@@ -1,0 +1,30 @@
+[project]
+name = "global-hubs-platform"
+version = "0.1.0"
+description = "AI-enabled digital intelligence platform for Global Hubs U.S."
+requires-python = ">=3.12"
+dependencies = [
+  "pandas>=2.2",
+  "openpyxl>=3.1",
+  "ydata-profiling>=4.10",
+  "sqlalchemy>=2.0",
+  "alembic>=1.13",
+  "pydantic>=2.6",
+  "python-dotenv>=1.0",
+  "httpx>=0.27",
+  "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+  "ipykernel>=6.29",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
