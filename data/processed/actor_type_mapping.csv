@@ -15,3 +15,12 @@ National Mineral Technology Center,national_research_center,Free-text — specia
 Industrial Host / Corporate Partner,industrial_partner,Free-text — corporate operator
 Large corporate industrial business,industrial_partner,Free-text — corporate operator
 New Venture / Project Developer,project_developer,Free-text — early-stage project entity
+Fund and Programme,un_programme,UN funds and programmes (UNDP, UNEP, UNICEF, etc.)
+Main Committee of the UNGA,un_committee,Committees of the UN General Assembly
+Functional Commission,un_committee,ECOSOC functional commissions
+Regional Commission,un_committee,ECOSOC regional commissions
+Department or Office,un_secretariat,UN Secretariat departments and offices
+Specialized Agency,un_agency,UN specialized agencies (FAO, UNESCO, WHO, etc.)
+Multilateral Development Bank,multilateral_development_bank,World Bank Group and similar
+Research and Training Institute,un_programme,UN research and training institutes (UNITAR, UNRISD)
+Intergovernmental Organization,intergovernmental_organization,Generic intergovernmental orgs not in other categories

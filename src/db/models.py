@@ -166,6 +166,9 @@ class Event(Base):
     recurring_pattern: Mapped[Optional[str]] = mapped_column(String(60))
     next_date: Mapped[Optional[datetime]] = mapped_column(Date)
     sponsoring_orgs: Mapped[Optional[str]] = mapped_column(Text)
+    host_actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor.actor_id")
+    )
     source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -296,3 +299,60 @@ class HubSectorStrength(Base):
     top_actor_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(ARRAY(UUID(as_uuid=True)))
     narrative_summary: Mapped[Optional[str]] = mapped_column(Text)
     last_computed: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+# ============================================================
+# INSTITUTIONAL PARTNER EXTENSIONS
+# Added for UN Mapping and future partner-organization spreadsheets.
+# ============================================================
+
+class OrganizationHierarchy(Base):
+    """Parent-child relationships between actors. Supports nested institutional
+    structures like UN General Assembly -> Funds and Programmes -> UNDP."""
+    __tablename__ = "organization_hierarchy"
+
+    parent_actor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor.actor_id"), primary_key=True
+    )
+    child_actor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor.actor_id"), primary_key=True
+    )
+    relationship_type: Mapped[Optional[str]] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class PartnershipProfile(Base):
+    """Partnership-evaluation sidecar for institutional actors.
+    1:1 with actor. Holds the rich partnership-relevant fields that apply
+    to UN agencies, federal agencies, foundations — but not to technical
+    actors like university labs or startups."""
+    __tablename__ = "partnership_profile"
+
+    partnership_profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor.actor_id"), unique=True, nullable=False
+    )
+    thematic_focus: Mapped[Optional[str]] = mapped_column(Text)
+    strategic_plan: Mapped[Optional[str]] = mapped_column(Text)
+    africa_specific_mandate: Mapped[Optional[str]] = mapped_column(Text)
+    africa_specific_details: Mapped[Optional[str]] = mapped_column(Text)
+    why_valuable_for_um6p: Mapped[Optional[str]] = mapped_column(Text)
+    budget_overview: Mapped[Optional[str]] = mapped_column(Text)
+    partners_with_universities: Mapped[Optional[bool]] = mapped_column(Boolean)
+    university_programmes: Mapped[Optional[str]] = mapped_column(Text)
+    university_partnership_examples: Mapped[Optional[str]] = mapped_column(Text)
+    key_entry_points: Mapped[Optional[str]] = mapped_column(Text)
+    funding_delivery: Mapped[Optional[bool]] = mapped_column(Boolean)
+    funding_delivery_mechanisms: Mapped[Optional[str]] = mapped_column(Text)
+    key_constraints: Mapped[Optional[str]] = mapped_column(Text)
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source.source_id")
+    )
+    verification_status: Mapped[Optional[str]] = mapped_column(String(30))
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

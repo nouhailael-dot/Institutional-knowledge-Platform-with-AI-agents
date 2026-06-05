@@ -8,6 +8,7 @@
 data/raw/
 data/interim/
 data/processed/
+!data/processed/actor_type_mapping.csv
 data/exports/
 
 # Python
