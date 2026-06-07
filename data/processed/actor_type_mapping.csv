@@ -24,3 +24,12 @@ Specialized Agency,un_agency,UN specialized agencies (FAO, UNESCO, WHO, etc.)
 Multilateral Development Bank,multilateral_development_bank,World Bank Group and similar
 Research and Training Institute,un_programme,UN research and training institutes (UNITAR, UNRISD)
 Intergovernmental Organization,intergovernmental_organization,Generic intergovernmental orgs not in other categories
+Fund & Programme,un_programme,UN funds and programmes (UNDP, UNEP, UNICEF, etc.)
+Main Committee of the UNGA,un_committee,Committees of the UN General Assembly
+Functional Commission of ECOSOC,un_committee,ECOSOC functional commissions
+Regional Commission of ECOSOC,un_committee,ECOSOC regional commissions
+Department of the UN Secretariat,un_secretariat,UN Secretariat departments and offices
+Office of the UN Secretariat,un_secretariat,UN Secretariat offices
+Specialized Agency,un_agency,UN specialized agencies (FAO UNESCO WHO etc.)
+Research & Training Institute,un_programme,UN research and training institutes (UNITAR UNRISD)
+World Bank Group Member,multilateral_development_bank,IBRD IDA IFC and similar
