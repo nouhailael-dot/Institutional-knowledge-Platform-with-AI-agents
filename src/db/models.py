@@ -364,3 +364,66 @@ class PartnershipProfile(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class EventScoring(Base):
+    """Strategic scoring sidecar for events.
+    1:1 with event. Same pattern as partnership_profile for actors.
+    Captures the 6-criterion scoring methodology from UM6P Dashboard v8."""
+    __tablename__ = "event_scoring"
+
+    event_scoring_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("event.event_id"), unique=True, nullable=False
+    )
+    longevity_description: Mapped[Optional[str]] = mapped_column(Text)
+    recognition_description: Mapped[Optional[str]] = mapped_column(Text)
+    scale_description: Mapped[Optional[str]] = mapped_column(Text)
+    audience_profile_description: Mapped[Optional[str]] = mapped_column(Text)
+    organizer_credibility_description: Mapped[Optional[str]] = mapped_column(Text)
+    geographic_reach_description: Mapped[Optional[str]] = mapped_column(Text)
+    longevity_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    recognition_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    scale_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    audience_profile_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    organizer_profile_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    geographic_reach_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    total_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    tier: Mapped[Optional[str]] = mapped_column(String(20))
+    tier_raw: Mapped[Optional[str]] = mapped_column(String(120))
+    strategic_value_narrative: Mapped[Optional[str]] = mapped_column(Text)
+    strategic_positioning: Mapped[Optional[str]] = mapped_column(Text)
+    scoring_methodology_version: Mapped[Optional[str]] = mapped_column(String(20))
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source.source_id")
+    )
+    scored_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ActorMergeLog(Base):
+    """Audit + reversibility for actor merges (handoff section 4). Created
+    schema-first, before the Week-5 integration that uses it.
+
+    merged_actor_id is intentionally NOT a foreign key: a merge absorbs the
+    merged actor and then deletes its row, so an FK constraint would block the
+    delete. We keep the raw UUID as a permanent historical record instead.
+    """
+    __tablename__ = "actor_merge_log"
+
+    merge_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    surviving_actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
+    merged_actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)  # NOT an FK — see docstring
+    merge_method: Mapped[Optional[str]] = mapped_column(String(40))   # tfidf | sbert | hybrid | claude_verified | manual
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    merge_evidence: Mapped[Optional[str]] = mapped_column(Text)
+    merged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now())
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
+    reversed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    reversed_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
