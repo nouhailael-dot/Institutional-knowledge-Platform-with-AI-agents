@@ -1,0 +1,7 @@
+# Pinned loosely; these are stable APIs at this scale.
+psycopg[binary]>=3.1      # Postgres driver (v3, with C speedups)
+python-dotenv>=1.0        # load .env
+voyageai>=0.2             # embeddings
+anthropic>=0.40           # Claude API
+streamlit>=1.38           # UI
+rapidfuzz>=3.0            # dedupe / alias matching (used later)
