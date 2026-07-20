@@ -1,33 +1,36 @@
 """Turn retrieved entities + a question into a CITED answer.
 
+v0.1 runs on Groq's free tier (a Llama model). The decided stack is the Claude
+API — this whole file is the only thing that changes between providers, so when
+the team funds Anthropic access you swap the client here and nothing else moves.
+
 The non-negotiable rules from CLAUDE.md are enforced in the system prompt:
   - Every fact must cite the entity it came from.
   - If the retrieved context doesn't answer the question, SAY SO — never guess.
     A confidently-wrong answer destroys the team's trust in the map.
-
-The model is a single constant below. To trade quality for cost later, change
-it to "claude-sonnet-5" or "claude-haiku-4-5" — nothing else changes.
 """
 
 import os
 
-import anthropic
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
-MODEL = "claude-opus-4-8"
+# Free, fast, capable enough for cited RAG answers. Browse other options at
+# https://console.groq.com/docs/models and change this one line to switch.
+MODEL = "llama-3.3-70b-versatile"
 MAX_TOKENS = 2048
 
 _client = None
 
 
-def _get_client() -> anthropic.Anthropic:
+def _get_client() -> Groq:
     global _client
     if _client is None:
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            raise RuntimeError("ANTHROPIC_API_KEY is not set. Add it to .env.")
-        _client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        if not os.environ.get("GROQ_API_KEY"):
+            raise RuntimeError("GROQ_API_KEY is not set. Add it to .env.")
+        _client = Groq()  # reads GROQ_API_KEY from env
     return _client
 
 
@@ -59,35 +62,36 @@ def _format_context(entities: list[dict]) -> str:
 
 
 def _build_messages(question: str, entities: list[dict]) -> list[dict]:
-    if not entities:
-        context = "(no sources retrieved)"
-    else:
-        context = _format_context(entities)
+    context = _format_context(entities) if entities else "(no sources retrieved)"
     user_content = f"SOURCES:\n\n{context}\n\n---\n\nQUESTION: {question}"
-    return [{"role": "user", "content": user_content}]
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
 
 
 def answer_question(question: str, entities: list[dict]) -> str:
     """Non-streaming: return the full cited answer as a string."""
-    resp = _get_client().messages.create(
+    resp = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        system=SYSTEM_PROMPT,
         messages=_build_messages(question, entities),
     )
-    return "".join(b.text for b in resp.content if b.type == "text")
+    return resp.choices[0].message.content
 
 
 def stream_answer(question: str, entities: list[dict]):
     """Streaming: yield answer text chunks as they arrive (used by the UI)."""
-    with _get_client().messages.stream(
+    stream = _get_client().chat.completions.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
-        system=SYSTEM_PROMPT,
         messages=_build_messages(question, entities),
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
+        stream=True,
+    )
+    for chunk in stream:
+        delta = chunk.choices[0].delta.content
+        if delta:
+            yield delta
 
 
 if __name__ == "__main__":
