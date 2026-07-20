@@ -1,0 +1,20 @@
+{
+  "_comment": "The quality gate. Each item is a question plus the entity names that SHOULD appear in the top-10 retrieved results. 'expected' matches are case-insensitive substrings, so partial names work (e.g. 'Mosaic' matches 'The Mosaic Company ...'). Run after EVERY change to retrieve.py or the assembly. Target 20 items — the team fills these in with known answers. The 3 below are seeds derived from the live data; verify and expand.",
+  "questions": [
+    {
+      "question": "Who manages phosphogypsum stacks in Central Florida?",
+      "expected": ["Mosaic"],
+      "verified_by": "seed"
+    },
+    {
+      "question": "Which actors work on phosphogypsum?",
+      "expected": ["Mosaic"],
+      "verified_by": "seed"
+    },
+    {
+      "question": "TODO: add a question the team already knows the answer to",
+      "expected": ["TODO entity name substring"],
+      "verified_by": "unverified"
+    }
+  ]
+}
