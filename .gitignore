@@ -43,3 +43,9 @@ node_modules/
 # Local DB
 *.db
 *.sqlite
+
+# models 
+models/
+.cache/
+huggingface/
+*.joblib

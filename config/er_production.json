@@ -1,0 +1,10 @@
+{
+     "model": "combiner_name_hub",
+     "features": ["tfidf_name_sim","sbert_name_sim","acronym_match","containment","jaccard","length_ratio","hub_overlap"],
+     "high_threshold": 0.99,
+     "low_threshold": 0.45981815523962793,
+     "min_precision": 0.97,
+     "validated_on": {"pairs": 586, "positives": 117, "pooled_precision": 1.0, "coverage": 0.085},
+     "frozen_date": "2025-...",
+     "notes": "Auto-merge approved for high-confidence tail only. Do not raise coverage by lowering HIGH without re-running k-fold."
+   }

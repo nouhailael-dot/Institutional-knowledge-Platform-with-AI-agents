@@ -1,0 +1,15 @@
+{
+  "stable": true,
+  "precision_ok": false,
+  "model": "combiner_name_hub",
+  "threshold_mean": 0.9645,
+  "threshold_std": 0.0101,
+  "threshold_min": 0.9427,
+  "threshold_max": 0.9818,
+  "pooled_coverage": 0.023,
+  "pooled_precision": 0.75,
+  "precision_ci": "[0.00,1.00]",
+  "auto_total": 4,
+  "true_merges": 3,
+  "false_merges": 1
+}

@@ -1,0 +1,22 @@
+{
+  "tfidf_name": {
+    "high_auto_merge": 1.0000000000000009,
+    "low_different": 0.0,
+    "best_f1": 0.7656824247681477
+  },
+  "sbert_name": {
+    "high_auto_merge": 0.9508499503135681,
+    "low_different": 0.23823235929012299,
+    "best_f1": 0.6521545648574829
+  },
+  "combiner_name": {
+    "high_auto_merge": 0.9856664809166603,
+    "low_different": 0.3996721256657007,
+    "best_f1": 0.7414117852861001
+  },
+  "combiner_name_hub": {
+    "high_auto_merge": 0.9490743241144217,
+    "low_different": 0.45981815523962793,
+    "best_f1": 0.7392160117157752
+  }
+}

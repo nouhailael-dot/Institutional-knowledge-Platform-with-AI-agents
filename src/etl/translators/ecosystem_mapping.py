@@ -48,6 +48,7 @@ logger = logging.getLogger(__name__)
 # Path inside the project. Resolved against PROJECT_ROOT by the runner.
 SOURCE_FILE = "data/raw/Ecosystem_Mapping_The_Final_UpV.xlsx"
 SHEET_NAME = "Ecosystem Mapping"
+SHEET_STRUCTURE = "Hub Structure and Actor Interac"
 AUDIT_LOG_PATH = "data/interim/ecosystem_mapping_audit.csv"
 FAILURE_LOG_PATH = "data/interim/ecosystem_mapping_failures.csv"
 SKIPPED_LOG_PATH = "data/interim/ecosystem_mapping_skipped.csv"
@@ -70,6 +71,11 @@ COL_PROGRAMS = 12
 COL_CONSTRAINTS = 13
 COL_FUNDINGS = 14
 COL_CROSS_THEMES = 15
+
+STRUCT_COL_HUB_NAME = 0
+STRUCT_COL_UPSTREAM = 1
+STRUCT_COL_DOWNSTREAM = 2
+STRUCT_COL_FLOW = 3
 
 DATA_STARTS_AT_ROW = 2  # row 1 is header
 
@@ -100,6 +106,8 @@ class RunStats:
     skipped_section_headers: int = 0
     skipped_empty: int = 0
     failed: int = 0
+    structure_updated: int = 0
+    structure_unmatched: int = 0
     failure_reasons: list[str] = field(default_factory=list)
     sector_unrecognized: list[str] = field(default_factory=list)
 
@@ -115,6 +123,8 @@ class RunStats:
             f"  Skipped (section header):{self.skipped_section_headers}",
             f"  Skipped (empty):         {self.skipped_empty}",
             f"  Failed:                  {self.failed}",
+            f"  Structure rows updated:  {self.structure_updated}",
+            f"  Structure rows unmatched:{self.structure_unmatched}",
             f"  Total rows examined:     {self.total}",
         ]
         if self.sector_unrecognized:
@@ -289,6 +299,9 @@ class EcosystemMappingTranslator:
                 country=country,
                 region=None,
                 description=clean_text(row[COL_DESCRIPTION]),
+                official_websites=clean_text(row[COL_WEBSITES]),
+                strategic_value_summary=clean_text(row[COL_VALUE_PROP]),
+                core_topic_strengths=clean_text(row[COL_CORE_STRENGTHS]),
                 composition_narrative=clean_text(row[COL_COMPOSITION]),
                 talent_narrative=clean_text(row[COL_TALENT]),
                 research_infrastructure_narrative=clean_text(row[COL_RESEARCH]),
@@ -317,6 +330,9 @@ class EcosystemMappingTranslator:
             existing.state = state
             existing.country = country
             existing.description = clean_text(row[COL_DESCRIPTION])
+            existing.official_websites = clean_text(row[COL_WEBSITES])
+            existing.strategic_value_summary = clean_text(row[COL_VALUE_PROP])
+            existing.core_topic_strengths = clean_text(row[COL_CORE_STRENGTHS])
             existing.composition_narrative = clean_text(row[COL_COMPOSITION])
             existing.talent_narrative = clean_text(row[COL_TALENT])
             existing.research_infrastructure_narrative = clean_text(row[COL_RESEARCH])
@@ -344,6 +360,61 @@ class EcosystemMappingTranslator:
             return (parts[0], parts[1], None)
         return (parts[0], parts[1], parts[2])
 
+    def _find_hub_by_structure_name(self, raw_name: Optional[str]) -> Optional[Hub]:
+        """Match structure-sheet hub names, which can be abbreviated."""
+        name = clean_text(raw_name)
+        if not name:
+            return None
+
+        slug = slugify(name)
+        exact = self.session.execute(
+            select(Hub).where(Hub.slug == slug)
+        ).scalar_one_or_none()
+        if exact:
+            return exact
+
+        hubs = self.session.execute(select(Hub)).scalars().all()
+        prefix_matches = [
+            h for h in hubs
+            if h.slug.startswith(slug) or slug.startswith(h.slug)
+        ]
+        if len(prefix_matches) == 1:
+            return prefix_matches[0]
+
+        lowered = name.lower()
+        contains_matches = [
+            h for h in hubs
+            if lowered in h.name.lower() or h.name.lower() in lowered
+        ]
+        if len(contains_matches) == 1:
+            return contains_matches[0]
+
+        return None
+
+    def _run_structure_sheet(self, ws) -> None:
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            row = list(row[:4])
+            while len(row) < 4:
+                row.append(None)
+
+            if not any(v is not None and str(v).strip() != "" for v in row):
+                continue
+
+            hub = self._find_hub_by_structure_name(row[STRUCT_COL_HUB_NAME])
+            raw_name = clean_text(row[STRUCT_COL_HUB_NAME]) or ""
+            if hub is None:
+                self.stats.structure_unmatched += 1
+                self._log(self.audit_log, row_idx, "structure_unmatched",
+                          raw_name[:120], "", "hub name did not resolve")
+                continue
+
+            hub.upstream_inputs = clean_text(row[STRUCT_COL_UPSTREAM])
+            hub.downstream_outputs = clean_text(row[STRUCT_COL_DOWNSTREAM])
+            hub.integrated_flow_description = clean_text(row[STRUCT_COL_FLOW])
+            self.stats.structure_updated += 1
+            self._log(self.audit_log, row_idx, "structure_updated",
+                      hub.name, "", "upstream/downstream/flow imported")
+
     # --------------------------------------------------------
     # MAIN ENTRY
     # --------------------------------------------------------
@@ -370,6 +441,10 @@ class EcosystemMappingTranslator:
                 # Trim row to the real columns only (ignore the 22 empty padding columns)
                 row = row[:16]
                 self._process_row(row_idx, row, source)
+
+            if SHEET_STRUCTURE in wb.sheetnames:
+                logger.info("Processing %s", SHEET_STRUCTURE)
+                self._run_structure_sheet(wb[SHEET_STRUCTURE])
 
             self.session.commit()
         finally:

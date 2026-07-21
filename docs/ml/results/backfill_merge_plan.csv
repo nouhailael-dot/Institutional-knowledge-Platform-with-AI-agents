@@ -1,0 +1,54 @@
+winner_actor_id,winner_name,winner_fields,loser_actor_id,loser_name,loser_fields,cluster_size
+09188ef4-8641-4b0d-ace8-6378a4ee4729,Northwestern University Environmental Engineering,2,b71d6bfe-b914-443a-9cda-2ff69fae635a,Northwestern Environmental Engineering Programs,2,2
+8bf6c70e-555f-467c-a69d-9b05b046ab59,Materials Research Science and Engineering Centers (MRSEC – regional sites),2,7126fce5-9060-4e66-adf1-0cd92a38b948,Materials Research Science and Engineering Centers,2,2
+a57da596-9644-497f-bfc9-316b57f38efc,UC Davis Center for Watershed Sciences,2,6b317a41-4a02-4a6e-acd9-c8d03702a53a,Center for Watershed Sciences,2,2
+29acca5c-2cd8-4d99-a845-6b5ed5b89fcd,Cornell AI Initiative (university-wide AI effort; useful linkage between Cornell Tech + Ithaca + Weill Cornell),2,89ee8c55-0fad-47f8-a500-49528bc62c6a,Cornell AI Initiative,2,2
+4e78643b-4219-4580-bfba-12e106b78081,National Renewable Energy Laboratory (NREL),14,83cbf8bc-2e2f-4a17-bbec-45b7c897d9af,National Renewable Energy Laboratory,2,4
+4e78643b-4219-4580-bfba-12e106b78081,National Renewable Energy Laboratory (NREL),14,a74b1cf9-472f-4ccb-86cc-60108abd4bbe,National Renewable Energy Laboratory (energy-mineral link),2,4
+4e78643b-4219-4580-bfba-12e106b78081,National Renewable Energy Laboratory (NREL),14,bfc97a22-39db-4257-bd67-dcab250b5684,NREL,2,4
+a7b37cd1-4153-49ea-8c13-e1abc2e0a51b,Carbon capture material research labs,2,dbb01649-435b-41de-8793-5fc308ba236e,Carbon Capture Research Labs,2,2
+27052c49-0e74-4be4-9da0-5a7eedf309bc,UC Berkeley Water Center,2,9b4d8d93-635d-455e-86ee-4c34ff1d0bec,Berkeley Water Center,2,2
+9329e6dd-498a-4592-ac15-cac1f21c5d45,Cornell Food Science Pilot Plant,2,1db818f0-b8c5-4631-b046-8eebe3f95d74,Food Science Pilot Plant,2,2
+14ff4640-1ade-4e5f-b6e0-d4a19eef1213,UNR Mackay School of Earth Sciences & Engineering,2,9693c60f-f746-43e4-b399-491913e1c8eb,Mackay School of Earth Sciences & Engineering,2,2
+683433a2-6977-42f3-9cb0-aa47a7f15bba,Cornell Horticulture Section,2,6f70e469-713e-4d76-98e8-0ed05797e4a2,Horticulture Section,2,2
+b122c8be-71b0-44ab-80f8-976d6f519211,Cornell Soil Health Laboratory,2,b19e1f38-7134-4022-83db-1229f15dc111,Soil Health Laboratory,2,2
+d2a0d6cd-3fa9-4429-963e-626d1f9208bc,Cornell Dairy Research Center,2,d0e5673c-b614-430d-9dcc-dc3341f09402,Dairy Research Center,2,2
+6ba81874-b3bc-400d-9c3e-6f4c52c570c3,UC Davis Plant Sciences Department,2,470222cf-8dcc-43b3-ab1d-afb236f494c1,Plant Sciences Department,2,2
+bdb48273-a310-4d65-9e3c-5d4b31cfcd8c,NASA Jet Propulsion Laboratory (AI systems),2,e82fe889-6aab-4784-92f9-b84d0013fb91,NASA Jet Propulsion Laboratory (JPL),2,2
+231ac3c8-d543-4e0b-aeeb-08ab3e6805ac,UW+Amazon Science Hub (robotics & AI research collaboration),2,09ca05d5-35a4-4f20-b3e9-7ec99be25a31,UW+Amazon Science Hub,2,2
+03917781-15a0-4958-91c4-1245a5328869,Break Through Tech AI Program (Cornell Tech talent pipeline / inclusion program),2,a143b729-5742-4df9-950b-e34f0c917e4d,Break Through Tech AI Program (Cornell Tech),2,2
+92472244-b69c-4b6b-bb06-9d7b61d8d960,MIT Media Lab (AI integration across domains),2,343bff45-7e71-4b9b-9be1-621a14dfa2fd,MIT Media Lab,2,2
+079fc2e8-b0c1-4889-ab7b-c959ed690827,Midwest Alliance for Clean Hydrogen,2,77b4480a-1afd-4237-9106-02b332868ada,Midwest Alliance for Clean Hydrogen (MACHH2),2,2
+d83b755e-f164-4812-b88c-ce32eabeb875,Texas Water Resources Institute,2,07e8851d-ee75-4559-b1b6-d8c548a53c11,Texas Water Resources Institute (TWRI),2,2
+d91974aa-a839-42f6-b19c-0b6515b48e40,MIT Energy Initiative (materials interface),2,abc927da-6ee9-4038-b95e-d2acbaf2fa41,MIT Energy Initiative,2,2
+6adebab5-0671-4fb0-b1a7-0d6a0082dab5,National Center for Atmospheric Research (NCAR),2,1baf3bcb-534b-4466-bc14-db6efb26a5c1,NCAR,2,2
+6ef9efc4-7bb1-42b8-9877-9402de21927d,Lawrence Livermore National Laboratory (LLNL),14,3ca18917-49fd-48a0-abb0-37a83f1f46e2,Lawrence Livermore National Laboratory,2,2
+93142c2c-5310-49cd-8d8d-48e76620e175,University of Illinois Urbana-Champaign (UIUC),13,abc71126-8512-4859-91d8-b0d310a5cf0f,University of Illinois Urbana-Champaign,2,2
+e6f559f7-ef16-4a59-b567-8358bc199e68,University of Washington (UW),2,2ebf35ea-d24e-433a-8801-6e5d1a43b65e,University of Washington,2,2
+1d31f7b9-2be3-4d23-ab66-ee66a5230b04,Precision medicine initiatives,2,7e3128a0-0652-429b-a761-69f16398bfff,Johns Hopkins Precision Medicine initiatives,2,2
+4341dfb0-b474-4983-8cac-762efd9790cc,MD Anderson Cancer Research Programs,2,b40d1d16-daff-4449-9261-9bc562617e20,MD Anderson Research Programs,2,2
+0608d9cf-fab6-4bb9-bd2a-2ac13fd2e871,Materials Science Research Labs,2,a8527a36-bb2a-4fbf-be06-ae6469ff6853,Materials Science Labs,2,2
+74f79bed-c0aa-4289-804c-2731ad8c743e,Harvard Department of Chemistry & Chemical Biology,2,a32ba9c9-415f-4e7e-9e04-0a704142b9dc,Harvard Chemistry & Chemical Biology,2,2
+d337bce9-424d-4097-a89c-aff430eb1876,Mineral Processing Pilot Facilities,2,23420c9f-b457-447c-a842-1381cad07478,Mineral Processing Facilities,2,2
+8b3e50bd-bc47-453a-9ae8-587bc670a990,Mine Reclamation Research Programs,2,c575d3a9-f0c6-42ca-8d77-9eaab5e4a8de,Mine Reclamation Programs,2,2
+7151a5f0-d363-4a8b-a270-8f4d98aef2e2,Rice University Department of Chemistry,2,8018d81c-51f8-4f40-bdec-baa1a4993285,Rice University Chemistry,2,2
+d57f516a-792e-4f71-9bc6-503bf9402ff6,Hospital Systems Research Centers,2,3e0729b6-fa00-4620-bc19-d0d210c1b836,Hospital Systems Research Labs,2,2
+be655096-a5c9-42b4-a156-a406301906ad,Environmental Justice Research Programs,2,250f8687-7f2d-4eb4-a01c-b3fa61338265,Environmental Justice Programs,2,2
+d92e7aed-1630-4d7d-90b5-7f82057acf76,Rice University Baker Institute (Energy Program),2,69b3aba5-c2fa-4cf1-a26f-e31072c7ff93,Rice Baker Institute Energy Program,2,2
+321f944a-5566-41e6-9706-272afd9a1e96,UC Berkeley Department of Chemistry,2,9bf2dc3c-e417-40ab-a9c2-35c2401cfc8a,UC Berkeley Chemistry,2,2
+ba354a1e-a26e-4bec-a461-6b3a530346e4,Stanford University Department of Chemistry,2,6804ea7c-cf93-4063-9637-861a6c55a2e6,Stanford Department of Chemistry,2,3
+ba354a1e-a26e-4bec-a461-6b3a530346e4,Stanford University Department of Chemistry,2,cf7544bf-73fb-419e-ae70-197acbaecf8d,Stanford Chemistry,2,3
+648f15fe-080a-4ede-9639-fa387dc6d60e,ExxonMobil Baytown Complex,2,2d4580d4-d14a-4631-9bea-e1a309bcebb7,ExxonMobil Baytown Technology & Engineering Complex,2,2
+958193c6-c539-412d-9495-103c6c323f80,NYC Mayor’s Office of Climate & Environmental Justice,2,42fc6473-6b45-441c-a143-10ccc7140d8b,NYC Mayor’s Climate Office,2,2
+331d6b1f-cfdc-43f7-ae7d-d28da80ca27a,Climate Tech Venture Capital Firms,2,10831b04-2906-4aa6-acc3-b786399ff40f,Climate Venture Capital Firms,2,2
+7374656c-97a5-49d5-9ce6-669a622502d8,University of Wisconsin–Madison Department of Chemistry,2,a81c0402-e188-4c0b-9e03-c7b0a9a38e90,University of Wisconsin–Madison Chemistry,2,2
+c2c45636-149f-49bc-a3dc-93fdb6906233,Offshore wind planning authorities,2,4b38c015-d680-4259-a8a2-538ce317f9a6,Offshore Wind Planning Bodies,2,2
+dd24e3c5-e9df-4273-a934-9f3a5466d742,Carbon capture pilot projects,2,25d48518-d8d7-4602-a06c-96d0f748d132,Carbon Capture Projects,2,2
+82eedb11-bae0-460b-9906-21a499b1791f,Regional Precision Agriculture & Ag-Tech Startups,2,9b853e30-2d0a-4e86-b3e6-1f99540787ec,Regional Ag-Tech Startups,2,2
+96d98f4e-bad0-4680-910a-1384a83c0f99,Berkeley Energy & Climate Institute,2,ae160cb2-dd3a-46a8-b3d3-a39b599e68ee,Berkeley Energy Institute,2,2
+18156051-007e-42a6-8390-ca2ab918c158,Northwestern University Department of Chemistry,2,9ae11791-dc3e-4d8b-a0a7-6bc1db08e071,Northwestern University Chemistry,2,2
+aae01bba-5be9-46d2-bf69-682406a13bf5,Mineral Processing Research Labs,2,2ea2fc43-8c89-4e28-a4b8-751b9dafd2a8,Mineral Processing Labs,2,2
+61fc81f6-b2ca-4d71-8672-d17d91742ba3,Digital Health Innovation Labs,2,7aed3e87-8279-4bf1-b874-419f05a6b35d,Digital Health Labs,2,2
+ebe71262-bbd1-4a0d-9ddf-258e34a6e645,Mining Automation Firms,2,dc2107fb-0fd9-482f-9839-6b9dc9b00f74,Mining Automation Technology Firms,2,2
+4d3212ee-700f-4a2d-8e3b-f7d551838712,Environmental Remediation Research Programs,2,3689bc22-823a-42b8-8ebb-2ee0c758e8eb,Environmental Remediation Programs,2,2
+23ecfefc-1785-419b-9b42-44226b08f72c,Carbon Capture Research Programs,2,64f84840-8625-4938-9495-925a6707c279,Industrial Carbon Capture Programs,2,2

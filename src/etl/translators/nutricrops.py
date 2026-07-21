@@ -410,6 +410,7 @@ class NutriCropsTranslator:
         current_activities = clean_text(row[COL_CURRENT_ACTIVITIES])
         tech_ip = clean_text(row[COL_TECH_IP_NOTES])
         constraints = clean_text(row[COL_CONSTRAINTS])
+        funding_summary = clean_text(row[COL_FUNDINGS])
 
         trl = parse_trl(row[COL_TRL])
 
@@ -432,6 +433,7 @@ class NutriCropsTranslator:
             existing.current_activities = existing.current_activities or current_activities
             existing.technology_ip_notes = existing.technology_ip_notes or tech_ip
             existing.key_constraints = existing.key_constraints or constraints
+            existing.funding_summary = existing.funding_summary or funding_summary
             existing.estimated_trl = existing.estimated_trl or trl
             existing.primary_lifecycle_role = existing.primary_lifecycle_role or lifecycle_clean
             self._actor_cache[slug] = existing
@@ -455,6 +457,7 @@ class NutriCropsTranslator:
             current_activities=current_activities,
             technology_ip_notes=tech_ip,
             key_constraints=constraints,
+            funding_summary=funding_summary,
             estimated_trl=trl,
             primary_lifecycle_role=lifecycle_clean,
             source_id=source.source_id,
@@ -498,8 +501,10 @@ class NutriCropsTranslator:
             "relevance_score": normalized_score,
             "maturity_risk": maturity_clean,
             "collaboration_orientation": (clean_text(row[COL_COLLABORATION]) or "")[:60] or None,
+            "challenge_relevance_narrative": clean_text(row[COL_RELEVANCE_PHOSPHOGYPSUM]),
             "why_relevant": clean_text(row[COL_WHY_VALUABLE]),
             "current_evidence": clean_text(row[COL_CURRENT_ACTIVITIES]),
+            "source_links": clean_text(row[COL_SOURCE_LINKS]),
             "additional_validation_needed": clean_text(row[COL_ANALYST_NOTES]),
         }
 
