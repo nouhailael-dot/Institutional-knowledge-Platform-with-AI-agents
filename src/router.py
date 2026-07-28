@@ -68,6 +68,13 @@ Respond in EXACTLY one of two ways:
 - If STRUCTURED: output only a single SQL statement inside a ```sql code block. \
 Use a SELECT only. Always filter actor.merged_into_actor_id IS NULL when \
 counting/listing actors. Add a LIMIT (<=100) to list queries.
+
+  CRITICAL name-matching rule: when filtering by a name (hub, actor, event), you \
+MUST use ILIKE with surrounding wildcards on the SHORTEST distinctive fragment, \
+e.g. `h.name ILIKE '%California Water%'`. Names in this database carry suffixes \
+like 'California Water Hub (UC Davis - Berkeley - Stanford)', so an exact match, \
+`=`, or ILIKE without `%` wildcards will WRONGLY return 0. Never match a full \
+name literally; always wrap a distinctive fragment in `%...%`.
 - If SEMANTIC: output only the single word SEMANTIC (nothing else)."""
 
 # Anything that isn't a plain read: reject before it reaches the database.
@@ -134,7 +141,10 @@ def format_sql_answer(question: str, sql: str, cols: list[str],
             "You state the result of a database query in plain English. The "
             "numbers are exact (computed directly from the database), so be "
             "definitive — do not hedge about completeness. Lead with the answer. "
-            "If the result is a list, present it clearly."
+            "If the result is a list, present it clearly. If the result is empty "
+            "or zero, say so, and note it may mean nothing in the database matched "
+            "the filter (for example, a name that isn't in the database) rather "
+            "than asserting a true count of zero."
         ),
         messages=[{"role": "user", "content":
                    f"Question: {question}\n\nSQL run:\n{sql}\n\nResult:\n{table}"}],
