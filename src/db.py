@@ -30,6 +30,21 @@ def get_connection() -> psycopg.Connection:
     return psycopg.connect(DATABASE_URL)
 
 
+def get_readonly_connection() -> psycopg.Connection:
+    """A hardened connection for running LLM-generated SQL (the router).
+
+    Two guarantees the database itself enforces, so a bad query can't hurt the
+    colleague's data even if our own validation missed something:
+      - `read_only = True` — the session physically rejects any write/DDL.
+      - `statement_timeout=8000` — a runaway query is killed after 8 seconds.
+    """
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set.")
+    conn = psycopg.connect(DATABASE_URL, options="-c statement_timeout=8000")
+    conn.read_only = True   # must be set before the first transaction
+    return conn
+
+
 if __name__ == "__main__":
     # Smoke test: run `python src/db.py` once credentials are in .env.
     # Proves we can reach the colleague's populated database.
