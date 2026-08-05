@@ -6,3 +6,5 @@ anthropic>=0.40           # Claude API (the decided stack; swap back when funded
 groq>=0.11                # free-tier LLM used for v0.1 answer generation
 streamlit>=1.38           # UI
 rapidfuzz>=3.0            # dedupe / alias matching (used later)
+pypdf>=5.0                # text extraction from uploaded PDFs (Ask-tab document upload, no OCR)
+numpy>=2.1                # per-session doc-chunk cosine search (Ask-tab document upload)
