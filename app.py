@@ -13,6 +13,8 @@ from src.retrieve import retrieve
 from src.generate import stream_answer
 from src.router import plan, run_sql, format_sql_answer
 from src import browse
+from src.documents.extract import ExtractionError, extract_text
+from src.documents.doc_store import STATE_KEY as DOC_STATE_KEY, build_store, search_chunks
 
 st.set_page_config(page_title="UM6P Intelligence", page_icon="🔎", layout="wide")
 
@@ -35,6 +37,30 @@ def _events():
     return browse.load_events()
 
 
+# --- light global polish -----------------------------------------------------
+# Streamlit's design ceiling is real, but a little CSS tightens spacing, gives
+# tabs/metrics/expanders more room to breathe, and reads consistently in both
+# light and dark mode (no hard-coded backgrounds that fight the theme).
+st.markdown("""
+<style>
+  .block-container { padding-top: 2.5rem; max-width: 1100px; }
+  /* Tabs: larger labels, a clear underline on the active one. */
+  button[data-baseweb="tab"] { font-size: 1.05rem; font-weight: 600; }
+  /* Metric cards: subtle bordered tiles instead of bare numbers. */
+  div[data-testid="stMetric"] {
+    border: 1px solid rgba(128,128,128,.25);
+    border-radius: 10px; padding: .75rem 1rem;
+  }
+  div[data-testid="stMetricLabel"] { opacity: .7; font-size: .8rem; }
+  /* Expanders: rounded, lightly separated. */
+  div[data-testid="stExpander"] details {
+    border-radius: 10px; border-color: rgba(128,128,128,.25);
+  }
+  /* Section headings a touch tighter to their content. */
+  h3, h4 { margin-bottom: .3rem; }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🔎 UM6P Intelligence")
 
 ask_tab, browse_tab = st.tabs(["Ask", "Browse"])
@@ -48,42 +74,115 @@ with ask_tab:
                "Counting questions are answered exactly from the database; "
                "everything else is answered from the map with cited sources.")
 
-    question = st.text_input(
-        "Your question",
-        placeholder="e.g. Who works on phosphogypsum?  ·  How many actors are at TRL 6+?",
-    )
+    with st.expander("📎 Attach a document (optional)"):
+        uploaded = st.file_uploader(
+            "Ask questions using this document AND the database together. "
+            "Nothing here is saved — it's cleared when you remove the file "
+            "or close the tab.",
+            type=["pdf", "txt", "md"],
+            accept_multiple_files=False,
+        )
 
-    if question:
-        with st.spinner("Understanding your question…"):
-            mode, sql = plan(question)
+    if uploaded is None:
+        for k in ("doc_name", DOC_STATE_KEY, "doc_answer", "doc_sources"):
+            st.session_state.pop(k, None)
+    elif st.session_state.get("doc_name") != uploaded.name:
+        # (Re)build only when the file changes, not on every Streamlit rerun.
+        try:
+            with st.spinner("Reading the document…"):
+                text = extract_text(uploaded.getvalue(), uploaded.name)
+        except ExtractionError as exc:
+            st.error(str(exc))
+            uploaded = None
+        else:
+            with st.spinner("Indexing the document…"):
+                st.session_state[DOC_STATE_KEY] = build_store(text, uploaded.name)
+            st.session_state["doc_name"] = uploaded.name
+            st.session_state.pop("doc_answer", None)
+            st.session_state.pop("doc_sources", None)
 
-        if mode == "sql":
-            try:
-                cols, rows = run_sql(sql)
-                answer = format_sql_answer(question, sql, cols, rows)
+    if uploaded is not None:
+        st.caption(f"📎 Attached: **{uploaded.name}** — answers below draw on "
+                   "this document AND the database. Remove the file above to "
+                   "go back to database-only search.")
+
+        # A form (not a live text_input) so opening the Sources expander below
+        # doesn't silently trigger a fresh paid answer on every rerun.
+        with st.form("doc_ask_form"):
+            doc_question = st.text_input(
+                "Your question",
+                placeholder="e.g. What's the proposed budget, and which of "
+                            "our actors could partner on this?",
+            )
+            asked = st.form_submit_button("Ask", type="primary")
+
+        if asked and doc_question.strip():
+            with st.spinner("Searching the document and the map…"):
+                map_hits = retrieve(doc_question, top_k=8)
+                doc_hits = search_chunks(st.session_state.get(DOC_STATE_KEY), doc_question)
+                merged = doc_hits + map_hits
+            st.session_state["doc_sources"] = merged
+            if merged:
                 st.subheader("Answer")
-                st.markdown(answer)
-                st.caption("⚡ Computed directly from the database — exact, not estimated.")
-                with st.expander("SQL query used"):
-                    st.code(sql, language="sql")
-            except Exception:
-                st.info("Falling back to map search…")
-                mode = "semantic"
-
-        if mode == "semantic":
-            with st.spinner("Searching the map…"):
-                hits = retrieve(question)
-
-            if not hits:
-                st.warning("No matching entities found in the map.")
+                st.session_state["doc_answer"] = st.write_stream(
+                    stream_answer(doc_question, merged))
             else:
-                st.subheader("Answer")
-                st.write_stream(stream_answer(question, hits))
-                with st.expander(f"Sources ({len(hits)} entities retrieved)"):
-                    for i, h in enumerate(hits, 1):
-                        st.markdown(f"**{i}. {h['name']}**  ·  _{h['entity_type']}_")
+                st.session_state.pop("doc_answer", None)
+        elif st.session_state.get("doc_answer"):
+            st.subheader("Answer")
+            st.markdown(st.session_state["doc_answer"])
+
+        if "doc_sources" in st.session_state:
+            merged = st.session_state["doc_sources"]
+            if not merged:
+                st.warning("Nothing matched in the document or the database.")
+            else:
+                with st.expander(f"Sources ({len(merged)}: document passages "
+                                 "+ database entities)"):
+                    for i, h in enumerate(merged, 1):
+                        tag = ("📄 document" if h["entity_type"] == "uploaded_document"
+                              else h["entity_type"])
+                        st.markdown(f"**{i}. {h['name']}**  ·  _{tag}_")
                         preview = h["doc_text"][:300]
                         st.caption(preview + ("…" if len(h["doc_text"]) > 300 else ""))
+
+    else:
+        question = st.text_input(
+            "Your question",
+            placeholder="e.g. Who works on phosphogypsum?  ·  How many actors are at TRL 6+?",
+        )
+
+        if question:
+            with st.spinner("Understanding your question…"):
+                mode, sql = plan(question)
+
+            if mode == "sql":
+                try:
+                    cols, rows = run_sql(sql)
+                    answer = format_sql_answer(question, sql, cols, rows)
+                    st.subheader("Answer")
+                    st.markdown(answer)
+                    st.caption("⚡ Computed directly from the database — exact, not estimated.")
+                    with st.expander("SQL query used"):
+                        st.code(sql, language="sql")
+                except Exception:
+                    st.info("Falling back to map search…")
+                    mode = "semantic"
+
+            if mode == "semantic":
+                with st.spinner("Searching the map…"):
+                    hits = retrieve(question)
+
+                if not hits:
+                    st.warning("No matching entities found in the map.")
+                else:
+                    st.subheader("Answer")
+                    st.write_stream(stream_answer(question, hits))
+                    with st.expander(f"Sources ({len(hits)} entities retrieved)"):
+                        for i, h in enumerate(hits, 1):
+                            st.markdown(f"**{i}. {h['name']}**  ·  _{h['entity_type']}_")
+                            preview = h["doc_text"][:300]
+                            st.caption(preview + ("…" if len(h["doc_text"]) > 300 else ""))
 
 
 # ===========================================================================
@@ -178,6 +277,10 @@ _HIDDEN_HUB_COLUMNS = {
     "secondary_sectors", "source_id", "verification_status",
 }
 
+# Longer than this, a field is treated as a narrative write-up (shown in an
+# expander) rather than a short value (shown in the field/value table).
+_NARRATIVE_MIN_CHARS = 200
+
 
 def _browse_hubs() -> None:
     hubs = _hubs()
@@ -194,20 +297,87 @@ def _browse_hubs() -> None:
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     st.divider()
-    chosen = st.selectbox("View full details for", [h["name"] for h in hubs],
+    chosen = st.selectbox(f"Hub ({len(hubs)})", [h["name"] for h in hubs],
                           key="hub_detail")
     h = next(x for x in hubs if x["name"] == chosen)
+    _render_hub_detail(h)
+
+
+# Fields promoted to the metric row / subtitle, so they aren't repeated in the
+# details grid below. Everything else populated shows up there or as a narrative.
+_HUB_HEADLINE_FIELDS = {
+    "name", "actor_count", "primary_city", "state", "country",
+    "primary_sectors", "confidence",
+}
+
+
+def _render_hub_detail(h: dict) -> None:
+    """A readable, card-style detail view for one hub."""
     st.markdown(f"### {h['name']}")
-    st.caption(f"{h['actor_count']} live actors")
-    # Every populated column, labeled — the readable form of "all columns".
-    for col in ordered:
-        if col in ("name", "actor_count"):
+
+    # Location subtitle, e.g. "Phoenix – Tucson · USA".
+    loc = " · ".join(p for p in (h.get("primary_city"), h.get("state"),
+                                 h.get("country")) if p and str(p).strip())
+    if loc:
+        st.caption(loc)
+
+    # Metric tiles: the numbers you glance at first.
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Live actors", h["actor_count"])
+    sector = (h.get("primary_sectors") or "").split(",")[0].strip() or "—"
+    m2.metric("Primary sector", sector.title() if sector != "—" else "—")
+    conf = h.get("confidence")
+    m3.metric("Confidence", f"{float(conf):.2f}" if conf not in (None, "") else "—")
+
+    # Split remaining populated fields: short values -> a two-column grid;
+    # long write-ups -> collapsible narratives (same split as the colleague's
+    # hub explorer, but rendered as a clean grid instead of a raw table).
+    short, narratives = [], {}
+    for col in ordered_hub_cols():
+        if col in _HUB_HEADLINE_FIELDS:
             continue
         val = h.get(col)
         if val is None or str(val).strip() == "":
             continue
-        st.markdown(f"**{col.replace('_', ' ')}**")
-        st.write(val)
+        if isinstance(val, str) and len(val) > _NARRATIVE_MIN_CHARS:
+            narratives[col] = val
+        else:
+            short.append((col.replace("_", " "), val))
+
+    if short:
+        with st.container(border=True):
+            for i in range(0, len(short), 2):
+                cols = st.columns(2)
+                for slot, (field, val) in zip(cols, short[i:i + 2]):
+                    slot.caption(field)
+                    slot.markdown(f"**{val}**")
+
+    if narratives:
+        st.markdown("#### Narratives")
+        for field, text in narratives.items():
+            with st.expander(field.replace("_", " "), expanded=False):
+                st.markdown(text)
+
+    st.markdown("#### Actors in this hub")
+    related = [a for a in _actors() if h["name"] in a["hubs"]]
+    if not related:
+        st.caption("No live actors linked to this hub yet.")
+    else:
+        rel_df = pd.DataFrame([{
+            "Name": a["name"],
+            "Type": (a["actor_type"] or "").replace("_", " "),
+            "Country": a["country"] or "—",
+            "TRL": str(a["trl"]) if a["trl"] is not None else "—",
+        } for a in related])
+        with st.container(border=True):
+            st.dataframe(rel_df, use_container_width=True, hide_index=True)
+
+
+def ordered_hub_cols() -> list[str]:
+    """Hub columns in display order, minus the hidden bookkeeping ones."""
+    lead = ["name", "actor_count"]
+    return lead + [c for c in browse.hub_columns()
+                   if c not in lead and c not in _HIDDEN_HUB_COLUMNS]
 
 
 def _browse_events() -> None:
