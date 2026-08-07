@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "um6p-api",
+      "runtimeExecutable": "/Users/ghus/.conda/envs/um6p/bin/python",
+      "runtimeArgs": ["-m", "uvicorn", "backend.app:app", "--port", "8000", "--reload"],
+      "port": 8000
+    }
+  ]
+}

@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UM6P Intelligence</title>
+<style>
+  :root{
+    --bg:#f4f3ef; --surface:#fffffe; --surface-2:#faf8f4;
+    --ink:#17191b; --muted:#697079; --faint:#9aa0a7;
+    --line:#e8e4dc; --line-strong:#d9d4ca;
+    --accent:#ef7d1a; --accent-2:#f6912f; --accent-ink:#b05707; --accent-soft:#fdeedd;
+    --teal:#0e7b71; --teal-soft:#e2f2ef;
+    --violet:#5850c4; --violet-soft:#ecebfa;
+    --slate:#556072; --slate-soft:#ebedf0;
+    --shadow-sm:0 1px 2px rgba(24,24,24,.05);
+    --shadow:0 1px 3px rgba(24,24,24,.05),0 10px 26px -8px rgba(24,24,24,.11);
+    --shadow-lg:0 2px 8px rgba(24,24,24,.06),0 22px 48px -14px rgba(24,24,24,.20);
+    --radius:16px; --radius-sm:11px;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0f1113; --surface:#181b1e; --surface-2:#1d2125;
+      --ink:#ecedef; --muted:#99a0a7; --faint:#6b7178;
+      --line:#282c31; --line-strong:#373c42;
+      --accent:#f6a15c; --accent-2:#ffb877; --accent-ink:#f8ab63; --accent-soft:#3a2512;
+      --teal:#3fd0c0; --teal-soft:#14302a;
+      --violet:#a79ef3; --violet-soft:#211e4d;
+      --slate:#aeb6bf; --slate-soft:#252a2f;
+      --shadow-sm:0 1px 2px rgba(0,0,0,.35);
+      --shadow:0 1px 3px rgba(0,0,0,.4),0 12px 28px -8px rgba(0,0,0,.5);
+      --shadow-lg:0 2px 8px rgba(0,0,0,.45),0 24px 52px -14px rgba(0,0,0,.62);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;
+    line-height:1.55;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+    background-image:radial-gradient(900px 420px at 50% -180px,
+      color-mix(in srgb,var(--accent) 9%,transparent),transparent);
+    background-attachment:fixed}
+  a{color:var(--accent-ink);text-decoration:none}
+  a:hover{text-decoration:underline}
+  button,input,textarea,select{font-family:inherit}
+
+  /* top bar */
+  .topbar{position:sticky;top:0;z-index:20;
+    background:color-mix(in srgb,var(--bg) 82%,transparent);
+    backdrop-filter:saturate(1.3) blur(12px);border-bottom:1px solid var(--line)}
+  .topbar-in{max-width:1120px;margin:0 auto;padding:13px 24px;display:flex;align-items:center;gap:20px}
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand svg{display:block;color:var(--accent)}
+  .wordmark{font-family:var(--serif);font-size:20px;font-weight:600;letter-spacing:.2px}
+  .wordmark .dot{color:var(--accent)}
+  .tabs{margin-left:auto;display:flex;gap:3px;background:var(--surface-2);
+    padding:4px;border-radius:12px;border:1px solid var(--line)}
+  .tab{border:0;background:transparent;color:var(--muted);font-weight:600;
+    padding:7px 18px;border-radius:9px;cursor:pointer;transition:.18s}
+  .tab:hover{color:var(--ink)}
+  .tab.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-sm)}
+
+  .wrap{max-width:1120px;margin:0 auto;padding:40px 24px 90px}
+
+  /* hero */
+  .hero-h{font-family:var(--serif);font-weight:600;font-size:30px;letter-spacing:-.2px;
+    margin:0 0 8px}
+  .lead{color:var(--muted);margin:0 0 24px;font-size:15px;max-width:60ch}
+
+  /* card */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow)}
+  .pad{padding:22px 24px}
+
+  /* ask input */
+  .ask-form{display:flex;gap:10px;align-items:stretch}
+  .input-shell{position:relative;flex:1}
+  .in-icon{position:absolute;left:17px;top:16px;color:var(--faint);pointer-events:none}
+  .field{width:100%;background:var(--surface);border:1px solid var(--line-strong);
+    border-radius:var(--radius-sm);padding:15px 16px;font-size:15px;color:var(--ink);
+    transition:border-color .15s,box-shadow .15s}
+  .field:focus{outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 4px var(--accent-soft)}
+  textarea.field{resize:vertical;min-height:56px;padding-left:46px}
+  .btn{border:0;color:#fff;font-weight:600;padding:0 24px;border-radius:var(--radius-sm);
+    cursor:pointer;white-space:nowrap;background:linear-gradient(180deg,var(--accent-2),var(--accent));
+    box-shadow:var(--shadow-sm);transition:filter .15s,transform .05s}
+  .btn:hover{filter:brightness(1.05)}
+  .btn:active{transform:translateY(1px)}
+  .btn:disabled{opacity:.55;cursor:default;filter:none}
+
+  /* chips */
+  .chip{display:inline-flex;align-items:center;gap:6px;background:var(--slate-soft);
+    color:var(--slate);font-size:12px;font-weight:600;padding:4px 11px;border-radius:999px;
+    white-space:nowrap;letter-spacing:.1px}
+  .chip.accent{background:var(--accent-soft);color:var(--accent-ink)}
+  .chip.teal{background:var(--teal-soft);color:var(--teal)}
+  .chip.violet{background:var(--violet-soft);color:var(--violet)}
+  .chip.slate{background:var(--slate-soft);color:var(--slate)}
+
+  /* answer */
+  .answer{font-size:15.5px;line-height:1.65}
+  .answer h1,.answer h2,.answer h3{font-family:var(--serif);line-height:1.25;margin:.7em 0 .35em}
+  .answer p{margin:.5em 0}
+  .answer ul{margin:.4em 0;padding-left:1.2em}
+  .answer li{margin:.25em 0}
+  .answer code{background:var(--slate-soft);padding:1px 6px;border-radius:6px;
+    font-family:var(--mono);font-size:.88em}
+  .answer pre{background:var(--surface-2);border:1px solid var(--line);padding:13px 15px;
+    border-radius:10px;overflow:auto}
+  .answer pre code{background:none;padding:0}
+  .answer table{border-collapse:collapse;width:100%;margin:.6em 0;font-size:14px}
+  .answer th,.answer td{border:1px solid var(--line);padding:8px 11px;text-align:left}
+  .answer th{background:var(--surface-2)}
+  .cursor{display:inline-block;width:7px;height:1.05em;background:var(--accent);
+    border-radius:2px;vertical-align:-2px;margin-left:2px;animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  details.sources{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+  details.sources summary{cursor:pointer;color:var(--muted);font-weight:600;font-size:13.5px;
+    list-style:none}
+  details.sources summary::-webkit-details-marker{display:none}
+  details.sources summary::before{content:"▸ ";color:var(--faint)}
+  details.sources[open] summary::before{content:"▾ "}
+  .src{padding:13px 0;border-bottom:1px solid var(--line)}
+  .src:last-child{border-bottom:0}
+  .src .nm{font-weight:600;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .src .pv{color:var(--muted);font-size:13.5px;margin-top:4px;line-height:1.5}
+
+  .hint{color:var(--muted);font-size:13px;margin-top:14px;display:flex;align-items:center;
+    gap:8px;flex-wrap:wrap}
+  .example{background:var(--surface);border:1px solid var(--line-strong);color:var(--muted);
+    font-size:13px;padding:7px 13px;border-radius:999px;cursor:pointer;transition:.15s}
+  .example:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+  .attach-row{margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+
+  /* browse — segmented control */
+  .subnav{display:inline-flex;gap:3px;margin-bottom:22px;background:var(--surface-2);
+    padding:4px;border-radius:12px;border:1px solid var(--line)}
+  .subnav button{border:0;background:transparent;color:var(--muted);font-weight:600;
+    padding:8px 18px;border-radius:9px;cursor:pointer;transition:.18s}
+  .subnav button:hover{color:var(--ink)}
+  .subnav button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-sm)}
+
+  .filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:14px}
+  .filters label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+  select.field,input.field{padding:10px 12px;font-size:14px;border-radius:10px}
+  input[type=range]{accent-color:var(--accent);width:100%}
+  input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+  .typechips{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px;
+    border-top:1px solid var(--line);padding-top:16px}
+  .tc{border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);
+    font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px;cursor:pointer;
+    transition:.15s}
+  .tc:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .tc.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+
+  .count{margin:22px 2px 12px;font-weight:700;font-size:15px}
+  .count b{color:var(--accent-ink)}
+  table.grid{width:100%;border-collapse:collapse;font-size:14px}
+  table.grid thead th{background:var(--surface-2);text-align:left;color:var(--muted);
+    font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;
+    padding:11px 14px;border-bottom:1px solid var(--line-strong)}
+  table.grid th.num,table.grid td.num{text-align:right}
+  table.grid td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+  table.grid tbody tr:last-child td{border-bottom:0}
+  table.grid tbody tr{cursor:pointer;transition:background .12s}
+  table.grid tbody tr:hover{background:var(--accent-soft)}
+  table.grid tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+  .name-cell{font-weight:600}
+  .dash{color:var(--faint)}
+  .trl{display:inline-block;min-width:22px;text-align:center;font-family:var(--mono);
+    font-size:12px;font-weight:600;padding:2px 7px;border-radius:6px;
+    background:var(--accent-soft);color:var(--accent-ink)}
+  .tablecap{color:var(--muted);font-size:13px;padding:14px 16px;border-top:1px solid var(--line)}
+
+  /* detail */
+  .detail h2{font-family:var(--serif);margin:0 0 5px;font-size:26px;letter-spacing:-.2px}
+  .detail .loc{color:var(--muted);margin-bottom:14px}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:18px 0}
+  .metric{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--surface-2)}
+  .metric .k{color:var(--muted);font-size:11.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.5px}
+  .metric .v{font-size:22px;font-weight:700;font-family:var(--serif);margin-top:4px}
+  .kv{display:grid;grid-template-columns:1fr 1fr;gap:14px 22px;margin:16px 0}
+  .kv .k{color:var(--muted);font-size:11.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.5px;margin-bottom:2px}
+  .kv .v{font-weight:600}
+  .narr summary{cursor:pointer;font-weight:600;padding:11px 0;border-top:1px solid var(--line);
+    list-style:none}
+  .narr summary::-webkit-details-marker{display:none}
+  .narr summary::before{content:"▸ ";color:var(--faint)}
+  .narr[open] summary::before{content:"▾ "}
+  .narr p{color:var(--ink);white-space:pre-wrap;margin:2px 0 14px;font-size:14.5px;line-height:1.6}
+  .backlink{border:0;background:none;color:var(--accent-ink);font-weight:600;cursor:pointer;
+    padding:0;margin-bottom:16px;font-size:13.5px}
+  .backlink:hover{text-decoration:underline}
+  .empty{color:var(--muted);padding:30px;text-align:center;border:1px dashed var(--line-strong);
+    border-radius:12px;background:var(--surface-2)}
+  .spin{width:16px;height:16px;border:2px solid var(--line-strong);border-top-color:var(--accent);
+    border-radius:50%;display:inline-block;animation:sp .7s linear infinite;vertical-align:-3px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .fade{animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+</style>
+<script type="importmap">
+{ "imports": {
+  "react": "https://esm.sh/react@18.3.1",
+  "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+  "htm": "https://esm.sh/htm@3.1.1",
+  "marked": "https://esm.sh/marked@12.0.2"
+}}
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="module">
+import React,{useState,useEffect,useRef} from "react";
+import {createRoot} from "react-dom/client";
+import htm from "htm";
+import {marked} from "marked";
+const html = htm.bind(React.createElement);
+const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
+
+/* colour-coded entity chip */
+const ETONE={actor:"accent",hub:"teal",event:"violet",uploaded_document:"slate"};
+const EChip=({type})=>html`<span class=${"chip "+(ETONE[type]||"slate")}>${(type||"").replace(/_/g," ")}</span>`;
+
+const ICON_SEARCH=html`<svg class="in-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
+
+/* ------------------------------------------------------------------ Ask */
+function Ask(){
+  const [q,setQ]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [done,setDone]=useState(true);
+  const [mode,setMode]=useState(null);
+  const [sql,setSql]=useState(null);
+  const [answer,setAnswer]=useState("");
+  const [sources,setSources]=useState([]);
+  const [docId,setDocId]=useState(null);
+  const [docName,setDocName]=useState(null);
+  const [uploading,setUploading]=useState(false);
+  const esRef=useRef(null);
+  const fileRef=useRef(null);
+
+  const examples=[
+    "Who works on phosphogypsum?",
+    "How many actors are at TRL 6 or above?",
+    "Which hubs focus on water?",
+  ];
+
+  async function onFile(e){
+    const f=e.target.files[0]; if(!f) return;
+    setUploading(true);
+    const fd=new FormData(); fd.append("file",f);
+    try{
+      const r=await fetch("/api/upload",{method:"POST",body:fd});
+      if(!r.ok){ const d=await r.json().catch(()=>({detail:"Upload failed"}));
+        alert(d.detail||"Upload failed"); }
+      else{ const d=await r.json(); setDocId(d.doc_id); setDocName(d.name); }
+    } finally { setUploading(false); if(fileRef.current) fileRef.current.value=""; }
+  }
+  function clearDoc(){ setDocId(null); setDocName(null); }
+
+  function ask(question){
+    const text=(question??q).trim();
+    if(!text) return;
+    if(esRef.current) esRef.current.close();
+    setBusy(true);setDone(false);setMode(null);setSql(null);setAnswer("");setSources([]);
+    const url="/api/ask/stream?question="+encodeURIComponent(text)
+      +(docId?("&doc_id="+encodeURIComponent(docId)):"");
+    const es=new EventSource(url);
+    esRef.current=es;
+    es.addEventListener("meta",e=>{
+      const d=JSON.parse(e.data);
+      setMode(d.mode); if(d.sql)setSql(d.sql); if(d.sources)setSources(d.sources);
+    });
+    es.addEventListener("delta",e=>{
+      const d=JSON.parse(e.data); setAnswer(a=>a+(d.text||""));
+    });
+    es.addEventListener("done",()=>{ setBusy(false);setDone(true);es.close(); });
+    es.onerror=()=>{ setBusy(false);setDone(true);es.close();
+      setAnswer(a=>a||"Something went wrong reaching the server."); };
+  }
+  useEffect(()=>()=>esRef.current&&esRef.current.close(),[]);
+
+  const modeChip = mode==="sql"
+    ? html`<span class="chip accent">⚡ Exact · from the database</span>`
+    : mode==="doc"
+    ? html`<span class="chip accent">📎 Document + map · cited</span>`
+    : mode==="semantic"
+    ? html`<span class="chip accent">◎ Map search · cited</span>` : null;
+
+  return html`
+  <div>
+    <h1 class="hero-h">Ask the map.</h1>
+    <p class="lead">Plain-English search over the UM6P Global Hubs research database.
+      Counting questions are answered exactly from the database; everything else is
+      answered from the map with cited sources.</p>
+
+    <form class="ask-form" onSubmit=${e=>{e.preventDefault();ask();}}>
+      <div class="input-shell">
+        ${ICON_SEARCH}
+        <textarea class="field" rows="1" placeholder="Ask about actors, hubs, or events…"
+          value=${q} onInput=${e=>setQ(e.target.value)}
+          onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask();}}}></textarea>
+      </div>
+      <button class="btn" disabled=${busy}>${busy?html`<span class="spin"></span>`:"Ask"}</button>
+    </form>
+
+    <div class="hint">Try
+      ${examples.map((x,i)=>html`<button key=${i} class="example" type="button"
+        onClick=${()=>{setQ(x);ask(x);}}>${x}</button>`)}
+    </div>
+
+    <div class="attach-row">
+      ${docName
+        ? html`<span class="chip accent">📎 ${docName}</span>
+            <button class="example" type="button" onClick=${clearDoc}>Remove</button>
+            <span class="hint" style=${{margin:0}}>Answers draw on this document
+              <b>and</b> the database. Nothing is saved.</span>`
+        : html`<label class="example" style=${{display:"inline-flex",gap:"7px",alignItems:"center"}}>
+            ${uploading
+              ? html`<span class="spin"></span> Indexing…`
+              : "📎 Attach a document (PDF, .txt, .md)"}
+            <input ref=${fileRef} type="file" accept=".pdf,.txt,.md"
+              style=${{display:"none"}} onChange=${onFile}/>
+          </label>`}
+    </div>
+
+    ${(answer||busy)&&html`
+      <div class="card pad fade" style=${{marginTop:"24px"}}>
+        <div style=${{display:"flex",gap:"10px",alignItems:"center",marginBottom:"14px"}}>
+          ${modeChip}
+          ${busy&&!answer&&html`<span class="chip"><span class="spin"></span> thinking…</span>`}
+        </div>
+        <div class="answer" ...${md(answer)}></div>
+        ${!done&&answer&&html`<span class="cursor"></span>`}
+        ${sql&&html`<details class="sources"><summary>SQL query used</summary>
+          <pre style=${{marginTop:"10px"}}><code>${sql}</code></pre></details>`}
+        ${sources.length>0&&html`
+          <details class="sources">
+            <summary>Sources — ${sources.length} ${sources.length===1?"entity":"entities"} retrieved</summary>
+            ${sources.map((s,i)=>html`<div class="src" key=${i}>
+              <div class="nm">${i+1}. ${s.name} <${EChip} type=${s.entity_type}/></div>
+              <div class="pv">${s.preview}</div></div>`)}
+          </details>`}
+      </div>`}
+  </div>`;
+}
+
+/* --------------------------------------------------------------- Browse */
+const api = (p)=>fetch(p).then(r=>r.json());
+const dash = (v)=> (v===null||v===undefined||v==="") ? html`<span class="dash">—</span>` : v;
+const trlCell=(t)=> t!=null ? html`<span class="trl">${t}</span>` : html`<span class="dash">—</span>`;
+
+function useOnce(fn,dep){ const[d,setD]=useState(null);
+  useEffect(()=>{let ok=true;fn().then(x=>ok&&setD(x));return()=>{ok=false}},dep||[]);return d; }
+
+function Actors(){
+  const data=useOnce(()=>api("/api/browse/actors"));
+  const [hub,setHub]=useState("");const[country,setCountry]=useState("");
+  const [state,setState]=useState("");const[types,setTypes]=useState([]);
+  const [sector,setSector]=useState("");
+  const [minTrl,setMinTrl]=useState(0);const[prof,setProf]=useState(false);
+  const [text,setText]=useState("");const[sel,setSel]=useState(null);
+  if(!data) return html`<${Loading}/>`;
+  const {actors,options}=data;
+  const matches=actors.filter(a=>
+    (!hub||a.hubs.includes(hub)) && (!country||a.country===country) &&
+    (!state||a.state===state) && (types.length===0||types.includes(a.actor_type)) &&
+    (!sector||(a.sectors||[]).includes(sector)) &&
+    (!minTrl||(a.trl!=null&&a.trl>=minTrl)) && (!prof||a.has_profile) &&
+    (!text|| (a.name||"").toLowerCase().includes(text.toLowerCase()) ||
+             (a.description||"").toLowerCase().includes(text.toLowerCase())));
+  if(sel) return html`<${ActorDetail} a=${sel} onBack=${()=>setSel(null)}/>`;
+  const toggle=(t)=>setTypes(ts=>ts.includes(t)?ts.filter(x=>x!==t):[...ts,t]);
+  return html`
+  <div class="fade">
+    <div class="card pad">
+      <div class="filters">
+        <div><label>Hub</label><${Sel} v=${hub} set=${setHub} opts=${options.hubs}/></div>
+        <div><label title="Derived from each actor's hub sectors — actors aren't tagged to a sector directly">Sector ⓘ</label>
+          <${Sel} v=${sector} set=${setSector} opts=${options.sectors||[]}/></div>
+        <div><label>Country</label><${Sel} v=${country} set=${setCountry} opts=${options.countries}/></div>
+        <div><label>State</label><${Sel} v=${state} set=${setState} opts=${options.states}/></div>
+        <div><label>Min TRL · ${minTrl||"any"}</label>
+          <input type="range" min="0" max="9" value=${minTrl}
+            onInput=${e=>setMinTrl(+e.target.value)}/></div>
+        <div><label>Search name / description</label>
+          <input class="field" placeholder="water, phosphate, Stanford…"
+            value=${text} onInput=${e=>setText(e.target.value)}/></div>
+        <div><label>Curation</label>
+          <label style=${{fontWeight:600,color:"var(--ink)",display:"flex",gap:"8px",alignItems:"center",fontSize:"13.5px",height:"39px"}}>
+            <input type="checkbox" checked=${prof} onChange=${e=>setProf(e.target.checked)}/>
+            Deeply-profiled only</label></div>
+      </div>
+      <div class="typechips">
+        ${options.types.map(t=>html`<button key=${t} class=${"tc"+(types.includes(t)?" on":"")}
+          onClick=${()=>toggle(t)}>${t.replace(/_/g," ")}</button>`)}
+      </div>
+    </div>
+    <div class="count"><b>${matches.length}</b> actor${matches.length===1?"":"s"} match</div>
+    ${matches.length===0? html`<div class="empty">No actors match these filters. Try widening them.</div>` : html`
+    <div class="card" style=${{overflow:"hidden"}}>
+      <table class="grid"><thead><tr>
+        <th>Name</th><th>Type</th><th>Country</th><th>State</th><th class="num">TRL</th></tr></thead>
+        <tbody>${matches.slice(0,400).map(a=>html`<tr key=${a.id} onClick=${()=>setSel(a)}>
+          <td class="name-cell">${a.name}</td>
+          <td>${dash((a.actor_type||"").replace(/_/g," "))}</td>
+          <td>${dash(a.country)}</td><td>${dash(a.state)}</td>
+          <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody>
+      </table>
+      ${matches.length>400&&html`<div class="tablecap">
+        Showing first 400 of ${matches.length} — narrow the filters to see the rest.</div>`}
+    </div>`}
+  </div>`;
+}
+function ActorDetail({a,onBack}){
+  const loc=[a.city,a.state,a.country_raw].filter(Boolean).join(", ");
+  return html`<div class="card pad detail fade">
+    <button class="backlink" onClick=${onBack}>← Back to results</button>
+    <h2>${a.name}</h2>
+    <div class="loc">${[a.actor_type&&a.actor_type.replace(/_/g," "),loc,a.trl!=null&&("TRL "+a.trl)]
+      .filter(Boolean).join("  ·  ")}</div>
+    <div class="badges">
+      ${a.has_profile&&html`<span class="chip accent">Deeply profiled</span>`}
+      ${a.verification_status&&html`<span class="chip">${a.verification_status.replace(/_/g," ")}</span>`}
+      ${(a.sectors||[]).map(s=>html`<span class="chip teal" key=${s}>${s}</span>`)}
+    </div>
+    ${a.website&&html`<p>🔗 <a href=${a.website} target="_blank" rel="noopener">${a.website}</a></p>`}
+    ${a.description&&html`<p>${a.description}</p>`}
+    ${a.hubs.length>0&&html`<div class="kv"><div><div class="k">In hubs</div>
+      <div class="v">${a.hubs.join(" · ")}</div></div></div>`}
+  </div>`;
+}
+
+const HUB_HIDDEN=new Set(["hub_id","slug","region","latitude","longitude","upstream_inputs",
+  "downstream_outputs","integrated_flow_description","cross_hub_themes","secondary_sectors",
+  "source_id","verification_status","created_at","updated_at"]);
+const HUB_HEAD=new Set(["name","actor_count","primary_city","state","country","primary_sectors","confidence"]);
+
+function Hubs(){
+  const data=useOnce(()=>api("/api/browse/hubs"));
+  const actorsData=useOnce(()=>api("/api/browse/actors"));
+  const [sel,setSel]=useState(null);
+  if(!data) return html`<${Loading}/>`;
+  const {hubs}=data;
+  if(sel) return html`<${HubDetail} h=${sel} actors=${actorsData?actorsData.actors:[]} onBack=${()=>setSel(null)}/>`;
+  return html`<div class="fade">
+    <div class="count"><b>${hubs.length}</b> hubs</div>
+    <div class="card" style=${{overflow:"hidden"}}>
+      <table class="grid"><thead><tr>
+        <th>Hub</th><th class="num">Actors</th><th>Primary city</th><th>Country</th><th>Primary sectors</th></tr></thead>
+        <tbody>${hubs.map(h=>html`<tr key=${h.name} onClick=${()=>setSel(h)}>
+          <td class="name-cell">${h.name}</td><td class="num">${h.actor_count}</td>
+          <td>${dash(h.primary_city)}</td><td>${dash(h.country)}</td>
+          <td>${dash(h.primary_sectors)}</td></tr>`)}</tbody></table>
+    </div></div>`;
+}
+function HubDetail({h,actors,onBack}){
+  const loc=[h.primary_city,h.state,h.country].filter(Boolean).join(" · ");
+  const sector=((h.primary_sectors||"").split(",")[0]||"").trim();
+  const short=[],narr=[];
+  Object.keys(h).forEach(k=>{
+    if(HUB_HIDDEN.has(k)||HUB_HEAD.has(k)||k==="actor_count") return;
+    const v=h[k]; if(v===null||v===undefined||String(v).trim()==="") return;
+    if(typeof v==="string"&&v.length>200) narr.push([k,v]); else short.push([k,v]);
+  });
+  const related=actors.filter(a=>a.hubs.includes(h.name));
+  return html`<div class="card pad detail fade">
+    <button class="backlink" onClick=${onBack}>← Back to hubs</button>
+    <h2>${h.name}</h2><div class="loc">${loc}</div>
+    <div class="metrics">
+      <div class="metric"><div class="k">Live actors</div><div class="v">${h.actor_count}</div></div>
+      <div class="metric"><div class="k">Primary sector</div><div class="v">${sector?sector.replace(/\b\w/g,c=>c.toUpperCase()):"—"}</div></div>
+      <div class="metric"><div class="k">Confidence</div><div class="v">${h.confidence!=null&&h.confidence!==""?(+h.confidence).toFixed(2):"—"}</div></div>
+    </div>
+    ${short.length>0&&html`<div class="kv">${short.map(([k,v])=>html`<div key=${k}>
+      <div class="k">${k.replace(/_/g," ")}</div><div class="v">${String(v)}</div></div>`)}</div>`}
+    ${narr.length>0&&html`<div style=${{marginTop:"6px"}}>
+      ${narr.map(([k,v])=>html`<details class="narr" key=${k}>
+        <summary>${k.replace(/_/g," ")}</summary><p>${v}</p></details>`)}</div>`}
+    <h3 style=${{fontFamily:"var(--serif)",marginTop:"22px",marginBottom:"8px"}}>Actors in this hub</h3>
+    ${related.length===0? html`<div class="empty">No live actors linked yet.</div>` : html`
+      <div class="card" style=${{overflow:"hidden"}}>
+      <table class="grid"><thead><tr><th>Name</th><th>Type</th><th>Country</th><th class="num">TRL</th></tr></thead>
+      <tbody>${related.map(a=>html`<tr key=${a.id}><td class="name-cell">${a.name}</td>
+        <td>${dash((a.actor_type||"").replace(/_/g," "))}</td><td>${dash(a.country)}</td>
+        <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody></table></div>`}
+  </div>`;
+}
+
+function Events(){
+  const data=useOnce(()=>api("/api/browse/events"));
+  const [loc,setLoc]=useState("");
+  if(!data) return html`<${Loading}/>`;
+  const matches=data.events.filter(e=>!loc||(e.location||"").toLowerCase().includes(loc.toLowerCase()));
+  return html`<div class="fade">
+    <div class="card pad"><div class="filters"><div>
+      <label>Location contains</label>
+      <input class="field" placeholder="New York, USA, Switzerland…"
+        value=${loc} onInput=${e=>setLoc(e.target.value)}/></div></div></div>
+    <div class="count"><b>${matches.length}</b> event${matches.length===1?"":"s"} match</div>
+    ${matches.length===0? html`<div class="empty">No events match.</div>` : html`
+    <div class="card" style=${{overflow:"hidden"}}>
+      <table class="grid"><thead><tr><th>Event</th><th>Type</th><th>Location</th><th>Next date</th></tr></thead>
+      <tbody>${matches.map(e=>html`<tr key=${e.id}><td class="name-cell">${e.name}</td>
+        <td>${dash(e.event_type)}</td><td>${dash(e.location)}</td>
+        <td>${dash(e.next_date)}</td></tr>`)}</tbody></table></div>`}
+  </div>`;
+}
+
+function Sel({v,set,opts}){ return html`<select class="field" value=${v} onChange=${e=>set(e.target.value)}>
+  <option value="">Any</option>${opts.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`; }
+function Loading(){ return html`<div class="empty"><span class="spin"></span> Loading…</div>`; }
+
+/* ------------------------------------------------------------------ App */
+function Browse(){
+  const [k,setK]=useState("actors");
+  const V={actors:Actors,hubs:Hubs,events:Events}[k];
+  return html`<div>
+    <div class="subnav">
+      ${["actors","hubs","events"].map(x=>html`<button key=${x} class=${k===x?"active":""}
+        onClick=${()=>setK(x)}>${x[0].toUpperCase()+x.slice(1)}</button>`)}
+    </div><${V}/></div>`;
+}
+const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="6" r="2.3"/>
+  <circle cx="12" cy="17.5" r="2.3"/><path d="M7.9 8.4 10.6 15.6M16.4 7.6 13.2 15.9M8.2 7 15.7 6.3"
+  stroke-linecap="round"/></svg>`;
+function App(){
+  const [tab,setTab]=useState("ask");
+  return html`
+  <div class="topbar"><div class="topbar-in">
+    <div class="brand">${LOGO}
+      <div class="wordmark">UM6P Intelligence<span class="dot">.</span></div></div>
+    <div class="tabs">
+      <button class=${"tab"+(tab==="ask"?" active":"")} onClick=${()=>setTab("ask")}>Ask</button>
+      <button class=${"tab"+(tab==="browse"?" active":"")} onClick=${()=>setTab("browse")}>Browse</button>
+    </div>
+  </div></div>
+  <div class="wrap">${tab==="ask"?html`<${Ask}/>`:html`<${Browse}/>`}</div>`;
+}
+createRoot(document.getElementById("root")).render(html`<${App}/>`);
+</script>
+</body>
+</html>

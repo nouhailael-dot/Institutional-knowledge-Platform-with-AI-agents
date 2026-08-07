@@ -8,3 +8,9 @@ streamlit>=1.38           # UI
 rapidfuzz>=3.0            # dedupe / alias matching (used later)
 pypdf>=5.0                # text extraction from uploaded PDFs (Ask-tab document upload, no OCR)
 numpy>=2.1                # per-session doc-chunk cosine search (Ask-tab document upload)
+
+# --- React + FastAPI app layer (backend/ wraps src/; new frontend/ is the UI) ---
+fastapi>=0.115            # HTTP API over the RAG engine
+uvicorn[standard]>=0.30   # ASGI server (uvicorn backend.app:app)
+sse-starlette>=2.0        # (available for SSE helpers; streaming uses StreamingResponse)
+python-multipart>=0.0.9   # multipart form parsing for /api/upload
