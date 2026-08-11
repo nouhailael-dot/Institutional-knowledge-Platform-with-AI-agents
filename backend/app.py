@@ -29,7 +29,7 @@ from src import browse
 from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
-from src.generate import stream_answer
+from src.generate import condense_question, stream_answer
 from src.retrieve import retrieve
 from src.router import format_sql_answer, plan, run_sql
 
@@ -103,46 +103,57 @@ def _sources(hits: list[dict]) -> list[dict]:
 
 @app.get("/api/ask/stream")
 def ask_stream(question: str = Query(..., min_length=1),
-               doc_id: str | None = Query(None)):
-    """Server-Sent Events: `meta` (route + sources/sql), then `delta`* , then `done`.
+               doc_id: str | None = Query(None),
+               history: str | None = Query(None)):
+    """Server-Sent Events: `meta` (route + sources/sql + rewritten), then `delta`*, `done`.
 
-    Mirrors app.py's Ask tab — SQL route answers exactly from the DB; everything
-    else streams a cited answer from the map. When `doc_id` is attached, the
-    answer merges document passages with map retrieval (same as the Streamlit
-    doc flow) and skips the SQL route.
+    Multi-turn: `history` is a JSON list of prior turns [{"q":..,"a":..}, ...]. When
+    present, the follow-up is condensed into a standalone question (cheap model)
+    before routing/retrieval, so "which of those are in Florida?" resolves against
+    the previous answer instead of being searched literally. `meta.rewritten`
+    carries the standalone form when it differs (shown in the UI for transparency).
     """
     def gen():
         q = question.strip()
         if not q:
             yield _sse("done", {}); return
 
+        turns = []
+        if history:
+            try:
+                turns = json.loads(history)
+            except Exception:
+                turns = []
+        standalone = condense_question(turns, q) if turns else q
+        rewritten = standalone if standalone.strip().lower() != q.lower() else None
+
         # Document attached -> merge doc chunks + map hits into one cited answer.
         doc = _DOC_STORES.get(doc_id) if doc_id else None
         if doc is not None:
-            merged = search_chunks(doc["store"], q) + retrieve(q, top_k=8)
-            yield _sse("meta", {"mode": "doc", "sources": _sources(merged)})
+            merged = search_chunks(doc["store"], standalone) + retrieve(standalone, top_k=8)
+            yield _sse("meta", {"mode": "doc", "sources": _sources(merged), "rewritten": rewritten})
             if merged:
-                for chunk in stream_answer(q, merged):
+                for chunk in stream_answer(standalone, merged):
                     yield _sse("delta", {"text": chunk})
             yield _sse("done", {})
             return
 
-        mode, sql = plan(q)
+        mode, sql = plan(standalone)
         if mode == "sql":
             try:
                 cols, rows = run_sql(sql)
-                answer = format_sql_answer(q, sql, cols, rows)
-                yield _sse("meta", {"mode": "sql", "sql": sql})
+                answer = format_sql_answer(standalone, sql, cols, rows)
+                yield _sse("meta", {"mode": "sql", "sql": sql, "rewritten": rewritten})
                 yield _sse("delta", {"text": answer})
                 yield _sse("done", {})
                 return
             except Exception:
                 mode = "semantic"      # fall back to map search, same as the UI
 
-        hits = retrieve(q)
-        yield _sse("meta", {"mode": "semantic", "sources": _sources(hits)})
+        hits = retrieve(standalone)
+        yield _sse("meta", {"mode": "semantic", "sources": _sources(hits), "rewritten": rewritten})
         if hits:
-            for chunk in stream_answer(q, hits):
+            for chunk in stream_answer(standalone, hits):
                 yield _sse("delta", {"text": chunk})
         yield _sse("done", {})
 

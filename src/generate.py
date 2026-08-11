@@ -19,8 +19,39 @@ load_dotenv()
 
 MODEL = "claude-opus-4-8"   # most capable; -> claude-sonnet-5 / -haiku-4-5 to cut cost
 MAX_TOKENS = 2048
+CONDENSE_MODEL = "claude-haiku-4-5"   # cheap: only rewrites a follow-up into a standalone Q
 
 _client = None
+
+
+_CONDENSE_SYSTEM = """\
+You rewrite a follow-up question into a single, self-contained question using the \
+conversation so far. Resolve references like "those", "them", "that hub" to the \
+specific entities discussed, and carry over any filters implied by context \
+(location, TRL, sector). Preserve the user's intent exactly. Output ONLY the \
+rewritten question — no preamble. If the follow-up already stands on its own, \
+return it unchanged."""
+
+
+def condense_question(history: list[dict], question: str) -> str:
+    """Turn a follow-up into a standalone query. `history` = [{'q':..,'a':..}, ...].
+
+    Runs on a cheap model. Returns `question` unchanged when there's no history
+    or on any error (fail open — a literal search beats a crash).
+    """
+    if not history:
+        return question
+    convo = "\n\n".join(f"User: {h.get('q','')}\nAssistant: {h.get('a','')}"
+                        for h in history[-3:])
+    user = f"{convo}\n\nFollow-up: {question}\n\nStandalone question:"
+    try:
+        resp = _get_client().messages.create(
+            model=CONDENSE_MODEL, max_tokens=256,
+            system=_CONDENSE_SYSTEM, messages=[{"role": "user", "content": user}])
+        out = "".join(b.text for b in resp.content if b.type == "text").strip()
+        return out or question
+    except Exception:
+        return question
 
 
 def _get_client() -> anthropic.Anthropic:

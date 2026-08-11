@@ -206,6 +206,29 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   .fade{animation:fade .25s ease}
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  /* chat */
+  .conv-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .newconv{border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);
+    font-weight:600;font-size:13px;padding:7px 14px;border-radius:999px;cursor:pointer;transition:.15s}
+  .newconv:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .welcome{text-align:center;padding:20px 0 4px}
+  .welcome .lead{margin-left:auto;margin-right:auto}
+  .welcome .hint{justify-content:center}
+  .chat{display:flex;flex-direction:column;gap:16px;margin-bottom:12px}
+  .msg{display:flex;gap:10px;align-items:flex-start}
+  .msg.user{justify-content:flex-end}
+  .avatar{flex:0 0 30px;width:30px;height:30px;border-radius:50%;background:var(--accent-soft);
+    color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm)}
+  .bubble{border-radius:16px;padding:12px 16px;max-width:84%}
+  .bubble.user{background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;
+    font-weight:500;border-bottom-right-radius:5px;box-shadow:var(--shadow-sm)}
+  .bubble.bot{background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);
+    border-bottom-left-radius:5px;max-width:88%}
+  .bubble.bot .answer{font-size:15px}
+  .rw{color:var(--muted);font-size:13px;margin:2px 0 10px}
+  .rw b{color:var(--accent-ink);font-weight:600}
+  .composer{position:sticky;bottom:0;z-index:10;padding:14px 0 20px;margin-top:6px;
+    background:linear-gradient(180deg,transparent,var(--bg) 26%)}
 </style>
 <script type="importmap">
 { "imports": {
@@ -232,21 +255,22 @@ const EChip=({type})=>html`<span class=${"chip "+(ETONE[type]||"slate")}>${(type
 
 const ICON_SEARCH=html`<svg class="in-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
+const AVATAR=html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.9"><circle cx="6" cy="7" r="2.1"/><circle cx="18" cy="6" r="2.1"/>
+  <circle cx="12" cy="17.5" r="2.1"/><path d="M7.9 8.4 10.6 15.6M16.4 7.6 13.2 15.9M8.2 7 15.7 6.3"
+  stroke-linecap="round"/></svg>`;
 
 /* ------------------------------------------------------------------ Ask */
 function Ask(){
   const [q,setQ]=useState("");
   const [busy,setBusy]=useState(false);
-  const [done,setDone]=useState(true);
-  const [mode,setMode]=useState(null);
-  const [sql,setSql]=useState(null);
-  const [answer,setAnswer]=useState("");
-  const [sources,setSources]=useState([]);
+  const [turns,setTurns]=useState([]);   // conversation: [{id,q,mode,sql,answer,sources,rewritten,done}]
   const [docId,setDocId]=useState(null);
   const [docName,setDocName]=useState(null);
   const [uploading,setUploading]=useState(false);
   const esRef=useRef(null);
   const fileRef=useRef(null);
+  const bottomRef=useRef(null);
 
   const examples=[
     "Who works on phosphogypsum?",
@@ -267,90 +291,118 @@ function Ask(){
   }
   function clearDoc(){ setDocId(null); setDocName(null); }
 
+  const patchLast=(p)=>setTurns(ts=>{
+    if(!ts.length) return ts;
+    const c=[...ts]; c[c.length-1]={...c[c.length-1],...p}; return c;});
+
   function ask(question){
     const text=(question??q).trim();
     if(!text) return;
     if(esRef.current) esRef.current.close();
-    setBusy(true);setDone(false);setMode(null);setSql(null);setAnswer("");setSources([]);
+    // recent completed turns become the conversation memory sent to the server
+    const hist=turns.filter(t=>t.done&&t.answer).slice(-3)
+      .map(t=>({q:t.q, a:(t.answer||"").slice(0,600)}));
+    const id=(crypto.randomUUID&&crypto.randomUUID())||String(Math.random());
+    setTurns(ts=>[...ts,{id,q:text,mode:null,sql:null,answer:"",sources:[],rewritten:null,done:false}]);
+    setQ(""); setBusy(true);
     const url="/api/ask/stream?question="+encodeURIComponent(text)
-      +(docId?("&doc_id="+encodeURIComponent(docId)):"");
-    const es=new EventSource(url);
-    esRef.current=es;
-    es.addEventListener("meta",e=>{
-      const d=JSON.parse(e.data);
-      setMode(d.mode); if(d.sql)setSql(d.sql); if(d.sources)setSources(d.sources);
-    });
-    es.addEventListener("delta",e=>{
-      const d=JSON.parse(e.data); setAnswer(a=>a+(d.text||""));
-    });
-    es.addEventListener("done",()=>{ setBusy(false);setDone(true);es.close(); });
-    es.onerror=()=>{ setBusy(false);setDone(true);es.close();
-      setAnswer(a=>a||"Something went wrong reaching the server."); };
+      +(docId?("&doc_id="+encodeURIComponent(docId)):"")
+      +(hist.length?("&history="+encodeURIComponent(JSON.stringify(hist))):"");
+    const es=new EventSource(url); esRef.current=es;
+    es.addEventListener("meta",e=>{const d=JSON.parse(e.data);
+      patchLast({mode:d.mode, sql:d.sql||null, sources:d.sources||[], rewritten:d.rewritten||null});});
+    es.addEventListener("delta",e=>{const d=JSON.parse(e.data);
+      setTurns(ts=>{const c=[...ts]; const l=c[c.length-1];
+        c[c.length-1]={...l, answer:(l.answer||"")+(d.text||"")}; return c;});});
+    es.addEventListener("done",()=>{ patchLast({done:true}); setBusy(false); es.close(); });
+    es.onerror=()=>{ setBusy(false); es.close();
+      setTurns(ts=>{const c=[...ts]; const l=c[c.length-1];
+        if(l) c[c.length-1]={...l, done:true,
+          answer:l.answer||"Something went wrong reaching the server."}; return c;});};
   }
+  function newConversation(){ if(esRef.current)esRef.current.close(); setTurns([]); setBusy(false); setQ(""); }
   useEffect(()=>()=>esRef.current&&esRef.current.close(),[]);
+  useEffect(()=>{ if(bottomRef.current) bottomRef.current.scrollIntoView({block:"end",behavior:"smooth"}); },[turns.length]);
 
-  const modeChip = mode==="sql"
+  const modeChip=(m)=> m==="sql"
     ? html`<span class="chip accent">⚡ Exact · from the database</span>`
-    : mode==="doc"
-    ? html`<span class="chip accent">📎 Document + map · cited</span>`
-    : mode==="semantic"
-    ? html`<span class="chip accent">◎ Map search · cited</span>` : null;
+    : m==="doc" ? html`<span class="chip accent">📎 Document + map · cited</span>`
+    : m==="semantic" ? html`<span class="chip accent">◎ Map search · cited</span>` : null;
 
+  const empty=turns.length===0;
   return html`
   <div>
-    <h1 class="hero-h">Ask the map.</h1>
-    <p class="lead">Plain-English search over the UM6P Global Hubs research database.
-      Counting questions are answered exactly from the database; everything else is
-      answered from the map with cited sources.</p>
+    ${empty
+      ? html`<div class="welcome">
+          <h1 class="hero-h">Ask the map.</h1>
+          <p class="lead">Plain-English search over the UM6P Global Hubs research database.
+            Counting questions are answered exactly from the database; everything else is
+            answered from the map with cited sources. Ask follow-ups — the chat remembers
+            what you asked.</p>
+          <div class="hint">Try
+            ${examples.map((x,i)=>html`<button key=${i} class="example" type="button"
+              onClick=${()=>{setQ(x);ask(x);}}>${x}</button>`)}
+          </div>
+        </div>`
+      : html`
+        <div class="conv-head"><span class="chip accent">💬 Conversation</span>
+          <button class="newconv" type="button" onClick=${newConversation}>＋ New conversation</button></div>
+        <div class="chat">
+          ${turns.map((t,i)=>{
+            const streaming=(i===turns.length-1)&&busy;
+            return html`
+            <div class="msg user" key=${t.id+"q"}><div class="bubble user">${t.q}</div></div>
+            <div class="msg bot" key=${t.id+"a"}>
+              <div class="avatar">${AVATAR}</div>
+              <div class="bubble bot">
+                <div style=${{display:"flex",gap:"10px",alignItems:"center",marginBottom:"10px"}}>
+                  ${modeChip(t.mode)}
+                  ${streaming&&!t.answer&&html`<span class="chip"><span class="spin"></span> thinking…</span>`}
+                </div>
+                ${t.rewritten&&html`<div class="rw">Interpreted as: <b>${t.rewritten}</b></div>`}
+                <div class="answer" ...${md(t.answer)}></div>
+                ${!t.done&&t.answer&&html`<span class="cursor"></span>`}
+                ${t.sql&&html`<details class="sources"><summary>SQL query used</summary>
+                  <pre style=${{marginTop:"10px"}}><code>${t.sql}</code></pre></details>`}
+                ${t.sources.length>0&&html`
+                  <details class="sources">
+                    <summary>Sources — ${t.sources.length} ${t.sources.length===1?"entity":"entities"} retrieved</summary>
+                    ${t.sources.map((s,j)=>html`<div class="src" key=${j}>
+                      <div class="nm">${j+1}. ${s.name} <${EChip} type=${s.entity_type}/></div>
+                      <div class="pv">${s.preview}</div></div>`)}
+                  </details>`}
+              </div>
+            </div>`;
+          })}
+          <div ref=${bottomRef}></div>
+        </div>`}
 
-    <form class="ask-form" onSubmit=${e=>{e.preventDefault();ask();}}>
-      <div class="input-shell">
-        ${ICON_SEARCH}
-        <textarea class="field" rows="1" placeholder="Ask about actors, hubs, or events…"
-          value=${q} onInput=${e=>setQ(e.target.value)}
-          onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask();}}}></textarea>
+    <div class="composer">
+      <div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>
+        ${docName
+          ? html`<span class="chip accent">📎 ${docName}</span>
+              <button class="example" type="button" onClick=${clearDoc}>Remove</button>
+              <span class="hint" style=${{margin:0}}>Answers draw on this document
+                <b>and</b> the database.</span>`
+          : html`<label class="example" style=${{display:"inline-flex",gap:"7px",alignItems:"center"}}>
+              ${uploading
+                ? html`<span class="spin"></span> Indexing…`
+                : "📎 Attach a document (PDF, .txt, .md)"}
+              <input ref=${fileRef} type="file" accept=".pdf,.txt,.md"
+                style=${{display:"none"}} onChange=${onFile}/>
+            </label>`}
       </div>
-      <button class="btn" disabled=${busy}>${busy?html`<span class="spin"></span>`:"Ask"}</button>
-    </form>
-
-    <div class="hint">Try
-      ${examples.map((x,i)=>html`<button key=${i} class="example" type="button"
-        onClick=${()=>{setQ(x);ask(x);}}>${x}</button>`)}
-    </div>
-
-    <div class="attach-row">
-      ${docName
-        ? html`<span class="chip accent">📎 ${docName}</span>
-            <button class="example" type="button" onClick=${clearDoc}>Remove</button>
-            <span class="hint" style=${{margin:0}}>Answers draw on this document
-              <b>and</b> the database. Nothing is saved.</span>`
-        : html`<label class="example" style=${{display:"inline-flex",gap:"7px",alignItems:"center"}}>
-            ${uploading
-              ? html`<span class="spin"></span> Indexing…`
-              : "📎 Attach a document (PDF, .txt, .md)"}
-            <input ref=${fileRef} type="file" accept=".pdf,.txt,.md"
-              style=${{display:"none"}} onChange=${onFile}/>
-          </label>`}
-    </div>
-
-    ${(answer||busy)&&html`
-      <div class="card pad fade" style=${{marginTop:"24px"}}>
-        <div style=${{display:"flex",gap:"10px",alignItems:"center",marginBottom:"14px"}}>
-          ${modeChip}
-          ${busy&&!answer&&html`<span class="chip"><span class="spin"></span> thinking…</span>`}
+      <form class="ask-form" onSubmit=${e=>{e.preventDefault();ask();}}>
+        <div class="input-shell">
+          ${ICON_SEARCH}
+          <textarea class="field" rows="1"
+            placeholder=${empty?"Ask about actors, hubs, or events…":"Ask a follow-up…"}
+            value=${q} onInput=${e=>setQ(e.target.value)}
+            onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask();}}}></textarea>
         </div>
-        <div class="answer" ...${md(answer)}></div>
-        ${!done&&answer&&html`<span class="cursor"></span>`}
-        ${sql&&html`<details class="sources"><summary>SQL query used</summary>
-          <pre style=${{marginTop:"10px"}}><code>${sql}</code></pre></details>`}
-        ${sources.length>0&&html`
-          <details class="sources">
-            <summary>Sources — ${sources.length} ${sources.length===1?"entity":"entities"} retrieved</summary>
-            ${sources.map((s,i)=>html`<div class="src" key=${i}>
-              <div class="nm">${i+1}. ${s.name} <${EChip} type=${s.entity_type}/></div>
-              <div class="pv">${s.preview}</div></div>`)}
-          </details>`}
-      </div>`}
+        <button class="btn" disabled=${busy}>${busy?html`<span class="spin"></span>`:"Ask"}</button>
+      </form>
+    </div>
   </div>`;
 }
 
@@ -449,19 +501,31 @@ function Hubs(){
   const data=useOnce(()=>api("/api/browse/hubs"));
   const actorsData=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
+  const [q,setQ]=useState("");
   if(!data) return html`<${Loading}/>`;
   const {hubs}=data;
   if(sel) return html`<${HubDetail} h=${sel} actors=${actorsData?actorsData.actors:[]} onBack=${()=>setSel(null)}/>`;
+  const ql=q.trim().toLowerCase();
+  const matches=hubs.filter(h=>!ql
+    || (h.name||"").toLowerCase().includes(ql)
+    || (h.primary_city||"").toLowerCase().includes(ql)
+    || (h.state||"").toLowerCase().includes(ql)
+    || (h.primary_sectors||"").toLowerCase().includes(ql));
   return html`<div class="fade">
-    <div class="count"><b>${hubs.length}</b> hubs</div>
+    <div class="card pad"><div class="filters"><div>
+      <label>Search hubs</label>
+      <input class="field" placeholder="name, city, or sector…"
+        value=${q} onInput=${e=>setQ(e.target.value)}/></div></div></div>
+    <div class="count"><b>${matches.length}</b> hub${matches.length===1?"":"s"}</div>
+    ${matches.length===0? html`<div class="empty">No hubs match. Try a shorter term.</div>` : html`
     <div class="card" style=${{overflow:"hidden"}}>
       <table class="grid"><thead><tr>
         <th>Hub</th><th class="num">Actors</th><th>Primary city</th><th>Country</th><th>Primary sectors</th></tr></thead>
-        <tbody>${hubs.map(h=>html`<tr key=${h.name} onClick=${()=>setSel(h)}>
+        <tbody>${matches.map(h=>html`<tr key=${h.name} onClick=${()=>setSel(h)}>
           <td class="name-cell">${h.name}</td><td class="num">${h.actor_count}</td>
           <td>${dash(h.primary_city)}</td><td>${dash(h.country)}</td>
           <td>${dash(h.primary_sectors)}</td></tr>`)}</tbody></table>
-    </div></div>`;
+    </div>`}</div>`;
 }
 function HubDetail({h,actors,onBack}){
   const loc=[h.primary_city,h.state,h.country].filter(Boolean).join(" · ");
@@ -499,20 +563,53 @@ function HubDetail({h,actors,onBack}){
 function Events(){
   const data=useOnce(()=>api("/api/browse/events"));
   const [loc,setLoc]=useState("");
+  const [when,setWhen]=useState("any");      // any | upcoming | past | range
+  const [from,setFrom]=useState("");const[to,setTo]=useState("");
   if(!data) return html`<${Loading}/>`;
-  const matches=data.events.filter(e=>!loc||(e.location||"").toLowerCase().includes(loc.toLowerCase()));
+  const today=new Date().toISOString().slice(0,10);
+  const nDated=data.events.filter(e=>e.next_date).length;
+  const matches=data.events.filter(e=>{
+    if(loc && !(e.location||"").toLowerCase().includes(loc.toLowerCase())) return false;
+    if(when==="any") return true;
+    const d=e.next_date;                     // ISO "YYYY-MM-DD" or null
+    if(!d) return false;                     // any date filter drops dateless events
+    if(when==="upcoming") return d>=today;
+    if(when==="past") return d<today;
+    if(when==="range") return (!from||d>=from)&&(!to||d<=to);
+    return true;
+  });
+  const dateCell=(d)=> !d ? html`<span class="dash">—</span>`
+    : html`${d} ${d<today?html`<span class="chip slate" style=${{marginLeft:"6px"}}>past</span>`:""}`;
   return html`<div class="fade">
-    <div class="card pad"><div class="filters"><div>
-      <label>Location contains</label>
-      <input class="field" placeholder="New York, USA, Switzerland…"
-        value=${loc} onInput=${e=>setLoc(e.target.value)}/></div></div></div>
+    <div class="card pad">
+      <div class="filters">
+        <div><label>Location contains</label>
+          <input class="field" placeholder="New York, USA, Switzerland…"
+            value=${loc} onInput=${e=>setLoc(e.target.value)}/></div>
+        <div><label>Date</label>
+          <select class="field" value=${when} onChange=${e=>setWhen(e.target.value)}>
+            <option value="any">Any date</option>
+            <option value="upcoming">Upcoming</option>
+            <option value="past">Past</option>
+            <option value="range">Custom range…</option>
+          </select></div>
+        ${when==="range"&&html`
+          <div><label>From</label><input class="field" type="date" value=${from}
+            onInput=${e=>setFrom(e.target.value)}/></div>
+          <div><label>To</label><input class="field" type="date" value=${to}
+            onInput=${e=>setTo(e.target.value)}/></div>`}
+      </div>
+      ${when!=="any"&&html`<div class="hint" style=${{marginTop:"12px"}}>
+        Only ${nDated} of ${data.events.length} events carry a scheduled date — date
+        filters list just those. Switch to “Any date” to include the rest.</div>`}
+    </div>
     <div class="count"><b>${matches.length}</b> event${matches.length===1?"":"s"} match</div>
     ${matches.length===0? html`<div class="empty">No events match.</div>` : html`
     <div class="card" style=${{overflow:"hidden"}}>
       <table class="grid"><thead><tr><th>Event</th><th>Type</th><th>Location</th><th>Next date</th></tr></thead>
       <tbody>${matches.map(e=>html`<tr key=${e.id}><td class="name-cell">${e.name}</td>
         <td>${dash(e.event_type)}</td><td>${dash(e.location)}</td>
-        <td>${dash(e.next_date)}</td></tr>`)}</tbody></table></div>`}
+        <td>${dateCell(e.next_date)}</td></tr>`)}</tbody></table></div>`}
   </div>`;
 }
 
