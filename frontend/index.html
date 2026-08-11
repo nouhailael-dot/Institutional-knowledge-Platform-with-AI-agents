@@ -335,10 +335,8 @@ function Ask(){
     ${empty
       ? html`<div class="welcome">
           <h1 class="hero-h">Ask the map.</h1>
-          <p class="lead">Plain-English search over the UM6P Global Hubs research database.
-            Counting questions are answered exactly from the database; everything else is
-            answered from the map with cited sources. Ask follow-ups — the chat remembers
-            what you asked.</p>
+          <p class="lead">Ask anything about the actors, hubs, and events we track across
+            US innovation ecosystems. Every answer is grounded in the database with cited sources.</p>
           <div class="hint">Try
             ${examples.map((x,i)=>html`<button key=${i} class="example" type="button"
               onClick=${()=>{setQ(x);ask(x);}}>${x}</button>`)}
