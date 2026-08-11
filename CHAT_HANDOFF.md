@@ -1,6 +1,6 @@
 # UM6P Intelligence — Project Status & Chat Handoff
 
-_Paste this into a new chat so it knows exactly where the project stands. Last updated at the end of the session that added document upload, the Browse hub redesign, and scoped the enrichment-agent phase._
+_Paste this into a new chat so it knows exactly where the project stands. Last updated at the end of the session that built the React + FastAPI app (Ask/Browse/doc-upload), redesigned it around a UM6P-orange research-console look, added Hubs search + Events date filtering, turned Ask into a real multi-turn chatbot, and scoped Task 1A enrichment (paused, resumable)._
 
 ---
 
@@ -8,157 +8,152 @@ _Paste this into a new chat so it knows exactly where the project stands. Last u
 
 **UM6P Intelligence** — an internal RAG platform for the **UM6P Global Hubs US team (~4 users)**. It makes a research database of US innovation ecosystems (actors, hubs, events the team tracks for partnership-building) searchable in plain English, with **cited** answers.
 
-- This repo is the **RAG / application layer only**. The Postgres schema and the ETL that populates it are owned and maintained separately (not by this repo). **Historically this code has been read-only against that database.**
+- This repo is the **RAG / application layer only**. The Postgres schema and the ETL that populates it are owned and maintained separately (not by this repo). **All DB access is read-only** except the (not-yet-built) enrichment write path.
 - Working directory: `/Users/ghus/Desktop/um6p-rag`
 - Git remote: `github.com/nouhailael-dot/Institutional-knowledge-Platform-with-AI-agents.git`
-- Current branch: `main`, HEAD = `bc76f37`, **in sync with `origin/main`** (this session's work is committed AND pushed).
+- Current branch: `main`, HEAD = `6150606`. **One commit ahead of `origin/main`, NOT pushed** — this sandbox has no cached GitHub credential (`fatal: could not read Username for 'https://github.com'`). Push from your own terminal: `git push origin main` (macOS Keychain will prompt for a PAT), or set up `gh auth login` / SSH first. See §10.
 - User: git identity `ghus`; email on file `nouhailahail12@gmail.com`.
 
-## 2. Environment & how to run
+## 2. ⚠️ Two parallel UIs exist — know which one you're editing
+
+| | Streamlit (`app.py`) | **React + FastAPI (active)** |
+|---|---|---|
+| Status | Frozen reference. Untouched this whole session. | **This is where all new work happens.** |
+| Run | `streamlit run app.py` → `localhost:8501` | `uvicorn backend.app:app --port 8000` → `localhost:8000` |
+| Files | `app.py` (root) | `backend/app.py` (API), `frontend/index.html` (UI) |
+
+`backend/app.py` is a thin FastAPI layer that **wraps `src/` unchanged** — same `retrieve`/`generate`/`router`/`browse` engine, same SQL-vs-semantic routing logic, nothing about the RAG core was rewritten. Only the presentation layer changed. If asked to "fix the Ask page" or "add a Browse filter," it means the React app unless told otherwise.
+
+## 3. Environment & how to run
 
 - Python 3.11, conda env at `~/.conda/envs/um6p` (interpreter: `~/.conda/envs/um6p/bin/python`).
-- Secrets in `.env` (loaded via python-dotenv): `DATABASE_URL`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`.
-- Run the app: `streamlit run app.py` (currently runs on `localhost:8501`).
+- Secrets in `.env` (loaded via python-dotenv): `DATABASE_URL`, `ANTHROPIC_API_KEY`, `VOYAGE_API_KEY`. **The Anthropic key was rotated this session** (old one was invalid/401; a fresh key was pasted into `.env` and confirmed working).
+- **Run the React app** (the active one): `uvicorn backend.app:app --port 8000` from repo root, or via the Claude Code preview tool using `.claude/launch.json` (config name `um6p-api`, already wired with `--reload`).
+- Run the old Streamlit app: `streamlit run app.py`.
 - Rebuild the search index (offline, after source data changes): `python -m src.embed`.
+- **No Node.js / npm on this machine.** `brew install node` failed — `/opt/homebrew` is owned by a different user, `chown` needs `sudo` (the user's password, which this session can't supply). The frontend is therefore a **no-build single-file React app**: React/ReactDOM/htm/marked are loaded live from `esm.sh` via an import map in `frontend/index.html`, and FastAPI serves that file as a static asset. This works great for local demo but needs internet access and isn't a real production build. Fixing this later means either the user runs `sudo chown -R $(whoami) /opt/homebrew*` once, or installing Node another way (nvm, official pkg installer), then standing up a real Vite project.
 
-## 3. Tech stack
+## 4. Tech stack
 
 - **DB**: Supabase (Postgres + `pgvector`), session pooler.
 - **Embeddings**: Voyage `voyage-3` (1024-dim).
-- **LLM**: Anthropic Claude, model `claude-opus-4-8` (isolated in `src/generate.py` + `src/router.py`; swap the `MODEL` constant to `claude-sonnet-5` / `claude-haiku-4-5` to cut cost).
-- **UI**: Streamlit.
-- **Other**: rapidfuzz (data-quality scan), pypdf + numpy (document upload).
-- **Deliberately NOT used**: LangChain (too heavy for this scale) and dedicated DevOps/containers (Streamlit Cloud handles deploy). Both were discussed and ruled out.
+- **LLM**: Anthropic Claude. Main answer generation `claude-opus-4-8` (`src/generate.py`). **New this session**: a second, cheap model `claude-haiku-4-5` (`CONDENSE_MODEL` in `src/generate.py`) used only to rewrite follow-up questions into standalone ones for multi-turn conversation. The Task 1A enrichment agent (`src/enrich/agent.py`) uses `claude-sonnet-5` with web-search tools, isolated from both.
+- **API layer** (new): FastAPI + `uvicorn[standard]` + `sse-starlette` + `python-multipart` — added to `requirements.txt`.
+- **Frontend** (new): React 18 (via esm.sh CDN, no build step), `htm` for JSX-less templating, `marked` for markdown rendering. Single file: `frontend/index.html`.
+- **UI (legacy)**: Streamlit (`app.py`, frozen).
+- **Other**: rapidfuzz (data-quality scan), pypdf + numpy (document upload, ported to the new app too).
+- **Deliberately NOT used**: LangChain (too heavy for this scale).
 
-## 4. Architecture
+## 5. Architecture
 
-**Two query flows in the Ask tab, deliberately separate:**
-- **SQL route** (`src/router.py`): counting / aggregation / "how many / list all" questions → Claude writes a **read-only SELECT** → Postgres runs it → exact answer. Exists because RAG retrieves a fixed number of docs and so **structurally cannot count**. Safety: LLM-written SQL runs on a hardened **read-only** session (8s timeout) AND is validated by `is_safe_select()` (single SELECT/WITH, no write/DDL keywords). Names are matched with `ILIKE '%fragment%'` because entities carry long suffixes.
-- **Semantic/RAG route** (`src/retrieve.py` → `src/generate.py`): hybrid retrieval — pgvector cosine (meaning) + Postgres tsvector keyword (acronyms like USGS/SRNL), fused with **Reciprocal Rank Fusion** — then Claude generates a **cited** answer. System prompt forbids using outside knowledge and requires "the map doesn't contain enough information" rather than guessing.
+**Two query flows, unchanged from the original design, now served two ways (Streamlit and the FastAPI `/api/ask/stream` endpoint):**
+- **SQL route** (`src/router.py`): counting / aggregation / "how many / list all" → Claude writes a **read-only SELECT** → Postgres runs it → exact answer. RAG retrieves a fixed number of docs and so **structurally cannot count**. Safety: runs on a hardened **read-only** DB session (8s timeout) + `is_safe_select()` validation. Names matched with `ILIKE '%fragment%'`.
+- **Semantic/RAG route** (`src/retrieve.py` → `src/generate.py`): hybrid pgvector cosine + Postgres tsvector keyword, fused with **Reciprocal Rank Fusion**, then Claude generates a **cited** answer (`(source: Entity Name)` inline, not `[SOURCE n]` indices). System prompt forbids outside knowledge.
 
-**Three UI surfaces (all in `app.py`, two tabs):**
-- **Ask tab** — the question box (routes as above), PLUS an **optional document attachment** (see §6).
-- **Browse tab** — structured, filterable lists of Actors / Hubs / Events. Pure DB reads, no LLM. In-memory filtering (whole live set is <1000 rows).
+**New this session — multi-turn conversation** (`src/generate.py:condense_question`, wired into `backend/app.py:/api/ask/stream` via an optional `history` query param): a follow-up question is rewritten into a standalone question using the last ~3 turns, on the cheap Haiku model, **before** it hits the SQL/semantic router. This means "which of those are in Florida?" resolves against the previous answer instead of literally searching for that string. The rewritten form is surfaced to the user ("Interpreted as: …") for transparency and debuggability. Fails open — on any error it falls back to the literal question rather than crashing.
 
-## 5. Repo structure (file by file)
+## 6. Repo structure (file by file)
 
 ```
-app.py                  Streamlit UI: Ask tab (SQL/RAG + doc upload) + Browse tab. Global CSS polish.
-data_quality_scan.py    Read-only scan → DATA_QUALITY_REPORT.md (dupes, country mess). rapidfuzz.
+app.py                  Streamlit UI (FROZEN — reference only, not edited this session).
+backend/app.py           FastAPI layer wrapping src/ unchanged. Endpoints:
+                            GET  /api/ask/stream       SSE: SQL/semantic/doc routing, streamed cited answer,
+                                                        multi-turn via ?history=<json>, ?doc_id=<id>
+                            POST /api/upload            extract+embed a doc, returns {doc_id, name}
+                            GET  /api/browse/actors      + hub-derived `sectors` field, sector filter options
+                            GET  /api/browse/hubs
+                            GET  /api/browse/events
+                            GET  /api/health
+                            GET  /  and static mount     serves frontend/index.html
+frontend/index.html      Entire React app: Ask (chatbot UI) + Browse (Actors/Hubs/Events). No build step.
+data_quality_scan.py     Read-only scan → DATA_QUALITY_REPORT.md (dupes, country mess). rapidfuzz.
 src/
-  db.py                 get_connection() and get_readonly_connection() (read_only=True, 8s timeout). Reads DATABASE_URL at import.
-  assemble.py           Build-time join: actor + partnership_profile + relevance + hubs → one doc_text blob per entity.
-  embed.py              Voyage embedding + writes search_doc (offline build). embed_texts() shared with retrieve.
-  retrieve.py           THE core: hybrid vector+keyword retrieval, RRF merge. retrieve(question, top_k).
-  generate.py           Claude answer generation (MODEL=claude-opus-4-8). stream_answer(). Citation rules in system prompt.
-  router.py             plan() decides SQL vs semantic; is_safe_select(); run_sql(); format_sql_answer(). SCHEMA string for the planner.
-  browse.py             Pure data module for Browse. normalize_country() (on read, never writes DB). load_actors/hubs/events, filter_*, actor_filter_options.
-  documents/            Document-upload feature (this session):
-    extract.py          bytes → clean text. PDF (pypdf, no OCR) / txt / md. Detects scanned/encrypted PDFs.
-    chunk.py            Overlapping char-based chunks (~300 tok, 50 overlap).
-    doc_store.py        Per-session in-memory Voyage-embedded NumPy cosine store. build_store(), search_chunks(). Never writes Postgres.
+  db.py                 get_connection() / get_readonly_connection() (read_only=True, 8s timeout).
+  assemble.py           Build-time join: actor + partnership_profile + relevance + hubs → doc_text blob.
+  embed.py              Voyage embedding + writes search_doc (offline build).
+  retrieve.py           Hybrid vector+keyword retrieval, RRF merge. retrieve(question, top_k).
+  generate.py           Claude answer generation (MODEL=claude-opus-4-8) + condense_question()
+                         (CONDENSE_MODEL=claude-haiku-4-5, new this session — multi-turn support).
+  router.py             plan() SQL vs semantic; is_safe_select(); run_sql(); format_sql_answer().
+  browse.py             Pure data module for Browse (load_*, filter_*, normalize_country() on read).
+  documents/            Document-upload feature: extract.py, chunk.py, doc_store.py (per-session,
+                         never writes Postgres). Now driven by both Streamlit AND backend/app.py.
+  enrich/               Task 1A scaffolding (NEW, dry-run, PAUSED — see §8):
+    gaps.py             Read-only gap worklist: live actors missing website/country, by tier.
+    agent.py            Per-(actor,field) web-search agent -> cited proposal via a strict tool.
+    run.py              Driver: loops the worklist -> writes proposals.jsonl. No DB writes.
+.claude/launch.json     Preview-server config: `um6p-api` runs uvicorn backend.app:app --reload --port 8000.
 ```
 
-Root docs: `HANDOFF.md` (STALE — predates Browse & everything after), `Tech_Summary.md`, `DATA_QUALITY_REPORT.md`, this file.
+Root docs: `Database schema.md` (live DB survey), `Tech_Summary.md`, `DATA_QUALITY_REPORT.md`, this file. (`HANDOFF.md`, stale, was deleted in an earlier session.)
 
-## 6. Document upload (built & committed this session)
+## 7. The React app, feature by feature (all built this session)
 
-- **Where**: optional attachment **inside the Ask tab** (expander "📎 Attach a document").
-- **Behavior chosen by the user**: an attached document is answered from the **document AND the database together** — doc passages are merged with hybrid map retrieval into one cited answer (doc chunks tagged `uploaded_document`).
-- **Types**: PDF, .txt, .md. Nothing is written to Postgres — the doc store lives in `st.session_state`, cleared when the file is removed.
-- Uses a Streamlit **form** so opening the Sources expander doesn't re-fire a paid answer.
-- **Verified**: extract/chunk/embed/retrieve/merge tested headlessly with real API keys (pulled the budget passage + relevant actors). **NOT** manually verified: the actual browser file-picker click (the automation tool can't drive a native OS file dialog) — user should upload a file once to confirm the UI end-to-end.
+### Ask — now a real chatbot
+- Conversation thread with **chat bubbles**: user messages right-aligned (orange), assistant replies left-aligned with an avatar, in a `.chat` flex column, auto-scrolling to the newest turn.
+- **Sticky bottom composer** (attach-doc row + input + Ask button), content scrolls underneath with a fade.
+- **"＋ New conversation"** resets the thread. Empty state shows a centered welcome + example chips.
+- **Multi-turn memory**: see §5. The last 3 completed turns (question + first 600 chars of answer) are sent as `history` on every follow-up.
+- Mode chips per turn: `⚡ Exact · from the database` (SQL), `◎ Map search · cited` (semantic), `📎 Document + map · cited` (doc-attached).
+- **Document upload**: `📎 Attach a document` → `POST /api/upload` → server extracts+embeds it, holds the store in an in-memory dict keyed by a UUID (`_DOC_STORES` in `backend/app.py`, capped at 24, oldest evicted), returns `doc_id`. Subsequent questions pass `doc_id` and the answer merges document passages with map retrieval. Nothing written to Postgres. **Verified end-to-end via the API directly** (upload → doc-aware ask, correct budget figure + citation returned); the actual browser file-picker click was not driven by automation (same limitation as Streamlit) — spot-check manually.
 
-## 7. Browse hub redesign + CSS polish (this session)
+### Browse — Actors / Hubs / Events
+- **Actors**: filters for Hub, Country, State, Min TRL (slider), name/description search, "Deeply-profiled only" checkbox, and type chips — plus a **new Sector filter**.
+  - ⚠️ **Sector is DERIVED, not stored.** `actor_sector` (the real per-actor join table) is **empty (0 rows)** in the DB. The filter instead uses each actor's **hub's** `primary_sectors` (8 of 10 catalog sectors actually appear on hubs: Agriculture, AI, Specialty Chemicals, Energy, Healthcare, Mining, Sustainability, Water). Backend: `backend/app.py:_sectors_by_hub()` / `_sector_code_to_name()`. UI has a "Sector ⓘ" tooltip explaining this. Verified live: filtering "Water" narrows 872 → 67 actors.
+  - Detail card shows sector chips (teal) alongside the verification-status badge.
+- **Hubs**: **new search bar** (name / city / sector, case-insensitive substring, client-side over the already-loaded 49 hubs). Verified: "water" → 5 hubs.
+- **Events**: **new Date filter** — Any date / Upcoming / Past / Custom range (native date pickers for range). Adds a "past" chip badge on rows before today. Keeps the existing location-contains text filter. Honest about data limits: a hint note says "Only 72 of 231 events carry a scheduled date — date filters list just those." Verified: "Upcoming" → 37 of 231 events.
 
-- Hub detail is now a **card**: metric tiles (Live actors · Primary sector · Confidence), location subtitle, two-column details grid, long write-ups in **Narratives** expanders, and an **"Actors in this hub"** table. Replaced a raw field/value dataframe (which also fixes an Arrow `Decimal` serialization error).
-- **Global CSS** (`app.py` top): centered reading width, bolder tabs, bordered metric tiles/expanders. Theme-safe (no hard-coded colors → works light & dark).
-- **Verified**: render path exercised headlessly across all 49 hubs (no errors, Arrow-clean). Global CSS confirmed visually on the Actors card. **NOT** screenshotted: the hub card itself — the browser automation tool **cannot toggle Streamlit radio buttons**, so the Hubs sub-view couldn't be driven. User should eyeball Browse → Hubs.
-- User was offered the same treatment for Actors/Events detail views and **declined** (chose "leave it here").
+### Design
+- Redesigned from a first-pass teal theme into **UM6P orange as the brand accent** (`--accent`), with hub=teal, event=violet, document=slate as the secondary category colors (colour-coded entity chips throughout, e.g. in the Ask Sources panel).
+- ⚠️ **The orange hex is a placeholder guess** (`#ef7d1a` light / `#f6a15c` dark), not confirmed against the real UM6P logo. Everything keys off the single `--accent` CSS variable, so correcting it later is a one-line change — **get the exact hex from the user before this goes anywhere real.**
+- Editorial serif headings (`Iowan Old Style`/Georgia stack), card depth via layered shadows, light **and** dark mode via `prefers-color-scheme`, micro-transitions on hover/focus.
 
-## 8. Data model reality (what the data actually supports)
+## 8. Task 1A — enrichment agent (scaffolded, PAUSED, resumable)
 
-Live counts (merged duplicates excluded): **872 live actors, 49 hubs, 169 events** (only ~35 events carry a date; 134 dateless).
+Built but **on hold** — the user asked to pause agent work and focus on the frontend; nothing here was abandoned, it's a clean stopping point.
 
-- **Two-tier verification** (`actor.verification_status`): `phase_1` (hand-curated, ~96, richest), `ai_inferred` (extracted from hub narratives, ~761, thin), `needs_review`. Only ~8% of actors carry a TRL rating.
-- **`country` is messy** (from `DATA_QUALITY_REPORT.md`): 214 "USA" + 178 "United States" (same country, two spellings), 6 US states stored as country, 19 free-text/description leaks. `browse.normalize_country()` cleans this **on read** for the UI; the DB is untouched. 8 near-duplicate name pairs flagged.
-- **Sector browsing is impossible**: `sector` table has 10 rows but the join tables (`actor_sector`, `event_sector`, `hub_sector_strength`) are **empty** — nothing is linked to a sector.
-- **Landing-zone tables already exist** (currently ~0 rows): `proposal` (agent workflow) and `query_log` (usage/feedback analytics). `review_queue` has ~277 rows. `search_doc` (~1010 rows) is the index; `search_doc_2` is an unexplained second copy.
+- **`src/enrich/gaps.py`** (read-only, free): confirmed via live query — **137 actors missing website** (128 `ai_inferred` + 2 `phase_1` + 7 untiered), **19 missing country**. Small and precise, not the ~730 the original handoff assumed (an enrichment pass had apparently already run against the shared DB between sessions).
+- **`src/enrich/agent.py`**: given one actor + a target field (`website` or `country`), uses Claude (`claude-sonnet-5`) with `web_search`/`web_fetch` server tools and a strict `submit_proposal` tool. Refuses (`found=false`) rather than guessing when it can't verify from a credible source. System prompt requires entity disambiguation (name + city/state/hub) before searching.
+- **`src/enrich/run.py`**: driver, `python -m src.enrich.run --field website --limit N` → writes `proposals.jsonl` (dry run, **zero DB writes**). Proposal rows are already shaped to match the `proposal` table schema for a trivial later swap.
+- **⚠️ Key finding from a 2-actor live pilot**: the two actors probed (*"Academic & Medical Anchors"*, *"Academic Anchors"*) turned out to be **aggregate/category-label rows**, not real organizations — the agent correctly refused to invent a website for them (guardrail working as intended). This means **before scaling the pilot, a triage/entity-resolution step is needed** to separate real-org rows from category-label rows in the 137/19 gap lists, or the agent will burn API calls failing on non-entities. This step (§ Task 1A workflow "② Triage") was designed but not built.
+- **Full workflow discussion** (gap scan → triage → enrich → threshold → human review → apply → re-index, shared between Task 1 "deepen existing map" and Task 2 "map a new domain on demand") is captured in conversation but not written to a file. Consider writing `ENRICHMENT_WORKFLOW.md` if resuming this — it was offered and not yet requested.
+- **Open gating question, still unresolved**: does an approved proposal write to the live DB, or hand back to the colleague's ETL/source spreadsheets? Do we have write credentials (the `proposal` table has RLS enabled)? Nothing here needs that resolved to keep prototyping — proposals stay in the dry-run JSONL until it's answered.
 
-`merged_into_actor_id IS NULL` = the row is live. ALWAYS filter on it when counting/listing actors.
+## 9. Context from the GHUS_RAG code-review episode (important — don't conflate repos)
 
-## 9. Key decisions locked in
+Mid-session, the user pasted a long, high-quality code-review document (bug list M-01…M-08, platform items P-01…P-10, product ideas E-01…E-07, an alignment scorecard). **I verified it targets a different, colleague-owned repo (`GHUS_RAG`)** — almost every file it references (`src/sql_answer.py`, `src/observability.py`, `pages/ask.py`, `Makefile`, etc.) doesn't exist here; our router exposes `plan()`/`is_safe_select()`, not their `classify()`/`validate_sql()`. This confirms the **original handoff's still-unresolved "which repo is the platform going forward" question is now more informed but still open** — GHUS_RAG appears to be the more architecturally complete implementation (reranker, observability/query_log, Curate UI, Alembic migrations, an eval harness that's been run). If a future session is asked to "fix bug M-04" or similar, **check which repo is meant** before touching anything — see the conversation transcript for the full applies/doesn't-apply breakdown if needed.
 
-- **Deploy target**: **Streamlit Community Cloud** (free, auto-deploys on git push, `st.secrets` for credentials, Google-email allowlist for the ~4 users). **NOT DONE YET** — needs a small `st.secrets`→`os.environ` shim placed BEFORE the `src.*` imports in `app.py`, plus a `runtime.txt` pinning `3.11`.
-- **Deploy first, then keep designing** was the agreed sequencing.
-- **Model cost lever**: stay on Opus for user-facing answers; use a cheaper model for bulk/background work.
+Items from that review that **do genuinely apply to our `um6p-rag` code** (worth prioritizing if this becomes the platform of record): no authentication (P-01, biggest gap — the React app has zero auth right now), prompt-injection hardening on `doc_text` in `generate.py` (C-07), incremental/content-hash embedding in `src/embed.py` (P-03, likely re-embeds everything on every build), one-vector-per-entity retrieval ceiling (C-01), no connection pooling (P-02), no tests/CI (P-04), always-Opus cost posture with no model ladder (P-08), no distance-relevance floor on vector search (C-02), no metadata filtering in retrieval (C-03, partially mitigated for actors by the new hub-derived sector filter), and the upload-cap / "where does my document go" disclosure (D-07/D-08).
 
-## 10. Cost / budget (already worked out with the user, for their manager)
+## 10. Deployment & auth — deliberately parked
 
-- **Runtime** (team usage): ~$0.02–0.04 per question on Opus; a 4-person team is ~$5–30/month. Negligible.
-- **Build + test credits to request now: ~$140** ($120 Anthropic + $20 Voyage). The dominant build cost is iterating on the enrichment agents.
-- **Enrichment full pass** (~730 thin actors): **~$20 on Haiku+Batch to ~$220 on Opus without batching** — a ~10× swing on model + batching choice.
-- **Voyage is always negligible** (index rebuild ≈ cents). Levers: cheap model for the agent, **Batch API (−50%)**, cap `web_fetch` content, prompt-cache the agent instructions, meter a ~50-entity pilot first.
+The user explicitly said "let's decide on deployment later, I just need something to demo." Current state:
+- **No public/hosted URL.** Everything runs on `localhost:8000` (React app) or `:8501` (Streamlit), visible only on this machine.
+- **No authentication anywhere.** Explicitly deferred, not forgotten — flag before sharing a link with anyone.
+- Prior conversation sketched a deploy plan (single container serving both the FastAPI API and the built React static files, fronted by an identity-aware proxy like Cloudflare Access for the ~4-user allowlist) — **not started**. Revisit when the user is ready.
+- **git push is blocked from this sandbox** — no GitHub credential available (`Device not configured` error). The user needs to push `main` (currently 1 commit ahead of origin) from their own terminal, or set up `gh auth login` / SSH first. See §1 for the exact commands offered.
 
-## 11. CURRENT FOCUS — Web-scraping agents (feature #2)
+## 11. Known gotchas / limitations
 
-The next big build: agents that gather information from the web and grow the map. The user defined **two distinct tasks** for this feature. Both run on the **same engine** — `find/fill → propose with evidence → human approves → apply` — they differ only in what they're pointed at.
+- **No Node/npm** on this machine — see §3. The frontend is CDN-loaded React, not a real build.
+- **Browser-automation flakiness observed this session**: a couple of clicks and one Enter-key submit didn't register on the first attempt during testing (had to retry via direct button click). No JS console errors accompanied it — looks like an automation-timing quirk, not an app bug, but **hasn't been independently confirmed by a human** — worth a quick manual sanity check if follow-up questions ever seem to "not submit."
+- **`__pycache__`/`*.pyc` already gitignored** — confirmed clean before each commit this session.
+- Sector filtering (Browse → Actors) is **hub-derived, not a real per-actor tag** — see §7. A true fix needs the DB owner to populate `actor_sector`.
+- The exact UM6P brand orange is unconfirmed — see §7.
+- All DB access remains `get_readonly_connection()` only; the enrichment agent's dry-run sink (`proposals.jsonl`) is the only write-shaped output anywhere, and it writes to a local file, not Postgres.
 
-### Task 1 — Deepen the existing map (START HERE)
+## 12. Open threads / TODO
 
-Work the domains **already** in the DB:
-- **Enrich existing actors** — fill missing factual fields on the ~730 thin `ai_inferred` actors (primarily **country** and **website**; also city/state, actor type, a short factual description). Also fix the messy `country` values (USA vs United States, states-as-country).
-- **Top up existing hubs/sectors** — add **new actors that belong to hubs/sectors already in the DB** (e.g. a hub with only 8 actors → find more that fit it).
-
-This is the **safe, verifiable** case ("does this org have a website?" is a fact with a source), so it's where we prove the whole loop.
-
-### Task 2 — Map a new domain on demand (LATER, same machinery)
-
-A human names a **new topic/sector the DB doesn't cover yet** — e.g. *"build me the fintech map"* — and the agent:
-- **discovers** the actors in that field (companies, labs, funders, universities, events),
-- **populates** them **following the existing structure** — same columns, same schema. It's a new *sector's worth of rows*, **NOT** a schema change / new columns.
-
-Three things get heavier in Task 2 vs Task 1:
-- **Volume** — many new-actor proposals at once → this is the expensive path (~$20–220 range); wants **Batch API + a cheap model + a metered pilot**.
-- **Dedup** — a "fintech" actor may already be in the DB under another label; must check before proposing it as new.
-- **Relevance judgment** — "is this actually a fintech actor worth tracking?" needs a human gate.
-
-> **New-entity support is already in the schema:** the `proposal` table's `entity_id` is **null when proposing a NEW entity**, so Task 2 (and adding actors in Task 1) reuse the same table — no rebuild.
-
-### The shared 5-stage pipeline
-
-1. **Find** — Task 1: read-only query for actors missing a field. Task 2: seed from the named topic.
-2. **Agent gathers evidence** — searches/scrapes the web for the value + a **source URL + snippet**.
-3. **Proposes** to the `proposal` table — `entity_id` (null = new actor), `field`, `old_value → new_value`, `evidence_url`, `evidence_snippet`, `proposed_by`, `status='pending'`. **Never writes live tables directly.**
-4. **Human reviews** pending proposals (with evidence) in a new review UI → approve / reject.
-5. **Apply** approved changes.
-
-### Guardrails (agreed, both tasks)
-
-Agent proposes, human approves — no auto-writes; **every proposal carries a citation** (the `proposal` table makes `evidence_url` / `evidence_snippet` NOT NULL); **factual fields only** — judgment fields (`why_valuable_for_um6p`, relevance scores, TRL) stay human-written; cheap model (Haiku/Sonnet) + Batch API + capped `web_fetch` + **metered ~50-actor pilot before any full run**.
-
-### OPEN GATING QUESTION (not yet resolved)
-
-Everything so far has been read-only. This phase needs to **write** (to `proposal`, and on approval to live tables). Unresolved: (a) do we have **write credentials** (the `proposal` table has **row-level security** enabled), and (b) does an approved proposal **write to the live DB**, or get **handed back to the owning ETL/source spreadsheets**? — patching the DB but not the source means the next ETL run overwrites the fix (the data-quality report deliberately routed fixes to the source spreadsheets for this reason).
-
-### AGREED NEXT STEP (safe regardless of the above)
-
-Run a read-only **"gap scan"** for **Task 1** — count live actors missing country vs. website vs. both, split by verification tier. Pure SELECT, same safe pattern as the data-quality scan. It sizes both the agent's work and the pilot cost before spending anything.
-
-## 12. Known gotchas / limitations
-
-- **Browser automation cannot toggle Streamlit radio buttons or drive native file-pickers**, and debounced text inputs are flaky — verify those UI paths manually or headlessly (this is why the hub card & file upload weren't screenshotted).
-- `st.dataframe(..., use_container_width=True)` throws a **deprecation warning** (removed after 2025-12-31 → switch to `width='stretch'`). Pre-existing, harmless for now.
-- **`HANDOFF.md` is stale** (predates Browse and everything after). This file supersedes it.
-- All DB access is via `get_readonly_connection()` (physically rejects writes) except where a future write path is deliberately added for the enrichment phase.
-
-## 13. Open threads / TODO
-
-- [ ] **Run the read-only gap scan** (immediate next step — Task 1).
-- [ ] Resolve the write-access / apply-to-live-vs-hand-back gating question before any proposal is written.
-- [ ] **Task 1** — build the agent (enrich existing actors + top up existing hubs) on a metered ~50-actor pilot (Haiku/Sonnet + Batch + capped fetch).
-- [ ] Build the review UI (approve/reject proposals with evidence) — shared by both tasks.
+- [ ] **Push `main` to `origin`** from a terminal with GitHub credentials (blocked in this sandbox).
+- [ ] Confirm the exact UM6P orange hex and correct `--accent` in `frontend/index.html` (one-line change).
+- [ ] Decide: keep the no-build CDN frontend, or fix the Homebrew permissions (`sudo chown -R $(whoami) /opt/homebrew*`) and stand up a real Node/Vite build.
+- [ ] Manually verify the document-upload file-picker click end-to-end (automation can't drive native file dialogs).
+- [ ] Resolve **which repo is the platform going forward** — this `um6p-rag` or the colleague's `GHUS_RAG` (§9) — before investing further in either's gaps.
+- [ ] If continuing on this repo: add authentication (P-01, highest-priority gap) before sharing any link.
+- [ ] **Resume Task 1A enrichment** (§8): build the triage/entity-resolution step (real-org vs. category-label) before scaling past the 2-actor probe; then run a ~10-actor metered pilot on the real-org subset.
+- [ ] Resolve the enrichment write-access / apply-to-live-vs-hand-back gating question before any proposal leaves the dry-run JSONL.
+- [ ] Build the review UI (approve/reject proposals with evidence) once triage + pilot look good.
 - [ ] **Task 2** — new-domain mapping ("build me the fintech map"): discovery + dedup + relevance gate, same propose→approve engine. Comes after Task 1 proves the loop.
-- [ ] **Deploy to Streamlit Cloud** (st.secrets shim + runtime.txt; user-side: Cloud account, connect repo, paste secrets, set allowlist).
-- [ ] Manually confirm the document-upload file-picker end-to-end, and eyeball the redesigned Hub card.
-- [ ] Fill the eval set (~2 → ~20 questions) and run the scorer.
+- [ ] Deployment: pick a platform + auth approach, deploy (parked per user request — revisit when asked).
+- [ ] Fill the eval set (~2 → ~20 questions) and run the scorer (pre-existing TODO, still open).
