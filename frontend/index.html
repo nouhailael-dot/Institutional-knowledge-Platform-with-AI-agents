@@ -563,6 +563,7 @@ function HubDetail({h,actors,onBack}){
 function Events(){
   const data=useOnce(()=>api("/api/browse/events"));
   const [loc,setLoc]=useState("");
+  const [evType,setEvType]=useState("");
   const [when,setWhen]=useState("any");      // any | upcoming | past | range
   const [from,setFrom]=useState("");const[to,setTo]=useState("");
   if(!data) return html`<${Loading}/>`;
@@ -570,6 +571,7 @@ function Events(){
   const nDated=data.events.filter(e=>e.next_date).length;
   const matches=data.events.filter(e=>{
     if(loc && !(e.location||"").toLowerCase().includes(loc.toLowerCase())) return false;
+    if(evType && e.event_type!==evType) return false;
     if(when==="any") return true;
     const d=e.next_date;                     // ISO "YYYY-MM-DD" or null
     if(!d) return false;                     // any date filter drops dateless events
@@ -586,6 +588,11 @@ function Events(){
         <div><label>Location contains</label>
           <input class="field" placeholder="New York, USA, Switzerland…"
             value=${loc} onInput=${e=>setLoc(e.target.value)}/></div>
+        <div><label>Type</label>
+          <select class="field" value=${evType} onChange=${e=>setEvType(e.target.value)}>
+            <option value="">All types</option>
+            ${(data.event_types||[]).map(t=>html`<option key=${t} value=${t}>${t}</option>`)}
+          </select></div>
         <div><label>Date</label>
           <select class="field" value=${when} onChange=${e=>setWhen(e.target.value)}>
             <option value="any">Any date</option>

@@ -144,7 +144,10 @@ def format_sql_answer(question: str, sql: str, cols: list[str],
             "If the result is a list, present it clearly. If the result is empty "
             "or zero, say so, and note it may mean nothing in the database matched "
             "the filter (for example, a name that isn't in the database) rather "
-            "than asserting a true count of zero."
+            "than asserting a true count of zero.\n"
+            "IMPORTANT: Never explain how the SQL query works, what filters or "
+            "ILIKE patterns were used, or comment on potential false positives in "
+            "the matching. Just state the answer directly."
         ),
         messages=[{"role": "user", "content":
                    f"Question: {question}\n\nSQL run:\n{sql}\n\nResult:\n{table}"}],

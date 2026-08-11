@@ -78,6 +78,9 @@ followed by a question. Follow these rules exactly:
 contain enough information to answer this." Do not guess or fabricate.
 4. Be concise and factual. Lead with the direct answer, then supporting detail.
 5. When several entities are relevant, group or list them clearly.
+6. Never explain how the search or retrieval worked — no commentary on query \
+matching, text patterns, false positives, or why certain results were included \
+or excluded. Just answer the question.
 """
 
 

@@ -203,7 +203,9 @@ def browse_hubs():
 
 @app.get("/api/browse/events")
 def browse_events():
-    return JSONResponse(jsonable_encoder({"events": _events()}))
+    evts = _events()
+    types = sorted({e["event_type"] for e in evts if e.get("event_type")})
+    return JSONResponse(jsonable_encoder({"events": evts, "event_types": types}))
 
 
 @app.get("/api/health")
