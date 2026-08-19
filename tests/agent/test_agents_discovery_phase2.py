@@ -4,9 +4,12 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import yaml
+
 from agents.common.raw_storage import RawContentStore
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery.extractors.event import EventExtractor
+from agents.discovery.promote import PromotionResult
 from agents.discovery.run import run_pipeline
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.stage import InMemoryStageStore
@@ -150,8 +153,53 @@ def test_replay_reproduces_original_routing_with_network_unavailable(tmp_path):
     assert replay_client.calls == first_client.calls
 
 
-def test_scheduled_workflow_does_not_enable_live():
-    workflow = (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(encoding="utf-8")
+def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path):
+    doc = fixture_doc()
+    run_log = InMemoryRunLog()
+    raw_store = RawContentStore(tmp_path / "raw")
+    session = object()
+    load_calls = []
+    decisions = []
 
-    assert '"$GITHUB_EVENT_NAME" = "workflow_dispatch"' in workflow
-    assert '"$GITHUB_EVENT_NAME" = "schedule"' not in workflow
+    def fake_load_event_candidates(active_session):
+        load_calls.append(active_session)
+        return [{"event_id": "evt-1", "name": "Climate Innovation Summit", "next_date": "2026-09-22"}]
+
+    def fake_promote(staged, decision, *, session=None, live=False):
+        decisions.append(decision)
+        return PromotionResult(
+            action=f"would_{decision.zone}",
+            entity_type=staged.entity_type,
+            zone=decision.zone,
+            entity_id=decision.target_entity_id,
+            dry_run=True,
+        )
+
+    monkeypatch.setattr("agents.discovery.run.load_event_candidates", fake_load_event_candidates)
+    monkeypatch.setattr("agents.discovery.run.promote", fake_promote)
+
+    result = run_pipeline(
+        args(offline=False, out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        session=session,
+        root=PROJECT_ROOT,
+        run_log=run_log,
+        stage_store=InMemoryStageStore(),
+        source=StaticSource(doc),
+        extractor=EventExtractor(CountingToolClient(fixture_payload())),
+        raw_store=raw_store,
+    )
+
+    assert load_calls == [session]
+    assert decisions[0].zone == "absorb"
+    assert result["audit_rows"][0]["zone"] == "absorb"
+    assert result["audit_rows"][0]["target_entity_id"] == "evt-1"
+    assert result["audit_rows"][0]["candidate_ids"] == ["evt-1"]
+
+
+def test_scheduled_workflow_does_not_enable_live():
+    workflow = yaml.safe_load((PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(encoding="utf-8"))
+    run_step = next(step for step in workflow["jobs"]["weekly-discovery"]["steps"] if step.get("name") == "Run weekly discovery")
+    script = run_step["run"]
+
+    assert '"$GITHUB_EVENT_NAME" = "workflow_dispatch"' in script
+    assert '"$GITHUB_EVENT_NAME" = "schedule"' not in script

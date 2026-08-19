@@ -5,6 +5,8 @@ import uuid
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine, event as sqla_event, text
+from sqlalchemy.orm import sessionmaker
 
 from agents.common.resolve_route import RouteDecision, Thresholds, route_event, zone_for_score
 from agents.discovery.extractors.event import EventExtractor
@@ -202,3 +204,67 @@ def test_promote_dry_run_and_live_execute_same_statements_with_commit_boundary_o
     assert dry_result.dry_run is True
     assert live_result.action == "created"
     assert live_result.dry_run is False
+
+
+def test_promote_dry_run_and_live_emit_same_sql_with_engine_listener():
+    staged = StagedRecord(
+        run_id=str(uuid.uuid4()),
+        raw_document_id=None,
+        entity_type="event",
+        natural_key="climate-innovation-summit|2026-09-22",
+        source_url="fixture://events",
+        payload={},
+        normalized_payload={"name": "Climate Innovation Summit", "next_date": "2026-09-22"},
+        prompt_version="event_v1",
+        extracted_at="2026-08-10T00:00:00+00:00",
+    )
+    route = RouteDecision(zone="create", score=0.0)
+
+    dry_sql, dry_result, dry_count = _captured_promote_sql(staged, route, live=False)
+    live_sql, live_result, live_count = _captured_promote_sql(staged, route, live=True)
+
+    assert dry_sql == live_sql
+    assert dry_count == 0
+    assert live_count == 1
+    assert dry_result.action == "would_create"
+    assert live_result.action == "created"
+
+
+def _captured_promote_sql(staged: StagedRecord, route: RouteDecision, *, live: bool):
+    engine = create_engine("sqlite:///:memory:", future=True)
+    _create_sqlite_promotion_schema(engine)
+    statements: list[str] = []
+
+    @sqla_event.listens_for(engine, "before_cursor_execute")
+    def capture_statement(conn, cursor, statement, parameters, context, executemany):
+        if statement.startswith(("INSERT INTO source", "INSERT INTO event", "UPDATE event")):
+            statements.append(statement)
+
+    SessionLocal = sessionmaker(bind=engine, future=True, expire_on_commit=False)
+    session = SessionLocal()
+    try:
+        result = promote(staged, route, session=session, live=live)
+        event_count = session.execute(text("SELECT count(*) FROM event")).scalar_one()
+        return statements, result, event_count
+    finally:
+        session.close()
+
+
+def _create_sqlite_promotion_schema(engine) -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE source ("
+                "source_id TEXT PRIMARY KEY, source_type TEXT, url TEXT, retrieved_at TEXT, "
+                "description TEXT, trust_tier TEXT)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE event ("
+                "event_id TEXT PRIMARY KEY, name TEXT, source_id TEXT, event_type TEXT, "
+                "description TEXT, location TEXT, website TEXT, thematic_focus TEXT, "
+                "expected_attendance TEXT, access_type TEXT, recurring_pattern TEXT, "
+                "next_date TEXT, sponsoring_orgs TEXT)"
+            )
+        )
