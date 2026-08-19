@@ -1,0 +1,89 @@
+# GHUS Agents Layer
+
+Phase 1 is a single vertical slice: one source adapter (`climate_week`), one entity type (`event`), and deterministic event routing. Phase 2 adds weekly unattended execution, content-hash change detection, replay from stored raw content, and a short weekly digest. Phase 4 adds the generalized enrichment policy layer and incremental `search_doc` refresh.
+
+## Run
+
+Dry-run is the default:
+
+```powershell
+python -m agents.discovery.run --source climate_week --entity event
+```
+
+Use `--out path/to/audit.csv` to choose the audit CSV path and `--digest-out path/to/digest.md` to choose the weekly digest path. Use `--limit N` to cap discovered URLs. `--live` is the only flag that enables database writes.
+
+## What Dry-Run Does
+
+Normal dry-run discovers fixture URLs, fetches fixture HTML, uses a fixture tool response instead of Claude, normalizes and filters event records, stages them in memory, routes them with the same deterministic event routing logic, writes an audit CSV, and writes a digest. It does not import `src.db.session`, open a DB session, call the network, call Claude, run migrations, or promote canonical rows.
+
+## Replay
+
+Replay re-extracts from `raw_document.storage_path` and does not call the source adapter or network:
+
+```powershell
+python -m agents.discovery.run --replay <run_id>
+```
+
+`--source` and `--entity` are optional in replay mode when the original `scrape_run` row is available. Replay is dry-run unless `--live` is explicitly supplied.
+
+## Change Detection
+
+Before extraction, the runner checks whether `(url, content_hash)` already exists in `raw_document`. If it does, extraction is skipped and the run increments `skipped_unchanged`. This is the weekly cost control path: unchanged pages should produce zero LLM calls.
+
+Fetched content is written under the configured `raw_storage_dir` and the path is stored in `raw_document.storage_path`, so extraction can be replayed without refetching.
+
+## Weekly Schedule
+
+`.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs pass `--live`; manual runs default to dry-run unless the `live` input is set to true. The workflow runs discovery, deterministic actor profile enrichment, then incremental `search_doc` refresh. It uploads the discovery audit CSV and digest as artifacts.
+
+## Enrichment
+
+Generalized enrichment entry point:
+
+```powershell
+python -m agents.enrichment.run --entity actor --field-set profile --limit 10
+```
+
+`agents/config/fields.yaml` defines enrichable fields and per-field auto-apply floors. Fields without a floor are proposal-only. Person fields are proposal-only. Low-confidence or human-review candidates with a `source_url` become `field_proposal` rows in live mode.
+
+The actor adapter preserves the existing `ActorEnrichmentCandidatePipeline` candidate generation and cost tracking. Other entity types currently have field policies and sparse-row gap detection, but no candidate adapter yet, so the CLI logs counts and attempts no writes for them.
+
+## Search Index
+
+Incremental refresh targets `search_doc` only:
+
+```powershell
+python -m agents.index.refresh --entity all --limit 500
+```
+
+Rows are selected when their canonical `updated_at` is newer than the visible `search_doc.updated_at`/`indexed_at` column, or when no `search_doc` entry exists. If the current `search_doc` table has no timestamp column, the refresh logs a warning and selects missing entries only. Zero candidates is a logged no-op and never deletes rows.
+
+## Reporting
+
+Callable entry point for the future Streamlit page:
+
+```python
+from agents.reporting import run_reporting_agent
+
+result = run_reporting_agent("Which hubs are strongest in energy?")
+```
+
+The reporting agent uses Claude tool-use with curated tools only. It has no free-form SQL tool. Query tools use parameterized SQL, cap limits at 100, and require a read-only connection string from `GHUS_READONLY_DATABASE_URL`, `DATABASE_READONLY_URL`, or `READONLY_DATABASE_URL`; they never fall back to `DATABASE_URL`.
+
+Every tool call and result is logged to `query_log` with a shared `request_id` in `found_by`. `draft_email` returns a draft object only; there is no send path. Artifact tools fill templates from `agents/reporting/templates/` and require cited entity ids in the spec.
+
+## Do Not Change Without Discussion
+
+1. Scraped data lands in `staged_record`; canonical entity writes belong only in `agents/discovery/promote.py`.
+2. Entity resolution/routing runs at ingest before any canonical insert.
+3. Dry-run is the default; live writes require explicit `--live`.
+4. Empty result sets are no-ops, never deletes or replacements.
+5. Entity writes and provenance writes happen in one transaction; provenance failure aborts the entity write.
+6. Never overwrite a non-null value automatically; fill gaps only and propose suspected corrections for humans.
+
+## Phase 1/2 Notes
+
+- The existing frozen combiner is trained on actors, so event routing does not use it. Events match deterministically on `natural_key = normalized title + start date`.
+- The existing `review_queue` table is actor-pair specific. The event route has only exact-match absorb and no-match create outcomes.
+- The canonical `event` table has no `verification_status`, `confidence`, or `updated_at` columns, so Phase 1 cannot set `needs_review` on event rows without changing upstream schema.
+- The agent SQL files are emitted under `agents/sql/`; the CLI does not run them.
