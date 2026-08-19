@@ -10,8 +10,9 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
 
-from agents.reporting.db import readonly_session
+from agents.reporting.db import query_log_session, readonly_session
 from agents.reporting.logging import QueryLogToolLogger, ToolLogEntry
+from agents.reporting.sanitize import generic_tool_failure, sanitize_exception
 from agents.reporting.tools import ReportingTools, tool_schemas
 from src.ai.client import HAIKU, PRICING, get_client
 
@@ -118,6 +119,7 @@ def run_reporting_agent(
     question: str,
     *,
     session=None,
+    log_session=None,
     llm: Optional[ToolLoopLLM] = None,
     tools: Optional[ReportingTools] = None,
     tool_logger=None,
@@ -133,9 +135,37 @@ def run_reporting_agent(
 
     if session is None:
         with readonly_session() as owned_session:
+            if tool_logger is not None:
+                return run_reporting_agent(
+                    question,
+                    session=owned_session,
+                    log_session=log_session,
+                    llm=llm,
+                    tools=tools,
+                    tool_logger=tool_logger,
+                    request_id=request_id,
+                    max_iterations=max_iterations,
+                    usd_budget=usd_budget,
+                )
+            with query_log_session() as owned_log_session:
+                return run_reporting_agent(
+                    question,
+                    session=owned_session,
+                    log_session=owned_log_session,
+                    llm=llm,
+                    tools=tools,
+                    tool_logger=tool_logger,
+                    request_id=request_id,
+                    max_iterations=max_iterations,
+                    usd_budget=usd_budget,
+                )
+
+    if tool_logger is None and log_session is None:
+        with query_log_session() as owned_log_session:
             return run_reporting_agent(
                 question,
-                session=owned_session,
+                session=session,
+                log_session=owned_log_session,
                 llm=llm,
                 tools=tools,
                 tool_logger=tool_logger,
@@ -147,7 +177,7 @@ def run_reporting_agent(
     llm = llm or ClaudeToolLoopClient()
     reporting_tools = tools or ReportingTools(session)
     registry = reporting_tools.registry()
-    logger_for_tools = tool_logger or QueryLogToolLogger(session)
+    logger_for_tools = tool_logger or QueryLogToolLogger(log_session)
     messages: list[dict[str, Any]] = [{"role": "user", "content": question}]
     spent = 0.0
     call_trace: list[dict[str, Any]] = []
@@ -208,7 +238,7 @@ def run_reporting_agent(
                     payload=payload,
                 )
             except Exception as exc:
-                payload = {"ok": False, "error": str(exc)}
+                log_payload = {"ok": False, **sanitize_exception(exc)}
                 _log_tool(
                     logger_for_tools,
                     request_id=request_id,
@@ -216,8 +246,9 @@ def run_reporting_agent(
                     call=call,
                     phase="error",
                     iteration=iteration,
-                    payload=payload,
+                    payload=log_payload,
                 )
+                payload = generic_tool_failure(call.name)
             tool_results.append(
                 {
                     "type": "tool_result",

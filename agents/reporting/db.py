@@ -18,10 +18,18 @@ READONLY_URL_ENV_VARS = (
     "DATABASE_READONLY_URL",
     "READONLY_DATABASE_URL",
 )
+QUERY_LOG_URL_ENV_VARS = (
+    "GHUS_QUERY_LOG_DATABASE_URL",
+    "QUERY_LOG_DATABASE_URL",
+)
 
 
 class MissingReadOnlyDatabaseUrl(RuntimeError):
     """Raised when reporting would otherwise fall back to an owner DB URL."""
+
+
+class MissingQueryLogDatabaseUrl(RuntimeError):
+    """Raised when reporting has no narrow connection for query_log writes."""
 
 
 def readonly_database_url(env: Optional[Mapping[str, str]] = None) -> str:
@@ -37,9 +45,28 @@ def readonly_database_url(env: Optional[Mapping[str, str]] = None) -> str:
     )
 
 
+def query_log_database_url(env: Optional[Mapping[str, str]] = None) -> str:
+    values = env if env is not None else os.environ
+    for name in QUERY_LOG_URL_ENV_VARS:
+        value = values.get(name)
+        if value:
+            return value
+    names = ", ".join(QUERY_LOG_URL_ENV_VARS)
+    raise MissingQueryLogDatabaseUrl(
+        f"Reporting requires one query-log connection string: {names}. "
+        "It will not fall back to DATABASE_URL or reuse the read-only session."
+    )
+
+
 def create_readonly_engine(url: Optional[str] = None, *, env: Optional[Mapping[str, str]] = None) -> Engine:
     load_dotenv(PROJECT_ROOT / ".env")
     db_url = url or readonly_database_url(env)
+    return create_engine(db_url, future=True, pool_pre_ping=True)
+
+
+def create_query_log_engine(url: Optional[str] = None, *, env: Optional[Mapping[str, str]] = None) -> Engine:
+    load_dotenv(PROJECT_ROOT / ".env")
+    db_url = url or query_log_database_url(env)
     return create_engine(db_url, future=True, pool_pre_ping=True)
 
 
@@ -58,6 +85,21 @@ def create_readonly_sessionmaker(
     )
 
 
+def create_query_log_sessionmaker(
+    url: Optional[str] = None,
+    *,
+    env: Optional[Mapping[str, str]] = None,
+) -> sessionmaker[Session]:
+    engine = create_query_log_engine(url, env=env)
+    return sessionmaker(
+        bind=engine,
+        autoflush=False,
+        autocommit=False,
+        future=True,
+        expire_on_commit=False,
+    )
+
+
 @contextmanager
 def readonly_session(
     url: Optional[str] = None,
@@ -65,5 +107,16 @@ def readonly_session(
     env: Optional[Mapping[str, str]] = None,
 ) -> Iterator[Session]:
     SessionLocal = create_readonly_sessionmaker(url, env=env)
+    with SessionLocal() as session:
+        yield session
+
+
+@contextmanager
+def query_log_session(
+    url: Optional[str] = None,
+    *,
+    env: Optional[Mapping[str, str]] = None,
+) -> Iterator[Session]:
+    SessionLocal = create_query_log_sessionmaker(url, env=env)
     with SessionLocal() as session:
         yield session

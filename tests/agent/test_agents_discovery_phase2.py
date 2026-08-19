@@ -74,6 +74,7 @@ def args(**overrides):
         "out": None,
         "digest_out": None,
         "replay": None,
+        "offline": True,
     }
     values.update(overrides)
     return Namespace(**values)
@@ -147,3 +148,10 @@ def test_replay_reproduces_original_routing_with_network_unavailable(tmp_path):
 
     assert routing_signature(replay) == routing_signature(first)
     assert replay_client.calls == first_client.calls
+
+
+def test_scheduled_workflow_does_not_enable_live():
+    workflow = (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(encoding="utf-8")
+
+    assert '"$GITHUB_EVENT_NAME" = "workflow_dispatch"' in workflow
+    assert '"$GITHUB_EVENT_NAME" = "schedule"' not in workflow

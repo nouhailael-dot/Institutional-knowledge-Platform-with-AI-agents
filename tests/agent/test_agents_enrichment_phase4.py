@@ -174,3 +174,25 @@ def test_search_doc_refresh_upserts_only_selected_candidates():
     assert stats.deletes == 0
     assert any("INSERT INTO search_doc" in sql for sql in session.statements)
     assert not any("search_doc_2" in sql for sql in session.statements)
+
+
+def test_search_doc_dry_run_executes_upsert_then_rolls_back():
+    session = FakeSession()
+    stats = refresh_search_doc(
+        session,
+        live=False,
+        candidates=[
+            SearchDocCandidate(
+                entity_type="actor",
+                entity_id=str(uuid.uuid4()),
+                name="Example Actor",
+                doc_text="Name: Example Actor\nWebsite: https://example.org",
+            )
+        ],
+    )
+
+    assert stats.candidates == 1
+    assert stats.upserts == 1
+    assert any("INSERT INTO search_doc" in sql for sql in session.statements)
+    assert session.commits == 0
+    assert session.rollbacks == 1

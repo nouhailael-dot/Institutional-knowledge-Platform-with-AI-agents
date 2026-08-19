@@ -48,18 +48,13 @@ def promote(staged: StagedRecord, route: RouteDecision, session=None, *, live: b
     if staged.entity_type != "event":
         raise NotImplementedError("Phase 1 promotion supports only entity_type='event'")
 
-    if not live:
-        return PromotionResult(
-            action=f"would_{route.zone}",
-            entity_type=staged.entity_type,
-            zone=route.zone,
-            entity_id=route.target_entity_id,
-            dry_run=True,
-        )
     if session is None:
-        raise ValueError("live promotion requires a database session")
+        if live:
+            raise ValueError("live promotion requires a database session")
+        return _dry_run_preview(staged, route)
 
-    with session.begin():
+    transaction = session.begin()
+    try:
         if route.zone == "create":
             source_id = insert_source(
                 session,
@@ -68,18 +63,18 @@ def promote(staged: StagedRecord, route: RouteDecision, session=None, *, live: b
                 description="agent discovery event create",
             )
             event_id = _insert_event(session, staged.normalized_payload, source_id)
-            return PromotionResult(
+            result = PromotionResult(
                 action="created",
                 entity_type="event",
                 zone="create",
                 entity_id=event_id,
                 dry_run=False,
             )
-        if route.zone == "absorb":
+        elif route.zone == "absorb":
             if not route.target_entity_id:
                 raise ValueError("absorb route requires target_entity_id")
             fields = _absorb_event_fields(session, route.target_entity_id, staged)
-            return PromotionResult(
+            result = PromotionResult(
                 action="absorbed" if fields else "no_op",
                 entity_type="event",
                 zone="absorb",
@@ -87,12 +82,38 @@ def promote(staged: StagedRecord, route: RouteDecision, session=None, *, live: b
                 dry_run=False,
                 fields_absorbed=fields,
             )
-        if route.zone == "review":
+        elif route.zone == "review":
             raise RuntimeError(
                 "event review routing cannot use the existing actor-only review_queue; "
                 "event route_event() is deterministic and should not produce review"
             )
-        raise ValueError(f"unknown route zone {route.zone!r}")
+        else:
+            raise ValueError(f"unknown route zone {route.zone!r}")
+    except Exception:
+        transaction.rollback()
+        raise
+
+    if live:
+        transaction.commit()
+        return result
+    transaction.rollback()
+    return _dry_run_result(result, route)
+
+
+def _dry_run_preview(staged: StagedRecord, route: RouteDecision) -> PromotionResult:
+    return PromotionResult(
+        action=f"would_{route.zone}",
+        entity_type=staged.entity_type,
+        zone=route.zone,
+        entity_id=route.target_entity_id,
+        dry_run=True,
+    )
+
+
+def _dry_run_result(result: PromotionResult, route: RouteDecision) -> PromotionResult:
+    result.action = f"would_{route.zone}"
+    result.dry_run = True
+    return result
 
 
 def _insert_event(session, payload: dict[str, object], source_id: str) -> str:

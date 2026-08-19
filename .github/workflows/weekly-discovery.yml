@@ -36,7 +36,7 @@ jobs:
           set +e
           mkdir -p agents/runs
           LIVE_ARG=""
-          if [ "$GITHUB_EVENT_NAME" = "schedule" ] || [ "$LIVE_INPUT" = "true" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$LIVE_INPUT" = "true" ]; then
             LIVE_ARG="--live"
           fi
           python -m agents.discovery.run \

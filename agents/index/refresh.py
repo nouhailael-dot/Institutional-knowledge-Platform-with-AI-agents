@@ -58,8 +58,7 @@ def refresh_search_doc(
                 candidate.entity_id,
             )
             continue
-        if live:
-            _upsert_search_doc(session, candidate)
+        _upsert_search_doc(session, candidate)
         upserts += 1
 
     if live:

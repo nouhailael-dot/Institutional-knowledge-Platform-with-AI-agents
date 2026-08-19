@@ -34,21 +34,28 @@ def load_config(root: Optional[Path] = None) -> dict[str, object]:
     return json.loads((root / "agents" / "config" / "sources.yaml").read_text(encoding="utf-8"))
 
 
-def build_source(name: str, config: dict[str, object], root: Path, *, live: bool):
+def build_source(name: str, config: dict[str, object], root: Path, *, offline: bool = False):
     sources = dict(config.get("sources", {}))
     source_config = dict(sources.get(name, {}))
     if not source_config:
         raise ValueError(f"unknown source {name!r}")
     if name != "climate_week":
         raise NotImplementedError("Phase 1 supports only source='climate_week'")
-    return ClimateWeekAdapter(source_config, project_root=root, offline=not live), source_config
+    return ClimateWeekAdapter(source_config, project_root=root, offline=offline), source_config
 
 
-def build_extractor(entity_type: str, source_config: dict[str, object], root: Path, *, live: bool, cost_meter: CostMeter):
+def build_extractor(
+    entity_type: str,
+    source_config: dict[str, object],
+    root: Path,
+    *,
+    offline: bool = False,
+    cost_meter: CostMeter,
+):
     if entity_type != "event":
         raise NotImplementedError("Phase 1 supports only entity='event'")
     fixture_response = source_config.get("llm_fixture_response")
-    if fixture_response and not live:
+    if fixture_response and offline:
         llm_client = FixtureToolClient.from_path(_resolve_path(root, str(fixture_response)))
     else:
         pricing = dict(source_config.get("llm_pricing", {}))
@@ -76,9 +83,12 @@ def run_pipeline(
     config = load_config(root)
     replay_run_id = getattr(args, "replay", None)
     live = bool(getattr(args, "live", False))
+    offline = bool(getattr(args, "offline", False))
+    if live and offline:
+        raise ValueError("--offline cannot be combined with --live")
     owned_session = False
 
-    if (live or (replay_run_id and run_log is None)) and session is None:
+    if session is None and not offline:
         from src.db.session import SessionLocal
 
         session = SessionLocal()
@@ -86,6 +96,8 @@ def run_pipeline(
 
     history_log = run_log if replay_run_id else None
     if replay_run_id and history_log is None:
+        if session is None:
+            raise RuntimeError("--replay in offline mode requires an injected run_log")
         history_log = SQLRunLog(session)
 
     source_name = getattr(args, "source", None)
@@ -103,7 +115,12 @@ def run_pipeline(
         if not source_config:
             raise ValueError(f"unknown source {source_name!r}")
     else:
-        source, source_config = (source, None) if source is not None else build_source(source_name, config, root, live=live)
+        source, source_config = (source, None) if source is not None else build_source(
+            source_name,
+            config,
+            root,
+            offline=offline,
+        )
         if source_config is None:
             source_config = dict(dict(config.get("sources", {})).get(source_name, {}))
         if entity_type not in source.entity_types:
@@ -111,9 +128,15 @@ def run_pipeline(
 
     cost_meter = CostMeter(max_usd=float(dict(config.get("cost", {})).get("max_usd_per_run", 0.0)))
     raw_store = raw_store or RawContentStore.from_config(root, source_config)
-    run_log = run_log or (SQLRunLog(session) if live else InMemoryRunLog())
-    stage_store = stage_store or (SQLStageStore(session) if live else InMemoryStageStore())
-    extractor = extractor or build_extractor(entity_type, source_config, root, live=live, cost_meter=cost_meter)
+    run_log = run_log or (InMemoryRunLog() if offline else SQLRunLog(session))
+    stage_store = stage_store or (InMemoryStageStore() if offline else SQLStageStore(session))
+    extractor = extractor or build_extractor(
+        entity_type,
+        source_config,
+        root,
+        offline=offline,
+        cost_meter=cost_meter,
+    )
 
     run_config = dict(source_config)
     if replay_run_id:
@@ -126,7 +149,7 @@ def run_pipeline(
     digest_path = _output_path(root, getattr(args, "digest_out", None), run_id, suffix=".md")
 
     try:
-        candidates = load_event_candidates(session) if live else []
+        candidates = [] if offline else load_event_candidates(session)
         if replay_run_id:
             raw_rows = history_log.raw_documents_for_run(replay_run_id)
             if not raw_rows:
@@ -354,6 +377,7 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--entity")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--live", action="store_true", help="commit writes; absent means dry-run")
+    parser.add_argument("--offline", action="store_true", help="test/fixture mode with no database or network access")
     parser.add_argument("--out", help="audit CSV output path")
     parser.add_argument("--digest-out", help="weekly digest markdown output path")
     parser.add_argument("--replay", help="existing scrape_run id whose stored raw content should be re-extracted")

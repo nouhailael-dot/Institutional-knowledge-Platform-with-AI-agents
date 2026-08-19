@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import socket
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -45,6 +47,44 @@ class StubTools:
     def call(self, tool_name, arguments):
         self.calls.append((tool_name, arguments))
         return self.registry()[tool_name].handler(**arguments)
+
+
+class FailingTools:
+    def registry(self):
+        return {
+            "query_actors": ToolSpec(
+                "query_actors",
+                "query actors",
+                {"type": "object", "properties": {}, "additionalProperties": False},
+                self.query_actors,
+            )
+        }
+
+    def call(self, tool_name, arguments):
+        return self.registry()[tool_name].handler(**arguments)
+
+    def query_actors(self, **kwargs):
+        raise RuntimeError(
+            "could not connect to postgresql://user:secret@db.example/ghus?sslmode=require password=abc123456"
+        )
+
+
+class InspectingLLM:
+    def __init__(self):
+        self.calls = 0
+        self.model_payload = ""
+
+    def next_turn(self, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            return LLMTurn(
+                tool_calls=[ToolCall("tool-1", "query_actors", {"limit": 1})],
+                raw_assistant_content=[
+                    {"type": "tool_use", "id": "tool-1", "name": "query_actors", "input": {"limit": 1}}
+                ],
+            )
+        self.model_payload = json.dumps(kwargs["messages"], sort_keys=True, default=str)
+        return LLMTurn(text="The tool failed safely.")
 
 
 class FakeRows:
@@ -168,6 +208,67 @@ def test_draft_email_returns_draft_without_network(monkeypatch):
 def test_missing_readonly_connection_string_raises_without_owner_fallback():
     with pytest.raises(MissingReadOnlyDatabaseUrl):
         readonly_database_url(env={"DATABASE_URL": "postgresql://owner-connection"})
+
+
+def test_reporting_agent_uses_separate_query_log_session(monkeypatch):
+    read_session = FakeSession()
+    log_session = FakeSession()
+
+    @contextmanager
+    def fake_readonly_session():
+        yield read_session
+
+    @contextmanager
+    def fake_query_log_session():
+        yield log_session
+
+    monkeypatch.setattr("agents.reporting.loop.readonly_session", fake_readonly_session)
+    monkeypatch.setattr("agents.reporting.loop.query_log_session", fake_query_log_session)
+
+    result = run_reporting_agent(
+        "Which actors are relevant to energy?",
+        llm=StubLLM(
+            [
+                LLMTurn(
+                    tool_calls=[ToolCall("tool-1", "query_actors", {"limit": 1})],
+                    raw_assistant_content=[
+                        {"type": "tool_use", "id": "tool-1", "name": "query_actors", "input": {"limit": 1}}
+                    ],
+                ),
+                LLMTurn(text="done"),
+            ]
+        ),
+        tools=StubTools(),
+    )
+
+    assert result.status == "succeeded"
+    assert not read_session.statements
+    assert any("INSERT INTO query_log" in sql for sql in log_session.statements)
+
+
+def test_tool_exception_is_sanitized_for_logs_and_model():
+    llm = InspectingLLM()
+    tool_logger = InMemoryToolLogger()
+
+    result = run_reporting_agent(
+        "Find actors",
+        session=object(),
+        llm=llm,
+        tools=FailingTools(),
+        tool_logger=tool_logger,
+    )
+
+    assert result.status == "succeeded"
+    logged_payload = json.dumps([entry.payload for entry in tool_logger.entries], sort_keys=True, default=str)
+    assert "user:secret" not in logged_payload
+    assert "db.example" not in logged_payload
+    assert "abc123456" not in logged_payload
+    assert "RuntimeError" in logged_payload
+    assert "<redacted" in logged_payload
+    assert "user:secret" not in llm.model_payload
+    assert "db.example" not in llm.model_payload
+    assert "abc123456" not in llm.model_payload
+    assert "See query_log" in llm.model_payload
 
 
 def test_query_actors_uses_limit_cap_and_bound_params():

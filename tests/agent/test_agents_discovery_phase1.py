@@ -33,6 +33,12 @@ class FakeTransaction:
         self.rolled_back = False
         self.committed = False
 
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
     def __enter__(self):
         return self
 
@@ -166,3 +172,33 @@ def test_promote_provenance_failure_prevents_entity_insert():
 
     assert session.transactions[-1].rolled_back
     assert not any("INSERT INTO event" in sql for sql in session.statements)
+
+
+def test_promote_dry_run_and_live_execute_same_statements_with_commit_boundary_only():
+    staged = StagedRecord(
+        run_id=str(uuid.uuid4()),
+        raw_document_id=None,
+        entity_type="event",
+        natural_key="climate-innovation-summit|2026-09-22",
+        source_url="fixture://events",
+        payload={},
+        normalized_payload={"name": "Climate Innovation Summit", "next_date": "2026-09-22"},
+        prompt_version="event_v1",
+        extracted_at="2026-08-10T00:00:00+00:00",
+    )
+    route = RouteDecision(zone="create", score=0.0)
+    dry_session = FakeSession()
+    live_session = FakeSession()
+
+    dry_result = promote(staged, route, session=dry_session, live=False)
+    live_result = promote(staged, route, session=live_session, live=True)
+
+    assert dry_session.statements == live_session.statements
+    assert dry_session.transactions[-1].rolled_back
+    assert not dry_session.transactions[-1].committed
+    assert live_session.transactions[-1].committed
+    assert not live_session.transactions[-1].rolled_back
+    assert dry_result.action == "would_create"
+    assert dry_result.dry_run is True
+    assert live_result.action == "created"
+    assert live_result.dry_run is False
