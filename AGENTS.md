@@ -27,7 +27,8 @@ project. Treat them as compile errors, not preferences.
    in `agents/discovery/promote.py` and `agents/enrichment/decisions.py`. Both
    writers must enforce a gap-guarded `WHERE` clause for automatic updates, a
    `rowcount` assertion that raises on missed writes, and provenance written in
-   the same transaction as the fact.
+   the same transaction as the fact. No other module may write canonical entity
+   tables.
 2. **Entity resolution runs at ingest, before insert.** Never after. Never
    bypassed. The agents call the existing frozen combiner and the existing
    thresholds — they do not implement their own matching logic and do not

@@ -242,16 +242,19 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
         Path("agents/discovery/promote.py"),
         Path("agents/enrichment/decisions.py"),
     }
-    pattern = re.compile(r"\b(?:INSERT\s+INTO|UPDATE)\s+(?:actor|hub|person|event)\b", re.IGNORECASE)
+    sql_pattern = re.compile(r"\b(?:INSERT\s+INTO|UPDATE)\s+(?:actor|hub|person|event)\b", re.IGNORECASE)
+    orm_pattern = re.compile(r"\b(?:actor|hub|person|event)\.[a-z_][a-z0-9_]*\s*=", re.IGNORECASE)
     offenders = []
     for path in (PROJECT_ROOT / "agents").rglob("*.py"):
         relative = path.relative_to(PROJECT_ROOT)
         if relative in allowed:
             continue
-        if pattern.search(path.read_text(encoding="utf-8")):
-            offenders.append(str(relative).replace("\\", "/"))
+        relative_display = str(relative).replace("\\", "/")
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if sql_pattern.search(line) or orm_pattern.search(line):
+                offenders.append(f"{relative_display}:{lineno}: {line.strip()}")
 
-    assert offenders == []
+    assert offenders == [], "Unapproved canonical writes found:\n" + "\n".join(offenders)
 
 
 def test_zero_search_doc_candidates_never_delete():
