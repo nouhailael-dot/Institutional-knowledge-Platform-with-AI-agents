@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
+import re
 import uuid
+from argparse import Namespace
 from pathlib import Path
 
+import pytest
+
+from agents.common.digest import build_digest
 from agents.enrichment.decisions import apply_or_propose_field
 from agents.enrichment.fields import FieldPolicy, load_field_config, policies_for_entity
 from agents.enrichment.gaps import is_gap
+from agents.enrichment.run import run_enrichment
 from agents.enrichment.specs import get_entity_spec
 from agents.index.refresh import SearchDocCandidate, refresh_search_doc
 
@@ -31,8 +38,10 @@ class FakeMappingResult:
 
 
 class FakeSession:
-    def __init__(self, current_values=None):
+    def __init__(self, current_values=None, *, update_rowcount=1, select_rows=None):
         self.current_values = list(current_values if current_values is not None else [None])
+        self.update_rowcount = update_rowcount
+        self.select_rows = list(select_rows or [])
         self.statements = []
         self.params = []
         self.commits = 0
@@ -45,6 +54,10 @@ class FakeSession:
         if sql.strip().startswith("SELECT") and "AS current_value" in sql:
             value = self.current_values.pop(0) if self.current_values else None
             return FakeMappingResult([{"current_value": value}])
+        if sql.strip().startswith("SELECT"):
+            return FakeMappingResult(self.select_rows)
+        if sql.strip().startswith("UPDATE actor"):
+            return FakeMappingResult(rowcount=self.update_rowcount)
         return FakeMappingResult()
 
     def commit(self):
@@ -91,12 +104,15 @@ def test_below_floor_candidate_writes_field_proposal_not_update():
     )
 
     assert outcome.action == "proposed_below_floor"
+    assert any("INSERT INTO source" in sql for sql in session.statements)
     assert any("INSERT INTO field_proposal" in sql for sql in session.statements)
     assert not any("UPDATE actor" in sql for sql in session.statements)
+    source_params = [params for sql, params in zip(session.statements, session.params) if "INSERT INTO source" in sql][0]
     field_proposal_params = [
         params for sql, params in zip(session.statements, session.params) if "INSERT INTO field_proposal" in sql
     ][0]
     assert field_proposal_params["source_url"] == "https://registry.example.org/example"
+    assert field_proposal_params["source_id"] == source_params["source_id"]
 
 
 def test_existing_value_becomes_proposal_never_overwrite():
@@ -143,6 +159,99 @@ def test_high_confidence_gap_applies_with_last_moment_gap_guard():
     assert "WHERE actor_id = CAST(:entity_id AS uuid)" in update_sql
     assert "website IS NULL" in update_sql
     assert "INSERT INTO source" in "\n".join(session.statements)
+
+
+def test_gap_guard_rowcount_refuses_racing_non_null_write():
+    session = FakeSession(current_values=[None, None], update_rowcount=0)
+    spec = get_entity_spec("actor")
+
+    with pytest.raises(RuntimeError, match="gap guard matched zero rows"):
+        apply_or_propose_field(
+            session,
+            run_id=str(uuid.uuid4()),
+            spec=spec,
+            policy=FieldPolicy("actor", "website", enrichable=True, auto_apply_floor=0.95),
+            entity_id=str(uuid.uuid4()),
+            field_name="website",
+            proposed_value="https://example.org",
+            source_url="https://registry.example.org/example",
+            confidence=0.99,
+            reason="meets configured floor",
+            live=True,
+        )
+
+    assert any("UPDATE actor" in sql for sql in session.statements)
+
+
+def test_every_field_proposal_has_source_row_and_source_id_link():
+    session = FakeSession(current_values=["https://existing.example"])
+    spec = get_entity_spec("actor")
+    outcome = apply_or_propose_field(
+        session,
+        run_id=str(uuid.uuid4()),
+        spec=spec,
+        policy=FieldPolicy("actor", "website", enrichable=True, auto_apply_floor=0.95),
+        entity_id=str(uuid.uuid4()),
+        field_name="website",
+        proposed_value="https://replacement.example",
+        source_url="https://registry.example.org/replacement",
+        confidence=0.99,
+        reason="high confidence but existing value is present",
+        live=True,
+    )
+
+    assert outcome.action == "proposed_existing_value"
+    source_params = [params for sql, params in zip(session.statements, session.params) if "INSERT INTO source" in sql][0]
+    proposal_params = [
+        params for sql, params in zip(session.statements, session.params) if "INSERT INTO field_proposal" in sql
+    ][0]
+    staged_params = [
+        params for sql, params in zip(session.statements, session.params) if "INSERT INTO staged_record" in sql
+    ][0]
+    staged_payload = json.loads(staged_params["payload"])
+
+    assert proposal_params["source_id"] == source_params["source_id"]
+    assert staged_payload["source_id"] == source_params["source_id"]
+
+
+def test_no_adapter_run_closes_skipped_and_digest_requires_attention():
+    session = FakeSession(select_rows=[{"entity_id": str(uuid.uuid4()), "name": "Sparse Hub"}])
+    result = run_enrichment(
+        Namespace(entity="hub", field_set="profile", limit=1, live=False, allow_claude=False),
+        session=session,
+        root=PROJECT_ROOT,
+    )
+    digest = build_digest(
+        run_id=result["run_id"],
+        source="enrichment",
+        entity_type="hub",
+        status=result["status"],
+        stats=result["stats"],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["stats"]["attention_required"] is True
+    assert "no candidate adapter exists for entity=hub" in result["stats"]["skipped_reason"]
+    assert "**Status:** skipped" in digest
+    assert "**Attention Required:** yes" in digest
+    assert "no candidate adapter exists for entity=hub" in digest
+
+
+def test_canonical_writes_under_agents_are_only_in_permitted_modules():
+    allowed = {
+        Path("agents/discovery/promote.py"),
+        Path("agents/enrichment/decisions.py"),
+    }
+    pattern = re.compile(r"\b(?:INSERT\s+INTO|UPDATE)\s+(?:actor|hub|person|event)\b", re.IGNORECASE)
+    offenders = []
+    for path in (PROJECT_ROOT / "agents").rglob("*.py"):
+        relative = path.relative_to(PROJECT_ROOT)
+        if relative in allowed:
+            continue
+        if pattern.search(path.read_text(encoding="utf-8")):
+            offenders.append(str(relative).replace("\\", "/"))
+
+    assert offenders == []
 
 
 def test_zero_search_doc_candidates_never_delete():

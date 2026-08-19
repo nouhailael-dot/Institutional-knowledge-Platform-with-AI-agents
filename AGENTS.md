@@ -23,8 +23,11 @@ These exist because violating them has already caused real damage in this
 project. Treat them as compile errors, not preferences.
 
 1. **Scraped data never writes directly to canonical tables.** It lands in
-   `staged_record`. A single `promote()` function is the ONLY code path in the
-   repo permitted to INSERT or UPDATE canonical entity tables.
+   `staged_record`. Canonical entity writes under `agents/` are permitted only
+   in `agents/discovery/promote.py` and `agents/enrichment/decisions.py`. Both
+   writers must enforce a gap-guarded `WHERE` clause for automatic updates, a
+   `rowcount` assertion that raises on missed writes, and provenance written in
+   the same transaction as the fact.
 2. **Entity resolution runs at ingest, before insert.** Never after. Never
    bypassed. The agents call the existing frozen combiner and the existing
    thresholds — they do not implement their own matching logic and do not

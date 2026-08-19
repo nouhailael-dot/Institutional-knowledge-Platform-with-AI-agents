@@ -67,20 +67,24 @@ def run_enrichment(args, *, session=None, root: Optional[Path] = None) -> dict[s
     }
 
     try:
+        status = "succeeded"
         if args.entity == "actor":
             stats.update(_run_actor_enrichment(args, root, session, run_id, fields, policies))
         else:
             stats.update(_scan_sparse_without_adapter(session, spec, fields, args.limit))
+            status = "skipped"
+            stats["attention_required"] = True
+            stats["skipped_reason"] = f"no candidate adapter exists for entity={args.entity}"
             logger.warning(
                 "No candidate adapter exists yet for entity=%s; sparse rows were counted, no writes attempted",
                 args.entity,
             )
 
         cost_usd = float(stats.get("cost_usd", 0.0) or 0.0)
-        run_log.close_run(run_id, status="succeeded", stats=stats, cost_usd=cost_usd)
+        run_log.close_run(run_id, status=status, stats=stats, cost_usd=cost_usd)
         if not live:
             session.rollback()
-        return {"status": "succeeded", "run_id": run_id, "stats": stats}
+        return {"status": status, "run_id": run_id, "stats": stats}
     except Exception as exc:
         session.rollback()
         stats["error"] = str(exc)

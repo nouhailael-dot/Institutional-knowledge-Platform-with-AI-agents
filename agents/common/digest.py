@@ -43,6 +43,10 @@ def build_digest(
     ]
     if stats.get("audit_csv"):
         lines.extend(["", f"Audit CSV: `{stats['audit_csv']}`"])
+    if stats.get("attention_required"):
+        lines.extend(["", "**Attention Required:** yes"])
+        if stats.get("skipped_reason"):
+            lines.append(f"Reason: {stats['skipped_reason']}")
     return "\n".join(lines) + "\n"
 
 

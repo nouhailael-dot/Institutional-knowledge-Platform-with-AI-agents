@@ -8,12 +8,11 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from agents.enrichment.decisions import classify_field_candidate, record_field_proposal
+from agents.enrichment.decisions import apply_or_propose_field
 from agents.enrichment.fields import FieldPolicy
-from agents.enrichment.gaps import is_gap, is_present
+from agents.enrichment.gaps import is_gap
 from agents.enrichment.specs import get_entity_spec
 from src.enrichment.actor_enrichment_candidates import (
-    AI_CONFIDENCE,
     DEFAULT_APPLY_THRESHOLD,
     SONNET,
     ActorEnrichmentCandidatePipeline,
@@ -109,56 +108,34 @@ class PolicyActorEnrichmentCandidatePipeline(ActorEnrichmentCandidatePipeline):
 
         for field in proposed_fields:
             policy = self.field_policies[field]
-            current_value = getattr(actor, field)
-            outcome = classify_field_candidate(
+            outcome = apply_or_propose_field(
+                self.session,
+                run_id=self.proposal_run_id or str(actor.actor_id),
+                spec=self.actor_spec,
                 policy=policy,
-                current_value=current_value,
+                entity_id=str(actor.actor_id),
+                field_name=field,
                 proposed_value=decision.get(field),
                 source_url=source_url,
                 confidence=float(decision["confidence"]),
+                reason="actor enrichment candidate",
+                live=self.apply,
                 needs_human_review=bool(decision["needs_human_review"]),
             )
-            if outcome.action == "apply":
-                if not self.apply:
-                    would_apply = True
-                    continue
-                if is_present(getattr(actor, field)):
-                    self._proposal_or_warning(
-                        actor,
-                        field=field,
-                        proposed_value=decision.get(field),
-                        current_value=getattr(actor, field),
-                        source_url=source_url,
-                        confidence=float(decision["confidence"]),
-                        reason="current value was filled before write; overwrite refused",
-                    )
-                    proposals += 1
-                    continue
-                setattr(actor, field, decision.get(field))
+            if outcome.action == "applied":
                 changed_fields.append(field)
-            elif outcome.action == "propose_below_floor":
+            elif outcome.action == "would_apply":
+                would_apply = True
+            elif outcome.action == "proposed_below_floor":
                 low_confidence_seen = True
-                if self._proposal_or_warning(
-                    actor,
-                    field=field,
-                    proposed_value=decision.get(field),
-                    current_value=current_value,
-                    source_url=source_url,
-                    confidence=float(decision["confidence"]),
-                    reason=outcome.reason,
-                ):
-                    proposals += 1
-            elif outcome.action.startswith("propose_"):
-                if self._proposal_or_warning(
-                    actor,
-                    field=field,
-                    proposed_value=decision.get(field),
-                    current_value=current_value,
-                    source_url=source_url,
-                    confidence=float(decision["confidence"]),
-                    reason=outcome.reason,
-                ):
-                    proposals += 1
+                proposals += 1
+            elif outcome.action.startswith("proposed_"):
+                proposals += 1
+            elif outcome.action == "would_propose_below_floor":
+                low_confidence_seen = True
+                proposals += 1
+            elif outcome.action.startswith("would_propose_"):
+                proposals += 1
             elif outcome.action == "missing_source_url":
                 missing_source_seen = True
                 logger.warning(
@@ -171,10 +148,6 @@ class PolicyActorEnrichmentCandidatePipeline(ActorEnrichmentCandidatePipeline):
             self.stats.skipped_low_confidence += 1
 
         if changed_fields:
-            source = self._get_or_create_source(actor, decision)
-            actor.source_id = source.source_id
-            actor.verification_status = "ai_inferred"
-            actor.confidence = AI_CONFIDENCE
             self.stats.applied += 1
             return "applied"
 
@@ -188,44 +161,3 @@ class PolicyActorEnrichmentCandidatePipeline(ActorEnrichmentCandidatePipeline):
         if missing_source_seen:
             return "missing_source_url"
         return "validated_no_update"
-
-    def _proposal_or_warning(
-        self,
-        actor,
-        *,
-        field: str,
-        proposed_value: object,
-        current_value: object,
-        source_url: Optional[str],
-        confidence: float,
-        reason: str,
-    ) -> bool:
-        if not self.apply:
-            return True
-        if not self.proposal_run_id:
-            logger.warning(
-                "actor enrichment field proposal skipped because no proposal_run_id was provided: actor=%s field=%s",
-                actor.actor_id,
-                field,
-            )
-            return False
-        if is_gap(source_url):
-            logger.warning(
-                "actor enrichment field proposal skipped because source_url is missing: actor=%s field=%s",
-                actor.actor_id,
-                field,
-            )
-            return False
-        record_field_proposal(
-            self.session,
-            run_id=self.proposal_run_id,
-            spec=self.actor_spec,
-            entity_id=str(actor.actor_id),
-            field_name=field,
-            proposed_value=proposed_value,
-            current_value=current_value,
-            source_url=str(source_url),
-            confidence=confidence,
-            reason=reason,
-        )
-        return True

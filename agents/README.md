@@ -64,7 +64,7 @@ Rows are selected when their canonical `updated_at` is newer than the visible `s
 
 ## Do Not Change Without Discussion
 
-1. Scraped data lands in `staged_record`; canonical entity writes belong only in `agents/discovery/promote.py`.
+1. Scraped data lands in `staged_record`; canonical entity writes under `agents/` belong only in `agents/discovery/promote.py` and `agents/enrichment/decisions.py`. Both enforce gap-guarded automatic updates, rowcount assertions, and provenance in the same transaction.
 2. Entity resolution/routing runs at ingest before any canonical insert.
 3. Dry-run is the default; live writes require explicit `--live`.
 4. Empty result sets are no-ops, never deletes or replacements.

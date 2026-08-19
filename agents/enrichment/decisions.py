@@ -173,6 +173,14 @@ def record_field_proposal(
 ) -> str:
     if is_gap(source_url):
         raise ValueError("field_proposal.source_url must be non-null")
+    source_id = insert_source(
+        session,
+        source_url=source_url,
+        fetched_at=datetime.now(timezone.utc),
+        description=f"Agent enrichment proposal for {spec.entity_type}.{field_name}",
+        source_type="agent_enrichment",
+        trust_tier="candidate",
+    )
     staged_record_id = _insert_enrichment_staged_record(
         session,
         run_id=run_id,
@@ -182,6 +190,7 @@ def record_field_proposal(
         proposed_value=proposed_value,
         current_value=current_value,
         source_url=source_url,
+        source_id=source_id,
         confidence=confidence,
         reason=reason,
     )
@@ -189,6 +198,7 @@ def record_field_proposal(
         session,
         run_id=run_id,
         staged_record_id=staged_record_id,
+        source_id=source_id,
         entity_type=spec.entity_type,
         entity_id=entity_id,
         field_name=field_name,
@@ -302,6 +312,7 @@ def _insert_enrichment_staged_record(
     proposed_value: object,
     current_value: object,
     source_url: str,
+    source_id: str,
     confidence: Optional[float],
     reason: str,
 ) -> str:
@@ -313,6 +324,7 @@ def _insert_enrichment_staged_record(
         "proposed_value": proposed_value,
         "current_value": current_value,
         "source_url": source_url,
+        "source_id": source_id,
         "confidence": confidence,
         "reason": reason,
     }
