@@ -13,7 +13,9 @@ events, 10 seeded sectors. A frozen ER combiner model with HIGH/LOW thresholds
 and a human review queue already exist and are in production use.
 
 We are now adding an agents layer: automated discovery of new ecosystem data,
-automated gap-filling of sparse fields, and a reporting agent.
+automated gap-filling of sparse fields, and a staged interface for teammate-owned
+new-sector discovery. The reporting agent is out of scope and preserved only on
+branch `shelved/reporting-agent`.
 
 ## Non-negotiable constraints
 

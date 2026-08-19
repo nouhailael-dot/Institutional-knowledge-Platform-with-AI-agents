@@ -2,6 +2,8 @@
 
 Phase 1 is a single vertical slice: one source adapter (`climate_week`), one entity type (`event`), and deterministic event routing. Phase 2 adds weekly unattended execution, content-hash change detection, replay from stored raw content, and a short weekly digest. Phase 4 adds the generalized enrichment policy layer and incremental `search_doc` refresh.
 
+The reporting agent is out of scope. Agent 3 is new-sector discovery, owned by a teammate. Reporting code is preserved on branch `shelved/reporting-agent`.
+
 ## Run
 
 Dry-run is the default:
@@ -14,7 +16,9 @@ Use `--out path/to/audit.csv` to choose the audit CSV path and `--digest-out pat
 
 ## What Dry-Run Does
 
-Normal dry-run discovers fixture URLs, fetches fixture HTML, uses a fixture tool response instead of Claude, normalizes and filters event records, stages them in memory, routes them with the same deterministic event routing logic, writes an audit CSV, and writes a digest. It does not import `src.db.session`, open a DB session, call the network, call Claude, run migrations, or promote canonical rows.
+Normal dry-run uses the configured database for run logging, raw-document storage, staging, and candidate loading. That is intentional: dry-run must route against real candidates and exercise the same promotion statements as live. Canonical promotion and `search_doc` refresh differ from live only at the final boundary: dry-run rolls back and live commits.
+
+Use `--offline` only for tests and local fixture runs. Offline mode uses fixture URLs, fixture extraction responses, in-memory run/stage stores, and no database session.
 
 ## Replay
 
@@ -34,7 +38,7 @@ Fetched content is written under the configured `raw_storage_dir` and the path i
 
 ## Weekly Schedule
 
-`.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs pass `--live`; manual runs default to dry-run unless the `live` input is set to true. The workflow runs discovery, deterministic actor profile enrichment, then incremental `search_doc` refresh. It uploads the discovery audit CSV and digest as artifacts.
+`.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs are dry-run. Live writes require manual `workflow_dispatch` with the `live` input set to true. The workflow runs discovery, deterministic actor profile enrichment, then incremental `search_doc` refresh. It uploads the discovery audit CSV and digest as artifacts.
 
 ## Enrichment
 
@@ -57,20 +61,6 @@ python -m agents.index.refresh --entity all --limit 500
 ```
 
 Rows are selected when their canonical `updated_at` is newer than the visible `search_doc.updated_at`/`indexed_at` column, or when no `search_doc` entry exists. If the current `search_doc` table has no timestamp column, the refresh logs a warning and selects missing entries only. Zero candidates is a logged no-op and never deletes rows.
-
-## Reporting
-
-Callable entry point for the future Streamlit page:
-
-```python
-from agents.reporting import run_reporting_agent
-
-result = run_reporting_agent("Which hubs are strongest in energy?")
-```
-
-The reporting agent uses Claude tool-use with curated tools only. It has no free-form SQL tool. Query tools use parameterized SQL, cap limits at 100, and require a read-only connection string from `GHUS_READONLY_DATABASE_URL`, `DATABASE_READONLY_URL`, or `READONLY_DATABASE_URL`; they never fall back to `DATABASE_URL`.
-
-Every tool call and result is logged to `query_log` with a shared `request_id` in `found_by`. `draft_email` returns a draft object only; there is no send path. Artifact tools fill templates from `agents/reporting/templates/` and require cited entity ids in the spec.
 
 ## Do Not Change Without Discussion
 
