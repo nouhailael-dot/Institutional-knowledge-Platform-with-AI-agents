@@ -478,12 +478,13 @@ class UnMappingTranslator:
 
                 # Continuation row (org column is empty or "—")
                 if not org_raw or org_str == "—":
-                    if current_org_actor is None or not event_raw:
+                    if not event_raw:
                         self.stats.events_skipped += 1
                         continue
-                    self._insert_event(row_idx, current_org_actor, event_raw, loc_raw, source)
+                    self._insert_event(
+                        row_idx, current_org_actor, event_raw, loc_raw, source,
+                        org_name=getattr(self, "_current_org_name", None))
                     continue
-
                 # New organization
                 org_name, _ = parse_un_name_acronym(clean_text(org_str) or "")
                 slug = slugify(org_name) if org_name else None
@@ -496,23 +497,30 @@ class UnMappingTranslator:
                 ).scalar_one_or_none()
 
                 if actor is None:
-                    # Org not found — log and skip its events
-                    logger.warning(
-                        "Events sheet row %d: org '%s' not found in actor table; skipping its events",
+                    # Org not yet a canonical actor — keep the event anyway with a
+                    # null host (matches the annual events translator). The host link fills in later once the org exists as an actor, rathe than discarding a strategic UN event now.
+                    logger.info(
+                        "Events sheet row %d: org '%s' not in actor table; "
+                        "storing event(s) with null host and organizer text",
                         row_idx, org_name
                     )
                     self.audit_writer.writerow(
-                        ["un_events", row_idx, "org_not_found", org_name, "", ""]
+                        ["un_events", row_idx, "org_not_found_null_host", org_name, "", ""]
                     )
                     current_org_actor = None
-                    self.stats.events_skipped += 1
+                    self._current_org_name = org_name        # remember for null-host events
+                    if event_raw:
+                        self._insert_event(row_idx, None, event_raw, loc_raw, source,
+                                           org_name=org_name)
                     continue
 
                 current_org_actor = actor
                 self._actor_cache[slug] = actor
+                self._current_org_name = org_name
 
                 if event_raw:
-                    self._insert_event(row_idx, current_org_actor, event_raw, loc_raw, source)
+                    self._insert_event(row_idx, current_org_actor, event_raw, loc_raw, source,
+                                       org_name=org_name)
                 else:
                     self.stats.events_skipped += 1
 
@@ -522,27 +530,33 @@ class UnMappingTranslator:
                 self.failure_writer.writerow(["un_events", row_idx, str(e), raw_summary])
                 logger.warning("UN Events row %d failed: %s", row_idx, e)
 
-    def _insert_event(self, row_idx: int, host: Actor, event_text: object,
-                      loc_text: object, source: Source):
+    def _insert_event(self, row_idx: int, host: Optional[Actor], event_text: object,
+                      loc_text: object, source: Source, org_name: Optional[str] = None):
         text = clean_text(event_text)
         if not text:
             self.stats.events_skipped += 1
             return
         parsed_date, name = parse_event_string(text)
         location = clean_text(loc_text)
+        host_id = host.actor_id if host else None
+        host_label = host.name if host else (org_name or "none")
 
-        # Idempotency by (host_actor_id, name) — simple but workable
-        existing = self.session.execute(
-            select(Event).where(
-                Event.host_actor_id == host.actor_id,
-                Event.name == name,
-            )
-        ).scalar_one_or_none()
+        # Idempotency: (name, host) for hosted events; (name, organizer) for null-host
+        q = select(Event).where(Event.name == name)
+        if host_id:
+            q = q.where(Event.host_actor_id == host_id)
+        else:
+            q = q.where(Event.host_actor_id.is_(None),
+                        Event.sponsoring_orgs == org_name)
+        existing = self.session.execute(q).scalars().first()
         if existing is not None:
             existing.next_date = parsed_date or existing.next_date
             existing.location = location or existing.location
+            # backfill organizer text if we now have it
+            if org_name and not existing.sponsoring_orgs:
+                existing.sponsoring_orgs = org_name
             self.audit_writer.writerow(
-                ["un_events", row_idx, "event_updated", name, host.name, ""]
+                ["un_events", row_idx, "event_updated", name, host_label, ""]
             )
             return
 
@@ -552,13 +566,14 @@ class UnMappingTranslator:
             event_type="UN event",
             location=location,
             next_date=parsed_date,
-            host_actor_id=host.actor_id,
+            host_actor_id=host_id,
+            sponsoring_orgs=org_name,      # preserve the organizer even with no actor link
             source_id=source.source_id,
         )
         self.session.add(ev)
         self.stats.events_inserted += 1
         self.audit_writer.writerow(
-            ["un_events", row_idx, "event_inserted", name, host.name, ""]
+            ["un_events", row_idx, "event_inserted", name, host_label, ""]
         )
 
     # ----------------------------------------------------------
@@ -574,9 +589,9 @@ class UnMappingTranslator:
         try:
             if SHEET_MAIN not in wb.sheetnames:
                 raise ValueError(f"Sheet '{SHEET_MAIN}' not found. Sheets: {wb.sheetnames}")
-            if SHEET_EVENTS not in wb.sheetnames:
-                raise ValueError(f"Sheet '{SHEET_EVENTS}' not found. Sheets: {wb.sheetnames}")
-
+            events_ws = next((wb[s] for s in wb.sheetnames if s.strip().lower() == "un key events"), None)
+            if events_ws is None:
+                raise ValueError(f"UN KEY EVENTS sheet not found. Sheets: {wb.sheetnames}")
             source = self._get_or_create_source()
 
             logger.info("Processing UN Mapping sheet")
@@ -586,7 +601,7 @@ class UnMappingTranslator:
             self.session.flush()
 
             logger.info("Processing UN KEY EVENTS sheet")
-            self._run_events_sheet(wb[SHEET_EVENTS], source)
+            self._run_events_sheet(events_ws, source)
 
             self.session.commit()
         finally:
