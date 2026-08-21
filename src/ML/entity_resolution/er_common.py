@@ -60,15 +60,16 @@ def tokens(s) -> set:
 
 # ---------------------------------------------------------------- loaders
 def load_actors(path) -> pd.DataFrame:
-    """actors.csv -> actor_id, name, hubs (description/location ignored: too sparse)."""
+    """actors.csv -> actor_id, name, hubs, description, location """
     a = pd.read_csv(path, dtype=str).fillna("")
     a.columns = [c.strip() for c in a.columns]
     for c in ("actor_id", "name"):
         if c not in a.columns:
             raise SystemExit(f"{path}: missing column '{c}'")
-    if "hubs" not in a.columns:
-        a["hubs"] = ""
-    return a[["actor_id", "name", "hubs"]].copy()
+    for c in ("hubs", "description", "location"):
+        if c not in a.columns:
+            a[c] = ""
+    return a[["actor_id", "name", "hubs", "description", "location"]].copy()
 
 
 def load_gold_with_split(gold_path, split_path) -> pd.DataFrame:
@@ -124,6 +125,14 @@ def attach_hubs(pairs: pd.DataFrame, actors: pd.DataFrame) -> pd.DataFrame:
         print(f"[join] id-join weak ({id_hit:.0%}); hubs attached by NAME ({cov:.0%} matched)")
     return p
 
+def attach_descriptions(gold, actors):
+    """Attach desc_a/desc_b by actor_id, same pattern as attach_hubs."""
+    lut = dict(zip(actors["actor_id"].astype(str), actors["description"].fillna("")))
+    gold["desc_a"] = gold["actor_id_a"].astype(str).map(lut).fillna("")
+    gold["desc_b"] = gold["actor_id_b"].astype(str).map(lut).fillna("")
+    hit = ((gold.desc_a != "") & (gold.desc_b != "")).mean()
+    print(f"[join] descriptions on both sides for {hit:.0%} of pairs")
+    return gold
 
 # ---------------------------------------------------------------- features
 def _acronym(name: str) -> str:

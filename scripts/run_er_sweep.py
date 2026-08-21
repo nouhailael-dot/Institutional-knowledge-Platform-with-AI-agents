@@ -48,6 +48,14 @@ except ImportError:
     sys.path.append(str(Path(__file__).resolve().parent))
     import er_common as ec
     from actor_merge import merge_actors
+try:
+    from src.ML.entity_resolution.er_mismatch_features import mismatch_features
+except ImportError:
+    from src.ML.entity_resolution.er_mismatch_features import mismatch_features
+try:
+    from src.ML.entity_resolution.er_description_features import description_features
+except ImportError:
+    from src.ML.entity_resolution.er_description_features import description_features
 
 
 def load_bundle(path):
@@ -98,6 +106,8 @@ def build_features(actors, pairs, bundle):
         "name_b": actors["name"].iloc[ib].values,
         "hubs_a": actors["hubs"].iloc[ia].values,
         "hubs_b": actors["hubs"].iloc[ib].values,
+        "desc_a": actors["description"].iloc[ia].values,
+        "desc_b": actors["description"].iloc[ib].values,
     })
     vec = bundle["tfidf_vectorizer"]
     A = vec.transform(df.name_a.map(ec.normalize_name))
@@ -112,7 +122,11 @@ def build_features(actors, pairs, bundle):
     sbert = np.array([float(np.dot(lut[a], lut[b])) for a, b in zip(df.name_a, df.name_b)])
 
     feats = pd.DataFrame({"tfidf_name_sim": tfidf, "sbert_name_sim": sbert})
-    feats = pd.concat([feats, ec.name_features(df), ec.hub_feature(df)], axis=1)
+    feats = pd.concat([feats, ec.name_features(df), ec.hub_feature(df),
+                       mismatch_features(df), description_features(df)], axis=1)
+    missing = [c for c in bundle["features"] if c not in feats.columns]
+    if missing:
+        raise SystemExit(f"feature mismatch: bundle expects {missing} which were not built")
     return df, feats[bundle["features"]]
 
 

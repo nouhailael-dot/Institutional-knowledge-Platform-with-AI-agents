@@ -48,6 +48,7 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from er_mismatch_features import mismatch_features, MISMATCH_FEATURE_COLS
+from er_description_features import description_features, DESC_FEATURE_COLS
 
 try:
     from . import er_common as ec
@@ -198,6 +199,7 @@ def main():
     actors = ec.load_actors(args.actors)
     g = load_gold(args.gold)
     g = ec.attach_hubs(g, actors)
+    g = ec.attach_descriptions(g, actors)
     y = g["y"].to_numpy()
     print(f"[data] {len(g)} pairs | positives: {int(y.sum())} | "
           f"{args.folds}-fold x {args.repeats} repeat(s) => "
@@ -209,9 +211,9 @@ def main():
     if f_sbert is not None:
         feats["sbert_name_sim"] = f_sbert
     feats = pd.concat([feats, ec.name_features(g), ec.hub_feature(g),
-                   mismatch_features(g)], axis=1)
+                   mismatch_features(g), description_features(g)], axis=1)
     base_cols = [c for c in ["tfidf_name_sim", "sbert_name_sim", "acronym_match",
-                         "containment", "jaccard", "length_ratio"] + MISMATCH_FEATURE_COLS
+                         "containment", "jaccard", "length_ratio"] + MISMATCH_FEATURE_COLS + DESC_FEATURE_COLS
              if c in feats.columns]
     strat = g["y"].astype(str).to_numpy()  # stratify folds by label
 
