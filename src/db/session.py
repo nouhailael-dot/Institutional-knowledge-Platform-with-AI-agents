@@ -10,7 +10,9 @@ when consuming:
 """
 
 import os
+import ipaddress
 import socket
+import subprocess
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -29,15 +31,65 @@ if not DATABASE_URL:
     )
 
 
+def _public_ipv4_addresses(host: str, port: int) -> list[str]:
+    addresses = []
+    try:
+        infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    except OSError:
+        infos = []
+
+    for info in infos:
+        ip = info[4][0]
+        if ipaddress.ip_address(ip).is_global and ip not in addresses:
+            addresses.append(ip)
+
+    if addresses or os.name != "nt":
+        return addresses
+
+    try:
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                (
+                    f"Resolve-DnsName -Type A {host} | "
+                    "Where-Object { $_.IPAddress } | "
+                    "Select-Object -ExpandProperty IPAddress"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return addresses
+
+    for line in result.stdout.splitlines():
+        ip = line.strip()
+        try:
+            parsed = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if parsed.version == 4 and parsed.is_global and ip not in addresses:
+            addresses.append(ip)
+    return addresses
+
+
 def _connect_args() -> dict:
     args = {"connect_timeout": 15}
     try:
         url = make_url(DATABASE_URL)
         if url.get_backend_name().startswith("postgresql") and url.host:
             port = url.port or 5432
-            infos = socket.getaddrinfo(url.host, port, socket.AF_INET, socket.SOCK_STREAM)
-            if infos:
-                args["hostaddr"] = infos[0][4][0]
+            for ip in _public_ipv4_addresses(url.host, port):
+                try:
+                    with socket.create_connection((ip, port), timeout=3):
+                        args["hostaddr"] = ip
+                        break
+                except OSError:
+                    continue
     except OSError:
         pass
     return args
@@ -49,4 +101,10 @@ engine = create_engine(
     pool_pre_ping=True,
     connect_args=_connect_args(),
 )
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    autocommit=False,
+    future=True,
+    expire_on_commit=False,
+)

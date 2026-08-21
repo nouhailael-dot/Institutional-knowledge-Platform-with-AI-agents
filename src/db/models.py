@@ -18,10 +18,13 @@ from typing import Optional
 from sqlalchemy import (
     ARRAY,
     Boolean,
+    Computed,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
+    JSON,
     Numeric,
     SmallInteger,
     String,
@@ -29,10 +32,29 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.types import UserDefinedType
 
 from src.db.base import Base
+
+
+class Vector(UserDefinedType):
+    """Minimal pgvector column type for ORM metadata parity."""
+
+    cache_ok = True
+
+    def get_col_spec(self, **kw) -> str:
+        return "vector"
+
+
+class TSVector(UserDefinedType):
+    """PostgreSQL tsvector column type used by derived search tables."""
+
+    cache_ok = True
+
+    def get_col_spec(self, **kw) -> str:
+        return "tsvector"
 
 
 # ============================================================
@@ -138,6 +160,8 @@ class Actor(Base):
     key_constraints: Mapped[Optional[str]] = mapped_column(Text)
     funding_summary: Mapped[Optional[str]] = mapped_column(Text)
     estimated_trl: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    merged_into_actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("actor.actor_id"), nullable=True)
     primary_lifecycle_role: Mapped[Optional[str]] = mapped_column(String(30))
     source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
     verification_status: Mapped[Optional[str]] = mapped_column(String(30))
@@ -173,8 +197,12 @@ class Event(Base):
     event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     event_type: Mapped[Optional[str]] = mapped_column(String(120))
+    description: Mapped[Optional[str]] = mapped_column(Text)
     location: Mapped[Optional[str]] = mapped_column(String(255))
     website: Mapped[Optional[str]] = mapped_column(String(500))
+    thematic_focus: Mapped[Optional[str]] = mapped_column(Text)
+    expected_attendance: Mapped[Optional[str]] = mapped_column(String(120))
+    access_type: Mapped[Optional[str]] = mapped_column(String(120))
     recurring_pattern: Mapped[Optional[str]] = mapped_column(String(60))
     next_date: Mapped[Optional[datetime]] = mapped_column(Date)
     sponsoring_orgs: Mapped[Optional[str]] = mapped_column(Text)
@@ -190,7 +218,7 @@ class Event(Base):
 # ============================================================
 
 class StrategicDocument(Base):
-    """Uploaded OCP, UM6P, GHUS strategy documents. Powers RAG (Phase 2 brief, capability C)."""
+    """Uploaded OCP, UM6P, GHUS strategy documents. Powers RAG."""
     __tablename__ = "strategic_document"
 
     document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -241,6 +269,105 @@ class ActorRelevance(Base):
     additional_validation_needed: Mapped[Optional[str]] = mapped_column(Text)
     source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ============================================================
+# ACTOR PROFILE / FACT / EVALUATION SIDECARS
+# ============================================================
+
+class ActorProfile(Base):
+    """One canonical, actor-level profile assembled from existing actor fields.
+
+    This sidecar keeps richer profile summaries queryable without removing the
+    legacy narrative columns already present on actor.
+    """
+    __tablename__ = "actor_profile"
+
+    actor_profile_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor.actor_id"), unique=True, nullable=False
+    )
+    profile_summary: Mapped[Optional[str]] = mapped_column(Text)
+    identity_summary: Mapped[Optional[str]] = mapped_column(Text)
+    technical_summary: Mapped[Optional[str]] = mapped_column(Text)
+    funding_summary: Mapped[Optional[str]] = mapped_column(Text)
+    lifecycle_summary: Mapped[Optional[str]] = mapped_column(Text)
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
+    verification_status: Mapped[Optional[str]] = mapped_column(String(30))
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    generated_by: Mapped[Optional[str]] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ActorCapabilityFact(Base):
+    """Atomic actor capability/funding/activity facts backfilled from actor text.
+
+    The legacy actor columns stay in place; this table gives the same content a
+    cleaner fact-level shape for filtering, review, and future enrichment.
+    """
+    __tablename__ = "actor_capability_fact"
+    __table_args__ = (
+        UniqueConstraint("actor_id", "fact_type", "source_field", name="uq_actor_capability_fact"),
+    )
+
+    actor_capability_fact_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
+    fact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_field: Mapped[str] = mapped_column(String(80), nullable=False)
+    fact_value: Mapped[str] = mapped_column(Text, nullable=False)
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
+    evidence_url: Mapped[Optional[str]] = mapped_column(Text)
+    verification_status: Mapped[Optional[str]] = mapped_column(String(30))
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    generated_by: Mapped[Optional[str]] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ActorEvaluation(Base):
+    """Context-specific actor evaluations.
+
+    This generalizes challenge relevance and partnership value without removing
+    actor_relevance or partnership_profile.
+    """
+    __tablename__ = "actor_evaluation"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_id",
+            "evaluation_context",
+            "context_entity_type",
+            "context_entity_id",
+            name="uq_actor_evaluation_context",
+        ),
+    )
+
+    actor_evaluation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
+    evaluation_context: Mapped[str] = mapped_column(String(120), nullable=False)
+    context_entity_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    context_entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    score: Mapped[Optional[float]] = mapped_column(Numeric(5, 3))
+    evaluation_summary: Mapped[Optional[str]] = mapped_column(Text)
+    evidence_summary: Mapped[Optional[str]] = mapped_column(Text)
+    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
+    verification_status: Mapped[Optional[str]] = mapped_column(String(30))
+    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    generated_by: Mapped[Optional[str]] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
 
 
 # ============================================================
@@ -313,6 +440,45 @@ class HubSectorStrength(Base):
     top_actor_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(ARRAY(UUID(as_uuid=True)))
     narrative_summary: Mapped[Optional[str]] = mapped_column(Text)
     last_computed: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+
+class SearchDoc(Base):
+    """Derived search document table for full-text and vector retrieval."""
+    __tablename__ = "search_doc"
+
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    entity_type: Mapped[Optional[str]] = mapped_column(Text)
+    name: Mapped[Optional[str]] = mapped_column(Text)
+    doc_text: Mapped[Optional[str]] = mapped_column(Text)
+    embedding: Mapped[Optional[str]] = mapped_column(Vector())
+    doc_tsv: Mapped[Optional[str]] = mapped_column(
+        TSVector(),
+        Computed("to_tsvector('english'::regconfig, COALESCE(doc_text, ''::text))"),
+    )
+
+
+class SearchDoc2(Base):
+    """Current richer search document table used by the app."""
+    __tablename__ = "search_doc_2"
+
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    entity_type: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[Optional[str]] = mapped_column(Text)
+    doc_text: Mapped[Optional[str]] = mapped_column(Text)
+    embedding: Mapped[Optional[str]] = mapped_column(Vector())
+    website: Mapped[Optional[str]] = mapped_column(Text)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    verification_status: Mapped[Optional[str]] = mapped_column(Text)
+    confidence: Mapped[Optional[str]] = mapped_column(Text)
+    indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    doc_tsv: Mapped[Optional[str]] = mapped_column(
+        TSVector(),
+        Computed(
+            "(setweight(to_tsvector('simple'::regconfig, COALESCE(name, ''::text)), 'A'::char) || "
+            "setweight(to_tsvector('english'::regconfig, COALESCE(name, ''::text)), 'A'::char)) || "
+            "setweight(to_tsvector('english'::regconfig, COALESCE(doc_text, ''::text)), 'B'::char)"
+        ),
+    )
 
 
 # ============================================================
@@ -399,8 +565,6 @@ class EventScoring(Base):
     total_score: Mapped[Optional[int]] = mapped_column(SmallInteger)
     tier: Mapped[Optional[str]] = mapped_column(String(20))
     tier_raw: Mapped[Optional[str]] = mapped_column(String(120))
-    strategic_value_narrative: Mapped[Optional[str]] = mapped_column(Text)
-    strategic_positioning: Mapped[Optional[str]] = mapped_column(Text)
     scoring_methodology_version: Mapped[Optional[str]] = mapped_column(String(20))
     source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source.source_id")
@@ -413,23 +577,73 @@ class EventScoring(Base):
 
 
 class ActorMergeLog(Base):
-    """Audit + reversibility for actor merges (handoff section 4). Created
-    schema-first, before the Week-5 integration that uses it.
-
-    merged_actor_id is intentionally NOT a foreign key: a merge absorbs the
-    merged actor and then deletes its row, so an FK constraint would block the
-    delete. We keep the raw UUID as a permanent historical record instead.
-    """
+    """Audit + reversibility for actor merges."""
     __tablename__ = "actor_merge_log"
 
     merge_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    surviving_actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
-    merged_actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)  # NOT an FK — see docstring
-    merge_method: Mapped[Optional[str]] = mapped_column(String(40))   # tfidf | sbert | hybrid | claude_verified | manual
-    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
-    merge_evidence: Mapped[Optional[str]] = mapped_column(Text)
-    merged_at: Mapped[Optional[datetime]] = mapped_column(DateTime, server_default=func.now())
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
-    reversed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
-    reversed_reason: Mapped[Optional[str]] = mapped_column(Text)
+    winner_actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
+    loser_actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
+    score: Mapped[Optional[float]] = mapped_column(Numeric(4, 3))
+    method: Mapped[str] = mapped_column(String(20), nullable=False)
+    decided_by: Mapped[Optional[str]] = mapped_column(String(120))
+    decided_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
+    pre_merge_state: Mapped[Optional[dict]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), server_default="applied", nullable=False)
+    reverted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ReviewQueue(Base):
+    """Human-in-the-loop entity resolution review queue."""
+    __tablename__ = "review_queue"
+    __table_args__ = (
+        UniqueConstraint("actor_id_a", "actor_id_b", name="uq_review_pair"),
+    )
+
+    review_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    actor_id_a: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
+    actor_id_b: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False)
+    score: Mapped[Optional[float]] = mapped_column(Numeric(4, 3))
+    model: Mapped[Optional[str]] = mapped_column(String(60))
+    features: Mapped[Optional[dict]] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), server_default="pending", nullable=False)
+    decided_by: Mapped[Optional[str]] = mapped_column(String(120))
+    decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    merge_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("actor_merge_log.merge_id"))
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Proposal(Base):
+    """Pending field-level change proposals surfaced for review."""
+    __tablename__ = "proposal"
+
+    proposal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    table_name: Mapped[str] = mapped_column(Text, nullable=False)
+    field: Mapped[Optional[str]] = mapped_column(Text)
+    old_value: Mapped[Optional[str]] = mapped_column(Text)
+    new_value: Mapped[Optional[str]] = mapped_column(Text)
+    evidence_url: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_snippet: Mapped[str] = mapped_column(Text, nullable=False)
+    proposed_by: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, server_default="pending", nullable=False)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(Text)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class QueryLog(Base):
+    """Application query telemetry."""
+    __tablename__ = "query_log"
+
+    query_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    asked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    route: Mapped[Optional[str]] = mapped_column(Text)
+    retrieved_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(ARRAY(UUID(as_uuid=True)))
+    found_by: Mapped[Optional[dict]] = mapped_column(JSONB)
+    top_distance: Mapped[Optional[float]] = mapped_column(Float)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    answer: Mapped[Optional[str]] = mapped_column(Text)
+    helpful: Mapped[Optional[bool]] = mapped_column(Boolean)

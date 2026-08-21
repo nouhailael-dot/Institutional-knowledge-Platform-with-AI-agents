@@ -1,10 +1,36 @@
 {
-     "model": "combiner_name_hub",
-     "features": ["tfidf_name_sim","sbert_name_sim","acronym_match","containment","jaccard","length_ratio","hub_overlap"],
-     "high_threshold": 0.99,
-     "low_threshold": 0.45981815523962793,
-     "min_precision": 0.97,
-     "validated_on": {"pairs": 586, "positives": 117, "pooled_precision": 1.0, "coverage": 0.085},
-     "frozen_date": "2025-...",
-     "notes": "Auto-merge approved for high-confidence tail only. Do not raise coverage by lowering HIGH without re-running k-fold."
-   }
+  "model": "combiner_name_mismatch",
+  "model_file": "models/er_combiner_v1.joblib",
+  "features": [
+    "tfidf_name_sim",
+    "sbert_name_sim",
+    "acronym_match",
+    "containment",
+    "jaccard",
+    "length_ratio",
+    "qualifier_mismatch",
+    "unique_tokens_both_sides",
+    "unique_token_count",
+    "place_mismatch",
+    "hierarchy_signal",
+    "desc_tfidf_sim",
+    "desc_token_overlap",
+    "desc_location_conflict"
+  ],
+  "excluded_features": [
+    "hub_overlap"
+  ],
+  "high_threshold": 0.96,
+  "low_threshold": 0.1889311318077817,
+  "min_precision": 0.97,
+  "auto_merge_enabled": true,
+  "validated_on": {
+    "pairs": 777,
+    "positives": 133,
+    "oof_precision": 1.0,
+    "oof_coverage": 0.346,
+    "oof_false_merges": 0
+  },
+  "frozen_date": "2026-08-08",
+  "notes": "AUTO-MERGE ENABLED at 0.96. Threshold chosen from the out-of-fold precision/coverage curve: precision 1.000 with 34.6% coverage and zero false merges. NOT from per-fold threshold selection, which kept landing near 0.948 where two ambiguous pairs sit. hub_overlap excluded: false merges in 3 of 4 rounds. Description features included; they took coverage from 2.3% to 34.6%."
+}
