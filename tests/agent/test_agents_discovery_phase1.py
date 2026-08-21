@@ -12,6 +12,7 @@ from agents.common.resolve_route import RouteDecision, Thresholds, route_event, 
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.normalize import event_natural_key, normalize_event_record, parse_date_to_iso
 from agents.discovery.promote import promote
+from agents.discovery.relevance import classify_sector_matches
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.stage import InMemoryStageStore, StagedRecord, stage_record
 
@@ -195,6 +196,48 @@ def test_staging_same_run_twice_is_idempotent():
 
     assert store.row_count() == 1
     assert first.staged_record_id == second.staged_record_id
+
+
+def test_out_of_sector_stage_status_and_empty_sector_guard():
+    classified = classify_sector_matches(
+        [
+            normalize_event_record(
+                {
+                    "title": "New Sector Summit",
+                    "start_date": "2026-09-23",
+                    "source_url": "fixture://events",
+                    "extracted_at": "2026-08-10T00:00:00+00:00",
+                    "sector_codes": ["NOT_SEEDED"],
+                }
+            )
+        ],
+        valid_sector_codes={"ENERGY"},
+    )
+    store = InMemoryStageStore()
+    staged = stage_record(
+        store,
+        run_id=str(uuid.uuid4()),
+        raw_document_id=None,
+        entity_type="event",
+        record=classified[0],
+        prompt_version="event_v1",
+    )
+
+    assert classified[0]["sector_match"] == "out_of_sector"
+    assert staged.sector_match == "out_of_sector"
+    assert staged.status == "out_of_sector"
+
+    with pytest.raises(RuntimeError, match="sector code set is empty"):
+        classify_sector_matches(classified, valid_sector_codes=set())
+
+
+def test_promote_refuses_out_of_sector_staged_records():
+    staged = _staged_event()
+    staged.sector_match = "out_of_sector"
+    staged.status = "out_of_sector"
+
+    with pytest.raises(RuntimeError, match="out_of_sector staged records must not be promoted"):
+        promote(staged, RouteDecision(zone="create", score=0.0), session=FakeSession(), live=True)
 
 
 def test_promote_provenance_failure_prevents_entity_insert():

@@ -45,6 +45,8 @@ class PromotionResult:
 
 
 def promote(staged: StagedRecord, route: RouteDecision, session=None, *, live: bool = False) -> PromotionResult:
+    if staged.sector_match == "out_of_sector" or staged.status == "out_of_sector":
+        raise RuntimeError("out_of_sector staged records must not be promoted")
     if staged.entity_type != "event":
         raise NotImplementedError("Phase 1 promotion supports only entity_type='event'")
 

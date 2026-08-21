@@ -16,8 +16,21 @@ from agents.enrichment.run import run_enrichment
 from agents.enrichment.specs import get_entity_spec
 from agents.index import refresh as refresh_module
 from agents.index.refresh import SearchDocCandidate, load_incremental_candidate_selection, refresh_search_doc
+from src.db import models
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _canonical_table_names_from_models() -> set[str]:
+    return set(models.CANONICAL_ENTITY_TABLES)
+
+
+def _agent_owned_table_names_from_sql() -> set[str]:
+    create_table = re.compile(r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)\b", re.IGNORECASE)
+    tables: set[str] = set()
+    for path in (PROJECT_ROOT / "agents" / "sql").glob("*.sql"):
+        tables.update(match.group(1) for match in create_table.finditer(path.read_text(encoding="utf-8")))
+    return tables
 
 
 class FakeMappingResult:
@@ -238,24 +251,70 @@ def test_no_adapter_run_closes_skipped_and_digest_requires_attention():
     assert "no candidate adapter exists for entity=hub" in digest
 
 
+def test_digest_reports_in_sector_and_out_of_sector_counts():
+    digest = build_digest(
+        run_id=str(uuid.uuid4()),
+        source="climate_week",
+        entity_type="event",
+        status="succeeded",
+        stats={
+            "documents_fetched": 1,
+            "skipped_unchanged": 0,
+            "records_extracted": 3,
+            "records_in_sector": 2,
+            "records_out_of_sector": 1,
+            "absorbed": 0,
+            "queued_for_review": 0,
+            "created": 2,
+            "failures": 0,
+        },
+    )
+
+    assert "| In-sector staged | 2 |" in digest
+    assert "| Out-of-sector staged | 1 |" in digest
+
+
 def test_canonical_writes_under_agents_are_only_in_permitted_modules():
-    allowed = {
-        Path("agents/discovery/promote.py"),
-        Path("agents/enrichment/decisions.py"),
+    canonical_tables = _canonical_table_names_from_models()
+    agent_owned_tables = _agent_owned_table_names_from_sql()
+    protected_tables = canonical_tables | agent_owned_tables
+    allowed_by_table = {
+        table: {
+            Path("agents/discovery/promote.py"),
+            Path("agents/enrichment/decisions.py"),
+        }
+        for table in canonical_tables
     }
-    sql_pattern = re.compile(r"\b(?:INSERT\s+INTO|UPDATE)\s+(?:actor|hub|person|event)\b", re.IGNORECASE)
-    orm_pattern = re.compile(r"\b(?:actor|hub|person|event)\.[a-z_][a-z0-9_]*\s*=", re.IGNORECASE)
+    allowed_by_table.update(
+        {
+            "scrape_run": {Path("agents/common/run_log.py")},
+            "raw_document": {Path("agents/common/run_log.py")},
+            "staged_record": {
+                Path("agents/discovery/stage.py"),
+                Path("agents/enrichment/decisions.py"),
+            },
+            "field_proposal": {Path("agents/common/provenance.py")},
+            "index_dirty": {
+                Path("agents/discovery/promote.py"),
+                Path("agents/index/refresh.py"),
+            },
+        }
+    )
+    table_pattern = "|".join(re.escape(table) for table in sorted(protected_tables, key=len, reverse=True))
+    sql_pattern = re.compile(rf"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+({table_pattern})\b", re.IGNORECASE)
+    orm_pattern = re.compile(rf"\b({table_pattern})\.[a-z_][a-z0-9_]*\s*=", re.IGNORECASE)
     offenders = []
     for path in (PROJECT_ROOT / "agents").rglob("*.py"):
         relative = path.relative_to(PROJECT_ROOT)
-        if relative in allowed:
-            continue
         relative_display = str(relative).replace("\\", "/")
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if sql_pattern.search(line) or orm_pattern.search(line):
-                offenders.append(f"{relative_display}:{lineno}: {line.strip()}")
+            sql_match = sql_pattern.search(line)
+            orm_match = orm_pattern.search(line)
+            table = (sql_match or orm_match).group(1).lower() if sql_match or orm_match else None
+            if table and relative not in allowed_by_table.get(table, set()):
+                offenders.append(f"{relative_display}:{lineno}: unexpected write to {table}: {line.strip()}")
 
-    assert offenders == [], "Unapproved canonical writes found:\n" + "\n".join(offenders)
+    assert offenders == [], "Unapproved protected-table writes found:\n" + "\n".join(offenders)
 
 
 def test_zero_search_doc_candidates_never_delete():

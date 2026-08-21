@@ -29,6 +29,8 @@ def build_digest(
         f"| Records fetched | {_count(stats, 'documents_fetched')} |",
         f"| Skipped unchanged | {_count(stats, 'skipped_unchanged')} |",
         f"| Extracted | {_count(stats, 'records_extracted')} |",
+        f"| In-sector staged | {_count(stats, 'records_in_sector')} |",
+        f"| Out-of-sector staged | {_count(stats, 'records_out_of_sector')} |",
         f"| Absorbed | {_count(stats, 'absorbed')} |",
         f"| Queued for review | {_count(stats, 'queued_for_review')} |",
         f"| Created | {_count(stats, 'created')} |",

@@ -9,6 +9,9 @@ from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
+IN_SECTOR = "in_sector"
+OUT_OF_SECTOR = "out_of_sector"
+
 
 def load_seeded_sector_codes(project_root: Optional[Path] = None) -> set[str]:
     """Read sector codes from the existing seed script without importing DB code."""
@@ -29,24 +32,47 @@ def filter_relevant_records(
     valid_sector_codes: Optional[set[str]] = None,
     project_root: Optional[Path] = None,
 ) -> list[dict[str, object]]:
-    valid_codes = valid_sector_codes or load_seeded_sector_codes(project_root)
+    return [
+        record
+        for record in classify_sector_matches(
+            records,
+            valid_sector_codes=valid_sector_codes,
+            project_root=project_root,
+        )
+        if record["sector_match"] == IN_SECTOR
+    ]
+
+
+def classify_sector_matches(
+    records: Iterable[dict[str, object]],
+    *,
+    valid_sector_codes: Optional[set[str]] = None,
+    project_root: Optional[Path] = None,
+) -> list[dict[str, object]]:
+    raw_valid_codes = load_seeded_sector_codes(project_root) if valid_sector_codes is None else valid_sector_codes
+    valid_codes = {str(code).upper() for code in raw_valid_codes}
     if not valid_codes:
         raise RuntimeError("sector code set is empty; refusing to silently filter everything")
 
-    kept: list[dict[str, object]] = []
-    dropped = 0
+    classified: list[dict[str, object]] = []
+    in_sector = 0
+    out_of_sector = 0
     for record in records:
         record_codes = [str(code).upper() for code in record.get("sector_codes", [])]
         matched = [code for code in record_codes if code in valid_codes]
+        enriched = record.copy()
         if matched:
-            enriched = record.copy()
             enriched["sector_codes"] = matched
-            kept.append(enriched)
+            enriched["sector_match"] = IN_SECTOR
+            in_sector += 1
         else:
-            dropped += 1
+            enriched["sector_codes"] = record_codes
+            enriched["sector_match"] = OUT_OF_SECTOR
+            out_of_sector += 1
+        classified.append(enriched)
 
-    if dropped:
-        logger.warning("filtered %d record(s) with no seeded-sector match", dropped)
-    if not kept:
-        logger.warning("relevance filtering matched zero records")
-    return kept
+    if out_of_sector:
+        logger.warning("classified %d record(s) as out_of_sector with no seeded-sector match", out_of_sector)
+    if not in_sector:
+        logger.warning("sector relevance matched zero in_sector records")
+    return classified
