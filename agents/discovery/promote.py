@@ -1,9 +1,9 @@
 """Canonical promotion path for agent-staged records.
 
 This module is intentionally one of the only agents modules that inserts or
-updates canonical entity tables. The Phase 1 slice supports event create/absorb.
-The existing review_queue table is actor-specific, so event routing is
-deterministic and does not emit review-zone decisions.
+updates canonical entity tables. The Phase 1 slice supports event
+create/absorb/review. Event review rows use an agent-owned queue because the
+existing review_queue table is actor-specific.
 """
 
 from __future__ import annotations
@@ -88,9 +88,15 @@ def promote(staged: StagedRecord, route: RouteDecision, session=None, *, live: b
                 fields_absorbed=fields,
             )
         elif route.zone == "review":
-            raise RuntimeError(
-                "event review routing cannot use the existing actor-only review_queue; "
-                "event route_event() is deterministic and should not produce review"
+            if not route.target_entity_id:
+                raise ValueError("event review route requires target_entity_id")
+            _insert_event_review(session, staged, route)
+            result = PromotionResult(
+                action="queued_for_review",
+                entity_type="event",
+                zone="review",
+                entity_id=route.target_entity_id,
+                dry_run=False,
             )
         else:
             raise ValueError(f"unknown route zone {route.zone!r}")
@@ -184,6 +190,42 @@ def _mark_index_dirty(session, *, entity_type: str, entity_id: str) -> None:
         ),
         {"entity_type": entity_type, "entity_id": entity_id},
     )
+
+
+def _insert_event_review(session, staged: StagedRecord, route: RouteDecision) -> str:
+    metadata = dict(route.metadata or {})
+    staged_title = str(metadata.get("staged_title") or staged.normalized_payload.get("name") or "")
+    candidate_title = str(metadata.get("candidate_title") or "")
+    shared_start_date = metadata.get("shared_start_date") or staged.normalized_payload.get("start_date") or staged.normalized_payload.get("next_date")
+    if not candidate_title:
+        raise ValueError("event review route metadata must include candidate_title")
+    if not shared_start_date:
+        raise ValueError("event review route metadata must include shared_start_date")
+
+    event_review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO event_review_queue (event_review_id, staged_record_id, candidate_event_id, "
+            "similarity_score, staged_title, candidate_title, shared_start_date, status, reviewer) "
+            "VALUES (CAST(:event_review_id AS uuid), CAST(:staged_record_id AS uuid), "
+            "CAST(:candidate_event_id AS uuid), :similarity_score, :staged_title, :candidate_title, "
+            "CAST(:shared_start_date AS date), 'pending', NULL) "
+            "ON CONFLICT (staged_record_id, candidate_event_id) DO UPDATE SET "
+            "similarity_score = EXCLUDED.similarity_score, staged_title = EXCLUDED.staged_title, "
+            "candidate_title = EXCLUDED.candidate_title, shared_start_date = EXCLUDED.shared_start_date, "
+            "updated_at = now()"
+        ),
+        {
+            "event_review_id": event_review_id,
+            "staged_record_id": staged.staged_record_id,
+            "candidate_event_id": route.target_entity_id,
+            "similarity_score": route.score,
+            "staged_title": staged_title,
+            "candidate_title": candidate_title,
+            "shared_start_date": shared_start_date,
+        },
+    )
+    return event_review_id
 
 
 def _is_empty(value: object) -> bool:

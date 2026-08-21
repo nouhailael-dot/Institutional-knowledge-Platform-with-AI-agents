@@ -179,6 +179,59 @@ def test_dry_run_and_live_routing_decisions_are_identical():
     assert dry_decision.score == 1.0
 
 
+def test_same_date_near_miss_event_title_routes_to_review():
+    candidate_id = str(uuid.uuid4())
+    record = normalize_event_record({"title": "AI & Climate Summit 2026", "start_date": "2026-09-22"})
+    candidates = [{"event_id": candidate_id, "name": "AI and Climate Summit 2026", "next_date": "2026-09-22"}]
+
+    decision = route_event(record, candidates, thresholds=Thresholds(high=0.75, low=0.25))
+
+    assert decision.zone == "review"
+    assert decision.target_entity_id == candidate_id
+    assert decision.metadata["staged_title"] == "AI & Climate Summit 2026"
+    assert decision.metadata["candidate_title"] == "AI and Climate Summit 2026"
+    assert decision.metadata["shared_start_date"] == "2026-09-22"
+
+
+def test_same_event_title_with_different_start_date_does_not_fuzzy_match():
+    record = normalize_event_record({"title": "AI & Climate Summit 2026", "start_date": "2026-09-22"})
+    candidates = [
+        {
+            "event_id": str(uuid.uuid4()),
+            "name": "AI & Climate Summit 2026",
+            "next_date": "2027-09-22",
+        }
+    ]
+
+    decision = route_event(record, candidates, thresholds=Thresholds(high=0.75, low=0.25))
+
+    assert decision.zone == "create"
+    assert decision.score == 0.0
+    assert decision.target_entity_id is None
+
+
+def test_event_fuzzy_review_threshold_is_read_from_config(tmp_path):
+    config_dir = tmp_path / "agents" / "config"
+    config_dir.mkdir(parents=True)
+    record = normalize_event_record({"title": "AI & Climate Summit 2026", "start_date": "2026-09-22"})
+    candidates = [{"event_id": str(uuid.uuid4()), "name": "AI and Climate Summit 2026", "next_date": "2026-09-22"}]
+
+    (config_dir / "sources.yaml").write_text(
+        json.dumps({"routing": {"event_fuzzy_review_threshold": 0.99}}),
+        encoding="utf-8",
+    )
+    strict = route_event(record, candidates, thresholds=Thresholds(high=0.75, low=0.25), project_root=tmp_path)
+
+    (config_dir / "sources.yaml").write_text(
+        json.dumps({"routing": {"event_fuzzy_review_threshold": 0.80}}),
+        encoding="utf-8",
+    )
+    permissive = route_event(record, candidates, thresholds=Thresholds(high=0.75, low=0.25), project_root=tmp_path)
+
+    assert strict.zone == "create"
+    assert permissive.zone == "review"
+
+
 def test_staging_same_run_twice_is_idempotent():
     store = InMemoryStageStore()
     run_id = str(uuid.uuid4())
@@ -321,6 +374,33 @@ def test_promote_index_dirty_failure_rolls_back_canonical_create():
     assert event_index < dirty_index
     assert session.transactions[-1].rolled_back
     assert not session.transactions[-1].committed
+
+
+def test_event_review_route_writes_event_review_queue_row():
+    candidate_id = str(uuid.uuid4())
+    staged = _staged_event(
+        {
+            "name": "AI & Climate Summit 2026",
+            "title": "AI & Climate Summit 2026",
+            "start_date": "2026-09-22",
+            "next_date": "2026-09-22",
+        }
+    )
+    decision = route_event(
+        staged.normalized_payload,
+        [{"event_id": candidate_id, "name": "AI and Climate Summit 2026", "next_date": "2026-09-22"}],
+        thresholds=Thresholds(high=0.75, low=0.25),
+    )
+    session = FakeSession()
+
+    result = promote(staged, decision, session=session, live=True)
+
+    assert decision.zone == "review"
+    assert result.action == "queued_for_review"
+    assert result.entity_id == candidate_id
+    assert any("INSERT INTO event_review_queue" in sql for sql in session.statements)
+    assert session.transactions[-1].committed
+    assert not session.transactions[-1].rolled_back
 
 
 def test_promote_dry_run_and_live_emit_same_sql_with_engine_listener():
