@@ -1,0 +1,290 @@
+2026-07-19 18:52:42,833  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-19 18:52:48,804  INFO     src.enrichment.actor_enrichment_candidates  Processing 688 sparse hub-linked actors
+2026-07-19 18:52:48,824  INFO     src.enrichment.actor_enrichment_candidates  [1/688] Advanced Polymer Companies
+2026-07-19 18:52:49,684  INFO     src.enrichment.actor_enrichment_candidates  [2/688] Agricultural Field Stations
+2026-07-19 18:52:50,669  INFO     src.enrichment.actor_enrichment_candidates  [3/688] Agricultural Field Testing Programs
+2026-07-19 18:52:51,764  INFO     src.enrichment.actor_enrichment_candidates  [4/688] Agricultural Sustainability Institute
+2026-07-19 18:52:52,610  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Agricultural+Sustainability+Institute "HTTP/1.1 200 OK"
+2026-07-19 18:52:53,518  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-19 18:52:57,873  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:52:57,948  INFO     src.enrichment.actor_enrichment_candidates  [5/688] Agricultural Water Management Programs
+2026-07-19 18:52:58,995  INFO     src.enrichment.actor_enrichment_candidates  [6/688] AI House (Seattle AI Hub space)
+2026-07-19 18:52:59,820  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+House+%28Seattle+AI+Hub+space%29 "HTTP/1.1 200 OK"
+2026-07-19 18:53:00,669  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Seattle+AI+Hub+space "HTTP/1.1 200 OK"
+2026-07-19 18:53:01,474  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+House "HTTP/1.1 200 OK"
+2026-07-19 18:53:06,474  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:06,494  INFO     src.enrichment.actor_enrichment_candidates  [7/688] AI-focused accelerators (e.g., Berkeley SkyDeck)
+2026-07-19 18:53:07,315  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-focused+accelerators+%28e.g.%2C+Berkeley+SkyDeck%29 "HTTP/1.1 200 OK"
+2026-07-19 18:53:08,649  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=e.g.%2C+Berkeley+SkyDeck "HTTP/1.1 200 OK"
+2026-07-19 18:53:09,573  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-focused+accelerators "HTTP/1.1 200 OK"
+2026-07-19 18:53:13,027  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:13,031  INFO     src.enrichment.actor_enrichment_candidates  [8/688] AI-Health Startups (Boston Region)
+2026-07-19 18:53:14,153  INFO     src.enrichment.actor_enrichment_candidates  [9/688] AI-in-health research labs
+2026-07-19 18:53:14,688  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-health+research+labs "HTTP/1.1 200 OK"
+2026-07-19 18:53:15,609  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-health+research "HTTP/1.1 200 OK"
+2026-07-19 18:53:19,374  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:19,397  INFO     src.enrichment.actor_enrichment_candidates  [10/688] AI-in-medicine research labs
+2026-07-19 18:53:19,814  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-medicine+research+labs "HTTP/1.1 200 OK"
+2026-07-19 18:53:20,713  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-medicine+research "HTTP/1.1 200 OK"
+2026-07-19 18:53:24,497  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:24,500  INFO     src.enrichment.actor_enrichment_candidates  [11/688] Air Products (hydrogen systems)
+2026-07-19 18:53:24,897  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Air+Products+%28hydrogen+systems%29 "HTTP/1.1 200 OK"
+2026-07-19 18:53:25,846  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=hydrogen+systems "HTTP/1.1 200 OK"
+2026-07-19 18:53:26,763  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Air+Products "HTTP/1.1 200 OK"
+2026-07-19 18:53:30,845  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:30,848  INFO     src.enrichment.actor_enrichment_candidates  [12/688] Albemarle
+2026-07-19 18:53:31,213  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Albemarle "HTTP/1.1 200 OK"
+2026-07-19 18:53:37,612  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:37,633  INFO     src.enrichment.actor_enrichment_candidates  [13/688] Amazon (AI & AWS)
+2026-07-19 18:53:38,382  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Amazon+%28AI+%26+AWS%29 "HTTP/1.1 200 OK"
+2026-07-19 18:53:39,362  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+%26+AWS "HTTP/1.1 200 OK"
+2026-07-19 18:53:40,094  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Amazon "HTTP/1.1 200 OK"
+2026-07-19 18:53:51,017  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:51,041  INFO     src.enrichment.actor_enrichment_candidates  [14/688] Ammonia Production Plants
+2026-07-19 18:53:52,106  INFO     src.enrichment.actor_enrichment_candidates  [15/688] Andreessen Horowitz (a16z)
+2026-07-19 18:53:52,825  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Andreessen+Horowitz+%28a16z%29 "HTTP/1.1 200 OK"
+2026-07-19 18:53:53,598  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=a16z "HTTP/1.1 200 OK"
+2026-07-19 18:53:54,327  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Andreessen+Horowitz "HTTP/1.1 200 OK"
+2026-07-19 18:53:57,061  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:53:57,082  INFO     src.enrichment.actor_enrichment_candidates  [16/688] Apple AI
+2026-07-19 18:53:57,883  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Apple+AI "HTTP/1.1 200 OK"
+2026-07-19 18:54:02,163  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:54:02,170  INFO     src.enrichment.actor_enrichment_candidates  [17/688] ArcelorMittal USA
+2026-07-19 18:54:02,617  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ArcelorMittal+USA "HTTP/1.1 200 OK"
+2026-07-19 18:54:08,529  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:54:08,546  INFO     src.enrichment.actor_enrichment_candidates  [18/688] Argonne National Laboratory Catalysis Programs
+2026-07-19 18:54:09,558  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Argonne+National+Laboratory+Catalysis+Programs "HTTP/1.1 200 OK"
+2026-07-19 18:54:10,349  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Argonne+National+Catalysis+Programs "HTTP/1.1 200 OK"
+2026-07-19 18:54:15,087  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:54:15,090  INFO     src.enrichment.actor_enrichment_candidates  [19/688] Arizona Department of Water Resources
+2026-07-19 18:54:15,574  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Arizona+Department+of+Water+Resources "HTTP/1.1 200 OK"
+2026-07-19 18:54:28,716  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:54:28,721  INFO     src.enrichment.actor_enrichment_candidates  [20/688] Arkema
+2026-07-19 18:54:29,384  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Arkema "HTTP/1.1 200 OK"
+2026-07-19 18:54:36,076  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:54:36,098  INFO     src.enrichment.actor_enrichment_candidates  Progress 20/688, Claude cost $0.1649
+2026-07-19 18:54:36,101  INFO     src.enrichment.actor_enrichment_candidates  [21/688] ASARCO
+2026-07-19 18:54:36,833  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ASARCO "HTTP/1.1 200 OK"
+2026-07-19 18:54:37,385  INFO     src.enrichment.actor_enrichment_candidates  [22/688] ASU Global Institute of Sustainability
+2026-07-19 18:54:38,331  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ASU+Global+Institute+of+Sustainability "HTTP/1.1 200 OK"
+2026-07-19 18:54:48,263  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:54:48,285  INFO     src.enrichment.actor_enrichment_candidates  [23/688] ASU Kyl Center for Water Policy
+2026-07-19 18:54:49,290  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ASU+Kyl+Center+for+Water+Policy "HTTP/1.1 200 OK"
+2026-07-19 18:54:57,896  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:54:57,921  INFO     src.enrichment.actor_enrichment_candidates  [24/688] Automotive Manufacturers
+2026-07-19 18:54:58,907  INFO     src.enrichment.actor_enrichment_candidates  [25/688] Auton Lab
+2026-07-19 18:54:59,789  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Auton+Lab "HTTP/1.1 200 OK"
+2026-07-19 18:55:00,510  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Auton "HTTP/1.1 200 OK"
+2026-07-19 18:55:03,312  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:55:03,702  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 25 actors
+2026-07-19 18:55:04,450  INFO     src.enrichment.actor_enrichment_candidates  [26/688] BASF (Gulf Coast)
+2026-07-19 18:55:04,936  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF+%28Gulf+Coast%29 "HTTP/1.1 200 OK"
+2026-07-19 18:55:05,980  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Gulf+Coast "HTTP/1.1 200 OK"
+2026-07-19 18:55:06,793  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF "HTTP/1.1 200 OK"
+2026-07-19 18:55:17,238  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:55:17,442  INFO     src.enrichment.actor_enrichment_candidates  [27/688] BASF (Regional Operations)
+2026-07-19 18:55:18,568  INFO     src.enrichment.actor_enrichment_candidates  [28/688] BASF Agricultural Solutions
+2026-07-19 18:55:19,404  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF+Agricultural+Solutions "HTTP/1.1 200 OK"
+2026-07-19 18:55:23,690  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:55:23,895  INFO     src.enrichment.actor_enrichment_candidates  [29/688] BASF Freeport
+2026-07-19 18:55:24,418  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF+Freeport "HTTP/1.1 200 OK"
+2026-07-19 18:55:38,439  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:55:38,649  INFO     src.enrichment.actor_enrichment_candidates  [30/688] BASF Midwest Research Operations
+2026-07-19 18:55:39,971  INFO     src.enrichment.actor_enrichment_candidates  [31/688] Battery Innovation Programs
+2026-07-19 18:55:41,302  INFO     src.enrichment.actor_enrichment_candidates  [32/688] Battery Storage Companies
+2026-07-19 18:55:42,531  INFO     src.enrichment.actor_enrichment_candidates  [33/688] Bayer Crop Science
+2026-07-19 18:55:43,355  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science "HTTP/1.1 200 OK"
+2026-07-19 18:55:53,182  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:55:53,388  INFO     src.enrichment.actor_enrichment_candidates  [34/688] Bayer Crop Science (Midwest Presence)
+2026-07-19 18:55:54,107  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+%28Midwest+Presence%29 "HTTP/1.1 200 OK"
+2026-07-19 18:55:55,017  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Midwest+Presence "HTTP/1.1 200 OK"
+2026-07-19 18:55:55,946  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science "HTTP/1.1 200 OK"
+2026-07-19 18:56:02,296  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:02,600  INFO     src.enrichment.actor_enrichment_candidates  [35/688] Bayer Crop Science (regional presence)
+2026-07-19 18:56:03,636  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+%28regional+presence%29 "HTTP/1.1 200 OK"
+2026-07-19 18:56:04,471  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=regional+presence "HTTP/1.1 200 OK"
+2026-07-19 18:56:05,355  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science "HTTP/1.1 200 OK"
+2026-07-19 18:56:09,772  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:09,977  INFO     src.enrichment.actor_enrichment_candidates  [36/688] Bayer Crop Science R&D Facilities
+2026-07-19 18:56:10,602  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+R%26D+Facilities "HTTP/1.1 200 OK"
+2026-07-19 18:56:11,478  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+Facilities "HTTP/1.1 200 OK"
+2026-07-19 18:56:18,678  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:18,987  INFO     src.enrichment.actor_enrichment_candidates  [37/688] Baylor College of Medicine Research Centers
+2026-07-19 18:56:20,113  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Baylor+College+of+Medicine+Research+Centers "HTTP/1.1 200 OK"
+2026-07-19 18:56:26,055  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:26,257  INFO     src.enrichment.actor_enrichment_candidates  [38/688] Baylor Translational Research Programs
+2026-07-19 18:56:27,482  INFO     src.enrichment.actor_enrichment_candidates  [39/688] Berkeley AI Research (BAIR)
+2026-07-19 18:56:28,300  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+AI+Research+%28BAIR%29 "HTTP/1.1 200 OK"
+2026-07-19 18:56:29,079  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BAIR "HTTP/1.1 200 OK"
+2026-07-19 18:56:29,929  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+AI+Research "HTTP/1.1 200 OK"
+2026-07-19 18:56:36,394  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:36,602  INFO     src.enrichment.actor_enrichment_candidates  [40/688] Berkeley Center for Green Chemistry
+2026-07-19 18:56:37,421  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Center+for+Green+Chemistry "HTTP/1.1 200 OK"
+2026-07-19 18:56:41,119  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:41,142  INFO     src.enrichment.actor_enrichment_candidates  Progress 40/688, Claude cost $0.3470
+2026-07-19 18:56:41,410  INFO     src.enrichment.actor_enrichment_candidates  [41/688] Berkeley Climate Initiative
+2026-07-19 18:56:41,899  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Climate+Initiative "HTTP/1.1 200 OK"
+2026-07-19 18:56:45,713  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:45,917  INFO     src.enrichment.actor_enrichment_candidates  [42/688] Berkeley Energy & Climate Institute
+2026-07-19 18:56:46,560  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Energy+%26+Climate+Institute "HTTP/1.1 200 OK"
+2026-07-19 18:56:49,706  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:49,925  INFO     src.enrichment.actor_enrichment_candidates  [43/688] Berkeley Energy Institute
+2026-07-19 18:56:50,335  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Energy+Institute "HTTP/1.1 200 OK"
+2026-07-19 18:56:54,931  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:56:55,337  INFO     src.enrichment.actor_enrichment_candidates  [44/688] Berkeley SkyDeck
+2026-07-19 18:56:56,162  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+SkyDeck "HTTP/1.1 200 OK"
+2026-07-19 18:56:59,915  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:57:00,267  INFO     src.enrichment.actor_enrichment_candidates  [45/688] Bingham Canyon Mine
+2026-07-19 18:57:00,676  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bingham+Canyon+Mine "HTTP/1.1 200 OK"
+2026-07-19 18:57:05,274  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:57:05,475  INFO     src.enrichment.actor_enrichment_candidates  [46/688] BioSTL
+2026-07-19 18:57:05,886  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BioSTL "HTTP/1.1 200 OK"
+2026-07-19 18:57:06,720  INFO     src.enrichment.actor_enrichment_candidates  [47/688] BioSTL Innovation Programs
+2026-07-19 18:57:07,933  INFO     src.enrichment.actor_enrichment_candidates  [48/688] Biotech Venture Funds
+2026-07-19 18:57:09,139  INFO     src.enrichment.actor_enrichment_candidates  [49/688] Blue Diamond Growers
+2026-07-19 18:57:09,688  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Blue+Diamond+Growers "HTTP/1.1 200 OK"
+2026-07-19 18:57:14,077  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:57:15,986  INFO     src.enrichment.actor_enrichment_candidates  [50/688] Boston Children’s Research Labs
+2026-07-19 18:57:18,895  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Boston+Children%E2%80%99s+Research+Labs "HTTP/1.1 200 OK"
+2026-07-19 18:57:19,826  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Boston+Children%E2%80%99s+Research "HTTP/1.1 200 OK"
+2026-07-19 18:57:28,318  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:57:28,718  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 50 actors
+2026-07-19 18:57:29,334  INFO     src.enrichment.actor_enrichment_candidates  [51/688] Brackish Groundwater Desalination Plants
+2026-07-19 18:57:30,360  INFO     src.enrichment.actor_enrichment_candidates  [52/688] Break Through Tech AI Program (Cornell Tech talent pipeline / inclusion program)
+2026-07-19 18:57:31,032  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program+%28Cornell+Tech+talent+pipeline+%2F+inclusion+program%29 "HTTP/1.1 500 Internal Server Error"
+2026-07-19 18:57:31,043  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Break Through Tech AI Program (Cornell Tech talent pipeline / inclusion program) via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program+%28Cornell+Tech+talent+pipeline+%2F+inclusion+program%29'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-19 18:57:31,995  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Tech+talent+pipeline+%2F+inclusion+program "HTTP/1.1 500 Internal Server Error"
+2026-07-19 18:57:32,008  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Cornell Tech talent pipeline / inclusion program via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=Cornell+Tech+talent+pipeline+%2F+inclusion+program'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-19 18:57:33,373  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program "HTTP/1.1 200 OK"
+2026-07-19 18:57:38,115  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:57:38,867  INFO     src.enrichment.actor_enrichment_candidates  [53/688] Breakthrough Energy Ventures
+2026-07-19 18:57:39,842  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Breakthrough+Energy+Ventures "HTTP/1.1 200 OK"
+2026-07-19 18:57:43,054  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:57:43,254  INFO     src.enrichment.actor_enrichment_candidates  [54/688] Broad Institute AI programs
+2026-07-19 18:57:44,487  INFO     src.enrichment.actor_enrichment_candidates  [55/688] CAISO (grid operator)
+2026-07-19 18:57:44,977  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CAISO+%28grid+operator%29 "HTTP/1.1 200 OK"
+2026-07-19 18:57:46,028  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=grid+operator "HTTP/1.1 200 OK"
+2026-07-19 18:57:47,327  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CAISO "HTTP/1.1 200 OK"
+2026-07-19 18:57:51,567  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:57:51,894  INFO     src.enrichment.actor_enrichment_candidates  [56/688] California Department of Toxic Substances Control Green Chemistry Initiative
+2026-07-19 18:57:52,507  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Department+of+Toxic+Substances+Control+Green+Chemistry+Initiative "HTTP/1.1 200 OK"
+2026-07-19 18:58:06,651  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:06,916  INFO     src.enrichment.actor_enrichment_candidates  [57/688] California Green Chemistry Initiative Programs
+2026-07-19 18:58:07,692  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Green+Chemistry+Initiative+Programs "HTTP/1.1 200 OK"
+2026-07-19 18:58:16,625  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:17,463  INFO     src.enrichment.actor_enrichment_candidates  [58/688] California Independent System Operator (CAISO)
+2026-07-19 18:58:19,183  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Independent+System+Operator+%28CAISO%29 "HTTP/1.1 200 OK"
+2026-07-19 18:58:19,919  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CAISO "HTTP/1.1 200 OK"
+2026-07-19 18:58:20,845  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Independent+System+Operator "HTTP/1.1 200 OK"
+2026-07-19 18:58:25,042  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:25,244  INFO     src.enrichment.actor_enrichment_candidates  [59/688] California Specialty Crop Commodity Boards
+2026-07-19 18:58:25,651  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Specialty+Crop+Commodity+Boards "HTTP/1.1 200 OK"
+2026-07-19 18:58:29,240  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:29,447  INFO     src.enrichment.actor_enrichment_candidates  [60/688] California State Water Project
+2026-07-19 18:58:29,964  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+State+Water+Project "HTTP/1.1 200 OK"
+2026-07-19 18:58:34,196  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:34,228  INFO     src.enrichment.actor_enrichment_candidates  Progress 60/688, Claude cost $0.5008
+2026-07-19 18:58:34,462  INFO     src.enrichment.actor_enrichment_candidates  [61/688] California State Water Resources Control Board
+2026-07-19 18:58:34,879  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+State+Water+Resources+Control+Board "HTTP/1.1 200 OK"
+2026-07-19 18:58:41,019  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:41,423  INFO     src.enrichment.actor_enrichment_candidates  [62/688] Caltech AI & Computational Science
+2026-07-19 18:58:43,067  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Caltech+AI+%26+Computational+Science "HTTP/1.1 200 OK"
+2026-07-19 18:58:46,852  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:47,060  INFO     src.enrichment.actor_enrichment_candidates  [63/688] Carbon Capture Companies
+2026-07-19 18:58:48,468  INFO     src.enrichment.actor_enrichment_candidates  [64/688] Carbon capture material research labs
+2026-07-19 18:58:49,719  INFO     src.enrichment.actor_enrichment_candidates  [65/688] Carbon capture pilot projects
+2026-07-19 18:58:51,049  INFO     src.enrichment.actor_enrichment_candidates  [66/688] Carbon Capture Projects
+2026-07-19 18:58:52,381  INFO     src.enrichment.actor_enrichment_candidates  [67/688] Carbon Capture Research Programs
+2026-07-19 18:58:53,611  INFO     src.enrichment.actor_enrichment_candidates  [68/688] Carbon Market Platforms
+2026-07-19 18:58:54,434  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Carbon+Market+Platforms "HTTP/1.1 200 OK"
+2026-07-19 18:58:57,708  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:58:57,915  INFO     src.enrichment.actor_enrichment_candidates  [69/688] Carbon Mineralization Companies
+2026-07-19 18:58:59,148  INFO     src.enrichment.actor_enrichment_candidates  [70/688] Carbon Mineralization Research Initiatives
+2026-07-19 18:58:59,538  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Carbon+Mineralization+Research+Initiatives "HTTP/1.1 200 OK"
+2026-07-19 18:59:02,418  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:02,725  INFO     src.enrichment.actor_enrichment_candidates  [71/688] Carbon Sequestration Startups
+2026-07-19 18:59:03,951  INFO     src.enrichment.actor_enrichment_candidates  [72/688] Cardiovascular research institutes
+2026-07-19 18:59:04,475  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cardiovascular+research+institutes "HTTP/1.1 200 OK"
+2026-07-19 18:59:10,405  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:10,611  INFO     src.enrichment.actor_enrichment_candidates  [73/688] Cardiovascular Research Institutes Digital Health & Innovation
+2026-07-19 18:59:11,434  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cardiovascular+Research+Institutes+Digital+Health+%26+Innovation "HTTP/1.1 200 OK"
+2026-07-19 18:59:15,867  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:16,101  INFO     src.enrichment.actor_enrichment_candidates  [74/688] Carnegie Mellon University (CMU)
+2026-07-19 18:59:16,858  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Carnegie+Mellon+University+%28CMU%29 "HTTP/1.1 200 OK"
+2026-07-19 18:59:17,999  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CMU "HTTP/1.1 200 OK"
+2026-07-19 18:59:18,850  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Carnegie+Mellon+University "HTTP/1.1 200 OK"
+2026-07-19 18:59:22,491  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:23,511  INFO     src.enrichment.actor_enrichment_candidates  [75/688] Carnegie Mellon University Energy Programs
+2026-07-19 18:59:24,002  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Carnegie+Mellon+University+Energy+Programs "HTTP/1.1 200 OK"
+2026-07-19 18:59:30,501  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:30,888  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 75 actors
+2026-07-19 18:59:31,499  INFO     src.enrichment.actor_enrichment_candidates  [76/688] Catalysis Center for Energy Innovation (CCEI)
+2026-07-19 18:59:32,423  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Catalysis+Center+for+Energy+Innovation+%28CCEI%29 "HTTP/1.1 200 OK"
+2026-07-19 18:59:33,343  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CCEI "HTTP/1.1 200 OK"
+2026-07-19 18:59:34,261  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Catalysis+Center+for+Energy+Innovation "HTTP/1.1 200 OK"
+2026-07-19 18:59:39,587  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:39,793  INFO     src.enrichment.actor_enrichment_candidates  [77/688] Catalysis Research Centers
+2026-07-19 18:59:41,022  INFO     src.enrichment.actor_enrichment_candidates  [78/688] Catalysis Research Labs
+2026-07-19 18:59:42,455  INFO     src.enrichment.actor_enrichment_candidates  [79/688] Cement Manufacturers
+2026-07-19 18:59:43,682  INFO     src.enrichment.actor_enrichment_candidates  [80/688] Center for Catalytic Science & Technology (CCST)
+2026-07-19 18:59:44,717  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Center+for+Catalytic+Science+%26+Technology+%28CCST%29 "HTTP/1.1 200 OK"
+2026-07-19 18:59:45,529  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CCST "HTTP/1.1 200 OK"
+2026-07-19 18:59:46,408  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Center+for+Catalytic+Science+%26+Technology "HTTP/1.1 200 OK"
+2026-07-19 18:59:49,728  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:49,753  INFO     src.enrichment.actor_enrichment_candidates  Progress 80/688, Claude cost $0.5902
+2026-07-19 18:59:49,939  INFO     src.enrichment.actor_enrichment_candidates  [81/688] Central Arizona Project
+2026-07-19 18:59:50,427  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Central+Arizona+Project "HTTP/1.1 200 OK"
+2026-07-19 18:59:53,821  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:54,031  INFO     src.enrichment.actor_enrichment_candidates  [82/688] Central Arizona Project governance bodies
+2026-07-19 18:59:54,623  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Central+Arizona+Project+governance+bodies "HTTP/1.1 200 OK"
+2026-07-19 18:59:57,715  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:59:57,937  INFO     src.enrichment.actor_enrichment_candidates  [83/688] CF Industries
+2026-07-19 18:59:58,319  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CF+Industries "HTTP/1.1 200 OK"
+2026-07-19 19:00:03,142  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:04,149  INFO     src.enrichment.actor_enrichment_candidates  [84/688] Chemical Pilot Facilities
+2026-07-19 19:00:05,394  INFO     src.enrichment.actor_enrichment_candidates  [85/688] Chemours
+2026-07-19 19:00:06,284  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chemours "HTTP/1.1 200 OK"
+2026-07-19 19:00:10,210  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:11,332  INFO     src.enrichment.actor_enrichment_candidates  [86/688] Chemours Research Facilities
+2026-07-19 19:00:12,561  INFO     src.enrichment.actor_enrichment_candidates  [87/688] Chevron Phillips Chemical
+2026-07-19 19:00:13,387  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chevron+Phillips+Chemical "HTTP/1.1 200 OK"
+2026-07-19 19:00:16,627  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:17,892  INFO     src.enrichment.actor_enrichment_candidates  [88/688] Chevron Phillips Chemical – Cedar Bayou Plant
+2026-07-19 19:00:18,309  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chevron+Phillips+Chemical+%E2%80%93+Cedar+Bayou+Plant "HTTP/1.1 200 OK"
+2026-07-19 19:00:27,001  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:27,206  INFO     src.enrichment.actor_enrichment_candidates  [89/688] Chicago Biomedical Engineering Programs
+2026-07-19 19:00:28,637  INFO     src.enrichment.actor_enrichment_candidates  [90/688] Chicago Board of Trade (CBOT)
+2026-07-19 19:00:29,466  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chicago+Board+of+Trade+%28CBOT%29 "HTTP/1.1 200 OK"
+2026-07-19 19:00:30,275  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CBOT "HTTP/1.1 200 OK"
+2026-07-19 19:00:31,305  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chicago+Board+of+Trade "HTTP/1.1 200 OK"
+2026-07-19 19:00:36,494  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:36,685  INFO     src.enrichment.actor_enrichment_candidates  [91/688] CIRES
+2026-07-19 19:00:37,408  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CIRES "HTTP/1.1 200 OK"
+2026-07-19 19:00:41,340  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:42,360  INFO     src.enrichment.actor_enrichment_candidates  [92/688] City of Seattle Office of Economic Development AI initiatives
+2026-07-19 19:00:43,290  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=City+of+Seattle+Office+of+Economic+Development+AI+initiatives "HTTP/1.1 200 OK"
+2026-07-19 19:00:47,657  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:47,889  INFO     src.enrichment.actor_enrichment_candidates  [93/688] Clayton Valley Lithium Operations
+2026-07-19 19:00:49,120  INFO     src.enrichment.actor_enrichment_candidates  [94/688] Cleveland Clinic
+2026-07-19 19:00:49,901  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cleveland+Clinic "HTTP/1.1 200 OK"
+2026-07-19 19:00:53,418  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:00:54,648  INFO     src.enrichment.actor_enrichment_candidates  [95/688] Cleveland Clinic Innovation
+2026-07-19 19:00:55,256  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cleveland+Clinic+Innovation "HTTP/1.1 200 OK"
+2026-07-19 19:01:04,382  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:01:04,587  INFO     src.enrichment.actor_enrichment_candidates  [96/688] Cleveland-Cliffs
+2026-07-19 19:01:05,462  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cleveland-Cliffs "HTTP/1.1 200 OK"
+2026-07-19 19:01:09,903  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:01:10,927  INFO     src.enrichment.actor_enrichment_candidates  [97/688] Climate Adaptation Research Initiatives
+2026-07-19 19:01:11,662  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Climate+Adaptation+Research+Initiatives "HTTP/1.1 200 OK"
+2026-07-19 19:01:14,821  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:01:15,023  INFO     src.enrichment.actor_enrichment_candidates  [98/688] Climate Data and Modeling Platforms
+2026-07-19 19:01:15,453  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Climate+Data+and+Modeling+Platforms "HTTP/1.1 200 OK"
+2026-07-19 19:01:19,421  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:01:19,614  INFO     src.enrichment.actor_enrichment_candidates  [99/688] Climate Data Centers
+2026-07-19 19:01:20,870  INFO     src.enrichment.actor_enrichment_candidates  [100/688] Climate Fintech Startups
+2026-07-19 19:01:22,264  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 100 actors
+2026-07-19 19:01:22,266  INFO     src.enrichment.actor_enrichment_candidates  Progress 100/688, Claude cost $0.7261
+2026-07-19 19:01:22,918  INFO     src.enrichment.actor_enrichment_candidates  [101/688] Climate Modeling Startups
+2026-07-19 19:01:23,942  INFO     src.enrichment.actor_enrichment_candidates  [102/688] Climate Risk Analytics Firms

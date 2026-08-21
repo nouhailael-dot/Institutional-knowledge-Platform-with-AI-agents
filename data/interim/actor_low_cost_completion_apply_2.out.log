@@ -1,0 +1,28 @@
+
+============================================================
+Actor enrichment candidate pipeline complete.
+============================================================
+  Actors processed:       638
+  Source candidates found:1891
+  Decisions made:         627
+  No candidates:          7
+  No verified match:      0
+  Human review flagged:   0
+  Would apply:            35
+  Applied:                35
+  Low-confidence skipped: 0
+  API failures:           16
+  AI failures:            0
+  Claude skipped:         254
+  Claude budget skipped:  0
+  Weak-candidate skipped: 0
+
+Usage:
+  Model:          claude-sonnet-5
+  Calls:          0
+  Failures:       0
+  Input tokens:   0
+  Output tokens:  0
+  Est. cost:      $0.0000
+
+Audit log: data/interim/actor_enrichment_candidates.csv

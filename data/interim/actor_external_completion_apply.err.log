@@ -1,0 +1,85 @@
+2026-07-27 13:49:00,847  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-27 13:49:12,920  INFO     src.enrichment.actor_enrichment_candidates  Processing 692 sparse actors
+2026-07-27 13:49:13,305  INFO     src.enrichment.actor_enrichment_candidates  [1/692] 3M Research Laboratories
+2026-07-27 13:49:14,841  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=3M+Research+Laboratories "HTTP/1.1 200 OK"
+2026-07-27 13:49:16,413  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=3M+Research+Laboratories&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:49:19,972  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-27 13:49:21,914  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=3M "HTTP/1.1 200 OK"
+2026-07-27 13:49:23,118  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=3M&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:49:37,897  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:49:38,766  INFO     src.enrichment.actor_enrichment_candidates  [2/692] Abbott Laboratories
+2026-07-27 13:49:39,375  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Abbott+Laboratories "HTTP/1.1 200 OK"
+2026-07-27 13:49:40,290  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Abbott+Laboratories&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:49:44,794  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Abbott "HTTP/1.1 200 OK"
+2026-07-27 13:49:45,515  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Abbott&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:04,088  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:50:04,094  WARNING  src.ai.client  No JSON object in reply: {
+  "matched": true,
+  "confidence": 0.55,
+  "needs_human_review": true,
+  "description": "SEC registrant record for public company ABBOTT LABORATORIES (ticker ABT).",
+  "website": null,
+  "location_c
+2026-07-27 13:50:04,263  INFO     src.enrichment.actor_enrichment_candidates  [3/692] Academic & Medical Anchors
+2026-07-27 13:50:04,605  INFO     src.enrichment.actor_enrichment_candidates  [4/692] Academic Anchors
+2026-07-27 13:50:04,942  INFO     src.enrichment.actor_enrichment_candidates  [5/692] Advanced Manufacturing AI Firms (Pittsburgh Region)
+2026-07-27 13:50:05,275  INFO     src.enrichment.actor_enrichment_candidates  [6/692] Advanced Manufacturing Labs
+2026-07-27 13:50:05,614  INFO     src.enrichment.actor_enrichment_candidates  [7/692] Advanced Manufacturing Research Centers
+2026-07-27 13:50:05,952  INFO     src.enrichment.actor_enrichment_candidates  [8/692] Advanced Materials Startups
+2026-07-27 13:50:06,282  INFO     src.enrichment.actor_enrichment_candidates  [9/692] Advanced Polymer Companies
+2026-07-27 13:50:06,623  INFO     src.enrichment.actor_enrichment_candidates  [10/692] Ag-Biotech Startups (St. Louis Region)
+2026-07-27 13:50:06,967  INFO     src.enrichment.actor_enrichment_candidates  [11/692] Agricultural Field Stations
+2026-07-27 13:50:07,307  INFO     src.enrichment.actor_enrichment_candidates  [12/692] Agricultural Field Testing Programs
+2026-07-27 13:50:07,640  INFO     src.enrichment.actor_enrichment_candidates  [13/692] Agricultural Sustainability Institute
+2026-07-27 13:50:08,294  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Agricultural+Sustainability+Institute "HTTP/1.1 200 OK"
+2026-07-27 13:50:09,379  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Agricultural+Sustainability+Institute&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:16,305  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:50:16,884  INFO     src.enrichment.actor_enrichment_candidates  [14/692] Agricultural Water Management Programs
+2026-07-27 13:50:17,262  INFO     src.enrichment.actor_enrichment_candidates  [15/692] Agrochemical Formulation Labs
+2026-07-27 13:50:17,678  INFO     src.enrichment.actor_enrichment_candidates  [16/692] Agrochemical R&D Labs
+2026-07-27 13:50:18,020  INFO     src.enrichment.actor_enrichment_candidates  [17/692] Agrochemical Research Labs
+2026-07-27 13:50:19,290  INFO     src.enrichment.actor_enrichment_candidates  [18/692] AI Health Startups
+2026-07-27 13:50:19,635  INFO     src.enrichment.actor_enrichment_candidates  [19/692] AI House (Seattle AI hub space for community, startups, events)
+2026-07-27 13:50:19,977  INFO     src.enrichment.actor_enrichment_candidates  [20/692] AI House (Seattle AI Hub space)
+2026-07-27 13:50:20,654  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+House+%28Seattle+AI+Hub+space%29 "HTTP/1.1 200 OK"
+2026-07-27 13:50:21,977  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI+House+%28Seattle+AI+Hub+space%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:25,802  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Seattle+AI+Hub+space "HTTP/1.1 200 OK"
+2026-07-27 13:50:26,306  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Seattle+AI+Hub+space&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:30,034  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+House "HTTP/1.1 200 OK"
+2026-07-27 13:50:30,544  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI+House&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:37,060  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:50:37,062  INFO     src.enrichment.actor_enrichment_candidates  Progress 20/692, Claude cost $0.0565
+2026-07-27 13:50:37,479  INFO     src.enrichment.actor_enrichment_candidates  [21/692] AI startups cluster (Seattle & Bellevue) across enterprise SaaS, robotics, and mission tech
+2026-07-27 13:50:37,933  INFO     src.enrichment.actor_enrichment_candidates  [22/692] AI-focused accelerators (e.g., Berkeley SkyDeck)
+2026-07-27 13:50:38,648  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-focused+accelerators+%28e.g.%2C+Berkeley+SkyDeck%29 "HTTP/1.1 200 OK"
+2026-07-27 13:50:39,523  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI-focused+accelerators+%28e.g.%2C+Berkeley+SkyDeck%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:43,363  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=e.g.%2C+Berkeley+SkyDeck "HTTP/1.1 200 OK"
+2026-07-27 13:50:44,060  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=e.g.%2C+Berkeley+SkyDeck&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:47,710  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-focused+accelerators "HTTP/1.1 200 OK"
+2026-07-27 13:50:48,166  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI-focused+accelerators&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:50:55,500  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:50:55,670  INFO     src.enrichment.actor_enrichment_candidates  [23/692] AI-Health Startups (Boston Region)
+2026-07-27 13:50:56,005  INFO     src.enrichment.actor_enrichment_candidates  [24/692] AI-in-health research labs
+2026-07-27 13:50:56,918  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-health+research+labs "HTTP/1.1 200 OK"
+2026-07-27 13:50:57,555  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI-in-health+research+labs&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:51:01,354  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-health+research "HTTP/1.1 200 OK"
+2026-07-27 13:51:01,818  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI-in-health+research&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:51:13,763  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:51:13,932  INFO     src.enrichment.actor_enrichment_candidates  [25/692] AI-in-medicine research labs
+2026-07-27 13:51:14,629  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-medicine+research+labs "HTTP/1.1 200 OK"
+2026-07-27 13:51:15,595  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI-in-medicine+research+labs&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:51:19,318  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI-in-medicine+research "HTTP/1.1 200 OK"
+2026-07-27 13:51:20,054  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI-in-medicine+research&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:51:34,662  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:51:35,028  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 25 actors
+2026-07-27 13:51:35,520  INFO     src.enrichment.actor_enrichment_candidates  [26/692] Air Products (hydrogen systems)
+2026-07-27 13:51:36,468  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Air+Products+%28hydrogen+systems%29 "HTTP/1.1 200 OK"
+2026-07-27 13:51:37,393  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Air+Products+%28hydrogen+systems%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:51:41,230  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=hydrogen+systems "HTTP/1.1 200 OK"
+2026-07-27 13:51:41,661  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=hydrogen+systems&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:51:45,874  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Air+Products "HTTP/1.1 200 OK"
+2026-07-27 13:51:46,518  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Air+Products&per-page=5 "HTTP/1.1 200 OK"
+2026-07-27 13:51:55,545  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-27 13:51:55,723  INFO     src.enrichment.actor_enrichment_candidates  [27/692] Albemarle
+2026-07-27 13:51:56,328  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Albemarle "HTTP/1.1 200 OK"
+2026-07-27 13:51:57,205  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Albemarle&per-page=5 "HTTP/1.1 200 OK"

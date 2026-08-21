@@ -1,0 +1,256 @@
+2026-07-21 16:39:14,331  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-21 16:39:24,577  INFO     src.enrichment.actor_enrichment_candidates  Processing 104 sparse actors
+2026-07-21 16:39:24,759  INFO     src.enrichment.actor_enrichment_candidates  [1/104] Berkeley Water Center
+2026-07-21 16:39:25,654  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Water+Center "HTTP/1.1 200 OK"
+2026-07-21 16:39:29,194  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Berkeley+Water+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:39:33,615  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-21 16:39:43,518  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:39:44,609  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 1 actors
+2026-07-21 16:39:45,073  INFO     src.enrichment.actor_enrichment_candidates  [2/104] Brazil Ecosystem Mapping
+2026-07-21 16:39:45,702  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 2 actors
+2026-07-21 16:39:46,187  INFO     src.enrichment.actor_enrichment_candidates  [3/104] Break Through Tech AI Program (Cornell Tech)
+2026-07-21 16:39:47,134  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program+%28Cornell+Tech%29 "HTTP/1.1 200 OK"
+2026-07-21 16:39:47,874  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Break+Through+Tech+AI+Program+%28Cornell+Tech%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:39:52,289  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Tech "HTTP/1.1 200 OK"
+2026-07-21 16:39:53,272  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Cornell+Tech&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:39:58,682  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program "HTTP/1.1 200 OK"
+2026-07-21 16:39:59,592  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Break+Through+Tech+AI+Program&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:40:11,043  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:40:11,225  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 3 actors
+2026-07-21 16:40:11,698  INFO     src.enrichment.actor_enrichment_candidates  [4/104] Center for Watershed Sciences
+2026-07-21 16:40:12,785  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Center+for+Watershed+Sciences "HTTP/1.1 200 OK"
+2026-07-21 16:40:13,482  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Center+for+Watershed+Sciences&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:40:20,026  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:40:21,003  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 4 actors
+2026-07-21 16:40:21,884  INFO     src.enrichment.actor_enrichment_candidates  [5/104] Clean Fraction /Hot Fraction Separations at Scale
+2026-07-21 16:40:22,910  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-21 16:40:22,912  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 3.0s before retry
+2026-07-21 16:40:26,048  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-21 16:40:26,051  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 6.0s before retry
+2026-07-21 16:40:32,966  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-21 16:40:32,990  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Clean Fraction /Hot Fraction Separations at Scale via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-21 16:40:33,754  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:40:38,064  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 5 actors
+2026-07-21 16:40:38,642  INFO     src.enrichment.actor_enrichment_candidates  [6/104] Climate Venture Capital Firms
+2026-07-21 16:40:39,092  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 6 actors
+2026-07-21 16:40:39,740  INFO     src.enrichment.actor_enrichment_candidates  [7/104] Commission for Social Development
+2026-07-21 16:40:40,742  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 7 actors
+2026-07-21 16:40:41,283  INFO     src.enrichment.actor_enrichment_candidates  [8/104] Commission on Population and Development
+2026-07-21 16:40:42,182  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 8 actors
+2026-07-21 16:40:42,672  INFO     src.enrichment.actor_enrichment_candidates  [9/104] Commission on Science and Technology for Development
+2026-07-21 16:40:43,685  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 9 actors
+2026-07-21 16:40:44,254  INFO     src.enrichment.actor_enrichment_candidates  [10/104] Commission on the Status of Women
+2026-07-21 16:40:45,170  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 10 actors
+2026-07-21 16:40:45,843  INFO     src.enrichment.actor_enrichment_candidates  [11/104] Cornell AI Initiative
+2026-07-21 16:40:46,910  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+AI+Initiative "HTTP/1.1 200 OK"
+2026-07-21 16:40:47,843  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Cornell+AI+Initiative&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:40:54,364  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:40:54,528  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 11 actors
+2026-07-21 16:40:55,117  INFO     src.enrichment.actor_enrichment_candidates  [12/104] Corporate Partners
+2026-07-21 16:40:55,820  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 12 actors
+2026-07-21 16:40:57,153  INFO     src.enrichment.actor_enrichment_candidates  [13/104] Dairy Research Center
+2026-07-21 16:40:58,740  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dairy+Research+Center "HTTP/1.1 200 OK"
+2026-07-21 16:41:00,306  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Dairy+Research+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:41:06,049  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dairy "HTTP/1.1 200 OK"
+2026-07-21 16:41:09,035  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Dairy&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:41:17,160  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:41:17,399  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 13 actors
+2026-07-21 16:41:17,949  INFO     src.enrichment.actor_enrichment_candidates  [14/104] Departments and Offices
+2026-07-21 16:41:19,131  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Departments+and+Offices "HTTP/1.1 200 OK"
+2026-07-21 16:41:20,294  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Departments+and+Offices&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:41:29,994  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:41:31,678  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 14 actors
+2026-07-21 16:41:32,152  INFO     src.enrichment.actor_enrichment_candidates  [15/104] Development Coordination Office
+2026-07-21 16:41:33,454  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 15 actors
+2026-07-21 16:41:34,003  INFO     src.enrichment.actor_enrichment_candidates  [16/104] Digital Health Labs
+2026-07-21 16:41:34,565  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 16 actors
+2026-07-21 16:41:35,174  INFO     src.enrichment.actor_enrichment_candidates  [17/104] ECONOMIC AND SOCIAL COUNCIL
+2026-07-21 16:41:36,233  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 17 actors
+2026-07-21 16:41:36,661  INFO     src.enrichment.actor_enrichment_candidates  [18/104] Economic Commission for Africa
+2026-07-21 16:41:37,988  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Economic+Commission+for+Africa "HTTP/1.1 200 OK"
+2026-07-21 16:41:38,777  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Economic+Commission+for+Africa&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:41:48,140  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:41:49,015  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 18 actors
+2026-07-21 16:41:49,901  INFO     src.enrichment.actor_enrichment_candidates  [19/104] Environmental Justice Programs
+2026-07-21 16:41:50,451  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 19 actors
+2026-07-21 16:41:50,895  INFO     src.enrichment.actor_enrichment_candidates  [20/104] Environmental Remediation Programs
+2026-07-21 16:41:51,857  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 20 actors
+2026-07-21 16:41:51,860  INFO     src.enrichment.actor_enrichment_candidates  Progress 20/104, Claude cost $0.0616
+2026-07-21 16:41:52,290  INFO     src.enrichment.actor_enrichment_candidates  [21/104] ExxonMobil Baytown Technology & Engineering Complex
+2026-07-21 16:41:53,909  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ExxonMobil+Baytown+Technology+%26+Engineering+Complex "HTTP/1.1 200 OK"
+2026-07-21 16:41:54,820  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=ExxonMobil+Baytown+Technology+%26+Engineering+Complex&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:42:11,530  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:42:11,734  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while processing actor 2d4580d4-d14a-4631-9bea-e1a309bcebb7; retrying in 10.0s (1/6): (psycopg2.OperationalError) server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+[SQL: SELECT source.source_id, source.source_type, source.url, source.retrieved_at, source.description, source.trust_tier, source.created_at 
+FROM source 
+WHERE source.source_type = %(source_type_1)s AND source.url = %(url_1)s AND source.description = %(description_1)s]
+[parameters: {'source_type_1': 'ai_inference', 'url_1': 'https://corporate.exxonmobil.com', 'description_1': 'AI/API actor enrichment candidate for ExxonMobil Baytown Technology & Engineering Complex (claude-sonnet-5)'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-21 16:42:37,617  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while processing actor 2d4580d4-d14a-4631-9bea-e1a309bcebb7; retrying in 20.0s (2/6): (psycopg2.OperationalError) connection to server at "18.213.155.45", port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-21 16:43:12,848  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while processing actor 2d4580d4-d14a-4631-9bea-e1a309bcebb7; retrying in 30.0s (3/6): (psycopg2.OperationalError) connection to server at "18.213.155.45", port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-21 16:43:57,150  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while processing actor 2d4580d4-d14a-4631-9bea-e1a309bcebb7; retrying in 40.0s (4/6): (psycopg2.OperationalError) connection to server at "18.213.155.45", port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-21 16:44:52,430  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while processing actor 2d4580d4-d14a-4631-9bea-e1a309bcebb7; retrying in 50.0s (5/6): (psycopg2.OperationalError) connection to server at "18.213.155.45", port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-21 16:45:57,666  ERROR    run_actor_enrichment_candidates  Actor enrichment candidate pipeline crashed: (psycopg2.OperationalError) connection to server at "18.213.155.45", port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Traceback (most recent call last):
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 145, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 3297, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 449, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 1264, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 718, in checkout
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\util\langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 716, in checkout
+    dbapi_connection = rec.get_connection()
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 838, in get_connection
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 901, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\util\langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 897, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\create.py", line 646, in connect
+    return dialect.connect(*cargs, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\default.py", line 625, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\psycopg2\__init__.py", line 135, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+psycopg2.OperationalError: connection to server at "18.213.155.45", port 5432 failed: timeout expired
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Ismail\Projects\GHUS-Platform\scripts\run_actor_enrichment_candidates.py", line 77, in main
+    stats = pipeline.run()
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 1622, in run
+    actor = self.session.get(Actor, actor_id)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 3694, in get
+    return self._get_impl(
+           ~~~~~~~~~~~~~~^
+        entity,
+        ^^^^^^^
+    ...<7 lines>...
+        bind_arguments=bind_arguments,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 3873, in _get_impl
+    return db_load_fn(
+        self,
+    ...<5 lines>...
+        bind_arguments=bind_arguments,
+    )
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\loading.py", line 694, in load_on_pk_identity
+    session.execute(
+    ~~~~~~~~~~~~~~~^
+        q,
+        ^^
+    ...<2 lines>...
+        bind_arguments=bind_arguments,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 2365, in execute
+    return self._execute_internal(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        statement,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        _add_event=_add_event,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 2241, in _execute_internal
+    conn = self._connection_for_bind(bind)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 2110, in _connection_for_bind
+    return trans._connection_for_bind(engine, execution_options)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 2, in _connection_for_bind
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\state_changes.py", line 139, in _go
+    ret_value = fn(self, *arg, **kw)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 1189, in _connection_for_bind
+    conn = bind.connect()
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 3273, in connect
+    return self._connection_cls(self)
+           ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 147, in __init__
+    Connection._handle_dbapi_exception_noconnection(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        err, dialect, engine
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 2436, in _handle_dbapi_exception_noconnection
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 145, in __init__
+    self._dbapi_connection = engine.raw_connection()
+                             ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 3297, in raw_connection
+    return self.pool.connect()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 449, in connect
+    return _ConnectionFairy._checkout(self)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 1264, in _checkout
+    fairy = _ConnectionRecord.checkout(pool)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 718, in checkout
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\util\langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 716, in checkout
+    dbapi_connection = rec.get_connection()
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 838, in get_connection
+    self.__connect()
+    ~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 901, in __connect
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\util\langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\pool\base.py", line 897, in __connect
+    self.dbapi_connection = connection = pool._invoke_creator(self)
+                                         ~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\create.py", line 646, in connect
+    return dialect.connect(*cargs, **cparams)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\default.py", line 625, in connect
+    return self.loaded_dbapi.connect(*cargs, **cparams)  # type: ignore[no-any-return]  # NOQA: E501
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\psycopg2\__init__.py", line 135, in connect
+    conn = _connect(dsn, connection_factory=connection_factory, **kwasync)
+sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) connection to server at "18.213.155.45", port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

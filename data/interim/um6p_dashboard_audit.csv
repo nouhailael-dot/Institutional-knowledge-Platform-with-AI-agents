@@ -1,0 +1,100 @@
+sheet,row,verdict,event_name,notes
+Agriculture,5,matched_existing,World Agri-Tech Innovation Summit,host=none; sector=AGRI
+Agriculture,6,matched_existing,CANVAS,host=none; sector=AGRI
+Agriculture,7,matched_existing,World Ag Expo,host=none; sector=AGRI
+Agriculture,8,matched_existing,Farm Progress Show,host=none; sector=AGRI
+Agriculture,9,matched_existing,Sustainable Agriculture Summit,host=none; sector=AGRI
+Agriculture,10,matched_existing,ASABE Annual International Meeting,host=none; sector=AGRI
+Agriculture,11,matched_existing,Salinas Biological Summit,host=none; sector=AGRI
+Agriculture,12,matched_existing,Tech Hub LIVE,host=none; sector=AGRI
+Agriculture,13,matched_existing,AgTech Innovation Summit – University of Illinois,host=none; sector=AGRI
+Agriculture,14,matched_existing,Agronomy Conference & Expo,host=none; sector=AGRI
+Agriculture,15,matched_existing,Eco-Ag Conference & Trade Show,host=none; sector=AGRI
+Agriculture,16,matched_existing,AI in Agriculture Conference – NC State University,host=North Carolina State University; sector=AGRI
+Agriculture,17,matched_existing,Indoor Ag-Con,host=none; sector=AGRI
+Agriculture,18,matched_existing,National No-Tillage Conference,host=none; sector=AGRI
+Agriculture,19,matched_existing,RegenerativeNYC,host=none; sector=AGRI
+Agriculture,20,matched_existing,Agri AI Summit,host=none; sector=AGRI
+Agriculture,21,matched_existing,Commodity Classic,host=none; sector=AGRI
+Agriculture,22,matched_existing,Grow-NY Food and Ag Summit,host=none; sector=AGRI
+Agriculture,23,matched_existing,Plant Health Annual Meeting,host=none; sector=AGRI
+Agriculture,24,matched_existing,Norman E. Borlaug International Dialogue,host=none; sector=AGRI
+Agriculture,25,matched_existing,UC Davis Plant Sciences Symposium,host=none; sector=AGRI
+Water ,5,matched_existing,WEFTEC — Water Environment Federation Technical Exhibition and Conference,host=none; sector=WATER
+Water ,6,matched_existing,AWWA Annual Conference & Expo (ACE),host=none; sector=WATER
+Water ,7,matched_existing,AWWA Water Infrastructure Conference,host=none; sector=WATER
+Water ,8,matched_existing,WateReuse Symposium,host=none; sector=WATER
+Water ,9,matched_existing,AWRA Annual Water Resources Conference,host=none; sector=WATER
+Water ,10,matched_existing,Water Week — National Water Policy Fly-In,host=none; sector=WATER
+Water ,11,matched_existing,Multi-State Salinity Coalition Annual Salinity Summit,host=none; sector=WATER
+Water ,12,matched_existing,Irrigation Show and Education Week,host=none; sector=WATER
+Water ,13,matched_existing,Texas Water,host=none; sector=WATER
+Water ,14,matched_existing,WaterSmart Innovations Conference,host=none; sector=WATER
+AI,5,matched_existing,The AI Conference,host=none; sector=AI
+AI,6,matched_existing,Databricks Data + AI Summit,host=none; sector=AI
+AI,7,matched_existing,AAAI Conference on Artificial Intelligence,host=none; sector=AI
+AI,8,matched_existing,USA Artificial Intelligence Summit,host=none; sector=AI
+AI,9,matched_existing,The AI Summit New York,host=none; sector=AI
+AI,10,matched_existing,Machine Learning for Healthcare Conference (MLHC),host=none; sector=AI
+AI,11,matched_existing,EmTech AI — MIT Technology Review,host=none; sector=AI
+AI,12,matched_existing,AI Con USA,host=none; sector=AI
+AI,13,matched_existing,"AHLI Conference on Health, Inference, and Learning (CHIL)",host=none; sector=AI
+Energy Transition,5,matched_existing,RE+,host=none; sector=ENERGY
+Energy Transition,6,matched_existing,CERAWeek by S&P Global,host=none; sector=ENERGY
+Energy Transition,7,matched_existing,Climate Week NYC,host=none; sector=ENERGY
+Energy Transition,8,matched_existing,MIT Energy Conference,host=none; sector=ENERGY
+Energy Transition,9,matched_existing,UT Energy Week,host=none; sector=ENERGY
+Energy Transition,10,matched_existing,Trellis Impact,host=none; sector=ENERGY
+Energy Transition,11,matched_existing,ARPA-E Energy Innovation Summit,host=none; sector=ENERGY
+Energy Transition,12,matched_existing,CLEANPOWER Conference & Exhibition,host=none; sector=ENERGY
+Energy Transition,13,matched_existing,DTECH,host=none; sector=ENERGY
+Energy Transition,14,matched_existing,BNEF Summit New York,host=none; sector=ENERGY
+Energy Transition,15,matched_existing,Columbia Global Energy Summit,host=none; sector=ENERGY
+Energy Transition,16,matched_existing,International Battery Seminar & Exhibit,host=none; sector=ENERGY
+Energy Transition,17,matched_existing,Energy Storage Summit USA,host=none; sector=ENERGY
+Energy Transition,18,matched_existing,Hydrogen Americas Summit & Exhibition,host=none; sector=ENERGY
+Energy Transition,19,matched_existing,The Battery Show North America,host=none; sector=ENERGY
+Mining ,6,matched_existing,MINExpo INTERNATIONAL,host=none; sector=MINING
+Mining ,7,matched_existing,SME Annual Conference & Expo — MINEXCHANGE,host=none; sector=MINING
+Mining ,8,matched_existing,Critical Minerals Forum Annual Summit,host=none; sector=MINING
+Mining ,9,matched_existing,AEMA Annual Meeting & Exposition,host=none; sector=MINING
+Mining ,10,matched_existing,Critical Minerals North America Conference & Exhibition,host=none; sector=MINING
+Mining ,11,matched_existing,Tailings and Mine Waste Conference,host=Colorado State University; sector=MINING
+Speciality Chemicals,5,matched_existing,Specialty & Agro Chemicals America,host=none; sector=CHEM
+Speciality Chemicals,6,matched_existing,American Chemical Society National Meeting,host=none; sector=CHEM
+Speciality Chemicals,7,matched_existing,The SOCMA Show — Specialty & Custom Chemicals Show,host=none; sector=CHEM
+Speciality Chemicals,8,matched_existing,ACS Green Chemistry & Engineering Conference,host=none; sector=CHEM
+Speciality Chemicals,9,matched_existing,CIEX North America — Chemical Innovation Exchange,host=none; sector=CHEM
+Speciality Chemicals,10,matched_existing,AIChE Annual Meeting,host=none; sector=CHEM
+Healthcare,5,matched_existing,J.P. Morgan Healthcare Conference,host=none; sector=HEALTH
+Healthcare,6,matched_existing,HIMSS Global Health Conference & Exhibition,host=none; sector=HEALTH
+Healthcare,7,matched_existing,HLTH USA,host=none; sector=HEALTH
+Healthcare,8,matched_existing,ViVE,host=none; sector=HEALTH
+Healthcare,9,matched_existing,ATA NEXUS Annual Conference,host=none; sector=HEALTH
+Healthcare,10,matched_existing,ADLM Annual Meeting & Clinical Lab Expo,host=none; sector=HEALTH
+Healthcare,11,matched_existing,BIO International Convention,host=none; sector=HEALTH
+Healthcare,12,matched_existing,MEDevice Boston,host=none; sector=HEALTH
+Healthcare,13,matched_existing,Forbes Healthcare Summit,host=none; sector=HEALTH
+Healthcare,14,matched_existing,NYC Health Innovation Week,host=none; sector=HEALTH
+Healthcare,15,matched_existing,NACHC Community Health Conference,host=none; sector=HEALTH
+Healthcare,16,matched_existing,Bio-IT World Conference & Expo,host=none; sector=HEALTH
+African Diaspora,6,matched_existing,Unstoppable Africa (GABI),host=none; sector=DIASPORA
+African Diaspora,7,matched_existing,Africa Business Conference — Harvard Business School,host=none; sector=DIASPORA
+African Diaspora,8,matched_existing,MIT Sloan Africa Innovate Conference,host=none; sector=DIASPORA
+African Diaspora,9,matched_existing,AFROTECH Conference,host=none; sector=DIASPORA
+African Diaspora,10,matched_existing,African Diaspora Investment Symposium,host=none; sector=DIASPORA
+African Diaspora,11,matched_existing,Africa-America Institute Annual Awards Gala,host=none; sector=DIASPORA
+CROSS-THEMATIC EVENTS,6,matched_existing,Deep Tech Week NYC,host=none; sector=CROSS
+CROSS-THEMATIC EVENTS,7,matched_existing,Science Summit at UNGA,host=none; sector=CROSS
+un_key_events,6,inserted,ECOSOC Partnership Forum,host=none
+un_key_events,7,inserted,Commission for Social Development (CSocD),host=none
+un_key_events,8,inserted,Commission on the Status of Women (CSW),host=UN Women
+un_key_events,9,matched_existing,ECOSOC Youth Forum,host=none
+un_key_events,10,inserted,Financing for Development Forum (FfD Forum),host=none
+un_key_events,11,inserted,"STI Forum — Science, Technology & Innovation for the SDGs",host=none
+un_key_events,12,inserted,ECOSOC Operational Activities for Development Segment,host=none
+un_key_events,13,inserted,High-Level Political Forum (HLPF),host=none
+un_key_events,14,inserted,ECOSOC High-Level Segment,host=none
+un_key_events,15,inserted,UN General Assembly High-Level Week (UNGA HLW),host=none
+un_key_events,16,inserted,"High-Level Meeting on Pandemic Prevention, Preparedness & Response",host=none
+un_key_events,17,inserted,UN General Assembly Second Committee (Economic & Financial Committee),host=none

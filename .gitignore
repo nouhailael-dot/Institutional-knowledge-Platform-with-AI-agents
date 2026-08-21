@@ -45,3 +45,6 @@ models/
 .cache/
 huggingface/
 *.joblib
+# Agent generated artifacts
+agents/runs/
+agents/raw_documents/
