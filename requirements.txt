@@ -30,3 +30,4 @@ python-dotenv>=1.0
 # Dev
 pytest>=8.0
 ruff>=0.6
+ipykernel>=6.29
