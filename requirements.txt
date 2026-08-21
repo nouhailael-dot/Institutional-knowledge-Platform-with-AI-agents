@@ -1,0 +1,32 @@
+# ER model artifact — pinned exactly.
+# er_combiner_v1.joblib was trained under these; unpickling can break across versions.
+scikit-learn==1.9.0
+joblib==1.5.3
+numpy==2.3.5
+scipy==1.16.3
+
+# Database
+SQLAlchemy>=2.0,<2.1
+alembic>=1.18
+psycopg2-binary>=2.9
+
+# LLM and embeddings
+anthropic>=0.100
+voyageai>=0.3
+
+# Data
+pandas>=2.3,<3.0
+sentence-transformers>=5.0
+openpyxl>=3.1
+
+# Scraping
+requests>=2.31
+beautifulsoup4>=4.12
+
+# Config
+PyYAML>=6.0
+python-dotenv>=1.0
+
+# Dev
+pytest>=8.0
+ruff>=0.6
