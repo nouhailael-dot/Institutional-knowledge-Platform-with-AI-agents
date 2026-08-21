@@ -53,16 +53,21 @@ class FakeTransaction:
 
 
 class FakeResult:
+    def __init__(self, row=None):
+        self.row = row
+
     def mappings(self):
         return self
 
     def first(self):
-        return None
+        return self.row
 
 
 class FakeSession:
-    def __init__(self, *, fail_on_source=False):
+    def __init__(self, *, fail_on_source=False, fail_on_index_dirty=False, event_row=None):
         self.fail_on_source = fail_on_source
+        self.fail_on_index_dirty = fail_on_index_dirty
+        self.event_row = event_row
         self.statements = []
         self.transactions = []
 
@@ -76,12 +81,49 @@ class FakeSession:
         self.statements.append(sql)
         if self.fail_on_source and "INSERT INTO source" in sql:
             raise RuntimeError("source insert failed")
+        if self.fail_on_index_dirty and "INSERT INTO index_dirty" in sql:
+            raise RuntimeError("index_dirty insert failed")
+        if sql.strip().startswith("SELECT event_type"):
+            return FakeResult(self.event_row)
         return FakeResult()
 
 
 def fixture_doc(name="climate_week_events.html"):
     content = (FIXTURE_ROOT / name).read_text(encoding="utf-8")
     return FetchedDoc.from_content(url=f"fixture://{name}", content=content)
+
+
+def _staged_event(normalized_payload=None):
+    payload = {"name": "Climate Innovation Summit", "next_date": "2026-09-22"}
+    if normalized_payload:
+        payload.update(normalized_payload)
+    return StagedRecord(
+        run_id=str(uuid.uuid4()),
+        raw_document_id=None,
+        entity_type="event",
+        natural_key="climate-innovation-summit|2026-09-22",
+        source_url="fixture://events",
+        payload={},
+        normalized_payload=payload,
+        prompt_version="event_v1",
+        extracted_at="2026-08-10T00:00:00+00:00",
+    )
+
+
+def _empty_event_row():
+    return {
+        "event_type": None,
+        "description": None,
+        "location": None,
+        "website": None,
+        "thematic_focus": None,
+        "expected_attendance": None,
+        "access_type": None,
+        "recurring_pattern": None,
+        "next_date": None,
+        "sponsoring_orgs": None,
+        "source_id": None,
+    }
 
 
 def test_normalize_dates_and_natural_key_stability():
@@ -206,6 +248,38 @@ def test_promote_dry_run_and_live_execute_same_statements_with_commit_boundary_o
     assert live_result.dry_run is False
 
 
+def test_promote_absorb_marks_index_dirty_before_commit():
+    event_id = str(uuid.uuid4())
+    session = FakeSession(event_row=_empty_event_row())
+    result = promote(
+        _staged_event({"description": "Updated climate event profile", "next_date": None}),
+        RouteDecision(zone="absorb", score=1.0, target_entity_id=event_id),
+        session=session,
+        live=True,
+    )
+
+    assert result.action == "absorbed"
+    assert result.fields_absorbed == ["description"]
+    update_index = next(index for index, sql in enumerate(session.statements) if "UPDATE event" in sql)
+    dirty_index = next(index for index, sql in enumerate(session.statements) if "INSERT INTO index_dirty" in sql)
+    assert update_index < dirty_index
+    assert session.transactions[-1].committed
+    assert not session.transactions[-1].rolled_back
+
+
+def test_promote_index_dirty_failure_rolls_back_canonical_create():
+    session = FakeSession(fail_on_index_dirty=True)
+
+    with pytest.raises(RuntimeError, match="index_dirty insert failed"):
+        promote(_staged_event(), RouteDecision(zone="create", score=0.0), session=session, live=True)
+
+    event_index = next(index for index, sql in enumerate(session.statements) if "INSERT INTO event" in sql)
+    dirty_index = next(index for index, sql in enumerate(session.statements) if "INSERT INTO index_dirty" in sql)
+    assert event_index < dirty_index
+    assert session.transactions[-1].rolled_back
+    assert not session.transactions[-1].committed
+
+
 def test_promote_dry_run_and_live_emit_same_sql_with_engine_listener():
     staged = StagedRecord(
         run_id=str(uuid.uuid4()),
@@ -237,7 +311,7 @@ def _captured_promote_sql(staged: StagedRecord, route: RouteDecision, *, live: b
 
     @sqla_event.listens_for(engine, "before_cursor_execute")
     def capture_statement(conn, cursor, statement, parameters, context, executemany):
-        if statement.startswith(("INSERT INTO source", "INSERT INTO event", "UPDATE event")):
+        if statement.startswith(("INSERT INTO source", "INSERT INTO event", "UPDATE event", "INSERT INTO index_dirty")):
             statements.append(statement)
 
     SessionLocal = sessionmaker(bind=engine, future=True, expire_on_commit=False)
@@ -266,5 +340,13 @@ def _create_sqlite_promotion_schema(engine) -> None:
                 "description TEXT, location TEXT, website TEXT, thematic_focus TEXT, "
                 "expected_attendance TEXT, access_type TEXT, recurring_pattern TEXT, "
                 "next_date TEXT, sponsoring_orgs TEXT)"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE index_dirty ("
+                "entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, "
+                "marked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+                "PRIMARY KEY (entity_type, entity_id))"
             )
         )
