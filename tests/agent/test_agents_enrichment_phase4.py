@@ -14,7 +14,8 @@ from agents.enrichment.fields import FieldPolicy, load_field_config, policies_fo
 from agents.enrichment.gaps import is_gap
 from agents.enrichment.run import run_enrichment
 from agents.enrichment.specs import get_entity_spec
-from agents.index.refresh import SearchDocCandidate, refresh_search_doc
+from agents.index import refresh as refresh_module
+from agents.index.refresh import SearchDocCandidate, load_incremental_candidate_selection, refresh_search_doc
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -266,6 +267,51 @@ def test_zero_search_doc_candidates_never_delete():
     assert not any("DELETE" in sql.upper() for sql in session.statements)
 
 
+def test_index_dirty_candidates_are_not_starved_by_updated_at_limit(monkeypatch):
+    updated_id = str(uuid.uuid4())
+    dirty_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+
+    monkeypatch.setattr(refresh_module, "_table_columns", lambda session, table_name: {"updated_at"})
+    monkeypatch.setattr(
+        refresh_module,
+        "_load_entity_rows",
+        lambda session, spec, *, timestamp_column, limit: [
+            {
+                "entity_id": updated_id,
+                "name": "Updated Event",
+                "description": "Selected by updated_at",
+                "source_updated_at": "2026-08-21T00:00:00Z",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        refresh_module,
+        "_load_index_dirty_rows",
+        lambda session, spec: [
+            {
+                "entity_id": dirty_ids[0],
+                "name": "Dirty Event 1",
+                "description": "Selected by index_dirty",
+                "source_updated_at": "2026-08-21T00:00:00Z",
+            },
+            {
+                "entity_id": dirty_ids[1],
+                "name": "Dirty Event 2",
+                "description": "Selected by index_dirty",
+                "source_updated_at": "2026-08-21T00:00:00Z",
+            },
+        ],
+    )
+
+    selection = load_incremental_candidate_selection(FakeSession(), entity_types=("event",), limit=1)
+
+    assert selection.updated_at_candidates == 1
+    assert selection.index_dirty_candidates == 2
+    assert len(selection.candidates) == 3
+    assert [candidate.entity_id for candidate in selection.candidates] == [updated_id, *dirty_ids]
+    assert sum(1 for candidate in selection.candidates if candidate.from_index_dirty) == 2
+
+
 def test_search_doc_refresh_upserts_only_selected_candidates():
     session = FakeSession()
     stats = refresh_search_doc(
@@ -286,6 +332,33 @@ def test_search_doc_refresh_upserts_only_selected_candidates():
     assert stats.deletes == 0
     assert any("INSERT INTO search_doc" in sql for sql in session.statements)
     assert not any("search_doc_2" in sql for sql in session.statements)
+
+
+def test_search_doc_upsert_clears_index_dirty_row_after_successful_upsert():
+    session = FakeSession()
+    stats = refresh_search_doc(
+        session,
+        live=True,
+        candidates=[
+            SearchDocCandidate(
+                entity_type="event",
+                entity_id=str(uuid.uuid4()),
+                name="Climate Innovation Summit",
+                doc_text="Name: Climate Innovation Summit\nDescription: Climate event",
+                from_index_dirty=True,
+            )
+        ],
+    )
+
+    assert stats.candidates == 1
+    assert stats.upserts == 1
+    assert stats.index_dirty_candidates == 1
+    assert stats.dirty_cleared == 1
+    upsert_index = next(index for index, sql in enumerate(session.statements) if "INSERT INTO search_doc" in sql)
+    clear_index = next(index for index, sql in enumerate(session.statements) if "DELETE FROM index_dirty" in sql)
+    assert upsert_index < clear_index
+    assert session.commits == 1
+    assert session.rollbacks == 0
 
 
 def test_search_doc_dry_run_executes_upsert_then_rolls_back():

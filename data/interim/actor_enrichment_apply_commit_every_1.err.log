@@ -1,0 +1,132 @@
+2026-07-19 19:12:46,869  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-19 19:12:53,636  INFO     src.enrichment.actor_enrichment_candidates  Processing 640 sparse hub-linked actors
+2026-07-19 19:12:53,657  INFO     src.enrichment.actor_enrichment_candidates  [1/640] Agricultural Sustainability Institute
+2026-07-19 19:12:54,796  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Agricultural+Sustainability+Institute "HTTP/1.1 200 OK"
+2026-07-19 19:12:55,889  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-19 19:13:00,872  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 19:15:01,714  ERROR    run_actor_enrichment_candidates  Actor enrichment candidate pipeline crashed: (psycopg2.errors.QueryCanceled) canceling statement due to statement timeout
+CONTEXT:  while updating tuple (0,18) in relation "actor"
+
+[SQL: UPDATE actor SET description=%(description)s, updated_at=now() WHERE actor.actor_id = %(actor_actor_id)s::UUID]
+[parameters: {'description': 'Agricultural Sustainability Institute is a hub-linked actor referenced in UC Davis / Sacramento Valley Agriculture Ecosystem. No high-confidence stru ... (187 characters truncated) ... iency and nutrient optimization in specialty crops ; Precision irrigation systems and deficit irrigation modeling ; Long-term farming systems trials.', 'actor_actor_id': UUID('d6ee8ecf-0636-4525-9dcb-34066b804707')}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Traceback (most recent call last):
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 1963, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\default.py", line 943, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.QueryCanceled: canceling statement due to statement timeout
+CONTEXT:  while updating tuple (0,18) in relation "actor"
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Ismail\Projects\GHUS-Platform\scripts\run_actor_enrichment_candidates.py", line 71, in main
+    stats = pipeline.run()
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 1073, in run
+    self._process_actor(actor)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 1056, in _process_actor
+    action = self._apply_decision(actor, decision)
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 967, in _apply_decision
+    source = self._get_or_create_source(actor, decision)
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 897, in _get_or_create_source
+    self.session.flush()
+    ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 4345, in flush
+    self._flush(objects)
+    ~~~~~~~~~~~^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 4480, in _flush
+    with util.safe_reraise():
+         ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\util\langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\session.py", line 4441, in _flush
+    flush_context.execute()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\unitofwork.py", line 466, in execute
+    rec.execute(self)
+    ~~~~~~~~~~~^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\unitofwork.py", line 642, in execute
+    util.preloaded.orm_persistence.save_obj(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self.mapper,
+        ^^^^^^^^^^^^
+        uow.states_for_mapper_hierarchy(self.mapper, False, False),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        uow,
+        ^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\persistence.py", line 85, in save_obj
+    _emit_update_statements(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        base_mapper,
+        ^^^^^^^^^^^^
+    ...<3 lines>...
+        update,
+        ^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\persistence.py", line 912, in _emit_update_statements
+    c = connection.execute(
+        statement, multiparams, execution_options=execution_options
+    )
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 1415, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\sql\elements.py", line 523, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 1637, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 1842, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 1982, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 2351, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\base.py", line 1963, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\engine\default.py", line 943, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.OperationalError: (psycopg2.errors.QueryCanceled) canceling statement due to statement timeout
+CONTEXT:  while updating tuple (0,18) in relation "actor"
+
+[SQL: UPDATE actor SET description=%(description)s, updated_at=now() WHERE actor.actor_id = %(actor_actor_id)s::UUID]
+[parameters: {'description': 'Agricultural Sustainability Institute is a hub-linked actor referenced in UC Davis / Sacramento Valley Agriculture Ecosystem. No high-confidence stru ... (187 characters truncated) ... iency and nutrient optimization in specialty crops ; Precision irrigation systems and deficit irrigation modeling ; Long-term farming systems trials.', 'actor_actor_id': UUID('d6ee8ecf-0636-4525-9dcb-34066b804707')}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

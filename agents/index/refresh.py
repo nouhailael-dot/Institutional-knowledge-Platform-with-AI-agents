@@ -6,7 +6,7 @@ import argparse
 import logging
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Optional
 
 from sqlalchemy import text
@@ -24,6 +24,7 @@ class SearchDocCandidate:
     name: str
     doc_text: str
     source_updated_at: object = None
+    from_index_dirty: bool = False
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,16 @@ class SearchRefreshStats:
     upserts: int = 0
     deletes: int = 0
     skipped: int = 0
+    updated_at_candidates: int = 0
+    index_dirty_candidates: int = 0
+    dirty_cleared: int = 0
+
+
+@dataclass(frozen=True)
+class CandidateSelection:
+    candidates: list[SearchDocCandidate]
+    updated_at_candidates: int = 0
+    index_dirty_candidates: int = 0
 
 
 def refresh_search_doc(
@@ -42,30 +53,67 @@ def refresh_search_doc(
     live: bool = False,
     candidates: Optional[Iterable[SearchDocCandidate]] = None,
 ) -> SearchRefreshStats:
-    selected = list(candidates) if candidates is not None else list(
-        load_incremental_candidates(session, entity_types=entity_types, limit=limit)
+    if candidates is not None:
+        selected = list(candidates)
+        index_dirty_candidates = sum(1 for candidate in selected if candidate.from_index_dirty)
+        updated_at_candidates = len(selected) - index_dirty_candidates
+    else:
+        selection = load_incremental_candidate_selection(session, entity_types=entity_types, limit=limit)
+        selected = selection.candidates
+        updated_at_candidates = selection.updated_at_candidates
+        index_dirty_candidates = selection.index_dirty_candidates
+
+    logger.info(
+        "search_doc candidate counts updated_at=%s index_dirty=%s total=%s",
+        updated_at_candidates,
+        index_dirty_candidates,
+        len(selected),
     )
     if not selected:
         logger.warning("search_doc incremental refresh found zero candidates; no-op with zero deletes")
-        return SearchRefreshStats(candidates=0, upserts=0, deletes=0, skipped=0)
+        return SearchRefreshStats(
+            candidates=0,
+            upserts=0,
+            deletes=0,
+            skipped=0,
+            updated_at_candidates=updated_at_candidates,
+            index_dirty_candidates=index_dirty_candidates,
+            dirty_cleared=0,
+        )
 
     upserts = 0
-    for candidate in selected:
-        if not candidate.doc_text.strip():
-            logger.warning(
-                "skipping blank search_doc text for %s %s",
-                candidate.entity_type,
-                candidate.entity_id,
-            )
-            continue
-        _upsert_search_doc(session, candidate)
-        upserts += 1
+    dirty_cleared = 0
+    try:
+        for candidate in selected:
+            if not candidate.doc_text.strip():
+                logger.warning(
+                    "skipping blank search_doc text for %s %s",
+                    candidate.entity_type,
+                    candidate.entity_id,
+                )
+                continue
+            _upsert_search_doc(session, candidate)
+            if candidate.from_index_dirty:
+                _clear_index_dirty(session, candidate)
+                dirty_cleared += 1
+            upserts += 1
+    except Exception:
+        session.rollback()
+        raise
 
     if live:
         session.commit()
     else:
         session.rollback()
-    return SearchRefreshStats(candidates=len(selected), upserts=upserts, deletes=0, skipped=len(selected) - upserts)
+    return SearchRefreshStats(
+        candidates=len(selected),
+        upserts=upserts,
+        deletes=0,
+        skipped=len(selected) - upserts,
+        updated_at_candidates=updated_at_candidates,
+        index_dirty_candidates=index_dirty_candidates,
+        dirty_cleared=dirty_cleared,
+    )
 
 
 def load_incremental_candidates(
@@ -74,40 +122,57 @@ def load_incremental_candidates(
     entity_types: Iterable[str],
     limit: Optional[int] = None,
 ) -> list[SearchDocCandidate]:
+    return load_incremental_candidate_selection(session, entity_types=entity_types, limit=limit).candidates
+
+
+def load_incremental_candidate_selection(
+    session,
+    *,
+    entity_types: Iterable[str],
+    limit: Optional[int] = None,
+) -> CandidateSelection:
     search_doc_columns = _table_columns(session, "search_doc")
     timestamp_column = _search_doc_timestamp_column(search_doc_columns)
     if timestamp_column is None:
         logger.warning(
             "search_doc has no updated_at/indexed_at column visible; selecting only canonical rows with no search_doc entry"
         )
-    candidates: list[SearchDocCandidate] = []
+    updated_candidates: list[SearchDocCandidate] = []
+    dirty_candidates: list[SearchDocCandidate] = []
     remaining = limit
     for entity_type in entity_types:
         spec = get_entity_spec(entity_type)
-        rows = _load_entity_rows(
-            session,
-            spec,
-            timestamp_column=timestamp_column,
-            limit=remaining,
-        )
-        for row in rows:
-            values = dict(row)
-            builder = spec.doc_builder
-            doc_text = builder(values) if builder else ""
-            candidates.append(
-                SearchDocCandidate(
-                    entity_type=spec.entity_type,
-                    entity_id=str(values["entity_id"]),
-                    name=str(values.get("name") or ""),
-                    doc_text=doc_text,
-                    source_updated_at=values.get("source_updated_at"),
-                )
+        rows = []
+        if remaining is None or remaining > 0:
+            rows = _load_entity_rows(
+                session,
+                spec,
+                timestamp_column=timestamp_column,
+                limit=remaining,
             )
-        if remaining is not None:
-            remaining -= len(rows)
-            if remaining <= 0:
-                break
-    return candidates
+            for row in rows:
+                updated_candidates.append(_candidate_from_row(spec, row, from_index_dirty=False))
+            if remaining is not None:
+                remaining -= len(rows)
+        dirty_rows = _load_index_dirty_rows(session, spec)
+        for row in dirty_rows:
+            dirty_candidates.append(_candidate_from_row(spec, row, from_index_dirty=True))
+
+    combined: dict[tuple[str, str], SearchDocCandidate] = {}
+    for candidate in updated_candidates:
+        combined[(candidate.entity_type, candidate.entity_id)] = candidate
+    for candidate in dirty_candidates:
+        key = (candidate.entity_type, candidate.entity_id)
+        if key in combined:
+            combined[key] = replace(combined[key], from_index_dirty=True)
+        else:
+            combined[key] = candidate
+
+    return CandidateSelection(
+        candidates=list(combined.values()),
+        updated_at_candidates=len(updated_candidates),
+        index_dirty_candidates=len(dirty_candidates),
+    )
 
 
 def parse_args(argv: Optional[list[str]] = None):
@@ -131,9 +196,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     with SessionLocal() as session:
         stats = refresh_search_doc(session, entity_types=entity_types, limit=args.limit, live=args.live)
     print(
-        "search_doc_refresh candidates={candidates} upserts={upserts} deletes={deletes} skipped={skipped} live={live}".format(
+        (
+            "search_doc_refresh candidates={candidates} updated_at_candidates={updated_at_candidates} "
+            "index_dirty_candidates={index_dirty_candidates} upserts={upserts} "
+            "dirty_cleared={dirty_cleared} deletes={deletes} skipped={skipped} live={live}"
+        ).format(
             candidates=stats.candidates,
+            updated_at_candidates=stats.updated_at_candidates,
+            index_dirty_candidates=stats.index_dirty_candidates,
             upserts=stats.upserts,
+            dirty_cleared=stats.dirty_cleared,
             deletes=stats.deletes,
             skipped=stats.skipped,
             live=args.live,
@@ -145,12 +217,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 def _load_entity_rows(session, spec: EntitySpec, *, timestamp_column: Optional[str], limit: Optional[int]):
     for identifier in (spec.table_name, spec.id_column, spec.name_column):
         _assert_identifier(identifier)
-    select_columns = [f"e.{spec.id_column}::text AS entity_id", f"e.{spec.name_column} AS name"]
-    for field in spec.fields:
-        _assert_identifier(field)
-        if field in {spec.id_column, spec.name_column}:
-            continue
-        select_columns.append(f"e.{field} AS {field}")
+    select_columns = _select_columns(spec)
     updated_expr = _canonical_updated_expression(spec)
     select_columns.append(f"{updated_expr} AS source_updated_at")
 
@@ -174,6 +241,49 @@ def _load_entity_rows(session, spec: EntitySpec, *, timestamp_column: Optional[s
     return rows
 
 
+def _load_index_dirty_rows(session, spec: EntitySpec):
+    for identifier in (spec.table_name, spec.id_column, spec.name_column):
+        _assert_identifier(identifier)
+    select_columns = _select_columns(spec)
+    updated_expr = _canonical_updated_expression(spec)
+    select_columns.append(f"{updated_expr} AS source_updated_at")
+    rows = session.execute(
+        text(
+            f"SELECT {', '.join(select_columns)} "
+            f"FROM index_dirty id "
+            f"JOIN {spec.table_name} e ON e.{spec.id_column} = id.entity_id "
+            f"WHERE id.entity_type = :entity_type "
+            f"ORDER BY id.marked_at, e.{spec.name_column}"
+        ),
+        {"entity_type": spec.entity_type},
+    ).mappings().all()
+    return rows
+
+
+def _candidate_from_row(spec: EntitySpec, row, *, from_index_dirty: bool) -> SearchDocCandidate:
+    values = dict(row)
+    builder = spec.doc_builder
+    doc_text = builder(values) if builder else ""
+    return SearchDocCandidate(
+        entity_type=spec.entity_type,
+        entity_id=str(values["entity_id"]),
+        name=str(values.get("name") or ""),
+        doc_text=doc_text,
+        source_updated_at=values.get("source_updated_at"),
+        from_index_dirty=from_index_dirty,
+    )
+
+
+def _select_columns(spec: EntitySpec) -> list[str]:
+    select_columns = [f"e.{spec.id_column}::text AS entity_id", f"e.{spec.name_column} AS name"]
+    for field in spec.fields:
+        _assert_identifier(field)
+        if field in {spec.id_column, spec.name_column}:
+            continue
+        select_columns.append(f"e.{field} AS {field}")
+    return select_columns
+
+
 def _upsert_search_doc(session, candidate: SearchDocCandidate) -> None:
     session.execute(
         text(
@@ -190,6 +300,16 @@ def _upsert_search_doc(session, candidate: SearchDocCandidate) -> None:
             "name": candidate.name,
             "doc_text": candidate.doc_text,
         },
+    )
+
+
+def _clear_index_dirty(session, candidate: SearchDocCandidate) -> None:
+    session.execute(
+        text(
+            "DELETE FROM index_dirty "
+            "WHERE entity_type = :entity_type AND entity_id = CAST(:entity_id AS uuid)"
+        ),
+        {"entity_type": candidate.entity_type, "entity_id": candidate.entity_id},
     )
 
 

@@ -4,13 +4,15 @@ Actor enrichment candidate pipeline.
 This job targets sparse actors created from ecosystem-map narratives. The
 spreadsheet usually gives actor names but not per-actor websites, descriptions,
 or locations. This pipeline searches trusted structured APIs, adds conservative
-candidates from the hub website text, asks Claude to validate the match, and
-then writes an audit CSV. Database updates happen only with --apply.
+candidates from the hub website text, applies deterministic matches first, and
+only calls Claude when explicitly enabled and the row passes cost gates.
+Database updates happen only with --apply.
 """
 
 from __future__ import annotations
 
 import csv
+import html
 import json
 import logging
 import re
@@ -20,6 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from sqlalchemy import and_, exists, or_, select
@@ -38,9 +41,77 @@ DEFAULT_APPLY_THRESHOLD = 0.85
 HTTP_TIMEOUT = 12.0
 USER_AGENT = "GHUS-Ecosystem-Intelligence/0.1 (actor-enrichment)"
 SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html/"
 OPENALEX_MAX_RETRY_AFTER = 300.0
 DB_RETRY_ATTEMPTS = 6
 DB_RETRY_SLEEP_SECONDS = 10.0
+DEFAULT_MISSING_FIELD_FILTERS = ("description", "website", "location_city", "country")
+ENRICHMENT_TARGET_FIELDS = ("description", "website", "location_city", "state", "country")
+MISSING_FIELD_ALIASES = {
+    "description": "description",
+    "website": "website",
+    "city": "location_city",
+    "location_city": "location_city",
+    "state": "state",
+    "country": "country",
+}
+CANDIDATE_FIELD_BY_ACTOR_FIELD = {
+    "description": "description",
+    "website": "website",
+    "location_city": "city",
+    "state": "state",
+    "country": "country",
+}
+BLOCKED_WEB_RESULT_DOMAINS = {
+    "wikipedia.org",
+    "linkedin.com",
+    "facebook.com",
+    "twitter.com",
+    "x.com",
+    "instagram.com",
+    "youtube.com",
+    "crunchbase.com",
+    "pitchbook.com",
+    "bloomberg.com",
+    "reuters.com",
+    "sec.gov",
+    "nlr.gov",
+}
+WEB_AUTO_APPLY_MIN_SCORE = 0.95
+WEB_AUTO_APPLY_MAX_RANK = 2
+WEB_RESULT_TITLE_BLOCKLIST = {
+    "news",
+    "newsroom",
+    "press release",
+    "careers",
+    "jobs",
+    "login",
+    "support",
+    "contact us",
+    "dashboard",
+    "facebook",
+    "linkedin",
+    "wikipedia",
+    "youtube",
+}
+WEB_AUTO_APPLY_GENERIC_TOKENS = {
+    "bodies",
+    "commission",
+    "commissions",
+    "facilities",
+    "firms",
+    "groups",
+    "initiatives",
+    "labs",
+    "plants",
+    "producers",
+    "programs",
+    "projects",
+    "refinery",
+    "research",
+    "smelter",
+    "studios",
+}
 
 NON_ENTITY_LABELS = {
     "academic anchors",
@@ -53,27 +124,62 @@ NON_ENTITY_LABELS = {
 
 GENERIC_ENTITY_TERMS = {
     "anchors",
+    "agencies",
+    "accelerator",
+    "accelerators",
+    "association",
+    "associations",
+    "authority",
+    "authorities",
+    "bodies",
     "boards",
     "clusters",
     "cluster",
+    "commissions",
     "companies",
+    "cooperative",
+    "cooperatives",
+    "department",
+    "developer",
+    "developers",
     "ecosystem",
     "facilities",
     "firms",
     "funds",
+    "groups",
+    "initiative",
+    "initiatives",
+    "institute",
+    "institutes",
     "labs",
     "manufacturers",
+    "network",
+    "networks",
     "operations",
+    "operator",
+    "operators",
+    "plant",
     "plants",
+    "platform",
+    "platforms",
+    "producer",
+    "producers",
     "programs",
     "projects",
+    "provider",
+    "providers",
     "centers",
     "centres",
+    "departments",
     "stations",
+    "offices",
     "startups",
     "stakeholders",
     "partners",
     "institutions",
+    "laboratory",
+    "section",
+    "training",
     "organizations",
 }
 
@@ -98,25 +204,46 @@ CATEGORY_DESCRIPTOR_TERMS = {
     "commodity",
     "corporate",
     "crop",
+    "dairy",
     "desalination",
+    "digital",
     "energy",
+    "engineering",
+    "enterprise",
+    "expert",
     "field",
+    "focused",
     "formulation",
+    "food",
+    "functional",
     "green",
     "groundwater",
     "health",
+    "horticulture",
     "industry",
+    "intergovernmental",
     "management",
     "manufacturing",
     "material",
     "materials",
     "medical",
+    "medicine",
+    "mission",
+    "modeling",
+    "offshore",
     "pilot",
+    "planning",
     "polymer",
+    "plant",
+    "science",
+    "sciences",
     "regional",
     "research",
     "robotics",
+    "saas",
+    "soil",
     "specialty",
+    "specialized",
     "startup",
     "sustainability",
     "technology",
@@ -224,6 +351,46 @@ KNOWN_OFFICIAL_ORGS = [
         "country": "Switzerland",
     },
     {
+        "names": ("Break Through Tech AI Program (Cornell Tech)", "Break Through Tech's AI Program"),
+        "website": "https://tech.cornell.edu/impact/break-through-tech/",
+        "description": "Break Through Tech's AI Program is a Cornell Tech-linked program that prepares undergraduate students for artificial intelligence careers through machine learning coursework, industry projects, and professional readiness support.",
+        "city": "New York",
+        "state": "New York",
+        "country": "United States",
+    },
+    {
+        "names": ("Cornell AI Initiative",),
+        "website": "https://ai.cornell.edu/",
+        "description": "The Cornell AI Initiative is a university-wide Cornell effort focused on artificial intelligence research, education, and responsible AI applications across the university.",
+        "city": "Ithaca",
+        "state": "New York",
+        "country": "United States",
+    },
+    {
+        "names": ("ExxonMobil Baytown Technology & Engineering Complex",),
+        "website": "https://corporate.exxonmobil.com/locations/united-states/baytown",
+        "description": "ExxonMobil's Baytown area operations include a global technology center within its Baytown refining and petrochemical complex.",
+        "city": "Baytown",
+        "state": "Texas",
+        "country": "United States",
+    },
+    {
+        "names": ("Harvard Chemistry & Chemical Biology",),
+        "website": "https://www.chemistry.harvard.edu/",
+        "description": "Harvard's Department of Chemistry and Chemical Biology is an academic department focused on chemistry and chemical biology research and education.",
+        "city": "Cambridge",
+        "state": "Massachusetts",
+        "country": "United States",
+    },
+    {
+        "names": ("Johns Hopkins Precision Medicine initiatives", "Johns Hopkins inHealth"),
+        "website": "https://www.hopkinsmedicine.org/inhealth/",
+        "description": "Johns Hopkins inHealth is a strategic Johns Hopkins Medicine initiative to advance precision medicine through data, analytics, and disease-specific expertise.",
+        "city": "Baltimore",
+        "state": "Maryland",
+        "country": "United States",
+    },
+    {
         "names": ("Lawrence Livermore National Laboratory", "LLNL"),
         "website": "https://www.llnl.gov",
         "description": "Lawrence Livermore National Laboratory is a U.S. Department of Energy national laboratory focused on science and technology for national security.",
@@ -240,7 +407,7 @@ KNOWN_OFFICIAL_ORGS = [
         "country": "United States",
     },
     {
-        "names": ("National Renewable Energy Laboratory", "NREL"),
+        "names": ("National Renewable Energy Laboratory", "National Renewable Energy Laboratory (energy-mineral link)", "NREL"),
         "website": "https://www.nrel.gov",
         "description": "The National Renewable Energy Laboratory is a U.S. Department of Energy national laboratory focused on renewable energy and energy efficiency research.",
         "city": "Golden",
@@ -256,10 +423,90 @@ KNOWN_OFFICIAL_ORGS = [
         "country": "United States",
     },
     {
+        "names": ("Materials Research Science and Engineering Centers", "MRSEC"),
+        "website": "https://www.nsf.gov/mps/materials-research-science-engineering-centers",
+        "description": "The U.S. National Science Foundation Materials Research Science and Engineering Centers are university-based centers supporting interdisciplinary materials research, education, and shared research infrastructure.",
+        "city": "Alexandria",
+        "state": "Virginia",
+        "country": "United States",
+    },
+    {
+        "names": ("Michigan State University",),
+        "website": "https://msu.edu/",
+        "description": "Michigan State University is a public research university in East Lansing, Michigan.",
+        "city": "East Lansing",
+        "state": "Michigan",
+        "country": "United States",
+    },
+    {
+        "names": ("MIT Media Lab",),
+        "website": "https://www.media.mit.edu/",
+        "description": "The MIT Media Lab is an interdisciplinary research laboratory at the Massachusetts Institute of Technology.",
+        "city": "Cambridge",
+        "state": "Massachusetts",
+        "country": "United States",
+    },
+    {
+        "names": ("Northwestern University Chemistry", "Northwestern Chemistry"),
+        "website": "https://chemistry.northwestern.edu/",
+        "description": "Northwestern University's Department of Chemistry is an academic department for chemistry education and research.",
+        "city": "Evanston",
+        "state": "Illinois",
+        "country": "United States",
+    },
+    {
+        "names": ("NYC Mayor's Climate Office", "NYC Mayor’s Climate Office"),
+        "website": "https://www.nyc.gov/site/cpp/our-programs/programs.page",
+        "description": "The NYC Mayor's Office of Climate Policy and Programs develops and delivers climate policy initiatives for New York City.",
+        "city": "New York",
+        "state": "New York",
+        "country": "United States",
+    },
+    {
+        "names": ("Office for Digital and Emerging Technologies",),
+        "website": "https://www.un.org/digital-emerging-technologies/",
+        "description": "The United Nations Office for Digital and Emerging Technologies is the UN system-wide focal point for digital issues and digital cooperation.",
+        "city": "New York",
+        "state": "New York",
+        "country": "United States",
+    },
+    {
         "names": ("Office of the Special Adviser on Africa",),
         "website": "https://www.un.org/osaa/",
         "description": "The Office of the Special Adviser on Africa is a United Nations office supporting international action and advocacy for African development priorities.",
         "city": "New York",
+        "country": "United States",
+    },
+    {
+        "names": ("Rice Baker Institute Energy Program", "Rice Baker Institute Center for Energy Studies"),
+        "website": "https://www.bakerinstitute.org/center/center-energy-studies",
+        "description": "The Center for Energy Studies at Rice University's Baker Institute for Public Policy conducts energy-market, policy, technology, and geopolitics research.",
+        "city": "Houston",
+        "state": "Texas",
+        "country": "United States",
+    },
+    {
+        "names": ("Rice University Chemistry",),
+        "website": "https://chemistry.rice.edu/",
+        "description": "Rice University's Department of Chemistry is an academic department for chemistry education and research.",
+        "city": "Houston",
+        "state": "Texas",
+        "country": "United States",
+    },
+    {
+        "names": ("SECRETARIAT", "United Nations Secretariat"),
+        "website": "https://www.un.org/en/about-us/secretariat",
+        "description": "The United Nations Secretariat carries out the day-to-day work of the United Nations as mandated by the General Assembly and the organization's other main organs.",
+        "city": "New York",
+        "state": "New York",
+        "country": "United States",
+    },
+    {
+        "names": ("Stanford Chemistry", "Stanford Department of Chemistry"),
+        "website": "https://chemistry.stanford.edu/",
+        "description": "Stanford University's Department of Chemistry is an academic department focused on chemical sciences research and education.",
+        "city": "Stanford",
+        "state": "California",
         "country": "United States",
     },
     {
@@ -282,6 +529,38 @@ KNOWN_OFFICIAL_ORGS = [
         "description": "The United Nations Industrial Development Organization is a UN specialized agency focused on inclusive and sustainable industrial development.",
         "city": "Vienna",
         "country": "Austria",
+    },
+    {
+        "names": ("U.S. Ventures", "U.S. Venture", "US Venture"),
+        "website": "https://www.usventure.com/",
+        "description": "U.S. Venture is a private company with energy, transportation, and sustainability-related business lines.",
+        "city": "Appleton",
+        "state": "Wisconsin",
+        "country": "United States",
+    },
+    {
+        "names": ("UC Berkeley Chemistry", "Berkeley Chemistry"),
+        "website": "https://chemistry.berkeley.edu/chem",
+        "description": "UC Berkeley's Department of Chemistry is an academic department in the College of Chemistry focused on chemistry education and research.",
+        "city": "Berkeley",
+        "state": "California",
+        "country": "United States",
+    },
+    {
+        "names": ("University of Illinois Urbana-Champaign", "University of Illinois Urbana Champaign"),
+        "website": "https://illinois.edu/",
+        "description": "The University of Illinois Urbana-Champaign is a public research university in Champaign-Urbana, Illinois.",
+        "city": "Champaign",
+        "state": "Illinois",
+        "country": "United States",
+    },
+    {
+        "names": ("University of Washington",),
+        "website": "https://www.washington.edu/",
+        "description": "The University of Washington is a public research university with campuses in Seattle, Bothell, and Tacoma.",
+        "city": "Seattle",
+        "state": "Washington",
+        "country": "United States",
     },
     {
         "names": ("United Nations Academic Impact",),
@@ -403,12 +682,16 @@ class RunStats:
     skipped_low_confidence: int = 0
     api_failures: int = 0
     ai_failures: int = 0
+    claude_skipped: int = 0
+    claude_budget_skipped: int = 0
+    claude_weak_candidate_skipped: int = 0
+    stopped_early: bool = False
 
     def summary(self) -> str:
-        return (
+        text = (
             f"  Actors processed:       {self.actors_seen}\n"
             f"  Source candidates found:{self.candidates_found}\n"
-            f"  Claude decisions:       {self.decisions_made}\n"
+            f"  Decisions made:         {self.decisions_made}\n"
             f"  No candidates:          {self.no_candidates}\n"
             f"  No verified match:      {self.no_match}\n"
             f"  Human review flagged:   {self.needs_review}\n"
@@ -416,12 +699,33 @@ class RunStats:
             f"  Applied:                {self.applied}\n"
             f"  Low-confidence skipped: {self.skipped_low_confidence}\n"
             f"  API failures:           {self.api_failures}\n"
-            f"  AI failures:            {self.ai_failures}"
+            f"  AI failures:            {self.ai_failures}\n"
+            f"  Claude skipped:         {self.claude_skipped}\n"
+            f"  Claude budget skipped:  {self.claude_budget_skipped}\n"
+            f"  Weak-candidate skipped: {self.claude_weak_candidate_skipped}"
         )
+        if self.stopped_early:
+            text += "\n  Stopped early:          yes"
+        return text
 
 
 def normalize_text(value: Optional[str]) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+
+
+def normalize_missing_fields(fields: Optional[list[str]]) -> tuple[str, ...]:
+    if not fields or "any" in fields:
+        return DEFAULT_MISSING_FIELD_FILTERS
+
+    normalized: list[str] = []
+    for raw_field in fields:
+        key = (raw_field or "").strip().lower()
+        field = MISSING_FIELD_ALIASES.get(key)
+        if not field:
+            raise ValueError(f"Unsupported missing field: {raw_field}")
+        if field not in normalized:
+            normalized.append(field)
+    return tuple(normalized or DEFAULT_MISSING_FIELD_FILTERS)
 
 
 def acronym_candidates(name: str) -> set[str]:
@@ -447,7 +751,8 @@ def is_placeholder_actor_name(name: str) -> bool:
 def has_specific_name_signal(name: str) -> bool:
     generic_acronyms = {"AI", "R&D", "RD"}
     for token in re.findall(r"\b[A-Z0-9&.-]{2,}\b", name or ""):
-        if token not in generic_acronyms:
+        cleaned = token.strip(".-&")
+        if cleaned not in generic_acronyms:
             return True
     if re.search(r"\b[A-Z][a-z]+[A-Z][A-Za-z0-9]*\b", name or ""):
         return True
@@ -459,6 +764,8 @@ def has_specific_name_signal(name: str) -> bool:
 def is_aggregate_actor_name(name: str, actor_type: Optional[str] = None) -> bool:
     normalized = normalize_text(name)
     tokens = normalized.split()
+    if re.search(r"(^|[\s(])(e\.g\.|eg|for example)([\s,.)]|$)", name or "", flags=re.I):
+        return True
     if is_placeholder_actor_name(name):
         return True
     if not tokens:
@@ -474,7 +781,11 @@ def is_aggregate_actor_name(name: str, actor_type: Optional[str] = None) -> bool
     }
     if not any(term in tokens for term in generic_terms):
         return False
-    descriptive = [t for t in tokens if t not in generic_terms]
+    connective_terms = {"and", "or", "in", "across", "with", "for", "e", "g", "eg"}
+    descriptive = [
+        t for t in tokens
+        if t not in generic_terms and t not in connective_terms
+    ]
     return bool(descriptive) and all(t in CATEGORY_DESCRIPTOR_TERMS for t in descriptive)
 
 
@@ -616,6 +927,28 @@ def build_aggregate_actor_decision(actor: Actor, hubs: list[Hub]) -> dict:
     }
 
 
+def build_name_context_aggregate_actor_decision(actor: Actor) -> dict:
+    description = (
+        f"{actor.name} is an aggregate actor label used for a category or group "
+        "of related organizations, not a single named legal entity."
+    )
+    return {
+        "matched": True,
+        "confidence": 0.86,
+        "needs_human_review": False,
+        "description": description,
+        "website": None,
+        "location_city": None,
+        "state": None,
+        "country": None,
+        "source_url": f"name_context://aggregate_actor/{actor.actor_id}",
+        "evidence_summary": (
+            "Generated from the actor name because it is a category/group label; "
+            "no website or location was inferred."
+        ),
+    }
+
+
 def build_hub_context_actor_decision(
     actor: Actor,
     hubs: list[Hub],
@@ -669,9 +1002,9 @@ def build_unresolved_actor_decision(reason: str) -> dict:
 def known_official_record(name: str) -> Optional[dict]:
     normalized = normalize_text(name)
     for record in KNOWN_OFFICIAL_ORGS:
-        exact_names = {normalize_text(value) for value in record.get("names", ())}
-        if normalized in exact_names:
-            return record
+        for official_name in record.get("names", ()):
+            if normalized == normalize_text(official_name) or _parenthetical_annotation_compatible(name, official_name):
+                return record
         for prefix in record.get("prefix_names", ()):
             prefix_key = normalize_text(prefix)
             if normalized.startswith(prefix_key):
@@ -694,6 +1027,304 @@ def build_known_official_actor_decision(actor: Actor) -> Optional[dict]:
         "country": record.get("country"),
         "source_url": record["website"],
         "evidence_summary": "Exact curated official organization match.",
+    }
+
+
+def _canonical_url_key(url: Optional[str]) -> str:
+    text = (url or "").strip().lower()
+    text = re.sub(r"^https?://", "", text)
+    text = re.sub(r"^www\.", "", text)
+    return text.rstrip("/")
+
+
+def _name_without_parentheticals(value: str) -> str:
+    return normalize_text(re.sub(r"\([^)]*\)", "", value or ""))
+
+
+def _parenthetical_annotations(value: str) -> list[str]:
+    return [
+        normalize_text(match)
+        for match in re.findall(r"\(([^)]+)\)", value or "")
+        if normalize_text(match)
+    ]
+
+
+def _parenthetical_annotation_compatible(actor_name: str, official_name: str) -> bool:
+    if _name_without_parentheticals(actor_name) != _name_without_parentheticals(official_name):
+        return False
+
+    actor_annotations = _parenthetical_annotations(actor_name)
+    official_annotations = _parenthetical_annotations(official_name)
+    if not actor_annotations or not official_annotations:
+        return False
+
+    return any(
+        actor_note == official_note
+        or actor_note.startswith(f"{official_note} ")
+        or official_note.startswith(f"{actor_note} ")
+        for actor_note in actor_annotations
+        for official_note in official_annotations
+    )
+
+
+def _official_label_directly_names_actor(actor_name: str, label: str) -> bool:
+    actor_key = normalize_text(actor_name)
+    label_key = normalize_text(label)
+    if not actor_key or not label_key:
+        return False
+    if actor_key == label_key:
+        return True
+    if _parenthetical_annotation_compatible(actor_name, label):
+        return True
+    # Accept labels that add an institutional prefix, e.g.
+    # "UC Davis Center for Watershed Sciences".
+    return len(actor_key.split()) >= 3 and actor_key in label_key
+
+
+def build_exact_official_website_decision(
+    actor: Actor,
+    candidates: list[ApiCandidate],
+) -> Optional[dict]:
+    if is_aggregate_actor_name(actor.name, actor.actor_type):
+        return None
+
+    matches = [
+        candidate
+        for candidate in candidates
+        if candidate.provider == "hub_official_websites"
+        and candidate.website
+        and candidate.source_url
+        and _official_label_directly_names_actor(actor.name, candidate.name)
+    ]
+    if not matches:
+        return None
+
+    by_url = {
+        _canonical_url_key(candidate.source_url or candidate.website): candidate
+        for candidate in matches
+    }
+    if len(by_url) != 1:
+        return None
+
+    candidate = next(iter(by_url.values()))
+    return {
+        "matched": True,
+        "confidence": 0.9,
+        "needs_human_review": False,
+        "description": (
+            f"{actor.name} is an organization or program identified through "
+            "an exact official website listing in GHUS ecosystem context."
+        ),
+        "website": candidate.website,
+        "location_city": None,
+        "state": None,
+        "country": None,
+        "source_url": candidate.source_url,
+        "evidence_summary": (
+            f"Exact official website listing label '{candidate.name}' matches the actor."
+        ),
+    }
+
+
+def _candidate_can_fill_missing_field(
+    actor: Actor,
+    candidate: ApiCandidate,
+    target_fields: Optional[tuple[str, ...]] = None,
+) -> bool:
+    fields = target_fields or ENRICHMENT_TARGET_FIELDS
+    for field in fields:
+        candidate_attr = CANDIDATE_FIELD_BY_ACTOR_FIELD[field]
+        value = getattr(candidate, candidate_attr)
+        existing = getattr(actor, field)
+        if value and not existing:
+            return True
+    return False
+
+
+def _candidate_match_score(actor: Actor, candidate: ApiCandidate) -> float:
+    score = max(
+        name_similarity(actor.name, candidate.name),
+        name_similarity(_name_without_parentheticals(actor.name), candidate.name),
+    )
+    if _official_label_directly_names_actor(actor.name, candidate.name):
+        score = max(score, 1.0)
+    for acronym in acronym_candidates(actor.name):
+        if re.search(r"\b" + re.escape(acronym) + r"\b", candidate.name or ""):
+            score = max(score, 0.82)
+    return score
+
+
+def _annotation_is_acronym_for_name(annotation: str, name: str) -> bool:
+    note = re.sub(r"[^A-Za-z0-9]", "", annotation or "").upper()
+    if len(note) < 2 or len(note) > 12:
+        return False
+    stop = {"and", "of", "the", "for", "at", "in", "on"}
+    words = [word for word in normalize_text(name).split() if word not in stop]
+    acronym = "".join(word[0].upper() for word in words if word)
+    return note == acronym
+
+
+def _strict_api_candidate_match(actor: Actor, candidate: ApiCandidate) -> bool:
+    if candidate.provider not in {"ror", "openalex", "wikidata"}:
+        return False
+
+    actor_key = normalize_text(actor.name)
+    candidate_key = normalize_text(candidate.name)
+    if actor_key and actor_key == candidate_key:
+        return True
+    if _parenthetical_annotation_compatible(actor.name, candidate.name):
+        return True
+
+    actor_annotations = _parenthetical_annotations(actor.name)
+    candidate_annotations = _parenthetical_annotations(candidate.name)
+    if actor_annotations and not candidate_annotations:
+        actor_base = re.sub(r"\([^)]*\)", "", actor.name or "").strip()
+        return _name_without_parentheticals(actor.name) == _name_without_parentheticals(candidate.name) and all(
+            _annotation_is_acronym_for_name(note, actor_base) for note in actor_annotations
+        )
+
+    return (
+        not actor_annotations
+        and _name_without_parentheticals(actor.name) == _name_without_parentheticals(candidate.name)
+    )
+
+
+def build_high_confidence_api_candidate_decision(
+    actor: Actor,
+    candidates: list[ApiCandidate],
+    target_fields: Optional[tuple[str, ...]] = None,
+) -> Optional[dict]:
+    matches = [
+        candidate
+        for candidate in candidates
+        if _candidate_can_fill_missing_field(actor, candidate, target_fields)
+        and _strict_api_candidate_match(actor, candidate)
+    ]
+    if not matches:
+        return None
+
+    url_keys = {
+        _canonical_url_key(candidate.website or candidate.source_url)
+        for candidate in matches
+        if candidate.website or candidate.source_url
+    }
+    if len(url_keys) > 1:
+        return None
+
+    def priority(candidate: ApiCandidate) -> tuple[int, float]:
+        provider_priority = {
+            "ror": 0,
+            "openalex": 1,
+            "wikidata": 2,
+            "sec": 3,
+        }.get(candidate.provider, 9)
+        return provider_priority, -_candidate_match_score(actor, candidate)
+
+    candidate = sorted(matches, key=priority)[0]
+    return {
+        "matched": True,
+        "confidence": 0.9 if candidate.provider == "sec" else 0.88,
+        "needs_human_review": False,
+        "description": candidate.description,
+        "website": candidate.website,
+        "location_city": candidate.city,
+        "state": candidate.state,
+        "country": candidate.country,
+        "source_url": candidate.source_url or candidate.website,
+        "evidence_summary": (
+            f"Exact {candidate.provider} structured candidate '{candidate.name}' "
+            "matches the actor without Claude validation."
+        ),
+    }
+
+
+def _web_result_rank(candidate: ApiCandidate) -> int:
+    match = re.search(r"rank\s+(\d+)", candidate.evidence or "", flags=re.I)
+    if not match:
+        return 999
+    return int(match.group(1))
+
+
+def _web_result_title_allowed(title: str) -> bool:
+    normalized = normalize_text(title)
+    return not any(term in normalized for term in WEB_RESULT_TITLE_BLOCKLIST)
+
+
+def _web_candidate_is_strong_official_match(actor: Actor, candidate: ApiCandidate) -> bool:
+    if candidate.provider != "duckduckgo_search" or not candidate.website:
+        return False
+    actor_tokens = set(normalize_text(actor.name).split())
+    if not has_specific_name_signal(actor.name) and actor_tokens & WEB_AUTO_APPLY_GENERIC_TOKENS:
+        return False
+    if _web_result_rank(candidate) > WEB_AUTO_APPLY_MAX_RANK:
+        return False
+    if not _web_result_title_allowed(candidate.name):
+        return False
+    if TrustedApiSearcher._web_result_domain_blocked(candidate.website):
+        return False
+    if _candidate_match_score(actor, candidate) < WEB_AUTO_APPLY_MIN_SCORE:
+        return False
+
+    annotations = _parenthetical_annotations(actor.name)
+    if annotations:
+        base_name = re.sub(r"\([^)]*\)", "", actor.name or "").strip()
+        searchable = normalize_text(f"{candidate.name} {candidate.website}")
+        for note in annotations:
+            if _annotation_is_acronym_for_name(note, base_name):
+                continue
+            note_terms = distinctive_tokens(note) - {
+                "ai",
+                "regional",
+                "presence",
+                "operations",
+                "systems",
+                "facilities",
+                "facility",
+                "hub",
+                "space",
+            }
+            if note_terms and not all(term in searchable for term in note_terms):
+                return False
+    return True
+
+
+def build_high_confidence_web_candidate_decision(
+    actor: Actor,
+    candidates: list[ApiCandidate],
+    target_fields: Optional[tuple[str, ...]] = None,
+) -> Optional[dict]:
+    fields = target_fields or ENRICHMENT_TARGET_FIELDS
+    if "website" not in fields or actor.website:
+        return None
+    if is_aggregate_actor_name(actor.name, actor.actor_type):
+        return None
+
+    matches = [
+        candidate
+        for candidate in candidates
+        if _web_candidate_is_strong_official_match(actor, candidate)
+    ]
+    if not matches:
+        return None
+
+    candidate = sorted(
+        matches,
+        key=lambda item: (_web_result_rank(item), -_candidate_match_score(actor, item)),
+    )[0]
+    return {
+        "matched": True,
+        "confidence": 0.88,
+        "needs_human_review": False,
+        "description": None,
+        "website": candidate.website,
+        "location_city": None,
+        "state": None,
+        "country": None,
+        "source_url": candidate.source_url or candidate.website,
+        "evidence_summary": (
+            f"High-confidence DuckDuckGo official website result '{candidate.name}' "
+            f"matches the actor at rank {_web_result_rank(candidate)}."
+        ),
     }
 
 
@@ -723,13 +1354,19 @@ class TrustedApiSearcher:
         self,
         sleep_seconds: float = 0.2,
         openalex_sleep_seconds: float = 2.0,
+        web_search_sleep_seconds: float = 0.5,
+        web_search_result_limit: int = 3,
         use_wikidata: bool = False,
         use_openalex: bool = True,
+        use_web_search: bool = False,
     ):
         self.sleep_seconds = sleep_seconds
         self.openalex_sleep_seconds = openalex_sleep_seconds
+        self.web_search_sleep_seconds = max(0.0, web_search_sleep_seconds)
+        self.web_search_result_limit = max(1, min(5, web_search_result_limit))
         self.use_wikidata = use_wikidata
         self.use_openalex = use_openalex
+        self.use_web_search = use_web_search
         self._openalex_blocked_until = 0.0
         self._sec_companies: Optional[list[dict]] = None
         self.client = httpx.Client(
@@ -768,6 +1405,14 @@ class TrustedApiSearcher:
                                    query_name, fn.__name__, err)
                 delay = self.openalex_sleep_seconds if fn.__name__ == "_search_openalex" else self.sleep_seconds
                 time.sleep(delay)
+
+        if self.use_web_search and not is_aggregate_actor_name(actor.name, actor.actor_type):
+            try:
+                candidates.extend(self._search_web(actor.name))
+            except httpx.HTTPError as err:
+                failures += 1
+                logger.warning("Web search failed for %s: %s", actor.name, err)
+            time.sleep(self.web_search_sleep_seconds)
 
         candidates.extend(self._hub_website_candidates(actor.name, hubs))
         return self._dedupe(candidates), failures
@@ -813,6 +1458,82 @@ class TrustedApiSearcher:
         assert last_response is not None
         last_response.raise_for_status()
         return {}
+
+    def _search_web(self, actor_name: str) -> list[ApiCandidate]:
+        queries: list[str] = []
+        for variant in (
+            actor_name,
+            re.sub(r"\([^)]*\)", "", actor_name or "").strip(),
+        ):
+            cleaned = re.sub(r"\s+", " ", variant or "").strip(" -,:;")
+            key = normalize_text(cleaned)
+            if cleaned and key and key not in {normalize_text(q) for q in queries}:
+                queries.append(cleaned)
+
+        out: list[ApiCandidate] = []
+        for query_name in queries[:2]:
+            payload = self.client.get(
+                DUCKDUCKGO_HTML_URL,
+                params={"q": f"{query_name} official website"},
+                headers={"User-Agent": f"Mozilla/5.0 {USER_AGENT}"},
+            )
+            payload.raise_for_status()
+            out.extend(self._duckduckgo_result_candidates(query_name, payload.text))
+            time.sleep(self.web_search_sleep_seconds)
+            if len(out) >= self.web_search_result_limit:
+                break
+        return out[: self.web_search_result_limit]
+
+    def _duckduckgo_result_candidates(self, query_name: str, text: str) -> list[ApiCandidate]:
+        out: list[ApiCandidate] = []
+        for rank, match in enumerate(
+            re.finditer(
+                r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+                text or "",
+                flags=re.S,
+            ),
+            1,
+        ):
+            raw_url = html.unescape(match.group(1))
+            url = self._duckduckgo_result_url(raw_url)
+            if not url or self._web_result_domain_blocked(url):
+                continue
+            title = html.unescape(re.sub(r"<.*?>", "", match.group(2))).strip()
+            if not title:
+                continue
+            out.append(ApiCandidate(
+                provider="duckduckgo_search",
+                name=title[:250],
+                website=url[:500],
+                source_url=url[:1000],
+                evidence=(
+                    f"DuckDuckGo result rank {rank} for query "
+                    f"'{query_name} official website'."
+                ),
+            ))
+            if len(out) >= self.web_search_result_limit:
+                break
+        return out
+
+    @staticmethod
+    def _duckduckgo_result_url(raw_url: str) -> Optional[str]:
+        url = (raw_url or "").strip()
+        if not url:
+            return None
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        if "uddg" in params and params["uddg"]:
+            url = params["uddg"][0]
+        if not url.startswith(("http://", "https://")):
+            return None
+        return url.rstrip(").,;")
+
+    @staticmethod
+    def _web_result_domain_blocked(url: str) -> bool:
+        host = (urlparse(url).netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return any(host == domain or host.endswith("." + domain) for domain in BLOCKED_WEB_RESULT_DOMAINS)
 
     def _search_ror(self, name: str) -> list[ApiCandidate]:
         payload = self._get_json(
@@ -1104,8 +1825,15 @@ Rules:
 - For corporate R&D/lab names, a clearly matching parent company is acceptable
   for website, location, and company description when the actor name is just the
   company's research unit (for example "3M Research Laboratories" -> "3M").
-- Official websites may come from ROR, OpenAlex, SEC, or a hub
-  official-websites listing if the label clearly matches the actor.
+- Official websites may come from ROR, OpenAlex, Wikidata, DuckDuckGo search
+  candidates, or a hub official-websites listing if the label/title clearly
+  matches the actor.
+- If the actor website is missing and you select a matching candidate that has
+  a website, copy that exact candidate website. Do not return matched=true with
+  website=null unless no matching candidate has a supported website.
+- For DuckDuckGo search candidates, accept only the official organization site,
+  not articles, databases, social pages, directories, or unrelated product pages.
+  When accepted, use the DuckDuckGo candidate's website as source_url too.
 - Description must be a concise, neutral sentence grounded in the candidate
   evidence. If evidence is too thin, return null.
 - Location fields must come from the selected candidate, not the hub location.
@@ -1174,7 +1902,18 @@ class ActorEnrichmentCandidatePipeline:
         use_wikidata: bool = False,
         use_openalex: bool = True,
         openalex_sleep_seconds: float = 2.0,
+        use_web_search: bool = False,
+        web_search_sleep_seconds: float = 0.5,
+        web_search_result_limit: int = 3,
         include_unlinked: bool = False,
+        deterministic_only: bool = False,
+        revisit_missing: bool = False,
+        use_claude: bool = False,
+        max_claude_calls: Optional[int] = 25,
+        max_claude_cost: Optional[float] = 0.50,
+        min_claude_candidate_score: float = 0.72,
+        missing_fields: Optional[list[str]] = None,
+        stop_after_claude_budget: bool = False,
     ):
         self.project_root = project_root
         self.session = session
@@ -1183,6 +1922,19 @@ class ActorEnrichmentCandidatePipeline:
         self.apply_threshold = apply_threshold
         self.commit_every = max(0, commit_every)
         self.include_unlinked = include_unlinked
+        self.deterministic_only = deterministic_only
+        self.revisit_missing = revisit_missing
+        self.use_claude = use_claude
+        self.max_claude_calls = (
+            None if max_claude_calls is None or max_claude_calls < 0 else max_claude_calls
+        )
+        self.max_claude_cost = (
+            None if max_claude_cost is None or max_claude_cost < 0 else max_claude_cost
+        )
+        self.min_claude_candidate_score = max(0.0, min(1.0, min_claude_candidate_score))
+        self.missing_fields = normalize_missing_fields(missing_fields)
+        self.stop_after_claude_budget = stop_after_claude_budget
+        self._stop_requested = False
         self.model = model
         self.tracker = UsageTracker(model=model)
         self.stats = RunStats()
@@ -1191,6 +1943,9 @@ class ActorEnrichmentCandidatePipeline:
             use_wikidata=use_wikidata,
             use_openalex=use_openalex,
             openalex_sleep_seconds=openalex_sleep_seconds,
+            use_web_search=use_web_search,
+            web_search_sleep_seconds=web_search_sleep_seconds,
+            web_search_result_limit=web_search_result_limit,
         )
 
         log_path = project_root / AUDIT_LOG
@@ -1241,6 +1996,13 @@ class ActorEnrichmentCandidatePipeline:
                 time.sleep(sleep_seconds)
         return []
 
+    def _missing_target_field_condition(self):
+        conditions = []
+        for field in self.missing_fields:
+            column = Actor.location_city if field == "location_city" else getattr(Actor, field)
+            conditions.extend((column.is_(None), column == ""))
+        return or_(*conditions)
+
     def _sparse_actor_query(self):
         has_hub_link = exists(
             select(HubActor.actor_id).where(HubActor.actor_id == Actor.actor_id)
@@ -1251,22 +2013,19 @@ class ActorEnrichmentCandidatePipeline:
                 Source.source_type == "ai_inference",
                 or_(
                     Source.description.like("AI/API actor enrichment candidate for %"),
+                    Source.description.like("Curated official actor enrichment for %"),
+                    Source.description.like("Official website actor enrichment for %"),
+                    Source.description.like("Web-search official website enrichment for %"),
+                    Source.description.like("Name-context aggregate actor enrichment for %"),
                     Source.description.like("Hub-context aggregate actor enrichment for %"),
                     Source.description.like("Hub-context actor enrichment for %"),
+                    Source.description.like("Relevance-context actor enrichment for %"),
                 ),
             )
         )
-        missing_target_field = or_(
-            Actor.description.is_(None),
-            Actor.description == "",
-            Actor.website.is_(None),
-            Actor.website == "",
-            Actor.location_city.is_(None),
-            Actor.location_city == "",
-            Actor.country.is_(None),
-            Actor.country == "",
-        )
-        filters = [missing_target_field, ~already_processed_by_pipeline]
+        filters = [self._missing_target_field_condition()]
+        if not self.revisit_missing:
+            filters.append(~already_processed_by_pipeline)
         if not self.include_unlinked:
             filters.append(has_hub_link)
         query = select(Actor).where(and_(*filters)).order_by(Actor.name)
@@ -1370,8 +2129,22 @@ class ActorEnrichmentCandidatePipeline:
         source_url = decision.get("source_url")
         if source_url and str(source_url).startswith("hub_context://aggregate_actor/"):
             description = f"Hub-context aggregate actor enrichment for {actor.name}"
+        elif source_url and str(source_url).startswith("name_context://aggregate_actor/"):
+            description = f"Name-context aggregate actor enrichment for {actor.name}"
         elif source_url and str(source_url).startswith("hub_context://actor/"):
             description = f"Hub-context actor enrichment for {actor.name}"
+        elif str(decision.get("evidence_summary") or "").startswith("Exact curated official"):
+            description = f"Curated official actor enrichment for {actor.name}"
+        elif str(decision.get("evidence_summary") or "").startswith("Exact official website"):
+            description = f"Official website actor enrichment for {actor.name}"
+        elif str(decision.get("evidence_summary") or "").startswith(
+            "High-confidence DuckDuckGo official website"
+        ):
+            description = f"Web-search official website enrichment for {actor.name}"
+        elif (
+            source_url and str(source_url).startswith("relevance_context://actor/")
+        ) or str(decision.get("evidence_summary") or "").startswith("Actor relevance"):
+            description = f"Relevance-context actor enrichment for {actor.name}"
         else:
             description = (
                 f"AI/API actor enrichment candidate for {actor.name} "
@@ -1429,18 +2202,51 @@ class ActorEnrichmentCandidatePipeline:
         if not decision["matched"] or not decision.get("source_url"):
             return decision
 
+        if decision.get("website"):
+            website_key = _canonical_url_key(decision["website"])
+            for candidate in candidates:
+                if candidate.website and _canonical_url_key(candidate.website) == website_key:
+                    decision["source_url"] = candidate.source_url or candidate.website
+                    break
+
         for candidate in candidates:
             if candidate.source_url != decision["source_url"]:
                 continue
+            if candidate.provider == "duckduckgo_search" and candidate.website:
+                score = _candidate_match_score(actor, candidate)
+                if score >= 0.85:
+                    decision["confidence"] = max(decision["confidence"], 0.86)
+                    decision["needs_human_review"] = False
+                return decision
+            if (
+                candidate.provider == "hub_official_websites"
+                and candidate.website
+                and _official_label_directly_names_actor(actor.name, candidate.name)
+            ):
+                decision["confidence"] = max(decision["confidence"], 0.88)
+                decision["needs_human_review"] = False
+                if not decision.get("description"):
+                    decision["description"] = (
+                        f"{actor.name} is an organization or program identified through "
+                        "official GHUS ecosystem website context."
+                    )
+                return decision
+            if (
+                candidate.provider in {"ror", "openalex"}
+                and candidate.website
+                and name_similarity(actor.name, candidate.name) >= 0.95
+            ):
+                decision["confidence"] = max(decision["confidence"], 0.88)
+                decision["needs_human_review"] = False
+                if not decision.get("description") and candidate.description:
+                    decision["description"] = candidate.description
+                return decision
             if candidate.provider != "sec":
                 continue
-            if name_similarity(actor.name, candidate.name) < 0.95:
-                continue
-            decision["confidence"] = max(decision["confidence"], 0.9)
-            decision["needs_human_review"] = False
-            if not decision.get("description"):
-                decision["description"] = candidate.description
-            return decision
+            # SEC records are kept as evidence for Claude/human validation, but
+            # are not strong enough alone for deterministic auto-apply: ticker
+            # registries can false-match short names and acronyms.
+            continue
         return decision
 
     def _apply_decision(self, actor: Actor, decision: dict) -> str:
@@ -1454,12 +2260,20 @@ class ActorEnrichmentCandidatePipeline:
             self.stats.needs_review += 1
             return "human_review"
 
+        target_fields = ("description", "website", "location_city", "state", "country")
+        would_change = any(
+            decision.get(attr) and not getattr(actor, attr)
+            for attr in target_fields
+        )
+        if not would_change:
+            return "validated_no_update"
+
         self.stats.would_apply += 1
         if not self.apply:
             return "would_apply"
 
         changed = False
-        for attr in ("description", "website", "location_city", "state", "country"):
+        for attr in target_fields:
             value = decision.get(attr)
             if value and not getattr(actor, attr):
                 setattr(actor, attr, value)
@@ -1474,16 +2288,129 @@ class ActorEnrichmentCandidatePipeline:
             return "validated_no_update"
         return "applied"
 
+    def _claude_preflight(
+        self,
+        actor: Actor,
+        candidates: list[ApiCandidate],
+    ) -> tuple[bool, str, str]:
+        if not self.use_claude:
+            return (
+                False,
+                "Claude validation is disabled for this run; candidates require API-only or human validation.",
+                "disabled",
+            )
+        if self.max_claude_calls is not None and self.tracker.calls >= self.max_claude_calls:
+            return (
+                False,
+                f"Claude call budget exhausted ({self.tracker.calls}/{self.max_claude_calls}).",
+                "budget",
+            )
+        if self.max_claude_cost is not None and self.tracker.cost_estimate() >= self.max_claude_cost:
+            return (
+                False,
+                f"Claude cost budget exhausted (${self.tracker.cost_estimate():.4f}/${self.max_claude_cost:.4f}).",
+                "budget",
+            )
+
+        useful_scores = [
+            _candidate_match_score(actor, candidate)
+            for candidate in candidates
+            if _candidate_can_fill_missing_field(actor, candidate, self.missing_fields)
+        ]
+        if not useful_scores:
+            return (
+                False,
+                "No candidate contains values for the actor fields that are still missing.",
+                "weak",
+            )
+
+        best_score = max(useful_scores)
+        if best_score < self.min_claude_candidate_score:
+            return (
+                False,
+                (
+                    f"Best candidate score {best_score:.2f} is below the Claude gate "
+                    f"{self.min_claude_candidate_score:.2f}."
+                ),
+                "weak",
+            )
+
+        return True, "", ""
+
+    def _write_claude_skip(
+        self,
+        actor: Actor,
+        hubs: list[Hub],
+        hub_names: list[str],
+        candidates: list[ApiCandidate],
+        reason: str,
+        kind: str,
+    ) -> None:
+        self.stats.claude_skipped += 1
+        if kind == "budget":
+            self.stats.claude_budget_skipped += 1
+            if self.stop_after_claude_budget:
+                self._stop_requested = True
+        elif kind == "weak":
+            self.stats.claude_weak_candidate_skipped += 1
+
+        if hubs:
+            decision = build_hub_context_actor_decision(
+                actor,
+                hubs,
+                f"{reason} Applied hub-context-only enrichment without Claude.",
+            )
+            self.stats.decisions_made += 1
+            action = self._apply_decision(actor, decision)
+            self._write_audit_row(actor, hub_names, len(candidates), decision, action)
+            return
+
+        decision = build_unresolved_actor_decision(reason)
+        self._write_audit_row(
+            actor,
+            hub_names,
+            len(candidates),
+            decision,
+            "claude_skipped_cost_control",
+        )
+
     def _process_actor(self, actor: Actor) -> None:
         hubs = self._actor_hubs(actor)
         hub_names = [hub.name for hub in hubs]
+
+        decision = build_known_official_actor_decision(actor)
+        if decision:
+            self.stats.decisions_made += 1
+            action = self._apply_decision(actor, decision)
+            self._write_audit_row(actor, hub_names, 1, decision, action)
+            return
+
+        local_candidates: list[ApiCandidate] = []
+        local_hubs = hubs if hubs else (self._all_hubs() if self.include_unlinked else [])
+        if local_hubs:
+            local_candidates = self.searcher._hub_website_candidates(actor.name, local_hubs)
+            decision = build_exact_official_website_decision(actor, local_candidates)
+            if decision:
+                self.stats.decisions_made += 1
+                self.stats.candidates_found += len(local_candidates)
+                action = self._apply_decision(actor, decision)
+                self._write_audit_row(actor, hub_names, len(local_candidates), decision, action)
+                return
+
+        if not hubs:
+            decision = self._relevance_context_decision(actor)
+            if decision:
+                self.stats.decisions_made += 1
+                action = self._apply_decision(actor, decision)
+                self._write_audit_row(actor, hub_names, 1, decision, action)
+                return
+
         if is_aggregate_actor_name(actor.name, actor.actor_type):
             if not hubs:
-                self.stats.no_candidates += 1
-                decision = build_unresolved_actor_decision(
-                    "Aggregate/category actor has no linked hub context; skipped to avoid name-only enrichment."
-                )
-                self._write_audit_row(actor, hub_names, 0, decision, "no_context")
+                decision = build_name_context_aggregate_actor_decision(actor)
+                self.stats.decisions_made += 1
+                action = self._apply_decision(actor, decision)
+                self._write_audit_row(actor, hub_names, 0, decision, action)
                 return
             decision = build_aggregate_actor_decision(actor, hubs)
             self.stats.decisions_made += 1
@@ -1491,7 +2418,25 @@ class ActorEnrichmentCandidatePipeline:
             self._write_audit_row(actor, hub_names, 0, decision, action)
             return
 
+        if self.deterministic_only:
+            decision = build_unresolved_actor_decision(
+                "Deterministic-only run found no local curated, relevance, aggregate, or exact official-website match."
+            )
+            self.stats.no_candidates += 1
+            self.stats.candidates_found += len(local_candidates)
+            self._write_audit_row(
+                actor,
+                hub_names,
+                len(local_candidates),
+                decision,
+                "needs_api_or_human_validation",
+            )
+            return
+
         candidates, failures = self.searcher.search(actor, hubs)
+        if local_candidates:
+            candidates.extend(local_candidates)
+            candidates = self.searcher._dedupe(candidates)
         self.stats.api_failures += failures
         self.stats.candidates_found += len(candidates)
 
@@ -1511,6 +2456,32 @@ class ActorEnrichmentCandidatePipeline:
             self.stats.decisions_made += 1
             action = self._apply_decision(actor, decision)
             self._write_audit_row(actor, hub_names, 0, decision, action)
+            return
+
+        decision = build_exact_official_website_decision(actor, candidates)
+        if decision:
+            self.stats.decisions_made += 1
+            action = self._apply_decision(actor, decision)
+            self._write_audit_row(actor, hub_names, len(candidates), decision, action)
+            return
+
+        decision = build_high_confidence_api_candidate_decision(actor, candidates, self.missing_fields)
+        if decision:
+            self.stats.decisions_made += 1
+            action = self._apply_decision(actor, decision)
+            self._write_audit_row(actor, hub_names, len(candidates), decision, action)
+            return
+
+        decision = build_high_confidence_web_candidate_decision(actor, candidates, self.missing_fields)
+        if decision:
+            self.stats.decisions_made += 1
+            action = self._apply_decision(actor, decision)
+            self._write_audit_row(actor, hub_names, len(candidates), decision, action)
+            return
+
+        can_call_claude, skip_reason, skip_kind = self._claude_preflight(actor, candidates)
+        if not can_call_claude:
+            self._write_claude_skip(actor, hubs, hub_names, candidates, skip_reason, skip_kind)
             return
 
         raw = structured_json(
@@ -1595,9 +2566,19 @@ class ActorEnrichmentCandidatePipeline:
                         err,
                     )
                     time.sleep(sleep_seconds)
+            if self._stop_requested:
+                self.stats.actors_seen = idx
+                self.stats.stopped_early = True
+                logger.info("Stopping early after Claude budget was reached")
+                break
             if idx % 20 == 0:
-                logger.info("Progress %d/%d, Claude cost $%.4f",
-                            idx, len(actor_ids), self.tracker.cost_estimate())
+                logger.info(
+                    "Progress %d/%d, Claude calls %d, Claude cost $%.4f",
+                    idx,
+                    len(actor_ids),
+                    self.tracker.calls,
+                    self.tracker.cost_estimate(),
+                )
 
         if self.apply:
             self.session.commit()

@@ -1,0 +1,63 @@
+row,verdict,hub_name,sector_code,notes
+2,skipped_section_header,Agriculture Hubs,,section divider
+3,updated,UC Davis / Sacramento Valley Agriculture Ecosystem,AGRI,existing hub updated
+4,updated,Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),AGRI,existing hub updated
+5,updated,Texas A&M / College Station – Texas Ag Corridor,AGRI,existing hub updated
+6,updated,Cornell / Upstate New York – Agriculture & AgriTech Hub,AGRI,existing hub updated
+7,updated,Missouri – St. Louis Plant Science & Ag-Biotech Hub,AGRI,existing hub updated
+8,skipped_section_header,AI Hubs,,section divider
+9,updated,Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),AI,existing hub updated
+10,updated,Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),AI,existing hub updated
+11,updated,Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),AI,existing hub updated
+12,updated,Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),AI,existing hub updated
+13,updated,New York City AI Hub (Columbia - NYC - Cornell Tech),AI,existing hub updated
+14,updated,Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),AI,existing hub updated
+15,skipped_section_header,Water Hubs,,section divider
+16,updated,California Water Hub (UC Davis - Berkeley- Stanford),WATER,existing hub updated
+17,updated,Colorado Water Hub (Boulder- Denver- Front Range)+A18,WATER,existing hub updated
+18,updated,Arizona Water Innovation Hub (Phoenix- Tueson),WATER,existing hub updated
+19,updated,Texas Water Systems Hub,WATER,existing hub updated
+20,updated,Great Lakes Water Hub,WATER,existing hub updated
+21,skipped_section_header,Energy Hubs,,section divider
+22,updated,Texas Energy Transition Hub,ENERGY,existing hub updated
+23,updated,California Clean Energy Hub,ENERGY,existing hub updated
+24,updated,Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),ENERGY,existing hub updated
+25,updated,Massachusetts Energy Innovation Hub (Boston – Cambridge),ENERGY,applied known-issue correction; existing hub updated
+26,updated,Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),ENERGY,existing hub updated
+27,updated,Mining Hubs,,existing hub updated
+28,updated,Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,MINING,existing hub updated
+29,updated,Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),MINING,existing hub updated
+30,updated,Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),MINING,applied known-issue correction; existing hub updated
+31,updated,Utah Mining & Mettallurgy Hub,MINING,applied known-issue correction; existing hub updated
+32,updated,Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),ENERGY,existing hub updated
+33,updated,Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),MINING,existing hub updated
+34,skipped_section_header,Specialty Chemicals Hub,,section divider
+35,updated,Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),CHEM,existing hub updated
+36,updated,Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),CHEM,existing hub updated
+37,updated,California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),CHEM,existing hub updated
+38,updated,Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,CHEM,existing hub updated
+39,updated,Boston–Cambridge Chemistry & Chemical Biology Hub,CHEM,existing hub updated
+40,updated,Bay Area Chemistry & Materials Innovation Hub,CHEM,existing hub updated
+41,updated,Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),CHEM,existing hub updated
+42,updated,Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),CHEM,existing hub updated
+43,updated,Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),CHEM,existing hub updated
+44,updated,Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),CHEM,existing hub updated
+45,skipped_section_header,Sustainability Hubs,,section divider
+46,updated,California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),ENERGY,existing hub updated
+47,updated,New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),SUSTAIN,existing hub updated
+48,updated,Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),SUSTAIN,existing hub updated
+49,updated,Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),SUSTAIN,existing hub updated
+50,updated,Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),SUSTAIN,existing hub updated
+51,skipped_section_header,Helath Hubs,,section divider
+52,updated,Boston- Cambridge Academic Medical Hub,HEALTH,existing hub updated
+53,updated,Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),HEALTH,existing hub updated
+54,updated,New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),HEALTH,existing hub updated
+55,updated,Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),HEALTH,existing hub updated
+56,updated,San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),HEALTH,existing hub updated
+57,updated,Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),HEALTH,existing hub updated
+58,skipped_empty,,,all cells empty
+59,skipped_empty,,,all cells empty
+60,skipped_empty,,,all cells empty
+61,skipped_empty,,,all cells empty
+2,structure_updated,UC Davis / Sacramento Valley Agriculture Ecosystem,,upstream/downstream/flow imported
+3,structure_updated,Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),,upstream/downstream/flow imported

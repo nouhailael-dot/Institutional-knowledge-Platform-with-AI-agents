@@ -1,0 +1,42 @@
+2026-07-21 16:34:16,324  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-21 16:34:26,437  INFO     src.enrichment.actor_enrichment_candidates  Processing 106 sparse actors
+2026-07-21 16:34:26,955  INFO     src.enrichment.actor_enrichment_candidates  [1/106] Arianne Phosphate
+2026-07-21 16:34:28,783  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 1 actors
+2026-07-21 16:34:30,210  INFO     src.enrichment.actor_enrichment_candidates  [2/106] Berkeley Energy Institute
+2026-07-21 16:34:31,603  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Energy+Institute "HTTP/1.1 200 OK"
+2026-07-21 16:34:32,762  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Berkeley+Energy+Institute&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:34:37,789  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-21 16:34:56,219  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 16:34:57,174  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 2 actors
+2026-07-21 16:34:57,812  INFO     src.enrichment.actor_enrichment_candidates  [3/106] Berkeley Water Center
+2026-07-21 16:34:59,561  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Water+Center "HTTP/1.1 200 OK"
+2026-07-21 16:35:00,591  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Berkeley+Water+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 16:35:04,768  ERROR    run_actor_enrichment_candidates  Actor enrichment candidate pipeline crashed: Instance <Hub at 0x249fa7bcad0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+Traceback (most recent call last):
+  File "C:\Users\Ismail\Projects\GHUS-Platform\scripts\run_actor_enrichment_candidates.py", line 77, in main
+    stats = pipeline.run()
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 1628, in run
+    self._process_actor(actor)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 1543, in _process_actor
+    candidates.extend(self.searcher._hub_website_candidates(actor.name, self._all_hubs()))
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\Projects\GHUS-Platform\src\enrichment\actor_enrichment_candidates.py", line 1007, in _hub_website_candidates
+    for url, label in self._url_label_pairs_v2(hub.official_websites or ""):
+                                               ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\attributes.py", line 566, in __get__
+    return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\attributes.py", line 1086, in get
+    value = self._fire_loader_callables(state, key, passive)
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\attributes.py", line 1116, in _fire_loader_callables
+    return state._load_expired(state, passive)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\state.py", line 803, in _load_expired
+    self.manager.expired_attribute_loader(self, toload, passive)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Ismail\AppData\Roaming\Python\Python313\site-packages\sqlalchemy\orm\loading.py", line 1603, in load_scalar_attributes
+    raise orm_exc.DetachedInstanceError(
+    ...<2 lines>...
+    )
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <Hub at 0x249fa7bcad0> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)

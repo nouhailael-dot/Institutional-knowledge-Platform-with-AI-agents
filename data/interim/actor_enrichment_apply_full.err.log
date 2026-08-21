@@ -1,0 +1,23 @@
+2026-07-19 18:31:43,034  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-19 18:31:49,119  INFO     src.enrichment.actor_enrichment_candidates  Processing 783 sparse hub-linked actors
+2026-07-19 18:31:49,122  INFO     src.enrichment.actor_enrichment_candidates  [1/783] 3M Research Laboratories
+2026-07-19 18:31:50,149  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=3M+Research+Laboratories "HTTP/1.1 200 OK"
+2026-07-19 18:31:50,640  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=3M+Research+Laboratories&per-page=5 "HTTP/1.1 429 Too Many Requests"
+2026-07-19 18:31:50,642  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for 3M Research Laboratories via _search_openalex: Client error '429 Too Many Requests' for url 'https://api.openalex.org/institutions?search=3M+Research+Laboratories&per-page=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2026-07-19 18:31:51,327  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-19 18:31:52,251  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=3M "HTTP/1.1 200 OK"
+2026-07-19 18:31:52,628  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=3M&per-page=5 "HTTP/1.1 429 Too Many Requests"
+2026-07-19 18:31:52,630  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for 3M via _search_openalex: Client error '429 Too Many Requests' for url 'https://api.openalex.org/institutions?search=3M&per-page=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2026-07-19 18:32:03,569  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-19 18:32:04,150  INFO     src.enrichment.actor_enrichment_candidates  [2/783] Abbott Laboratories
+2026-07-19 18:32:04,814  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Abbott+Laboratories "HTTP/1.1 200 OK"
+2026-07-19 18:32:05,343  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Abbott+Laboratories&per-page=5 "HTTP/1.1 429 Too Many Requests"
+2026-07-19 18:32:05,346  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Abbott Laboratories via _search_openalex: Client error '429 Too Many Requests' for url 'https://api.openalex.org/institutions?search=Abbott+Laboratories&per-page=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2026-07-19 18:32:06,252  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Abbott "HTTP/1.1 200 OK"
+2026-07-19 18:32:06,572  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Abbott&per-page=5 "HTTP/1.1 429 Too Many Requests"
+2026-07-19 18:32:06,573  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Abbott via _search_openalex: Client error '429 Too Many Requests' for url 'https://api.openalex.org/institutions?search=Abbott&per-page=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429
+2026-07-19 18:32:14,330  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"

@@ -1,9 +1,9 @@
 """Canonical promotion path for agent-staged records.
 
-This module is intentionally the only agents module that inserts or updates
-canonical entity tables. The Phase 1 slice supports event create/absorb. The
-existing review_queue table is actor-specific, so event routing is deterministic
-and does not emit review-zone decisions.
+This module is intentionally one of the only agents modules that inserts or
+updates canonical entity tables. The Phase 1 slice supports event create/absorb.
+The existing review_queue table is actor-specific, so event routing is
+deterministic and does not emit review-zone decisions.
 """
 
 from __future__ import annotations
@@ -63,6 +63,7 @@ def promote(staged: StagedRecord, route: RouteDecision, session=None, *, live: b
                 description="agent discovery event create",
             )
             event_id = _insert_event(session, staged.normalized_payload, source_id)
+            _mark_index_dirty(session, entity_type="event", entity_id=event_id)
             result = PromotionResult(
                 action="created",
                 entity_type="event",
@@ -74,6 +75,8 @@ def promote(staged: StagedRecord, route: RouteDecision, session=None, *, live: b
             if not route.target_entity_id:
                 raise ValueError("absorb route requires target_entity_id")
             fields = _absorb_event_fields(session, route.target_entity_id, staged)
+            if fields:
+                _mark_index_dirty(session, entity_type="event", entity_id=route.target_entity_id)
             result = PromotionResult(
                 action="absorbed" if fields else "no_op",
                 entity_type="event",
@@ -167,6 +170,18 @@ def _absorb_event_fields(session, event_id: str, staged: StagedRecord) -> list[s
     set_clause = ", ".join(f"{field_name} = :{field_name}" for field_name in updates if field_name != "event_id")
     session.execute(text(f"UPDATE event SET {set_clause} WHERE event_id = CAST(:event_id AS uuid)"), updates)
     return [field_name for field_name in updates if field_name not in {"event_id", "source_id"}]
+
+
+def _mark_index_dirty(session, *, entity_type: str, entity_id: str) -> None:
+    session.execute(
+        text(
+            "INSERT INTO index_dirty (entity_type, entity_id, marked_at) "
+            "VALUES (:entity_type, CAST(:entity_id AS uuid), CURRENT_TIMESTAMP) "
+            "ON CONFLICT (entity_type, entity_id) DO UPDATE SET "
+            "marked_at = EXCLUDED.marked_at"
+        ),
+        {"entity_type": entity_type, "entity_id": entity_id},
+    )
 
 
 def _is_empty(value: object) -> bool:
