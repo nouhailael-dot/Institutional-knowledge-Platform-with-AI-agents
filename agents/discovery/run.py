@@ -17,7 +17,7 @@ from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.normalize import normalize_event_record
 from agents.discovery.promote import promote
-from agents.discovery.relevance import filter_relevant_records
+from agents.discovery.relevance import IN_SECTOR, OUT_OF_SECTOR, classify_sector_matches
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.climate_week import ClimateWeekAdapter
 from agents.discovery.stage import InMemoryStageStore, SQLStageStore, mark_routed, stage_record
@@ -257,9 +257,13 @@ def _extract_stage_route_promote(
     extracted = extractor.extract(doc)
     stats["records_extracted"] += len(extracted)
     normalized = [normalize_event_record(record) for record in extracted]
-    relevant = filter_relevant_records(normalized, project_root=root)
-    stats["records_relevant"] += len(relevant)
-    for record in relevant:
+    classified = classify_sector_matches(normalized, project_root=root)
+    in_sector_count = sum(1 for record in classified if record.get("sector_match") == IN_SECTOR)
+    out_of_sector_count = sum(1 for record in classified if record.get("sector_match") == OUT_OF_SECTOR)
+    stats["records_in_sector"] += in_sector_count
+    stats["records_out_of_sector"] += out_of_sector_count
+    stats["records_relevant"] += in_sector_count
+    for record in classified:
         staged = stage_record(
             stage_store,
             run_id=run_id,
@@ -269,6 +273,24 @@ def _extract_stage_route_promote(
             prompt_version=extractor.prompt_version,
         )
         stats["records_staged"] += 1
+        if staged.sector_match == OUT_OF_SECTOR:
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": source_name,
+                    "entity_type": entity_type,
+                    "source_url": record.get("source_url"),
+                    "content_hash": doc.content_hash,
+                    "natural_key": record.get("natural_key"),
+                    "zone": OUT_OF_SECTOR,
+                    "score": "",
+                    "target_entity_id": "",
+                    "candidate_ids": [],
+                    "status": "out_of_sector",
+                    "error": "",
+                }
+            )
+            continue
         decision = route_event(record, candidates)
         staged = mark_routed(stage_store, staged, decision)
         result = promote(staged, decision, session=session, live=live)
@@ -362,6 +384,8 @@ def _empty_stats() -> dict[str, int]:
         "skipped_unchanged": 0,
         "records_extracted": 0,
         "records_relevant": 0,
+        "records_in_sector": 0,
+        "records_out_of_sector": 0,
         "records_staged": 0,
         "records_promoted": 0,
         "absorbed": 0,
@@ -390,13 +414,15 @@ def main(argv: Optional[list[str]] = None) -> None:
     stats = result["stats"]
     print(
         "status={status} run_id={run_id} documents={documents} skipped_unchanged={skipped} "
-        "extracted={extracted} relevant={relevant} staged={staged} audit={audit} digest={digest}".format(
+        "extracted={extracted} in_sector={in_sector} out_of_sector={out_of_sector} "
+        "staged={staged} audit={audit} digest={digest}".format(
             status=result["status"],
             run_id=result["run_id"],
             documents=stats["documents_fetched"],
             skipped=stats["skipped_unchanged"],
             extracted=stats["records_extracted"],
-            relevant=stats["records_relevant"],
+            in_sector=stats["records_in_sector"],
+            out_of_sector=stats["records_out_of_sector"],
             staged=stats["records_staged"],
             audit=stats["audit_csv"],
             digest=stats["digest_md"],

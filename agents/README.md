@@ -40,6 +40,12 @@ Fetched content is written under the configured `raw_storage_dir` and the path i
 
 `.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs are dry-run. Live writes require manual `workflow_dispatch` with the `live` input set to true. The workflow runs discovery, deterministic actor profile enrichment, then incremental `search_doc` refresh. It uploads the discovery audit CSV and digest as artifacts.
 
+## Sector-Discovery Handoff
+
+Discovery stages every extracted record. Records whose `sector_codes` match the seeded sector list continue to routing with `sector_match = 'in_sector'`. Records with no seeded-sector match are staged with `sector_match = 'out_of_sector'` and `status = 'out_of_sector'`; they are never routed or promoted.
+
+The teammate-owned sector-discovery agent reads `staged_record WHERE status = 'out_of_sector'`. It does not write to any table owned by this pipeline.
+
 ## Enrichment
 
 Generalized enrichment entry point:

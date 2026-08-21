@@ -213,6 +213,10 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+CANONICAL_ENTITY_MODELS = (Hub, Actor, Person, Event)
+CANONICAL_ENTITY_TABLES = tuple(model.__tablename__ for model in CANONICAL_ENTITY_MODELS)
+
+
 # ============================================================
 # STRATEGIC ALIGNMENT ENTITIES
 # ============================================================

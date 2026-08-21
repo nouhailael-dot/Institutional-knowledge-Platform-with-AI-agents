@@ -10,6 +10,7 @@ from agents.common.raw_storage import RawContentStore
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.promote import PromotionResult
+from agents.discovery.relevance import load_seeded_sector_codes
 from agents.discovery.run import run_pipeline
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.stage import InMemoryStageStore
@@ -57,6 +58,17 @@ class CountingToolClient:
     def extract_with_tool(self, **kwargs):
         self.calls += 1
         return self.payload
+
+
+class StaticExtractor:
+    prompt_version = "event_test_v1"
+
+    def __init__(self, records):
+        self.records = records
+        self.llm_client = CountingToolClient({"events": []})
+
+    def extract(self, doc):
+        return self.records
 
 
 def fixture_payload():
@@ -194,6 +206,64 @@ def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path)
     assert result["audit_rows"][0]["zone"] == "absorb"
     assert result["audit_rows"][0]["target_entity_id"] == "evt-1"
     assert result["audit_rows"][0]["candidate_ids"] == ["evt-1"]
+
+
+def test_out_of_sector_record_is_staged_and_never_promoted(monkeypatch, tmp_path):
+    doc = fixture_doc()
+    run_log = InMemoryRunLog()
+    stage_store = InMemoryStageStore()
+    raw_store = RawContentStore(tmp_path / "raw")
+    promoted = []
+    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+
+    def fake_promote(staged, decision, *, session=None, live=False):
+        promoted.append(staged)
+        return PromotionResult(
+            action=f"would_{decision.zone}",
+            entity_type=staged.entity_type,
+            zone=decision.zone,
+            entity_id=decision.target_entity_id,
+            dry_run=True,
+        )
+
+    monkeypatch.setattr("agents.discovery.run.promote", fake_promote)
+
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=run_log,
+        stage_store=stage_store,
+        source=StaticSource(doc),
+        extractor=StaticExtractor(
+            [
+                {
+                    "title": "In-Sector Climate Summit",
+                    "start_date": "2026-09-22",
+                    "source_url": doc.url,
+                    "extracted_at": "2026-08-10T00:00:00+00:00",
+                    "sector_codes": [valid_code],
+                },
+                {
+                    "title": "Unseeded Frontier Summit",
+                    "start_date": "2026-09-23",
+                    "source_url": doc.url,
+                    "extracted_at": "2026-08-10T00:00:00+00:00",
+                    "sector_codes": ["UNSEEDED_FRONTIER"],
+                },
+            ]
+        ),
+        raw_store=raw_store,
+    )
+
+    assert result["stats"]["records_extracted"] == 2
+    assert result["stats"]["records_in_sector"] == 1
+    assert result["stats"]["records_out_of_sector"] == 1
+    assert result["stats"]["records_staged"] == 2
+    assert len(promoted) == 1
+    rows = list(stage_store.rows.values())
+    assert sorted(row.sector_match for row in rows) == ["in_sector", "out_of_sector"]
+    assert [row for row in rows if row.status == "out_of_sector"]
+    assert any(row["status"] == "out_of_sector" and row["zone"] == "out_of_sector" for row in result["audit_rows"])
 
 
 def test_scheduled_workflow_does_not_enable_live():
