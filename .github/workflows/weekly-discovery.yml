@@ -1,0 +1,76 @@
+name: Weekly Discovery
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      live:
+        description: 'Run with --live and write to the configured database'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  weekly-discovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GHUS_AGENT_CONTACT_EMAIL: ${{ secrets.GHUS_AGENT_CONTACT_EMAIL }}
+      LIVE_INPUT: ${{ github.event.inputs.live || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[dev]"
+
+      - name: Run weekly discovery
+        shell: bash
+        run: |
+          set +e
+          mkdir -p agents/runs
+          LIVE_ARG=""
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$LIVE_INPUT" = "true" ]; then
+            LIVE_ARG="--live"
+          fi
+          python -m agents.discovery.run \
+            --source climate_week \
+            --entity event \
+            $LIVE_ARG \
+            --out agents/runs/weekly-audit.csv \
+            --digest-out agents/runs/weekly-digest.md
+          RUN_EXIT=$?
+          set -e
+          if [ -f agents/runs/weekly-digest.md ] && grep -qi "status.*failed" agents/runs/weekly-digest.md; then
+            exit 1
+          fi
+          if [ "$RUN_EXIT" -ne 0 ]; then
+            exit "$RUN_EXIT"
+          fi
+          python -m agents.enrichment.run \
+            --entity actor \
+            --field-set profile \
+            --limit 50 \
+            --deterministic-only \
+            --revisit-missing \
+            $LIVE_ARG
+          python -m agents.index.refresh \
+            --entity all \
+            --limit 500 \
+            $LIVE_ARG
+
+      - name: Upload weekly discovery artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-discovery-artifacts
+          path: |
+            agents/runs/weekly-audit.csv
+            agents/runs/weekly-digest.md
+          if-no-files-found: warn
