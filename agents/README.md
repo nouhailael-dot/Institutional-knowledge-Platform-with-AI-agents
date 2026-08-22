@@ -78,10 +78,11 @@ TEMPORARY: `index_dirty` exists because `event` currently has no `updated_at`, s
 4. Empty result sets are no-ops, never deletes or replacements.
 5. Entity writes and provenance writes happen in one transaction; provenance failure aborts the entity write.
 6. Never overwrite a non-null value automatically; fill gaps only and propose suspected corrections for humans.
+7. Event routing deliberately does not use the frozen ER combiner. That combiner was trained on actor name/profile features; applying it to events would be a training/deployment distribution mismatch, the same class of failure that previously forced `desc_both_present` out of the actor model when production null patterns diverged from the gold set.
 
 ## Phase 1/2 Notes
 
-- The existing frozen combiner is trained on actors, so event routing does not use it. Events match deterministically on `natural_key = normalized title + start date`.
-- The existing `review_queue` table is actor-pair specific. The event route has only exact-match absorb and no-match create outcomes.
+- The existing frozen combiner is trained on actors, so event routing does not use it. Events exact-match on `natural_key = normalized title + start date`; same-date fuzzy title matches go to the agent-owned `event_review_queue`.
+- The existing `review_queue` table is actor-pair specific. Event review rows go to `event_review_queue` instead of extending that upstream table.
 - The canonical `event` table has no `verification_status`, `confidence`, or `updated_at` columns, so Phase 1 cannot set `needs_review` on event rows without changing upstream schema.
 - The agent SQL files are emitted under `agents/sql/`; the CLI does not run them.

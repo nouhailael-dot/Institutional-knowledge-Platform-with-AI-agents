@@ -117,6 +117,7 @@ def mark_routed(store, staged: StagedRecord, route) -> StagedRecord:
         "score": route.score,
         "target_entity_id": route.target_entity_id,
         "candidate_ids": route.candidate_ids,
+        "metadata": getattr(route, "metadata", {}),
     }
     staged.status = f"routed_{route.zone}"
     staged.target_entity_id = route.target_entity_id

@@ -298,6 +298,7 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
                 Path("agents/discovery/promote.py"),
                 Path("agents/index/refresh.py"),
             },
+            "event_review_queue": {Path("agents/discovery/promote.py")},
         }
     )
     table_pattern = "|".join(re.escape(table) for table in sorted(protected_tables, key=len, reverse=True))

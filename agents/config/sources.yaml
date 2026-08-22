@@ -2,6 +2,9 @@
   "cost": {
     "max_usd_per_run": 0.05
   },
+  "routing": {
+    "event_fuzzy_review_threshold": 0.88
+  },
   "sources": {
     "climate_week": {
       "entity_types": ["event"],
