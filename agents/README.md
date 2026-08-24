@@ -1,6 +1,6 @@
 # GHUS Agents Layer
 
-Phase 1 is a single vertical slice: one source adapter (`climate_week`), one entity type (`event`), and deterministic event routing. Phase 2 adds weekly unattended execution, content-hash change detection, replay from stored raw content, and a short weekly digest. Phase 4 adds the generalized enrichment policy layer and incremental `search_doc` refresh.
+Phase 1 started as a single vertical slice: one source adapter (`climate_week`), one entity type (`event`), and deterministic event routing. Discovery now supports three event sources: `climate_week`, `unga_programme`, and `unga_guide`. Phase 2 adds weekly unattended execution, content-hash change detection, replay from stored raw content, and a short weekly digest. Phase 4 adds the generalized enrichment policy layer and incremental `search_doc` refresh.
 
 The reporting agent is out of scope. Agent 3 is new-sector discovery, owned by a teammate. Reporting code is preserved on branch `shelved/reporting-agent`.
 
@@ -10,6 +10,13 @@ Dry-run is the default:
 
 ```powershell
 python -m agents.discovery.run --source climate_week --entity event
+```
+
+Other event sources:
+
+```powershell
+python -m agents.discovery.run --source unga_programme --entity event
+python -m agents.discovery.run --source unga_guide --entity event
 ```
 
 Use `--out path/to/audit.csv` to choose the audit CSV path and `--digest-out path/to/digest.md` to choose the weekly digest path. Use `--limit N` to cap discovered URLs. `--live` is the only flag that enables database writes.
@@ -36,15 +43,47 @@ Before extraction, the runner checks whether `(url, content_hash)` already exist
 
 Fetched content is written under the configured `raw_storage_dir` and the path is stored in `raw_document.storage_path`, so extraction can be replayed without refetching.
 
+## Run Status
+
+Discovery closes runs honestly:
+
+- `succeeded`: documents fetched and records staged, all fetched documents were skipped unchanged, or records were extracted but all were out of the seeded sectors.
+- `attention`: a source yields zero URLs, zero documents are fetched, or fetched documents produce zero extracted records.
+- `failed`: an exception aborts the run.
+
+Every run writes `scrape_run.status_reason`, including successful cheap-week runs where all fetched documents were unchanged and extraction was skipped. The weekly digest prints the reason at the top so a no-op success is visibly different from a broken zero-output run. Apply `agents/sql/070_scrape_run_status_reason.sql` before running this version against a database.
+
+`agents/config/sources.yaml` is parsed as YAML, not JSON. Keep using the `.yaml` file name; the shipped-config test loads this exact file so syntax errors fail before the Monday workflow.
+
+The default run cost ceiling is `$0.50`, which leaves headroom for a full Climate Week extraction that has measured around `$0.14`. If the ceiling is exceeded, discovery closes the run as `attention`, writes audit and digest artifacts for the partial staged work, and exits nonzero for CI.
+
+## Actor Discovery
+
+E1 actor discovery has a tool-schema extractor and promotion branch, but no actor source adapter has been added yet. Actor routing uses the existing frozen `EntityResolver` blocking and combiner scoring through `agents.common.resolve_route.route_actor`; all canonical actor writes still happen only in `agents/discovery/promote.py`. Before allowing actor auto-absorb on a new source, run:
+
+```powershell
+python -m agents.evals.score_distribution --limit 100
+```
+
+The score distribution script reports mean, median, share above HIGH, and the saved OOF reference metrics. It does not adjust thresholds.
+
+## Event Sources
+
+- `climate_week`: fetches only `https://www.climateweeknyc.org/event-search` and configured pagination URLs. It slices the `hubdb-listing` event cards into row batches before calling Claude, so it no longer sends the full multi-megabyte page at once.
+- `unga_programme`: fetches the official UN General Assembly high-level meetings page at `https://www.un.org/en/ga/81/meetings/` using a browser-like, contactable User-Agent.
+- `unga_guide`: fetches `https://ungaguide.com/`, follows minimal same-site pagination links, and treats a coming-soon page as an attention run rather than an extraction failure.
+
+Network source adapters check `robots.txt`, use `GHUS_AGENT_CONTACT_EMAIL` in the User-Agent, and fail loudly if that contact address is missing.
+
 ## Weekly Schedule
 
 `.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs are dry-run. Live writes require manual `workflow_dispatch` with the `live` input set to true. The workflow runs discovery, deterministic actor profile enrichment, then incremental `search_doc` refresh. It uploads the discovery audit CSV and digest as artifacts.
 
 ## Sector-Discovery Handoff
 
-Discovery stages every extracted record. Records whose `sector_codes` match the seeded sector list continue to routing with `sector_match = 'in_sector'`. Records with no seeded-sector match are staged with `sector_match = 'out_of_sector'` and `status = 'out_of_sector'`; they are never routed or promoted.
+Discovery stages every extracted record. Records whose `sector_codes` match the seeded sector list continue to routing with `sector_match = 'in_sector'`. Records with no seeded-sector match are staged with `sector_match = 'out_of_sector'`; they are never routed or promoted. `sector_match` is the source-of-truth classification for the teammate handoff; `status` remains the staged-record lifecycle state.
 
-The teammate-owned sector-discovery agent reads `staged_record WHERE status = 'out_of_sector'`. It does not write to any table owned by this pipeline.
+The teammate-owned sector-discovery agent reads `staged_record WHERE sector_match = 'out_of_sector'`. It does not write to any table owned by this pipeline.
 
 ## Enrichment
 
@@ -79,6 +118,7 @@ TEMPORARY: `index_dirty` exists because `event` currently has no `updated_at`, s
 5. Entity writes and provenance writes happen in one transaction; provenance failure aborts the entity write.
 6. Never overwrite a non-null value automatically; fill gaps only and propose suspected corrections for humans.
 7. Event routing deliberately does not use the frozen ER combiner. That combiner was trained on actor name/profile features; applying it to events would be a training/deployment distribution mismatch, the same class of failure that previously forced `desc_both_present` out of the actor model when production null patterns diverged from the gold set.
+8. `search_doc` is a derived index rather than a fact store. Its rows are reconstructable from canonical rows that already carry provenance, so it deliberately does not get its own `source` rows. Every `search_doc` row must store `entity_type` and `entity_id` so the trail back to provenance stays explicit.
 
 ## Phase 1/2 Notes
 

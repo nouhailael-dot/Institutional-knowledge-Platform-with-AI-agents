@@ -22,6 +22,7 @@ class RunSnapshot:
     status: str = "running"
     stats: dict[str, object] = field(default_factory=dict)
     error: Optional[str] = None
+    status_reason: str = ""
 
 
 class InMemoryRunLog:
@@ -46,16 +47,34 @@ class InMemoryRunLog:
             raise RuntimeError(f"scrape_run {run_id} does not exist")
         return run.__dict__.copy()
 
-    def close_run(self, run_id: str, *, status: str, stats: dict[str, object], cost_usd: float = 0.0) -> None:
+    def close_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        stats: dict[str, object],
+        cost_usd: float = 0.0,
+        status_reason: str = "",
+    ) -> None:
         run = self.runs[run_id]
         run.status = status
+        run.status_reason = status_reason
         run.stats.update(stats)
         run.stats["cost_usd"] = round(float(cost_usd), 6)
 
-    def fail_run(self, run_id: str, *, error: str, stats: dict[str, object], cost_usd: float = 0.0) -> None:
+    def fail_run(
+        self,
+        run_id: str,
+        *,
+        error: str,
+        stats: dict[str, object],
+        cost_usd: float = 0.0,
+        status_reason: str = "",
+    ) -> None:
         run = self.runs[run_id]
         run.status = "failed"
         run.error = error
+        run.status_reason = status_reason or error
         run.stats.update(stats)
         run.stats["cost_usd"] = round(float(cost_usd), 6)
 
@@ -111,7 +130,7 @@ class SQLRunLog:
         row = self.session.execute(
             text(
                 "SELECT run_id::text AS run_id, source_name, entity_type, mode, status, "
-                "stats, error, cost_usd FROM scrape_run WHERE run_id = CAST(:run_id AS uuid)"
+                "stats, error, cost_usd, status_reason FROM scrape_run WHERE run_id = CAST(:run_id AS uuid)"
             ),
             {"run_id": run_id},
         ).mappings().first()
@@ -119,11 +138,19 @@ class SQLRunLog:
             raise RuntimeError(f"scrape_run {run_id} does not exist")
         return dict(row)
 
-    def close_run(self, run_id: str, *, status: str, stats: dict[str, object], cost_usd: float = 0.0) -> None:
+    def close_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        stats: dict[str, object],
+        cost_usd: float = 0.0,
+        status_reason: str = "",
+    ) -> None:
         self.session.execute(
             text(
                 "UPDATE scrape_run SET status = :status, finished_at = now(), "
-                "stats = CAST(:stats AS jsonb), cost_usd = :cost_usd "
+                "stats = CAST(:stats AS jsonb), cost_usd = :cost_usd, status_reason = :status_reason "
                 "WHERE run_id = CAST(:run_id AS uuid)"
             ),
             {
@@ -131,15 +158,25 @@ class SQLRunLog:
                 "status": status,
                 "stats": json.dumps(stats, sort_keys=True, default=str),
                 "cost_usd": float(cost_usd),
+                "status_reason": status_reason,
             },
         )
         self.session.commit()
 
-    def fail_run(self, run_id: str, *, error: str, stats: dict[str, object], cost_usd: float = 0.0) -> None:
+    def fail_run(
+        self,
+        run_id: str,
+        *,
+        error: str,
+        stats: dict[str, object],
+        cost_usd: float = 0.0,
+        status_reason: str = "",
+    ) -> None:
         self.session.execute(
             text(
                 "UPDATE scrape_run SET status = 'failed', finished_at = now(), "
-                "stats = CAST(:stats AS jsonb), error = :error, cost_usd = :cost_usd "
+                "stats = CAST(:stats AS jsonb), error = :error, cost_usd = :cost_usd, "
+                "status_reason = :status_reason "
                 "WHERE run_id = CAST(:run_id AS uuid)"
             ),
             {
@@ -147,6 +184,7 @@ class SQLRunLog:
                 "stats": json.dumps(stats, sort_keys=True, default=str),
                 "error": error,
                 "cost_usd": float(cost_usd),
+                "status_reason": status_reason or error,
             },
         )
         self.session.commit()

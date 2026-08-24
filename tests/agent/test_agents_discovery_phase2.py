@@ -4,15 +4,21 @@ import json
 from argparse import Namespace
 from pathlib import Path
 
+import pytest
 import yaml
 
+from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.raw_storage import RawContentStore
 from agents.common.run_log import InMemoryRunLog
+from agents.discovery import run as discovery_run
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.promote import PromotionResult
 from agents.discovery.relevance import load_seeded_sector_codes
-from agents.discovery.run import run_pipeline
+from agents.discovery.run import load_config, run_pipeline
 from agents.discovery.sources.base import FetchedDoc
+from agents.discovery.sources.climate_week import ClimateWeekAdapter
+from agents.discovery.sources.unga_guide import UngaGuideAdapter
+from agents.discovery.sources.unga_programme import UngaProgrammeAdapter
 from agents.discovery.stage import InMemoryStageStore
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "agents"
@@ -49,11 +55,37 @@ class NetworkUnavailableSource:
         raise AssertionError("replay must not fetch from the network")
 
 
+class EmptySource:
+    name = "climate_week"
+    entity_types = ("event",)
+    rate_limit_s = 0.0
+
+    def __init__(self, reason: str = ""):
+        self.last_discovery_reason = reason
+
+    def discover(self):
+        return iter(())
+
+    def fetch(self, url: str):
+        raise AssertionError("empty source must not fetch")
+
+
 class CountingToolClient:
     def __init__(self, payload):
         self.payload = payload
         self.calls = 0
-        self.usage = type("Usage", (), {"snapshot": lambda _: {"calls": self.calls, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}})()
+        self.usage = type(
+            "Usage",
+            (),
+            {
+                "snapshot": lambda _: {
+                    "calls": self.calls,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cost_usd": 0.0,
+                }
+            },
+        )()
 
     def extract_with_tool(self, **kwargs):
         self.calls += 1
@@ -71,8 +103,18 @@ class StaticExtractor:
         return self.records
 
 
+class FailingExtractor(StaticExtractor):
+    def __init__(self):
+        super().__init__([])
+
+    def extract(self, doc):
+        raise RuntimeError("extractor failed")
+
+
 def fixture_payload():
-    return json.loads((FIXTURE_ROOT / "climate_week_events.expected.json").read_text(encoding="utf-8"))
+    return json.loads(
+        (FIXTURE_ROOT / "climate_week_events.expected.json").read_text(encoding="utf-8")
+    )
 
 
 def fixture_doc():
@@ -95,6 +137,22 @@ def args(**overrides):
     return Namespace(**values)
 
 
+def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
+    config = load_config(PROJECT_ROOT)
+
+    assert sorted(config) == ["cost", "routing", "sources"]
+    assert float(dict(config["cost"])["max_usd_per_run"]) == 0.50
+    sources = dict(config["sources"])
+    assert set(sources) >= {"climate_week", "unga_programme", "unga_guide"}
+    for source_name in ("climate_week", "unga_programme", "unga_guide"):
+        source = dict(sources[source_name])
+        assert source["entity_types"] == ["event"]
+        assert source["raw_storage_dir"]
+        assert source["contact_email_env"] == "GHUS_AGENT_CONTACT_EMAIL"
+        assert "claude_model" in source
+        assert "llm_pricing" in source
+
+
 def routing_signature(result):
     return [
         {
@@ -113,7 +171,9 @@ def routing_signature(result):
 def test_hash_match_skips_extraction_and_llm_calls(tmp_path):
     doc = fixture_doc()
     run_log = InMemoryRunLog()
-    seed_run_id = run_log.start_run(source_name="climate_week", entity_type="event", live=False, config={})
+    seed_run_id = run_log.start_run(
+        source_name="climate_week", entity_type="event", live=False, config={}
+    )
     raw_store = RawContentStore(tmp_path / "raw")
     storage_path = raw_store.write(run_id=seed_run_id, doc=doc)
     run_log.write_raw_document(run_id=seed_run_id, doc=doc, storage_path=storage_path)
@@ -131,7 +191,86 @@ def test_hash_match_skips_extraction_and_llm_calls(tmp_path):
 
     assert result["stats"]["skipped_unchanged"] == 1
     assert result["stats"]["records_extracted"] == 0
+    assert result["status"] == "succeeded"
+    assert seed_run_id in result["stats"]["status_reason"]
+    assert "no extraction needed" in result["stats"]["status_reason"]
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert f"**Reason:** 1 document(s) unchanged since run {seed_run_id}" in digest
     assert client.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("adapter_cls", "config", "expected_url"),
+    [
+        (
+            ClimateWeekAdapter,
+            {
+                "listing_url": "https://www.climateweeknyc.org/event-search",
+                "pagination_urls": [
+                    "https://www.climateweeknyc.org/event-search/",
+                    "https://www.climateweeknyc.org/event-search?redirect=1",
+                ],
+            },
+            "https://www.climateweeknyc.org/event-search",
+        ),
+        (
+            UngaProgrammeAdapter,
+            {
+                "meeting_url": "https://www.un.org/en/ga/81/meetings/",
+                "seed_urls": ["https://www.un.org/en/ga/81/meetings/?redirect=1"],
+            },
+            "https://www.un.org/en/ga/81/meetings/",
+        ),
+        (
+            UngaGuideAdapter,
+            {
+                "listing_url": "https://ungaguide.com/",
+                "seed_urls": ["https://ungaguide.com/?redirect=1"],
+            },
+            "https://ungaguide.com/",
+        ),
+    ],
+)
+def test_source_adapters_discover_dedupes_after_redirects(
+    monkeypatch, adapter_cls, config, expected_url
+):
+    adapter = adapter_cls(config, project_root=PROJECT_ROOT, offline=False)
+    monkeypatch.setattr(adapter.http, "resolve_url", lambda url: expected_url)
+    if isinstance(adapter, UngaGuideAdapter):
+        monkeypatch.setattr(
+            adapter,
+            "fetch",
+            lambda url: FetchedDoc.from_content(
+                url=url, content="<html>Search through 1 events</html>"
+            ),
+        )
+
+    assert list(adapter.discover()) == [expected_url]
+
+
+def test_unga_guide_discover_generates_full_pagination_range(monkeypatch):
+    adapter = UngaGuideAdapter(
+        {"listing_url": "https://ungaguide.com/"}, project_root=PROJECT_ROOT, offline=False
+    )
+    content = """
+    <html><body>
+      <main id="site-content">
+        <a class="page-numbers" href="https://ungaguide.com/page/2/">2</a>
+        <a class="page-numbers" href="https://ungaguide.com/page/3/">3</a>
+        <span class="page-numbers dots">...</span>
+        <a class="page-numbers" href="https://ungaguide.com/page/11/">11</a>
+      </main>
+    </body></html>
+    """
+    monkeypatch.setattr(adapter.http, "resolve_url", lambda url: url)
+    monkeypatch.setattr(
+        adapter, "fetch", lambda url: FetchedDoc.from_content(url=url, content=content)
+    )
+
+    assert list(adapter.discover()) == [
+        "https://ungaguide.com/",
+        *[f"https://ungaguide.com/page/{page}/" for page in range(2, 12)],
+    ]
 
 
 def test_replay_reproduces_original_routing_with_network_unavailable(tmp_path):
@@ -152,7 +291,11 @@ def test_replay_reproduces_original_routing_with_network_unavailable(tmp_path):
 
     replay_client = CountingToolClient(fixture_payload())
     replay = run_pipeline(
-        args(replay=first["run_id"], out=str(tmp_path / "replay.csv"), digest_out=str(tmp_path / "replay.md")),
+        args(
+            replay=first["run_id"],
+            out=str(tmp_path / "replay.csv"),
+            digest_out=str(tmp_path / "replay.md"),
+        ),
         root=PROJECT_ROOT,
         run_log=run_log,
         stage_store=InMemoryStageStore(),
@@ -165,6 +308,302 @@ def test_replay_reproduces_original_routing_with_network_unavailable(tmp_path):
     assert replay_client.calls == first_client.calls
 
 
+def test_pipeline_dedupes_duplicate_natural_keys_before_staging(tmp_path):
+    doc = fixture_doc()
+    run_log = InMemoryRunLog()
+    stage_store = InMemoryStageStore()
+    raw_store = RawContentStore(tmp_path / "raw")
+    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+    duplicate_records = [
+        {
+            "title": "Duplicate Climate Event",
+            "start_date": "2026-09-22",
+            "source_url": doc.url,
+            "extracted_at": "2026-08-10T00:00:00+00:00",
+            "sector_codes": [valid_code],
+        },
+        {
+            "title": "Duplicate   Climate Event",
+            "start_date": "2026-09-22",
+            "source_url": doc.url,
+            "extracted_at": "2026-08-10T00:00:00+00:00",
+            "sector_codes": [valid_code],
+        },
+    ]
+
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=run_log,
+        stage_store=stage_store,
+        source=StaticSource(doc),
+        extractor=StaticExtractor(duplicate_records),
+        raw_store=raw_store,
+    )
+
+    assert result["stats"]["records_extracted"] == 1
+    assert result["stats"]["records_staged"] == 1
+    assert stage_store.row_count() == 1
+
+
+def test_status_succeeded_when_documents_fetch_and_records_stage(tmp_path):
+    doc = fixture_doc()
+    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=InMemoryStageStore(),
+        source=StaticSource(doc),
+        extractor=StaticExtractor(
+            [
+                {
+                    "title": "Climate Status Event",
+                    "start_date": "2026-09-22",
+                    "source_url": doc.url,
+                    "extracted_at": "2026-08-10T00:00:00+00:00",
+                    "sector_codes": [valid_code],
+                }
+            ]
+        ),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["stats"]["status_reason"] == "staged 1 record(s): 1 in-sector, 0 out-of-sector"
+
+
+def test_extractor_attention_reason_overrides_success_status(tmp_path):
+    doc = FetchedDoc.from_content(
+        url="fixture://climate_week/event-search",
+        content="""
+        <!-- event listing: total=5 fetched=2 pages_needed=3 max_pages=10 -->
+        <div class="hubdb-listing">
+          <article class="event-card"><h2>One</h2></article>
+          <article class="event-card"><h2>Two</h2></article>
+        </div>
+        """,
+        meta={"extractor_mode": "hubdb_listing"},
+    )
+    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+    client = CountingToolClient(
+        {
+            "events": [
+                {
+                    "title": "Climate Guard Event",
+                    "start_date": "2026-09-22",
+                    "end_date": None,
+                    "description": None,
+                    "location": None,
+                    "country": None,
+                    "website": None,
+                    "thematic_focus": None,
+                    "event_type": None,
+                    "expected_attendance": None,
+                    "access_type": None,
+                    "recurring_pattern": None,
+                    "sponsoring_orgs": None,
+                    "sector_codes": [valid_code],
+                }
+            ]
+        }
+    )
+
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=InMemoryStageStore(),
+        source=StaticSource(doc),
+        extractor=EventExtractor(client, row_batch_size=10, min_row_count=4),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    assert result["stats"]["records_staged"] == 1
+    assert result["status"] == "attention"
+    assert "below configured floor 4" in result["stats"]["status_reason"]
+    assert "displays total=5 but parser found 2 rows" in result["stats"]["status_reason"]
+
+
+def test_status_attention_when_documents_fetch_but_zero_records_extract(tmp_path):
+    doc = fixture_doc()
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=InMemoryStageStore(),
+        source=StaticSource(doc),
+        extractor=StaticExtractor([]),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    assert result["status"] == "attention"
+    assert result["stats"]["status_reason"] == "documents fetched but zero records extracted"
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert "**Status:** attention" in digest
+    assert "**Reason:** documents fetched but zero records extracted" in digest
+
+
+def test_status_succeeded_when_records_extract_but_zero_are_in_sector(tmp_path):
+    doc = fixture_doc()
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=InMemoryStageStore(),
+        source=StaticSource(doc),
+        extractor=StaticExtractor(
+            [
+                {
+                    "title": "Out Of Seed Sector Event",
+                    "start_date": "2026-09-22",
+                    "source_url": doc.url,
+                    "extracted_at": "2026-08-10T00:00:00+00:00",
+                    "sector_codes": ["UNSEEDED_FRONTIER"],
+                }
+            ]
+        ),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["stats"]["records_extracted"] == 1
+    assert result["stats"]["records_in_sector"] == 0
+    assert result["stats"]["records_out_of_sector"] == 1
+    assert (
+        result["stats"]["status_reason"]
+        == "extracted 1 record(s); 0 matched seeded sectors; staged as out_of_sector"
+    )
+
+
+def test_cost_ceiling_breach_closes_attention_retains_staged_records(
+    monkeypatch, tmp_path
+):
+    doc = fixture_doc()
+    run_log = InMemoryRunLog()
+    stage_store = InMemoryStageStore()
+    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+
+    def fake_enforce(self):
+        self.max_usd = 0.05
+        self.spent_usd = 0.06
+        raise CostLimitExceeded("agent run cost $0.0600 exceeded ceiling $0.0500")
+
+    monkeypatch.setattr(CostMeter, "enforce", fake_enforce)
+
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=run_log,
+        stage_store=stage_store,
+        source=StaticSource(doc),
+        extractor=StaticExtractor(
+            [
+                {
+                    "title": "Partially Kept Climate Event",
+                    "start_date": "2026-09-22",
+                    "source_url": doc.url,
+                    "extracted_at": "2026-08-10T00:00:00+00:00",
+                    "sector_codes": [valid_code],
+                }
+            ]
+        ),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    run = next(iter(run_log.runs.values()))
+    assert result["status"] == "attention"
+    assert result["exit_code"] == 1
+    assert run.status == "attention"
+    assert result["stats"]["records_staged"] == 1
+    assert stage_store.row_count() == 1
+    assert result["stats"]["failures"] == 0
+    assert "cost ceiling exceeded" in result["stats"]["status_reason"]
+    assert "$0.060000" in result["stats"]["status_reason"]
+    assert (tmp_path / "audit.csv").exists()
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert "**Status:** attention" in digest
+    assert "**Reason:** cost ceiling exceeded" in digest
+
+
+def test_discovery_main_exits_nonzero_for_cost_attention(monkeypatch):
+    def fake_run_pipeline(_args):
+        return {
+            "run_id": "run-1",
+            "status": "attention",
+            "stats": {
+                "documents_fetched": 1,
+                "skipped_unchanged": 0,
+                "records_extracted": 1,
+                "records_in_sector": 1,
+                "records_out_of_sector": 0,
+                "records_staged": 1,
+                "audit_csv": "audit.csv",
+                "digest_md": "digest.md",
+            },
+            "exit_code": 1,
+        }
+
+    monkeypatch.setattr(discovery_run, "run_pipeline", fake_run_pipeline)
+
+    with pytest.raises(SystemExit) as exc:
+        discovery_run.main(["--source", "climate_week", "--entity", "event"])
+
+    assert exc.value.code == 1
+
+
+def test_status_attention_when_source_yields_zero_urls(tmp_path):
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=InMemoryStageStore(),
+        source=EmptySource("test source has no URLs"),
+        extractor=StaticExtractor([]),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    assert result["status"] == "attention"
+    assert result["stats"]["status_reason"] == "test source has no URLs"
+
+
+def test_status_attention_when_limit_prevents_all_fetches(tmp_path):
+    doc = fixture_doc()
+    result = run_pipeline(
+        args(limit=0, out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=InMemoryStageStore(),
+        source=StaticSource(doc),
+        extractor=StaticExtractor([]),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    assert result["status"] == "attention"
+    assert result["stats"]["status_reason"] == "source yielded zero fetched documents"
+
+
+def test_status_failed_when_extractor_raises(tmp_path):
+    doc = fixture_doc()
+    run_log = InMemoryRunLog()
+
+    with pytest.raises(RuntimeError, match="extractor failed"):
+        run_pipeline(
+            args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+            root=PROJECT_ROOT,
+            run_log=run_log,
+            stage_store=InMemoryStageStore(),
+            source=StaticSource(doc),
+            extractor=FailingExtractor(),
+            raw_store=RawContentStore(tmp_path / "raw"),
+        )
+
+    run = next(iter(run_log.runs.values()))
+    assert run.status == "failed"
+    assert run.status_reason == "extractor failed"
+
+
 def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path):
     doc = fixture_doc()
     run_log = InMemoryRunLog()
@@ -175,7 +614,9 @@ def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path)
 
     def fake_load_event_candidates(active_session):
         load_calls.append(active_session)
-        return [{"event_id": "evt-1", "name": "Climate Innovation Summit", "next_date": "2026-09-22"}]
+        return [
+            {"event_id": "evt-1", "name": "Climate Innovation Summit", "next_date": "2026-09-22"}
+        ]
 
     def fake_promote(staged, decision, *, session=None, live=False):
         decisions.append(decision)
@@ -191,7 +632,9 @@ def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path)
     monkeypatch.setattr("agents.discovery.run.promote", fake_promote)
 
     result = run_pipeline(
-        args(offline=False, out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        args(
+            offline=False, out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")
+        ),
         session=session,
         root=PROJECT_ROOT,
         run_log=run_log,
@@ -259,17 +702,69 @@ def test_out_of_sector_record_is_staged_and_never_promoted(monkeypatch, tmp_path
     assert result["stats"]["records_in_sector"] == 1
     assert result["stats"]["records_out_of_sector"] == 1
     assert result["stats"]["records_staged"] == 2
+    assert result["status"] == "succeeded"
     assert len(promoted) == 1
     rows = list(stage_store.rows.values())
     assert sorted(row.sector_match for row in rows) == ["in_sector", "out_of_sector"]
-    assert [row for row in rows if row.status == "out_of_sector"]
-    assert any(row["status"] == "out_of_sector" and row["zone"] == "out_of_sector" for row in result["audit_rows"])
+    out_of_sector_rows = [row for row in rows if row.sector_match == "out_of_sector"]
+    assert out_of_sector_rows
+    assert all(row.status == "staged" for row in out_of_sector_rows)
+    assert any(
+        row["status"] == "out_of_sector" and row["zone"] == "out_of_sector"
+        for row in result["audit_rows"]
+    )
 
 
 def test_scheduled_workflow_does_not_enable_live():
-    workflow = yaml.safe_load((PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(encoding="utf-8"))
-    run_step = next(step for step in workflow["jobs"]["weekly-discovery"]["steps"] if step.get("name") == "Run weekly discovery")
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    run_step = next(
+        step
+        for step in workflow["jobs"]["weekly-discovery"]["steps"]
+        if step.get("name") == "Run weekly discovery"
+    )
     script = run_step["run"]
 
     assert '"$GITHUB_EVENT_NAME" = "workflow_dispatch"' in script
     assert '"$GITHUB_EVENT_NAME" = "schedule"' not in script
+
+
+def test_weekly_workflow_passes_required_secrets():
+    workflow_text = (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(
+        encoding="utf-8"
+    )
+    workflow = yaml.safe_load(workflow_text)
+    env = workflow["jobs"]["weekly-discovery"]["env"]
+
+    assert env["DATABASE_URL"] == "${{ secrets.DATABASE_URL }}"
+    assert env["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
+    assert env["GHUS_AGENT_CONTACT_EMAIL"] == "${{ secrets.GHUS_AGENT_CONTACT_EMAIL }}"
+    assert "VOYAGE_API_KEY" not in workflow_text
+
+
+def test_agent_sql_contains_weekly_run_schema_changes():
+    sql_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((PROJECT_ROOT / "agents" / "sql").glob("*.sql"))
+    )
+
+    assert "CREATE TABLE IF NOT EXISTS scrape_run" in sql_text
+    assert "CREATE TABLE IF NOT EXISTS raw_document" in sql_text
+    assert "CREATE TABLE IF NOT EXISTS staged_record" in sql_text
+    assert "ADD COLUMN IF NOT EXISTS storage_path" in sql_text
+    assert "ADD COLUMN IF NOT EXISTS sector_match" in sql_text
+    assert "ADD COLUMN IF NOT EXISTS status_reason" in sql_text
+    assert "CREATE TABLE IF NOT EXISTS index_dirty" in sql_text
+    assert "CREATE TABLE IF NOT EXISTS event_review_queue" in sql_text
+
+
+def test_out_of_sector_index_filters_on_sector_match():
+    migration = (PROJECT_ROOT / "agents" / "sql" / "080_stage_sector_match_index.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "WHERE sector_match = 'out_of_sector'" in migration
+    assert "WHERE status = 'out_of_sector'" not in migration.split("DROP INDEX", 1)[-1]

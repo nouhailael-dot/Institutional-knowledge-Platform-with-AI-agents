@@ -18,6 +18,8 @@ from typing import Iterable, Optional
 
 from sqlalchemy import text
 
+from agents.common.config import load_sources_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,11 +47,13 @@ def load_actor_thresholds(project_root: Optional[Path] = None) -> Thresholds:
 
 def load_event_review_threshold(project_root: Optional[Path] = None) -> float:
     root = project_root or Path(__file__).resolve().parents[2]
-    cfg = json.loads((root / "agents" / "config" / "sources.yaml").read_text(encoding="utf-8"))
+    cfg = load_sources_config(root)
     try:
         threshold = float(dict(cfg["routing"])["event_fuzzy_review_threshold"])
     except (KeyError, TypeError, ValueError) as exc:
-        raise RuntimeError("agents/config/sources.yaml must define routing.event_fuzzy_review_threshold") from exc
+        raise RuntimeError(
+            "agents/config/sources.yaml must define routing.event_fuzzy_review_threshold"
+        ) from exc
     if threshold <= 0.0 or threshold > 1.0:
         raise RuntimeError("routing.event_fuzzy_review_threshold must be > 0 and <= 1")
     return threshold
@@ -70,10 +74,51 @@ def zone_for_score(score: float, thresholds: Thresholds) -> str:
     return "create"
 
 
+def route_actor(record: dict[str, object], resolver) -> RouteDecision:
+    """Route an actor with the existing frozen actor ER resolver.
+
+    The resolver owns blocking, feature extraction, and combiner scoring. This
+    function only maps the best score to the shared route shape so promotion
+    stays inside agents/discovery/promote.py.
+    """
+    name = str(record.get("name") or "").strip()
+    if not name:
+        raise ValueError("actor record has no name")
+
+    candidates = resolver._candidates(name)
+    thresholds = Thresholds(high=float(resolver.HIGH), low=float(resolver.LOW))
+    if candidates.empty:
+        return RouteDecision(
+            zone="create",
+            score=0.0,
+            candidate_ids=[],
+            metadata={"model": getattr(resolver, "model_name", "combiner")},
+        )
+
+    scored = resolver._score(record, candidates)
+    best = scored.iloc[0]
+    score = float(best["score"])
+    zone = zone_for_score(score, thresholds)
+    candidate_ids = [str(value) for value in scored["actor_id"].tolist()]
+    target_entity_id = str(best["actor_id"]) if zone in {"absorb", "review"} else None
+    return RouteDecision(
+        zone=zone,
+        score=score,
+        target_entity_id=target_entity_id,
+        candidate_ids=candidate_ids,
+        metadata={
+            "matched_name": str(best.get("name") or ""),
+            "model": getattr(resolver, "model_name", "combiner"),
+        },
+    )
+
+
 def load_event_candidates(session) -> list[dict[str, object]]:
-    rows = session.execute(
-        text("SELECT event_id::text AS event_id, name, next_date FROM event")
-    ).mappings().all()
+    rows = (
+        session.execute(text("SELECT event_id::text AS event_id, name, next_date FROM event"))
+        .mappings()
+        .all()
+    )
     return [dict(row) for row in rows]
 
 
@@ -86,7 +131,11 @@ def route_event(
     project_root: Optional[Path] = None,
 ) -> RouteDecision:
     thresholds = thresholds or load_actor_thresholds()
-    fuzzy_threshold = event_review_threshold if event_review_threshold is not None else load_event_review_threshold(project_root)
+    fuzzy_threshold = (
+        event_review_threshold
+        if event_review_threshold is not None
+        else load_event_review_threshold(project_root)
+    )
     blocked = normalized_token_block(record, candidates)
     record_key = str(record.get("natural_key") or "").strip()
     candidate_ids = [_candidate_id(candidate) for candidate in blocked]
@@ -157,7 +206,9 @@ def normalized_token_block(
         if record_date and candidate_date and record_date == candidate_date:
             blocked.append(candidate)
             continue
-        if record_tokens and record_tokens.intersection(_tokens(candidate.get("name") or candidate.get("title"))):
+        if record_tokens and record_tokens.intersection(
+            _tokens(candidate.get("name") or candidate.get("title"))
+        ):
             blocked.append(candidate)
     return blocked
 

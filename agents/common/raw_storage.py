@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from sys import path
 from typing import Optional
+
+from annotated_types import doc
 
 from agents.discovery.sources.base import FetchedDoc
 
@@ -25,11 +28,12 @@ class RawContentStore:
         target_dir = self.base_dir / _safe_part(run_id)
         target_dir.mkdir(parents=True, exist_ok=True)
         path = target_dir / f"{doc.content_hash}.{_extension(doc.content_type)}"
-        path.write_text(doc.content, encoding="utf-8", newline="\n")
+        path.write_text(doc.content, encoding="utf-8", newline="")
+        path.write_bytes(doc.content.encode("utf-8"))
         return str(path)
 
     def read(self, storage_path: str) -> str:
-        return Path(storage_path).read_text(encoding="utf-8")
+        return Path(storage_path).read_bytes().decode("utf-8")
 
     def exists(self, storage_path: Optional[str]) -> bool:
         return bool(storage_path) and Path(str(storage_path)).exists()

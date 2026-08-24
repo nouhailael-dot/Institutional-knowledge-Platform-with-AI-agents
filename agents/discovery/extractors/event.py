@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import html
+import html.parser
+import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
 from agents.discovery.sources.base import FetchedDoc
 
+logger = logging.getLogger(__name__)
+
 PROMPT_VERSION = "event_v1"
+VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 
 EVENT_FIELDS = [
     "title",
@@ -62,16 +69,117 @@ EVENT_TOOL_SCHEMA: dict[str, Any] = {
 }
 
 
+class _HubDbListingParser(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.found_listing = False
+        self._listing_depth = 0
+        self._article_depth = 0
+        self._current: list[str] = []
+        self.rows: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag_lower = tag.lower()
+        classes = _classes(attrs)
+        if not self._listing_depth and tag_lower == "div" and "hubdb-listing" in classes:
+            self.found_listing = True
+            self._listing_depth = 1
+            return
+        if self._listing_depth and tag_lower not in VOID_TAGS:
+            self._listing_depth += 1
+        if self._listing_depth and not self._article_depth and tag_lower == "article" and "event-card" in classes:
+            self._article_depth = 1
+            self._current = [self.get_starttag_text() or _start_tag(tag_lower, attrs)]
+            return
+        if self._article_depth:
+            self._current.append(self.get_starttag_text() or _start_tag(tag_lower, attrs))
+            if tag_lower not in VOID_TAGS:
+                self._article_depth += 1
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._article_depth:
+            self._current.append(self.get_starttag_text() or _start_tag(tag.lower(), attrs, closed=True))
+
+    def handle_endtag(self, tag: str) -> None:
+        tag_lower = tag.lower()
+        if self._article_depth:
+            self._current.append(f"</{tag_lower}>")
+            self._article_depth -= 1
+            if self._article_depth == 0:
+                self.rows.append("".join(self._current))
+                self._current = []
+        if self._listing_depth and tag_lower not in VOID_TAGS:
+            self._listing_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._article_depth:
+            self._current.append(html.escape(data))
+
+    def handle_entityref(self, name: str) -> None:
+        if self._article_depth:
+            self._current.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if self._article_depth:
+            self._current.append(f"&#{name};")
+
+
 class EventExtractor:
     entity_type = "event"
     prompt_version = PROMPT_VERSION
     json_schema = EVENT_TOOL_SCHEMA
 
-    def __init__(self, llm_client, *, max_tokens: int = 2048):
+    def __init__(self, llm_client, *, max_tokens: int = 2048, row_batch_size: int = 25, min_row_count: int = 0):
         self.llm_client = llm_client
         self.max_tokens = max_tokens
+        self.row_batch_size = row_batch_size
+        self.min_row_count = min_row_count
+        self.attention_reasons: list[str] = []
 
     def extract(self, doc: FetchedDoc) -> list[dict]:
+        if doc.meta.get("extractor_mode") == "hubdb_listing" or "hubdb-listing" in doc.content:
+            return self._extract_hubdb_listing(doc)
+        return self._extract_single_doc(doc)
+
+    def _extract_hubdb_listing(self, doc: FetchedDoc) -> list[dict]:
+        rows, found_listing = hubdb_listing_rows(doc.content)
+        if not found_listing:
+            logger.warning(
+                "hubdb-listing container not found for %s; page_size_bytes=%d",
+                doc.url,
+                len(doc.content.encode("utf-8")),
+            )
+            return []
+        if not rows:
+            logger.warning("hubdb-listing container had zero event-card rows for %s", doc.url)
+            return []
+        self._check_listing_completeness(doc, len(rows))
+        records: list[dict] = []
+        for batch_number, rows_batch in enumerate(_batches(rows, self.row_batch_size), start=1):
+            batch_doc = FetchedDoc.from_content(
+                url=doc.url,
+                content="\n".join(rows_batch),
+                content_type=doc.content_type,
+                fetched_at=doc.fetched_at,
+                meta={**doc.meta, "batch_number": batch_number, "batch_rows": len(rows_batch)},
+            )
+            records.extend(self._extract_single_doc(batch_doc))
+        return records
+
+    def _check_listing_completeness(self, doc: FetchedDoc, row_count: int) -> None:
+        reasons: list[str] = []
+        if self.min_row_count and row_count < self.min_row_count:
+            reasons.append(
+                f"{doc.url} parsed {row_count} event rows, below configured floor {self.min_row_count}"
+            )
+        displayed_total = displayed_event_total(doc.content)
+        if displayed_total is not None and displayed_total > row_count:
+            reasons.append(f"{doc.url} displays total={displayed_total} but parser found {row_count} rows")
+        for reason in reasons:
+            logger.warning(reason)
+            self.attention_reasons.append(reason)
+
+    def _extract_single_doc(self, doc: FetchedDoc) -> list[dict]:
         payload = self.llm_client.extract_with_tool(
             system=self._system_prompt(),
             user=self._user_prompt(doc),
@@ -110,3 +218,42 @@ class EventExtractor:
             "source must be null, never guessed.\n\n"
             f"{doc.content[:12000]}"
         )
+
+
+def hubdb_listing_rows(content: str) -> tuple[list[str], bool]:
+    parser = _HubDbListingParser()
+    parser.feed(content)
+    return parser.rows, parser.found_listing
+
+
+def displayed_event_total(content: str) -> int | None:
+    comment_match = re.search(r"event listing:\s*total=(\d+)\s+fetched=(\d+)", content, flags=re.IGNORECASE)
+    if comment_match:
+        return int(comment_match.group(1))
+    text_match = re.search(r"Search through\s+(\d+)\s+events", content, flags=re.IGNORECASE)
+    if text_match:
+        return int(text_match.group(1))
+    return None
+
+
+def _batches(items: list[str], size: int):
+    if size <= 0:
+        raise ValueError("row_batch_size must be greater than zero")
+    for index in range(0, len(items), size):
+        yield items[index : index + size]
+
+
+def _classes(attrs: list[tuple[str, str | None]]) -> set[str]:
+    for name, value in attrs:
+        if name.lower() == "class" and value:
+            return {part.strip() for part in value.split() if part.strip()}
+    return set()
+
+
+def _start_tag(tag: str, attrs: list[tuple[str, str | None]], *, closed: bool = False) -> str:
+    attr_text = "".join(
+        f' {name}="{html.escape(value, quote=True)}"' if value is not None else f" {name}"
+        for name, value in attrs
+    )
+    suffix = " /" if closed else ""
+    return f"<{tag}{attr_text}{suffix}>"

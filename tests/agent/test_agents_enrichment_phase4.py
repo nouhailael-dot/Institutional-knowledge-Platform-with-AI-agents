@@ -391,7 +391,30 @@ def test_search_doc_refresh_upserts_only_selected_candidates():
     assert stats.upserts == 1
     assert stats.deletes == 0
     assert any("INSERT INTO search_doc" in sql for sql in session.statements)
+    upsert_params = [params for sql, params in zip(session.statements, session.params) if "INSERT INTO search_doc" in sql][0]
+    assert upsert_params["entity_type"] == "actor"
+    assert upsert_params["entity_id"]
     assert not any("search_doc_2" in sql for sql in session.statements)
+
+
+def test_search_doc_refresh_refuses_candidate_without_entity_reference():
+    session = FakeSession()
+
+    with pytest.raises(RuntimeError, match="missing entity_type or entity_id"):
+        refresh_search_doc(
+            session,
+            live=True,
+            candidates=[
+                SearchDocCandidate(
+                    entity_type="",
+                    entity_id=str(uuid.uuid4()),
+                    name="Broken Candidate",
+                    doc_text="Name: Broken Candidate",
+                )
+            ],
+        )
+
+    assert not any("INSERT INTO search_doc" in sql for sql in session.statements)
 
 
 def test_search_doc_upsert_clears_index_dirty_row_after_successful_upsert():

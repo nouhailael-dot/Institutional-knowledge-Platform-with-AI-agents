@@ -32,11 +32,9 @@ class CostMeter:
         if amount < 0:
             raise ValueError("cost amount cannot be negative")
         if amount == 0:
-            self.enforce()
             return
         self.spent_usd += amount
         self.entries.append(CostEntry(label=label, amount_usd=amount))
-        self.enforce()
 
     def enforce(self) -> None:
         if self.max_usd is not None and self.spent_usd > float(self.max_usd):

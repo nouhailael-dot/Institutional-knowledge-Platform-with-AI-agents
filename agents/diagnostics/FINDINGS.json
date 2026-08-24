@@ -1,0 +1,819 @@
+[
+  {
+    "body_preview": "<!--  Added by GoogleTagManager integration -->\n<noscript><iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-WTJLKM4\" height=\"0\" width=\"0\" style=\"display:none;visibility:hidden\"></iframe></noscript>\n\n<!-- /Added by GoogleTagManager integration -->\n\n\n    <div class=\"body-wrapper fd-light-active   hs-content-id-354562384077 hs-site-page page \">\n\n      \n      <div data-global-resource-path=\"strutoCX Theme - Climate Group/templates/partials/climate-week-nyc-header.html\"><header class=\"header\">\n\n  <div class=\"container-fluid\">\n<div class=\"row-fluid-wrapper\">\n<div class=\"row-fluid\">\n<div class=\"span12 widget-span widget-type-cell \" style=\"\" data-widget-type=\"cell\" data-x=\"0\" data-w=\"12\">\n\n<div class=\"row-fluid-wrapper row-depth-1 row-number-1 dnd-section header-row-0-padding header-row-0-force-full-width-section\">\n<div class=\"row-fluid \">\n<div class=\"span12 widget-span widget-type-custom_widget dnd-module\" style=\"\" data-widget-type=\"custom_widget\" data-x=\"0\" data-w=\"12\">\n<div id=\"hs_cos_wrapper_header-module-1\" class=\"hs_cos_wrapper hs_cos_wrapper_widget hs_cos_wrapper_type_module\" style=\"\" data-hs-cos-general-type=\"widget\" data-hs-cos-type=\"module\">\n\n\n\n\n\n\n\n\n<!-- Main Menu -->\n<header class=\"ap-header-main-section ap-header-main-section-header-module-1 header__primary-header\">\n  \n  <!-- Top Container -->\n  <div class=\"ap-header-main-container ap-header-top-container\">\n    <div class=\"ap-header-main-menu-wrap\">\n      \n      <div class=\"ap-main-menu-desktop-content\">\n\n     ... [truncated]",
+    "byte_count": 5179993,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://www.climateweeknyc.org/event-search",
+    "item_count": 428,
+    "item_outer_html": [
+      "<article class=\"event-card mix date-20260927 public in-person theme-built-environment theme-environmental-justice theme-cities\" data-title=\"day 2: climate innovation, energy &amp; community garden tours with lungs\" data-name=\"Day 2: Climate Innovation, Energy &amp; Community Garden Tours with LUNGS\">\r\n\r\n                    <a href=\"/event-search/day-2-climate-innovation-energy-community-garden-tours-with-lungs?hsLang=en\" class=\"event-card__link\" target=\"_blank\" rel=\"noopener noreferrer\">\r\n\r\n    ... [truncated]",
+      "<article class=\"event-card mix date-20260927 public in-person theme-cities\" data-title=\"free central park bike tour for climate week nyc 9/27 - 11:00am\" data-name=\"Free Central Park Bike Tour for Climate Week NYC 9/27 - 11:00AM\">\r\n\r\n                    <a href=\"/event-search/free-central-park-bike-tour-for-climate-week-nyc-927-1100am?hsLang=en\" class=\"event-card__link\" target=\"_blank\" rel=\"noopener noreferrer\">\r\n\r\n                        <div class=\"event-card__image\" data-image-id-url=\"\" data-i... [truncated]"
+    ],
+    "item_selector": "article.event-card",
+    "listing_count": 1,
+    "listing_outer_html": [],
+    "listing_selector": ".hubdb-listing",
+    "requested_url": "https://www.climateweeknyc.org/event-search",
+    "source": "climate_week",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\climate_week\\01_www.climateweeknyc.org_event-search.html",
+    "top_class_values": [
+      [
+        "event-card__link",
+        428
+      ],
+      [
+        "event-card__image",
+        428
+      ],
+      [
+        "event-card__content",
+        428
+      ],
+      [
+        "event-card__title",
+        428
+      ],
+      [
+        "event-card__meta",
+        428
+      ],
+      [
+        "event-card__meta-list",
+        428
+      ],
+      [
+        "event-card__meta-item event-card__meta-item--date",
+        428
+      ],
+      [
+        "event-card__meta-item event-card__meta-item--format",
+        428
+      ],
+      [
+        "event-card__meta-item event-card__meta-item--type",
+        406
+      ],
+      [
+        "event-card__meta-item event-card__meta-item--location",
+        389
+      ]
+    ]
+  },
+  {
+    "body_preview": "<!-- stats_bodytop.shtml-->\r\n<!-- Google Tag Manager (noscript) -->\r\n<noscript><iframe src=\"https://www.googletagmanager.com/ns.html?id=GTM-LQCS\"\r\n    height=\"0\" width=\"0\" style=\"display:none;visibility:hidden\"></iframe></noscript>\r\n    <!-- End Google Tag Manager (noscript) -->\r\n\r\n<div id=\"skiplink\">\r\n  <ul>\r\n    <li><a href=\"#site-main-menu\">Skip to main navigation</a></li>\r\n    <li><a href=\"#content\">Skip to content</a></li>\r\n  </ul>\r\n</div>\r\n<header role=\"banner\"> \r\n  <!-- used div instead of nav to not interfere with jquery for site nav, temp solution -->\r\n<div class=\"un-brand-bar\">\r\n  <div class=\"container\">\r\n    <div class=\"row\">\r\n    <div id=\"skiptocontent\" tabindex=\"1\"><a href=\"#un-main-content\" class=\"\"><!--#include virtual=\"/en/events/global-assets/snippets-languages/en/skip.txt\" --></a></div>\r\n      <div class=\"col-md-4 un-no-padding un-sm-padding\"> <a class=\"navbar-brand un-brandbar-welcome-lr\" href=\"http://www.un.org/en\"><span class=\"un-offscreen\"><!--#include virtual=\"/en/events/global-assets/snippets-languages/en/unhome.txt\" --></span></a> </div>\r\n      <div class=\"col-md-8 language-switcher un-no-padding un-sm-padding\">\r\n              \r\n        <button type=\"button\" class=\"navbar-toggle collapsed\" data-toggle=\"collapse\" data-target=\"#language-switcher\"> <span class=\"sr-only\"><!--#include virtual=\"/en/events/global-assets/snippets-languages/en/toggle.txt\" --></span> <span class=\"icon-bar blue-icon-bar\"></span> <span class=\"icon-bar blue-icon-bar\"></span> <span... [truncated]",
+    "byte_count": 29526,
+    "content_type": "text/html",
+    "final_url": "https://www.un.org/en/ga/81/meetings/",
+    "item_count": 109,
+    "item_outer_html": [
+      "<li><a href=\"#site-main-menu\">Skip to main navigation</a></li>",
+      "<li><a href=\"#content\">Skip to content</a></li>"
+    ],
+    "item_selector": "li",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div id=\"content\" class=\"col-xs-12 col-md-9\"> \r\n    <h2>High-level Meetings of the 81st Session</h2>\r\n    <h3>Provisional Schedule</h3>\r\n    <ul>\r\n      <li><strong>Opening of the 81st session</strong>: 8 September 2026 | <a aria-label=\"official document, in PDF\" href=\"https://undocs.org/en/A/INF/81/1\">A/INF/81/1</a>&nbsp;<img src=\"/common/images/icons/ico_pdf.gif\" alt=\"PDF\"></li>\r\n      <li><strong>Sustainable Development Goals (SDG) Moment</strong>: 18 September 2026 | <a aria-label=\"official ... [truncated]"
+    ],
+    "listing_selector": "div#content",
+    "requested_url": "https://www.un.org/en/ga/81/meetings/",
+    "source": "unga_programme",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_programme\\01_www.un.org_en_ga_81_meetings.html",
+    "top_class_values": [
+      [
+        "nolink",
+        10
+      ],
+      [
+        "un-offscreen",
+        6
+      ],
+      [
+        "fa fa-caret-down",
+        6
+      ],
+      [
+        "container",
+        5
+      ],
+      [
+        "un-language-link",
+        5
+      ],
+      [
+        "sub-nav",
+        5
+      ],
+      [
+        "nav-item col-xs-12 col-sm-1 col-md-1",
+        4
+      ],
+      [
+        "nav-item col-xs-12 col-sm-2 col-md-2",
+        4
+      ],
+      [
+        "search-control form-control",
+        4
+      ],
+      [
+        "leaf",
+        4
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 75354,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9560 unga_event type-unga_event status-publish hentry unga_event_category-ai unga_event_category-art-culture unga_event_category-climate-environment unga_event_category-data-tech unga_event_category-government unga_event_category-sustainable-development\">\n    <header>\n        <time datetime=\"2026-09-10\">\n            <span class=\"date\">Thu, Sep 10</span>\n            <span class=\"time\">Multi-Day Event</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"u... [truncated]",
+      "<article class=\"post-9561 unga_event type-unga_event status-publish hentry unga_event_category-health\">\n    <header>\n        <time datetime=\"2026-09-14\">\n            <span class=\"date\">Mon, Sep 14</span>\n            <span class=\"time\">9:00am - 5:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/c3-davos-of-healthcare-nyc-summit/\">C3 Davos of Healthcare\u2122 NYC Summit</a></h2>\n                <p class=\"unga-event_... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9560 unga_event type-unga_event status-publish hentry unga_event_category-ai unga_event_category-art-culture unga_event_category-climate-environment unga_event_category-data-tech unga_event_category-government unga_event_category-sustainable-development\">\n    <header>\n        <time datetime=\"2026-09-10\">\n            <span class=\"date\">Thu, Sep 10</span>\n            <span class=\"time\">Multi-Day Event</span>\n        </ti... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\01_ungaguide.com.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "page-numbers",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 73029,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/2/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9885 unga_event type-unga_event status-publish hentry\">\n    <header>\n        <time datetime=\"2026-09-20\">\n            <span class=\"date\">Sun, Sep 20</span>\n            <span class=\"time\">5:30pm - 7:30pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/network-social/\">Network Social</a></h2>\n                <p class=\"unga-event__organizer\">Rani</p>\n                </div>\n</article>",
+      "<article class=\"post-9639 unga_event type-unga_event status-publish hentry unga_event_category-climate-environment unga_event_category-economic-development\">\n    <header>\n        <time datetime=\"2026-09-21\">\n            <span class=\"date\">Mon, Sep 21</span>\n            <span class=\"time\">All Day Event</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/accelerating-business-leadership-on-air-pollution-roundtable/\">Ac... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9885 unga_event type-unga_event status-publish hentry\">\n    <header>\n        <time datetime=\"2026-09-20\">\n            <span class=\"date\">Sun, Sep 20</span>\n            <span class=\"time\">5:30pm - 7:30pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/network-social/\">Network Social</a></h2>\n                <p class=\"unga-event__organize... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/2/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\02_ungaguide.com_page_2.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "page-numbers",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 73713,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/3/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9862 unga_event type-unga_event status-publish hentry unga_event_category-climate-environment\">\n    <header>\n        <time datetime=\"2026-09-21\">\n            <span class=\"date\">Mon, Sep 21</span>\n            <span class=\"time\">9:00am - 12:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/solving-food-waste-is-a-key-solution-to-the-climate-crisis/\">Solving Food Waste is a Key Solution to th... [truncated]",
+      "<article class=\"post-9640 unga_event type-unga_event status-publish hentry unga_event_category-climate-environment\">\n    <header>\n        <time datetime=\"2026-09-21\">\n            <span class=\"date\">Mon, Sep 21</span>\n            <span class=\"time\">9:30am - 12:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/ceo-water-mandates-corporate-water-stewardship-half-day/\">CEO Water Mandate&#8217;s Corporate Water Ste... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9862 unga_event type-unga_event status-publish hentry unga_event_category-climate-environment\">\n    <header>\n        <time datetime=\"2026-09-21\">\n            <span class=\"date\">Mon, Sep 21</span>\n            <span class=\"time\">9:00am - 12:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/solving-food-waste-is-a-key-solution-to-the-cl... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/3/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\03_ungaguide.com_page_3.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "page-numbers",
+        5
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 82578,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/4/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9904 unga_event type-unga_event status-publish hentry unga_event_category-gender unga_event_category-health\">\n    <header>\n        <time datetime=\"2026-09-21\">\n            <span class=\"date\">Mon, Sep 21</span>\n            <span class=\"time\">3:30pm - 6:30pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/sustaining-action-for-women-and-girls/\">Sustaining Action for Women and Girls</a></h2>\n   ... [truncated]",
+      "<article class=\"post-9927 unga_event type-unga_event status-publish hentry unga_event_category-health\">\n    <header>\n        <time datetime=\"2026-09-21\">\n            <span class=\"date\">Mon, Sep 21</span>\n            <span class=\"time\">4:00pm - 6:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/crisis-in-preparedness-laboratories-frontline-readiness-in-the-time-of-ebola/\">Crisis in preparedness: laboratories &... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9904 unga_event type-unga_event status-publish hentry unga_event_category-gender unga_event_category-health\">\n    <header>\n        <time datetime=\"2026-09-21\">\n            <span class=\"date\">Mon, Sep 21</span>\n            <span class=\"time\">3:30pm - 6:30pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/sustaining-action-for-women-and-g... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/4/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\04_ungaguide.com_page_4.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "page-numbers",
+        6
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 75837,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/5/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9910 unga_event type-unga_event status-publish hentry unga_event_category-government\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">Multi-Day Event</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/unga81-high-level-week-general-debate/\">UNGA81 High-Level Week / General Debate</a></h2>\n                <p class... [truncated]",
+      "<article class=\"post-9692 unga_event type-unga_event status-publish hentry unga_event_category-economic-development unga_event_category-government unga_event_category-human-rights\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">All Day Event</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/ungps-at-15-business-leadership-on-human-... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9910 unga_event type-unga_event status-publish hentry unga_event_category-government\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">Multi-Day Event</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/unga81-high-level-week-general-debate/\">UNGA81 High-Leve... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/5/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\05_ungaguide.com_page_5.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "page-numbers",
+        6
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 75683,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/6/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9660 unga_event type-unga_event status-publish hentry unga_event_category-health unga_event_category-sustainable-development\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">9:30am - 11:00am</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/the-health-system-stress-test-why-kidney-health-matters-for-uhc/\">The He... [truncated]",
+      "<article class=\"post-9556 unga_event type-unga_event status-publish hentry unga_event_category-climate-environment\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">10:00am - 12:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/how-do-we-create-meaningful-climate-action-in-an-increasingly-authoritarian-usa-2/\">How Do We Create M... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9660 unga_event type-unga_event status-publish hentry unga_event_category-health unga_event_category-sustainable-development\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">9:30am - 11:00am</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/the-health-syst... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/6/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\06_ungaguide.com_page_6.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "page-numbers",
+        6
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 87737,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/7/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9897 unga_event type-unga_event status-publish hentry unga_event_category-education unga_event_category-youth\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">2:00pm - 3:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/in-the-shadow-of-tomorrow-nurturing-human-thriving-in-a-polycrisis-world/\">In the Shadow... [truncated]",
+      "<article class=\"post-9907 unga_event type-unga_event status-publish hentry unga_event_category-ai unga_event_category-data-tech\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">2:00pm - 6:30pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/navigating-power-trust-and-cooperation-in-an-era-of-strategic-competition/\">Navigating Powe... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9897 unga_event type-unga_event status-publish hentry unga_event_category-education unga_event_category-youth\">\n    <header>\n        <time datetime=\"2026-09-22\">\n            <span class=\"date\">Tue, Sep 22</span>\n            <span class=\"time\">2:00pm - 3:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/in-the-shadow-of-tomorrow-nurtu... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/7/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\07_ungaguide.com_page_7.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "page-numbers",
+        6
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 78044,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/8/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9888 unga_event type-unga_event status-publish hentry unga_event_category-ai unga_event_category-data-tech unga_event_category-gender unga_event_category-government unga_event_category-human-rights unga_event_category-sustainable-development unga_event_category-youth\">\n    <header>\n        <time datetime=\"2026-09-23\">\n            <span class=\"date\">Wed, Sep 23</span>\n            <span class=\"time\">10:00am - 4:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n ... [truncated]",
+      "<article class=\"post-9552 unga_event type-unga_event status-publish hentry unga_event_category-art-culture\">\n    <header>\n        <time datetime=\"2026-09-23\">\n            <span class=\"date\">Wed, Sep 23</span>\n            <span class=\"time\">11:00am - 2:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/rewear-the-revolution-street-event/\">ReWear the Revolution (Street Event)</a></h2>\n                <p class=\"un... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9888 unga_event type-unga_event status-publish hentry unga_event_category-ai unga_event_category-data-tech unga_event_category-gender unga_event_category-government unga_event_category-human-rights unga_event_category-sustainable-development unga_event_category-youth\">\n    <header>\n        <time datetime=\"2026-09-23\">\n            <span class=\"date\">Wed, Sep 23</span>\n            <span class=\"time\">10:00am - 4:00pm</spa... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/8/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\08_ungaguide.com_page_8.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "page-numbers",
+        6
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 77088,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/9/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9840 unga_event type-unga_event status-publish hentry unga_event_category-climate-environment unga_event_category-data-tech unga_event_category-economic-development\">\n    <header>\n        <time datetime=\"2026-09-24\">\n            <span class=\"date\">Thu, Sep 24</span>\n            <span class=\"time\">8:00am - 2:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/climate-solutions-investing-a-sys... [truncated]",
+      "<article class=\"post-9726 unga_event type-unga_event status-publish hentry unga_event_category-sustainable-development\">\n    <header>\n        <time datetime=\"2026-09-24\">\n            <span class=\"date\">Thu, Sep 24</span>\n            <span class=\"time\">8:00am - 1:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/united-nations-global-compact-network-usa-annual-summit-the-room-where-it-happens-shaping-the-next-e... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9840 unga_event type-unga_event status-publish hentry unga_event_category-climate-environment unga_event_category-data-tech unga_event_category-economic-development\">\n    <header>\n        <time datetime=\"2026-09-24\">\n            <span class=\"date\">Thu, Sep 24</span>\n            <span class=\"time\">8:00am - 2:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/9/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\09_ungaguide.com_page_9.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "page-numbers",
+        5
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 77355,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/10/",
+    "item_count": 12,
+    "item_outer_html": [
+      "<article class=\"post-9548 unga_event type-unga_event status-publish hentry unga_event_category-health\">\n    <header>\n        <time datetime=\"2026-09-25\">\n            <span class=\"date\">Fri, Sep 25</span>\n            <span class=\"time\">8:00am - 7:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/new-approaches-summit-nyc-2026-5th-annual-date/\">New Approaches Summit: NYC 2026 &#8211; 5th Annual Date</a></h2>\n   ... [truncated]",
+      "<article class=\"post-9549 unga_event type-unga_event status-publish hentry unga_event_category-gender unga_event_category-health\">\n    <header>\n        <time datetime=\"2026-09-25\">\n            <span class=\"date\">Fri, Sep 25</span>\n            <span class=\"time\">9:00am</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/2026-women-in-nephrology-leadership-conference/\">2026 Women in Nephrology Leadership Conference</a>... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9548 unga_event type-unga_event status-publish hentry unga_event_category-health\">\n    <header>\n        <time datetime=\"2026-09-25\">\n            <span class=\"date\">Fri, Sep 25</span>\n            <span class=\"time\">8:00am - 7:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/new-approaches-summit-nyc-2026-5th-annual-date/\">New Approac... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/10/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\10_ungaguide.com_page_10.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "date",
+        12
+      ],
+      [
+        "time",
+        12
+      ],
+      [
+        "body",
+        12
+      ],
+      [
+        "unga-event__title",
+        12
+      ],
+      [
+        "unga-event__organizer",
+        12
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "page-numbers",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  },
+  {
+    "body_preview": "<header id=\"site-header\" role=\"banner\">\n        <div class=\"container\">\n            <a href=\"https://ungaguide.com\" title=\"UNGA Guide 2026\">\n                <img fetchpriority=\"high\" src=\"https://ungaguide.com/wp-content/uploads/2026/06/UNGA-Guide-logo_2026.png\" alt=\"Logo\" class=\"logo\" width=\"625\" height=\"579\">\n            </a>\n            <button class=\"navigation-toggle\" type=\"button\" aria-controls=\"primary-menu\" aria-expanded=\"false\">\n                <span></span>\n                <span></span>\n                <span></span>\n            </button>\n            <nav class=\"primary-menu-wrapper\" aria-label=\"Horizontal\" role=\"navigation\">\n                <ul class=\"primary-menu\">\n                    <li class=\"navigation-toggle\">\n                        Close Menu                        <svg class=\"svg-icon\" aria-hidden=\"true\" role=\"img\" focusable=\"false\" xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 16 16\"><polygon fill=\"\" fill-rule=\"evenodd\" points=\"6.852 7.649 .399 1.195 1.445 .149 7.899 6.602 14.352 .149 15.399 1.195 8.945 7.649 15.399 14.102 14.352 15.149 7.899 8.695 1.445 15.149 .399 14.102\"></polygon></svg>\n                    </li>\n                    <li id=\"menu-item-595\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-595\"><a href=\"https://ungaguide.com/about/\" data-ps2id-api=\"true\">About</a></li>\n<li id=\"menu-item-1744\" class=\"menu-item menu-item-type-post_type menu-item-object-page menu-item-1744\"><a href=\"https://un... [truncated]",
+    "byte_count": 59193,
+    "content_type": "text/html; charset=UTF-8",
+    "final_url": "https://ungaguide.com/page/11/",
+    "item_count": 4,
+    "item_outer_html": [
+      "<article class=\"post-9571 unga_event type-unga_event status-publish hentry unga_event_category-art-culture unga_event_category-climate-environment\">\n    <header>\n        <time datetime=\"2026-09-26\">\n            <span class=\"date\">Sat, Sep 26</span>\n            <span class=\"time\">10:00am - 1:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/the-importance-of-artists-and-art-making-in-the-climate-movement/\">The ... [truncated]",
+      "<article class=\"post-9570 unga_event type-unga_event status-publish hentry unga_event_category-ai unga_event_category-climate-environment\">\n    <header>\n        <time datetime=\"2026-09-26\">\n            <span class=\"date\">Sat, Sep 26</span>\n            <span class=\"time\">1:30pm - 3:30pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/ai-and-the-climate-crisis-who-benefits-who-bears-the-environmental-costs/\">AI and... [truncated]"
+    ],
+    "item_selector": "article.unga_event",
+    "listing_count": 1,
+    "listing_outer_html": [
+      "<div class=\"container articles-wrapper\">\n                <article class=\"post-9571 unga_event type-unga_event status-publish hentry unga_event_category-art-culture unga_event_category-climate-environment\">\n    <header>\n        <time datetime=\"2026-09-26\">\n            <span class=\"date\">Sat, Sep 26</span>\n            <span class=\"time\">10:00am - 1:00pm</span>\n        </time>\n    </header>\n    <div class=\"body\">\n    <h2 class=\"unga-event__title\"><a href=\"https://ungaguide.com/events/the-importance... [truncated]"
+    ],
+    "listing_selector": "div.articles-wrapper",
+    "requested_url": "https://ungaguide.com/page/11/",
+    "source": "unga_guide",
+    "status": 200,
+    "storage_path": "agents\\diagnostics\\unga_guide\\11_ungaguide.com_page_11.html",
+    "top_class_values": [
+      [
+        "cat-btn",
+        14
+      ],
+      [
+        "container",
+        4
+      ],
+      [
+        "date",
+        4
+      ],
+      [
+        "time",
+        4
+      ],
+      [
+        "body",
+        4
+      ],
+      [
+        "unga-event__title",
+        4
+      ],
+      [
+        "unga-event__organizer",
+        4
+      ],
+      [
+        "screen-reader-text",
+        3
+      ],
+      [
+        "page-numbers",
+        3
+      ],
+      [
+        "navigation-toggle",
+        2
+      ]
+    ]
+  }
+]
