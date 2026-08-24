@@ -3,26 +3,42 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 from pathlib import Path
 from typing import Optional
 
-from agents.common.cost import CostMeter
+from agents.common.config import load_sources_config
+from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.digest import write_digest
 from agents.common.llm import ClaudeToolClient, FixtureToolClient
 from agents.common.raw_storage import RawContentStore
-from agents.common.resolve_route import load_event_candidates, route_event
+from agents.common.resolve_route import (
+    load_actor_resolver_class,
+    load_event_candidates,
+    route_actor,
+    route_event,
+)
 from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
+from agents.discovery.extractors.actor import ActorExtractor
 from agents.discovery.extractors.event import EventExtractor
-from agents.discovery.normalize import normalize_event_record
+from agents.discovery.extractors.unga_guide import UngaGuideExtractor
+from agents.discovery.extractors.unga_programme import UngaProgrammeExtractor
+from agents.discovery.normalize import normalize_actor_record, normalize_event_record
 from agents.discovery.promote import promote
 from agents.discovery.relevance import IN_SECTOR, OUT_OF_SECTOR, classify_sector_matches
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.climate_week import ClimateWeekAdapter
+from agents.discovery.sources.unga_guide import UngaGuideAdapter
+from agents.discovery.sources.unga_programme import UngaProgrammeAdapter
 from agents.discovery.stage import InMemoryStageStore, SQLStageStore, mark_routed, stage_record
 
 logger = logging.getLogger(__name__)
+
+SOURCE_ADAPTERS = {
+    "climate_week": ClimateWeekAdapter,
+    "unga_programme": UngaProgrammeAdapter,
+    "unga_guide": UngaGuideAdapter,
+}
 
 
 def project_root() -> Path:
@@ -30,8 +46,7 @@ def project_root() -> Path:
 
 
 def load_config(root: Optional[Path] = None) -> dict[str, object]:
-    root = root or project_root()
-    return json.loads((root / "agents" / "config" / "sources.yaml").read_text(encoding="utf-8"))
+    return load_sources_config(root or project_root())
 
 
 def build_source(name: str, config: dict[str, object], root: Path, *, offline: bool = False):
@@ -39,9 +54,10 @@ def build_source(name: str, config: dict[str, object], root: Path, *, offline: b
     source_config = dict(sources.get(name, {}))
     if not source_config:
         raise ValueError(f"unknown source {name!r}")
-    if name != "climate_week":
-        raise NotImplementedError("Phase 1 supports only source='climate_week'")
-    return ClimateWeekAdapter(source_config, project_root=root, offline=offline), source_config
+    adapter_cls = SOURCE_ADAPTERS.get(name)
+    if adapter_cls is None:
+        raise NotImplementedError(f"source {name!r} is not implemented")
+    return adapter_cls(source_config, project_root=root, offline=offline), source_config
 
 
 def build_extractor(
@@ -52,8 +68,8 @@ def build_extractor(
     offline: bool = False,
     cost_meter: CostMeter,
 ):
-    if entity_type != "event":
-        raise NotImplementedError("Phase 1 supports only entity='event'")
+    if entity_type not in {"event", "actor"}:
+        raise NotImplementedError("discovery supports entity='event' or entity='actor'")
     fixture_response = source_config.get("llm_fixture_response")
     if fixture_response and offline:
         llm_client = FixtureToolClient.from_path(_resolve_path(root, str(fixture_response)))
@@ -65,7 +81,29 @@ def build_extractor(
             input_usd_per_million=float(pricing.get("input_usd_per_million", 0.0)),
             output_usd_per_million=float(pricing.get("output_usd_per_million", 0.0)),
         )
-    return EventExtractor(llm_client)
+    if entity_type == "actor":
+        return ActorExtractor(
+            llm_client,
+            max_tokens=int(source_config.get("max_tokens", 2048)),
+        )
+    if source_config.get("extractor") == "unga_guide":
+        return UngaGuideExtractor(
+            llm_client,
+            max_tokens=int(source_config.get("max_tokens", 2048)),
+            coming_soon_markers=[
+                str(value) for value in source_config.get("coming_soon_markers", [])
+            ],
+        )
+    if source_config.get("extractor") == "unga_programme":
+        return UngaProgrammeExtractor(
+            llm_client, max_tokens=int(source_config.get("max_tokens", 2048))
+        )
+    return EventExtractor(
+        llm_client,
+        max_tokens=int(source_config.get("max_tokens", 2048)),
+        row_batch_size=int(source_config.get("event_row_batch_size", 25)),
+        min_row_count=int(source_config.get("min_event_row_count", 0) or 0),
+    )
 
 
 def run_pipeline(
@@ -78,6 +116,7 @@ def run_pipeline(
     source=None,
     extractor=None,
     raw_store: Optional[RawContentStore] = None,
+    actor_resolver=None,
 ) -> dict[str, object]:
     root = root or project_root()
     config = load_config(root)
@@ -107,7 +146,9 @@ def run_pipeline(
         source_name = source_name or str(prior_run.get("source_name") or "")
         entity_type = entity_type or str(prior_run.get("entity_type") or "")
     if not source_name or not entity_type:
-        raise ValueError("--source and --entity are required unless --replay can resolve them from scrape_run")
+        raise ValueError(
+            "--source and --entity are required unless --replay can resolve them from scrape_run"
+        )
 
     if replay_run_id:
         sources = dict(config.get("sources", {}))
@@ -115,11 +156,15 @@ def run_pipeline(
         if not source_config:
             raise ValueError(f"unknown source {source_name!r}")
     else:
-        source, source_config = (source, None) if source is not None else build_source(
-            source_name,
-            config,
-            root,
-            offline=offline,
+        source, source_config = (
+            (source, None)
+            if source is not None
+            else build_source(
+                source_name,
+                config,
+                root,
+                offline=offline,
+            )
         )
         if source_config is None:
             source_config = dict(dict(config.get("sources", {})).get(source_name, {}))
@@ -141,7 +186,9 @@ def run_pipeline(
     run_config = dict(source_config)
     if replay_run_id:
         run_config["replay_of_run_id"] = replay_run_id
-    run_id = run_log.start_run(source_name=source_name, entity_type=entity_type, live=live, config=run_config)
+    run_id = run_log.start_run(
+        source_name=source_name, entity_type=entity_type, live=live, config=run_config
+    )
 
     stats = _empty_stats()
     audit_rows: list[dict[str, object]] = []
@@ -149,7 +196,9 @@ def run_pipeline(
     digest_path = _output_path(root, getattr(args, "digest_out", None), run_id, suffix=".md")
 
     try:
-        candidates = [] if offline else load_event_candidates(session)
+        candidates = [] if offline or entity_type != "event" else load_event_candidates(session)
+        if not offline and entity_type == "actor" and actor_resolver is None:
+            actor_resolver = load_actor_resolver_class()(session, project_root=root)
         if replay_run_id:
             raw_rows = history_log.raw_documents_for_run(replay_run_id)
             if not raw_rows:
@@ -173,10 +222,12 @@ def run_pipeline(
                     session=session,
                     live=live,
                     candidates=candidates,
+                    actor_resolver=actor_resolver,
                     root=root,
                     stats=stats,
                     audit_rows=audit_rows,
                 )
+                cost_meter.enforce()
         else:
             urls = list(source.discover())
             stats["urls_discovered"] = len(urls)
@@ -189,10 +240,15 @@ def run_pipeline(
                 doc = source.fetch(url)
                 stats["documents_fetched"] += 1
                 prior_raw = run_log.find_raw_document(url=doc.url, content_hash=doc.content_hash)
-                storage_path = _storage_path_for_doc(raw_store, run_id=run_id, doc=doc, prior_raw=prior_raw)
-                raw_document_id = run_log.write_raw_document(run_id=run_id, doc=doc, storage_path=storage_path)
+                storage_path = _storage_path_for_doc(
+                    raw_store, run_id=run_id, doc=doc, prior_raw=prior_raw
+                )
+                raw_document_id = run_log.write_raw_document(
+                    run_id=run_id, doc=doc, storage_path=storage_path
+                )
                 if prior_raw is not None:
                     stats["skipped_unchanged"] += 1
+                    _record_unchanged_skip(stats, prior_raw)
                     audit_rows.append(_skip_audit_row(run_id, source_name, entity_type, doc))
                     continue
                 _extract_stage_route_promote(
@@ -206,6 +262,7 @@ def run_pipeline(
                     session=session,
                     live=live,
                     candidates=candidates,
+                    actor_resolver=actor_resolver,
                     root=root,
                     stats=stats,
                     audit_rows=audit_rows,
@@ -214,22 +271,96 @@ def run_pipeline(
 
         logger.info("skipped unchanged documents: %d", stats["skipped_unchanged"])
         _finalize_cost(stats, extractor, cost_meter)
+        _finalize_attention_reasons(stats, extractor)
         stats["audit_csv"] = str(out_path)
         stats["digest_md"] = str(digest_path)
         stats["cost_usd"] = cost_meter.spent_usd
+        status, status_reason = _determine_run_status(stats, source=source)
+        stats["status_reason"] = status_reason
+        if status_reason:
+            log = logger.info if status == "succeeded" else logger.warning
+            log("run %s closed with status=%s reason=%s", run_id, status, status_reason)
         write_audit_csv(out_path, audit_rows)
-        write_digest(digest_path, run_id=run_id, source=source_name, entity_type=entity_type, status="succeeded", stats=stats)
-        run_log.close_run(run_id, status="succeeded", stats=stats, cost_usd=cost_meter.spent_usd)
-        return {"run_id": run_id, "status": "succeeded", "stats": stats, "audit_rows": audit_rows, "digest_path": str(digest_path)}
+        write_digest(
+            digest_path,
+            run_id=run_id,
+            source=source_name,
+            entity_type=entity_type,
+            status=status,
+            stats=stats,
+        )
+        run_log.close_run(
+            run_id,
+            status=status,
+            stats=stats,
+            cost_usd=cost_meter.spent_usd,
+            status_reason=status_reason,
+        )
+        return {
+            "run_id": run_id,
+            "status": status,
+            "stats": stats,
+            "audit_rows": audit_rows,
+            "digest_path": str(digest_path),
+            "exit_code": 0,
+        }
+    except CostLimitExceeded as exc:
+        _finalize_cost(stats, extractor, cost_meter)
+        _finalize_attention_reasons(stats, extractor)
+        stats["audit_csv"] = str(out_path)
+        stats["digest_md"] = str(digest_path)
+        stats["cost_usd"] = cost_meter.spent_usd
+        status_reason = _cost_limit_status_reason(exc, cost_meter)
+        stats["status_reason"] = status_reason
+        logger.warning("run %s stopped at cost ceiling: %s", run_id, status_reason)
+        write_audit_csv(out_path, audit_rows)
+        write_digest(
+            digest_path,
+            run_id=run_id,
+            source=source_name,
+            entity_type=entity_type,
+            status="attention",
+            stats=stats,
+        )
+        run_log.close_run(
+            run_id,
+            status="attention",
+            stats=stats,
+            cost_usd=cost_meter.spent_usd,
+            status_reason=status_reason,
+        )
+        return {
+            "run_id": run_id,
+            "status": "attention",
+            "stats": stats,
+            "audit_rows": audit_rows,
+            "digest_path": str(digest_path),
+            "exit_code": 1,
+        }
     except Exception as exc:
         stats["failures"] += 1
         _finalize_cost(stats, extractor, cost_meter)
+        _finalize_attention_reasons(stats, extractor)
         stats["audit_csv"] = str(out_path)
         stats["digest_md"] = str(digest_path)
         stats["cost_usd"] = cost_meter.spent_usd
+        stats["status_reason"] = str(exc)
         write_audit_csv(out_path, audit_rows)
-        write_digest(digest_path, run_id=run_id, source=source_name, entity_type=entity_type, status="failed", stats=stats)
-        run_log.fail_run(run_id, error=str(exc), stats=stats, cost_usd=cost_meter.spent_usd)
+        write_digest(
+            digest_path,
+            run_id=run_id,
+            source=source_name,
+            entity_type=entity_type,
+            status="failed",
+            stats=stats,
+        )
+        run_log.fail_run(
+            run_id,
+            error=str(exc),
+            stats=stats,
+            cost_usd=cost_meter.spent_usd,
+            status_reason=str(exc),
+        )
         if live and session is not None:
             session.rollback()
         raise
@@ -253,13 +384,22 @@ def _extract_stage_route_promote(
     root: Path,
     stats: dict[str, int],
     audit_rows: list[dict[str, object]],
+    actor_resolver=None,
 ) -> None:
     extracted = extractor.extract(doc)
-    stats["records_extracted"] += len(extracted)
-    normalized = [normalize_event_record(record) for record in extracted]
+    if entity_type == "event":
+        normalized = [normalize_event_record(record) for record in extracted]
+    elif entity_type == "actor":
+        normalized = [normalize_actor_record(record) for record in extracted]
+    else:
+        raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
+    normalized = _dedupe_by_natural_key(normalized)
+    stats["records_extracted"] += len(normalized)
     classified = classify_sector_matches(normalized, project_root=root)
     in_sector_count = sum(1 for record in classified if record.get("sector_match") == IN_SECTOR)
-    out_of_sector_count = sum(1 for record in classified if record.get("sector_match") == OUT_OF_SECTOR)
+    out_of_sector_count = sum(
+        1 for record in classified if record.get("sector_match") == OUT_OF_SECTOR
+    )
     stats["records_in_sector"] += in_sector_count
     stats["records_out_of_sector"] += out_of_sector_count
     stats["records_relevant"] += in_sector_count
@@ -291,7 +431,14 @@ def _extract_stage_route_promote(
                 }
             )
             continue
-        decision = route_event(record, candidates)
+        if entity_type == "event":
+            decision = route_event(record, candidates)
+        elif entity_type == "actor":
+            if actor_resolver is None:
+                raise RuntimeError("actor routing requires an EntityResolver")
+            decision = route_actor(record, actor_resolver)
+        else:
+            raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
         staged = mark_routed(stage_store, staged, decision)
         result = promote(staged, decision, session=session, live=live)
         stats["records_promoted"] += 0 if result.dry_run else 1
@@ -314,7 +461,13 @@ def _extract_stage_route_promote(
         )
 
 
-def _storage_path_for_doc(raw_store: RawContentStore, *, run_id: str, doc: FetchedDoc, prior_raw: Optional[dict[str, object]]) -> str:
+def _storage_path_for_doc(
+    raw_store: RawContentStore,
+    *,
+    run_id: str,
+    doc: FetchedDoc,
+    prior_raw: Optional[dict[str, object]],
+) -> str:
     prior_path = str((prior_raw or {}).get("storage_path") or "")
     if raw_store.exists(prior_path):
         return prior_path
@@ -342,7 +495,9 @@ def _doc_from_raw(raw: dict[str, object], raw_store: RawContentStore) -> Fetched
     return doc
 
 
-def _skip_audit_row(run_id: str, source_name: str, entity_type: str, doc: FetchedDoc) -> dict[str, object]:
+def _skip_audit_row(
+    run_id: str, source_name: str, entity_type: str, doc: FetchedDoc
+) -> dict[str, object]:
     return {
         "run_id": run_id,
         "source": source_name,
@@ -368,10 +523,107 @@ def _count_zone(stats: dict[str, int], zone: str) -> None:
         stats["created"] += 1
 
 
+def _dedupe_by_natural_key(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, object]] = []
+    for record in records:
+        natural_key = str(record.get("natural_key") or "").strip()
+        if natural_key and natural_key in seen:
+            continue
+        if natural_key:
+            seen.add(natural_key)
+        deduped.append(record)
+    return deduped
+
+
+def _determine_run_status(stats: dict[str, object], *, source=None) -> tuple[str, str]:
+    attention_reasons = [
+        str(reason) for reason in stats.get("attention_reasons", []) or [] if str(reason).strip()
+    ]
+    if attention_reasons:
+        return "attention", "; ".join(attention_reasons)
+    documents_fetched = int(stats.get("documents_fetched", 0) or 0)
+    skipped_unchanged = int(stats.get("skipped_unchanged", 0) or 0)
+    records_extracted = int(stats.get("records_extracted", 0) or 0)
+    records_staged = int(stats.get("records_staged", 0) or 0)
+    records_in_sector = int(stats.get("records_in_sector", 0) or 0)
+    urls_discovered = int(stats.get("urls_discovered", 0) or 0)
+
+    if documents_fetched > 0 and skipped_unchanged == documents_fetched:
+        return "succeeded", _unchanged_status_reason(stats)
+    if records_extracted > 0 and records_in_sector == 0:
+        return (
+            "succeeded",
+            f"extracted {records_extracted} record(s); 0 matched seeded sectors; "
+            "staged as out_of_sector",
+        )
+    if records_staged > 0:
+        records_out_of_sector = int(stats.get("records_out_of_sector", 0) or 0)
+        return (
+            "succeeded",
+            f"staged {records_staged} record(s): {records_in_sector} in-sector, "
+            f"{records_out_of_sector} out-of-sector",
+        )
+    if documents_fetched > skipped_unchanged and records_extracted == 0:
+        return "attention", "documents fetched but zero records extracted"
+    if documents_fetched == 0 and urls_discovered == 0:
+        reason = str(getattr(source, "last_discovery_reason", "") or "source yielded zero URLs")
+        return "attention", reason
+    if documents_fetched == 0:
+        return "attention", "source yielded zero fetched documents"
+    return "succeeded", ""
+
+
+def _record_unchanged_skip(stats: dict[str, object], prior_raw: dict[str, object]) -> None:
+    prior_run_id = str(prior_raw.get("run_id") or "").strip()
+    if not prior_run_id:
+        return
+    run_ids = list(stats.get("unchanged_since_run_ids", []) or [])
+    if prior_run_id not in run_ids:
+        run_ids.append(prior_run_id)
+    stats["unchanged_since_run_ids"] = run_ids
+
+
+def _unchanged_status_reason(stats: dict[str, object]) -> str:
+    skipped = int(stats.get("skipped_unchanged", 0) or 0)
+    run_ids = [str(value) for value in stats.get("unchanged_since_run_ids", []) or []]
+    if len(run_ids) == 1:
+        return f"{skipped} document(s) unchanged since run {run_ids[0]}, no extraction needed"
+    if run_ids:
+        return (
+            f"{skipped} document(s) unchanged since prior runs {', '.join(run_ids)}, "
+            "no extraction needed"
+        )
+    return f"{skipped} document(s) unchanged, no extraction needed"
+
+
+def _cost_limit_status_reason(exc: CostLimitExceeded, cost_meter: CostMeter) -> str:
+    ceiling = cost_meter.max_usd
+    ceiling_text = "unconfigured" if ceiling is None else f"${float(ceiling):.6f}"
+    return (
+        f"cost ceiling exceeded: spent ${float(cost_meter.spent_usd):.6f} "
+        f"against ceiling {ceiling_text}; partial staged records retained ({exc})"
+    )
+
+
+def _finalize_attention_reasons(stats: dict[str, object], extractor) -> None:
+    reasons = [
+        str(reason)
+        for reason in getattr(extractor, "attention_reasons", [])
+        if str(reason).strip()
+    ]
+    if reasons:
+        stats["attention_reasons"] = reasons
+
+
 def _finalize_cost(stats: dict[str, object], extractor, cost_meter: CostMeter) -> None:
     llm_client = getattr(extractor, "llm_client", None)
     usage = getattr(llm_client, "usage", None)
-    stats["llm"] = usage.snapshot() if usage is not None else {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+    stats["llm"] = (
+        usage.snapshot()
+        if usage is not None
+        else {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+    )
     if float(stats["llm"].get("cost_usd", 0.0) or 0.0) > cost_meter.spent_usd:
         cost_meter.spent_usd = float(stats["llm"].get("cost_usd", 0.0) or 0.0)
     stats["cost"] = cost_meter.snapshot()
@@ -401,10 +653,16 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--entity")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--live", action="store_true", help="commit writes; absent means dry-run")
-    parser.add_argument("--offline", action="store_true", help="test/fixture mode with no database or network access")
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="test/fixture mode with no database or network access",
+    )
     parser.add_argument("--out", help="audit CSV output path")
     parser.add_argument("--digest-out", help="weekly digest markdown output path")
-    parser.add_argument("--replay", help="existing scrape_run id whose stored raw content should be re-extracted")
+    parser.add_argument(
+        "--replay", help="existing scrape_run id whose stored raw content should be re-extracted"
+    )
     return parser.parse_args(argv)
 
 
@@ -428,6 +686,9 @@ def main(argv: Optional[list[str]] = None) -> None:
             digest=stats["digest_md"],
         )
     )
+    exit_code = int(result.get("exit_code", 0) or 0)
+    if exit_code:
+        raise SystemExit(exit_code)
 
 
 def _output_path(root: Path, value: Optional[str], run_id: str, *, suffix: str) -> Path:

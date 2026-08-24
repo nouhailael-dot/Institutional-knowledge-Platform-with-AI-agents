@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from datetime import date, datetime
+from urllib.parse import urlparse
 from typing import Optional
 
 MISSING_TOKENS = {"", "n/a", "na", "none", "null", "unknown", "tbd", "-", "--"}
@@ -56,6 +57,17 @@ def normalize_event_record(record: dict[str, object]) -> dict[str, object]:
     return out
 
 
+def normalize_actor_record(record: dict[str, object]) -> dict[str, object]:
+    out = {key: normalize_whitespace(value) for key, value in record.items()}
+    out["name"] = out.get("name")
+    out["country"] = canonical_country(out.get("country"))
+    out["sector_codes"] = normalize_sector_codes(out.get("sector_codes"))
+    out["estimated_trl"] = parse_optional_int(out.get("estimated_trl"))
+    out["natural_key"] = actor_natural_key(str(out.get("name") or ""), out.get("website"))
+    out["entity_type"] = "actor"
+    return out
+
+
 def normalize_whitespace(value: object) -> object:
     if value is None or isinstance(value, list):
         return value
@@ -78,8 +90,8 @@ def parse_date_to_iso(value: object) -> Optional[str]:
         return None
     text = str(raw)
     text = text.replace("Sept.", "Sep").replace("Sept ", "Sep ")
+    text = text.replace("\u2013", "-").replace("\u2014", "-")
     text = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", text, flags=re.IGNORECASE)
-    text = text.replace("–", "-").replace("—", "-")
 
     range_match = re.match(r"^([A-Za-z]+)\s+(\d{1,2})\s*-\s*\d{1,2},?\s+(\d{4})$", text)
     if range_match:
@@ -129,6 +141,34 @@ def normalize_sector_codes(value: object) -> list[str]:
 
 def event_natural_key(title: str, start_date: str) -> str:
     return f"{normalize_key_text(title)}|{start_date.strip()}"
+
+
+def parse_optional_int(value: object) -> Optional[int]:
+    cleaned = normalize_whitespace(value)
+    if cleaned is None:
+        return None
+    try:
+        return int(str(cleaned).strip())
+    except ValueError as exc:
+        raise ValueError(f"could not parse integer {value!r}") from exc
+
+
+def actor_natural_key(name: str, website: object = None) -> str:
+    name_key = normalize_key_text(name)
+    website_key = _website_key(website)
+    if website_key:
+        return f"{name_key}|{website_key}"
+    return name_key
+
+
+def _website_key(value: object) -> str:
+    cleaned = normalize_whitespace(value)
+    if cleaned is None:
+        return ""
+    parsed = urlparse(str(cleaned) if "://" in str(cleaned) else f"https://{cleaned}")
+    host = (parsed.netloc or parsed.path).lower().removeprefix("www.")
+    path = parsed.path.strip("/") if parsed.netloc else ""
+    return "/".join(part for part in [host, path] if part)
 
 
 def normalize_key_text(value: str) -> str:

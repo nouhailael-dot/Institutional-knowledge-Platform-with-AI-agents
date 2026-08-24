@@ -85,6 +85,8 @@ def refresh_search_doc(
     dirty_cleared = 0
     try:
         for candidate in selected:
+            if not str(candidate.entity_type or "").strip() or not str(candidate.entity_id or "").strip():
+                raise RuntimeError("search_doc candidate missing entity_type or entity_id")
             if not candidate.doc_text.strip():
                 logger.warning(
                     "skipping blank search_doc text for %s %s",

@@ -2,11 +2,11 @@ name: Weekly Discovery
 
 on:
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: "0 6 * * 1"
   workflow_dispatch:
     inputs:
       live:
-        description: 'Run with --live and write to the configured database'
+        description: "Run with --live and write to the configured database"
         required: false
         default: false
         type: boolean
@@ -25,10 +25,24 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
       - name: Install dependencies
-        run: python -m pip install -e ".[dev]"
+        run: |
+          python -m pip install -r requirements.txt
+          python -c "import sqlalchemy, sklearn, joblib, httpx, yaml; print('deps ok')"
+
+      - name: Validate discovery config
+        run: |
+          python - <<'PY'
+          from agents.discovery.run import load_config
+
+          config = load_config()
+          required = {"climate_week", "unga_programme", "unga_guide"}
+          missing = required.difference(config.get("sources", {}))
+          if missing:
+              raise SystemExit(f"missing discovery source config: {sorted(missing)}")
+          PY
 
       - name: Run weekly discovery
         shell: bash
@@ -39,17 +53,23 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$LIVE_INPUT" = "true" ]; then
             LIVE_ARG="--live"
           fi
-          python -m agents.discovery.run \
-            --source climate_week \
-            --entity event \
-            $LIVE_ARG \
-            --out agents/runs/weekly-audit.csv \
-            --digest-out agents/runs/weekly-digest.md
-          RUN_EXIT=$?
+          RUN_EXIT=0
+          for SOURCE in climate_week unga_programme unga_guide; do
+            python -m agents.discovery.run \
+              --source "$SOURCE" \
+              --entity event \
+              $LIVE_ARG \
+              --out "agents/runs/${SOURCE}-audit.csv" \
+              --digest-out "agents/runs/${SOURCE}-digest.md"
+            SOURCE_EXIT=$?
+            if [ -f "agents/runs/${SOURCE}-digest.md" ] && grep -qi "status.*failed" "agents/runs/${SOURCE}-digest.md"; then
+              RUN_EXIT=1
+            fi
+            if [ "$SOURCE_EXIT" -ne 0 ]; then
+              RUN_EXIT="$SOURCE_EXIT"
+            fi
+          done
           set -e
-          if [ -f agents/runs/weekly-digest.md ] && grep -qi "status.*failed" agents/runs/weekly-digest.md; then
-            exit 1
-          fi
           if [ "$RUN_EXIT" -ne 0 ]; then
             exit "$RUN_EXIT"
           fi
@@ -71,6 +91,6 @@ jobs:
         with:
           name: weekly-discovery-artifacts
           path: |
-            agents/runs/weekly-audit.csv
-            agents/runs/weekly-digest.md
+            agents/runs/*-audit.csv
+            agents/runs/*-digest.md
           if-no-files-found: warn

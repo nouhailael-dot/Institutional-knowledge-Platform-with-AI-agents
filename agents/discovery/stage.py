@@ -104,13 +104,13 @@ def stage_record(
         extracted_at=extracted_at,
         sector_codes=[str(code) for code in record.get("sector_codes", [])],
         sector_match=sector_match,
-        status="out_of_sector" if sector_match == "out_of_sector" else "staged",
+        status="staged",
     )
     return store.upsert(staged)
 
 
 def mark_routed(store, staged: StagedRecord, route) -> StagedRecord:
-    if staged.sector_match == "out_of_sector" or staged.status == "out_of_sector":
+    if staged.sector_match == "out_of_sector":
         raise RuntimeError("out_of_sector staged records must not be routed or promoted")
     staged.route = {
         "zone": route.zone,

@@ -1,31 +1,80 @@
 {
-  "cost": {
-    "max_usd_per_run": 0.05
-  },
-  "routing": {
-    "event_fuzzy_review_threshold": 0.88
-  },
-  "sources": {
-    "climate_week": {
-      "entity_types": ["event"],
-      "calendar_url": "https://www.climateweeknyc.org/events",
-      "raw_storage_dir": "agents/raw_documents",
-      "fixture_urls": ["fixture://climate_week/events"],
-      "fixtures": {
-        "fixture://climate_week/events": "tests/fixtures/agents/climate_week_events.html"
-      },
-      "llm_fixture_response": "tests/fixtures/agents/climate_week_events.expected.json",
-      "event_link_patterns": ["event", "events"],
-      "rate_limit_s": 1.0,
-      "timeout_s": 20.0,
-      "max_retries": 3,
-      "user_agent_product": "GHUS-AgentDiscovery/0.1",
-      "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
-      "claude_model": "claude-haiku-4-5",
-      "llm_pricing": {
-        "input_usd_per_million": 1.0,
-        "output_usd_per_million": 5.0
-      }
-    }
-  }
+  "cost": { "max_usd_per_run": 0.50 },
+  "routing": { "event_fuzzy_review_threshold": 0.88 },
+  "sources":
+    {
+      "climate_week":
+        {
+          "entity_types": ["event"],
+          "listing_url": "https://www.climateweeknyc.org/event-search",
+          "raw_storage_dir": "agents/raw_documents",
+          "fixture_urls": ["fixture://climate_week/event-search"],
+          "fixtures":
+            {
+              "fixture://climate_week/event-search": "tests/fixtures/agents/climate_week_event_search.html",
+            },
+          "llm_fixture_response": "tests/fixtures/agents/climate_week_events.expected.json",
+          "pagination_urls": [],
+          "event_row_batch_size": 25,
+          "min_event_row_count": 400,
+          "diagnostics":
+            {
+              "listing_container_selector": ".hubdb-listing",
+              "item_selector": "article.event-card",
+            },
+          "rate_limit_s": 1.0,
+          "timeout_s": 20.0,
+          "max_retries": 3,
+          "user_agent_product": "GHUS-AgentDiscovery/0.1",
+          "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
+          "claude_model": "claude-haiku-4-5",
+          "llm_pricing":
+            { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
+        },
+      "unga_programme":
+        {
+          "entity_types": ["event"],
+          "meeting_url": "https://www.un.org/en/ga/81/meetings/",
+          "seed_urls": ["https://www.un.org/en/ga/81/meetings/"],
+          "raw_storage_dir": "agents/raw_documents",
+          "extractor": "unga_programme",
+          "diagnostics":
+            {
+              "listing_container_selector": "div#content",
+              "item_selector": "li",
+            },
+          "rate_limit_s": 1.0,
+          "timeout_s": 20.0,
+          "max_retries": 3,
+          "user_agent_product": "GHUS-AgentDiscovery/0.1",
+          "browser_like_user_agent": true,
+          "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
+          "claude_model": "claude-haiku-4-5",
+          "llm_pricing":
+            { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
+        },
+      "unga_guide":
+        {
+          "entity_types": ["event"],
+          "listing_url": "https://ungaguide.com/",
+          "seed_urls": ["https://ungaguide.com/"],
+          "raw_storage_dir": "agents/raw_documents",
+          "extractor": "unga_guide",
+          "coming_soon_markers":
+            ["coming soon", "launching soon", "check back soon"],
+          "diagnostics":
+            {
+              "listing_container_selector": "div.articles-wrapper",
+              "item_selector": "article.unga_event",
+            },
+          "rate_limit_s": 1.0,
+          "timeout_s": 20.0,
+          "max_retries": 3,
+          "user_agent_product": "GHUS-AgentDiscovery/0.1",
+          "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
+          "claude_model": "claude-haiku-4-5",
+          "llm_pricing":
+            { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
+        },
+    },
 }
