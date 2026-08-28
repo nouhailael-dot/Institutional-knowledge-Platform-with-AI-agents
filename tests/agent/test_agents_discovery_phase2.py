@@ -43,6 +43,11 @@ class StaticSource:
         return self.doc
 
 
+class PersonStaticSource(StaticSource):
+    name = "people_fixture"
+    entity_types = ("person",)
+
+
 class NetworkUnavailableSource:
     name = "climate_week"
     entity_types = ("event",)
@@ -103,6 +108,10 @@ class StaticExtractor:
         return self.records
 
 
+class StaticPersonExtractor(StaticExtractor):
+    prompt_version = "person_test_v1"
+
+
 class FailingExtractor(StaticExtractor):
     def __init__(self):
         super().__init__([])
@@ -144,9 +153,11 @@ def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
     assert float(dict(config["cost"])["max_usd_per_run"]) == 0.50
     sources = dict(config["sources"])
     assert set(sources) >= {"climate_week", "unga_programme", "unga_guide"}
+    assert dict(sources["climate_week"])["entity_types"] == ["event"]
+    assert dict(sources["unga_programme"])["entity_types"] == ["event"]
+    assert dict(sources["unga_guide"])["entity_types"] == ["event", "actor"]
     for source_name in ("climate_week", "unga_programme", "unga_guide"):
         source = dict(sources[source_name])
-        assert source["entity_types"] == ["event"]
         assert source["raw_storage_dir"]
         assert source["contact_email_env"] == "GHUS_AGENT_CONTACT_EMAIL"
         assert "claude_model" in source
@@ -313,7 +324,7 @@ def test_pipeline_dedupes_duplicate_natural_keys_before_staging(tmp_path):
     run_log = InMemoryRunLog()
     stage_store = InMemoryStageStore()
     raw_store = RawContentStore(tmp_path / "raw")
-    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+    valid_code = min(load_seeded_sector_codes(PROJECT_ROOT))
     duplicate_records = [
         {
             "title": "Duplicate Climate Event",
@@ -348,7 +359,7 @@ def test_pipeline_dedupes_duplicate_natural_keys_before_staging(tmp_path):
 
 def test_status_succeeded_when_documents_fetch_and_records_stage(tmp_path):
     doc = fixture_doc()
-    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+    valid_code = min(load_seeded_sector_codes(PROJECT_ROOT))
 
     result = run_pipeline(
         args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
@@ -386,7 +397,7 @@ def test_extractor_attention_reason_overrides_success_status(tmp_path):
         """,
         meta={"extractor_mode": "hubdb_listing"},
     )
-    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+    valid_code = min(load_seeded_sector_codes(PROJECT_ROOT))
     client = CountingToolClient(
         {
             "events": [
@@ -477,13 +488,11 @@ def test_status_succeeded_when_records_extract_but_zero_are_in_sector(tmp_path):
     )
 
 
-def test_cost_ceiling_breach_closes_attention_retains_staged_records(
-    monkeypatch, tmp_path
-):
+def test_cost_ceiling_breach_closes_attention_retains_staged_records(monkeypatch, tmp_path):
     doc = fixture_doc()
     run_log = InMemoryRunLog()
     stage_store = InMemoryStageStore()
-    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+    valid_code = min(load_seeded_sector_codes(PROJECT_ROOT))
 
     def fake_enforce(self):
         self.max_usd = 0.05
@@ -651,13 +660,58 @@ def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path)
     assert result["audit_rows"][0]["candidate_ids"] == ["evt-1"]
 
 
+def test_person_pipeline_routes_to_review_without_sector_codes(tmp_path):
+    doc = fixture_doc()
+    run_log = InMemoryRunLog()
+    stage_store = InMemoryStageStore()
+
+    result = run_pipeline(
+        args(
+            source="people_fixture",
+            entity="person",
+            out=str(tmp_path / "audit.csv"),
+            digest_out=str(tmp_path / "digest.md"),
+        ),
+        root=PROJECT_ROOT,
+        run_log=run_log,
+        stage_store=stage_store,
+        source=PersonStaticSource(doc),
+        extractor=StaticPersonExtractor(
+            [
+                {
+                    "name": "Dr. Amina Example",
+                    "affiliation": "Example Climate Lab",
+                    "role": "Research Director",
+                    "public_profile_url": "https://example.org/amina",
+                    "research_area": "climate analytics",
+                    "source_url": doc.url,
+                    "extracted_at": "2026-08-10T00:00:00+00:00",
+                }
+            ]
+        ),
+        raw_store=RawContentStore(tmp_path / "raw"),
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["stats"]["records_extracted"] == 1
+    assert result["stats"]["records_in_sector"] == 1
+    assert result["stats"]["records_out_of_sector"] == 0
+    assert result["stats"]["queued_for_review"] == 1
+    assert result["audit_rows"][0]["zone"] == "review"
+    assert result["audit_rows"][0]["status"] == "would_review"
+    staged = next(iter(stage_store.rows.values()))
+    assert staged.entity_type == "person"
+    assert staged.sector_match == "in_sector"
+    assert staged.status == "routed_review"
+
+
 def test_out_of_sector_record_is_staged_and_never_promoted(monkeypatch, tmp_path):
     doc = fixture_doc()
     run_log = InMemoryRunLog()
     stage_store = InMemoryStageStore()
     raw_store = RawContentStore(tmp_path / "raw")
     promoted = []
-    valid_code = sorted(load_seeded_sector_codes(PROJECT_ROOT))[0]
+    valid_code = min(load_seeded_sector_codes(PROJECT_ROOT))
 
     def fake_promote(staged, decision, *, session=None, live=False):
         promoted.append(staged)
@@ -759,6 +813,7 @@ def test_agent_sql_contains_weekly_run_schema_changes():
     assert "ADD COLUMN IF NOT EXISTS status_reason" in sql_text
     assert "CREATE TABLE IF NOT EXISTS index_dirty" in sql_text
     assert "CREATE TABLE IF NOT EXISTS event_review_queue" in sql_text
+    assert "CREATE TABLE IF NOT EXISTS person_review_queue" in sql_text
 
 
 def test_out_of_sector_index_filters_on_sector_match():

@@ -9,8 +9,8 @@ when consuming:
         ...
 """
 
-import os
 import ipaddress
+import os
 import socket
 import subprocess
 from pathlib import Path
@@ -26,9 +26,7 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL is not set. Copy .env.example to .env and fill it in."
-    )
+    raise RuntimeError("DATABASE_URL is not set. Copy .env.example to .env and fill it in.")
 
 
 def _public_ipv4_addresses(host: str, port: int) -> list[str]:
@@ -46,6 +44,17 @@ def _public_ipv4_addresses(host: str, port: int) -> list[str]:
     if addresses or os.name != "nt":
         return addresses
 
+    for dns_server in [None, "1.1.1.1", "8.8.8.8"]:
+        _extend_with_powershell_dns(addresses, host, dns_server=dns_server)
+        if addresses:
+            break
+    return addresses
+
+
+def _extend_with_powershell_dns(
+    addresses: list[str], host: str, *, dns_server: str | None = None
+) -> None:
+    server_arg = f" -Server {dns_server}" if dns_server else ""
     try:
         result = subprocess.run(
             [
@@ -53,7 +62,7 @@ def _public_ipv4_addresses(host: str, port: int) -> list[str]:
                 "-NoProfile",
                 "-Command",
                 (
-                    f"Resolve-DnsName -Type A {host} | "
+                    f"Resolve-DnsName -Type A -Name {host}{server_arg} | "
                     "Where-Object { $_.IPAddress } | "
                     "Select-Object -ExpandProperty IPAddress"
                 ),
@@ -64,7 +73,7 @@ def _public_ipv4_addresses(host: str, port: int) -> list[str]:
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return addresses
+        return
 
     for line in result.stdout.splitlines():
         ip = line.strip()
@@ -74,13 +83,14 @@ def _public_ipv4_addresses(host: str, port: int) -> list[str]:
             continue
         if parsed.version == 4 and parsed.is_global and ip not in addresses:
             addresses.append(ip)
-    return addresses
 
 
 def _connect_args() -> dict:
     args = {"connect_timeout": 15}
     try:
         url = make_url(DATABASE_URL)
+        if url.get_backend_name().startswith("postgresql"):
+            args["sslmode"] = str(url.query.get("sslmode") or "require")
         if url.get_backend_name().startswith("postgresql") and url.host:
             port = url.port or 5432
             for ip in _public_ipv4_addresses(url.host, port):

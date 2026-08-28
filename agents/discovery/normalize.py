@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from urllib.parse import urlparse
-from typing import Optional
 
 MISSING_TOKENS = {"", "n/a", "na", "none", "null", "unknown", "tbd", "-", "--"}
 
@@ -68,6 +67,19 @@ def normalize_actor_record(record: dict[str, object]) -> dict[str, object]:
     return out
 
 
+def normalize_person_record(record: dict[str, object]) -> dict[str, object]:
+    out = {key: normalize_whitespace(value) for key, value in record.items()}
+    out["name"] = out.get("name")
+    out["sector_codes"] = []
+    out["natural_key"] = person_natural_key(
+        str(out.get("name") or ""),
+        out.get("affiliation"),
+        out.get("public_profile_url"),
+    )
+    out["entity_type"] = "person"
+    return out
+
+
 def normalize_whitespace(value: object) -> object:
     if value is None or isinstance(value, list):
         return value
@@ -78,7 +90,7 @@ def normalize_whitespace(value: object) -> object:
     return text or None
 
 
-def parse_date_to_iso(value: object) -> Optional[str]:
+def parse_date_to_iso(value: object) -> str | None:
     if value is None:
         return None
     if isinstance(value, datetime):
@@ -102,7 +114,7 @@ def parse_date_to_iso(value: object) -> Optional[str]:
 
     for fmt in DATE_FORMATS:
         try:
-            return datetime.strptime(text, fmt).date().isoformat()
+            return datetime.strptime(text, fmt).replace(tzinfo=UTC).date().isoformat()
         except ValueError:
             continue
     try:
@@ -111,7 +123,7 @@ def parse_date_to_iso(value: object) -> Optional[str]:
         raise ValueError(f"could not parse date {value!r}") from exc
 
 
-def canonical_country(value: object) -> Optional[str]:
+def canonical_country(value: object) -> str | None:
     cleaned = normalize_whitespace(value)
     if cleaned is None:
         return None
@@ -143,7 +155,7 @@ def event_natural_key(title: str, start_date: str) -> str:
     return f"{normalize_key_text(title)}|{start_date.strip()}"
 
 
-def parse_optional_int(value: object) -> Optional[int]:
+def parse_optional_int(value: object) -> int | None:
     cleaned = normalize_whitespace(value)
     if cleaned is None:
         return None
@@ -159,6 +171,17 @@ def actor_natural_key(name: str, website: object = None) -> str:
     if website_key:
         return f"{name_key}|{website_key}"
     return name_key
+
+
+def person_natural_key(
+    name: str,
+    affiliation: object = None,
+    public_profile_url: object = None,
+) -> str:
+    name_key = normalize_key_text(name)
+    affiliation_key = normalize_key_text(str(affiliation or ""))
+    profile_key = _website_key(public_profile_url)
+    return "|".join(part for part in [name_key, affiliation_key, profile_key] if part)
 
 
 def _website_key(value: object) -> str:

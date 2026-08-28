@@ -15,7 +15,11 @@ from agents.enrichment.gaps import is_gap
 from agents.enrichment.run import run_enrichment
 from agents.enrichment.specs import get_entity_spec
 from agents.index import refresh as refresh_module
-from agents.index.refresh import SearchDocCandidate, load_incremental_candidate_selection, refresh_search_doc
+from agents.index.refresh import (
+    SearchDocCandidate,
+    load_incremental_candidate_selection,
+    refresh_search_doc,
+)
 from src.db import models
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -26,10 +30,14 @@ def _canonical_table_names_from_models() -> set[str]:
 
 
 def _agent_owned_table_names_from_sql() -> set[str]:
-    create_table = re.compile(r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)\b", re.IGNORECASE)
+    create_table = re.compile(
+        r"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-z_][a-z0-9_]*)\b", re.IGNORECASE
+    )
     tables: set[str] = set()
     for path in (PROJECT_ROOT / "agents" / "sql").glob("*.sql"):
-        tables.update(match.group(1) for match in create_table.finditer(path.read_text(encoding="utf-8")))
+        tables.update(
+            match.group(1) for match in create_table.finditer(path.read_text(encoding="utf-8"))
+        )
     return tables
 
 
@@ -121,10 +129,16 @@ def test_below_floor_candidate_writes_field_proposal_not_update():
     assert any("INSERT INTO source" in sql for sql in session.statements)
     assert any("INSERT INTO field_proposal" in sql for sql in session.statements)
     assert not any("UPDATE actor" in sql for sql in session.statements)
-    source_params = [params for sql, params in zip(session.statements, session.params) if "INSERT INTO source" in sql][0]
-    field_proposal_params = [
-        params for sql, params in zip(session.statements, session.params) if "INSERT INTO field_proposal" in sql
-    ][0]
+    source_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO source" in sql
+    )
+    field_proposal_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO field_proposal" in sql
+    )
     assert field_proposal_params["source_url"] == "https://registry.example.org/example"
     assert field_proposal_params["source_id"] == source_params["source_id"]
 
@@ -169,7 +183,7 @@ def test_high_confidence_gap_applies_with_last_moment_gap_guard():
     )
 
     assert outcome.action == "applied"
-    update_sql = [sql for sql in session.statements if "UPDATE actor" in sql][0]
+    update_sql = next(sql for sql in session.statements if "UPDATE actor" in sql)
     assert "WHERE actor_id = CAST(:entity_id AS uuid)" in update_sql
     assert "website IS NULL" in update_sql
     assert "INSERT INTO source" in "\n".join(session.statements)
@@ -215,13 +229,21 @@ def test_every_field_proposal_has_source_row_and_source_id_link():
     )
 
     assert outcome.action == "proposed_existing_value"
-    source_params = [params for sql, params in zip(session.statements, session.params) if "INSERT INTO source" in sql][0]
-    proposal_params = [
-        params for sql, params in zip(session.statements, session.params) if "INSERT INTO field_proposal" in sql
-    ][0]
-    staged_params = [
-        params for sql, params in zip(session.statements, session.params) if "INSERT INTO staged_record" in sql
-    ][0]
+    source_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO source" in sql
+    )
+    proposal_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO field_proposal" in sql
+    )
+    staged_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO staged_record" in sql
+    )
     staged_payload = json.loads(staged_params["payload"])
 
     assert proposal_params["source_id"] == source_params["source_id"]
@@ -299,10 +321,15 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
                 Path("agents/index/refresh.py"),
             },
             "event_review_queue": {Path("agents/discovery/promote.py")},
+            "person_review_queue": {Path("agents/discovery/promote.py")},
         }
     )
-    table_pattern = "|".join(re.escape(table) for table in sorted(protected_tables, key=len, reverse=True))
-    sql_pattern = re.compile(rf"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+({table_pattern})\b", re.IGNORECASE)
+    table_pattern = "|".join(
+        re.escape(table) for table in sorted(protected_tables, key=len, reverse=True)
+    )
+    sql_pattern = re.compile(
+        rf"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+({table_pattern})\b", re.IGNORECASE
+    )
     orm_pattern = re.compile(rf"\b({table_pattern})\.[a-z_][a-z0-9_]*\s*=", re.IGNORECASE)
     offenders = []
     for path in (PROJECT_ROOT / "agents").rglob("*.py"):
@@ -313,7 +340,9 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             orm_match = orm_pattern.search(line)
             table = (sql_match or orm_match).group(1).lower() if sql_match or orm_match else None
             if table and relative not in allowed_by_table.get(table, set()):
-                offenders.append(f"{relative_display}:{lineno}: unexpected write to {table}: {line.strip()}")
+                offenders.append(
+                    f"{relative_display}:{lineno}: unexpected write to {table}: {line.strip()}"
+                )
 
     assert offenders == [], "Unapproved protected-table writes found:\n" + "\n".join(offenders)
 
@@ -331,7 +360,9 @@ def test_index_dirty_candidates_are_not_starved_by_updated_at_limit(monkeypatch)
     updated_id = str(uuid.uuid4())
     dirty_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
 
-    monkeypatch.setattr(refresh_module, "_table_columns", lambda session, table_name: {"updated_at"})
+    monkeypatch.setattr(
+        refresh_module, "_table_columns", lambda session, table_name: {"updated_at"}
+    )
     monkeypatch.setattr(
         refresh_module,
         "_load_entity_rows",
@@ -363,7 +394,9 @@ def test_index_dirty_candidates_are_not_starved_by_updated_at_limit(monkeypatch)
         ],
     )
 
-    selection = load_incremental_candidate_selection(FakeSession(), entity_types=("event",), limit=1)
+    selection = load_incremental_candidate_selection(
+        FakeSession(), entity_types=("event",), limit=1
+    )
 
     assert selection.updated_at_candidates == 1
     assert selection.index_dirty_candidates == 2
@@ -391,7 +424,11 @@ def test_search_doc_refresh_upserts_only_selected_candidates():
     assert stats.upserts == 1
     assert stats.deletes == 0
     assert any("INSERT INTO search_doc" in sql for sql in session.statements)
-    upsert_params = [params for sql, params in zip(session.statements, session.params) if "INSERT INTO search_doc" in sql][0]
+    upsert_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO search_doc" in sql
+    )
     assert upsert_params["entity_type"] == "actor"
     assert upsert_params["entity_id"]
     assert not any("search_doc_2" in sql for sql in session.statements)
@@ -437,8 +474,12 @@ def test_search_doc_upsert_clears_index_dirty_row_after_successful_upsert():
     assert stats.upserts == 1
     assert stats.index_dirty_candidates == 1
     assert stats.dirty_cleared == 1
-    upsert_index = next(index for index, sql in enumerate(session.statements) if "INSERT INTO search_doc" in sql)
-    clear_index = next(index for index, sql in enumerate(session.statements) if "DELETE FROM index_dirty" in sql)
+    upsert_index = next(
+        index for index, sql in enumerate(session.statements) if "INSERT INTO search_doc" in sql
+    )
+    clear_index = next(
+        index for index, sql in enumerate(session.statements) if "DELETE FROM index_dirty" in sql
+    )
     assert upsert_index < clear_index
     assert session.commits == 1
     assert session.rollbacks == 0

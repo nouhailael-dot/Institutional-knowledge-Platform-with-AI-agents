@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 from pathlib import Path
-from typing import Optional
 
 from agents.common.config import load_sources_config
 from agents.common.cost import CostLimitExceeded, CostMeter
@@ -15,16 +15,23 @@ from agents.common.raw_storage import RawContentStore
 from agents.common.resolve_route import (
     load_actor_resolver_class,
     load_event_candidates,
+    load_person_candidates,
     route_actor,
     route_event,
+    route_person,
 )
 from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.extractors.actor import ActorExtractor
 from agents.discovery.extractors.event import EventExtractor
-from agents.discovery.extractors.unga_guide import UngaGuideExtractor
+from agents.discovery.extractors.person import PersonExtractor
+from agents.discovery.extractors.unga_guide import UngaGuideActorExtractor, UngaGuideExtractor
 from agents.discovery.extractors.unga_programme import UngaProgrammeExtractor
-from agents.discovery.normalize import normalize_actor_record, normalize_event_record
-from agents.discovery.promote import promote
+from agents.discovery.normalize import (
+    normalize_actor_record,
+    normalize_event_record,
+    normalize_person_record,
+)
+from agents.discovery.promote import guard_actor_absorb_route, promote
 from agents.discovery.relevance import IN_SECTOR, OUT_OF_SECTOR, classify_sector_matches
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.climate_week import ClimateWeekAdapter
@@ -45,7 +52,7 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def load_config(root: Optional[Path] = None) -> dict[str, object]:
+def load_config(root: Path | None = None) -> dict[str, object]:
     return load_sources_config(root or project_root())
 
 
@@ -54,10 +61,45 @@ def build_source(name: str, config: dict[str, object], root: Path, *, offline: b
     source_config = dict(sources.get(name, {}))
     if not source_config:
         raise ValueError(f"unknown source {name!r}")
+    _raise_if_source_disabled(name, source_config)
+    source_config.setdefault("source_name", name)
+    adapter_cls = _source_adapter_class(name, source_config)
+    return adapter_cls(source_config, project_root=root, offline=offline), source_config
+
+
+def _source_adapter_class(name: str, source_config: dict[str, object]):
+    adapter_path = str(source_config.get("adapter") or "").strip()
+    if adapter_path:
+        return _import_adapter_class(adapter_path)
     adapter_cls = SOURCE_ADAPTERS.get(name)
     if adapter_cls is None:
         raise NotImplementedError(f"source {name!r} is not implemented")
-    return adapter_cls(source_config, project_root=root, offline=offline), source_config
+    return adapter_cls
+
+
+def _import_adapter_class(adapter_path: str):
+    module_path, sep, class_name = adapter_path.partition(":")
+    if not sep:
+        module_path, _, class_name = adapter_path.rpartition(".")
+    if not module_path or not class_name:
+        raise ValueError(
+            "source adapter must be a Python path like "
+            "'agents.discovery.sources.configured_pages:ConfiguredPagesAdapter'"
+        )
+    module = importlib.import_module(module_path)
+    try:
+        return getattr(module, class_name)
+    except AttributeError as exc:
+        raise ValueError(
+            f"source adapter class {class_name!r} not found in {module_path!r}"
+        ) from exc
+
+
+def _raise_if_source_disabled(name: str, source_config: dict[str, object]) -> None:
+    if not bool(source_config.get("disabled", False)):
+        return
+    reason = str(source_config.get("disabled_reason") or "no reason configured").strip()
+    raise RuntimeError(f"source {name!r} is disabled: {reason}")
 
 
 def build_extractor(
@@ -68,8 +110,10 @@ def build_extractor(
     offline: bool = False,
     cost_meter: CostMeter,
 ):
-    if entity_type not in {"event", "actor"}:
-        raise NotImplementedError("discovery supports entity='event' or entity='actor'")
+    if entity_type not in {"event", "actor", "person"}:
+        raise NotImplementedError(
+            "discovery supports entity='event', entity='actor', or entity='person'"
+        )
     fixture_response = source_config.get("llm_fixture_response")
     if fixture_response and offline:
         llm_client = FixtureToolClient.from_path(_resolve_path(root, str(fixture_response)))
@@ -82,7 +126,19 @@ def build_extractor(
             output_usd_per_million=float(pricing.get("output_usd_per_million", 0.0)),
         )
     if entity_type == "actor":
+        if source_config.get("extractor") == "unga_guide":
+            return UngaGuideActorExtractor(
+                max_tokens=int(source_config.get("max_tokens", 2048)),
+                coming_soon_markers=[
+                    str(value) for value in source_config.get("coming_soon_markers", [])
+                ],
+            )
         return ActorExtractor(
+            llm_client,
+            max_tokens=int(source_config.get("max_tokens", 2048)),
+        )
+    if entity_type == "person":
+        return PersonExtractor(
             llm_client,
             max_tokens=int(source_config.get("max_tokens", 2048)),
         )
@@ -110,12 +166,12 @@ def run_pipeline(
     args,
     *,
     session=None,
-    root: Optional[Path] = None,
+    root: Path | None = None,
     run_log=None,
     stage_store=None,
     source=None,
     extractor=None,
-    raw_store: Optional[RawContentStore] = None,
+    raw_store: RawContentStore | None = None,
     actor_resolver=None,
 ) -> dict[str, object]:
     root = root or project_root()
@@ -155,6 +211,7 @@ def run_pipeline(
         source_config = dict(sources.get(source_name, {}))
         if not source_config:
             raise ValueError(f"unknown source {source_name!r}")
+        _raise_if_source_disabled(source_name, source_config)
     else:
         source, source_config = (
             (source, None)
@@ -196,7 +253,14 @@ def run_pipeline(
     digest_path = _output_path(root, getattr(args, "digest_out", None), run_id, suffix=".md")
 
     try:
-        candidates = [] if offline or entity_type != "event" else load_event_candidates(session)
+        if offline:
+            candidates = []
+        elif entity_type == "event":
+            candidates = load_event_candidates(session)
+        elif entity_type == "person":
+            candidates = load_person_candidates(session)
+        else:
+            candidates = []
         if not offline and entity_type == "actor" and actor_resolver is None:
             actor_resolver = load_actor_resolver_class()(session, project_root=root)
         if replay_run_id:
@@ -391,11 +455,16 @@ def _extract_stage_route_promote(
         normalized = [normalize_event_record(record) for record in extracted]
     elif entity_type == "actor":
         normalized = [normalize_actor_record(record) for record in extracted]
+    elif entity_type == "person":
+        normalized = [normalize_person_record(record) for record in extracted]
     else:
         raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
     normalized = _dedupe_by_natural_key(normalized)
     stats["records_extracted"] += len(normalized)
-    classified = classify_sector_matches(normalized, project_root=root)
+    if entity_type == "person":
+        classified = [{**record, "sector_match": IN_SECTOR} for record in normalized]
+    else:
+        classified = classify_sector_matches(normalized, project_root=root)
     in_sector_count = sum(1 for record in classified if record.get("sector_match") == IN_SECTOR)
     out_of_sector_count = sum(
         1 for record in classified if record.get("sector_match") == OUT_OF_SECTOR
@@ -437,6 +506,9 @@ def _extract_stage_route_promote(
             if actor_resolver is None:
                 raise RuntimeError("actor routing requires an EntityResolver")
             decision = route_actor(record, actor_resolver)
+            decision = guard_actor_absorb_route(staged, decision)
+        elif entity_type == "person":
+            decision = route_person(record, candidates)
         else:
             raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
         staged = mark_routed(stage_store, staged, decision)
@@ -466,7 +538,7 @@ def _storage_path_for_doc(
     *,
     run_id: str,
     doc: FetchedDoc,
-    prior_raw: Optional[dict[str, object]],
+    prior_raw: dict[str, object] | None,
 ) -> str:
     prior_path = str((prior_raw or {}).get("storage_path") or "")
     if raw_store.exists(prior_path):
@@ -554,15 +626,19 @@ def _determine_run_status(stats: dict[str, object], *, source=None) -> tuple[str
     if records_extracted > 0 and records_in_sector == 0:
         return (
             "succeeded",
-            f"extracted {records_extracted} record(s); 0 matched seeded sectors; "
-            "staged as out_of_sector",
+            (
+                f"extracted {records_extracted} record(s); 0 matched seeded sectors; "
+                "staged as out_of_sector"
+            ),
         )
     if records_staged > 0:
         records_out_of_sector = int(stats.get("records_out_of_sector", 0) or 0)
         return (
             "succeeded",
-            f"staged {records_staged} record(s): {records_in_sector} in-sector, "
-            f"{records_out_of_sector} out-of-sector",
+            (
+                f"staged {records_staged} record(s): {records_in_sector} in-sector, "
+                f"{records_out_of_sector} out-of-sector"
+            ),
         )
     if documents_fetched > skipped_unchanged and records_extracted == 0:
         return "attention", "documents fetched but zero records extracted"
@@ -608,9 +684,7 @@ def _cost_limit_status_reason(exc: CostLimitExceeded, cost_meter: CostMeter) -> 
 
 def _finalize_attention_reasons(stats: dict[str, object], extractor) -> None:
     reasons = [
-        str(reason)
-        for reason in getattr(extractor, "attention_reasons", [])
-        if str(reason).strip()
+        str(reason) for reason in getattr(extractor, "attention_reasons", []) if str(reason).strip()
     ]
     if reasons:
         stats["attention_reasons"] = reasons
@@ -624,8 +698,9 @@ def _finalize_cost(stats: dict[str, object], extractor, cost_meter: CostMeter) -
         if usage is not None
         else {"calls": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
     )
-    if float(stats["llm"].get("cost_usd", 0.0) or 0.0) > cost_meter.spent_usd:
-        cost_meter.spent_usd = float(stats["llm"].get("cost_usd", 0.0) or 0.0)
+    cost_meter.spent_usd = max(
+        cost_meter.spent_usd, float(stats["llm"].get("cost_usd", 0.0) or 0.0)
+    )
     stats["cost"] = cost_meter.snapshot()
 
 
@@ -647,7 +722,7 @@ def _empty_stats() -> dict[str, int]:
     }
 
 
-def parse_args(argv: Optional[list[str]] = None):
+def parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source")
     parser.add_argument("--entity")
@@ -666,7 +741,7 @@ def parse_args(argv: Optional[list[str]] = None):
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     result = run_pipeline(parse_args(argv))
     stats = result["stats"]
@@ -691,7 +766,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         raise SystemExit(exit_code)
 
 
-def _output_path(root: Path, value: Optional[str], run_id: str, *, suffix: str) -> Path:
+def _output_path(root: Path, value: str | None, run_id: str, *, suffix: str) -> Path:
     path = Path(value) if value else root / "agents" / "runs" / f"{run_id}{suffix}"
     return path if path.is_absolute() else root / path
 

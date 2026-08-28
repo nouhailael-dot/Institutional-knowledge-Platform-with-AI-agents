@@ -8,16 +8,16 @@ existing review_queue table is actor-specific.
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
 
 from sqlalchemy import text
 
 from agents.common.provenance import insert_source
 from agents.common.resolve_route import RouteDecision
-from src.ML.entity_resolution.resolve_or_create import INHERITABLE_FIELDS as ACTOR_FIELDS
 from agents.discovery.stage import StagedRecord
+from src.ML.entity_resolution.resolve_or_create import INHERITABLE_FIELDS as ACTOR_FIELDS
 
 EVENT_CREATE_FIELDS = [
     "event_type",
@@ -35,6 +35,63 @@ EVENT_CREATE_FIELDS = [
 EVENT_ABSORB_FIELDS = EVENT_CREATE_FIELDS.copy()
 ACTOR_CREATE_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_FIELDS = list(ACTOR_FIELDS)
+ACTOR_ABSORB_CONNECTOR_RE = re.compile(
+    r"\b(?:in collaboration with|in partnership with|in cooperation with|"
+    r"in association with|co-hosted by|hosted by|supported by|with support from)\b",
+    flags=re.IGNORECASE,
+)
+ACTOR_ROLE_PREFIX_RE = re.compile(
+    r"^\s*(?:president|chair|co-chair|minister|secretary-general|director|dean|"
+    r"professor|representative|ambassador|mayor|governor|prime minister|head)\s+"
+    r"(?:of|for|to)\b",
+    flags=re.IGNORECASE,
+)
+ACTOR_LIST_DELIMITER_RE = re.compile(r"\s*(?:;|,|\band\b)\s*", flags=re.IGNORECASE)
+ACTOR_ORG_MARKERS = {
+    "academy",
+    "agency",
+    "alliance",
+    "association",
+    "bank",
+    "center",
+    "centre",
+    "coalition",
+    "commission",
+    "committee",
+    "compact",
+    "council",
+    "department",
+    "foundation",
+    "fund",
+    "group",
+    "institute",
+    "initiative",
+    "lab",
+    "labs",
+    "ministry",
+    "network",
+    "nations",
+    "organization",
+    "organisation",
+    "programme",
+    "program",
+    "project",
+    "university",
+    "union",
+}
+ACTOR_LIST_SUFFIXES = {
+    "corp",
+    "corp.",
+    "gmbh",
+    "inc",
+    "inc.",
+    "llc",
+    "ltd",
+    "ltd.",
+    "plc",
+    "s.a.",
+    "sarl",
+}
 
 
 @dataclass
@@ -42,10 +99,29 @@ class PromotionResult:
     action: str
     entity_type: str
     zone: str
-    entity_id: Optional[str] = None
+    entity_id: str | None = None
     dry_run: bool = True
     fields_absorbed: list[str] = field(default_factory=list)
-    review_id: Optional[str] = None
+    review_id: str | None = None
+
+
+def guard_actor_absorb_route(staged: StagedRecord, route: RouteDecision) -> RouteDecision:
+    if staged.entity_type != "actor" or route.zone != "absorb":
+        return route
+    reason = _unsafe_actor_absorb_reason(staged.normalized_payload.get("name"))
+    if not reason:
+        return route
+    if not route.target_entity_id:
+        raise ValueError("actor absorb route requires target_entity_id")
+    metadata = dict(route.metadata or {})
+    metadata["actor_absorb_guard_reason"] = reason
+    return RouteDecision(
+        zone="review",
+        score=route.score,
+        target_entity_id=route.target_entity_id,
+        candidate_ids=route.candidate_ids,
+        metadata=metadata,
+    )
 
 
 def promote(
@@ -55,9 +131,12 @@ def promote(
         raise RuntimeError("out_of_sector staged records must not be promoted")
     if staged.entity_type == "actor":
         return _promote_actor(staged, route, session=session, live=live)
+    if staged.entity_type == "person":
+        return _promote_person(staged, route, session=session, live=live)
     if staged.entity_type != "event":
         raise NotImplementedError(
-            "promotion supports only entity_type='event' or entity_type='actor'"
+            "promotion supports only entity_type='event', entity_type='actor', "
+            "or entity_type='person'"
         )
 
     if session is None:
@@ -253,6 +332,7 @@ def _insert_event_review(session, staged: StagedRecord, route: RouteDecision) ->
 def _promote_actor(
     staged: StagedRecord, route: RouteDecision, session=None, *, live: bool = False
 ) -> PromotionResult:
+    route = guard_actor_absorb_route(staged, route)
     if session is None:
         if live:
             raise ValueError("live promotion requires a database session")
@@ -331,7 +411,7 @@ def _insert_actor(session, payload: dict[str, object], source_id: str) -> str:
     cols: dict[str, object] = {
         "actor_id": actor_id,
         "name": name,
-        "slug": f"{_slugify(str(name))}-{actor_id[:8]}",
+        "slug": _actor_slug(str(name), actor_id),
         "verification_status": "needs_review",
         "source_id": source_id,
     }
@@ -427,6 +507,97 @@ def _insert_actor_review(session, actor_id_a: str, actor_id_b: str, route: Route
     return review_id
 
 
+def _promote_person(
+    staged: StagedRecord, route: RouteDecision, session=None, *, live: bool = False
+) -> PromotionResult:
+    if route.zone != "review":
+        raise RuntimeError("person records must route to review only")
+    if session is None:
+        if live:
+            raise ValueError("live promotion requires a database session")
+        return _dry_run_preview(staged, route)
+
+    transaction = session.begin()
+    try:
+        source_id = insert_source(
+            session,
+            source_url=staged.source_url,
+            fetched_at=staged.extracted_at,
+            description="agent discovery person review",
+        )
+        review_id = _insert_person_review(session, staged, route, source_id)
+        result = PromotionResult(
+            action="queued_for_review",
+            entity_type="person",
+            zone="review",
+            entity_id=route.target_entity_id,
+            dry_run=False,
+            review_id=review_id,
+        )
+    except Exception:
+        transaction.rollback()
+        raise
+
+    if live:
+        transaction.commit()
+        return result
+    transaction.rollback()
+    return _dry_run_result(result, route)
+
+
+def _insert_person_review(
+    session,
+    staged: StagedRecord,
+    route: RouteDecision,
+    source_id: str,
+) -> str:
+    payload = staged.normalized_payload
+    staged_name = str(payload.get("name") or "").strip()
+    if not staged_name:
+        raise ValueError("cannot queue person review without name")
+
+    metadata = dict(route.metadata or {})
+    person_review_id = str(uuid.uuid4())
+    conflict_clause = (
+        "ON CONFLICT (staged_record_id, candidate_person_id) "
+        "WHERE candidate_person_id IS NOT NULL DO UPDATE SET "
+        if route.target_entity_id
+        else "ON CONFLICT (staged_record_id) WHERE candidate_person_id IS NULL DO UPDATE SET "
+    )
+    session.execute(
+        text(
+            "INSERT INTO person_review_queue (person_review_id, staged_record_id, source_id, "
+            "candidate_person_id, score, staged_name, affiliation, role, public_profile_url, "
+            "research_area, candidate_name, source_url, status, reviewer) "
+            "VALUES (CAST(:person_review_id AS uuid), CAST(:staged_record_id AS uuid), "
+            "CAST(:source_id AS uuid), CAST(:candidate_person_id AS uuid), :score, "
+            ":staged_name, :affiliation, :role, :public_profile_url, :research_area, "
+            ":candidate_name, :source_url, 'pending', NULL) "
+            f"{conflict_clause}"
+            "source_id = EXCLUDED.source_id, score = EXCLUDED.score, "
+            "staged_name = EXCLUDED.staged_name, affiliation = EXCLUDED.affiliation, "
+            "role = EXCLUDED.role, public_profile_url = EXCLUDED.public_profile_url, "
+            "research_area = EXCLUDED.research_area, candidate_name = EXCLUDED.candidate_name, "
+            "source_url = EXCLUDED.source_url, updated_at = now()"
+        ),
+        {
+            "person_review_id": person_review_id,
+            "staged_record_id": staged.staged_record_id,
+            "source_id": source_id,
+            "candidate_person_id": route.target_entity_id,
+            "score": float(route.score),
+            "staged_name": staged_name,
+            "affiliation": payload.get("affiliation"),
+            "role": payload.get("role"),
+            "public_profile_url": payload.get("public_profile_url"),
+            "research_area": payload.get("research_area"),
+            "candidate_name": metadata.get("candidate_name"),
+            "source_url": staged.source_url,
+        },
+    )
+    return person_review_id
+
+
 def _gap_sql(field_name: str) -> str:
     if field_name == "estimated_trl":
         return f"{field_name} IS NULL"
@@ -442,6 +613,48 @@ def _slugify(value: str) -> str:
         import re
 
         return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+
+def _actor_slug(name: str, actor_id: str) -> str:
+    suffix = f"-{actor_id[:8]}"
+    max_base_length = 160 - len(suffix)
+    base = _slugify(name)[:max_base_length].strip("-") or "actor"
+    return f"{base}{suffix}"
+
+
+def _unsafe_actor_absorb_reason(value: object) -> str | None:
+    name = str(value or "").strip()
+    if not name:
+        return None
+    if ACTOR_ABSORB_CONNECTOR_RE.search(name):
+        return "connector phrase remains in actor name"
+    if ACTOR_ROLE_PREFIX_RE.search(name):
+        return "actor name reads as a role rather than an organization"
+    if _looks_like_combined_actor_name(name):
+        return "actor name looks like a combined organization list"
+    return None
+
+
+def _looks_like_combined_actor_name(name: str) -> bool:
+    if not re.search(r"[;,]|\band\b", name, flags=re.IGNORECASE):
+        return False
+    parts = [
+        part.strip()
+        for part in ACTOR_LIST_DELIMITER_RE.split(name)
+        if part and part.strip().lower() not in ACTOR_LIST_SUFFIXES
+    ]
+    return sum(1 for part in parts if _looks_like_actor_name_part(part)) >= 2
+
+
+def _looks_like_actor_name_part(value: str) -> bool:
+    stripped = value.strip()
+    if re.fullmatch(r"[A-Z0-9][A-Z0-9&./-]+(?:\s+[A-Z0-9][A-Z0-9&./-]+)*", stripped):
+        return True
+    tokens = re.findall(r"[A-Za-z][A-Za-z&.'-]*", stripped)
+    if {token.lower().strip(".") for token in tokens}.intersection(ACTOR_ORG_MARKERS):
+        return True
+    title_tokens = [token for token in tokens if token[:1].isupper()]
+    return len(tokens) >= 2 and len(title_tokens) >= 2
 
 
 def _is_empty(value: object) -> bool:

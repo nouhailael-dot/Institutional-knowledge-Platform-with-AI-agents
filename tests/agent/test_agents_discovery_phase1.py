@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from sqlalchemy import create_engine, event as sqla_event, text
+from sqlalchemy import create_engine, text
+from sqlalchemy import event as sqla_event
 from sqlalchemy.orm import sessionmaker
 
 from agents.common.resolve_route import (
@@ -15,6 +16,7 @@ from agents.common.resolve_route import (
     Thresholds,
     route_actor,
     route_event,
+    route_person,
     zone_for_score,
 )
 from agents.discovery.extractors.actor import ACTOR_FIELDS, ActorExtractor
@@ -23,12 +25,18 @@ from agents.discovery.extractors.event import (
     displayed_event_total,
     hubdb_listing_rows,
 )
-from agents.discovery.extractors.unga_guide import UngaGuideExtractor
+from agents.discovery.extractors.person import PERSON_FIELDS, PersonExtractor
+from agents.discovery.extractors.unga_guide import (
+    UngaGuideActorExtractor,
+    UngaGuideExtractor,
+    _split_organizer_name,
+)
 from agents.discovery.extractors.unga_programme import UngaProgrammeExtractor
 from agents.discovery.normalize import (
     event_natural_key,
     normalize_actor_record,
     normalize_event_record,
+    normalize_person_record,
     parse_date_to_iso,
 )
 from agents.discovery.promote import promote
@@ -162,6 +170,30 @@ def _staged_event(normalized_payload=None):
     )
 
 
+def _staged_person(normalized_payload=None):
+    payload = {
+        "name": "Dr. Amina Example",
+        "affiliation": "Example Climate Lab",
+        "role": "Research Director",
+        "public_profile_url": "https://example.org/amina",
+        "research_area": "climate analytics",
+    }
+    if normalized_payload:
+        payload.update(normalized_payload)
+    normalized = normalize_person_record(payload)
+    return StagedRecord(
+        run_id=str(uuid.uuid4()),
+        raw_document_id=None,
+        entity_type="person",
+        natural_key=str(normalized["natural_key"]),
+        source_url="fixture://people",
+        payload={},
+        normalized_payload=normalized,
+        prompt_version="person_v1",
+        extracted_at="2026-08-10T00:00:00+00:00",
+    )
+
+
 def _empty_event_row():
     return {
         "event_type": None,
@@ -291,6 +323,41 @@ def test_unga_guide_fixture_extracts_jsonld_events_without_llm():
     assert records[0]["website"] == "https://unblockchainweek.com"
     assert set(records[0]["sector_codes"]) == {"AI", "SUSTAIN", "CROSS"}
     assert records[1]["sponsoring_orgs"] == "C3 Summit"
+
+
+def test_unga_guide_fixture_extracts_organizer_actors_without_llm():
+    extractor = UngaGuideActorExtractor()
+    doc = fixture_doc("unga_guide_home.html")
+
+    records = extractor.extract(doc)
+
+    assert len(records) == 19
+    first = records[0]
+    assert first["name"] == "GlobalBoost"
+    assert first["actor_type_raw"] == "UNGA Guide organizer"
+    assert first["primary_lifecycle_role"] == "Convener"
+    assert set(first["sector_codes"]) == {"AI", "SUSTAIN", "CROSS"}
+    assert "UN Blockchain Week Conference 2026" in str(first["description"])
+    assert first["prompt_version"] == "unga_guide_actor_v1"
+    assert first["source_url"] == doc.url
+    assert any(record["name"] == "Project Everyone" for record in records)
+
+
+def test_unga_guide_organizer_splitter_separates_replay_combined_names():
+    assert _split_organizer_name(
+        "International Telecommunication Union (ITU), "
+        "United Nations Development Programme (UNDP)"
+    ) == [
+        "International Telecommunication Union (ITU)",
+        "United Nations Development Programme (UNDP)",
+    ]
+    assert _split_organizer_name(
+        "President of the United Nations General Assembly, "
+        "in collaboration with the World Health Organization (WHO)"
+    ) == [
+        "President of the United Nations General Assembly",
+        "the World Health Organization (WHO)",
+    ]
 
 
 def test_unga_guide_unmapped_categories_do_not_default_to_cross():
@@ -847,11 +914,36 @@ def test_promote_actor_create_writes_needs_review_actor_with_source_and_index_di
 
     assert result.action == "created"
     assert result.entity_type == "actor"
-    actor_insert = [sql for sql in session.statements if "INSERT INTO actor" in sql][0]
+    actor_insert = next(sql for sql in session.statements if "INSERT INTO actor" in sql)
     assert "verification_status" in actor_insert
     assert any("INSERT INTO source" in sql for sql in session.statements)
     assert any("INSERT INTO index_dirty" in sql for sql in session.statements)
     assert session.transactions[-1].committed
+
+
+def test_promote_actor_create_truncates_long_slug_to_column_limit():
+    staged = _staged_event(
+        {
+            "name": (
+                "Merieux Foundation USA, Weill Cornell Medical College, GHESKIO Centers, "
+                "Pan American Health Organization, Pandemic Fund, CEPI, APHL"
+            ),
+            "description": "Health preparedness organizer",
+            "sector_codes": ["HEALTH"],
+        }
+    )
+    staged.entity_type = "actor"
+    session = FakeSession()
+
+    promote(staged, RouteDecision(zone="create", score=0.0), session=session, live=True)
+
+    actor_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO actor" in sql
+    )
+    assert len(actor_params["slug"]) <= 160
+    assert actor_params["slug"].endswith(actor_params["actor_id"][:8])
 
 
 def test_promote_actor_absorb_fills_only_empty_fields_with_gap_guard():
@@ -895,7 +987,7 @@ def test_promote_actor_absorb_fills_only_empty_fields_with_gap_guard():
 
     assert result.action == "absorbed"
     assert result.fields_absorbed == ["description"]
-    update_sql = [sql for sql in session.statements if "UPDATE actor" in sql][0]
+    update_sql = next(sql for sql in session.statements if "UPDATE actor" in sql)
     assert "description = :description" in update_sql
     assert "website = :website" not in update_sql
     assert "description IS NULL" in update_sql
@@ -920,6 +1012,47 @@ def test_promote_actor_absorb_raises_when_gap_guard_loses_race():
         )
 
     assert session.transactions[-1].rolled_back
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        (
+            "International Telecommunication Union (ITU), "
+            "United Nations Development Programme (UNDP)"
+        ),
+        (
+            "President of the United Nations General Assembly, "
+            "in collaboration with the World Health Organization (WHO)"
+        ),
+    ],
+)
+def test_promote_actor_absorb_guard_sends_combined_or_role_names_to_review(name):
+    existing_actor_id = str(uuid.uuid4())
+    staged = _staged_event({"name": name, "description": "UNGA Guide organizer"})
+    staged.entity_type = "actor"
+    session = FakeSession()
+
+    result = promote(
+        staged,
+        RouteDecision(
+            zone="absorb",
+            score=0.99,
+            target_entity_id=existing_actor_id,
+            candidate_ids=[existing_actor_id],
+            metadata={"model": "combiner_name_mismatch"},
+        ),
+        session=session,
+        live=True,
+    )
+
+    assert result.action == "queued_for_review"
+    assert result.zone == "review"
+    assert result.entity_id != existing_actor_id
+    assert not any(sql.strip().startswith("UPDATE actor") for sql in session.statements)
+    assert any("INSERT INTO actor" in sql for sql in session.statements)
+    assert any("INSERT INTO review_queue" in sql for sql in session.statements)
+    assert session.transactions[-1].committed
 
 
 def test_promote_actor_review_creates_candidate_and_existing_review_queue_row():
@@ -948,3 +1081,107 @@ def test_promote_actor_review_creates_candidate_and_existing_review_queue_row():
     assert any("INSERT INTO review_queue" in sql for sql in session.statements)
     assert any("INSERT INTO index_dirty" in sql for sql in session.statements)
     assert session.transactions[-1].committed
+
+
+def test_person_extractor_only_public_professional_fields():
+    person = {field: None for field in PERSON_FIELDS}
+    person.update(
+        {
+            "name": "Dr. Amina Example",
+            "affiliation": "Example Climate Lab",
+            "role": "Research Director",
+            "public_profile_url": "https://example.org/amina",
+            "research_area": "climate analytics",
+        }
+    )
+    client = ActorStubToolClient({"people": [person]})
+    extractor = PersonExtractor(client)
+    doc = FetchedDoc.from_content(
+        url="fixture://people", content="<html>Dr. Amina Example, Research Director</html>"
+    )
+
+    records = extractor.extract(doc)
+
+    assert client.calls == 1
+    assert client.last_kwargs["tool_name"] == "record_people"
+    assert client.last_kwargs["temperature"] == 0.0
+    schema_text = json.dumps(client.last_kwargs["input_schema"])
+    for forbidden in ("email", "phone", "tel", "bio"):
+        assert forbidden not in schema_text.lower()
+    assert records[0]["name"] == "Dr. Amina Example"
+    assert records[0]["affiliation"] == "Example Climate Lab"
+    assert records[0]["source_url"] == "fixture://people"
+    assert records[0]["prompt_version"] == "person_v1"
+
+
+def test_person_routing_review_only_even_on_perfect_name_match():
+    candidate_id = str(uuid.uuid4())
+    record = normalize_person_record(
+        {
+            "name": "Dr. Amina Example",
+            "affiliation": "Example Climate Lab",
+            "public_profile_url": "https://example.org/amina",
+        }
+    )
+
+    decision = route_person(
+        record,
+        [
+            {
+                "person_id": candidate_id,
+                "full_name": "Dr. Amina Example",
+                "title": "Research Director",
+                "linkedin_url": None,
+            }
+        ],
+    )
+
+    assert decision.zone == "review"
+    assert decision.score == 1.0
+    assert decision.target_entity_id == candidate_id
+    assert decision.candidate_ids == [candidate_id]
+    assert decision.metadata["candidate_name"] == "Dr. Amina Example"
+
+
+def test_promote_person_guard_raises_for_non_review_route():
+    staged = _staged_person()
+
+    with pytest.raises(RuntimeError, match="person records must route to review only"):
+        promote(staged, RouteDecision(zone="create", score=0.0), session=FakeSession(), live=True)
+
+
+def test_promote_person_review_writes_person_review_queue_only():
+    staged = _staged_person()
+    session = FakeSession()
+    candidate_id = str(uuid.uuid4())
+
+    result = promote(
+        staged,
+        RouteDecision(
+            zone="review",
+            score=1.0,
+            target_entity_id=candidate_id,
+            candidate_ids=[candidate_id],
+            metadata={"candidate_name": "Dr. Amina Example"},
+        ),
+        session=session,
+        live=True,
+    )
+
+    assert result.action == "queued_for_review"
+    assert result.entity_type == "person"
+    assert result.entity_id == candidate_id
+    assert any("INSERT INTO source" in sql for sql in session.statements)
+    assert any("INSERT INTO person_review_queue" in sql for sql in session.statements)
+    assert not any("INSERT INTO person " in sql for sql in session.statements)
+    assert not any("UPDATE person" in sql for sql in session.statements)
+    assert session.transactions[-1].committed
+    review_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO person_review_queue" in sql
+    )
+    assert review_params["source_id"]
+    assert review_params["source_url"] == "fixture://people"
+    assert review_params["staged_name"] == "Dr. Amina Example"
+    assert review_params["candidate_person_id"] == candidate_id

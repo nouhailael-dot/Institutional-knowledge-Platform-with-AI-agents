@@ -8,13 +8,13 @@ stays uniform without applying an actor model to events.
 
 from __future__ import annotations
 
-from difflib import SequenceMatcher
 import json
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Iterable, Optional
 
 from sqlalchemy import text
 
@@ -33,19 +33,19 @@ class Thresholds:
 class RouteDecision:
     zone: str
     score: float
-    target_entity_id: Optional[str] = None
+    target_entity_id: str | None = None
     candidate_ids: list[str] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
 
 
-def load_actor_thresholds(project_root: Optional[Path] = None) -> Thresholds:
+def load_actor_thresholds(project_root: Path | None = None) -> Thresholds:
     """Load deployed ER thresholds from the existing production config."""
     root = project_root or Path(__file__).resolve().parents[2]
     cfg = json.loads((root / "config" / "er_production.json").read_text(encoding="utf-8"))
     return Thresholds(high=float(cfg["high_threshold"]), low=float(cfg["low_threshold"]))
 
 
-def load_event_review_threshold(project_root: Optional[Path] = None) -> float:
+def load_event_review_threshold(project_root: Path | None = None) -> float:
     root = project_root or Path(__file__).resolve().parents[2]
     cfg = load_sources_config(root)
     try:
@@ -122,13 +122,59 @@ def load_event_candidates(session) -> list[dict[str, object]]:
     return [dict(row) for row in rows]
 
 
+def load_person_candidates(session) -> list[dict[str, object]]:
+    rows = (
+        session.execute(
+            text("SELECT person_id::text AS person_id, full_name, title, linkedin_url FROM person")
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(row) for row in rows]
+
+
+def route_person(
+    record: dict[str, object],
+    candidates: Iterable[dict[str, object]],
+) -> RouteDecision:
+    """Route people to human review only.
+
+    Exact-name matches become reviewer hints, not automatic absorbs. There is no
+    person ER model, and individual name collisions are too risky for automatic
+    canonical writes.
+    """
+    name = str(record.get("name") or "").strip()
+    if not name:
+        raise ValueError("person record has no name")
+
+    from agents.discovery.normalize import normalize_key_text
+
+    record_key = normalize_key_text(name)
+    exact_matches = [
+        candidate
+        for candidate in candidates
+        if normalize_key_text(str(candidate.get("full_name") or "")) == record_key
+    ]
+    if exact_matches:
+        candidate = exact_matches[0]
+        return RouteDecision(
+            zone="review",
+            score=1.0,
+            target_entity_id=_person_candidate_id(candidate),
+            candidate_ids=[_person_candidate_id(match) for match in exact_matches],
+            metadata={"candidate_name": str(candidate.get("full_name") or "")},
+        )
+
+    return RouteDecision(zone="review", score=0.0)
+
+
 def route_event(
     record: dict[str, object],
     candidates: Iterable[dict[str, object]],
     *,
-    thresholds: Optional[Thresholds] = None,
-    event_review_threshold: Optional[float] = None,
-    project_root: Optional[Path] = None,
+    thresholds: Thresholds | None = None,
+    event_review_threshold: float | None = None,
+    project_root: Path | None = None,
 ) -> RouteDecision:
     thresholds = thresholds or load_actor_thresholds()
     fuzzy_threshold = (
@@ -215,6 +261,11 @@ def normalized_token_block(
 
 def _candidate_id(candidate: dict[str, object]) -> str:
     value = candidate.get("event_id") or candidate.get("entity_id") or candidate.get("id")
+    return "" if value is None else str(value)
+
+
+def _person_candidate_id(candidate: dict[str, object]) -> str:
+    value = candidate.get("person_id") or candidate.get("entity_id") or candidate.get("id")
     return "" if value is None else str(value)
 
 

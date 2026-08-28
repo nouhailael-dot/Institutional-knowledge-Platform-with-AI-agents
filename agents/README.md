@@ -67,6 +67,12 @@ python -m agents.evals.score_distribution --limit 100
 
 The score distribution script reports mean, median, share above HIGH, and the saved OOF reference metrics. It does not adjust thresholds.
 
+## Person Discovery
+
+E2 person discovery extracts only public professional fields: name, affiliation, role, public profile URL, and research area. It intentionally excludes contact details and biographical detail beyond professional role.
+
+People are review-only. No discovered person is auto-created or auto-absorbed into the canonical `person` table; exact name matches are only hints for reviewers. Person review rows go to the agent-owned `person_review_queue` table and carry a `source_id` provenance link in the same transaction as the queue row.
+
 ## Event Sources
 
 - `climate_week`: fetches only `https://www.climateweeknyc.org/event-search` and configured pagination URLs. It slices the `hubdb-listing` event cards into row batches before calling Claude, so it no longer sends the full multi-megabyte page at once.

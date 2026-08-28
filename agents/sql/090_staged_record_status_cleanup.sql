@@ -1,4 +1,4 @@
-﻿-- Keep sector_match as the authoritative out-of-sector classification.
+-- Keep sector_match as the authoritative out-of-sector classification.
 -- status is a lifecycle state and should not duplicate sector handoff state.
 UPDATE staged_record
 SET status = 'staged',
