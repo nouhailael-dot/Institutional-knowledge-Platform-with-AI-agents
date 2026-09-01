@@ -27,8 +27,9 @@ from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.db.session import SessionLocal
+
 try:
-    from src.ml.entity_resolution.actor_merge import merge_actors, revert_merge
+    from scripts.actor_merge import merge_actors, revert_merge
 except ImportError:
     sys.path.append(str(Path(__file__).resolve().parent))
     from actor_merge import merge_actors, revert_merge

@@ -21,7 +21,7 @@ regenerating the duplicates the backfill just removed.
 This is the same three-zone logic as the sweep, applied one record at a time at
 the point of ingestion instead of in a batch afterwards.
 
-    from src.ml.entity_resolution.resolve_or_create import EntityResolver
+    from src.ML.entity_resolution.resolve_or_create import EntityResolver
 
     resolver = EntityResolver(session)            # loads model + candidates once
     result = resolver.resolve_actor({
@@ -129,7 +129,7 @@ class EntityResolver:
             return self._actors
         vec = self.bundle["tfidf_vectorizer"]
         try:
-            from src.ml.entity_resolution import er_common as ec
+            from src.ML.entity_resolution import er_common as ec
             norm = ec.normalize_name
         except ImportError:
             norm = lambda s: str(s).lower().strip()
@@ -142,13 +142,13 @@ class EntityResolver:
         return out[out["_lex"] > 0.15]
 
     def _score(self, record: dict, cands: pd.DataFrame) -> pd.DataFrame:
-        from src.ml.entity_resolution import er_common as ec
+        from src.ML.entity_resolution import er_common as ec
         try:
-            from src.ml.entity_resolution.er_mismatch_features import mismatch_features
+            from src.ML.entity_resolution.er_mismatch_features import mismatch_features
         except ImportError:
             mismatch_features = None
         try:
-            from src.ml.entity_resolution.er_description_features import description_features
+            from src.ML.entity_resolution.er_description_features import description_features
         except ImportError:
             description_features = None
 

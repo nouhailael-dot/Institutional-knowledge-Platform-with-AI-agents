@@ -19,7 +19,7 @@ and reported on TEST. Selection metric = auto-merge coverage at precision
 >= --min-precision (default 0.97), per the revised evaluation strategy.
 
 Usage (from repo root):
-  python -m src.ml.entity_resolution.run_description_eval \
+  python -m src.ML.entity_resolution.run_description_eval \
       --actors data/exports/actors.csv \
       --gold data/processed/entity_resolution_gold.csv \
       --split data/processed/entity_resolution_split.csv \

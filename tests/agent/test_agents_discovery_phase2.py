@@ -799,6 +799,73 @@ def test_weekly_workflow_passes_required_secrets():
     assert "VOYAGE_API_KEY" not in workflow_text
 
 
+def test_weekly_workflow_validates_required_environment_before_discovery():
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["weekly-discovery"]["steps"]
+    names = [step.get("name") for step in steps]
+    validate_index = names.index("Validate required environment")
+    discovery_index = names.index("Run weekly discovery")
+    validate_script = steps[validate_index]["run"]
+
+    assert validate_index < discovery_index
+    for name in ("DATABASE_URL", "ANTHROPIC_API_KEY", "GHUS_AGENT_CONTACT_EMAIL"):
+        assert name in validate_script
+    assert "Missing required environment variable(s):" in validate_script
+    assert "${missing[*]}" in validate_script
+    assert "printenv \"$name\"" in validate_script
+    assert "${!name" not in validate_script
+    assert 'printf "$' not in validate_script
+
+
+def test_weekly_workflow_runs_all_sources_and_reports_outcomes_before_failure():
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["weekly-discovery"]["steps"]
+    run_step = next(step for step in steps if step.get("name") == "Run weekly discovery")
+    upload_step = next(
+        step for step in steps if step.get("name") == "Upload weekly discovery artifacts"
+    )
+    script = run_step["run"]
+
+    assert "SUCCEEDED=()" in script
+    assert "FAILED=()" in script
+    assert "for SOURCE in climate_week unga_programme unga_guide; do" in script
+    assert 'FAILED+=("${SOURCE}(exit=${SOURCE_EXIT})")' in script
+    assert "tee agents/runs/source-outcomes.md" in script
+    assert 'if [ "$RUN_EXIT" -ne 0 ]; then' in script
+    assert script.index("tee agents/runs/source-outcomes.md") < script.index(
+        'if [ "$RUN_EXIT" -ne 0 ]; then'
+    )
+    assert "agents/runs/source-outcomes.md" in upload_step["with"]["path"]
+    assert upload_step["if"] == "always()"
+
+
+def test_code_imports_real_src_ml_package_casing_without_alias():
+    checked_roots = [
+        PROJECT_ROOT / "agents",
+        PROJECT_ROOT / "scripts",
+        PROJECT_ROOT / "src",
+    ]
+    offenders = []
+    for root in checked_roots:
+        for path in root.rglob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            for lineno, line in enumerate(text.splitlines(), 1):
+                if "src.ml" in line:
+                    offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{lineno}:{line}")
+
+    assert offenders == []
+    src_init = (PROJECT_ROOT / "src" / "__init__.py").read_text(encoding="utf-8")
+    assert "sys.modules.setdefault" not in src_init
+
+
 def test_agent_sql_contains_weekly_run_schema_changes():
     sql_text = "\n".join(
         path.read_text(encoding="utf-8")

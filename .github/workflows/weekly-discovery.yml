@@ -32,6 +32,21 @@ jobs:
           python -m pip install -r requirements.txt
           python -c "import sqlalchemy, sklearn, joblib, httpx, yaml; print('deps ok')"
 
+      - name: Validate required environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in DATABASE_URL ANTHROPIC_API_KEY GHUS_AGENT_CONTACT_EMAIL; do
+            if ! value="$(printenv "$name")" || [ -z "$value" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing required environment variable(s): %s\n' "${missing[*]}" >&2
+            exit 1
+          fi
+
       - name: Validate discovery config
         run: |
           python - <<'PY'
@@ -47,14 +62,17 @@ jobs:
       - name: Run weekly discovery
         shell: bash
         run: |
-          set +e
+          set -u
           mkdir -p agents/runs
           LIVE_ARG=""
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$LIVE_INPUT" = "true" ]; then
             LIVE_ARG="--live"
           fi
           RUN_EXIT=0
+          SUCCEEDED=()
+          FAILED=()
           for SOURCE in climate_week unga_programme unga_guide; do
+            set +e
             python -m agents.discovery.run \
               --source "$SOURCE" \
               --entity event \
@@ -62,14 +80,28 @@ jobs:
               --out "agents/runs/${SOURCE}-audit.csv" \
               --digest-out "agents/runs/${SOURCE}-digest.md"
             SOURCE_EXIT=$?
+            set -e
             if [ -f "agents/runs/${SOURCE}-digest.md" ] && grep -qi "status.*failed" "agents/runs/${SOURCE}-digest.md"; then
+              SOURCE_EXIT=1
+            fi
+            if [ "$SOURCE_EXIT" -eq 0 ]; then
+              SUCCEEDED+=("$SOURCE")
+            else
+              FAILED+=("${SOURCE}(exit=${SOURCE_EXIT})")
               RUN_EXIT=1
             fi
-            if [ "$SOURCE_EXIT" -ne 0 ]; then
-              RUN_EXIT="$SOURCE_EXIT"
-            fi
           done
-          set -e
+
+          {
+            echo "### Weekly discovery source outcomes"
+            echo
+            echo "Succeeded: ${SUCCEEDED[*]:-none}"
+            echo "Failed: ${FAILED[*]:-none}"
+          } | tee agents/runs/source-outcomes.md
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            cat agents/runs/source-outcomes.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
           if [ "$RUN_EXIT" -ne 0 ]; then
             exit "$RUN_EXIT"
           fi
@@ -93,4 +125,5 @@ jobs:
           path: |
             agents/runs/*-audit.csv
             agents/runs/*-digest.md
+            agents/runs/source-outcomes.md
           if-no-files-found: warn

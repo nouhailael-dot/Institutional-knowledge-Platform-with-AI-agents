@@ -37,11 +37,13 @@ ACTOR_CREATE_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_CONNECTOR_RE = re.compile(
     r"\b(?:in collaboration with|in partnership with|in cooperation with|"
-    r"in association with|co-hosted by|hosted by|supported by|with support from)\b",
+    r"in association with|together with|co-hosted by|hosted by|supported by|"
+    r"with support from|and)\b",
     flags=re.IGNORECASE,
 )
 ACTOR_ROLE_PREFIX_RE = re.compile(
-    r"^\s*(?:president|chair|co-chair|minister|secretary-general|director|dean|"
+    r"^\s*(?:(?:executive\s+)?office|permanent mission|president|chair|co-chair|"
+    r"minister|secretary-general|director|dean|"
     r"professor|representative|ambassador|mayor|governor|prime minister|head)\s+"
     r"(?:of|for|to)\b",
     flags=re.IGNORECASE,

@@ -358,6 +358,15 @@ def test_unga_guide_organizer_splitter_separates_replay_combined_names():
         "President of the United Nations General Assembly",
         "the World Health Organization (WHO)",
     ]
+    assert _split_organizer_name(
+        "The Business Council for International Understanding (BCIU) and Siemens Healthineers"
+    ) == [
+        "The Business Council for International Understanding (BCIU)",
+        "Siemens Healthineers",
+    ]
+    assert _split_organizer_name(
+        "Jameel Arts & Health Lab together with World Health Organization"
+    ) == ["Jameel Arts & Health Lab", "World Health Organization"]
 
 
 def test_unga_guide_unmapped_categories_do_not_default_to_cross():
@@ -1025,6 +1034,9 @@ def test_promote_actor_absorb_raises_when_gap_guard_loses_race():
             "President of the United Nations General Assembly, "
             "in collaboration with the World Health Organization (WHO)"
         ),
+        "Office of the Secretary-General",
+        "Permanent Mission of Canada to the United Nations",
+        "Example Climate Council and Example Health Foundation",
     ],
 )
 def test_promote_actor_absorb_guard_sends_combined_or_role_names_to_review(name):

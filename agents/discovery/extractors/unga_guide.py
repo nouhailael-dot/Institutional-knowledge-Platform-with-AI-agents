@@ -30,7 +30,8 @@ CATEGORY_TO_SECTOR_CODES = {
 }
 ORGANIZER_CONNECTOR_SPLIT_RE = re.compile(
     r"\s*(?:;|,|\b(?:in collaboration with|in partnership with|in cooperation with|"
-    r"in association with|co-hosted by|hosted by|supported by|with support from)\b)\s*",
+    r"in association with|together with|co-hosted by|hosted by|supported by|"
+    r"with support from)\b)\s*",
     flags=re.IGNORECASE,
 )
 ORGANIZER_AND_SPLIT_RE = re.compile(r"\s+\band\s+", flags=re.IGNORECASE)
@@ -356,7 +357,7 @@ def _split_organizer_name(value: str) -> list[str]:
 
     names: list[str] = []
     for piece in ORGANIZER_CONNECTOR_SPLIT_RE.split(cleaned):
-        clean_piece = _clean_text(piece)
+        clean_piece = _strip_leading_connector(_clean_text(piece))
         if not clean_piece:
             continue
         names.extend(_split_and_organizer_piece(clean_piece))
@@ -375,6 +376,12 @@ def _split_and_organizer_piece(value: str) -> list[str]:
     if all(_looks_like_standalone_org_piece(piece) for piece in pieces):
         return pieces
     return [value]
+
+
+def _strip_leading_connector(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return re.sub(r"^(?:and|&)\s+", "", value, flags=re.IGNORECASE).strip() or None
 
 
 def _looks_like_standalone_org_piece(value: str) -> bool:
@@ -397,6 +404,7 @@ def _non_org_connector(value: str) -> bool:
         "in partnership with",
         "in cooperation with",
         "in association with",
+        "together with",
         "co-hosted by",
         "hosted by",
         "supported by",

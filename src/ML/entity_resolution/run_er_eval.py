@@ -22,7 +22,7 @@ NOT F1. Note the auto-merge precision CONFIDENCE INTERVAL: the test split has
 ~21 positives, so the point estimate is noisy.
 
 Usage (repo root, venv active):
-  python -m src.ml.entity_resolution.run_er_eval \
+  python -m src.ML.entity_resolution.run_er_eval \
       --actors data/exports/actors.csv \
       --gold   data/processed/entity_resolution_gold.csv \
       --split  data/processed/entity_resolution_split.csv \
@@ -47,7 +47,7 @@ try:
     from . import er_common as ec
 except ImportError:
     sys.path.append(str(Path(__file__).resolve().parent))
-    import er_common as ec 
+    import er_common as ec
 
 
 def tfidf_name_sim(p, actors):

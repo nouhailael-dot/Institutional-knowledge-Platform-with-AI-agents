@@ -29,7 +29,7 @@ loser and re-inserts what was deleted.
 
 Usage:
     from src.db.session import SessionLocal
-    from src.ml.entity_resolution.actor_merge import merge_actors, revert_merge
+    from scripts.actor_merge import merge_actors, revert_merge
 
     merge_id = merge_actors(SessionLocal, winner_id, loser_id,
                             score=0.97, method="auto", decided_by="er_pipeline")
