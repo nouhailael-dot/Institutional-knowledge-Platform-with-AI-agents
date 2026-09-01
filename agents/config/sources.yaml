@@ -55,7 +55,7 @@
         },
       "unga_guide":
         {
-          "entity_types": ["event", "actor"],
+          "entity_types": ["event"],
           "listing_url": "https://ungaguide.com/",
           "seed_urls": ["https://ungaguide.com/"],
           "raw_storage_dir": "agents/raw_documents",

@@ -155,7 +155,7 @@ def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
     assert set(sources) >= {"climate_week", "unga_programme", "unga_guide"}
     assert dict(sources["climate_week"])["entity_types"] == ["event"]
     assert dict(sources["unga_programme"])["entity_types"] == ["event"]
-    assert dict(sources["unga_guide"])["entity_types"] == ["event", "actor"]
+    assert dict(sources["unga_guide"])["entity_types"] == ["event"]
     for source_name in ("climate_week", "unga_programme", "unga_guide"):
         source = dict(sources[source_name])
         assert source["raw_storage_dir"]

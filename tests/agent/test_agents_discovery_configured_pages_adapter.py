@@ -78,10 +78,11 @@ def test_build_source_rejects_disabled_source(tmp_path):
         build_source("tmp_people", config, PROJECT_ROOT)
 
 
-def test_sources_config_keeps_sci_people_disabled_and_adds_unga_guide_actor():
+def test_sources_config_keeps_sci_people_disabled_and_event_sources_event_only():
     config = load_sources_config(PROJECT_ROOT)
     sources = config["sources"]
 
     assert sources["sci_people"]["disabled"] is True
     assert "TARGETING_POLICY.md section 6" in sources["sci_people"]["disabled_reason"]
-    assert "actor" in sources["unga_guide"]["entity_types"]
+    for source_name in ("climate_week", "unga_programme", "unga_guide"):
+        assert sources[source_name]["entity_types"] == ["event"]

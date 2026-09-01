@@ -24,7 +24,7 @@ from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.extractors.actor import ActorExtractor
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.extractors.person import PersonExtractor
-from agents.discovery.extractors.unga_guide import UngaGuideActorExtractor, UngaGuideExtractor
+from agents.discovery.extractors.unga_guide import UngaGuideExtractor
 from agents.discovery.extractors.unga_programme import UngaProgrammeExtractor
 from agents.discovery.normalize import (
     normalize_actor_record,
@@ -126,13 +126,6 @@ def build_extractor(
             output_usd_per_million=float(pricing.get("output_usd_per_million", 0.0)),
         )
     if entity_type == "actor":
-        if source_config.get("extractor") == "unga_guide":
-            return UngaGuideActorExtractor(
-                max_tokens=int(source_config.get("max_tokens", 2048)),
-                coming_soon_markers=[
-                    str(value) for value in source_config.get("coming_soon_markers", [])
-                ],
-            )
         return ActorExtractor(
             llm_client,
             max_tokens=int(source_config.get("max_tokens", 2048)),

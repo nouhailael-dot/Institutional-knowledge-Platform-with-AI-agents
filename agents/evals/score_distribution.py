@@ -11,7 +11,6 @@ import argparse
 import json
 import statistics
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import text
 
@@ -23,7 +22,7 @@ def project_root() -> Path:
 
 
 def load_staged_actor_records(
-    session, *, limit: int, run_id: Optional[str] = None
+    session, *, limit: int, run_id: str | None = None
 ) -> list[dict[str, object]]:
     where = ["entity_type = 'actor'", "sector_match = 'in_sector'"]
     params: dict[str, object] = {"limit": int(limit)}
@@ -47,11 +46,13 @@ def load_staged_actor_records(
 
 
 def score_records(
-    session, *, root: Path, limit: int, run_id: Optional[str] = None
+    session, *, root: Path, limit: int, run_id: str | None = None
 ) -> dict[str, object]:
     records = load_staged_actor_records(session, limit=limit, run_id=run_id)
     if not records:
-        raise RuntimeError("no staged in-sector actor records found to score")
+        raise RuntimeError(
+            "no staged in-sector actor records found to score; no actor source is currently configured"
+        )
     resolver = load_actor_resolver_class()(session, project_root=root)
     scored: list[dict[str, object]] = []
     for row in records:
@@ -145,7 +146,7 @@ def _oof_artifact_status(root: Path, model_name: str) -> dict[str, str]:
     return {"message": f"`{pair_scores}` contains `{expected}` for score-level comparison."}
 
 
-def parse_args(argv: Optional[list[str]] = None):
+def parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--run-id")
@@ -153,7 +154,7 @@ def parse_args(argv: Optional[list[str]] = None):
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     from src.db.session import SessionLocal
 

@@ -26,11 +26,7 @@ from agents.discovery.extractors.event import (
     hubdb_listing_rows,
 )
 from agents.discovery.extractors.person import PERSON_FIELDS, PersonExtractor
-from agents.discovery.extractors.unga_guide import (
-    UngaGuideActorExtractor,
-    UngaGuideExtractor,
-    _split_organizer_name,
-)
+from agents.discovery.extractors.unga_guide import UngaGuideExtractor
 from agents.discovery.extractors.unga_programme import UngaProgrammeExtractor
 from agents.discovery.normalize import (
     event_natural_key,
@@ -323,50 +319,6 @@ def test_unga_guide_fixture_extracts_jsonld_events_without_llm():
     assert records[0]["website"] == "https://unblockchainweek.com"
     assert set(records[0]["sector_codes"]) == {"AI", "SUSTAIN", "CROSS"}
     assert records[1]["sponsoring_orgs"] == "C3 Summit"
-
-
-def test_unga_guide_fixture_extracts_organizer_actors_without_llm():
-    extractor = UngaGuideActorExtractor()
-    doc = fixture_doc("unga_guide_home.html")
-
-    records = extractor.extract(doc)
-
-    assert len(records) == 19
-    first = records[0]
-    assert first["name"] == "GlobalBoost"
-    assert first["actor_type_raw"] == "UNGA Guide organizer"
-    assert first["primary_lifecycle_role"] == "Convener"
-    assert set(first["sector_codes"]) == {"AI", "SUSTAIN", "CROSS"}
-    assert "UN Blockchain Week Conference 2026" in str(first["description"])
-    assert first["prompt_version"] == "unga_guide_actor_v1"
-    assert first["source_url"] == doc.url
-    assert any(record["name"] == "Project Everyone" for record in records)
-
-
-def test_unga_guide_organizer_splitter_separates_replay_combined_names():
-    assert _split_organizer_name(
-        "International Telecommunication Union (ITU), "
-        "United Nations Development Programme (UNDP)"
-    ) == [
-        "International Telecommunication Union (ITU)",
-        "United Nations Development Programme (UNDP)",
-    ]
-    assert _split_organizer_name(
-        "President of the United Nations General Assembly, "
-        "in collaboration with the World Health Organization (WHO)"
-    ) == [
-        "President of the United Nations General Assembly",
-        "the World Health Organization (WHO)",
-    ]
-    assert _split_organizer_name(
-        "The Business Council for International Understanding (BCIU) and Siemens Healthineers"
-    ) == [
-        "The Business Council for International Understanding (BCIU)",
-        "Siemens Healthineers",
-    ]
-    assert _split_organizer_name(
-        "Jameel Arts & Health Lab together with World Health Organization"
-    ) == ["Jameel Arts & Health Lab", "World Health Organization"]
 
 
 def test_unga_guide_unmapped_categories_do_not_default_to_cross():
@@ -1041,7 +993,7 @@ def test_promote_actor_absorb_raises_when_gap_guard_loses_race():
 )
 def test_promote_actor_absorb_guard_sends_combined_or_role_names_to_review(name):
     existing_actor_id = str(uuid.uuid4())
-    staged = _staged_event({"name": name, "description": "UNGA Guide organizer"})
+    staged = _staged_event({"name": name, "description": "Future actor source candidate"})
     staged.entity_type = "actor"
     session = FakeSession()
 

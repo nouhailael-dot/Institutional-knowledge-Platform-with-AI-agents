@@ -59,7 +59,7 @@ The default run cost ceiling is `$0.50`, which leaves headroom for a full Climat
 
 ## Actor Discovery
 
-E1 actor discovery has a tool-schema extractor and promotion branch, but no actor source adapter has been added yet. Actor routing uses the existing frozen `EntityResolver` blocking and combiner scoring through `agents.common.resolve_route.route_actor`; all canonical actor writes still happen only in `agents/discovery/promote.py`. Before allowing actor auto-absorb on a new source, run:
+E1 actor discovery has a tool-schema extractor and promotion branch, but no active configured source. Actor routing uses the existing frozen `EntityResolver` blocking and combiner scoring through `agents.common.resolve_route.route_actor`; all canonical actor writes still happen only in `agents/discovery/promote.py`. Before allowing actor auto-absorb on a new source, run:
 
 ```powershell
 python -m agents.evals.score_distribution --limit 100
@@ -67,13 +67,17 @@ python -m agents.evals.score_distribution --limit 100
 
 The score distribution script reports mean, median, share above HIGH, and the saved OOF reference metrics. It does not adjust thresholds.
 
+Actor sources must be built around organisation profiles with enough evidence to support ER: at minimum name plus context such as description, country, website, or other profile fields. Event-listing organiser strings are not actor discovery sources.
+
 ## Person Discovery
 
 E2 person discovery extracts only public professional fields: name, affiliation, role, public profile URL, and research area. It intentionally excludes contact details and biographical detail beyond professional role.
 
-People are review-only. No discovered person is auto-created or auto-absorbed into the canonical `person` table; exact name matches are only hints for reviewers. Person review rows go to the agent-owned `person_review_queue` table and carry a `source_id` provenance link in the same transaction as the queue row.
+People are review-only. No discovered person is auto-created or auto-absorbed into the canonical `person` table; exact name matches are only hints for reviewers. Person review rows go to the agent-owned `person_review_queue` table and carry a `source_id` provenance link in the same transaction as the queue row. The person extractor and promote branch exist and are tested, but no active person source is configured; `sci_people` remains disabled until the personal-data basis in `TARGETING_POLICY.md` section 6 is approved.
 
 ## Event Sources
+
+The three enabled discovery sources are event-only. `climate_week`, `unga_programme`, and `unga_guide` exist to populate the event table, not to derive actors from event organisers.
 
 - `climate_week`: fetches only `https://www.climateweeknyc.org/event-search` and configured pagination URLs. It slices the `hubdb-listing` event cards into row batches before calling Claude, so it no longer sends the full multi-megabyte page at once.
 - `unga_programme`: fetches the official UN General Assembly high-level meetings page at `https://www.un.org/en/ga/81/meetings/` using a browser-like, contactable User-Agent.
@@ -125,6 +129,7 @@ TEMPORARY: `index_dirty` exists because `event` currently has no `updated_at`, s
 6. Never overwrite a non-null value automatically; fill gaps only and propose suspected corrections for humans.
 7. Event routing deliberately does not use the frozen ER combiner. That combiner was trained on actor name/profile features; applying it to events would be a training/deployment distribution mismatch, the same class of failure that previously forced `desc_both_present` out of the actor model when production null patterns diverged from the gold set.
 8. `search_doc` is a derived index rather than a fact store. Its rows are reconstructable from canonical rows that already carry provenance, so it deliberately does not get its own `source` rows. Every `search_doc` row must store `entity_type` and `entity_id` so the trail back to provenance stays explicit.
+9. `climate_week`, `unga_programme`, and `unga_guide` are protected as event-only sources. They must not derive actors from organiser strings: replay `3aeb1d49-677b-435f-8453-138ed889818c` staged 121 such actors with a median ER score of 0.029 because the source yielded bare names without description, country, or website. Adding actor discovery requires a source built around organisation profiles, not event listings.
 
 ## Phase 1/2 Notes
 

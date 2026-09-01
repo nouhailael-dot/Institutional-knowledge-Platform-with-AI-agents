@@ -9,7 +9,6 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-from agents.discovery.extractors.actor import ACTOR_FIELDS
 from agents.discovery.extractors.event import EVENT_FIELDS, EVENT_TOOL_SCHEMA
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.unga_guide import _is_coming_soon
@@ -17,8 +16,6 @@ from agents.discovery.sources.unga_guide import _is_coming_soon
 logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "unga_guide_event_v1"
-ACTOR_PROMPT_VERSION = "unga_guide_actor_v1"
-MAX_ACTOR_NAME_LENGTH = 255
 CATEGORY_TO_SECTOR_CODES = {
     "ai": ["AI"],
     "data-tech": ["AI"],
@@ -27,45 +24,6 @@ CATEGORY_TO_SECTOR_CODES = {
     "climate-environment": ["SUSTAIN"],
     "sustainable-development": ["SUSTAIN"],
     "global-development": ["SUSTAIN"],
-}
-ORGANIZER_CONNECTOR_SPLIT_RE = re.compile(
-    r"\s*(?:;|,|\b(?:in collaboration with|in partnership with|in cooperation with|"
-    r"in association with|together with|co-hosted by|hosted by|supported by|"
-    r"with support from)\b)\s*",
-    flags=re.IGNORECASE,
-)
-ORGANIZER_AND_SPLIT_RE = re.compile(r"\s+\band\s+", flags=re.IGNORECASE)
-ORG_LIST_MARKERS = {
-    "academy",
-    "agency",
-    "alliance",
-    "association",
-    "bank",
-    "center",
-    "centre",
-    "coalition",
-    "commission",
-    "committee",
-    "compact",
-    "council",
-    "department",
-    "foundation",
-    "fund",
-    "group",
-    "institute",
-    "initiative",
-    "lab",
-    "labs",
-    "ministry",
-    "network",
-    "nations",
-    "organization",
-    "organisation",
-    "programme",
-    "program",
-    "project",
-    "university",
-    "union",
 }
 
 
@@ -88,54 +46,6 @@ class UngaGuideExtractor:
         if records:
             return records
         return [_record_from_article(article, doc) for article in _article_blocks(doc.content)]
-
-
-class UngaGuideActorExtractor:
-    entity_type = "actor"
-    prompt_version = ACTOR_PROMPT_VERSION
-    json_schema = None
-
-    def __init__(
-        self, *, max_tokens: int = 2048, coming_soon_markers: list[str] | None = None
-    ):
-        self.max_tokens = max_tokens
-        self.coming_soon_markers = coming_soon_markers or [
-            "coming soon",
-            "launching soon",
-            "check back soon",
-        ]
-        self.attention_reasons: list[str] = []
-
-    def extract(self, doc: FetchedDoc) -> list[dict]:
-        if _is_coming_soon(doc.content, self.coming_soon_markers):
-            logger.warning("UNGA Guide page is coming soon; no actor extraction attempted for %s", doc.url)
-            return []
-
-        article_metadata = _article_metadata_by_title(doc.content)
-        extracted_at = datetime.now(UTC).replace(microsecond=0).isoformat()
-        records: list[dict[str, object]] = []
-        for event in _jsonld_events(doc.content):
-            title = _clean_text(event.get("name"))
-            metadata = article_metadata.get(_key(title), {})
-            category_slugs = list(metadata.get("category_slugs", []) or [])
-            sector_codes = _sector_codes(category_slugs)
-            for name in _event_organizer_names(event, metadata):
-                record = {field: None for field in ACTOR_FIELDS}
-                record.update(
-                    {
-                        "name": name,
-                        "actor_type_raw": "UNGA Guide organizer",
-                        "description": _actor_context_description(title, category_slugs),
-                        "current_activities": _actor_context_description(title, category_slugs),
-                        "primary_lifecycle_role": "Convener",
-                        "sector_codes": sector_codes,
-                    }
-                )
-                record["source_url"] = doc.url
-                record["extracted_at"] = extracted_at
-                record["prompt_version"] = ACTOR_PROMPT_VERSION
-                records.append(record)
-        return _dedupe_actor_records(records)
 
 
 def _jsonld_events(content: str) -> list[dict[str, Any]]:
@@ -334,110 +244,6 @@ def _organizer_names(value: Any) -> list[str]:
         elif isinstance(item, str):
             names.append(_clean_text(item))
     return [name for name in names if name]
-
-
-def _event_organizer_names(
-    event: dict[str, Any], metadata: dict[str, object]
-) -> list[str]:
-    names = _organizer_names(event.get("organizers") or event.get("organizer"))
-    if not names:
-        names = _organizer_names(metadata.get("organizer"))
-    deduped: list[str] = []
-    for name in names:
-        for part in _split_organizer_name(name):
-            if part not in deduped:
-                deduped.append(part)
-    return deduped
-
-
-def _split_organizer_name(value: str) -> list[str]:
-    cleaned = _clean_text(value)
-    if not cleaned:
-        return []
-
-    names: list[str] = []
-    for piece in ORGANIZER_CONNECTOR_SPLIT_RE.split(cleaned):
-        clean_piece = _strip_leading_connector(_clean_text(piece))
-        if not clean_piece:
-            continue
-        names.extend(_split_and_organizer_piece(clean_piece))
-    return [
-        str(name)
-        for name in names
-        if name and len(str(name)) <= MAX_ACTOR_NAME_LENGTH and not _non_org_connector(str(name))
-    ]
-
-
-def _split_and_organizer_piece(value: str) -> list[str]:
-    pieces = [_clean_text(piece) for piece in ORGANIZER_AND_SPLIT_RE.split(value)]
-    pieces = [str(piece) for piece in pieces if piece]
-    if len(pieces) <= 1:
-        return [value]
-    if all(_looks_like_standalone_org_piece(piece) for piece in pieces):
-        return pieces
-    return [value]
-
-
-def _strip_leading_connector(value: str | None) -> str | None:
-    if value is None:
-        return None
-    return re.sub(r"^(?:and|&)\s+", "", value, flags=re.IGNORECASE).strip() or None
-
-
-def _looks_like_standalone_org_piece(value: str) -> bool:
-    stripped = value.strip()
-    if re.fullmatch(r"[A-Z0-9][A-Z0-9&./-]+(?:\s+[A-Z0-9][A-Z0-9&./-]+)*", stripped):
-        return True
-    tokens = re.findall(r"[A-Za-z][A-Za-z&.'-]*", stripped)
-    if {token.lower().strip(".") for token in tokens}.intersection(ORG_LIST_MARKERS):
-        return True
-    title_tokens = [token for token in tokens if token[:1].isupper()]
-    return len(tokens) >= 2 and len(title_tokens) >= 2
-
-
-def _non_org_connector(value: str) -> bool:
-    lowered = value.lower().strip()
-    return lowered in {
-        "and",
-        "&",
-        "in collaboration with",
-        "in partnership with",
-        "in cooperation with",
-        "in association with",
-        "together with",
-        "co-hosted by",
-        "hosted by",
-        "supported by",
-        "with support from",
-    }
-
-
-def _actor_context_description(title: object, category_slugs: list[str]) -> str | None:
-    clean_title = _clean_text(title)
-    categories = _category_label_text(category_slugs)
-    if clean_title and categories:
-        return f"Listed by UNGA Guide as organizer of {clean_title}; event categories: {categories}."
-    if clean_title:
-        return f"Listed by UNGA Guide as organizer of {clean_title}."
-    return None
-
-
-def _dedupe_actor_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
-    deduped: dict[str, dict[str, object]] = {}
-    for record in records:
-        key = _key(record.get("name"))
-        if not key:
-            continue
-        existing = deduped.get(key)
-        if existing is None:
-            deduped[key] = record
-            continue
-        existing_codes = list(existing.get("sector_codes") or [])
-        for code in list(record.get("sector_codes") or []):
-            if code not in existing_codes:
-                existing_codes.append(code)
-        existing["sector_codes"] = existing_codes
-    return list(deduped.values())
 
 
 def _clean_text(value: Any) -> str | None:
