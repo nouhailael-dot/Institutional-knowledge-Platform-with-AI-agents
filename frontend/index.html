@@ -229,6 +229,39 @@
   .rw b{color:var(--accent-ink);font-weight:600}
   .composer{position:sticky;bottom:0;z-index:10;padding:14px 0 20px;margin-top:6px;
     background:linear-gradient(180deg,transparent,var(--bg) 26%)}
+
+  /* ---- Build the Map ---- */
+  .mgroup{margin-bottom:30px}
+  .mgroup-h{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-family:var(--serif);
+    font-size:19px;font-weight:600}
+  .mgroup-h .n{color:var(--muted);font-size:13px;font-family:var(--sans);font-weight:500}
+  .mcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;margin-bottom:10px}
+  .mcard.weak{opacity:.72;border-style:dashed}
+  .mcard .mh{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:7px}
+  .mcard .mn{font-weight:650;font-size:15.5px}
+  .mcard .mdesc{color:var(--muted);font-size:13.5px;line-height:1.55;margin:6px 0 9px}
+  .mrow{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;color:var(--muted);margin-bottom:4px}
+  .mrow b{color:var(--ink);font-weight:600}
+  .msrc{margin-top:9px;font-size:12.5px}
+  .msrc a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid var(--accent-soft)}
+  .msrc a:hover{border-bottom-color:var(--accent)}
+  .msrc .bad{color:var(--violet);text-decoration:line-through}
+  .mbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:18px 0 22px}
+  .score{font-variant-numeric:tabular-nums}
+  .mnote{color:var(--muted);font-size:12.5px;margin-top:7px;font-style:italic}
+  .mcard.pick{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-soft)}
+  .rank{display:inline-flex;align-items:center;justify-content:center;min-width:22px;
+    height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;
+    font-weight:700;padding:0 6px}
+  .why{color:var(--accent-ink);font-size:12.5px;margin-top:8px;padding-left:10px;
+    border-left:2px solid var(--accent-soft)}
+  .selnote{color:var(--muted);font-size:13px;margin:0 0 18px;padding:11px 14px;
+    background:var(--surface-2);border-radius:var(--radius-sm);line-height:1.5}
+  .resthead{margin:26px 0 12px;color:var(--muted);font-size:13px;font-weight:600}
+  .thread{display:flex;flex-direction:column;gap:16px;margin:22px 0}
+  .mprog{color:var(--muted);font-size:14px;display:flex;align-items:center;gap:10px;
+    padding:26px 0}
 </style>
 <script type="importmap">
 { "imports": {
@@ -622,6 +655,310 @@ function Sel({v,set,opts}){ return html`<select class="field" value=${v} onChang
   <option value="">Any</option>${opts.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`; }
 function Loading(){ return html`<div class="empty"><span class="spin"></span> Loading…</div>`; }
 
+/* ------------------------------------------------------ Build the Map */
+const MGROUPS=[["actor","Organizations","accent"],["person","People","teal"],
+               ["event","Events","violet"]];
+const MFIELDS={
+  actor:[["actor_type","Type"],["location_city","City"],["state","State"],
+         ["primary_technical_focus","Focus"],
+         ["funding_summary","Funding"],["current_activities","Activity"]],
+  person:[["title","Title"],["email","Email"]],
+  event:[["event_type","Type"],["location","Location"],["next_date","Next date"],
+         ["recurring_pattern","Recurs"],["expected_attendance","Attendance"],
+         ["access_type","Access"],["thematic_focus","Themes"],
+         ["sponsoring_orgs","Sponsors"]],
+};
+const ename=(e)=>e.full_name||e.name||"—";
+
+/* one result card: fields, sources (struck through when dead), judge verdict */
+function MapCard({e,request,onUpdate}){
+  const [busy,setBusy]=useState(false);
+  const j=e._judge||null, lc=e._link_check||null;
+
+  async function verify(){
+    setBusy(true);
+    try{
+      const r=await fetch("/api/map/verify",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({entities:[e],request})});
+      const d=await r.json();
+      if(d.entities&&d.entities[0]) onUpdate(d.entities[0]);
+    }catch(err){ /* leave the card as-is on failure */ }
+    setBusy(false);
+  }
+
+  const badge = j && j.relevance_score!=null
+    ? html`<span class=${"chip "+(j.is_relevant?"teal":"violet")}>
+        ${j.is_relevant?"✓":"!"} <span class="score">${j.relevance_score.toFixed(2)}</span></span>`
+    : null;
+  const deadWeb = lc && lc.website && !lc.website.ok;
+
+  return html`<div class=${"mcard"+(e._below_floor===true?" weak":"")
+                            +(e._rank?" pick":"")}>
+    <div class="mh">
+      ${e._rank&&html`<span class="rank">${e._rank}</span>`}
+      <span class="mn">${ename(e)}</span>
+      ${badge}
+      ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
+      ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
+      <span style=${{marginLeft:"auto"}}>
+        <button class="example" type="button" disabled=${busy} onClick=${verify}>
+          ${busy?html`<span class="spin"></span>`:(j?"Re-verify":"Verify")}</button>
+      </span>
+    </div>
+    ${e.description&&html`<div class="mdesc">${e.description}</div>`}
+    ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
+    <div class="mrow">
+      ${(MFIELDS[e._entity_type]||[]).filter(([k])=>e[k]).map(([k,label])=>
+        html`<span key=${k}>${label}: <b>${e[k]}</b></span>`)}
+    </div>
+    ${(e.website||e.linkedin_url)&&html`<div class="msrc">
+      ${e.website&&html`<a class=${deadWeb?"bad":""} href=${e.website} target="_blank"
+        rel="noopener noreferrer">${e.website}</a>`}
+      ${e.linkedin_url&&html`${e.website?" · ":""}<a href=${e.linkedin_url} target="_blank"
+        rel="noopener noreferrer">LinkedIn</a>`}
+    </div>`}
+    ${(e.sources||[]).length>0&&html`<details class="msrc">
+      <summary>${e.sources.length} source${e.sources.length>1?"s":""}</summary>
+      ${e.sources.map((s,i)=>{
+        const res=lc&&(lc.sources||[]).find(r=>r.url===s.url);
+        const bad=res&&!res.ok;
+        return html`<div key=${i} style=${{marginTop:"5px"}}>
+          <a class=${bad?"bad":""} href=${s.url} target="_blank"
+            rel="noopener noreferrer">${s.url}</a>
+          ${s.supports&&html`<span class="dash"> — ${s.supports}</span>`}</div>`;
+      })}
+    </details>`}
+    ${e._why&&html`<div class="why">${e._why}</div>`}
+    ${j&&j.reason&&html`<div class="mnote">${j.reason}</div>`}
+  </div>`;
+}
+
+function BuildMap(){
+  const [desc,setDesc]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [phase,setPhase]=useState("");        // progress text while polling
+  const [res,setRes]=useState(null);          // {tasks,counts,entities}
+  const [request,setRequest]=useState("");    // the description the result belongs to
+  const [err,setErr]=useState(null);
+  const [file,setFile]=useState(null);
+  const [docId,setDocId]=useState(null);
+  const [verifying,setVerifying]=useState(false);
+  const [summary,setSummary]=useState(null);
+  // The planning conversation: [{role,content}]. The agent asks what it needs,
+  // then decides on its own when to start searching.
+  const [msgs,setMsgs]=useState([]);
+  const fileRef=useRef(null);
+  const pollRef=useRef(null);
+  const bottomRef=useRef(null);
+
+  useEffect(()=>{bottomRef.current&&bottomRef.current.scrollIntoView({behavior:"smooth"})},
+            [msgs.length,busy]);
+
+  useEffect(()=>()=>clearTimeout(pollRef.current),[]);   // stop polling on unmount
+
+  const examples=["Energy optimization research centers",
+                  "Controlled environment agriculture in the US",
+                  "Green hydrogen labs and pilot projects"];
+
+  const post=(url,body)=>fetch(url,{method:"POST",
+    headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+
+  /* One turn of the conversation. The agent either replies (asking something)
+     or decides it has enough and starts building — it never asks permission. */
+  async function send(){
+    const text=desc.trim();
+    if(!text||busy) return;
+    const thread=[...msgs,{role:"user",content:text}];
+    setMsgs(thread); setDesc(""); setBusy(true); setErr(null);
+    setPhase("Thinking…");
+    try{
+      let id=docId;
+      if(file&&!id){                       // upload once, then refer to it by id
+        const fd=new FormData(); fd.append("file",file);
+        const up=await fetch("/api/upload",{method:"POST",body:fd});
+        if(!up.ok) throw new Error((await up.json()).detail||"Could not read the document.");
+        id=(await up.json()).doc_id; setDocId(id);
+      }
+      const r=await post("/api/map/chat",{messages:thread,doc_id:id});
+      if(!r.ok) throw new Error((await r.json()).detail||"Could not reach the planner.");
+      const d=await r.json();
+
+      if(d.status==="reply"){
+        setMsgs([...thread,{role:"assistant",content:d.message}]);
+        setBusy(false); setPhase("");
+        return;
+      }
+      if(d.status==="plan"){
+        // It decided. Announce in its own words, then run without asking.
+        setMsgs([...thread,{role:"assistant",content:d.summary}]);
+        setRequest(thread.filter(m=>m.role==="user").map(m=>m.content).join("\n"));
+        setPhase("Searching the web… this takes a few minutes.");
+        const rr=await post("/api/map",{
+          description:thread.filter(m=>m.role==="user").map(m=>m.content).join("\n"),
+          doc_id:id, plan:{tasks:d.tasks,requirements:d.requirements}});
+        if(!rr.ok) throw new Error((await rr.json()).detail||"Could not start the map.");
+        poll((await rr.json()).job_id);
+        return;
+      }
+      throw new Error(d.message||"The planner could not continue.");
+    }catch(e){ setErr(e.message); setBusy(false); setPhase(""); }
+  }
+
+  function reset(){
+    clearTimeout(pollRef.current);
+    setMsgs([]); setDesc(""); setRes(null); setSummary(null); setErr(null);
+    setFile(null); setDocId(null); setBusy(false); setPhase("");
+    if(fileRef.current) fileRef.current.value="";
+  }
+
+  function poll(jobId){
+    pollRef.current=setTimeout(async()=>{
+      try{
+        const d=await fetch("/api/map/"+jobId).then(r=>r.json());
+        if(d.status==="running"){ poll(jobId); return; }
+        if(d.status==="error"){ setErr(d.error||"The map failed."); }
+        else { setRes(d.result); }
+      }catch(e){ setErr("Lost contact with the server."); }
+      setBusy(false); setPhase("");
+    },3000);
+  }
+
+  const all=()=>MGROUPS.flatMap(([k])=>(res&&res.entities&&res.entities[k])||[]);
+
+  async function verifyAll(){
+    const items=all();
+    if(!items.length||verifying) return;
+    setVerifying(true);
+    try{
+      const r=await fetch("/api/map/verify",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({entities:items,request})});
+      const d=await r.json();
+      const byKey={}; (d.entities||[]).forEach(x=>{byKey[x._entity_type+"|"+ename(x)]=x;});
+      const next={}; MGROUPS.forEach(([k])=>{
+        next[k]=((res.entities&&res.entities[k])||[]).map(x=>byKey[k+"|"+ename(x)]||x);
+      });
+      setRes({...res,entities:next}); setSummary(d.summary);
+    }catch(e){ setErr("Verification failed."); }
+    setVerifying(false);
+  }
+
+  function updateOne(updated){
+    const k=updated._entity_type;
+    const next={...res.entities};
+    next[k]=(next[k]||[]).map(x=>ename(x)===ename(updated)?updated:x);
+    setRes({...res,entities:next});
+  }
+
+  const total=all().length;
+
+  return html`<div>
+    <h1 class="hero-h">Build the map.</h1>
+    <p class="lead">Describe a domain, venture, or program. An agent searches the web for
+      the US universities, labs, and research centers working on it — plus the people and
+      events around them — then you can verify what it found.</p>
+
+    <div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>
+      ${file
+        ? html`<span class="chip accent">📎 ${file.name}</span>
+            <button class="example" type="button" onClick=${()=>{setFile(null);
+              if(fileRef.current)fileRef.current.value="";}}>Remove</button>
+            <span class="hint" style=${{margin:0}}>Used as extra context for the search.</span>`
+        : html`<label class="example" style=${{display:"inline-flex",gap:"7px",alignItems:"center"}}>
+            📎 Attach a strategy or program document (PDF, .txt, .md)
+            <input ref=${fileRef} type="file" accept=".pdf,.txt,.md" style=${{display:"none"}}
+              onChange=${e=>setFile(e.target.files[0]||null)}/>
+          </label>`}
+    </div>
+
+    ${msgs.length>0&&html`<div class="thread">
+      ${msgs.map((m,i)=> m.role==="user"
+        ? html`<div class="msg user" key=${i}><div class="bubble user">${m.content}</div></div>`
+        : html`<div class="msg bot" key=${i}>
+            <div class="avatar">${AVATAR}</div>
+            <div class="bubble bot"><div class="answer" ...${md(m.content)}></div></div>
+          </div>`)}
+      <div ref=${bottomRef}></div>
+    </div>`}
+
+    <form class="ask-form" onSubmit=${e=>{e.preventDefault();send();}}>
+      <div class="input-shell">
+        ${ICON_SEARCH}
+        <textarea class="field" rows="1"
+          placeholder=${msgs.length?"Reply…":"Describe the map you want to build…"}
+          value=${desc} onInput=${e=>setDesc(e.target.value)}
+          onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}></textarea>
+      </div>
+      <button class="btn" disabled=${busy}>${busy?html`<span class="spin"></span>`:"Send"}</button>
+    </form>
+
+    ${!msgs.length&&!busy&&!err&&html`<div class="attach-row">
+      ${examples.map(x=>html`<button key=${x} class="example" type="button"
+        onClick=${()=>setDesc(x)}>${x}</button>`)}
+    </div>`}
+
+    ${(msgs.length>0||res)&&!busy&&html`<div class="attach-row">
+      <button class="example" type="button" onClick=${reset}>+ New map</button>
+    </div>`}
+
+    ${busy&&html`<div class="mprog"><span class="spin"></span> ${phase}</div>`}
+    ${err&&html`<div class="mprog" style=${{color:"var(--violet)"}}>${err}</div>`}
+
+    ${res&&html`<div style=${{marginTop:"26px"}}>
+      ${(res.failures||[]).length>0&&html`<div class="selnote"
+        style=${{color:"var(--violet)"}}>
+        ${res.failures.length} of the searches failed, so this map may be incomplete.
+        Worth re-running.</div>`}
+      ${total===0
+        ? html`<div class="mprog">${(res.failures||[]).length>0
+            ? "The searches failed — nothing was returned. Try again in a moment."
+            : "No entities found for that description. Try being more specific, or naming the technology and geography."}</div>`
+        : html`
+          <div class="mbar">
+            <span class="chip slate">${total} found</span>
+            <button class="example" type="button" disabled=${verifying} onClick=${verifyAll}>
+              ${verifying?html`<span class="spin"></span> Verifying…`:"Verify all"}</button>
+            ${summary&&html`<span class="hint" style=${{margin:0}}>
+              ${summary.strong} strong · ${summary.weak} weak
+              ${summary.dead_links>0?" · "+summary.dead_links+" dead link(s)":""}
+              ${summary.avg_score!=null?" · avg "+summary.avg_score:""}</span>`}
+          </div>
+          ${res.selection_note&&html`<div class="selnote">${res.selection_note}</div>`}
+
+          ${(()=>{
+            // When the request carried requirements, the pipeline marks matches
+            // with _rank. Show those first, then the rest under a divider.
+            const picked=all().some(e=>e._rank);
+            const section=(want)=>MGROUPS.map(([k,label,tone])=>{
+              const items=((res.entities&&res.entities[k])||[])
+                .filter(e=>picked?(want?!!e._rank:!e._rank):true);
+              if(!items.length) return null;
+              return html`<div class="mgroup" key=${(want?"s":"r")+k}>
+                <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
+                  <span class="n">${items.length}</span></div>
+                ${items.map((e,i)=>html`<${MapCard} key=${k+i} e=${e} request=${request}
+                  onUpdate=${updateOne}/>`)}
+              </div>`;
+            });
+            if(!picked) return section(true);
+            const rest=all().filter(e=>!e._rank).length;
+            return html`${section(true)}
+              ${rest>0&&html`<details>
+                <summary class="resthead">Also found — ${rest} not matching your
+                  request</summary>
+                ${section(false)}
+              </details>`}`;
+          })()}
+          ${res.tasks&&res.tasks.length>0&&html`<details class="msrc" style=${{marginTop:"6px"}}>
+            <summary>What the agent searched for</summary>
+            ${res.tasks.map((t,i)=>html`<div key=${i} style=${{marginTop:"5px"}}>
+              <span class="dash">${t.entity_type}</span> ${t.query}</div>`)}
+          </details>`}`}
+    </div>`}
+  </div>`;
+}
+
 /* ------------------------------------------------------------------ App */
 function Browse(){
   const [k,setK]=useState("actors");
@@ -645,9 +982,11 @@ function App(){
     <div class="tabs">
       <button class=${"tab"+(tab==="ask"?" active":"")} onClick=${()=>setTab("ask")}>Ask</button>
       <button class=${"tab"+(tab==="browse"?" active":"")} onClick=${()=>setTab("browse")}>Browse</button>
+      <button class=${"tab"+(tab==="map"?" active":"")} onClick=${()=>setTab("map")}>Build the Map</button>
     </div>
   </div></div>
-  <div class="wrap">${tab==="ask"?html`<${Ask}/>`:html`<${Browse}/>`}</div>`;
+  <div class="wrap">${tab==="ask"?html`<${Ask}/>`
+    :tab==="browse"?html`<${Browse}/>`:html`<${BuildMap}/>`}</div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);
 </script>

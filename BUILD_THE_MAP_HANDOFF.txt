@@ -1,0 +1,414 @@
+========================================================================
+BUILD THE MAP — DETAILED HANDOFF
+Project: UM6P Intelligence  |  Feature: "Build the Map" (Task 2)
+Last updated: 2026-08-19
+========================================================================
+
+Give this file to a new chat so it knows exactly what we are building, why,
+where the code stands, and what the next steps are. It is self-contained.
+
+
+------------------------------------------------------------------------
+0. THE 30-SECOND SUMMARY
+------------------------------------------------------------------------
+We are building a new feature called "Build the Map" for an internal RAG
+platform (UM6P Intelligence). The user describes a domain they want mapped
+(e.g. "fintech in Boston"), optionally uploads a document, and an AI agent
+searches the web to find relevant US organizations, people, and events —
+returned as structured records matching the platform's database schema.
+
+The core agent (find things on the web) is BUILT and VERIFIED.
+The quality/verification layers (is the data correct & relevant?) are
+DESIGNED but NOT yet built.
+The app wiring (backend endpoint + frontend page) is NOT yet built.
+
+
+------------------------------------------------------------------------
+1. THE PARENT PROJECT (context)
+------------------------------------------------------------------------
+"UM6P Intelligence" is an internal RAG platform for the UM6P Global Hubs US
+team (~4 users). It makes a research database of US innovation ecosystems
+(organizations, people, events) searchable in plain English, with cited
+answers.
+
+- This repo is the RAG / application layer only. The Postgres schema and the
+  ETL that fill it are owned separately (a colleague). IMPORTANT: all DB
+  access from this repo is READ-ONLY. We do not write to the live tables.
+- Working directory: /Users/ghus/Desktop/um6p-rag
+- Active UI = React + FastAPI app (frontend/index.html + backend/app.py).
+  There is also a frozen Streamlit app (app.py) — do not touch it.
+- Existing features that already work: "Ask" (multi-turn cited chatbot) and
+  "Browse" (Actors / Hubs / Events with filters), plus document upload.
+- Stack: Supabase/Postgres + pgvector, Voyage embeddings, Anthropic Claude,
+  FastAPI, single-file React (no build step, CDN).
+- There is a fuller project handoff at CHAT_HANDOFF.md; this file is the deep
+  dive on the Build the Map feature specifically.
+
+
+------------------------------------------------------------------------
+2. WHAT "BUILD THE MAP" IS
+------------------------------------------------------------------------
+A third tab in the app, next to "Ask" and "Browse". Name of the tab and the
+page: "Build the Map".
+
+The user:
+  1. Describes what they want mapped. Input is flexible — a domain name, a
+     free-text description, or an uploaded document (PDF / txt / md) such as a
+     strategy or program brief.
+  2. Clicks a button. An agent scouts the web.
+  3. Gets back structured results grouped into Organizations (actors),
+     People, and Events.
+
+Key decisions already made:
+  - The AGENT decides which entity types to look for (actor / person / event)
+    based on the input. The user does not have to specify.
+  - Scope is US ONLY, by design.
+  - Fields collected per entity type MATCH THE DATABASE TABLE COLUMNS (see §4).
+  - Results are shown FAST (see the two-phase design in §6), not streamed
+    token by token.
+
+
+------------------------------------------------------------------------
+3. WHAT IS ALREADY BUILT (the discovery agent)
+------------------------------------------------------------------------
+A self-contained Python module at:  src/map_agent/
+
+Files and what each does:
+  planner.py   Stage 1. One cheap LLM call (claude-haiku-4-5). Reads the
+               description (+ up to ~6k chars of doc text) and returns a list
+               of search tasks: [{entity_type, query, focus}, ...].
+               Uses a strict "submit_plan" tool.
+
+  discover.py  Stage 2. One agent per search task (claude-sonnet-5). Tools:
+               Anthropic server tools web_search + web_fetch (version
+               *_20260209), plus a "submit_entities" tool. Loops up to
+               MAX_HOPS=8, MAX_TOKENS=8192. Returns a list of entity dicts,
+               each tagged with "_entity_type".
+
+  enrich.py    Stage 3 (optional). Per-entity detail pass (claude-sonnet-5,
+               MAX_HOPS=6, MAX_TOKENS=4096). Visits the entity's site /
+               searches to fill missing fields. Keeps existing values; falls
+               back to the original entity if it cannot improve it.
+
+  dedup.py     Stage 4. Pure Python + rapidfuzz. Merges duplicate entities
+               (same entity_type AND (name >=85 fuzzy match OR same
+               normalized website)); keeps the longer value per field.
+               No LLM, no cost.
+
+  pipeline.py  Orchestrator. build_map(description, doc_text=None,
+               do_enrich=True). Runs: plan -> discover (parallel,
+               ThreadPoolExecutor, 4 workers) -> enrich (parallel) -> dedup
+               -> group by entity type. Returns:
+                 {"tasks":[...],
+                  "counts":{"actor":N,...},
+                  "entities":{"actor":[...],"person":[...],"event":[...]}}
+               Per-task / per-entity failures are caught and skipped, not
+               fatal.
+
+STATUS: built and verified. A single discovery search for "vertical farming
+startups USA" returned 11 real US organizations (Oishii, Bowery Farming,
+80 Acres Farms, Little Leaf Farms, Eden Green, Revol Greens, ...) each with
+name, location, and website. Dedup was unit-tested with sample data.
+
+TWO BUGS FOUND AND FIXED DURING TESTING (keep these in mind, they will bite
+again if the schemas grow):
+  1. strict:True on the discover/enrich submit tools caused API errors
+     ("Schema is too complex" / "Grammar compilation timed out") — the
+     array-of-objects output schema is too big for strict-mode grammar
+     compilation. FIX: dropped strict on those two tools (kept it on the
+     small planner schema). Made entity extraction defensive:
+     block.input.get("entities", []).
+  2. The Sonnet agent crams all its work into ONE turn (it also reaches for
+     bundled code_execution / bash_code_execution server tools) and hit
+     max_tokens, TRUNCATING the submit_entities call -> 0 results. FIX:
+     raised max_tokens (8192 discover / 4096 enrich); treat max_tokens like
+     end_turn (best-effort return, do not echo a truncated tool_use); prompt
+     now says "work lean, do not write code."
+
+
+------------------------------------------------------------------------
+4. FIELDS COLLECTED PER ENTITY TYPE (match the DB schema)
+------------------------------------------------------------------------
+System columns (ids, timestamps, verification_status, confidence, source_id,
+merged_into_actor_id) are intentionally EXCLUDED — the agent only fills
+human-meaningful factual fields.
+
+  actor:  name, actor_type, description, website, location_city, state,
+          country, primary_technical_focus, technical_approach,
+          current_activities, funding_summary, estimated_trl
+  person: full_name, title, bio, linkedin_url, email
+  event:  name, event_type, description, location, website, next_date,
+          recurring_pattern, sponsoring_orgs, thematic_focus,
+          expected_attendance, access_type
+
+
+------------------------------------------------------------------------
+5. QUALITY / VERIFICATION LAYERS (designed, NOT built)
+------------------------------------------------------------------------
+Because the data comes from the OPEN WEB, it is LEADS, not FACTS. We cannot
+guarantee correctness — the goal is to make correctness CHECKABLE and the
+failure modes VISIBLE. We designed six assessment layers. Raw candidates
+from discovery pass through them; verified entities come out.
+
+  1. EVIDENCE CAPTURE (LLM) — for every field the agent fills, record WHERE
+     it came from (source URL + short verbatim snippet). This is the
+     foundation; nothing downstream can verify without it. Catches
+     unsupported claims by making them traceable. (Cheap — the agent already
+     visited those pages.)
+
+  2. URL LIVENESS CHECK (pure code) — does the entity's website actually
+     resolve (HTTP 200)? Kills dead and hallucinated links. Deterministic,
+     near-zero cost.
+
+  3. INDEPENDENT JUDGE (LLM, SEPARATE call) — a fresh model call, per entity,
+     that receives the entity + its evidence + the ORIGINAL request and
+     outputs: a relevance/correctness score (0-1), a relevance flag, and a
+     one-line reason. Because it did not produce the entity, it grades
+     honestly. This is "LLM-as-a-judge" done properly (separate call), NOT
+     the weaker "model scores its own output" self-evaluation. Catches
+     off-topic and low-quality matches.
+
+  4. DB CROSS-CHECK (pure code) — DROPPED (user's call, 2026-08-19). Was: is
+     this entity already in our own actor table? flag "already tracked". For
+     new-domain mapping most entities won't be in our DB, so it earns little.
+     Kept in the doc for context; not in the build.
+
+  5. RELEVANCE FLOOR (pure code) — drop or visually separate entities the
+     judge scored below a threshold, so weak matches don't pad the list.
+
+  6. HUMAN REVIEW (human) — DEFERRED for now (user's call, 2026-08-19). The
+     idea: present everything as CANDIDATES TO REVIEW with evidence links and
+     judge scores, and a person approves what is real. Still non-negotiable
+     BEFORE anything is ever written to a database — but out of scope for the
+     current build. For now the output is machine-checked (layers 1-5) only.
+
+NOTE ON CONFIDENCE SCORES: any score an LLM emits (self-scored OR from the
+judge) is the model WRITING a number, not reading its true internal
+probabilities. LLMs tend to be overconfident. Treat scores as a rough,
+directional signal — evidence links a human can click matter more than the
+number. (The real token probabilities, "logprobs", are a different mechanism
+we are NOT using.)
+
+ORDERING PRINCIPLE: run the cheap deterministic checks (URL, DB cross-check,
+relevance floor) BEFORE / AROUND the costly LLM judge, so we don't pay to
+grade an entity a dead-URL or duplicate check would have discarded anyway.
+
+
+------------------------------------------------------------------------
+6. THE CHOSEN FLOW: FAST RESULTS + CHECKS ON DEMAND  (important)
+------------------------------------------------------------------------
+We are NOT running every layer before showing anything (too slow / costly).
+Instead, two phases:
+
+  PHASE 1 — automatic, shown FAST (a minute or two):
+    discovery -> dedup -> DISPLAY
+    plus the cheap layers that add little delay:
+      - evidence capture (layer 1) — sources recorded as the agent finds them
+      - DB cross-check (layer 4)   — fast local query against our actor table
+    Results appear quickly, already carrying source links and "already
+    tracked" flags.
+
+  PHASE 2 — ON DEMAND, per user click:
+    the EXPENSIVE layers:
+      - URL liveness check (layer 2)
+      - independent judge  (layer 3)  <- the costly LLM scoring call
+    Triggered by a button. Results update IN PLACE with a score badge, a
+    relevance flag, and dead-link warnings.
+
+  "Verify" should work BOTH per-entity (spot-check one) AND all-at-once
+  ("verify all" for a serious pass). [This "both" is a recommendation; final
+  confirmation from the user still pending.]
+
+Benefit: a map in ~1-2 minutes, with rigor applied only where/when asked —
+so we don't pay judge-call costs on entities the user will ignore.
+
+
+------------------------------------------------------------------------
+7. WHERE THE GATHERED DATA IS STORED  (open decision)
+------------------------------------------------------------------------
+Right now: NOWHERE. build_map() returns a dict in memory; once wired to the
+backend it becomes JSON shown in the browser and is gone when the page
+closes. Because this repo's DB is READ-ONLY, writing discovered entities
+into the live actor/person/event tables is NOT ours to do unilaterally — it
+needs the colleague's sign-off (same unresolved question the enrichment
+agent hit).
+
+Options discussed (no final choice yet):
+  1. Display only — simplest; nothing persists.
+  2. Export file (JSON / CSV / Excel) — a "Download" button; results kept
+     outside the owned DB. [Leading recommendation for v1: option 1 + 2.]
+  3. Local staging store (our own small table or JSON files, NOT the live
+     tables) — lets users revisit past maps. Same pattern as the enrichment
+     agent's proposals.jsonl.
+  4. Write into the live DB — needs colleague sign-off + write creds + a
+     review step first. Deferred.
+
+
+------------------------------------------------------------------------
+8. WHAT IS LEFT TO DO
+------------------------------------------------------------------------
+Agent quality layers (from §5, in the two-phase shape of §6):
+  [x] Evidence capture — DONE. Each entity now carries a 'sources' list
+      (url + what it supports), added to every schema in discover.py and to
+      the prompt (every entity must have >=1 real source). Verified: a live
+      search returned entities each with real, relevant source URLs.
+  [x] URL liveness check — DONE. src/map_agent/urlcheck.py, pure Python,
+      concurrent. verify_links(entities) annotates each with _link_check +
+      _links_ok. Forgiving about bot-blocking (403/429 = "blocked", still ok);
+      flags 404/dead/unreachable. Verified on real/404/hallucinated URLs.
+  [x] Independent judge stage — DONE. src/map_agent/judge.py, separate Haiku
+      call per entity (one-shot, no web tools), concurrent. Gets entity +
+      sources + original request; returns relevance_score (0-1), is_relevant,
+      reason. Annotates each entity with '_judge'. Verified: scored an
+      on-target org 0.95, a bank 0.10 (off-topic), and a source-less startup
+      0.30 (flagged thin sourcing). Model swap to Sonnet is one line if needed.
+  [-] DB cross-check — DROPPED (user's call, 2026-08-19). For new-domain
+      mapping most entities won't already be in our DB, so the check earns
+      little; keeps the pipeline simpler. Can revisit if dedup-against-DB
+      becomes useful later.
+  [x] Relevance floor — DONE. src/map_agent/floor.py, pure Python. Uses the
+      judge score; DEFAULT_THRESHOLD=0.5. Does NOT delete — flags _below_floor
+      (True/False/None) and partition() splits into (kept, weak); unjudged
+      entities stay in 'kept'. Verified.
+
+  [x] Phase-2 orchestrator — DONE. src/map_agent/verify.py chains
+      urlcheck -> judge -> floor. API: verify(entities, request),
+      verify_one(entity, request) for a single card, verify_and_split() ->
+      (kept, weak), and summarize() -> counts for the UI. Flags check_links /
+      run_judge allow a cheaper subset. NOTE: the link-check verdict is now
+      passed INTO the judge prompt (judge.py:_render_entity), so a dead-URL
+      entity is judged with that fact in view — verified: the judge led its
+      reason with "website is unreachable" and scored it 0.1.
+
+App wiring:
+  [x] Backend — DONE. Three routes in backend/app.py:
+        POST /api/map            multipart: description (required), enrich
+                                 (bool, default true), file (optional). Starts
+                                 a JOB (maps take minutes) -> {job_id,status}.
+        GET  /api/map/{job_id}   poll -> {status: running|done|error,
+                                 description, result, error}.
+        POST /api/map/verify     JSON {entities, request, check_links,
+                                 run_judge} -> {entities (annotated), summary}.
+                                 Stateless: the frontend posts back what it
+                                 holds; works for one entity or all.
+      Jobs live in an in-memory _MAP_JOBS dict (cap 12, oldest evicted), run on
+      a 2-worker ThreadPoolExecutor. Nothing written to Postgres. Verified:
+      400 on blank description, 404 on unknown job, verify returns annotated
+      entities + counts and run_judge=false correctly skips the LLM.
+      NOTE: no auth on these routes (platform-wide gap) — a map costs real
+      money per call, so do not expose publicly before auth exists.
+  [x] Frontend — DONE. "Build the Map" tab added to frontend/index.html
+      (components: BuildMap + MapCard, styles under "/* ---- Build the Map */").
+      Textarea + optional document attach + Build button; example chips;
+      polls the job every 3s with a progress line; results as cards grouped
+      into Organizations / People / Events with entity-type chips. Each card
+      shows the schema fields, website + sources (struck through when a link
+      is dead), a "Verify" / "Re-verify" button, the judge badge (score +
+      relevant/not), dead-link warnings, the judge's reason, and goes
+      dashed/faded when below the relevance floor. A "Verify all" button plus
+      a summary line (strong / weak / dead links / avg score), and a
+      "What the agent searched for" disclosure listing the plan.
+  [x] End-to-end test from the browser preview — DONE for the UI + phase 2.
+      Verified in-browser: tab renders, job polling -> results, cards/groups,
+      per-card Verify against the REAL /api/map/verify (judge flagged a
+      placeholder "Jane Doe" at 0.10 with "no working URL", card correctly
+      went weak). No console errors. Fixed one cosmetic bug found in the pass
+      (stray "·" before LinkedIn when a person had no website).
+  [x] FULL REAL RUN THROUGH THE UI — DONE (2026-08-19). Query: "vertical
+      farming and controlled environment agriculture startups in the US".
+      Planner produced 7 tasks; result: 58 entities (27 organizations,
+      25 people, 6 events) after dedup. Quality was genuinely good — real
+      companies with correct cities (Plenty/SF, Eden Green/Cleburne TX,
+      Square Roots/Brooklyn), real founders with correct titles (Irving Fain
+      of Bowery, Hiroki Koga of Oishii), real conferences with actual venues.
+      The run surfaced TWO REAL PROBLEMS, both now fixed — see below.
+
+TWO PROBLEMS FOUND BY THE REAL RUN (both fixed 2026-08-19):
+
+  A. SOURCES WERE BEING SILENTLY DESTROYED. Every one of the 58 entities came
+     back with 0 sources, even though evidence capture works when discover()
+     is called on its own. Cause: enrich.py's schemas had no `sources` field
+     AND enrich_entity() returned the model's tool output WHOLESALE, replacing
+     the entity — so everything discovery had gathered was dropped. This
+     quietly guts the entire verification layer (the judge penalizes unsourced
+     entities; the URL check has nothing to check).
+     FIX: added `sources` to all three enrich schemas, and enrich_entity() now
+     MERGES onto the original ({**entity, **filled_fields}) with a
+     _merge_sources() union that de-dupes by URL. Verified by unit test.
+     LESSON: any stage that returns a model-shaped dict must merge, not
+     replace — the schema only covers what that stage knows about.
+
+  B. IT IS FAR SLOWER THAN ESTIMATED. The run was CONFIRMED still running at
+     ~13 minutes and finished at an unmeasured point after that (the run was
+     never timestamped — treat ">20 min" claims as inference, not data). Well
+     beyond the "few minutes" originally quoted either way. A single
+     discover() call alone exceeds 300s; 7 tasks at 4 workers is two waves,
+     then enrichment adds ONE AGENT CALL PER ENTITY (58 of them).
+     TODO: actually time a run (wrap build_map in a timer and log it) — every
+     latency number in this document so far is an estimate.
+     FIXES APPLIED: do_enrich now defaults to FALSE (pipeline.build_map and
+     the POST /api/map form field) — it was the bulk of the time and only
+     tops up fields discovery already found; MAX_WORKERS raised 4 -> 10
+     (these are network-bound, not CPU-bound); the planner is now capped at
+     3-5 tasks instead of 3-8.
+     NOT YET RE-MEASURED: a fresh run with these settings. Expect roughly the
+     discovery time alone, but this is an estimate, not a measurement.
+
+Decisions still open:
+  [ ] Where gathered data is stored (§7).
+  [ ] Is the detail-enrichment pass (Stage 3) on by default? (cost vs
+      completeness).
+  [ ] Confirm "verify" works both per-entity and all-at-once.
+
+
+------------------------------------------------------------------------
+9. COST & SPEED  (flag before opening to the team)
+------------------------------------------------------------------------
+MEASURED (2026-08-19), superseding the earlier estimates:
+- A real 7-task run with enrichment ON produced 58 entities and took OVER
+  20 MINUTES. The original "a few minutes / $2-5" estimate was too optimistic.
+- Enrichment was the bulk of that (one agent call per entity), which is why it
+  now defaults to OFF. With it off and MAX_WORKERS=10, expect roughly the
+  discovery time — NOT yet re-measured, so treat as an estimate.
+- The independent judge adds one cheap Haiku call per entity, only when the
+  user clicks Verify. "Verify all" on 58 entities = 58 calls; still cheap
+  (Haiku) but not free.
+- ACTUAL BILLED COST (Anthropic Console, 2026-08-19): $22 for the day. That
+  covers the one full map run PLUS all the standalone discover()/judge/pipeline
+  tests. Console counters for the day: 8,450,538 tokens IN, 293,095 tokens OUT,
+  242 web searches, essentially all claude-sonnet-5. The map run was the larger
+  of the two hourly bars (~5M of the 8.45M input), so call it ~$12-14 for ONE
+  map. The original "$2-5 per map" estimate in this document's history was off
+  by ~3x.
+- THE KEY NUMBER IS THE RATIO: 8.45M in vs 293K out = 29:1. This is an INPUT
+  cost problem. Money goes to re-reading web content, not to generating
+  answers, because every hop re-sends the whole accumulated conversation
+  (fetched pages included). Optimize input, not output.
+- Highest-leverage dial: max_content_tokens on web_fetch (currently 4000).
+  Cutting it saves those tokens on EVERY remaining hop of that conversation,
+  not just once. Then MAX_HOPS, then number of planner tasks.
+- Prompt caching appears to be helping already (naive full-price math on the
+  same counters gives ~$32 vs the $22 actually billed). Explicit cache_control
+  on the system prompt + tool definitions may reduce it further — untested.
+- LESSON: every cost/latency figure in this project's history that was
+  ESTIMATED turned out wrong (cost ~3x low, latency ~5x low). resp.usage
+  carries exact token counts on every API response. MEASURE, do not estimate.
+
+
+------------------------------------------------------------------------
+10. HOW TO RUN / TEST
+------------------------------------------------------------------------
+- Python interpreter: ~/.conda/envs/um6p/bin/python
+- Secrets in .env: DATABASE_URL, ANTHROPIC_API_KEY, VOYAGE_API_KEY.
+- Quick agent smoke test (no app needed), a single discovery call:
+    from src.map_agent.discover import discover
+    discover("vertical farming startups USA", "actor", "early-stage CEA")
+- Full pipeline (WARNING: real API cost, a few minutes):
+    from src.map_agent.pipeline import build_map
+    build_map("controlled environment agriculture startups", do_enrich=False)
+- Run the app (once wired): uvicorn backend.app:app --port 8000
+  (launch.json config name: um6p-api)
+
+========================================================================
+END OF HANDOFF
+========================================================================

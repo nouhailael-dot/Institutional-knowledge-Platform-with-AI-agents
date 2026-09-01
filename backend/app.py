@@ -13,6 +13,7 @@ retrieve / generate / router / browse.
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
@@ -20,16 +21,20 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))          # make `src` importable no matter the CWD
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from src import browse
 from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
 from src.generate import condense_question, stream_answer
+from src.map_agent.pipeline import build_map
+from src.map_agent.planner import map_chat
+from src.map_agent.verify import summarize, verify
 from src.retrieve import retrieve
 from src.router import format_sql_answer, plan, run_sql
 
@@ -79,7 +84,10 @@ def upload(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=str(exc))
     store = build_store(text, file.filename)
     doc_id = uuid4().hex
-    _DOC_STORES[doc_id] = {"store": store, "name": file.filename, "ts": time.time()}
+    # `text` is kept alongside the embedded store: Ask searches the store, but the
+    # map planner needs the raw excerpt as prompt context.
+    _DOC_STORES[doc_id] = {"store": store, "text": text, "name": file.filename,
+                           "ts": time.time()}
     _evict_docs()
     return {"doc_id": doc_id, "name": file.filename}
 
@@ -206,6 +214,140 @@ def browse_events():
     evts = _events()
     types = sorted({e["event_type"] for e in evts if e.get("event_type")})
     return JSONResponse(jsonable_encoder({"events": evts, "event_types": types}))
+
+
+# ---------------------------------------------------------------- Build the Map
+# Phase 1 (discovery) takes minutes, so it can't be one blocking request: POST
+# /api/map starts a job and returns an id, the frontend polls GET /api/map/{id}.
+# Phase 2 (verification) is on demand and fast enough to answer inline, and is
+# stateless — the frontend posts back the entities it already holds.
+#
+# Same in-memory posture as _DOC_STORES: nothing is written to Postgres, and the
+# store is capped so the process can't grow unbounded.
+_MAP_JOBS: dict[str, dict] = {}
+_MAP_CAP = 12
+_MAP_POOL = ThreadPoolExecutor(max_workers=2)   # a map is expensive; don't fan out
+
+
+def _evict_maps():
+    while len(_MAP_JOBS) > _MAP_CAP:
+        oldest = min(_MAP_JOBS, key=lambda k: _MAP_JOBS[k]["ts"])
+        _MAP_JOBS.pop(oldest, None)
+
+
+class ChatRequest(BaseModel):
+    """One turn of the map-planning conversation. `messages` is the whole thread
+    as plain {role, content} turns; `doc_id` refers to an /api/upload document."""
+    messages: list[dict]
+    doc_id: str | None = None
+
+
+@app.post("/api/map/chat")
+def map_chat_turn(payload: ChatRequest):
+    """Talk with the planner until it has enough to search.
+
+    Returns {"status": "reply"|"plan"|"error", ...}. On "reply" the agent is
+    asking something — show it and send the user's answer back with the thread.
+    On "plan" it has decided: the caller starts POST /api/map with that plan.
+    """
+    if not payload.messages:
+        raise HTTPException(status_code=400, detail="messages is required")
+    doc = _DOC_STORES.get(payload.doc_id) if payload.doc_id else None
+    return JSONResponse(jsonable_encoder(
+        map_chat(payload.messages, doc["text"] if doc else None)))
+
+
+def _run_map_job(job_id: str, description: str, doc_text: str | None,
+                 do_enrich: bool, actor_focus: str, plan: dict | None):
+    """Worker body: run the pipeline, park the result on the job record."""
+    job = _MAP_JOBS.get(job_id)
+    if job is None:
+        return
+    try:
+        job["result"] = build_map(description, doc_text, do_enrich=do_enrich,
+                                  actor_focus=actor_focus, plan=plan)
+        job["status"] = "done"
+    except Exception as exc:
+        job["status"] = "error"
+        job["error"] = str(exc)
+
+
+class MapRequest(BaseModel):
+    """Run an APPROVED plan. Documents are uploaded separately via /api/upload,
+    so the planning turns and this call can both refer to them by `doc_id`."""
+    description: str
+    plan: dict | None = None          # from /api/map/plan; None re-plans silently
+    doc_id: str | None = None
+    enrich: bool = False
+    actor_focus: str = "research"
+
+
+@app.post("/api/map")
+def map_start(payload: MapRequest):
+    """Start a map build. Returns {job_id}; poll GET /api/map/{job_id}.
+
+    Normally called with the plan the user approved at /api/map/plan — discovery
+    is expensive, so it should never run on a plan nobody saw. `actor_focus`
+    defaults to "research" (~80/20 toward universities and national labs) and is
+    deliberately NOT exposed in the UI.
+    """
+    desc = (payload.description or "").strip()
+    if not desc:
+        raise HTTPException(status_code=400, detail="description is required")
+
+    doc = _DOC_STORES.get(payload.doc_id) if payload.doc_id else None
+    doc_text = doc["text"] if doc else None
+
+    job_id = uuid4().hex
+    focus = payload.actor_focus if payload.actor_focus in (
+        "both", "companies", "research") else "research"
+    _MAP_JOBS[job_id] = {"status": "running", "result": None, "error": None,
+                         "description": desc, "ts": time.time()}
+    _evict_maps()
+    _MAP_POOL.submit(_run_map_job, job_id, desc, doc_text, payload.enrich,
+                     focus, payload.plan)
+    return {"job_id": job_id, "status": "running"}
+
+
+@app.get("/api/map/{job_id}")
+def map_status(job_id: str):
+    """Poll a map job. status is running | done | error; result present when done."""
+    job = _MAP_JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown job_id")
+    return JSONResponse(jsonable_encoder({
+        "status": job["status"],
+        "description": job["description"],
+        "result": job["result"],
+        "error": job["error"],
+    }))
+
+
+class VerifyRequest(BaseModel):
+    """Phase-2 payload. `entities` are the ones the frontend already holds, and
+    `request` must be the ORIGINAL map description — the judge grades against it."""
+    entities: list[dict]
+    request: str
+    check_links: bool = True
+    run_judge: bool = True
+
+
+@app.post("/api/map/verify")
+def map_verify(payload: VerifyRequest):
+    """Run the verification layers (link check -> judge -> relevance floor).
+
+    Works for one entity or all of them — the frontend decides what to send.
+    Returns the annotated entities plus summary counts.
+    """
+    if not payload.entities:
+        return {"entities": [], "summary": summarize([])}
+    entities = verify(payload.entities, payload.request,
+                      check_links=payload.check_links,
+                      run_judge=payload.run_judge)
+    return JSONResponse(jsonable_encoder({
+        "entities": entities,
+        "summary": summarize(entities),
+    }))
 
 
 @app.get("/api/health")
