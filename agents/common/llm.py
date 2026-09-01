@@ -11,7 +11,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from agents.common.cost import CostMeter
 
@@ -44,7 +44,7 @@ class ClaudeToolClient:
         self,
         model: str,
         *,
-        cost_meter: Optional[CostMeter] = None,
+        cost_meter: CostMeter | None = None,
         input_usd_per_million: float = 0.0,
         output_usd_per_million: float = 0.0,
     ):
@@ -74,25 +74,16 @@ class ClaudeToolClient:
         tool_description: str,
         input_schema: dict[str, Any],
         max_tokens: int = 2048,
-        temperature: Optional[float] = 0.0,
     ) -> dict[str, Any]:
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "system": system,
-            "messages": [{"role": "user", "content": user}],
-            "tools": [
-                {
-                    "name": tool_name,
-                    "description": tool_description,
-                    "input_schema": input_schema,
-                }
-            ],
-            "tool_choice": {"type": "tool", "name": tool_name},
-        }
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-
+        kwargs = build_messages_create_kwargs(
+            model=self.model,
+            system=system,
+            user=user,
+            tool_name=tool_name,
+            tool_description=tool_description,
+            input_schema=input_schema,
+            max_tokens=max_tokens,
+        )
         response = self._get_client().messages.create(**kwargs)
         self._record_usage(response)
 
@@ -143,3 +134,30 @@ class FixtureToolClient:
     def extract_with_tool(self, **_: Any) -> dict[str, Any]:
         self.usage.calls += 1
         return copy.deepcopy(self.payload)
+
+
+def build_messages_create_kwargs(
+    *,
+    model: str,
+    system: str,
+    user: str,
+    tool_name: str,
+    tool_description: str,
+    input_schema: dict[str, Any],
+    max_tokens: int = 2048,
+) -> dict[str, Any]:
+    """Build the Anthropic Messages.create request for tool-schema extraction."""
+    return {
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": [{"role": "user", "content": user}],
+        "tools": [
+            {
+                "name": tool_name,
+                "description": tool_description,
+                "input_schema": input_schema,
+            }
+        ],
+        "tool_choice": {"type": "tool", "name": tool_name},
+    }

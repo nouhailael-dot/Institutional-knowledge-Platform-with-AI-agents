@@ -57,6 +57,10 @@ Every run writes `scrape_run.status_reason`, including successful cheap-week run
 
 The default run cost ceiling is `$0.50`, which leaves headroom for a full Climate Week extraction that has measured around `$0.14`. If the ceiling is exceeded, discovery closes the run as `attention`, writes audit and digest artifacts for the partial staged work, and exits nonzero for CI.
 
+## Claude SDK Compatibility
+
+The agents pin `anthropic==1.0.0`. That SDK no longer accepts `temperature`, `top_p`, or `top_k` on `messages.create`, and Anthropic's migration notes say current models do not use those sampling parameters. Discovery therefore does not send sampling controls. Extraction remains constrained through stable prompts, tool schemas, and forced `tool_choice`, but exact repeat-token determinism is not guaranteed by a temperature setting.
+
 ## Actor Discovery
 
 E1 actor discovery has a tool-schema extractor and promotion branch, but no active configured source. Actor routing uses the existing frozen `EntityResolver` blocking and combiner scoring through `agents.common.resolve_route.route_actor`; all canonical actor writes still happen only in `agents/discovery/promote.py`. Before allowing actor auto-absorb on a new source, run:

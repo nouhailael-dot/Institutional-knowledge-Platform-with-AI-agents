@@ -11,7 +11,7 @@ alembic>=1.18
 psycopg2-binary>=2.9
 
 # LLM and embeddings
-anthropic>=0.100
+anthropic==1.0.0
 voyageai>=0.3
 
 # Data

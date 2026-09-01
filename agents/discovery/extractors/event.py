@@ -187,7 +187,6 @@ class EventExtractor:
             tool_description="Return events explicitly present in the source page.",
             input_schema=self.json_schema,
             max_tokens=self.max_tokens,
-            temperature=0.0,
         )
         events = payload.get("events", []) if payload else []
         if not events:

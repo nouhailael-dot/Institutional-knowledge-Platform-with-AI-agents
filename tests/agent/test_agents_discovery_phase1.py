@@ -51,7 +51,7 @@ class StubToolClient:
     def extract_with_tool(self, **kwargs):
         self.calls += 1
         assert kwargs["tool_name"] == "record_events"
-        assert kwargs["temperature"] == 0.0
+        assert "temperature" not in kwargs
         return self.payload
 
 
@@ -823,7 +823,7 @@ def test_actor_extractor_uses_tool_schema_and_preserves_nulls():
 
     assert client.calls == 1
     assert client.last_kwargs["tool_name"] == "record_actors"
-    assert client.last_kwargs["temperature"] == 0.0
+    assert "temperature" not in client.last_kwargs
     assert records[0]["name"] == "Example Climate Lab"
     assert records[0]["actor_type"] is None
     assert records[0]["source_url"] == "fixture://actors"
@@ -1068,7 +1068,7 @@ def test_person_extractor_only_public_professional_fields():
 
     assert client.calls == 1
     assert client.last_kwargs["tool_name"] == "record_people"
-    assert client.last_kwargs["temperature"] == 0.0
+    assert "temperature" not in client.last_kwargs
     schema_text = json.dumps(client.last_kwargs["input_schema"])
     for forbidden in ("email", "phone", "tel", "bio"):
         assert forbidden not in schema_text.lower()

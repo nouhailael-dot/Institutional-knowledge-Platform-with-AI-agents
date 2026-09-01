@@ -61,7 +61,6 @@ class PersonExtractor:
             ),
             input_schema=self.json_schema,
             max_tokens=self.max_tokens,
-            temperature=0.0,
         )
         people = payload.get("people", []) if payload else []
         if not people:

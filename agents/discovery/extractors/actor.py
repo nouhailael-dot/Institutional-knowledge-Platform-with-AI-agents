@@ -84,7 +84,6 @@ class ActorExtractor:
             tool_description="Return organization actor records explicitly present in the source page.",
             input_schema=self.json_schema,
             max_tokens=self.max_tokens,
-            temperature=0.0,
         )
         actors = payload.get("actors", []) if payload else []
         if not actors:
