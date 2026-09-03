@@ -23,7 +23,8 @@ sys.path.insert(0, str(ROOT))          # make `src` importable no matter the CWD
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (FileResponse, JSONResponse, Response,
+                               StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -32,6 +33,7 @@ from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
 from src.generate import condense_question, stream_answer
+from src.map_agent.export import to_pptx, to_xlsx
 from src.map_agent.pipeline import build_map
 from src.map_agent.planner import map_chat
 from src.map_agent.verify import summarize, verify
@@ -348,6 +350,35 @@ def map_verify(payload: VerifyRequest):
         "entities": entities,
         "summary": summarize(entities),
     }))
+
+
+class ExportRequest(BaseModel):
+    """Export the map the frontend currently holds (so it reflects any
+    verification the user ran). `result` is the pipeline result object;
+    `fmt` is 'xlsx' or 'pptx'."""
+    result: dict
+    request: str = ""
+    fmt: str = "xlsx"
+
+
+_EXPORT = {
+    "xlsx": (to_xlsx, "map.xlsx",
+             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    "pptx": (to_pptx, "map.pptx",
+             "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+}
+
+
+@app.post("/api/map/export")
+def map_export(payload: ExportRequest):
+    """Return the map as a downloadable .xlsx or .pptx (selected entities only)."""
+    spec = _EXPORT.get(payload.fmt)
+    if spec is None:
+        raise HTTPException(status_code=400, detail="fmt must be 'xlsx' or 'pptx'")
+    render, filename, media = spec
+    data = render(payload.result, payload.request)
+    return Response(content=data, media_type=media, headers={
+        "Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.get("/api/health")

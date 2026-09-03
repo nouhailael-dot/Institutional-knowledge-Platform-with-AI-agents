@@ -826,6 +826,24 @@ function BuildMap(){
 
   const all=()=>MGROUPS.flatMap(([k])=>(res&&res.entities&&res.entities[k])||[]);
 
+  const [exporting,setExporting]=useState("");
+
+  async function download(fmt){
+    if(exporting) return;
+    setExporting(fmt);
+    try{
+      const r=await post("/api/map/export",{result:res,request,fmt});
+      if(!r.ok) throw new Error("export failed");
+      const blob=await r.blob();
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");
+      a.href=url; a.download="um6p-map."+fmt;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }catch(e){ setErr("Could not export the file."); }
+    setExporting("");
+  }
+
   async function verifyAll(){
     const items=all();
     if(!items.length||verifying) return;
@@ -919,6 +937,12 @@ function BuildMap(){
             <span class="chip slate">${total} found</span>
             <button class="example" type="button" disabled=${verifying} onClick=${verifyAll}>
               ${verifying?html`<span class="spin"></span> Verifying…`:"Verify all"}</button>
+            <button class="example" type="button" disabled=${!!exporting}
+              onClick=${()=>download("xlsx")}>
+              ${exporting==="xlsx"?html`<span class="spin"></span> Excel…`:"⤓ Excel"}</button>
+            <button class="example" type="button" disabled=${!!exporting}
+              onClick=${()=>download("pptx")}>
+              ${exporting==="pptx"?html`<span class="spin"></span> PowerPoint…`:"⤓ PowerPoint"}</button>
             ${summary&&html`<span class="hint" style=${{margin:0}}>
               ${summary.strong} strong · ${summary.weak} weak
               ${summary.dead_links>0?" · "+summary.dead_links+" dead link(s)":""}

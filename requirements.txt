@@ -5,9 +5,11 @@ voyageai>=0.2             # embeddings
 anthropic>=0.40           # Claude API (the decided stack; swap back when funded)
 groq>=0.11                # free-tier LLM used for v0.1 answer generation
 streamlit>=1.38           # UI
-rapidfuzz>=3.0            # dedupe / alias matching (used later)
+rapidfuzz>=3.0            # dedupe / alias matching (map_agent + data-quality)
 pypdf>=5.0                # text extraction from uploaded PDFs (Ask-tab document upload, no OCR)
 numpy>=2.1                # per-session doc-chunk cosine search (Ask-tab document upload)
+openpyxl>=3.1            # Build the Map — Excel export (src/map_agent/export.py)
+python-pptx>=1.0         # Build the Map — PowerPoint export (src/map_agent/export.py)
 
 # --- React + FastAPI app layer (backend/ wraps src/; new frontend/ is the UI) ---
 fastapi>=0.115            # HTTP API over the RAG engine
