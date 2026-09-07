@@ -1,6 +1,52 @@
 {
   "cost": { "max_usd_per_run": 0.50 },
   "routing": { "event_fuzzy_review_threshold": 0.88 },
+  "open_web_discovery":
+    {
+      "provider": "claude",
+      "brave_api_key_env": "BRAVE_SEARCH_API_KEY",
+      "web_search_tool_version": "web_search_20250305",
+      "web_search_usd_per_request": 0.01,
+      "web_search_max_uses": 1,
+      "results_per_query": 10,
+      "triage_batch_size": 20,
+      "max_searches": 40,
+      "max_candidates_triaged": 200,
+      "max_usd_per_run": 5.00,
+      "forward_window_days": 365,
+      "people_enabled": false,
+      "accept_floor":
+        {
+          "event": 0.60,
+          "actor": 0.70,
+          "person": 0.95,
+        },
+      "blocklist_domains":
+        [
+          "facebook.com",
+          "instagram.com",
+          "linkedin.com",
+          "x.com",
+          "twitter.com",
+          "youtube.com",
+          "eventbrite.com",
+        ],
+      "non_content_path_fragments":
+        [
+          "/login",
+          "/cart",
+          "/privacy",
+          "/privacy-policy",
+          "/terms",
+          "/tag/",
+        ],
+      "search_model": "claude-haiku-4-5",
+      "search_llm_pricing":
+        { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
+      "triage_model": "claude-sonnet-5",
+      "triage_llm_pricing":
+        { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
+    },
   "sources":
     {
       "climate_week":
@@ -27,9 +73,9 @@
           "max_retries": 3,
           "user_agent_product": "GHUS-AgentDiscovery/0.1",
           "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
-          "claude_model": "claude-haiku-4-5",
+          "claude_model": "claude-sonnet-5",
           "llm_pricing":
-            { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
+            { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
         },
       "unga_programme":
         {
@@ -49,6 +95,7 @@
           "user_agent_product": "GHUS-AgentDiscovery/0.1",
           "browser_like_user_agent": true,
           "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
+          # Inert: this source uses the deterministic unga_programme extractor.
           "claude_model": "claude-haiku-4-5",
           "llm_pricing":
             { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
@@ -72,6 +119,7 @@
           "max_retries": 3,
           "user_agent_product": "GHUS-AgentDiscovery/0.1",
           "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
+          # Inert: this source uses the deterministic unga_guide extractor.
           "claude_model": "claude-haiku-4-5",
           "llm_pricing":
             { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },

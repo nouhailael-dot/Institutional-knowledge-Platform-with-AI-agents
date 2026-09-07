@@ -30,7 +30,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install -r requirements.txt
-          python -c "import sqlalchemy, sklearn, joblib, httpx, yaml; print('deps ok')"
+          python -c "import sqlalchemy, sklearn, joblib, httpx, yaml, anthropic; print('deps ok')"
+
+      - name: Validate Anthropic SDK compatibility
+        run: |
+          python -m pytest -q tests/agent/test_agents_common_llm.py
 
       - name: Validate required environment
         shell: bash
@@ -62,60 +66,12 @@ jobs:
       - name: Run weekly discovery
         shell: bash
         run: |
-          set -u
-          mkdir -p agents/runs
-          LIVE_ARG=""
+          set -euo pipefail
           if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$LIVE_INPUT" = "true" ]; then
-            LIVE_ARG="--live"
-          fi
-          RUN_EXIT=0
-          SUCCEEDED=()
-          FAILED=()
-          for SOURCE in climate_week unga_programme unga_guide; do
-            set +e
-            python -m agents.discovery.run \
-              --source "$SOURCE" \
-              --entity event \
-              $LIVE_ARG \
-              --out "agents/runs/${SOURCE}-audit.csv" \
-              --digest-out "agents/runs/${SOURCE}-digest.md"
-            SOURCE_EXIT=$?
-            set -e
-            if [ -f "agents/runs/${SOURCE}-digest.md" ] && grep -qi "status.*failed" "agents/runs/${SOURCE}-digest.md"; then
-              SOURCE_EXIT=1
-            fi
-            if [ "$SOURCE_EXIT" -eq 0 ]; then
-              SUCCEEDED+=("$SOURCE")
+            python -m agents.weekly_discovery --live
             else
-              FAILED+=("${SOURCE}(exit=${SOURCE_EXIT})")
-              RUN_EXIT=1
-            fi
-          done
-
-          {
-            echo "### Weekly discovery source outcomes"
-            echo
-            echo "Succeeded: ${SUCCEEDED[*]:-none}"
-            echo "Failed: ${FAILED[*]:-none}"
-          } | tee agents/runs/source-outcomes.md
-          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-            cat agents/runs/source-outcomes.md >> "$GITHUB_STEP_SUMMARY"
+            python -m agents.weekly_discovery
           fi
-
-          if [ "$RUN_EXIT" -ne 0 ]; then
-            exit "$RUN_EXIT"
-          fi
-          python -m agents.enrichment.run \
-            --entity actor \
-            --field-set profile \
-            --limit 50 \
-            --deterministic-only \
-            --revisit-missing \
-            $LIVE_ARG
-          python -m agents.index.refresh \
-            --entity all \
-            --limit 500 \
-            $LIVE_ARG
 
       - name: Upload weekly discovery artifacts
         if: always()

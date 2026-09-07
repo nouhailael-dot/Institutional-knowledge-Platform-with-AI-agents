@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agents.discovery.sources.base import FetchedDoc
@@ -88,7 +88,7 @@ class ActorExtractor:
         actors = payload.get("actors", []) if payload else []
         if not actors:
             return []
-        extracted_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        extracted_at = datetime.now(UTC).replace(microsecond=0).isoformat()
         records: list[dict] = []
         for actor in actors:
             record = {field: actor.get(field) for field in ACTOR_FIELDS}

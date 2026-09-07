@@ -4,6 +4,44 @@ Phase 1 started as a single vertical slice: one source adapter (`climate_week`),
 
 The reporting agent is out of scope. Agent 3 is new-sector discovery, owned by a teammate. Reporting code is preserved on branch `shelved/reporting-agent`.
 
+## Open-Web Search Triage
+
+Open-web Phase 1 runs before configured-source fetching. It searches for
+candidate pages, rejects obvious bad/known results deterministically, sends only
+the survivors to Claude for fit triage, writes every candidate to
+`search_candidate`, and produces a markdown report:
+
+```powershell
+python -m agents.discovery.search.run --entity event --report-out agents/runs/open-web-events.md
+python -m agents.discovery.search.run --entity actor --report-out agents/runs/open-web-actors.md
+```
+
+This step does not fetch candidate pages, stage records, route records, or write
+canonical tables. Claude native web search is the default provider because its
+server-side search spend is added to the same `CostMeter` as query generation
+and triage, so `max_usd_per_run` aborts runaway searches cleanly. Brave Search
+is retained as a fallback and reads its key from `BRAVE_SEARCH_API_KEY` only
+when `provider: brave` is configured. Search providers are selected in
+`agents/config/sources.yaml` under `open_web_discovery`.
+
+Events use database events, seeded sectors, and the configured event sources as
+query-generation context. Actors use database actors only, excluding
+`actor_type = 'aggregate'` and merged-away actors. People remain disabled until
+`TARGETING_POLICY.md` section 6 is approved.
+
+Caps are hard stops: `max_searches`, `max_candidates_triaged`, and
+`max_usd_per_run` close the run as `attention` with a visible reason rather than
+silently truncating. Phase 1 also rejects URLs already seen in `raw_document` by
+URL because it deliberately does not fetch candidate pages and therefore cannot
+recompute page-content hashes until Phase 2.
+
+Claude web search widens the prompt-injection surface because the model has
+already read searched pages before candidates reach this pipeline. The provider
+therefore converts only `web_search_tool_result` / `web_search_result` blocks
+into `(url, title, snippet, provider, query)` and discards free-form assistant
+text. Triage and extraction never receive model commentary from the search
+response.
+
 ## Run
 
 Dry-run is the default:
@@ -91,7 +129,7 @@ Network source adapters check `robots.txt`, use `GHUS_AGENT_CONTACT_EMAIL` in th
 
 ## Weekly Schedule
 
-`.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs are dry-run. Live writes require manual `workflow_dispatch` with the `live` input set to true. The workflow runs discovery, deterministic actor profile enrichment, then incremental `search_doc` refresh. It uploads the discovery audit CSV and digest as artifacts.
+`.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs are dry-run. Live writes require manual `workflow_dispatch` with the `live` input set to true. The workflow first runs the Anthropic SDK compatibility test, then runs each discovery source independently, then deterministic actor profile enrichment, then incremental `search_doc` refresh. One source failure does not stop the remaining sources or downstream maintenance; the workflow writes `agents/runs/source-outcomes.md`, uploads all available artifacts, and exits nonzero at the end if any source or downstream step failed.
 
 ## Sector-Discovery Handoff
 
@@ -134,6 +172,13 @@ TEMPORARY: `index_dirty` exists because `event` currently has no `updated_at`, s
 7. Event routing deliberately does not use the frozen ER combiner. That combiner was trained on actor name/profile features; applying it to events would be a training/deployment distribution mismatch, the same class of failure that previously forced `desc_both_present` out of the actor model when production null patterns diverged from the gold set.
 8. `search_doc` is a derived index rather than a fact store. Its rows are reconstructable from canonical rows that already carry provenance, so it deliberately does not get its own `source` rows. Every `search_doc` row must store `entity_type` and `entity_id` so the trail back to provenance stays explicit.
 9. `climate_week`, `unga_programme`, and `unga_guide` are protected as event-only sources. They must not derive actors from organiser strings: replay `3aeb1d49-677b-435f-8453-138ed889818c` staged 121 such actors with a median ER score of 0.029 because the source yielded bare names without description, country, or website. Adding actor discovery requires a source built around organisation profiles, not event listings.
+10. Open-web discovery is search-results only in Phase 1: no autonomous crawling,
+    no candidate-page fetches, no staging, and no canonical writes.
+11. Open-web actor and person reference examples come from the database only.
+    Aggregate actors and merged-away actors must not appear in the actor
+    reference set.
+12. Records from a discovered domain never auto-absorb until a human promotes
+    that domain to trusted in a later phase.
 
 ## Phase 1/2 Notes
 

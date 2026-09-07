@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from agents import weekly_discovery
 from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.raw_storage import RawContentStore
 from agents.common.run_log import InMemoryRunLog
@@ -23,6 +24,10 @@ from agents.discovery.stage import InMemoryStageStore
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "agents"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+EXPECTED_MODEL_PRICING = {
+    "claude-haiku-4-5": {"input_usd_per_million": 1.0, "output_usd_per_million": 5.0},
+    "claude-sonnet-5": {"input_usd_per_million": 2.0, "output_usd_per_million": 10.0},
+}
 
 
 class StaticSource:
@@ -149,8 +154,19 @@ def args(**overrides):
 def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
     config = load_config(PROJECT_ROOT)
 
-    assert sorted(config) == ["cost", "routing", "sources"]
+    assert sorted(config) == ["cost", "open_web_discovery", "routing", "sources"]
     assert float(dict(config["cost"])["max_usd_per_run"]) == 0.50
+    open_web = dict(config["open_web_discovery"])
+    assert open_web["provider"] == "claude"
+    assert open_web["brave_api_key_env"] == "BRAVE_SEARCH_API_KEY"
+    assert open_web["web_search_tool_version"] == "web_search_20250305"
+    assert float(open_web["web_search_usd_per_request"]) == 0.01
+    assert open_web["search_model"] == "claude-haiku-4-5"
+    assert open_web["triage_model"] == "claude-sonnet-5"
+    assert int(open_web["max_searches"]) == 40
+    assert int(open_web["max_candidates_triaged"]) == 200
+    assert float(open_web["max_usd_per_run"]) == 5.00
+    assert open_web["people_enabled"] is False
     sources = dict(config["sources"])
     assert set(sources) >= {"climate_week", "unga_programme", "unga_guide"}
     assert dict(sources["climate_week"])["entity_types"] == ["event"]
@@ -162,6 +178,25 @@ def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
         assert source["contact_email_env"] == "GHUS_AGENT_CONTACT_EMAIL"
         assert "claude_model" in source
         assert "llm_pricing" in source
+
+
+def test_configured_model_pricing_matches_selected_models():
+    config = load_config(PROJECT_ROOT)
+    open_web = dict(config["open_web_discovery"])
+
+    _assert_model_pricing_matches(
+        open_web["search_model"],
+        dict(open_web["search_llm_pricing"]),
+    )
+    _assert_model_pricing_matches(
+        open_web["triage_model"],
+        dict(open_web["triage_llm_pricing"]),
+    )
+    for source in dict(config["sources"]).values():
+        source = dict(source)
+        if "claude_model" not in source:
+            continue
+        _assert_model_pricing_matches(source["claude_model"], dict(source["llm_pricing"]))
 
 
 def routing_signature(result):
@@ -821,6 +856,22 @@ def test_weekly_workflow_validates_required_environment_before_discovery():
     assert 'printf "$' not in validate_script
 
 
+def test_weekly_workflow_validates_anthropic_sdk_before_discovery():
+    workflow = yaml.safe_load(
+        (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    steps = workflow["jobs"]["weekly-discovery"]["steps"]
+    names = [step.get("name") for step in steps]
+    compatibility_index = names.index("Validate Anthropic SDK compatibility")
+    discovery_index = names.index("Run weekly discovery")
+    compatibility_script = steps[compatibility_index]["run"]
+
+    assert compatibility_index < discovery_index
+    assert "tests/agent/test_agents_common_llm.py" in compatibility_script
+
+
 def test_weekly_workflow_runs_all_sources_and_reports_outcomes_before_failure():
     workflow = yaml.safe_load(
         (PROJECT_ROOT / ".github" / "workflows" / "weekly-discovery.yml").read_text(
@@ -834,17 +885,106 @@ def test_weekly_workflow_runs_all_sources_and_reports_outcomes_before_failure():
     )
     script = run_step["run"]
 
-    assert "SUCCEEDED=()" in script
-    assert "FAILED=()" in script
-    assert "for SOURCE in climate_week unga_programme unga_guide; do" in script
-    assert 'FAILED+=("${SOURCE}(exit=${SOURCE_EXIT})")' in script
-    assert "tee agents/runs/source-outcomes.md" in script
-    assert 'if [ "$RUN_EXIT" -ne 0 ]; then' in script
-    assert script.index("tee agents/runs/source-outcomes.md") < script.index(
-        'if [ "$RUN_EXIT" -ne 0 ]; then'
-    )
+    assert "python -m agents.weekly_discovery" in script
+    assert "python -m agents.discovery.run" not in script
+    assert "python -m agents.enrichment.run" not in script
+    assert "python -m agents.index.refresh" not in script
     assert "agents/runs/source-outcomes.md" in upload_step["with"]["path"]
     assert upload_step["if"] == "always()"
+
+
+def test_weekly_orchestrator_runs_every_source_and_downstream_after_source_failure(tmp_path):
+    commands = []
+
+    def runner(command):
+        commands.append(list(command))
+        module = command[command.index("-m") + 1]
+        if module == "agents.discovery.run":
+            source = command[command.index("--source") + 1]
+            digest_path = Path(command[command.index("--digest-out") + 1])
+            status = "failed" if source == "climate_week" else "succeeded"
+            digest_path.write_text(f"**Status:** {status}\n", encoding="utf-8")
+            return 1 if source == "climate_week" else 0
+        return 0
+
+    outcome = weekly_discovery.run_weekly(runs_dir=tmp_path, runner=runner)
+
+    modules = [command[command.index("-m") + 1] for command in commands]
+    discovery_sources = [
+        command[command.index("--source") + 1]
+        for command in commands
+        if command[command.index("-m") + 1] == "agents.discovery.run"
+    ]
+
+    assert discovery_sources == ["climate_week", "unga_programme", "unga_guide"]
+    assert modules[-2:] == ["agents.enrichment.run", "agents.index.refresh"]
+    assert outcome.exit_code == 1
+    summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
+    assert "Discovery succeeded: unga_programme, unga_guide" in summary
+    assert "Discovery failed: climate_week(status=failed,exit=1)" in summary
+    assert "Downstream succeeded: enrichment, index_refresh" in summary
+
+
+def _assert_model_pricing_matches(model: str, pricing: dict[str, object]) -> None:
+    expected = EXPECTED_MODEL_PRICING[str(model)]
+    assert float(pricing["input_usd_per_million"]) == expected["input_usd_per_million"]
+    assert float(pricing["output_usd_per_million"]) == expected["output_usd_per_million"]
+
+
+def test_weekly_orchestrator_missing_digest_is_failure_but_continues(tmp_path):
+    commands = []
+
+    def runner(command):
+        commands.append(list(command))
+        module = command[command.index("-m") + 1]
+        if module == "agents.discovery.run":
+            source = command[command.index("--source") + 1]
+            if source != "climate_week":
+                digest_path = Path(command[command.index("--digest-out") + 1])
+                digest_path.write_text("**Status:** succeeded\n", encoding="utf-8")
+        return 0
+
+    outcome = weekly_discovery.run_weekly(runs_dir=tmp_path, runner=runner)
+
+    assert len(commands) == 5
+    assert outcome.exit_code == 1
+    assert outcome.discovery[0].name == "climate_week"
+    assert outcome.discovery[0].status == "missing_digest"
+    summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
+    assert "climate_week(status=missing_digest,exit=1)" in summary
+
+
+def test_weekly_orchestrator_passes_live_flag_to_all_commands(tmp_path):
+    commands = []
+
+    def runner(command):
+        commands.append(list(command))
+        module = command[command.index("-m") + 1]
+        if module == "agents.discovery.run":
+            digest_path = Path(command[command.index("--digest-out") + 1])
+            digest_path.write_text("**Status:** succeeded\n", encoding="utf-8")
+        return 0
+
+    outcome = weekly_discovery.run_weekly(live=True, runs_dir=tmp_path, runner=runner)
+
+    assert outcome.exit_code == 0
+    assert all("--live" in command for command in commands)
+
+
+def test_weekly_orchestrator_required_env_names_missing_without_values():
+    with pytest.raises(RuntimeError) as exc:
+        weekly_discovery.validate_required_env(
+            {
+                "DATABASE_URL": "",
+                "ANTHROPIC_API_KEY": "secret-value",
+            }
+        )
+
+    message = str(exc.value)
+    assert "DATABASE_URL" in message
+    assert "GHUS_AGENT_CONTACT_EMAIL" in message
+    assert "ANTHROPIC_API_KEY" not in message
+    assert "secret-value" not in message
 
 
 def test_code_imports_real_src_ml_package_casing_without_alias():
@@ -881,6 +1021,7 @@ def test_agent_sql_contains_weekly_run_schema_changes():
     assert "CREATE TABLE IF NOT EXISTS index_dirty" in sql_text
     assert "CREATE TABLE IF NOT EXISTS event_review_queue" in sql_text
     assert "CREATE TABLE IF NOT EXISTS person_review_queue" in sql_text
+    assert "CREATE TABLE IF NOT EXISTS search_candidate" in sql_text
 
 
 def test_out_of_sector_index_filters_on_sector_match():

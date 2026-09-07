@@ -17,7 +17,7 @@ from agents.common.cost import CostMeter
 
 try:
     from src.ai.client import UsageTracker
-except Exception:  # pragma: no cover - fallback only for isolated agent tests
+except ImportError:  # pragma: no cover - fallback only for isolated agent tests
     UsageTracker = None
 
 
@@ -128,7 +128,7 @@ class FixtureToolClient:
         self.usage = LLMUsage()
 
     @classmethod
-    def from_path(cls, path: Path) -> "FixtureToolClient":
+    def from_path(cls, path: Path) -> FixtureToolClient:
         return cls(json.loads(path.read_text(encoding="utf-8")))
 
     def extract_with_tool(self, **_: Any) -> dict[str, Any]:

@@ -68,6 +68,22 @@ project. Treat them as compile errors, not preferences.
 - Column resolution from spreadsheets is by header name, never by position
   (`header_resolver.py`). Do not introduce positional indexing.
 
+### Open-web discovery
+
+- Events are seeded by three configured sources and the database. Actors and
+  people are seeded by the database only; there is no reference site for them.
+- `actor_type = 'aggregate'` is excluded everywhere: from the fit-scoring
+  reference set, from ER candidate loading, and from anything an agent learns
+  from. Aggregates are category labels ("Phosphogypsum Ecosystem Hubs"), not
+  operating organisations. Agents must also never create one; a candidate that
+  is a grouping, consortium listing, or category page is rejected, not staged.
+- Records from a discovered domain never auto-absorb. They route to `create` or
+  `review` only, until that domain has a promotion track record.
+- Person discovery stays disabled until `TARGETING_POLICY.md` section 6 has
+  documented supervisor approval. The code may exist; the switch stays off.
+- No autonomous crawling. Search results only, one level deep.
+- No LLM in routing or promotion. Those stay deterministic and replayable.
+
 ## Environment
 
 - Windows dev machine, PowerShell / Git Bash, Python venv, VS Code.

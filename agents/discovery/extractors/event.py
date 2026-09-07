@@ -6,7 +6,7 @@ import html
 import html.parser
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from agents.discovery.sources.base import FetchedDoc
@@ -191,7 +191,7 @@ class EventExtractor:
         events = payload.get("events", []) if payload else []
         if not events:
             return []
-        extracted_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        extracted_at = datetime.now(UTC).replace(microsecond=0).isoformat()
         records: list[dict] = []
         for event in events:
             record = {field: event.get(field) for field in EVENT_FIELDS}
