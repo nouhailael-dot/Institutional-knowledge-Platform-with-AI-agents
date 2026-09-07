@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+from dataclasses import replace
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from agents.common.config import load_sources_config
 from agents.common.cost import CostLimitExceeded, CostMeter
@@ -134,11 +136,14 @@ def run_search_triage(
             cost_meter.enforce()
             search_results.extend(results)
         stats["search_results"] = len(search_results)
+        deduplicated_results = _deduplicate_search_results(search_results)
+        stats["search_results_unique"] = len(deduplicated_results)
+        stats["search_results_deduplicated"] = len(search_results) - len(deduplicated_results)
 
         pending_results = _deterministic_triage(
             run_id=run_id,
             entity_type=entity_type,
-            results=search_results,
+            results=deduplicated_results,
             store=store,
             config=config,
             full_config=full_config,
@@ -409,46 +414,140 @@ def _triage_batch_with_retry(
     sectors: list[dict[str, str]],
     references: list[dict[str, object]],
 ) -> dict[str, TriageDecision]:
+    decisions = _triage_once(
+        batch,
+        triage_client=triage_client,
+        entity_type=entity_type,
+        sectors=sectors,
+        references=references,
+    )
+    if decisions is None:
+        logger.warning("LLM triage batch failed; retrying split batch once")
+        return _retry_split_batch_once(
+            batch,
+            triage_client=triage_client,
+            entity_type=entity_type,
+            sectors=sectors,
+            references=references,
+            incomplete_reason="batch failed after split retry",
+        )
+
+    batch_decisions = _only_batch_decisions(batch, decisions)
+    if _has_decision_for_every_candidate(batch, batch_decisions):
+        return batch_decisions
+
+    missing = [candidate for candidate in batch if candidate.url not in batch_decisions]
+    logger.warning(
+        "LLM triage returned %d/%d decision(s); retrying split batch once",
+        len(batch_decisions),
+        len(batch),
+    )
+    split_decisions = _retry_split_batch_once(
+        batch,
+        triage_client=triage_client,
+        entity_type=entity_type,
+        sectors=sectors,
+        references=references,
+        incomplete_reason="candidate omitted after split retry",
+    )
+    for url, decision in batch_decisions.items():
+        split_decisions[url] = decision
+    still_missing = [candidate for candidate in missing if candidate.url not in split_decisions]
+    split_decisions.update(
+        _incomplete_decisions(still_missing, "candidate omitted after split retry")
+    )
+    return _only_batch_decisions(batch, split_decisions)
+
+
+def _triage_once(
+    batch: list[SearchResult],
+    *,
+    triage_client,
+    entity_type: str,
+    sectors: list[dict[str, str]],
+    references: list[dict[str, object]],
+) -> dict[str, TriageDecision] | None:
     try:
-        decisions = triage_client.triage(
+        return triage_client.triage(
             batch,
             entity_type=entity_type,
             sectors=sectors,
             references=references,
         )
     except Exception as exc:  # noqa: BLE001 - a malformed/failed LLM batch must not kill the run.
-        logger.warning("LLM triage batch failed; retrying once: %s", exc)
-        try:
-            decisions = triage_client.triage(
-                batch,
-                entity_type=entity_type,
-                sectors=sectors,
-                references=references,
-            )
-        except Exception as retry_exc:  # noqa: BLE001 - convert retry failure to audit rows.
-            logger.warning("LLM triage retry failed; marking batch incomplete: %s", retry_exc)
-            return _incomplete_decisions(batch, "batch failed after one retry")
+        logger.warning("LLM triage call failed for %d candidate(s): %s", len(batch), exc)
+        return None
 
-    missing = [candidate for candidate in batch if candidate.url not in decisions]
-    if not missing:
-        return _only_batch_decisions(batch, decisions)
 
-    logger.warning("LLM triage omitted %d candidate(s); retrying omissions once", len(missing))
-    try:
-        retry_decisions = triage_client.triage(
-            missing,
+def _retry_split_batch_once(
+    batch: list[SearchResult],
+    *,
+    triage_client,
+    entity_type: str,
+    sectors: list[dict[str, str]],
+    references: list[dict[str, object]],
+    incomplete_reason: str,
+) -> dict[str, TriageDecision]:
+    if not batch:
+        return {}
+
+    split_at = max(1, len(batch) // 2)
+    chunks = [batch[:split_at], batch[split_at:]]
+    decisions: dict[str, TriageDecision] = {}
+    for chunk in chunks:
+        if not chunk:
+            continue
+        retry_decisions = _triage_once(
+            chunk,
+            triage_client=triage_client,
             entity_type=entity_type,
             sectors=sectors,
             references=references,
         )
-    except Exception as exc:  # noqa: BLE001 - convert retry failure to audit rows.
-        logger.warning("LLM triage omission retry failed: %s", exc)
-        retry_decisions = {}
-
-    decisions.update(_only_batch_decisions(missing, retry_decisions))
-    still_missing = [candidate for candidate in missing if candidate.url not in decisions]
-    decisions.update(_incomplete_decisions(still_missing, "candidate omitted after one retry"))
+        if retry_decisions is None:
+            decisions.update(_incomplete_decisions(chunk, incomplete_reason))
+            continue
+        chunk_decisions = _only_batch_decisions(chunk, retry_decisions)
+        missing = [candidate for candidate in chunk if candidate.url not in chunk_decisions]
+        if missing:
+            logger.warning(
+                "LLM triage split retry returned %d/%d decision(s)",
+                len(chunk_decisions),
+                len(chunk),
+            )
+        decisions.update(chunk_decisions)
+        decisions.update(_incomplete_decisions(missing, incomplete_reason))
     return _only_batch_decisions(batch, decisions)
+
+
+def _deduplicate_search_results(results: list[SearchResult]) -> list[SearchResult]:
+    grouped: dict[str, SearchResult] = {}
+    queries_by_url: dict[str, list[str]] = {}
+    for result in results:
+        url = normalize_candidate_url(result.url)
+        if not url:
+            url = result.url.strip()
+        if url not in grouped:
+            grouped[url] = replace(result, url=url)
+            queries_by_url[url] = []
+        if result.query not in queries_by_url[url]:
+            queries_by_url[url].append(result.query)
+
+    deduplicated: list[SearchResult] = []
+    for url, result in grouped.items():
+        deduplicated.append(replace(result, query=" | ".join(queries_by_url[url])))
+    return deduplicated
+
+
+def normalize_candidate_url(url: str) -> str:
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    parsed = urlsplit(text)
+    if not parsed.scheme or not parsed.netloc:
+        return text.split("#", 1)[0].split("?", 1)[0].rstrip("/")
+    path = parsed.path.rstrip("/")
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), path, "", ""))
 
 
 def _only_batch_decisions(
@@ -457,6 +556,13 @@ def _only_batch_decisions(
 ) -> dict[str, TriageDecision]:
     batch_urls = {candidate.url for candidate in batch}
     return {url: decision for url, decision in decisions.items() if url in batch_urls}
+
+
+def _has_decision_for_every_candidate(
+    batch: list[SearchResult],
+    decisions: dict[str, TriageDecision],
+) -> bool:
+    return len(decisions) == len(batch) and all(candidate.url in decisions for candidate in batch)
 
 
 def _incomplete_decisions(
@@ -545,6 +651,8 @@ def _empty_stats() -> dict[str, object]:
         "reference_count": 0,
         "searches_executed": 0,
         "search_results": 0,
+        "search_results_unique": 0,
+        "search_results_deduplicated": 0,
         "deterministic_rejected": 0,
         "deterministic_survivors": 0,
         "triage_cap_rejected": 0,

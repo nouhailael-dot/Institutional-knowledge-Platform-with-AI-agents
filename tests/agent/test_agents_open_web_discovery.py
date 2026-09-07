@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from agents.common.config import load_sources_config
 from agents.common.cost import CostMeter
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery.search import run as search_run
@@ -21,11 +22,12 @@ from agents.discovery.search.query_generation import (
     QueryBundle,
     QueryGenerator,
     _event_seed_queries,
+    _representative_terms_from_titles,
     load_actor_reference_set,
     normalize_event_geography,
 )
 from agents.discovery.search.store import InMemorySearchCandidateStore
-from agents.discovery.search.triage import SearchTriageClient
+from agents.discovery.search.triage import SearchTriageClient, deterministic_rejection
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -286,9 +288,45 @@ def test_event_seed_queries_use_sector_names_and_representative_terms_not_codes(
     )
 
     query_text = "\n".join(queries)
-    assert '"Artificial Intelligence" machine learning governance' in query_text
+    assert '"Artificial Intelligence" machine learning' in query_text
+    assert "governance" not in query_text
     assert '"AI"' not in query_text
     assert "AI summit" not in query_text
+
+
+def test_representative_terms_filter_noise_and_cap_to_two_terms():
+    water_terms = _representative_terms_from_titles(
+        [
+            "Water AWWA and Salinity Summit",
+            "Water Technology Innovation Forum",
+            "Water Desalination Forum",
+        ],
+        sector_name="Water",
+    )
+    healthcare_terms = _representative_terms_from_titles(
+        ["Healthcare Health Expo ADLM"],
+        sector_name="Healthcare",
+    )
+    chemicals_terms = _representative_terms_from_titles(
+        ["Chemical America Specialty Chemicals Exhibition"],
+        sector_name="Specialty Chemicals",
+    )
+
+    assert water_terms == ["salinity", "technology"]
+    assert len(water_terms) <= 2
+    assert {"water", "awwa", "and"}.isdisjoint(water_terms)
+    assert healthcare_terms == []
+    assert chemicals_terms == []
+
+
+def test_open_web_triage_token_budget_matches_configured_batch_size():
+    config = load_sources_config(PROJECT_ROOT)["open_web_discovery"]
+    batch_size = int(config["triage_batch_size"])
+    max_tokens = int(config["triage_max_tokens"])
+
+    assert batch_size == 8
+    assert max_tokens >= 8000
+    assert max_tokens >= batch_size * 1000
 
 
 def test_claude_web_search_provider_parses_multi_block_response_by_type():
@@ -386,7 +424,7 @@ def test_search_triage_client_accepts_wrapped_candidate_list():
         ]
     )
 
-    decisions = SearchTriageClient(client, {}).triage(
+    decisions = SearchTriageClient(client, {"triage_max_tokens": 8000}).triage(
         [candidate],
         entity_type="event",
         sectors=[],
@@ -394,6 +432,34 @@ def test_search_triage_client_accepts_wrapped_candidate_list():
     )
 
     assert decisions[candidate.url].fit_score == 0.8
+    assert client.calls[0]["max_tokens"] == 8000
+
+
+def test_search_triage_client_accepts_url_keyed_candidate_mapping():
+    candidate = _result("https://fresh.example/page", "q")
+    client = StubToolClient(
+        [
+            {
+                "candidates": {
+                    candidate.url: {
+                        "is_entity_type": True,
+                        "plausible_sector": True,
+                        "fit_score": 0.82,
+                        "reason": "specific event page",
+                    }
+                }
+            }
+        ]
+    )
+
+    decisions = SearchTriageClient(client, {}).triage(
+        [candidate],
+        entity_type="event",
+        sectors=[],
+        references=[],
+    )
+
+    assert decisions[candidate.url].fit_score == 0.82
 
 
 def test_deterministic_rejections_happen_before_llm_triage(monkeypatch, tmp_path):
@@ -426,6 +492,58 @@ def test_deterministic_rejections_happen_before_llm_triage(monkeypatch, tmp_path
     assert {row.triage_verdict for row in store.candidates} == {"rejected"}
     assert result["stats"]["deterministic_rejected"] == 4
     assert triage.calls == []
+
+
+def test_conference_aggregators_are_rejected_deterministically():
+    domains = [
+        "allconferencealert.com",
+        "conferenceindex.org",
+        "10times.com",
+        "exponents.com",
+    ]
+
+    for domain in domains:
+        rejected = deterministic_rejection(
+            _result(f"https://www.{domain}/events", "q"),
+            raw_lookup=InMemorySearchCandidateStore(),
+            blocklist_domains=domains,
+            known_source_domains=[],
+        )
+
+        assert rejected is not None
+        assert rejected.reason == f"blocked domain: {domain}"
+
+
+def test_duplicate_urls_collapse_before_triage_and_keep_all_queries(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch, max_candidates_triaged=10)
+    store = InMemorySearchCandidateStore()
+    provider = StaticSearchProvider(
+        {
+            "q1": [_result("https://Dup.Example/event/?utm_source=x#top", "q1")],
+            "q2": [_result("https://dup.example/event/", "q2")],
+        }
+    )
+    triage = RecordingTriageClient(score=0.95)
+
+    result = search_run.run_search_triage(
+        _args(tmp_path),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        store=store,
+        search_provider=provider,
+        query_generator=StaticQueryGenerator(["q1", "q2"]),
+        triage_client=triage,
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["stats"]["search_results"] == 2
+    assert result["stats"]["search_results_unique"] == 1
+    assert result["stats"]["search_results_deduplicated"] == 1
+    assert [len(call) for call in triage.calls] == [1]
+    assert triage.calls[0][0].url == "https://dup.example/event"
+    assert len(store.candidates) == 1
+    assert store.candidates[0].url == "https://dup.example/event"
+    assert store.candidates[0].query == "q1 | q2"
 
 
 def test_every_search_result_gets_candidate_row(monkeypatch, tmp_path):
@@ -546,7 +664,7 @@ def test_every_candidate_sent_to_triage_gets_explicit_verdict(monkeypatch, tmp_p
     assert all(row.triage_reason for row in store.candidates)
 
 
-def test_incomplete_triage_retries_missing_candidates_once_then_marks_incomplete(
+def test_incomplete_triage_splits_batch_once_then_marks_remaining_incomplete(
     monkeypatch,
     tmp_path,
 ):
@@ -557,6 +675,15 @@ def test_incomplete_triage_retries_missing_candidates_once_then_marks_incomplete
     provider = StaticSearchProvider({"q": [first, second]})
     triage = SequencedTriageClient(
         [
+            {
+                first.url: TriageDecision(
+                    url=first.url,
+                    is_entity_type=True,
+                    plausible_sector=True,
+                    fit_score=0.8,
+                    reason="specific event",
+                )
+            },
             {
                 first.url: TriageDecision(
                     url=first.url,
@@ -581,7 +708,7 @@ def test_incomplete_triage_retries_missing_candidates_once_then_marks_incomplete
         triage_client=triage,
     )
 
-    assert [len(call) for call in triage.calls] == [2, 1]
+    assert [len(call) for call in triage.calls] == [2, 1, 1]
     assert result["status"] == "attention"
     assert result["stats"]["triage_incomplete"] == 1
     assert {row.url: row.triage_verdict for row in store.candidates} == {
@@ -589,7 +716,7 @@ def test_incomplete_triage_retries_missing_candidates_once_then_marks_incomplete
         second.url: "triage_incomplete",
     }
     assert store.candidates[1].triage_reason == (
-        "triage incomplete: candidate omitted after one retry"
+        "triage incomplete: candidate omitted after split retry"
     )
 
 
@@ -620,7 +747,7 @@ def test_malformed_triage_response_does_not_kill_run(monkeypatch, tmp_path):
     assert len(store.candidates) == 1
     assert store.candidates[0].triage_verdict == "triage_incomplete"
     assert store.candidates[0].triage_reason == (
-        "triage incomplete: batch failed after one retry"
+        "triage incomplete: batch failed after split retry"
     )
 
 
@@ -858,7 +985,8 @@ def _install_open_web_config(monkeypatch, **overrides) -> None:
     open_web = {
         "provider": "claude",
         "results_per_query": 10,
-        "triage_batch_size": 20,
+        "triage_batch_size": 8,
+        "triage_max_tokens": 8000,
         "max_searches": 40,
         "max_candidates_triaged": 200,
         "max_usd_per_run": 5.00,

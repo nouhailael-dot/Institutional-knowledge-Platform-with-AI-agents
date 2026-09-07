@@ -80,27 +80,46 @@ NYC_METRO_PARTS = {"manhattan", "brooklyn", "queens", "bronx", "staten island", 
 TERM_STOPWORDS = {
     "about",
     "agenda",
+    "and",
     "annual",
+    "america",
+    "american",
+    "calendar",
     "conference",
     "congress",
+    "dates",
     "event",
     "events",
+    "exhibition",
+    "exhibitions",
+    "expo",
+    "exposition",
     "forum",
     "global",
     "high",
     "international",
+    "innovation",
     "level",
     "meeting",
     "meetings",
     "new",
+    "program",
     "programme",
+    "schedule",
     "session",
+    "show",
+    "shows",
     "summit",
     "the",
+    "trade",
+    "university",
+    "usa",
     "week",
     "world",
     "york",
 }
+REPRESENTATIVE_TERM_WHITELIST = {"arpa-e"}
+REPRESENTATIVE_TOKEN = re.compile(r"[A-Za-z][A-Za-z-]{1,}")
 
 
 @dataclass(frozen=True)
@@ -291,8 +310,8 @@ def load_sector_event_terms(session, *, limit_per_sector: int = 25) -> dict[str,
     rows = (
         session.execute(
             text(
-                "SELECT code, name FROM ("
-                "SELECT s.code, e.name, "
+                "SELECT code, sector_name, event_name FROM ("
+                "SELECT s.code, s.name AS sector_name, e.name AS event_name, "
                 "row_number() OVER (PARTITION BY s.code ORDER BY e.next_date DESC NULLS LAST, e.name) AS rn "
                 "FROM event e "
                 "JOIN event_sector es ON es.event_id = e.event_id "
@@ -306,13 +325,20 @@ def load_sector_event_terms(session, *, limit_per_sector: int = 25) -> dict[str,
         .all()
     )
     titles_by_code: dict[str, list[str]] = {}
+    sector_names_by_code: dict[str, str] = {}
     for row in rows:
         code = str(row.get("code") or "").strip().upper()
-        title = str(row.get("name") or "").strip()
+        sector_name = str(row.get("sector_name") or "").strip()
+        title = str(row.get("event_name") or row.get("name") or "").strip()
+        if code and sector_name:
+            sector_names_by_code[code] = sector_name
         if code and title:
             titles_by_code.setdefault(code, []).append(title)
     return {
-        code: _representative_terms_from_titles(titles)
+        code: _representative_terms_from_titles(
+            titles,
+            sector_name=sector_names_by_code.get(code, ""),
+        )
         for code, titles in titles_by_code.items()
     }
 
@@ -473,11 +499,16 @@ def _sectors_with_representative_terms(
     enriched: list[dict[str, str]] = []
     for sector in sectors:
         code = str(sector["code"]).upper()
+        name = str(sector["name"])
+        clean_terms = _sanitize_representative_terms(
+            sector_terms.get(code, []),
+            sector_name=name,
+        )
         enriched.append(
             {
                 "code": code,
-                "name": str(sector["name"]),
-                "representative_terms": " ".join(sector_terms.get(code, [])),
+                "name": name,
+                "representative_terms": " ".join(clean_terms),
             }
         )
     return enriched
@@ -485,23 +516,96 @@ def _sectors_with_representative_terms(
 
 def _sector_search_phrase(sector: dict[str, str]) -> str:
     name = str(sector["name"]).strip()
-    terms = str(sector.get("representative_terms") or "").strip()
+    terms = _sanitize_representative_terms(
+        str(sector.get("representative_terms") or "").split(),
+        sector_name=name,
+    )
     if terms:
-        return f'"{name}" {terms}'
+        return f'"{name}" {" ".join(terms)}'
     return f'"{name}"'
 
 
-def _representative_terms_from_titles(titles: list[str], *, max_terms: int = 4) -> list[str]:
+def _representative_terms_from_titles(
+    titles: list[str],
+    *,
+    sector_name: str = "",
+    max_terms: int = 2,
+) -> list[str]:
     counts: Counter[str] = Counter()
+    sector_tokens = _sector_tokens(sector_name)
     for title in titles:
-        for token in re.findall(r"[A-Za-z][A-Za-z-]{2,}", title.lower()):
+        for token in REPRESENTATIVE_TOKEN.findall(title.lower()):
             token = token.strip("-")
-            if token in TERM_STOPWORDS or token.isdigit():
-                continue
-            if token.startswith("unga"):
+            if not _is_clean_representative_token(token, sector_tokens):
                 continue
             counts[token] += 1
     return [token for token, _count in counts.most_common(max_terms)]
+
+
+def _sanitize_representative_terms(
+    terms: object,
+    *,
+    sector_name: str,
+    max_terms: int = 2,
+) -> list[str]:
+    if isinstance(terms, str):
+        raw_terms = terms.split()
+    else:
+        raw_terms = list(terms or [])
+    sector_tokens = _sector_tokens(sector_name)
+    clean: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_terms:
+        token = str(raw or "").strip().strip(".,;:()[]{}\"'").lower()
+        if not token or token in seen:
+            continue
+        if not _is_clean_representative_token(token, sector_tokens):
+            continue
+        clean.append(token)
+        seen.add(token)
+        if len(clean) >= max_terms:
+            break
+    return clean
+
+
+def _is_clean_representative_token(token: str, sector_tokens: set[str]) -> bool:
+    if not token:
+        return False
+    if token in TERM_STOPWORDS:
+        return False
+    if token.startswith("unga"):
+        return False
+    letters = re.sub(r"[^a-z]", "", token)
+    if not letters:
+        return False
+    if len(letters) < 5 and token not in REPRESENTATIVE_TERM_WHITELIST:
+        return False
+    return not _is_sector_name_repeat(token, sector_tokens)
+
+
+def _sector_tokens(sector_name: str) -> set[str]:
+    return {
+        token.strip("-").lower()
+        for token in REPRESENTATIVE_TOKEN.findall(sector_name)
+        if token.strip("-")
+    }
+
+
+def _is_sector_name_repeat(token: str, sector_tokens: set[str]) -> bool:
+    token_compact = token.replace("-", "")
+    token_stem = token_compact.rstrip("s")
+    for sector_token in sector_tokens:
+        sector_compact = sector_token.replace("-", "")
+        sector_stem = sector_compact.rstrip("s")
+        if token_stem == sector_stem:
+            return True
+        if (
+            len(token_stem) >= 5
+            and len(sector_stem) >= 5
+            and (token_stem.startswith(sector_stem) or sector_stem.startswith(token_stem))
+        ):
+            return True
+    return False
 
 
 def _distinct_queries(queries) -> list[str]:

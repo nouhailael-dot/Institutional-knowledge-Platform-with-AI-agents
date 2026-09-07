@@ -254,20 +254,39 @@ def _candidate_items_from_payload(payload: object) -> list[object] | None:
     if not isinstance(payload, dict):
         return None
 
-    candidates = payload.get("candidates")
-    if isinstance(candidates, list):
+    candidates = _candidate_items_from_value(payload.get("candidates"))
+    if candidates is not None:
         return candidates
-    if isinstance(candidates, dict):
-        nested = candidates.get("candidates") or candidates.get("results") or candidates.get("items")
-        if isinstance(nested, list):
-            return nested
 
     for key in ("results", "items", "decisions", "response"):
-        nested = payload.get(key)
+        nested = _candidate_items_from_value(payload.get(key))
+        if nested is not None:
+            return nested
+    return None
+
+
+def _candidate_items_from_value(value: object) -> list[object] | None:
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, dict):
+        return None
+    for key in ("candidates", "results", "items", "decisions"):
+        nested = value.get(key)
         if isinstance(nested, list):
             return nested
         if isinstance(nested, dict):
-            nested_candidates = nested.get("candidates")
-            if isinstance(nested_candidates, list):
-                return nested_candidates
-    return None
+            mapped = _candidate_items_from_mapping(nested)
+            if mapped is not None:
+                return mapped
+    return _candidate_items_from_mapping(value)
+
+
+def _candidate_items_from_mapping(mapping: dict[object, object]) -> list[object] | None:
+    items: list[object] = []
+    for key, value in mapping.items():
+        if not isinstance(value, dict):
+            continue
+        item = dict(value)
+        item.setdefault("url", str(key))
+        items.append(item)
+    return items or None
