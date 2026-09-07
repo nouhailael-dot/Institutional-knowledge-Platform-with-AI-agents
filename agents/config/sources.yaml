@@ -15,12 +15,8 @@
       "max_usd_per_run": 5.00,
       "forward_window_days": 365,
       "people_enabled": false,
-      "accept_floor":
-        {
-          "event": 0.60,
-          "actor": 0.70,
-          "person": 0.95,
-        },
+      "query_excluded_sectors": ["CROSS", "DIASPORA"],
+      "accept_floor": { "event": 0.60, "actor": 0.70, "person": 0.95 },
       "blocklist_domains":
         [
           "facebook.com",
@@ -32,14 +28,7 @@
           "eventbrite.com",
         ],
       "non_content_path_fragments":
-        [
-          "/login",
-          "/cart",
-          "/privacy",
-          "/privacy-policy",
-          "/terms",
-          "/tag/",
-        ],
+        ["/login", "/cart", "/privacy", "/privacy-policy", "/terms", "/tag/"],
       "search_model": "claude-haiku-4-5",
       "search_llm_pricing":
         { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
@@ -77,8 +66,7 @@
           "llm_pricing":
             { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
         },
-      "unga_programme":
-        {
+      "unga_programme": {
           "entity_types": ["event"],
           "meeting_url": "https://www.un.org/en/ga/81/meetings/",
           "seed_urls": ["https://www.un.org/en/ga/81/meetings/"],
@@ -100,8 +88,7 @@
           "llm_pricing":
             { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
         },
-      "unga_guide":
-        {
+      "unga_guide": {
           "entity_types": ["event"],
           "listing_url": "https://ungaguide.com/",
           "seed_urls": ["https://ungaguide.com/"],

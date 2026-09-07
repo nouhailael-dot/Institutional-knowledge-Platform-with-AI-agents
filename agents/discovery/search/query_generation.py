@@ -366,7 +366,6 @@ def _event_seed_queries(
 
     queries: list[str] = []
     for sector in sectors:
-        code = sector["code"]
         phrase = _sector_search_phrase(sector)
         queries.append(f"{phrase} summit conference event {year_terms}")
         queries.append(f"{phrase} innovation forum {geo_terms[0]} {year_terms}")
