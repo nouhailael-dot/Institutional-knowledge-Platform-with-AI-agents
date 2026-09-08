@@ -1,0 +1,2 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+3f5847ad-27d4-4abc-bfd2-267957437fce,open_web_search,event,https://events.example/unchanged,7e742f968356280dad3e0d40fe720a7b60011f8801570977ceacb1a18c9db86c,,skipped,,,,skipped_unchanged,

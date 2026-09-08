@@ -15,8 +15,9 @@ from urllib.parse import urlsplit, urlunsplit
 from agents.common.config import load_sources_config
 from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.llm import ClaudeToolClient
-from agents.common.run_log import InMemoryRunLog, SQLRunLog
+from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.search.models import CandidateRecord, SearchResult, TriageDecision
+from agents.discovery.search.phase2 import fetch_extract_stage_events
 from agents.discovery.search.providers import SearchProvider, build_search_provider
 from agents.discovery.search.query_generation import (
     QueryBundle,
@@ -30,9 +31,11 @@ from agents.discovery.search.store import InMemorySearchCandidateStore, SQLSearc
 from agents.discovery.search.triage import (
     TRIAGE_INCOMPLETE_REASON_PREFIX,
     SearchTriageClient,
+    blocklist_domains_for_entity,
     deterministic_rejection,
     is_triage_incomplete,
     known_source_domains,
+    load_existing_actor_domains,
     normalized_domain,
     triage_verdict,
 )
@@ -65,6 +68,12 @@ def run_search_triage(
     triage_client=None,
     cost_meter: CostMeter | None = None,
     search_client=None,
+    fetch_source=None,
+    extractor=None,
+    raw_store=None,
+    stage_store=None,
+    domain_store=None,
+    event_candidates=None,
 ) -> dict[str, object]:
     root = root or project_root()
     full_config = load_sources_config(root)
@@ -98,6 +107,7 @@ def run_search_triage(
     query_generator = query_generator or QueryGenerator(llm_client, config)
     triage_client = triage_client or SearchTriageClient(llm_client, config)
     report_path = _report_path(root, getattr(args, "report_out", None))
+    audit_path = _audit_path(root, getattr(args, "audit_out", None))
 
     run_id = run_log.start_run(
         source_name="open_web_search",
@@ -107,6 +117,7 @@ def run_search_triage(
     )
     stats = _empty_stats()
     candidate_rows: list[CandidateRecord] = []
+    audit_rows: list[dict[str, object]] = []
     generated_queries: dict[str, list[str]] = {entity_type: []}
 
     try:
@@ -119,6 +130,8 @@ def run_search_triage(
         stats["deterministic_queries"] = len(bundle.deterministic_queries)
         stats["llm_queries"] = len(bundle.llm_queries)
         stats["reference_count"] = bundle.reference_count
+        if entity_type == "actor":
+            _attach_actor_query_metadata(stats, bundle.metadata or {})
 
         attention_reasons: list[str] = []
         queries = bundle.queries
@@ -147,6 +160,7 @@ def run_search_triage(
             store=store,
             config=config,
             full_config=full_config,
+            session=session,
             candidate_rows=candidate_rows,
             stats=stats,
         )
@@ -184,6 +198,28 @@ def run_search_triage(
             candidate_rows=candidate_rows,
         )
 
+        if entity_type == "event" and bool(config.get("fetch_enabled", False)):
+            attention_reasons.extend(
+                fetch_extract_stage_events(
+                    run_id=run_id,
+                    candidates=candidate_rows,
+                    config=config,
+                    root=root,
+                    session=session,
+                    live=live,
+                    run_log=run_log,
+                    cost_meter=cost_meter,
+                    stats=stats,
+                    audit_rows=audit_rows,
+                    source=fetch_source,
+                    extractor=extractor,
+                    raw_store=raw_store,
+                    stage_store=stage_store,
+                    domain_store=domain_store,
+                    event_candidates=event_candidates,
+                )
+            )
+
         stats["candidates_written"] = store.write_candidates(candidate_rows)
         stats["accepted"] = sum(1 for row in candidate_rows if row.triage_verdict == "accepted")
         stats["rejected"] = sum(1 for row in candidate_rows if row.triage_verdict == "rejected")
@@ -199,6 +235,7 @@ def run_search_triage(
         stats["cost"] = cost_meter.snapshot()
         status = "attention" if attention_reasons else "succeeded"
         status_reason = "; ".join(attention_reasons)
+        write_audit_csv(audit_path, audit_rows)
         run_log.close_run(
             run_id,
             status=status,
@@ -223,6 +260,7 @@ def run_search_triage(
             "queries": generated_queries,
             "candidates": candidate_rows,
             "report_path": str(report_path),
+            "audit_path": str(audit_path),
             "exit_code": 1 if status == "attention" else 0,
         }
     except CostLimitExceeded as exc:
@@ -230,6 +268,7 @@ def run_search_triage(
         stats["cost"] = cost_meter.snapshot()
         stats["candidates_written"] = store.write_candidates(candidate_rows)
         status_reason = f"max_usd_per_run cap hit: {exc}"
+        write_audit_csv(audit_path, audit_rows)
         run_log.close_run(
             run_id,
             status="attention",
@@ -254,6 +293,7 @@ def run_search_triage(
             "queries": generated_queries,
             "candidates": candidate_rows,
             "report_path": str(report_path),
+            "audit_path": str(audit_path),
             "exit_code": 1,
         }
     except Exception as exc:
@@ -261,6 +301,7 @@ def run_search_triage(
         stats["cost_usd"] = cost_meter.spent_usd
         stats["cost"] = cost_meter.snapshot()
         stats["candidates_written"] = store.write_candidates(candidate_rows)
+        write_audit_csv(audit_path, audit_rows)
         run_log.fail_run(
             run_id,
             error=str(exc),
@@ -301,19 +342,28 @@ def _deterministic_triage(
     store,
     config: dict[str, object],
     full_config: dict[str, object],
+    session,
     candidate_rows: list[CandidateRecord],
     stats: dict[str, object],
 ) -> list[SearchResult]:
     pending: list[SearchResult] = []
     configured_domains = known_source_domains(full_config)
+    blocklist_domains = blocklist_domains_for_entity(entity_type, config)
+    existing_actor_domains = load_existing_actor_domains(session) if entity_type == "actor" else []
+    if entity_type == "actor":
+        stats["actor_existing_domain_blocklist_count"] = len(existing_actor_domains)
     for result in results:
         domain = normalized_domain(result.url)
         rejected = deterministic_rejection(
             result,
             raw_lookup=store,
-            blocklist_domains=config.get("blocklist_domains", []) or [],
+            blocklist_domains=blocklist_domains,
             known_source_domains=configured_domains,
+            existing_actor_domains=existing_actor_domains,
             non_content_paths=config.get("non_content_path_fragments", []) or [],
+            reject_seen_raw_urls=not (
+                entity_type == "event" and bool(config.get("fetch_enabled", False))
+            ),
         )
         if rejected is not None:
             stats["deterministic_rejected"] += 1
@@ -334,6 +384,22 @@ def _deterministic_triage(
     if not pending:
         logger.warning("open-web deterministic triage left zero candidates for LLM triage")
     return pending
+
+
+def _attach_actor_query_metadata(stats: dict[str, object], metadata: dict[str, object]) -> None:
+    stats["actor_query_grid_size"] = int(metadata.get("query_grid_size") or 0)
+    actor_types = [str(value) for value in metadata.get("actor_types", []) or []]
+    stats["actor_type_count"] = len(actor_types)
+    selected_hubs = []
+    for hub in metadata.get("selected_hubs", []) or []:
+        if not isinstance(hub, dict):
+            continue
+        name = str(hub.get("name") or "").strip()
+        if not name:
+            continue
+        count = hub.get("actor_count")
+        selected_hubs.append(f"{name} ({count})")
+    stats["actor_selected_thinnest_hubs"] = "; ".join(selected_hubs)
 
 
 def _cap_triage_candidates(
@@ -660,6 +726,22 @@ def _empty_stats() -> dict[str, object]:
         "candidates_written": 0,
         "accepted": 0,
         "rejected": 0,
+        "fetch_candidates": 0,
+        "pages_selected": 0,
+        "pages_fetched": 0,
+        "new_domains_eligible": 0,
+        "blocked_domains_skipped": 0,
+        "fetch_failures": 0,
+        "skipped_unchanged": 0,
+        "records_extracted": 0,
+        "records_in_sector": 0,
+        "records_out_of_sector": 0,
+        "records_relevant": 0,
+        "records_staged": 0,
+        "records_promoted": 0,
+        "absorbed": 0,
+        "queued_for_review": 0,
+        "created": 0,
         "failures": 0,
         "cost_usd": 0.0,
     }
@@ -672,10 +754,18 @@ def _report_path(root: Path, explicit: str | None) -> Path:
     return root / "agents" / "runs" / "open-web-discovery.md"
 
 
+def _audit_path(root: Path, explicit: str | None) -> Path:
+    if explicit:
+        path = Path(explicit)
+        return path if path.is_absolute() else root / path
+    return root / "agents" / "runs" / "open-web-discovery-audit.csv"
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entity", choices=["event", "actor", "person"], required=True)
     parser.add_argument("--report-out")
+    parser.add_argument("--audit-out")
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--offline", action="store_true")
     return parser

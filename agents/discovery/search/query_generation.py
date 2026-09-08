@@ -129,6 +129,7 @@ class QueryBundle:
     deterministic_queries: list[str]
     llm_queries: list[str]
     reference_count: int
+    metadata: dict[str, object] | None = None
 
 
 class QueryGenerator:
@@ -181,21 +182,27 @@ class QueryGenerator:
                 ),
             }
         elif entity_type == "actor":
-            references = load_actor_reference_set(session)
-            if not references:
-                raise RuntimeError(
-                    "actor query generation requires a non-empty non-aggregate database reference set"
-                )
-            deterministic = _actor_seed_queries(references)
-            prompt_context = {
-                "entity_type": "actor",
-                "sectors": sectors,
-                "reference_actors": references,
-                "quality_rule": (
-                    "Return queries for real operating organisations with evidence of "
-                    "activity, not grouping pages, consortium listings, or categories."
-                ),
-            }
+            actor_types = load_actor_types(session)
+            hubs = load_actor_query_hubs(session)
+            max_queries = int(self.config.get("actor_query_limit") or self.config.get("max_searches", 40))
+            deterministic, metadata = _actor_grid_queries(
+                actor_types,
+                hubs,
+                max_queries=max_queries,
+            )
+            references = []
+            llm_queries = []
+            queries = _distinct_queries(deterministic)
+            if not queries:
+                raise RuntimeError(f"query generation returned zero queries for {entity_type}")
+            return QueryBundle(
+                entity_type=entity_type,
+                queries=queries,
+                deterministic_queries=deterministic,
+                llm_queries=llm_queries,
+                reference_count=0,
+                metadata=metadata,
+            )
         else:
             references = []
             deterministic = []
@@ -211,6 +218,7 @@ class QueryGenerator:
             deterministic_queries=deterministic,
             llm_queries=llm_queries,
             reference_count=len(references),
+            metadata=None,
         )
 
     def _llm_queries(self, context: dict[str, object]) -> list[str]:
@@ -369,6 +377,79 @@ def load_actor_reference_set(session, *, limit: int = 20) -> list[dict[str, obje
     ][:limit]
 
 
+def load_actor_types(session) -> list[str]:
+    if session is None:
+        return []
+    rows = (
+        session.execute(
+            text(
+                "SELECT DISTINCT actor_type FROM actor "
+                "WHERE actor_type IS NOT NULL "
+                "AND btrim(actor_type) <> '' "
+                "AND lower(actor_type) <> 'aggregate' "
+                "ORDER BY actor_type"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [
+        actor_type
+        for actor_type in _distinct_queries(str(row.get("actor_type") or "").strip() for row in rows)
+        if actor_type.lower() != "aggregate"
+    ]
+
+
+def load_actor_query_hubs(session) -> list[dict[str, object]]:
+    if session is None:
+        return []
+    rows = (
+        session.execute(
+            text(
+                "SELECT h.hub_id::text AS hub_id, h.name, h.primary_city, h.state, h.country, h.region, "
+                "count(a.actor_id) AS actor_count "
+                "FROM hub h "
+                "LEFT JOIN hub_actor ha ON ha.hub_id = h.hub_id "
+                "LEFT JOIN actor a ON a.actor_id = ha.actor_id "
+                "AND a.merged_into_actor_id IS NULL "
+                "AND (a.actor_type IS NULL OR lower(a.actor_type) <> 'aggregate') "
+                "WHERE h.name <> 'Mining Hubs' "
+                "GROUP BY h.hub_id, h.name, h.primary_city, h.state, h.country, h.region "
+                "ORDER BY count(a.actor_id) ASC, h.name"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    hubs: list[dict[str, object]] = []
+    for row in rows:
+        hub = dict(row)
+        name = str(hub.get("name") or "").strip()
+        if not name or name == "Mining Hubs":
+            continue
+        theme = _hub_theme(name)
+        geographies = _hub_geographies(name)
+        if not geographies:
+            geographies = _hub_geographies_from_columns(hub)
+        if not theme or not geographies:
+            continue
+        actor_count = hub.get("actor_count")
+        try:
+            count = int(actor_count or 0)
+        except (TypeError, ValueError):
+            count = 0
+        hubs.append(
+            {
+                "hub_id": str(hub.get("hub_id") or ""),
+                "name": name,
+                "actor_count": count,
+                "theme": theme,
+                "geographies": geographies,
+            }
+        )
+    return hubs
+
+
 def _is_reference_actor(row: dict[str, object]) -> bool:
     actor_type = str(row.get("actor_type") or "").strip().lower()
     if actor_type == "aggregate":
@@ -408,6 +489,140 @@ def _actor_seed_queries(references: list[dict[str, object]]) -> list[str]:
         focus_terms = " ".join(focus.split()[:8]) if focus else "research innovation"
         queries.append(f'"{actor_type}" "{focus_terms}" organisation {country}'.strip())
     return _distinct_queries(queries)
+
+
+def _actor_grid_queries(
+    actor_types: list[str],
+    hubs: list[dict[str, object]],
+    *,
+    max_queries: int,
+) -> tuple[list[str], dict[str, object]]:
+    if not actor_types:
+        raise RuntimeError("actor query generation requires at least one non-aggregate actor_type")
+    if not hubs:
+        raise RuntimeError("actor query generation requires at least one non-category hub")
+    if max_queries <= 0:
+        raise RuntimeError("open_web_discovery actor query limit must be positive")
+
+    readable_types = [_actor_type_query_phrase(actor_type) for actor_type in actor_types]
+    readable_types = [phrase for phrase in _distinct_queries(readable_types) if phrase != "aggregate"]
+    if not readable_types:
+        raise RuntimeError("actor query generation found no searchable non-aggregate actor types")
+
+    queries: list[str] = []
+    query_hubs: dict[str, dict[str, object]] = {}
+    grid_size = 0
+    for hub in sorted(hubs, key=lambda item: (int(item.get("actor_count") or 0), str(item.get("name") or ""))):
+        theme = str(hub.get("theme") or "").strip()
+        geographies = [str(geo).strip() for geo in hub.get("geographies", []) or [] if str(geo).strip()]
+        for geography in geographies:
+            for actor_type in readable_types:
+                grid_size += 1
+                if len(queries) >= max_queries:
+                    continue
+                query = f"{actor_type} {theme} {geography}"
+                queries.append(query)
+                query_hubs.setdefault(
+                    str(hub.get("hub_id") or hub.get("name") or ""),
+                    {
+                        "name": str(hub.get("name") or ""),
+                        "actor_count": int(hub.get("actor_count") or 0),
+                        "theme": theme,
+                        "geographies": [],
+                    },
+                )
+                selected_geographies = query_hubs[str(hub.get("hub_id") or hub.get("name") or "")]["geographies"]
+                if geography not in selected_geographies:
+                    selected_geographies.append(geography)
+
+    return _distinct_queries(queries), {
+        "actor_types": readable_types,
+        "query_grid_size": grid_size,
+        "selected_hubs": list(query_hubs.values()),
+    }
+
+
+def _actor_type_query_phrase(actor_type: str) -> str:
+    parts = [part for part in re.split(r"[_\s]+", actor_type.strip().lower()) if part]
+    readable: list[str] = []
+    for part in parts:
+        if part == "rd":
+            readable.append("R&D")
+        elif part == "vc":
+            readable.append("venture capital")
+        else:
+            readable.append(part)
+    return " ".join(readable).strip()
+
+
+def _hub_theme(name: str) -> str:
+    text = name.lower()
+    if re.search(r"\b(ai|artificial intelligence)\b", text):
+        return "AI"
+    if re.search(r"\b(critical minerals?|mining|mine|mineral)\b", text):
+        return "critical minerals"
+    if re.search(r"\b(specialty chemicals?|chemicals?|chemistry|catalysis)\b", text):
+        return "specialty chemicals"
+    if re.search(r"\b(water|aquifer|desalination|irrigation)\b", text):
+        return "water"
+    if re.search(r"\b(agriculture|agricultural|agtech|food|soil|crop|crops)\b", text):
+        return "agriculture"
+    if re.search(r"\b(health|biomedical|biohealth|medicine|medical)\b", text):
+        return "health"
+    if re.search(r"\b(energy|hydrogen|battery|batteries|solar|grid)\b", text):
+        return "energy"
+    if re.search(r"\b(sustainability|sustainable|climate|cleantech|clean tech)\b", text):
+        return "sustainability"
+    return ""
+
+
+def _hub_geographies(name: str) -> list[str]:
+    parenthetical = re.search(r"\(([^)]*)\)", name)
+    if parenthetical:
+        return _clean_geography_terms(parenthetical.group(1), qualifier=_leading_place_words(name))
+    return _clean_geography_terms(_leading_place_words(name))
+
+
+def _hub_geographies_from_columns(row: dict[str, object]) -> list[str]:
+    parts = [
+        str(row.get("primary_city") or "").strip(),
+        str(row.get("state") or "").strip(),
+        str(row.get("region") or "").strip(),
+        str(row.get("country") or "").strip(),
+    ]
+    return _distinct_queries(" ".join(part for part in parts[:2] if part) or part for part in parts if part)
+
+
+def _leading_place_words(name: str) -> str:
+    outside_parenthetical = re.sub(r"\([^)]*\)", "", name)
+    theme_match = re.search(
+        r"\b(water|ai|artificial intelligence|critical minerals?|mining|mine|mineral|"
+        r"specialty chemicals?|chemicals?|chemistry|catalysis|agriculture|agricultural|"
+        r"agtech|food|soil|crop|crops|health|biomedical|biohealth|medicine|medical|"
+        r"energy|hydrogen|battery|batteries|solar|grid|sustainability|sustainable|"
+        r"climate|cleantech|clean tech|hub)\b",
+        outside_parenthetical,
+        flags=re.IGNORECASE,
+    )
+    candidate = outside_parenthetical[: theme_match.start()] if theme_match else outside_parenthetical
+    candidate = re.sub(r"\bhub(s)?\b", "", candidate, flags=re.IGNORECASE)
+    return " ".join(candidate.replace("-", " ").split()).strip(" ,")
+
+
+def _clean_geography_terms(value: str, *, qualifier: str = "") -> list[str]:
+    raw_terms = re.split(r"\s*(?:,|;|/|\||\band\b| - |-|–|—)\s*", value)
+    terms: list[str] = []
+    clean_qualifier = " ".join(qualifier.split()).strip()
+    for raw in raw_terms:
+        term = " ".join(str(raw or "").split()).strip(" ,")
+        if not term:
+            continue
+        if term.lower() in {"hub", "hubs", "usa", "united states"}:
+            continue
+        if clean_qualifier and clean_qualifier.lower() not in term.lower():
+            term = f"{term} {clean_qualifier}"
+        terms.append(term)
+    return _distinct_queries(terms)
 
 
 def _configured_event_sources(project_root: Path) -> list[dict[str, object]]:

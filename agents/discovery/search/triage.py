@@ -8,10 +8,24 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from sqlalchemy import text
+
 from agents.discovery.search.models import SearchResult, TriageDecision
 
 logger = logging.getLogger(__name__)
 TRIAGE_INCOMPLETE_REASON_PREFIX = "triage incomplete:"
+ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST = (
+    "geekwire.com",
+    "siliconangle.com",
+    "axios.com",
+    "hpcwire.com",
+    "marktechpost.com",
+    "techcrunch.com",
+    "crunchbase.com",
+    "businesswire.com",
+    "prnewswire.com",
+    "globenewswire.com",
+)
 
 DEFAULT_NON_CONTENT_PATHS = (
     "/login",
@@ -73,7 +87,11 @@ class SearchTriageClient:
                     ),
                     "actor_quality_rule": (
                         "For actors, score substance and operating-entity quality, not just topic. "
-                        "Reject grouping pages, consortium listings, category pages, and bare projects."
+                        "Before fit scoring, reject any candidate that is not published by the "
+                        "organisation itself. Press coverage, conference speaker bios, directory "
+                        "listings, third-party funding announcements, aggregator profiles, grouping "
+                        "pages, consortium listings, category pages, and bare projects must be "
+                        "rejected with reason 'not the organisation's own page'."
                     ),
                 },
                 ensure_ascii=False,
@@ -128,7 +146,7 @@ class SearchTriageClient:
                 is_entity_type=bool(item.get("is_entity_type")),
                 plausible_sector=bool(item.get("plausible_sector")),
                 fit_score=_coerce_score(item.get("fit_score")),
-                reason=str(item.get("reason") or "").strip() or "no reason returned",
+                reason=_clean_decision_reason(item.get("reason")),
             )
 
         input_urls = {candidate.url for candidate in candidates}
@@ -159,7 +177,9 @@ def deterministic_rejection(
     raw_lookup: RawDocumentLookup,
     blocklist_domains: Iterable[str],
     known_source_domains: Iterable[str],
+    existing_actor_domains: Iterable[str] = (),
     non_content_paths: Iterable[str] = DEFAULT_NON_CONTENT_PATHS,
+    reject_seen_raw_urls: bool = True,
 ) -> DeterministicReject | None:
     parsed = urlparse(result.url or "")
     if parsed.scheme not in ("http", "https") or "." not in parsed.netloc:
@@ -167,7 +187,10 @@ def deterministic_rejection(
     domain = normalized_domain(result.url)
     if not domain:
         return DeterministicReject("invalid URL", domain="")
-    if raw_lookup.has_seen_raw_url(result.url):
+    for existing in _normalized_domains(existing_actor_domains):
+        if _domain_matches(domain, existing):
+            return DeterministicReject("actor already in database", domain=domain)
+    if reject_seen_raw_urls and raw_lookup.has_seen_raw_url(result.url):
         return DeterministicReject(
             "already in raw_document; Phase 1 does not fetch pages to recompute content hash",
             domain=domain,
@@ -184,6 +207,34 @@ def deterministic_rejection(
         if str(fragment).lower() in path:
             return DeterministicReject(f"obvious non-content URL pattern: {fragment}", domain=domain)
     return None
+
+
+def blocklist_domains_for_entity(entity_type: str, config: dict[str, object]) -> list[str]:
+    domains = list(config.get("blocklist_domains", []) or [])
+    if entity_type == "actor":
+        domains.extend(ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST)
+        domains.extend(config.get("actor_blocklist_domains", []) or [])
+    return sorted(set(_normalized_domains(domains)))
+
+
+def load_existing_actor_domains(session) -> list[str]:
+    if session is None:
+        return []
+    rows = (
+        session.execute(
+            text(
+                "SELECT website FROM actor "
+                "WHERE merged_into_actor_id IS NULL "
+                "AND website IS NOT NULL "
+                "AND btrim(website) <> '' "
+                "AND (actor_type IS NULL OR lower(actor_type) <> 'aggregate')"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    domains = [normalized_domain(str(row.get("website") or "")) for row in rows]
+    return sorted({domain for domain in domains if domain})
 
 
 def known_source_domains(config: dict[str, object]) -> list[str]:
@@ -220,7 +271,10 @@ def is_triage_incomplete(decision: TriageDecision) -> bool:
 
 
 def normalized_domain(url: str) -> str:
-    parsed = urlparse(url)
+    text_value = str(url or "").strip()
+    if not text_value:
+        return ""
+    parsed = urlparse(text_value if "://" in text_value else f"https://{text_value}")
     host = (parsed.hostname or "").lower().strip(".")
     return host.removeprefix("www.")
 
@@ -249,6 +303,30 @@ def _coerce_score(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return max(0.0, min(score, 1.0))
+
+
+def _clean_decision_reason(value: object) -> str:
+    reason = str(value or "").strip()
+    if not reason:
+        return "no reason returned"
+    if _reason_is_urlish(reason):
+        return "LLM returned URL instead of reasoning"
+    return reason
+
+
+def _reason_is_urlish(reason: str) -> bool:
+    if "|||" in reason:
+        return True
+    compact = reason.strip()
+    parsed = urlparse(compact)
+    if parsed.scheme in ("http", "https") and parsed.netloc:
+        return True
+    if any(char.isspace() for char in compact):
+        return False
+    bare = urlparse(f"https://{compact}")
+    host = (bare.hostname or "").lower().removeprefix("www.")
+    normalized = compact.lower().removeprefix("www.")
+    return bool(host and "." in host and (normalized == host or normalized.startswith(f"{host}/")))
 
 
 def _candidate_items_from_payload(payload: object) -> list[object] | None:

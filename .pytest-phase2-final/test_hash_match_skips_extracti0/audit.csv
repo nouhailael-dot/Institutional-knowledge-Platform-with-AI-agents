@@ -1,0 +1,2 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+32692d9c-3ebe-4042-a0a4-fe85e1f644e2,climate_week,event,fixture://climate_week/events,18aa43668ae80773e344e88effd44dfcab32640eaf7562e8b891998fa14e41b2,,skipped,,,,skipped_unchanged,

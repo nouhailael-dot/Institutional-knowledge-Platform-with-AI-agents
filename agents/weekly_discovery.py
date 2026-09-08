@@ -58,6 +58,25 @@ def run_weekly(
     live_arg = ["--live"] if live else []
 
     discovery: list[StepOutcome] = []
+    open_web_report = output_dir / "open-web-event-report.md"
+    open_web_command = [
+        sys.executable,
+        "-m",
+        "agents.discovery.search.run",
+        "--entity",
+        "event",
+        *live_arg,
+        "--report-out",
+        str(open_web_report),
+        "--audit-out",
+        str(output_dir / "open-web-event-audit.csv"),
+    ]
+    open_web_exit = int(command_runner(open_web_command) or 0)
+    open_web_status = digest_status(open_web_report)
+    if open_web_status == "missing_digest":
+        open_web_exit = open_web_exit or 1
+    discovery.append(StepOutcome("open_web_event", open_web_status, open_web_exit))
+
     for source in DISCOVERY_SOURCES:
         digest_path = output_dir / f"{source}-digest.md"
         command = [
@@ -127,6 +146,9 @@ def digest_status(path: Path) -> str:
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.startswith("**Status:**"):
             status = line.removeprefix("**Status:**").strip().lower()
+            return status if status in {"succeeded", "attention", "failed"} else "unknown"
+        if line.startswith("Status: **") and line.endswith("**"):
+            status = line.removeprefix("Status: **").removesuffix("**").strip().lower()
             return status if status in {"succeeded", "attention", "failed"} else "unknown"
     return "unknown"
 

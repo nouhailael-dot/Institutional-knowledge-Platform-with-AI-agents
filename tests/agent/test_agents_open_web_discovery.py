@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from argparse import Namespace
 from datetime import date
 from pathlib import Path
@@ -21,9 +22,13 @@ from agents.discovery.search.providers import (
 from agents.discovery.search.query_generation import (
     QueryBundle,
     QueryGenerator,
+    _actor_grid_queries,
+    _actor_type_query_phrase,
     _event_seed_queries,
     _representative_terms_from_titles,
+    load_actor_query_hubs,
     load_actor_reference_set,
+    load_actor_types,
     normalize_event_geography,
 )
 from agents.discovery.search.store import InMemorySearchCandidateStore
@@ -129,6 +134,20 @@ class CapturingSession:
         return MappingRows(self.rows)
 
 
+class RoutedSession:
+    def __init__(self, responses: list[tuple[str, list[dict[str, object]]]]):
+        self.responses = responses
+        self.statements: list[str] = []
+
+    def execute(self, statement, params=None):
+        sql = str(statement)
+        self.statements.append(sql)
+        for fragment, rows in self.responses:
+            if fragment in sql:
+                return MappingRows(rows)
+        return MappingRows([])
+
+
 class FakeClaudeMessages:
     def __init__(self, responses: list[object]):
         self.responses = list(responses)
@@ -150,22 +169,10 @@ def test_open_web_query_generation_produces_distinct_event_and_actor_queries():
     client = StubToolClient(
         [
             {"queries": ["climate innovation forum 2027", "climate innovation forum 2027"]},
-            {"queries": ["water research institute partnerships"]},
         ]
     )
-    config = {"people_enabled": False, "forward_window_days": 365}
-    actor_session = CapturingSession(
-        [
-            {
-                "actor_id": "3",
-                "name": "Clean Lab",
-                "actor_type": "research",
-                "merged_into_actor_id": None,
-                "description": "Water research and field pilots",
-                "country": "USA",
-            },
-        ]
-    )
+    config = {"people_enabled": False, "forward_window_days": 365, "max_searches": 6}
+    actor_session = _actor_query_session()
 
     event_bundle = QueryGenerator(client, config, today=date(2026, 9, 3)).generate(
         "event", session=None, project_root=PROJECT_ROOT
@@ -178,6 +185,7 @@ def test_open_web_query_generation_produces_distinct_event_and_actor_queries():
     assert actor_bundle.queries
     assert len(event_bundle.queries) == len({query.lower() for query in event_bundle.queries})
     assert len(actor_bundle.queries) == len({query.lower() for query in actor_bundle.queries})
+    assert actor_bundle.llm_queries == []
 
 
 def test_open_web_people_query_path_is_disabled_by_default():
@@ -190,14 +198,90 @@ def test_open_web_people_query_path_is_disabled_by_default():
     assert client.calls == []
 
 
-def test_actor_query_generation_requires_database_reference_set():
+def test_actor_query_generation_requires_actor_types_and_hubs():
     client = StubToolClient([])
     generator = QueryGenerator(client, {"people_enabled": False})
 
-    with pytest.raises(RuntimeError, match="non-empty non-aggregate database reference set"):
+    with pytest.raises(RuntimeError, match="at least one non-aggregate actor_type"):
         generator.generate("actor", session=None, project_root=PROJECT_ROOT)
 
     assert client.calls == []
+
+
+def test_actor_query_generation_uses_hub_grid_not_reference_names_or_descriptions():
+    client = StubToolClient([])
+    session = _actor_query_session()
+
+    bundle = QueryGenerator(
+        client,
+        {"people_enabled": False, "max_searches": 8},
+        today=date(2026, 9, 7),
+    ).generate("actor", session=session, project_root=PROJECT_ROOT)
+
+    query_text = "\n".join(bundle.queries).lower()
+    assert "albemarle" not in query_text
+    assert "allen institute" not in query_text
+    assert "soil microbiome ecology" not in query_text
+    assert "rhizosphere biology" not in query_text
+    assert "corporate_rd_lab" not in query_text
+    assert "corporate R&D lab water Boulder Colorado" in bundle.queries
+    assert "aggregate" not in query_text
+    assert client.calls == []
+    assert not any("actor_id::text" in sql for sql in session.statements)
+
+
+def test_actor_types_are_read_from_database_and_converted_to_search_words():
+    session = RoutedSession(
+        [
+            (
+                "SELECT DISTINCT actor_type",
+                [
+                    {"actor_type": "aggregate"},
+                    {"actor_type": "corporate_rd_lab"},
+                    {"actor_type": "university_lab"},
+                    {"actor_type": "venture_capital"},
+                ],
+            )
+        ]
+    )
+
+    actor_types = load_actor_types(session)
+
+    assert actor_types == ["corporate_rd_lab", "university_lab", "venture_capital"]
+    assert _actor_type_query_phrase("corporate_rd_lab") == "corporate R&D lab"
+    assert _actor_type_query_phrase("venture_capital") == "venture capital"
+
+
+def test_actor_query_grid_samples_thinnest_hubs_and_excludes_mining_hubs():
+    session = _actor_query_session()
+
+    hubs = load_actor_query_hubs(session)
+    queries, metadata = _actor_grid_queries(
+        ["corporate_rd_lab", "university_lab"],
+        hubs,
+        max_queries=4,
+    )
+
+    assert [hub["name"] for hub in hubs] == [
+        "Colorado Water Hub (Boulder- Denver- Front Range)",
+        "Houston Specialty Chemicals Hub",
+    ]
+    assert all("Mining Hubs" not in str(hub) for hub in hubs)
+    assert queries == [
+        "corporate R&D lab water Boulder Colorado",
+        "university lab water Boulder Colorado",
+        "corporate R&D lab water Denver Colorado",
+        "university lab water Denver Colorado",
+    ]
+    assert metadata["query_grid_size"] == 8
+    assert metadata["selected_hubs"] == [
+        {
+            "name": "Colorado Water Hub (Boulder- Denver- Front Range)",
+            "actor_count": 1,
+            "theme": "water",
+            "geographies": ["Boulder Colorado", "Denver Colorado"],
+        }
+    ]
 
 
 def test_actor_reference_set_excludes_aggregates_and_merged_actors():
@@ -462,6 +546,65 @@ def test_search_triage_client_accepts_url_keyed_candidate_mapping():
     assert decisions[candidate.url].fit_score == 0.82
 
 
+def test_search_triage_client_actor_prompt_requires_organisation_own_page():
+    candidate = _result("https://fresh.example/about", "q")
+    client = StubToolClient(
+        [
+            {
+                "candidates": [
+                    {
+                        "url": candidate.url,
+                        "is_entity_type": False,
+                        "plausible_sector": False,
+                        "fit_score": None,
+                        "reason": "not the organisation's own page",
+                    }
+                ]
+            }
+        ]
+    )
+
+    SearchTriageClient(client, {}).triage(
+        [candidate],
+        entity_type="actor",
+        sectors=[],
+        references=[{"name": "Reference Lab"}],
+    )
+
+    user_payload = json.loads(client.calls[0]["user"])
+    assert "not published by the organisation itself" in user_payload["actor_quality_rule"]
+    assert "not the organisation's own page" in user_payload["actor_quality_rule"]
+
+
+def test_search_triage_client_replaces_url_shaped_reasons():
+    candidate = _result("https://fresh.example/about", "q")
+    client = StubToolClient(
+        [
+            {
+                "candidates": [
+                    {
+                        "url": candidate.url,
+                        "is_entity_type": True,
+                        "plausible_sector": True,
+                        "fit_score": 0.8,
+                        "reason": "https://fresh.example/about",
+                    }
+                ]
+            }
+        ]
+    )
+
+    decisions = SearchTriageClient(client, {}).triage(
+        [candidate],
+        entity_type="actor",
+        sectors=[],
+        references=[],
+    )
+
+    assert decisions[candidate.url].reason == "LLM returned URL instead of reasoning"
+    assert not decisions[candidate.url].reason.startswith("http")
+
+
 def test_deterministic_rejections_happen_before_llm_triage(monkeypatch, tmp_path):
     _install_open_web_config(monkeypatch)
     store = InMemorySearchCandidateStore(seen_raw_urls={"https://seen.example/page"})
@@ -491,6 +634,64 @@ def test_deterministic_rejections_happen_before_llm_triage(monkeypatch, tmp_path
     assert len(store.candidates) == 4
     assert {row.triage_verdict for row in store.candidates} == {"rejected"}
     assert result["stats"]["deterministic_rejected"] == 4
+    assert triage.calls == []
+
+
+def test_existing_actor_domain_is_rejected_before_llm_triage(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch)
+    store = InMemorySearchCandidateStore()
+    provider = StaticSearchProvider(
+        {"q": [_result("https://www.albemarle.com/us/en/news/lithium", "q")]}
+    )
+    triage = RecordingTriageClient()
+
+    result = search_run.run_search_triage(
+        _args(tmp_path, entity="actor"),
+        root=PROJECT_ROOT,
+        session=RoutedSession(
+            [
+                (
+                    "SELECT website FROM actor",
+                    [{"website": "https://albemarle.com/us/en"}],
+                )
+            ]
+        ),
+        run_log=InMemoryRunLog(),
+        store=store,
+        search_provider=provider,
+        query_generator=StaticQueryGenerator(["q"]),
+        triage_client=triage,
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["stats"]["actor_existing_domain_blocklist_count"] == 1
+    assert result["stats"]["deterministic_rejected"] == 1
+    assert store.candidates[0].triage_reason == "actor already in database"
+    assert triage.calls == []
+
+
+def test_actor_news_domain_is_rejected_before_llm_triage(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch)
+    store = InMemorySearchCandidateStore()
+    provider = StaticSearchProvider(
+        {"q": [_result("https://techcrunch.com/2026/01/01/funding-news", "q")]}
+    )
+    triage = RecordingTriageClient()
+
+    result = search_run.run_search_triage(
+        _args(tmp_path, entity="actor"),
+        root=PROJECT_ROOT,
+        session=RoutedSession([("SELECT website FROM actor", [])]),
+        run_log=InMemoryRunLog(),
+        store=store,
+        search_provider=provider,
+        query_generator=StaticQueryGenerator(["q"]),
+        triage_client=triage,
+    )
+
+    assert result["status"] == "succeeded"
+    assert result["stats"]["deterministic_rejected"] == 1
+    assert store.candidates[0].triage_reason == "blocked domain: techcrunch.com"
     assert triage.calls == []
 
 
@@ -1006,6 +1207,74 @@ def _install_open_web_config(monkeypatch, **overrides) -> None:
         "sources": {"known": {"listing_url": "https://known.example/events"}},
     }
     monkeypatch.setattr(search_run, "load_sources_config", lambda root=None: config)
+
+
+def _actor_query_session() -> RoutedSession:
+    return RoutedSession(
+        [
+            (
+                "SELECT DISTINCT actor_type",
+                [
+                    {"actor_type": "corporate_rd_lab"},
+                    {"actor_type": "university_lab"},
+                    {"actor_type": "aggregate"},
+                ],
+            ),
+            (
+                "FROM hub h",
+                [
+                    {
+                        "hub_id": "thin-water",
+                        "name": "Colorado Water Hub (Boulder- Denver- Front Range)",
+                        "primary_city": "Boulder",
+                        "state": "Colorado",
+                        "country": "USA",
+                        "region": "Front Range",
+                        "actor_count": 1,
+                    },
+                    {
+                        "hub_id": "category",
+                        "name": "Mining Hubs",
+                        "primary_city": None,
+                        "state": None,
+                        "country": "USA",
+                        "region": None,
+                        "actor_count": 0,
+                    },
+                    {
+                        "hub_id": "chem-houston",
+                        "name": "Houston Specialty Chemicals Hub",
+                        "primary_city": "Houston",
+                        "state": "Texas",
+                        "country": "USA",
+                        "region": None,
+                        "actor_count": 12,
+                    },
+                ],
+            ),
+            (
+                "SELECT actor_id::text AS actor_id",
+                [
+                    {
+                        "actor_id": "1",
+                        "name": "Albemarle",
+                        "actor_type": "corporate_rd_lab",
+                        "merged_into_actor_id": None,
+                        "description": "Soil microbiome ecology and rhizosphere biology; nitrogen and field pilots",
+                        "country": "USA",
+                    },
+                    {
+                        "actor_id": "2",
+                        "name": "Allen Institute for AI",
+                        "actor_type": "university_lab",
+                        "merged_into_actor_id": None,
+                        "description": "Large-scale language models; AI infrastructure",
+                        "country": "USA",
+                    },
+                ],
+            ),
+        ]
+    )
 
 
 def _claude_search_response(

@@ -899,6 +899,10 @@ def test_weekly_orchestrator_runs_every_source_and_downstream_after_source_failu
     def runner(command):
         commands.append(list(command))
         module = command[command.index("-m") + 1]
+        if module == "agents.discovery.search.run":
+            report_path = Path(command[command.index("--report-out") + 1])
+            report_path.write_text("Status: **succeeded**\n", encoding="utf-8")
+            return 0
         if module == "agents.discovery.run":
             source = command[command.index("--source") + 1]
             digest_path = Path(command[command.index("--digest-out") + 1])
@@ -920,7 +924,7 @@ def test_weekly_orchestrator_runs_every_source_and_downstream_after_source_failu
     assert modules[-2:] == ["agents.enrichment.run", "agents.index.refresh"]
     assert outcome.exit_code == 1
     summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
-    assert "Discovery succeeded: unga_programme, unga_guide" in summary
+    assert "Discovery succeeded: open_web_event, unga_programme, unga_guide" in summary
     assert "Discovery failed: climate_week(status=failed,exit=1)" in summary
     assert "Downstream succeeded: enrichment, index_refresh" in summary
 
@@ -937,6 +941,10 @@ def test_weekly_orchestrator_missing_digest_is_failure_but_continues(tmp_path):
     def runner(command):
         commands.append(list(command))
         module = command[command.index("-m") + 1]
+        if module == "agents.discovery.search.run":
+            report_path = Path(command[command.index("--report-out") + 1])
+            report_path.write_text("Status: **succeeded**\n", encoding="utf-8")
+            return 0
         if module == "agents.discovery.run":
             source = command[command.index("--source") + 1]
             if source != "climate_week":
@@ -946,10 +954,10 @@ def test_weekly_orchestrator_missing_digest_is_failure_but_continues(tmp_path):
 
     outcome = weekly_discovery.run_weekly(runs_dir=tmp_path, runner=runner)
 
-    assert len(commands) == 5
+    assert len(commands) == 6
     assert outcome.exit_code == 1
-    assert outcome.discovery[0].name == "climate_week"
-    assert outcome.discovery[0].status == "missing_digest"
+    assert outcome.discovery[1].name == "climate_week"
+    assert outcome.discovery[1].status == "missing_digest"
     summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
     assert "climate_week(status=missing_digest,exit=1)" in summary
 
@@ -960,6 +968,10 @@ def test_weekly_orchestrator_passes_live_flag_to_all_commands(tmp_path):
     def runner(command):
         commands.append(list(command))
         module = command[command.index("-m") + 1]
+        if module == "agents.discovery.search.run":
+            report_path = Path(command[command.index("--report-out") + 1])
+            report_path.write_text("Status: **succeeded**\n", encoding="utf-8")
+            return 0
         if module == "agents.discovery.run":
             digest_path = Path(command[command.index("--digest-out") + 1])
             digest_path.write_text("**Status:** succeeded\n", encoding="utf-8")

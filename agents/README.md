@@ -16,8 +16,9 @@ python -m agents.discovery.search.run --entity event --report-out agents/runs/op
 python -m agents.discovery.search.run --entity actor --report-out agents/runs/open-web-actors.md
 ```
 
-This step does not fetch candidate pages, stage records, route records, or write
-canonical tables. Claude native web search is the default provider because its
+For events, Phase 2 fetches accepted candidate pages and sends them through the
+existing extract, normalize, sector-filter, stage, and deterministic route path.
+Actor and person runs still stop after Phase 1 triage. Claude native web search is the default provider because its
 server-side search spend is added to the same `CostMeter` as query generation
 and triage, so `max_usd_per_run` aborts runaway searches cleanly. Brave Search
 is retained as a fallback and reads its key from `BRAVE_SEARCH_API_KEY` only
@@ -31,9 +32,19 @@ query-generation context. Actors use database actors only, excluding
 
 Caps are hard stops: `max_searches`, `max_candidates_triaged`, and
 `max_usd_per_run` close the run as `attention` with a visible reason rather than
-silently truncating. Phase 1 also rejects URLs already seen in `raw_document` by
-URL because it deliberately does not fetch candidate pages and therefore cannot
-recompute page-content hashes until Phase 2.
+silently truncating. Phase 1-only paths reject URLs already seen in
+`raw_document` by URL. Phase 2 event runs re-fetch accepted URLs and compare the
+new content hash, so changed pages can be extracted while unchanged pages skip
+the extraction call.
+
+Phase 2 fetches at most 30 accepted pages and admits at most 10 previously unseen
+domains per run. Both are hard, config-driven caps; hitting either closes the run
+as `attention` and names the cap in `status_reason`. Fetches use the same
+contactable User-Agent, rate limiting, and robots-aware HTTP layer as configured
+sources. Redirect destinations are robots-checked before their page content is
+requested. The `discovered_domain` table records domain status and cumulative
+fetch, extraction, and promotion counts; apply
+`agents/sql/120_discovered_domain.sql` before running Phase 2 against a database.
 
 Claude web search widens the prompt-injection surface because the model has
 already read searched pages before candidates reach this pipeline. The provider
@@ -41,6 +52,14 @@ therefore converts only `web_search_tool_result` / `web_search_result` blocks
 into `(url, title, snippet, provider, query)` and discards free-form assistant
 text. Triage and extraction never receive model commentary from the search
 response.
+
+Fetched open-web pages are also untrusted model input. Their raw content is stored
+and content-hashed before extraction, the prompt labels the page body as
+untrusted data, and the extractor can return only the forced event tool schema.
+No free-form model text is routed or staged, and no extraction tool has database
+write access. Records from discovered domains may route to create or review, but
+never absorb. Exact canonical matches are forced to event review, and
+`agents/discovery/promote.py` raises if an absorb route reaches it anyway.
 
 ## Run
 
@@ -172,8 +191,9 @@ TEMPORARY: `index_dirty` exists because `event` currently has no `updated_at`, s
 7. Event routing deliberately does not use the frozen ER combiner. That combiner was trained on actor name/profile features; applying it to events would be a training/deployment distribution mismatch, the same class of failure that previously forced `desc_both_present` out of the actor model when production null patterns diverged from the gold set.
 8. `search_doc` is a derived index rather than a fact store. Its rows are reconstructable from canonical rows that already carry provenance, so it deliberately does not get its own `source` rows. Every `search_doc` row must store `entity_type` and `entity_id` so the trail back to provenance stays explicit.
 9. `climate_week`, `unga_programme`, and `unga_guide` are protected as event-only sources. They must not derive actors from organiser strings: replay `3aeb1d49-677b-435f-8453-138ed889818c` staged 121 such actors with a median ER score of 0.029 because the source yielded bare names without description, country, or website. Adding actor discovery requires a source built around organisation profiles, not event listings.
-10. Open-web discovery is search-results only in Phase 1: no autonomous crawling,
-    no candidate-page fetches, no staging, and no canonical writes.
+10. Open-web discovery is search-results only in Phase 1. Phase 2 may fetch only
+    accepted event candidates, one level deep, through the bounded robots-aware
+    path; it does not crawl links from those pages.
 11. Open-web actor and person reference examples come from the database only.
     Aggregate actors and merged-away actors must not appear in the actor
     reference set.

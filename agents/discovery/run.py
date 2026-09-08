@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 import importlib
 import logging
+from dataclasses import replace
 from pathlib import Path
+from urllib.parse import urlparse
 
 from agents.common.config import load_sources_config
 from agents.common.cost import CostLimitExceeded, CostMeter
@@ -13,6 +15,7 @@ from agents.common.digest import write_digest
 from agents.common.llm import ClaudeToolClient, FixtureToolClient
 from agents.common.raw_storage import RawContentStore
 from agents.common.resolve_route import (
+    RouteDecision,
     load_actor_resolver_class,
     load_event_candidates,
     load_person_candidates,
@@ -31,7 +34,11 @@ from agents.discovery.normalize import (
     normalize_event_record,
     normalize_person_record,
 )
-from agents.discovery.promote import guard_actor_absorb_route, promote
+from agents.discovery.promote import (
+    DISCOVERED_DOMAIN_PAYLOAD_KEY,
+    guard_actor_absorb_route,
+    promote,
+)
 from agents.discovery.relevance import IN_SECTOR, OUT_OF_SECTOR, classify_sector_matches
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.climate_week import ClimateWeekAdapter
@@ -152,6 +159,7 @@ def build_extractor(
         max_tokens=int(source_config.get("max_tokens", 2048)),
         row_batch_size=int(source_config.get("event_row_batch_size", 25)),
         min_row_count=int(source_config.get("min_event_row_count", 0) or 0),
+        untrusted_content=bool(source_config.get("untrusted_content", False)),
     )
 
 
@@ -202,6 +210,8 @@ def run_pipeline(
     if replay_run_id:
         sources = dict(config.get("sources", {}))
         source_config = dict(sources.get(source_name, {}))
+        if not source_config and source_name == "open_web_search":
+            source_config = _open_web_replay_config(config)
         if not source_config:
             raise ValueError(f"unknown source {source_name!r}")
         _raise_if_source_disabled(source_name, source_config)
@@ -283,6 +293,7 @@ def run_pipeline(
                     root=root,
                     stats=stats,
                     audit_rows=audit_rows,
+                    discovered_domain=_discovered_domain(source_name, doc.url),
                 )
                 cost_meter.enforce()
         else:
@@ -442,6 +453,7 @@ def _extract_stage_route_promote(
     stats: dict[str, int],
     audit_rows: list[dict[str, object]],
     actor_resolver=None,
+    discovered_domain: str | None = None,
 ) -> None:
     extracted = extractor.extract(doc)
     if entity_type == "event":
@@ -453,6 +465,11 @@ def _extract_stage_route_promote(
     else:
         raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
     normalized = _dedupe_by_natural_key(normalized)
+    if discovered_domain:
+        normalized = [
+            {**record, DISCOVERED_DOMAIN_PAYLOAD_KEY: discovered_domain}
+            for record in normalized
+        ]
     stats["records_extracted"] += len(normalized)
     if entity_type == "person":
         classified = [{**record, "sector_match": IN_SECTOR} for record in normalized]
@@ -495,6 +512,12 @@ def _extract_stage_route_promote(
             continue
         if entity_type == "event":
             decision = route_event(record, candidates)
+            decision = _review_discovered_event_absorb(
+                record,
+                decision,
+                candidates,
+                discovered_domain=discovered_domain,
+            )
         elif entity_type == "actor":
             if actor_resolver is None:
                 raise RuntimeError("actor routing requires an EntityResolver")
@@ -526,6 +549,55 @@ def _extract_stage_route_promote(
         )
 
 
+def _review_discovered_event_absorb(
+    record: dict[str, object],
+    route: RouteDecision,
+    candidates: list[dict[str, object]],
+    *,
+    discovered_domain: str | None,
+) -> RouteDecision:
+    if not discovered_domain or route.zone != "absorb":
+        return route
+    target = next(
+        (
+            candidate
+            for candidate in candidates
+            if str(candidate.get("event_id") or candidate.get("entity_id") or candidate.get("id") or "")
+            == str(route.target_entity_id or "")
+        ),
+        None,
+    )
+    if target is None:
+        raise RuntimeError(
+            "discovered-domain absorb override could not find its target event candidate"
+        )
+    staged_title = str(record.get("name") or record.get("title") or "").strip()
+    candidate_title = str(target.get("name") or target.get("title") or "").strip()
+    shared_start_date = str(
+        record.get("start_date")
+        or record.get("next_date")
+        or target.get("start_date")
+        or target.get("next_date")
+        or ""
+    ).split("T", 1)[0]
+    if not staged_title or not candidate_title or not shared_start_date:
+        raise RuntimeError(
+            "discovered-domain event review requires staged title, candidate title, and shared date"
+        )
+    return replace(
+        route,
+        zone="review",
+        metadata={
+            **dict(route.metadata or {}),
+            "staged_title": staged_title,
+            "candidate_title": candidate_title,
+            "shared_start_date": shared_start_date,
+            "discovered_domain": discovered_domain,
+            "route_policy": "discovered domains never auto-absorb",
+        },
+    )
+
+
 def _storage_path_for_doc(
     raw_store: RawContentStore,
     *,
@@ -537,6 +609,30 @@ def _storage_path_for_doc(
     if raw_store.exists(prior_path):
         return prior_path
     return raw_store.write(run_id=run_id, doc=doc)
+
+
+def _open_web_replay_config(config: dict[str, object]) -> dict[str, object]:
+    source_config = dict(config.get("open_web_discovery", {}))
+    if not source_config:
+        raise RuntimeError("open-web replay requires open_web_discovery configuration")
+    source_config["claude_model"] = source_config.get("extraction_model") or source_config.get(
+        "triage_model", "claude-sonnet-5"
+    )
+    source_config["llm_pricing"] = source_config.get("extraction_llm_pricing") or source_config.get(
+        "triage_llm_pricing", {}
+    )
+    source_config["max_tokens"] = int(source_config.get("extraction_max_tokens", 2048))
+    source_config["untrusted_content"] = True
+    return source_config
+
+
+def _discovered_domain(source_name: str, url: str) -> str | None:
+    if source_name != "open_web_search":
+        return None
+    host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+    if not host:
+        raise RuntimeError(f"open-web raw document has invalid source URL {url!r}")
+    return host
 
 
 def _doc_from_raw(raw: dict[str, object], raw_store: RawContentStore) -> FetchedDoc:

@@ -323,6 +323,7 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             "event_review_queue": {Path("agents/discovery/promote.py")},
             "person_review_queue": {Path("agents/discovery/promote.py")},
             "search_candidate": {Path("agents/discovery/search/store.py")},
+            "discovered_domain": {Path("agents/discovery/search/phase2.py")},
         }
     )
     table_pattern = "|".join(

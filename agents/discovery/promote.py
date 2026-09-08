@@ -33,6 +33,7 @@ EVENT_CREATE_FIELDS = [
 ]
 
 EVENT_ABSORB_FIELDS = EVENT_CREATE_FIELDS.copy()
+DISCOVERED_DOMAIN_PAYLOAD_KEY = "_discovered_domain"
 ACTOR_CREATE_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_CONNECTOR_RE = re.compile(
@@ -126,11 +127,31 @@ def guard_actor_absorb_route(staged: StagedRecord, route: RouteDecision) -> Rout
     )
 
 
+def guard_discovered_domain_route(
+    staged: StagedRecord, route: RouteDecision
+) -> RouteDecision:
+    domain = str(staged.normalized_payload.get(DISCOVERED_DOMAIN_PAYLOAD_KEY) or "").strip()
+    if not domain:
+        return route
+    if route.zone == "absorb":
+        raise RuntimeError(
+            "records from discovered domains must not use the absorb route; "
+            f"domain={domain!r}"
+        )
+    if route.zone not in {"create", "review"}:
+        raise RuntimeError(
+            "records from discovered domains may route only to create or review; "
+            f"got {route.zone!r}"
+        )
+    return route
+
+
 def promote(
     staged: StagedRecord, route: RouteDecision, session=None, *, live: bool = False
 ) -> PromotionResult:
     if staged.sector_match == "out_of_sector":
         raise RuntimeError("out_of_sector staged records must not be promoted")
+    route = guard_discovered_domain_route(staged, route)
     if staged.entity_type == "actor":
         return _promote_actor(staged, route, session=session, live=live)
     if staged.entity_type == "person":

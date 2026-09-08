@@ -81,5 +81,6 @@ jobs:
           path: |
             agents/runs/*-audit.csv
             agents/runs/*-digest.md
+            agents/runs/open-web-*-report.md
             agents/runs/source-outcomes.md
           if-no-files-found: warn

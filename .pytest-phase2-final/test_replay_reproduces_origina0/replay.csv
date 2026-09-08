@@ -1,0 +1,4 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+2a70ec5c-bcd6-4612-8db5-aea9c4936845,climate_week,event,fixture://climate_week/events,18aa43668ae80773e344e88effd44dfcab32640eaf7562e8b891998fa14e41b2,climate-innovation-summit|2026-09-22,create,0.0,,,would_create,
+2a70ec5c-bcd6-4612-8db5-aea9c4936845,climate_week,event,fixture://climate_week/events,18aa43668ae80773e344e88effd44dfcab32640eaf7562e8b891998fa14e41b2,water-resilience-forum|2026-09-24,create,0.0,,,would_create,
+2a70ec5c-bcd6-4612-8db5-aea9c4936845,climate_week,event,fixture://climate_week/events,18aa43668ae80773e344e88effd44dfcab32640eaf7562e8b891998fa14e41b2,ai-for-energy-systems-workshop|2026-09-25,create,0.0,,,would_create,

@@ -1,0 +1,2 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+b5e62b0e-5991-4291-902c-9f35f74758c0,open_web_search,event,https://events.example/replay,1373fdecade93c9f1734fbb2a2db8a1f4682a2795c6d92f329dbd31cda34f60c,climate-event-replay|2027-03-10,create,0.0,,,would_create,
