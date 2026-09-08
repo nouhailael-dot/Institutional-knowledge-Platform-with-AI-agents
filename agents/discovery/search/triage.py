@@ -161,6 +161,9 @@ def deterministic_rejection(
     known_source_domains: Iterable[str],
     non_content_paths: Iterable[str] = DEFAULT_NON_CONTENT_PATHS,
 ) -> DeterministicReject | None:
+    parsed = urlparse(result.url or "")
+    if parsed.scheme not in ("http", "https") or "." not in parsed.netloc:
+        return DeterministicReject("invalid URL", domain="")
     domain = normalized_domain(result.url)
     if not domain:
         return DeterministicReject("invalid URL", domain="")
