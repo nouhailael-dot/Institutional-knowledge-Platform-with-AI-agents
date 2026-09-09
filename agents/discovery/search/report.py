@@ -81,8 +81,49 @@ def write_candidate_report(
                     query=_escape(row.query),
                 )
             )
+        if entity_type == "actor":
+            actor_rows = [row for row in rows if row.partner_signals is not None]
+            if actor_rows:
+                lines.extend(
+                    [
+                        "",
+                        "#### Partner evidence",
+                        "",
+                        "| Domain | Partner | Distinctiveness | Existing actors | Hubs | Sectors | Signals |",
+                        "| --- | ---: | ---: | ---: | --- | --- | --- |",
+                    ]
+                )
+                for row in actor_rows:
+                    lines.append(
+                        "| {domain} | {partner} | {distinctiveness} | {count} | {hubs} | "
+                        "{sectors} | {signals} |".format(
+                            domain=_escape(row.domain),
+                            partner=_format_score(row.partner_findability),
+                            distinctiveness=_format_score(row.distinctiveness),
+                            count=(
+                                "n/a"
+                                if row.existing_actor_count is None
+                                else str(row.existing_actor_count)
+                            ),
+                            hubs=_escape(", ".join(row.hub_matches)),
+                            sectors=_escape(", ".join(row.sector_codes)),
+                            signals=_escape(_partner_signal_summary(row.partner_signals or {})),
+                        )
+                    )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _escape(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _format_score(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.3f}"
+
+
+def _partner_signal_summary(signals: dict[str, str | None]) -> str:
+    return "; ".join(
+        f"{name}: {evidence}"
+        for name, evidence in signals.items()
+        if evidence
+    ) or "none"

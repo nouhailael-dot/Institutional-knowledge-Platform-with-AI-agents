@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy import event as sqla_event
 from sqlalchemy.orm import sessionmaker
 
+from agents.common.config import load_sources_config
 from agents.common.resolve_route import (
     RouteDecision,
     Thresholds,
@@ -20,6 +22,7 @@ from agents.common.resolve_route import (
     zone_for_score,
 )
 from agents.discovery.extractors.actor import ACTOR_FIELDS, ActorExtractor
+from agents.discovery.extractors.climate_week import ClimateWeekExtractor
 from agents.discovery.extractors.event import (
     EventExtractor,
     displayed_event_total,
@@ -41,6 +44,7 @@ from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.stage import InMemoryStageStore, StagedRecord, stage_record
 
 FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures" / "agents"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class StubToolClient:
@@ -53,20 +57,6 @@ class StubToolClient:
         assert kwargs["tool_name"] == "record_events"
         assert "temperature" not in kwargs
         return self.payload
-
-
-class BatchCountingToolClient:
-    def __init__(self):
-        self.calls = 0
-        self.event_card_counts: list[int] = []
-        self.payload_sizes: list[int] = []
-
-    def extract_with_tool(self, **kwargs):
-        self.calls += 1
-        user_payload = kwargs["user"]
-        self.event_card_counts.append(user_payload.count("event-card"))
-        self.payload_sizes.append(len(user_payload.encode("utf-8")))
-        return {"events": []}
 
 
 class FakeTransaction:
@@ -244,43 +234,96 @@ def test_climate_week_event_search_fixture_has_hubdb_rows():
     assert all("event-card" in row for row in rows[:3])
 
 
-def test_climate_week_hubdb_listing_is_extracted_in_row_batches():
+def test_climate_week_deterministic_fixture_yields_all_428_events():
+    config = load_sources_config(PROJECT_ROOT)
+    source_config = dict(dict(config["sources"])["climate_week"])
+    extractor = ClimateWeekExtractor(
+        theme_to_sector_codes=dict(source_config["theme_to_sector_codes"]),
+        base_url=str(source_config["listing_url"]),
+        min_row_count=int(source_config["min_event_row_count"]),
+    )
+    records = extractor.extract(fixture_doc("climate_week_event_search.html"))
+
+    assert len(records) == 428
+    assert all(record["title"] for record in records)
+    assert all(
+        re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(record["start_date"]))
+        for record in records
+    )
+    assert all(
+        str(record["website"]).startswith("https://www.climateweeknyc.org/event-search/")
+        for record in records
+    )
+    assert sum(record["location"] is None for record in records) == 39
+    assert sum(bool(record["sector_codes"]) for record in records) == 376
+    assert extractor.attention_reasons == []
+
+
+def test_climate_week_theme_mapping_is_table_driven():
     content = """
     <html><body>
       <div class="hubdb-listing">
-        <article class="event-card"><h2>One</h2></article>
-        <article class="event-card"><h2>Two</h2></article>
-        <article class="event-card"><h2>Three</h2></article>
+        <article class="event-card theme-energy theme-policy">
+          <a class="event-card__link" href="/event-search/one">
+            <h3 class="event-card__title">One</h3>
+            <time datetime="2026-09-17">September 17, 2026</time>
+          </a>
+        </article>
       </div>
     </body></html>
     """
-    client = BatchCountingToolClient()
-    extractor = EventExtractor(client, row_batch_size=2)
-    doc = FetchedDoc.from_content(
-        url="fixture://climate_week/event-search",
-        content=content,
-        meta={"extractor_mode": "hubdb_listing"},
+    extractor = ClimateWeekExtractor(
+        theme_to_sector_codes={"energy": ["WATER"], "policy": []},
+        base_url="https://www.climateweeknyc.org/event-search",
     )
 
-    assert extractor.extract(doc) == []
-    assert client.calls == 2
-    assert client.event_card_counts == [2, 1]
-    assert max(client.payload_sizes) < len(content.encode("utf-8")) + 300
+    records = extractor.extract(FetchedDoc.from_content(url="fixture://events", content=content))
+
+    assert records[0]["thematic_focus"] == "energy, policy"
+    assert records[0]["sector_codes"] == ["WATER"]
 
 
-def test_climate_week_missing_hubdb_listing_warns(caplog):
-    client = BatchCountingToolClient()
-    extractor = EventExtractor(client, row_batch_size=2)
+def test_climate_week_virtual_event_without_address_parses():
+    content = """
+    <div class="hubdb-listing">
+      <article class="event-card virtual theme-energy">
+        <a class="event-card__link" href="/event-search/virtual-event">
+          <h3 class="event-card__title">Virtual Energy Forum</h3>
+          <time datetime="2026-09-18">September 18, 2026</time>
+          <li class="event-card__meta-item--format"><span>Virtual</span></li>
+          <li class="event-card__meta-item--type">Public</li>
+        </a>
+      </article>
+    </div>
+    """
+    extractor = ClimateWeekExtractor(
+        theme_to_sector_codes={"energy": ["ENERGY"]},
+        base_url="https://www.climateweeknyc.org/event-search",
+    )
+
+    records = extractor.extract(FetchedDoc.from_content(url="fixture://events", content=content))
+
+    assert records[0]["location"] is None
+    assert records[0]["event_type"] == "Virtual"
+    assert records[0]["access_type"] == "Public"
+
+
+def test_climate_week_missing_hubdb_listing_warns_and_sets_attention(caplog):
+    extractor = ClimateWeekExtractor(
+        theme_to_sector_codes={},
+        base_url="https://www.climateweeknyc.org/event-search",
+        min_row_count=400,
+    )
     doc = FetchedDoc.from_content(
         url="fixture://climate_week/event-search",
         content="<html><body>No listing here</body></html>",
-        meta={"extractor_mode": "hubdb_listing"},
     )
 
     caplog.set_level(logging.WARNING)
     assert extractor.extract(doc) == []
 
-    assert client.calls == 0
+    assert extractor.attention_reasons
+    assert "parsed 0 event rows" in extractor.attention_reasons[0]
     assert "hubdb-listing container not found" in caplog.text
     assert "page_size_bytes=" in caplog.text
 
@@ -294,14 +337,17 @@ def test_climate_week_displayed_total_mismatch_sets_attention_reason():
       <article class="event-card"><h2>Three</h2></article>
     </div>
     """
-    extractor = EventExtractor(BatchCountingToolClient(), row_batch_size=10)
+    extractor = ClimateWeekExtractor(
+        theme_to_sector_codes={},
+        base_url="https://www.climateweeknyc.org/event-search",
+    )
     doc = FetchedDoc.from_content(
         url="fixture://climate_week/event-search",
         content=content,
         meta={"extractor_mode": "hubdb_listing"},
     )
 
-    assert extractor.extract(doc) == []
+    assert len(extractor.extract(doc)) == 3
     assert extractor.attention_reasons
     assert "displays total=5 but parser found 3 rows" in extractor.attention_reasons[0]
 

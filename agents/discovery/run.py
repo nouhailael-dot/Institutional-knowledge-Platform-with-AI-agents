@@ -25,6 +25,7 @@ from agents.common.resolve_route import (
 )
 from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.extractors.actor import ActorExtractor
+from agents.discovery.extractors.climate_week import ClimateWeekExtractor
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.extractors.person import PersonExtractor
 from agents.discovery.extractors.unga_guide import UngaGuideExtractor
@@ -120,6 +121,15 @@ def build_extractor(
     if entity_type not in {"event", "actor", "person"}:
         raise NotImplementedError(
             "discovery supports entity='event', entity='actor', or entity='person'"
+        )
+    if entity_type == "event" and source_config.get("extractor") == "climate_week":
+        theme_mapping = source_config.get("theme_to_sector_codes")
+        if not isinstance(theme_mapping, dict):
+            raise ValueError("climate_week requires a theme_to_sector_codes mapping")
+        return ClimateWeekExtractor(
+            theme_to_sector_codes=theme_mapping,
+            base_url=str(source_config.get("listing_url") or ""),
+            min_row_count=int(source_config.get("min_event_row_count", 0) or 0),
         )
     fixture_response = source_config.get("llm_fixture_response")
     if fixture_response and offline:

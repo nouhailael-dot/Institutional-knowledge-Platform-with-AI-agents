@@ -32,7 +32,14 @@ from agents.discovery.search.query_generation import (
     normalize_event_geography,
 )
 from agents.discovery.search.store import InMemorySearchCandidateStore
-from agents.discovery.search.triage import SearchTriageClient, deterministic_rejection
+from agents.discovery.search.triage import (
+    PARTNER_SIGNAL_NAMES,
+    SearchTriageClient,
+    actor_distinctiveness_score,
+    deterministic_rejection,
+    load_actor_hub_sector_counts,
+    load_actor_triage_reference_examples,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -86,6 +93,21 @@ class RecordingTriageClient:
 
     def triage(self, candidates, *, entity_type, sectors, references):
         self.calls.append(list(candidates))
+        actor_fields = {}
+        if entity_type == "actor":
+            actor_fields = {
+                "is_own_page": True,
+                "is_operating_org": True,
+                "partner_signals": {
+                    name: (
+                        "Partnerships page names an external collaboration programme"
+                        if name == "collaboration_surface"
+                        else None
+                    )
+                    for name in PARTNER_SIGNAL_NAMES
+                },
+                "partner_findability": 0.8,
+            }
         return {
             candidate.url: TriageDecision(
                 url=candidate.url,
@@ -93,6 +115,7 @@ class RecordingTriageClient:
                 plausible_sector=True,
                 fit_score=self.score,
                 reason="matches reference set",
+                **actor_fields,
             )
             for candidate in candidates
         }
@@ -503,6 +526,11 @@ def test_open_web_triage_token_budget_matches_configured_batch_size():
     assert batch_size == 8
     assert max_tokens >= 8000
     assert max_tokens >= batch_size * 1000
+    assert config["actor_partner_findability_floor"] == pytest.approx(0.20)
+    assert config["actor_fit_weights"] == {
+        "partner_findability": 0.80,
+        "distinctiveness": 0.20,
+    }
 
 
 def test_claude_web_search_provider_parses_multi_block_response_by_type():
@@ -660,12 +688,44 @@ def test_search_triage_client_actor_prompt_requires_organisation_own_page():
         [candidate],
         entity_type="actor",
         sectors=[],
-        references=[{"name": "Reference Lab"}],
+        references=[
+            {
+                "actor_id": "internal-id",
+                "name": "Reference Lab",
+                "actor_type": "university_lab",
+                "sectors": ["water"],
+                "description": "must not leave the application",
+                "website": "https://reference.example",
+            }
+        ],
     )
 
     user_payload = json.loads(client.calls[0]["user"])
     assert "not published by the organisation itself" in user_payload["actor_quality_rule"]
     assert "not the organisation's own page" in user_payload["actor_quality_rule"]
+    assert user_payload["reference_examples"] == [
+        {
+            "name": "Reference Lab",
+            "actor_type": "university_lab",
+            "sectors": ["WATER"],
+        }
+    ]
+    schema = client.calls[0]["input_schema"]["properties"]["candidates"]["items"]
+    assert {
+        "is_own_page",
+        "is_operating_org",
+        "actor_type_guess",
+        "hub_matches",
+        "sector_codes",
+        "partner_signals",
+        "partner_findability",
+        "distinctiveness",
+        "fit_score",
+        "verdict",
+        "reason",
+    }.issubset(schema["properties"])
+    signal_schema = schema["properties"]["partner_signals"]
+    assert set(signal_schema["properties"]) == set(PARTNER_SIGNAL_NAMES)
 
 
 def test_search_triage_client_replaces_url_shaped_reasons():
@@ -676,9 +736,22 @@ def test_search_triage_client_replaces_url_shaped_reasons():
                 "candidates": [
                     {
                         "url": candidate.url,
-                        "is_entity_type": True,
-                        "plausible_sector": True,
+                        "is_own_page": True,
+                        "is_operating_org": True,
+                        "actor_type_guess": "research_organization",
+                        "hub_matches": ["Colorado Water Hub"],
+                        "sector_codes": ["WATER"],
+                        "partner_signals": {
+                            "collaboration_surface": "Industry partnerships programme",
+                            "open_programmes": None,
+                            "precedent": None,
+                            "route_in": None,
+                            "complementarity": None,
+                        },
+                        "partner_findability": 0.4,
+                        "distinctiveness": 0.9,
                         "fit_score": 0.8,
+                        "verdict": "accept",
                         "reason": "https://fresh.example/about",
                     }
                 ]
@@ -695,6 +768,179 @@ def test_search_triage_client_replaces_url_shaped_reasons():
 
     assert decisions[candidate.url].reason == "LLM returned URL instead of reasoning"
     assert not decisions[candidate.url].reason.startswith("http")
+
+
+def test_actor_partner_floor_rejects_no_route_and_accepts_one_signal(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch)
+    no_route = _result("https://closed.example/about", "q")
+    open_route = _result("https://open.example/partners", "q")
+    client = StubToolClient(
+        [
+            {
+                "candidates": [
+                    _actor_triage_item(
+                        no_route.url,
+                        partner_findability=0.9,
+                        collaboration_surface=True,
+                    ),
+                    _actor_triage_item(
+                        open_route.url,
+                        partner_findability=0.2,
+                        collaboration_surface="Industry Partnerships page with an affiliate scheme",
+                    ),
+                ]
+            }
+        ]
+    )
+    triage = SearchTriageClient(
+        client,
+        {
+            "triage_max_tokens": 8000,
+            "actor_partner_findability_floor": 0.2,
+            "actor_fit_weights": {
+                "partner_findability": 0.8,
+                "distinctiveness": 0.2,
+            },
+        },
+    )
+    provider = StaticSearchProvider({"q": [no_route, open_route]})
+    args = _args(tmp_path, entity="actor")
+    args.audit_out = str(tmp_path / "audit.csv")
+
+    result = search_run.run_search_triage(
+        args,
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        store=InMemorySearchCandidateStore(),
+        search_provider=provider,
+        query_generator=StaticQueryGenerator(["q"]),
+        triage_client=triage,
+    )
+
+    rows = {row.url: row for row in result["candidates"]}
+    assert rows[no_route.url].triage_verdict == "rejected"
+    assert rows[no_route.url].triage_reason == "no partner route"
+    assert all(value is None for value in rows[no_route.url].partner_signals.values())
+    assert rows[open_route.url].triage_verdict == "accepted"
+    assert rows[open_route.url].fit_score == pytest.approx(0.16)
+    assert rows[open_route.url].fit_score < 0.70
+    assert result["stats"]["actor_partner_route_rejected"] == 1
+    assert result["stats"]["actor_partner_route_rejected_proportion"] == pytest.approx(0.5)
+    report = Path(result["report_path"]).read_text(encoding="utf-8")
+    assert "#### Partner evidence" in report
+    assert "Industry Partnerships page with an affiliate scheme" in report
+
+
+def test_actor_distinctiveness_uses_database_count_and_configured_weights():
+    candidate = _result("https://open.example/partners", "water research Boulder")
+    client = StubToolClient(
+        [
+            {
+                "candidates": [
+                    _actor_triage_item(
+                        candidate.url,
+                        partner_findability=0.5,
+                        collaboration_surface="Sponsored research partnerships are open",
+                        hub_matches=["Colorado Water Hub"],
+                        sector_codes=["WATER"],
+                        distinctiveness=0.99,
+                        fit_score=0.99,
+                    )
+                ]
+            }
+        ]
+    )
+    triage = SearchTriageClient(
+        client,
+        {
+            "actor_partner_findability_floor": 0.2,
+            "actor_fit_weights": {
+                "partner_findability": 0.6,
+                "distinctiveness": 0.4,
+            },
+        },
+    )
+
+    decisions = triage.triage(
+        [candidate],
+        entity_type="actor",
+        sectors=[{"code": "WATER", "name": "Water"}],
+        references=[],
+        actor_context={
+            "coverage_counts": {("Colorado Water Hub", "WATER"): 4},
+            "candidate_hubs": {candidate.url: ("Colorado Water Hub",)},
+        },
+    )
+
+    decision = decisions[candidate.url]
+    assert decision.existing_actor_count == 4
+    assert decision.distinctiveness == pytest.approx(actor_distinctiveness_score(4))
+    assert decision.distinctiveness == pytest.approx(0.2)
+    assert decision.fit_score == pytest.approx(0.38)
+    context = json.loads(client.calls[0]["user"])["candidates"][0]["coverage_context"]
+    assert context == {
+        "likely_hubs": [
+            {
+                "hub_name": "Colorado Water Hub",
+                "sector_counts": [
+                    {"sector_code": "WATER", "existing_actor_count": 4}
+                ],
+            }
+        ]
+    }
+    assert "actor" not in json.dumps(context).lower().replace("existing_actor_count", "")
+
+
+def test_actor_hub_sector_counts_are_loaded_without_actor_details():
+    session = CapturingSession(
+        [
+            {"hub_name": "Colorado Water Hub", "sector_code": "water", "actor_count": 4},
+            {"hub_name": "Utah Mining Hub", "sector_code": "MINING", "actor_count": 1},
+        ]
+    )
+
+    counts = load_actor_hub_sector_counts(session)
+
+    assert counts == {
+        ("Colorado Water Hub", "WATER"): 4,
+        ("Utah Mining Hub", "MINING"): 1,
+    }
+    sql = "\n".join(session.statements)
+    assert "count(DISTINCT CASE" in sql
+    assert "lower(actor.actor_type) <> 'aggregate'" in sql
+    assert "actor.name" not in sql
+    assert "actor.description" not in sql
+
+
+def test_actor_triage_references_load_only_public_calibration_fields():
+    session = CapturingSession(
+        [
+            {
+                "name": "Reference Lab",
+                "actor_type": "university_lab",
+                "sectors": ["WATER", "AI"],
+                "actor_id": "must-not-pass-through",
+                "description": "must-not-pass-through",
+                "website": "https://must-not-pass-through.example",
+            }
+        ]
+    )
+
+    references = load_actor_triage_reference_examples(session)
+
+    assert references == [
+        {
+            "name": "Reference Lab",
+            "actor_type": "university_lab",
+            "sectors": ["WATER", "AI"],
+        }
+    ]
+    sql = "\n".join(session.statements)
+    assert "actor.name" in sql
+    assert "actor.actor_type" in sql
+    assert "sector.code" in sql
+    assert "description" not in sql
+    assert "website" not in sql
 
 
 def test_deterministic_rejections_happen_before_llm_triage(monkeypatch, tmp_path):
@@ -1286,6 +1532,8 @@ def _install_open_web_config(monkeypatch, **overrides) -> None:
         "forward_window_days": 365,
         "people_enabled": False,
         "accept_floor": {"event": 0.60, "actor": 0.70, "person": 0.95},
+        "actor_partner_findability_floor": 0.20,
+        "actor_fit_weights": {"partner_findability": 0.80, "distinctiveness": 0.20},
         "blocklist_domains": ["blocked.example"],
         "non_content_path_fragments": ["/privacy"],
         "search_model": "claude-haiku-4-5",
@@ -1299,6 +1547,41 @@ def _install_open_web_config(monkeypatch, **overrides) -> None:
         "sources": {"known": {"listing_url": "https://known.example/events"}},
     }
     monkeypatch.setattr(search_run, "load_sources_config", lambda root=None: config)
+
+
+def _actor_triage_item(
+    url: str,
+    *,
+    partner_findability: float,
+    collaboration_surface=None,
+    hub_matches: list[str] | None = None,
+    sector_codes: list[str] | None = None,
+    distinctiveness: float = 0.0,
+    fit_score: float = 0.0,
+) -> dict[str, object]:
+    has_route = isinstance(collaboration_surface, str) and bool(
+        collaboration_surface.strip()
+    )
+    return {
+        "url": url,
+        "is_own_page": True,
+        "is_operating_org": True,
+        "actor_type_guess": "research_organization",
+        "hub_matches": hub_matches or ["Colorado Water Hub"],
+        "sector_codes": sector_codes or ["WATER"],
+        "partner_signals": {
+            "collaboration_surface": collaboration_surface,
+            "open_programmes": None,
+            "precedent": None,
+            "route_in": None,
+            "complementarity": None,
+        },
+        "partner_findability": partner_findability,
+        "distinctiveness": distinctiveness,
+        "fit_score": fit_score,
+        "verdict": "accept" if has_route else "reject",
+        "reason": "actionable partner" if has_route else "no partner route",
+    }
 
 
 def _actor_query_session() -> RoutedSession:

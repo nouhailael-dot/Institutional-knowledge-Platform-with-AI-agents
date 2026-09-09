@@ -33,6 +33,9 @@
       "people_enabled": false,
       "query_excluded_sectors": ["CROSS", "DIASPORA"],
       "accept_floor": { "event": 0.60, "actor": 0.70, "person": 0.95 },
+      "actor_partner_findability_floor": 0.20,
+      "actor_fit_weights":
+        { "partner_findability": 0.80, "distinctiveness": 0.20 },
       "blocklist_domains":
         [
           "facebook.com",
@@ -76,15 +79,30 @@
           "entity_types": ["event"],
           "listing_url": "https://www.climateweeknyc.org/event-search",
           "raw_storage_dir": "agents/raw_documents",
+          # This source uses structured event cards and a deterministic extractor.
+          "extractor": "climate_week",
           "fixture_urls": ["fixture://climate_week/event-search"],
           "fixtures":
             {
               "fixture://climate_week/event-search": "tests/fixtures/agents/climate_week_event_search.html",
             },
-          "llm_fixture_response": "tests/fixtures/agents/climate_week_events.expected.json",
           "pagination_urls": [],
-          "event_row_batch_size": 25,
           "min_event_row_count": 400,
+          "theme_to_sector_codes":
+            {
+              "cities": ["SUSTAIN"],
+              "energy": ["ENERGY"],
+              "policy": [],
+              "health": ["HEALTH"],
+              "nature": ["SUSTAIN"],
+              "environmental-justice": ["SUSTAIN"],
+              "technology-and-ai": ["AI"],
+              "industry": [],
+              "built-environment": ["SUSTAIN"],
+              "finance": [],
+              "food": ["AGRI"],
+              "transport-and-travel": ["ENERGY"],
+            },
           "diagnostics":
             {
               "listing_container_selector": ".hubdb-listing",
@@ -95,9 +113,6 @@
           "max_retries": 3,
           "user_agent_product": "GHUS-AgentDiscovery/0.1",
           "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
-          "claude_model": "claude-sonnet-5",
-          "llm_pricing":
-            { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
         },
       "unga_programme": {
           "entity_types": ["event"],

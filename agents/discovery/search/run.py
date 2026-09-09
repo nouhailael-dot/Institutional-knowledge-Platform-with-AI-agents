@@ -7,6 +7,7 @@ candidate pages, stage records, route records, or write canonical tables.
 from __future__ import annotations
 
 import argparse
+import inspect
 import logging
 from dataclasses import replace
 from pathlib import Path
@@ -22,7 +23,6 @@ from agents.discovery.search.providers import SearchProvider, build_search_provi
 from agents.discovery.search.query_generation import (
     QueryBundle,
     QueryGenerator,
-    load_actor_reference_set,
     load_event_reference_examples,
     load_seeded_sectors,
 )
@@ -31,10 +31,15 @@ from agents.discovery.search.store import InMemorySearchCandidateStore, SQLSearc
 from agents.discovery.search.triage import (
     TRIAGE_INCOMPLETE_REASON_PREFIX,
     SearchTriageClient,
+    actor_fit_weights,
+    actor_partner_findability_floor,
     blocklist_domains_for_entity,
     deterministic_rejection,
+    has_partner_route,
     is_triage_incomplete,
     known_source_domains,
+    load_actor_hub_sector_counts,
+    load_actor_triage_reference_examples,
     load_existing_actor_domains,
     normalized_domain,
     triage_verdict,
@@ -132,6 +137,10 @@ def run_search_triage(
         stats["reference_count"] = bundle.reference_count
         if entity_type == "actor":
             _attach_actor_query_metadata(stats, bundle.metadata or {})
+            weights = actor_fit_weights(config)
+            stats["actor_partner_findability_floor"] = actor_partner_findability_floor(config)
+            stats["actor_fit_weight_partner_findability"] = weights["partner_findability"]
+            stats["actor_fit_weight_distinctiveness"] = weights["distinctiveness"]
 
         attention_reasons: list[str] = []
         queries = bundle.queries
@@ -188,6 +197,7 @@ def run_search_triage(
             session=session,
             root=root,
             cost_meter=cost_meter,
+            actor_query_metadata=bundle.metadata or {},
         )
         _append_llm_triaged_rows(
             run_id=run_id,
@@ -226,6 +236,8 @@ def run_search_triage(
         stats["triage_incomplete"] = sum(
             1 for row in candidate_rows if row.triage_verdict == "triage_incomplete"
         )
+        if entity_type == "actor":
+            _attach_actor_partner_stats(stats, candidate_rows)
         if stats["triage_incomplete"]:
             attention_reasons.append(
                 f"triage_incomplete: {stats['triage_incomplete']} candidate(s) "
@@ -402,6 +414,26 @@ def _attach_actor_query_metadata(stats: dict[str, object], metadata: dict[str, o
     stats["actor_selected_thinnest_hubs"] = "; ".join(selected_hubs)
 
 
+def _attach_actor_partner_stats(
+    stats: dict[str, object],
+    candidate_rows: list[CandidateRecord],
+) -> None:
+    evaluated = [
+        row
+        for row in candidate_rows
+        if row.partner_signals is not None
+        and not str(row.triage_reason or "").lower().startswith(
+            TRIAGE_INCOMPLETE_REASON_PREFIX
+        )
+    ]
+    route_rejected = sum(row.triage_reason == "no partner route" for row in evaluated)
+    stats["actor_partner_evaluated"] = len(evaluated)
+    stats["actor_partner_route_rejected"] = route_rejected
+    stats["actor_partner_route_rejected_proportion"] = (
+        route_rejected / len(evaluated) if evaluated else 0.0
+    )
+
+
 def _cap_triage_candidates(
     *,
     run_id: str,
@@ -445,15 +477,25 @@ def _llm_triage(
     session,
     root: Path,
     cost_meter: CostMeter,
+    actor_query_metadata: dict[str, object] | None = None,
 ) -> dict[str, TriageDecision]:
     if not results:
         return {}
     sectors = load_seeded_sectors(root)
     references = (
-        load_actor_reference_set(session)
+        load_actor_triage_reference_examples(session)
         if entity_type == "actor"
         else load_event_reference_examples(session)
     )
+    actor_context = None
+    if entity_type == "actor":
+        actor_context = {
+            "coverage_counts": load_actor_hub_sector_counts(session),
+            "candidate_hubs": _candidate_hubs_from_query_plan(
+                results,
+                actor_query_metadata or {},
+            ),
+        }
     decisions: dict[str, TriageDecision] = {}
     batch_size = int(config.get("triage_batch_size", 20))
     if batch_size <= 0:
@@ -466,6 +508,7 @@ def _llm_triage(
             entity_type=entity_type,
             sectors=sectors,
             references=references,
+            actor_context=actor_context,
         )
         decisions.update(batch_decisions)
         cost_meter.enforce()
@@ -479,6 +522,7 @@ def _triage_batch_with_retry(
     entity_type: str,
     sectors: list[dict[str, str]],
     references: list[dict[str, object]],
+    actor_context: dict[str, object] | None = None,
 ) -> dict[str, TriageDecision]:
     decisions = _triage_once(
         batch,
@@ -486,6 +530,7 @@ def _triage_batch_with_retry(
         entity_type=entity_type,
         sectors=sectors,
         references=references,
+        actor_context=actor_context,
     )
     if decisions is None:
         logger.warning("LLM triage batch failed; retrying split batch once")
@@ -495,6 +540,7 @@ def _triage_batch_with_retry(
             entity_type=entity_type,
             sectors=sectors,
             references=references,
+            actor_context=actor_context,
             incomplete_reason="batch failed after split retry",
         )
 
@@ -514,6 +560,7 @@ def _triage_batch_with_retry(
         entity_type=entity_type,
         sectors=sectors,
         references=references,
+        actor_context=actor_context,
         incomplete_reason="candidate omitted after split retry",
     )
     for url, decision in batch_decisions.items():
@@ -532,14 +579,17 @@ def _triage_once(
     entity_type: str,
     sectors: list[dict[str, str]],
     references: list[dict[str, object]],
+    actor_context: dict[str, object] | None = None,
 ) -> dict[str, TriageDecision] | None:
     try:
-        return triage_client.triage(
-            batch,
-            entity_type=entity_type,
-            sectors=sectors,
-            references=references,
-        )
+        kwargs = {
+            "entity_type": entity_type,
+            "sectors": sectors,
+            "references": references,
+        }
+        if actor_context is not None and _triage_supports_actor_context(triage_client):
+            kwargs["actor_context"] = actor_context
+        return triage_client.triage(batch, **kwargs)
     except Exception as exc:  # noqa: BLE001 - a malformed/failed LLM batch must not kill the run.
         logger.warning("LLM triage call failed for %d candidate(s): %s", len(batch), exc)
         return None
@@ -552,6 +602,7 @@ def _retry_split_batch_once(
     entity_type: str,
     sectors: list[dict[str, str]],
     references: list[dict[str, object]],
+    actor_context: dict[str, object] | None = None,
     incomplete_reason: str,
 ) -> dict[str, TriageDecision]:
     if not batch:
@@ -569,6 +620,7 @@ def _retry_split_batch_once(
             entity_type=entity_type,
             sectors=sectors,
             references=references,
+            actor_context=actor_context,
         )
         if retry_decisions is None:
             decisions.update(_incomplete_decisions(chunk, incomplete_reason))
@@ -584,6 +636,42 @@ def _retry_split_batch_once(
         decisions.update(chunk_decisions)
         decisions.update(_incomplete_decisions(missing, incomplete_reason))
     return _only_batch_decisions(batch, decisions)
+
+
+def _triage_supports_actor_context(triage_client) -> bool:
+    try:
+        parameters = inspect.signature(triage_client.triage).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        parameter.name == "actor_context"
+        or parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+
+
+def _candidate_hubs_from_query_plan(
+    results: list[SearchResult],
+    metadata: dict[str, object],
+) -> dict[str, tuple[str, ...]]:
+    hubs_by_query: dict[str, str] = {}
+    for item in metadata.get("query_plan", []) or []:
+        if not isinstance(item, dict):
+            continue
+        query = str(item.get("query") or "").strip()
+        hub_name = str(item.get("hub_name") or "").strip()
+        if query and hub_name:
+            hubs_by_query[query] = hub_name
+
+    candidate_hubs: dict[str, tuple[str, ...]] = {}
+    for result in results:
+        hubs: list[str] = []
+        for query in result.query.split(" | "):
+            hub_name = hubs_by_query.get(query)
+            if hub_name and hub_name not in hubs:
+                hubs.append(hub_name)
+        candidate_hubs[result.url] = tuple(hubs)
+    return candidate_hubs
 
 
 def _deduplicate_search_results(results: list[SearchResult]) -> list[SearchResult]:
@@ -658,6 +746,9 @@ def _append_llm_triaged_rows(
 ) -> None:
     floors = dict(config.get("accept_floor", {}) or {})
     floor = float(floors.get(entity_type, 0.5))
+    partner_floor = (
+        actor_partner_findability_floor(config) if entity_type == "actor" else None
+    )
     decided_urls = set(decisions)
     capped_urls = {
         row.url
@@ -676,9 +767,17 @@ def _append_llm_triaged_rows(
                 fit_score=None,
                 reason=f"{TRIAGE_INCOMPLETE_REASON_PREFIX} candidate was not assigned a decision",
             )
-        verdict = triage_verdict(decision, floor=floor)
+        verdict = triage_verdict(
+            decision,
+            floor=floor,
+            entity_type=entity_type,
+            partner_floor=partner_floor,
+        )
         reason = decision.reason
-        if (
+        if entity_type == "actor" and verdict == "rejected" and decision.accepted:
+            if not has_partner_route(decision, floor=float(partner_floor or 0.0)):
+                reason = "no partner route"
+        elif (
             result.url in decided_urls
             and verdict == "rejected"
             and decision.fit_score is not None
@@ -694,6 +793,7 @@ def _append_llm_triaged_rows(
                 triage_verdict=verdict,
                 triage_reason=reason,
                 fit_score=decision.fit_score,
+                actor_triage=decision if entity_type == "actor" else None,
             )
         )
 

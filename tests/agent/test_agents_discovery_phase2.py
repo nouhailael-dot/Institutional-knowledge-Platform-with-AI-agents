@@ -12,6 +12,7 @@ from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.raw_storage import RawContentStore
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery import run as discovery_run
+from agents.discovery.extractors.climate_week import ClimateWeekExtractor
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.promote import PromotionResult
 from agents.discovery.relevance import load_seeded_sector_codes
@@ -176,6 +177,14 @@ def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
         source = dict(sources[source_name])
         assert source["raw_storage_dir"]
         assert source["contact_email_env"] == "GHUS_AGENT_CONTACT_EMAIL"
+    climate_week = dict(sources["climate_week"])
+    assert climate_week["extractor"] == "climate_week"
+    assert "claude_model" not in climate_week
+    assert "llm_pricing" not in climate_week
+    assert "event_row_batch_size" not in climate_week
+    assert len(dict(climate_week["theme_to_sector_codes"])) == 12
+    for source_name in ("unga_programme", "unga_guide"):
+        source = dict(sources[source_name])
         assert "claude_model" in source
         assert "llm_pricing" in source
 
@@ -426,50 +435,64 @@ def test_extractor_attention_reason_overrides_success_status(tmp_path):
         content="""
         <!-- event listing: total=5 fetched=2 pages_needed=3 max_pages=10 -->
         <div class="hubdb-listing">
-          <article class="event-card"><h2>One</h2></article>
-          <article class="event-card"><h2>Two</h2></article>
+          <article class="event-card theme-energy">
+            <a class="event-card__link" href="/event-search/one">
+              <h3 class="event-card__title">One</h3>
+              <time datetime="2026-09-17">September 17, 2026</time>
+            </a>
+          </article>
+          <article class="event-card theme-energy">
+            <a class="event-card__link" href="/event-search/two">
+              <h3 class="event-card__title">Two</h3>
+              <time datetime="2026-09-18">September 18, 2026</time>
+            </a>
+          </article>
         </div>
         """,
         meta={"extractor_mode": "hubdb_listing"},
     )
     valid_code = min(load_seeded_sector_codes(PROJECT_ROOT))
-    client = CountingToolClient(
-        {
-            "events": [
-                {
-                    "title": "Climate Guard Event",
-                    "start_date": "2026-09-22",
-                    "end_date": None,
-                    "description": None,
-                    "location": None,
-                    "country": None,
-                    "website": None,
-                    "thematic_focus": None,
-                    "event_type": None,
-                    "expected_attendance": None,
-                    "access_type": None,
-                    "recurring_pattern": None,
-                    "sponsoring_orgs": None,
-                    "sector_codes": [valid_code],
-                }
-            ]
-        }
-    )
-
     result = run_pipeline(
         args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
         root=PROJECT_ROOT,
         run_log=InMemoryRunLog(),
         stage_store=InMemoryStageStore(),
         source=StaticSource(doc),
-        extractor=EventExtractor(client, row_batch_size=10, min_row_count=4),
+        extractor=ClimateWeekExtractor(
+            theme_to_sector_codes={"energy": [valid_code]},
+            base_url="https://www.climateweeknyc.org/event-search",
+            min_row_count=4,
+        ),
         raw_store=RawContentStore(tmp_path / "raw"),
     )
 
-    assert result["stats"]["records_staged"] == 1
+    assert result["stats"]["records_staged"] == 2
     assert result["status"] == "attention"
     assert "below configured floor 4" in result["stats"]["status_reason"]
     assert "displays total=5 but parser found 2 rows" in result["stats"]["status_reason"]
+
+
+def test_build_climate_week_extractor_never_constructs_llm(monkeypatch):
+    source_config = dict(load_config(PROJECT_ROOT)["sources"]["climate_week"])
+
+    def fail_if_constructed(*args, **kwargs):
+        raise AssertionError("Climate Week must not construct an LLM client")
+
+    monkeypatch.setattr(discovery_run, "ClaudeToolClient", fail_if_constructed)
+
+    extractor = discovery_run.build_extractor(
+        "event",
+        source_config,
+        PROJECT_ROOT,
+        offline=False,
+        cost_meter=CostMeter(max_usd=0.50),
+    )
+
+    assert isinstance(extractor, ClimateWeekExtractor)
+    assert extractor.theme_to_sector_codes == {
+        theme: tuple(codes)
+        for theme, codes in source_config["theme_to_sector_codes"].items()
+    }
 
 
 def test_status_attention_when_documents_fetch_but_zero_records_extract(tmp_path):
