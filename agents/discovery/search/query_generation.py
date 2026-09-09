@@ -120,6 +120,46 @@ TERM_STOPWORDS = {
 }
 REPRESENTATIVE_TERM_WHITELIST = {"arpa-e"}
 REPRESENTATIVE_TOKEN = re.compile(r"[A-Za-z][A-Za-z-]{1,}")
+ACTOR_TYPE_ROTATION_GROUPS = (
+    (
+        "company / industrial operator",
+        ("company", "corporate R&D lab", "industrial partner", "project developer"),
+    ),
+    (
+        "research organization",
+        (
+            "federal research system",
+            "national research center",
+            "national research lab",
+            "research organization",
+            "university",
+            "university lab",
+        ),
+    ),
+    (
+        "public agency",
+        ("federal agency", "government agency", "state agency"),
+    ),
+    (
+        "UN / intergovernmental",
+        (
+            "intergovernmental organization",
+            "multilateral development bank",
+            "un agency",
+            "un committee",
+            "un programme",
+            "un secretariat",
+        ),
+    ),
+    (
+        "ecosystem convenor",
+        ("consortium", "industry association", "nonprofit"),
+    ),
+    (
+        "startup ecosystem",
+        ("accelerator", "startup", "venture capital"),
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -185,10 +225,13 @@ class QueryGenerator:
             actor_types = load_actor_types(session)
             hubs = load_actor_query_hubs(session)
             max_queries = int(self.config.get("actor_query_limit") or self.config.get("max_searches", 40))
+            types_per_hub = int(self.config.get("actor_type_queries_per_hub", 3))
             deterministic, metadata = _actor_grid_queries(
                 actor_types,
                 hubs,
                 max_queries=max_queries,
+                rotation_seed=_actor_type_rotation_seed(self.today, self.config),
+                types_per_hub=types_per_hub,
             )
             references = []
             llm_queries = []
@@ -496,6 +539,8 @@ def _actor_grid_queries(
     hubs: list[dict[str, object]],
     *,
     max_queries: int,
+    rotation_seed: int = 0,
+    types_per_hub: int = 3,
 ) -> tuple[list[str], dict[str, object]]:
     if not actor_types:
         raise RuntimeError("actor query generation requires at least one non-aggregate actor_type")
@@ -503,43 +548,203 @@ def _actor_grid_queries(
         raise RuntimeError("actor query generation requires at least one non-category hub")
     if max_queries <= 0:
         raise RuntimeError("open_web_discovery actor query limit must be positive")
+    if types_per_hub <= 0:
+        raise RuntimeError("open_web_discovery.actor_type_queries_per_hub must be positive")
 
     readable_types = [_actor_type_query_phrase(actor_type) for actor_type in actor_types]
     readable_types = [phrase for phrase in _distinct_queries(readable_types) if phrase != "aggregate"]
     if not readable_types:
         raise RuntimeError("actor query generation found no searchable non-aggregate actor types")
 
-    queries: list[str] = []
-    query_hubs: dict[str, dict[str, object]] = {}
-    grid_size = 0
-    for hub in sorted(hubs, key=lambda item: (int(item.get("actor_count") or 0), str(item.get("name") or ""))):
-        theme = str(hub.get("theme") or "").strip()
-        geographies = [str(geo).strip() for geo in hub.get("geographies", []) or [] if str(geo).strip()]
-        for geography in geographies:
-            for actor_type in readable_types:
-                grid_size += 1
-                if len(queries) >= max_queries:
-                    continue
-                query = f"{actor_type} {theme} {geography}"
-                queries.append(query)
-                query_hubs.setdefault(
-                    str(hub.get("hub_id") or hub.get("name") or ""),
-                    {
-                        "name": str(hub.get("name") or ""),
-                        "actor_count": int(hub.get("actor_count") or 0),
-                        "theme": theme,
-                        "geographies": [],
-                    },
-                )
-                selected_geographies = query_hubs[str(hub.get("hub_id") or hub.get("name") or "")]["geographies"]
-                if geography not in selected_geographies:
-                    selected_geographies.append(geography)
+    sorted_hubs = sorted(
+        hubs,
+        key=lambda item: (int(item.get("actor_count") or 0), str(item.get("name") or "")),
+    )
+    type_buckets = _actor_type_rotation_buckets(readable_types)
+    plans = [
+        _actor_hub_query_plan(
+            hub,
+            type_buckets,
+            hub_index=index,
+            rotation_seed=rotation_seed,
+            types_per_hub=types_per_hub,
+        )
+        for index, hub in enumerate(sorted_hubs)
+    ]
+    plans = [plan for plan in plans if plan["geographies"] and plan["actor_types"]]
 
-    return _distinct_queries(queries), {
+    queries: list[str] = []
+    query_plan: list[dict[str, object]] = []
+    seen_queries: set[str] = set()
+    pass_index = 0
+    while len(queries) < max_queries:
+        added_this_pass = False
+        for plan in plans:
+            if len(queries) >= max_queries:
+                break
+            query_item = _query_for_plan_pass(plan, pass_index, seen_queries)
+            if query_item is None:
+                continue
+            queries.append(str(query_item["query"]))
+            query_plan.append(query_item)
+            seen_queries.add(str(query_item["query"]).lower())
+            added_this_pass = True
+        if not added_this_pass:
+            break
+        pass_index += 1
+
+    selected_hubs = _selected_hub_metadata(plans, query_plan)
+    grid_size = sum(
+        len(plan["actor_types"]) * len(plan["geographies"])
+        for plan in plans
+    )
+    full_grid_size = sum(
+        len(readable_types) * len(plan["geographies"])
+        for plan in plans
+    )
+    return queries, {
         "actor_types": readable_types,
+        "actor_type_rotation_groups": _actor_type_rotation_group_metadata(type_buckets),
+        "actor_type_rotation_seed": rotation_seed,
+        "actor_types_per_hub": min(types_per_hub, len(type_buckets)),
+        "full_query_grid_size": full_grid_size,
         "query_grid_size": grid_size,
-        "selected_hubs": list(query_hubs.values()),
+        "selected_hubs": selected_hubs,
+        "distinct_hubs_covered": len(selected_hubs),
+        "query_plan": query_plan,
     }
+
+
+def _actor_type_rotation_seed(today: date, config: dict[str, object]) -> int:
+    configured = config.get("actor_query_rotation_seed")
+    if configured is not None:
+        return int(configured)
+    iso_year, iso_week, _weekday = today.isocalendar()
+    return (iso_year * 53) + iso_week
+
+
+def _actor_type_rotation_buckets(readable_types: list[str]) -> list[dict[str, object]]:
+    by_key = {actor_type.lower(): actor_type for actor_type in readable_types}
+    used: set[str] = set()
+    buckets: list[dict[str, object]] = []
+    for label, members in ACTOR_TYPE_ROTATION_GROUPS:
+        present = [
+            by_key[member.lower()]
+            for member in members
+            if member.lower() in by_key
+        ]
+        if not present:
+            continue
+        used.update(member.lower() for member in present)
+        buckets.append({"label": label, "members": present})
+    for actor_type in readable_types:
+        if actor_type.lower() in used:
+            continue
+        buckets.append({"label": actor_type, "members": [actor_type]})
+    return buckets
+
+
+def _actor_hub_query_plan(
+    hub: dict[str, object],
+    type_buckets: list[dict[str, object]],
+    *,
+    hub_index: int,
+    rotation_seed: int,
+    types_per_hub: int,
+) -> dict[str, object]:
+    bucket_count = min(types_per_hub, len(type_buckets))
+    bucket_start = (rotation_seed + hub_index) % len(type_buckets)
+    actor_types: list[str] = []
+    bucket_labels: list[str] = []
+    for offset in range(bucket_count):
+        bucket = type_buckets[(bucket_start + offset) % len(type_buckets)]
+        members = [str(member) for member in bucket["members"]]
+        if not members:
+            continue
+        member_index = (rotation_seed + hub_index + offset) % len(members)
+        actor_types.append(members[member_index])
+        bucket_labels.append(str(bucket["label"]))
+    return {
+        "hub_id": str(hub.get("hub_id") or hub.get("name") or ""),
+        "name": str(hub.get("name") or ""),
+        "actor_count": int(hub.get("actor_count") or 0),
+        "theme": str(hub.get("theme") or "").strip(),
+        "geographies": [
+            str(geo).strip()
+            for geo in hub.get("geographies", []) or []
+            if str(geo).strip()
+        ],
+        "actor_types": actor_types,
+        "actor_type_groups": bucket_labels,
+    }
+
+
+def _query_for_plan_pass(
+    plan: dict[str, object],
+    pass_index: int,
+    seen_queries: set[str],
+) -> dict[str, object] | None:
+    actor_types = [str(value) for value in plan["actor_types"]]
+    geographies = [str(value) for value in plan["geographies"]]
+    theme = str(plan["theme"])
+    combinations = len(actor_types) * len(geographies)
+    for attempt in range(combinations):
+        actor_type = actor_types[(pass_index + attempt) % len(actor_types)]
+        geography = geographies[((pass_index + attempt) // len(actor_types)) % len(geographies)]
+        query = f"{actor_type} {theme} {geography}"
+        if query.lower() in seen_queries:
+            continue
+        return {
+            "query": query,
+            "hub_id": str(plan["hub_id"]),
+            "hub_name": str(plan["name"]),
+            "actor_count": int(plan["actor_count"]),
+            "theme": theme,
+            "geography": geography,
+            "actor_type": actor_type,
+            "pass_index": pass_index,
+        }
+    return None
+
+
+def _selected_hub_metadata(
+    plans: list[dict[str, object]],
+    query_plan: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    planned_by_hub = {str(plan["hub_id"]): plan for plan in plans}
+    selected: dict[str, dict[str, object]] = {}
+    for item in query_plan:
+        hub_id = str(item["hub_id"])
+        plan = planned_by_hub[hub_id]
+        entry = selected.setdefault(
+            hub_id,
+            {
+                "name": str(plan["name"]),
+                "actor_count": int(plan["actor_count"]),
+                "theme": str(plan["theme"]),
+                "geographies": [],
+                "actor_types": list(plan["actor_types"]),
+                "actor_type_groups": list(plan["actor_type_groups"]),
+                "query_count": 0,
+            },
+        )
+        entry["query_count"] = int(entry["query_count"]) + 1
+        geography = str(item["geography"])
+        if geography not in entry["geographies"]:
+            entry["geographies"].append(geography)
+    return list(selected.values())
+
+
+def _actor_type_rotation_group_metadata(
+    type_buckets: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "label": str(bucket["label"]),
+            "members": [str(member) for member in bucket["members"]],
+        }
+        for bucket in type_buckets
+    ]
 
 
 def _actor_type_query_phrase(actor_type: str) -> str:

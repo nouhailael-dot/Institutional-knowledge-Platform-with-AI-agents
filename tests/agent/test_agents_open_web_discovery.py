@@ -214,7 +214,7 @@ def test_actor_query_generation_uses_hub_grid_not_reference_names_or_description
 
     bundle = QueryGenerator(
         client,
-        {"people_enabled": False, "max_searches": 8},
+        {"people_enabled": False, "max_searches": 8, "actor_query_rotation_seed": 0},
         today=date(2026, 9, 7),
     ).generate("actor", session=session, project_root=PROJECT_ROOT)
 
@@ -260,6 +260,7 @@ def test_actor_query_grid_samples_thinnest_hubs_and_excludes_mining_hubs():
         ["corporate_rd_lab", "university_lab"],
         hubs,
         max_queries=4,
+        rotation_seed=0,
     )
 
     assert [hub["name"] for hub in hubs] == [
@@ -269,9 +270,9 @@ def test_actor_query_grid_samples_thinnest_hubs_and_excludes_mining_hubs():
     assert all("Mining Hubs" not in str(hub) for hub in hubs)
     assert queries == [
         "corporate R&D lab water Boulder Colorado",
+        "university lab specialty chemicals Houston",
         "university lab water Boulder Colorado",
-        "corporate R&D lab water Denver Colorado",
-        "university lab water Denver Colorado",
+        "corporate R&D lab specialty chemicals Houston",
     ]
     assert metadata["query_grid_size"] == 8
     assert metadata["selected_hubs"] == [
@@ -279,9 +280,100 @@ def test_actor_query_grid_samples_thinnest_hubs_and_excludes_mining_hubs():
             "name": "Colorado Water Hub (Boulder- Denver- Front Range)",
             "actor_count": 1,
             "theme": "water",
-            "geographies": ["Boulder Colorado", "Denver Colorado"],
-        }
+            "geographies": ["Boulder Colorado"],
+            "actor_types": ["corporate R&D lab", "university lab"],
+            "actor_type_groups": [
+                "company / industrial operator",
+                "research organization",
+            ],
+            "query_count": 2,
+        },
+        {
+            "name": "Houston Specialty Chemicals Hub",
+            "actor_count": 12,
+            "theme": "specialty chemicals",
+            "geographies": ["Houston"],
+            "actor_types": ["university lab", "corporate R&D lab"],
+            "actor_type_groups": [
+                "research organization",
+                "company / industrial operator",
+            ],
+            "query_count": 2,
+        },
     ]
+
+
+def test_actor_query_grid_round_robins_forty_queries_across_forty_hubs():
+    actor_types = _actor_types_from_evidence_report()
+    hubs = _round_robin_hubs(48)
+
+    queries, metadata = _actor_grid_queries(
+        actor_types,
+        hubs,
+        max_queries=40,
+        rotation_seed=0,
+    )
+
+    query_hubs = [item["hub_name"] for item in metadata["query_plan"]]
+    expected_first_forty = [
+        f"Hub {index:02d} Water Hub (City {index:02d})"
+        for index in range(40)
+    ]
+    assert len(queries) == 40
+    assert len(set(query_hubs)) == 40
+    assert metadata["distinct_hubs_covered"] == 40
+    assert query_hubs == expected_first_forty
+    assert all("Mining Hubs" not in query for query in queries)
+
+
+def test_actor_query_grid_finishes_first_hub_pass_before_second_queries():
+    actor_types = _actor_types_from_evidence_report()
+    hubs = _round_robin_hubs(48)
+
+    _queries, metadata = _actor_grid_queries(
+        actor_types,
+        hubs,
+        max_queries=52,
+        rotation_seed=0,
+    )
+
+    query_hubs = [item["hub_name"] for item in metadata["query_plan"]]
+    expected_first_pass = [
+        f"Hub {index:02d} Water Hub (City {index:02d})"
+        for index in range(48)
+    ]
+    assert query_hubs[:48] == expected_first_pass
+    assert len(set(query_hubs[:48])) == 48
+    assert query_hubs[48:52] == expected_first_pass[:4]
+
+
+def test_actor_type_subset_is_small_and_rotates_across_runs():
+    actor_types = _actor_types_from_evidence_report()
+    hubs = _round_robin_hubs(48)
+
+    _queries_a, metadata_a = _actor_grid_queries(
+        actor_types,
+        hubs,
+        max_queries=96,
+        rotation_seed=0,
+    )
+    _queries_b, metadata_b = _actor_grid_queries(
+        actor_types,
+        hubs,
+        max_queries=96,
+        rotation_seed=1,
+    )
+
+    full_type_count = len(
+        {_actor_type_query_phrase(actor_type) for actor_type in actor_types}
+    )
+    actor_type_counts = [
+        len(hub["actor_types"]) for hub in metadata_a["selected_hubs"]
+    ]
+    assert max(actor_type_counts) <= 3
+    assert max(actor_type_counts) < full_type_count
+    assert metadata_a["selected_hubs"][0]["actor_types"] != metadata_b["selected_hubs"][0]["actor_types"]
+    assert metadata_a["actor_type_rotation_groups"]
 
 
 def test_actor_reference_set_excludes_aggregates_and_merged_actors():
@@ -1275,6 +1367,49 @@ def _actor_query_session() -> RoutedSession:
             ),
         ]
     )
+
+
+def _actor_types_from_evidence_report() -> list[str]:
+    return [
+        "accelerator",
+        "company",
+        "consortium",
+        "corporate_rd_lab",
+        "federal_agency",
+        "federal_research_system",
+        "government_agency",
+        "industrial_partner",
+        "industry_association",
+        "intergovernmental_organization",
+        "national_research_center",
+        "national_research_lab",
+        "nonprofit",
+        "other",
+        "project_developer",
+        "research_organization",
+        "startup",
+        "state_agency",
+        "un_agency",
+        "un_committee",
+        "un_programme",
+        "un_secretariat",
+        "university",
+        "university_lab",
+        "venture_capital",
+    ]
+
+
+def _round_robin_hubs(count: int) -> list[dict[str, object]]:
+    return [
+        {
+            "hub_id": f"hub-{index:02d}",
+            "name": f"Hub {index:02d} Water Hub (City {index:02d})",
+            "actor_count": index,
+            "theme": "water",
+            "geographies": [f"City {index:02d}"],
+        }
+        for index in reversed(range(count))
+    ]
 
 
 def _claude_search_response(
