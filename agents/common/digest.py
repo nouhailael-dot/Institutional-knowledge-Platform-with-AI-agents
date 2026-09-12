@@ -59,6 +59,7 @@ def build_digest(
                 f"| Attendable | {_count(stats, 'events_qualified_attendable')} |",
                 f"| Minable | {_count(stats, 'events_qualified_minable')} |",
                 f"| Both paths | {_count(stats, 'events_qualified_both')} |",
+                f"| Mined, not stored | {_count(stats, 'events_mined_not_stored')} |",
                 f"| Rejected: neither path | {_count(stats, 'events_rejected_unqualified')} |",
             ]
         )

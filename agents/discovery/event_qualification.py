@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+import json
 import re
 from dataclasses import asdict, dataclass
 from datetime import date
@@ -27,6 +29,8 @@ class EventQualification:
     accepted: bool
     attendable: bool
     minable: bool
+    store_event: bool
+    mined_not_stored: bool
     paths: tuple[str, ...]
     reason: str
     run_date: str
@@ -48,15 +52,34 @@ def qualify_event(
     if window_months <= 0:
         raise ValueError("event qualification forward_window_months must be positive")
     window_end = _add_months(run_date, window_months)
+    minable = _has_named_participants(record)
     start_date = _event_date(record)
 
     if start_date is None:
         return _rejected("missing start date", run_date, window_end)
     if start_date < run_date:
-        return _rejected(
-            f"event date {start_date.isoformat()} is before run date {run_date.isoformat()}",
-            run_date,
-            window_end,
+        if not minable:
+            return _rejected(
+                f"event date {start_date.isoformat()} is before run date {run_date.isoformat()}; "
+                "fewer than three named participants and no named speakers",
+                run_date,
+                window_end,
+            )
+        if not list(record.get("sector_codes") or []):
+            return _rejected("event has no seeded-sector match", run_date, window_end)
+        return EventQualification(
+            accepted=True,
+            attendable=False,
+            minable=True,
+            store_event=False,
+            mined_not_stored=True,
+            paths=("minable",),
+            reason=(
+                "mined, not stored: "
+                f"event date {start_date.isoformat()} is before run date {run_date.isoformat()}"
+            ),
+            run_date=run_date.isoformat(),
+            window_end=window_end.isoformat(),
         )
     if start_date > window_end:
         return _rejected(
@@ -67,7 +90,6 @@ def qualify_event(
     if not list(record.get("sector_codes") or []):
         return _rejected("event has no seeded-sector match", run_date, window_end)
 
-    minable = _has_named_participants(record)
     registration_open = _registration_is_open(record, config)
     institutional_value = _has_institutional_value(record, config)
     attendable = registration_open and institutional_value
@@ -81,6 +103,8 @@ def qualify_event(
             accepted=True,
             attendable=attendable,
             minable=minable,
+            store_event=True,
+            mined_not_stored=False,
             paths=paths,
             reason=f"qualified as {' and '.join(paths)}",
             run_date=run_date.isoformat(),
@@ -92,7 +116,7 @@ def qualify_event(
         failed.append("registration is not open to external organisations")
     if not institutional_value:
         failed.append("scale or topic does not justify institutional attendance")
-    failed.append("no named speakers, sponsors, exhibitors, or conveners")
+    failed.append("fewer than three named participants and no named speakers")
     return _rejected("; ".join(failed), run_date, window_end)
 
 
@@ -102,7 +126,8 @@ def structured_page_date_rejection(
     run_date: date,
     config: dict[str, object],
 ) -> str | None:
-    """Reject a single-date structured page before an extraction model is called."""
+    """Reject a single-date page pre-LLM unless a past page is visibly minable."""
+    minable = _structured_page_is_minable(content)
     raw_dates = [
         *re.findall(r"<time[^>]+datetime=[\"']([^\"']+)[\"']", content, re.IGNORECASE),
         *re.findall(r'[\"\']startDate[\"\']\s*:\s*[\"\']([^\"\']+)', content, re.IGNORECASE),
@@ -119,7 +144,7 @@ def structured_page_date_rejection(
     start_date = parsed_dates[0]
     window_months = int(config.get("forward_window_months", 12) or 12)
     window_end = _add_months(run_date, window_months)
-    if start_date < run_date:
+    if start_date < run_date and not minable:
         return f"event date {start_date.isoformat()} is before run date {run_date.isoformat()}"
     if start_date > window_end:
         return f"event date {start_date.isoformat()} is after window end {window_end.isoformat()}"
@@ -342,17 +367,154 @@ def _has_institutional_value(
 
 
 def _has_named_participants(record: dict[str, object]) -> bool:
-    explicit = record.get("has_named_participants")
-    if isinstance(explicit, bool):
-        return explicit
+    names: set[str] = set()
     for key in ("participant_actors", "participant_people"):
         values = record.get(key) or []
-        if isinstance(values, list) and any(
-            isinstance(item, dict) and str(item.get("name") or "").strip()
-            for item in values
+        if not isinstance(values, list):
+            continue
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            key_text = normalize_key_text(name)
+            if key_text:
+                names.add(key_text)
+    named_speakers = record.get("participant_people") or []
+    if isinstance(named_speakers, list) and any(
+        isinstance(item, dict) and str(item.get("name") or "").strip()
+        for item in named_speakers
+    ):
+        return True
+    sponsoring_orgs = str(record.get("sponsoring_orgs") or "").strip()
+    if sponsoring_orgs:
+        key_text = normalize_key_text(sponsoring_orgs)
+        if key_text:
+            names.add(key_text)
+    return len(names) >= 3
+
+
+def _structured_page_is_minable(content: str) -> bool:
+    names: set[str] = set()
+    speaker_names: set[str] = set()
+    text_fragments = [content]
+    for raw in re.findall(
+        r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
+        content,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        try:
+            payload = json.loads(html.unescape(raw).strip())
+        except json.JSONDecodeError:
+            continue
+        _collect_structured_participants(payload, names, speaker_names)
+        text_fragments.extend(_structured_strings(payload))
+
+    for fragment in text_fragments:
+        decoded = html.unescape(fragment).replace("\\/", "/")
+        for match in re.finditer(
+            r"<h[1-6][^>]*>\s*(speakers?|sponsors?|exhibitors?|participants?|"
+            r"organizers?|organisers?|conveners?|hosts?)\s*</h[1-6]>(.*?)"
+            r"(?=<h[1-6][^>]*>|$)",
+            decoded,
+            flags=re.IGNORECASE | re.DOTALL,
         ):
-            return True
-    return bool(str(record.get("sponsoring_orgs") or "").strip())
+            role = match.group(1).casefold()
+            section_names = [
+                _visible_text(value)
+                for value in re.findall(
+                    r"<(?:li|p)[^>]*>(.*?)</(?:li|p)>",
+                    match.group(2),
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+            ]
+            for name in section_names:
+                _add_participant_name(name, names)
+                if role.startswith("speaker"):
+                    _add_participant_name(name, speaker_names)
+
+        for match in re.finditer(
+            r"<([a-z0-9]+)[^>]*(?:class|itemprop)=[\"'][^\"']*"
+            r"(speaker|performer|sponsor|exhibitor|participant|organizer|organiser|convener|host)"
+            r"[^\"']*[\"'][^>]*>(.*?)</\1>",
+            decoded,
+            flags=re.IGNORECASE | re.DOTALL,
+        ):
+            name = _visible_text(match.group(3))
+            _add_participant_name(name, names)
+            if match.group(2).casefold() in {"speaker", "performer"}:
+                _add_participant_name(name, speaker_names)
+
+    return bool(speaker_names) or len(names) >= 3
+
+
+def _collect_structured_participants(
+    value: object,
+    names: set[str],
+    speaker_names: set[str],
+) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _collect_structured_participants(item, names, speaker_names)
+        return
+    if not isinstance(value, dict):
+        return
+    for raw_key, raw_value in value.items():
+        key = str(raw_key).casefold()
+        if key in {
+            "speaker",
+            "speakers",
+            "performer",
+            "performers",
+            "attendee",
+            "attendees",
+            "participant",
+            "participants",
+            "sponsor",
+            "sponsors",
+            "organizer",
+            "organizers",
+        }:
+            for name in _structured_names(raw_value):
+                _add_participant_name(name, names)
+                if key in {"speaker", "speakers", "performer", "performers"}:
+                    _add_participant_name(name, speaker_names)
+        _collect_structured_participants(raw_value, names, speaker_names)
+
+
+def _structured_names(value: object) -> list[str]:
+    values = value if isinstance(value, list) else [value]
+    names: list[str] = []
+    for item in values:
+        if isinstance(item, dict):
+            name = str(item.get("name") or "").strip()
+        elif isinstance(item, str):
+            name = item.strip()
+        else:
+            name = ""
+        if name:
+            names.append(name)
+    return names
+
+
+def _structured_strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [text for item in value for text in _structured_strings(item)]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _structured_strings(item)]
+    return []
+
+
+def _visible_text(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", value)).strip()
+
+
+def _add_participant_name(value: str, names: set[str]) -> None:
+    name = re.split(r"\s+[\u2013\u2014-]\s+", value, maxsplit=1)[0].strip(" ,;:")
+    key = normalize_key_text(name)
+    if key:
+        names.add(key)
 
 
 def _event_context(event: dict[str, object], role: str) -> str:
@@ -379,6 +541,8 @@ def _rejected(reason: str, run_date: date, window_end: date) -> EventQualificati
         accepted=False,
         attendable=False,
         minable=False,
+        store_event=False,
+        mined_not_stored=False,
         paths=(),
         reason=reason,
         run_date=run_date.isoformat(),

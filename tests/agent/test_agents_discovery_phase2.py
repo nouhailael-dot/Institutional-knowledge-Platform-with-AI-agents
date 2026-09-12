@@ -11,6 +11,7 @@ import yaml
 from agents import weekly_discovery
 from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.raw_storage import RawContentStore
+from agents.common.resolve_route import RouteDecision
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery import run as discovery_run
 from agents.discovery.extractors.climate_week import ClimateWeekExtractor
@@ -573,6 +574,106 @@ def test_structured_out_of_window_event_rejects_before_extractor_call(
     assert result["audit_rows"][0]["status"] == "rejected_date_window"
     digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
     assert "| Rejected: neither path | 1 |" in digest
+
+
+def test_past_event_with_speakers_mines_participants_without_event_row(
+    monkeypatch,
+    tmp_path,
+):
+    sector_code = min(load_seeded_sector_codes(PROJECT_ROOT))
+    speaker_rows = "".join(
+        f"<li>Speaker {index} - Director, Institute {index}</li>"
+        for index in range(1, 6)
+    )
+    doc = FetchedDoc.from_content(
+        url="https://events.example/past-speaker-event",
+        content=(
+            '<html><time datetime="2026-04-10">April 10, 2026</time>'
+            f"<h2>Speakers</h2><ul>{speaker_rows}</ul></html>"
+        ),
+    )
+    extractor = StaticExtractor(
+        [
+            {
+                "title": "Spring Climate Conference",
+                "start_date": "2026-04-10",
+                "source_url": doc.url,
+                "extracted_at": "2026-09-09T00:00:00+00:00",
+                "sector_codes": [sector_code],
+                "participant_people": [
+                    {
+                        "name": f"Speaker {index}",
+                        "affiliation": f"Institute {index}",
+                        "role": "Director",
+                        "public_profile_url": None,
+                    }
+                    for index in range(1, 6)
+                ],
+            }
+        ]
+    )
+    stage_store = InMemoryStageStore()
+    monkeypatch.setattr(
+        discovery_run,
+        "route_actor",
+        lambda _record, _resolver: RouteDecision(zone="review", score=0.5),
+    )
+
+    result = run_pipeline(
+        args(
+            enable_people_for_run=True,
+            out=str(tmp_path / "audit.csv"),
+            digest_out=str(tmp_path / "digest.md"),
+        ),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=stage_store,
+        source=StaticSource(doc),
+        extractor=extractor,
+        raw_store=RawContentStore(tmp_path / "raw"),
+        actor_resolver=object(),
+        run_date=date(2026, 9, 9),
+    )
+
+    staged_types = [row.entity_type for row in stage_store.rows.values()]
+    assert extractor.extract_calls == 1
+    assert "event" not in staged_types
+    assert staged_types.count("actor") == 5
+    assert staged_types.count("person") == 5
+    assert result["stats"]["events_mined_not_stored"] == 1
+    assert any(row["status"] == "mined_not_stored" for row in result["audit_rows"])
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert "| Mined, not stored | 1 |" in digest
+
+
+def test_past_event_with_one_organizer_rejects_before_extractor_call(tmp_path):
+    doc = FetchedDoc.from_content(
+        url="https://events.example/past-organizer-event",
+        content=(
+            '<script type="application/ld+json">'
+            '{"@type":"Event","startDate":"2026-04-10",'
+            '"organizer":{"@type":"Organization","name":"Only Organizer"}}'
+            "</script>"
+        ),
+    )
+    extractor = StaticExtractor([])
+    stage_store = InMemoryStageStore()
+
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=stage_store,
+        source=StaticSource(doc),
+        extractor=extractor,
+        raw_store=RawContentStore(tmp_path / "raw"),
+        run_date=date(2026, 9, 9),
+    )
+
+    assert extractor.extract_calls == 0
+    assert extractor.llm_client.calls == 0
+    assert stage_store.row_count() == 0
+    assert result["stats"]["events_rejected_unqualified"] == 1
 
 
 def test_status_succeeded_when_records_extract_but_zero_are_in_sector(tmp_path):

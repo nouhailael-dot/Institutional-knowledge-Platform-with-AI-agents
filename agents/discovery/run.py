@@ -581,6 +581,49 @@ def _extract_stage_route_promote(
     stats["records_relevant"] += in_sector_count
     participant_actor_resolver = actor_resolver
     for record in classified:
+        if entity_type == "event" and record.get("sector_match") != OUT_OF_SECTOR:
+            if (
+                record.get("qualification_minable") is True
+                and bool(
+                    (qualification_config or {}).get(
+                        "participant_extraction_enabled", False
+                    )
+                )
+            ):
+                participant_actor_resolver = _stage_event_participants(
+                    event=record,
+                    doc=doc,
+                    raw_document_id=raw_document_id,
+                    run_id=run_id,
+                    source_name=source_name,
+                    stage_store=stage_store,
+                    session=session,
+                    live=live,
+                    actor_resolver=participant_actor_resolver,
+                    people_enabled=people_enabled,
+                    root=root,
+                    stats=stats,
+                    audit_rows=audit_rows,
+                    discovered_domain=discovered_domain,
+                )
+            if record.get("qualification_mined_not_stored") is True:
+                audit_rows.append(
+                    {
+                        "run_id": run_id,
+                        "source": source_name,
+                        "entity_type": entity_type,
+                        "source_url": record.get("source_url"),
+                        "content_hash": doc.content_hash,
+                        "natural_key": record.get("natural_key"),
+                        "zone": "mined",
+                        "score": "",
+                        "target_entity_id": "",
+                        "candidate_ids": [],
+                        "status": "mined_not_stored",
+                        "error": "",
+                    }
+                )
+                continue
         staged = stage_record(
             stage_store,
             run_id=run_id,
@@ -678,25 +721,6 @@ def _extract_stage_route_promote(
                 "error": "",
             }
         )
-        if entity_type == "event" and bool(
-            (qualification_config or {}).get("participant_extraction_enabled", False)
-        ):
-            participant_actor_resolver = _stage_event_participants(
-                event=record,
-                doc=doc,
-                raw_document_id=raw_document_id,
-                run_id=run_id,
-                source_name=source_name,
-                stage_store=stage_store,
-                session=session,
-                live=live,
-                actor_resolver=participant_actor_resolver,
-                people_enabled=people_enabled,
-                root=root,
-                stats=stats,
-                audit_rows=audit_rows,
-                discovered_domain=discovered_domain,
-            )
 
 
 def _review_discovered_event_absorb(
@@ -763,6 +787,10 @@ def _count_event_qualification(stats: dict[str, object], qualification) -> None:
     if qualification.attendable and qualification.minable:
         stats["events_qualified_both"] = int(
             stats.get("events_qualified_both", 0) or 0
+        ) + 1
+    if qualification.mined_not_stored:
+        stats["events_mined_not_stored"] = int(
+            stats.get("events_mined_not_stored", 0) or 0
         ) + 1
     if not qualification.accepted:
         stats["events_rejected_unqualified"] = int(

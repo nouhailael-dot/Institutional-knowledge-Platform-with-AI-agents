@@ -453,6 +453,72 @@ def test_closed_event_with_named_speaker_qualifies_as_minable():
     assert decision.paths == ("minable",)
 
 
+def test_past_event_with_named_speakers_is_mined_without_event_storage():
+    decision = qualify_event(
+        {
+            "title": "Spring Climate Conference",
+            "start_date": "2026-04-10",
+            "sector_codes": ["SUSTAIN"],
+            "participant_people": [
+                {"name": f"Speaker {index}"} for index in range(1, 6)
+            ],
+        },
+        run_date=date(2026, 9, 9),
+        config={"forward_window_months": 12},
+    )
+
+    assert decision.accepted is True
+    assert decision.attendable is False
+    assert decision.minable is True
+    assert decision.store_event is False
+    assert decision.mined_not_stored is True
+    assert decision.reason.startswith("mined, not stored")
+
+
+def test_single_organizer_does_not_make_an_event_minable():
+    decision = qualify_event(
+        {
+            "title": "Institutional Climate Conference",
+            "start_date": "2027-03-10",
+            "access_type": "Public",
+            "event_type": "Conference",
+            "sector_codes": ["SUSTAIN"],
+            "participant_actors": [
+                {"name": "Only Organizer", "participant_role": "organizer"}
+            ],
+        },
+        run_date=date(2026, 9, 9),
+        config={"forward_window_months": 12},
+    )
+
+    assert decision.accepted is True
+    assert decision.attendable is True
+    assert decision.minable is False
+    assert decision.paths == ("attendable",)
+    assert decision.store_event is True
+
+
+def test_three_named_organisations_make_an_event_minable():
+    decision = qualify_event(
+        {
+            "title": "Private Research Roundtable",
+            "start_date": "2027-03-10",
+            "access_type": "Invitation only",
+            "sector_codes": ["AI"],
+            "participant_actors": [
+                {"name": f"Sponsor {index}", "participant_role": "sponsor"}
+                for index in range(1, 4)
+            ],
+        },
+        run_date=date(2026, 9, 9),
+        config={"forward_window_months": 12},
+    )
+
+    assert decision.accepted is True
+    assert decision.attendable is False
+    assert decision.minable is True
+
+
 def test_event_person_projection_is_flag_guarded_and_drops_forbidden_fields():
     event = {
         "participant_people": [

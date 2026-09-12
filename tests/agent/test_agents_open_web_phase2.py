@@ -118,11 +118,12 @@ class ParticipantEventExtractor(StaticEventExtractor):
         records = super().extract(doc)
         records[0]["participant_actors"] = [
             {
-                "name": "Example Event Sponsor",
+                "name": f"Example Event Sponsor {index}",
                 "participant_role": "sponsor",
                 "actor_type": "company",
-                "website": "https://events.example/sponsor",
+                "website": f"https://events.example/sponsor-{index}",
             }
+            for index in range(1, 4)
         ]
         return records
 
@@ -296,10 +297,12 @@ def test_discovered_event_sponsor_uses_er_bridge_but_cannot_auto_absorb(
 
     actor_rows = [row for row in stage_store.rows.values() if row.entity_type == "actor"]
     assert result["status"] == "succeeded"
-    assert len(actor_rows) == 1
-    assert actor_rows[0].route["zone"] == "review"
-    assert actor_rows[0].route["metadata"]["route_policy"] == (
-        "discovered domains never auto-absorb"
+    assert len(actor_rows) == 3
+    assert all(row.route["zone"] == "review" for row in actor_rows)
+    assert all(
+        row.route["metadata"]["route_policy"]
+        == "discovered domains never auto-absorb"
+        for row in actor_rows
     )
 
 
