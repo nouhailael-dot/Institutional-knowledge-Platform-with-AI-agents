@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,11 @@ from agents.common.resolve_route import (
     route_event,
     route_person,
     zone_for_score,
+)
+from agents.discovery.event_qualification import (
+    EVENT_PARTICIPANT_PERSON_FIELDS,
+    participant_person_records,
+    qualify_event,
 )
 from agents.discovery.extractors.actor import ACTOR_FIELDS, ActorExtractor
 from agents.discovery.extractors.climate_week import ClimateWeekExtractor
@@ -367,6 +373,114 @@ def test_unga_guide_fixture_extracts_jsonld_events_without_llm():
     assert records[1]["sponsoring_orgs"] == "C3 Summit"
 
 
+def test_unga_guide_extracts_structured_organizers_and_permitted_speaker_fields():
+    extractor = UngaGuideExtractor(
+        StubToolClient({"events": []}),
+        people_enabled=True,
+    )
+
+    records = extractor.extract(fixture_doc("unga_guide_home.html"))
+    actor_names = [
+        actor["name"]
+        for record in records
+        for actor in record["participant_actors"]
+    ]
+    people = [
+        person
+        for record in records
+        for person in record["participant_people"]
+    ]
+
+    assert "C3 Summit" in actor_names
+    assert any(person["name"] == "Miranda Hoffner" for person in people)
+    assert all(set(person) == set(EVENT_PARTICIPANT_PERSON_FIELDS) for person in people)
+
+
+@pytest.mark.parametrize("start_date", ["2026-09-08", "2027-09-10"])
+def test_event_outside_twelve_month_window_is_rejected(start_date):
+    decision = qualify_event(
+        {
+            "title": "Institutional Climate Conference",
+            "start_date": start_date,
+            "access_type": "Public",
+            "sector_codes": ["SUSTAIN"],
+            "participant_actors": [{"name": "Example Sponsor"}],
+        },
+        run_date=date(2026, 9, 9),
+        config={"forward_window_months": 12},
+    )
+
+    assert decision.accepted is False
+    assert decision.attendable is False
+    assert decision.minable is False
+
+
+def test_event_failing_attendable_and_minable_paths_is_rejected():
+    decision = qualify_event(
+        {
+            "title": "Institutional Climate Conference",
+            "start_date": "2027-03-10",
+            "access_type": "Members only",
+            "sector_codes": ["SUSTAIN"],
+            "participant_actors": [],
+            "participant_people": [],
+        },
+        run_date=date(2026, 9, 9),
+        config={"forward_window_months": 12},
+    )
+
+    assert decision.accepted is False
+    assert "registration is not open" in decision.reason
+    assert "no named speakers" in decision.reason
+
+
+def test_closed_event_with_named_speaker_qualifies_as_minable():
+    decision = qualify_event(
+        {
+            "title": "Private Research Roundtable",
+            "start_date": "2027-03-10",
+            "access_type": "Invitation only",
+            "sector_codes": ["AI"],
+            "participant_people": [{"name": "Dr. Amina Example"}],
+        },
+        run_date=date(2026, 9, 9),
+        config={"forward_window_months": 12},
+    )
+
+    assert decision.accepted is True
+    assert decision.attendable is False
+    assert decision.minable is True
+    assert decision.paths == ("minable",)
+
+
+def test_event_person_projection_is_flag_guarded_and_drops_forbidden_fields():
+    event = {
+        "participant_people": [
+            {
+                "name": "Dr. Amina Example",
+                "affiliation": "Example University",
+                "role": "Speaker",
+                "public_profile_url": "https://example.edu/amina",
+                "email": "must-not-pass@example.edu",
+                "description": "must not pass",
+                "internal_id": "must-not-pass",
+            }
+        ],
+        "source_url": "https://events.example/programme",
+        "extracted_at": "2026-09-09T00:00:00+00:00",
+        "prompt_version": "event_v1",
+    }
+
+    with pytest.raises(RuntimeError, match="person extraction is disabled"):
+        participant_person_records(event, people_enabled=False)
+
+    records = participant_person_records(event, people_enabled=True)
+    assert records[0]["name"] == "Dr. Amina Example"
+    assert "email" not in records[0]
+    assert "description" not in records[0]
+    assert "internal_id" not in records[0]
+
+
 def test_unga_guide_unmapped_categories_do_not_default_to_cross():
     client = StubToolClient({"events": []})
     extractor = UngaGuideExtractor(client)
@@ -411,6 +525,15 @@ def test_unga_programme_fixture_extracts_provisional_schedule_without_llm():
     sea_level = next(record for record in records if "sea level rise" in str(record["title"]))
     pandemic = next(record for record in records if "pandemic prevention" in str(record["title"]))
     assert records[0]["sector_codes"] == []
+    assert records[0]["participant_actors"] == [
+        {
+            "name": "United Nations General Assembly",
+            "participant_role": "convener",
+            "actor_type": "intergovernmental_organization",
+            "website": "https://www.un.org/en/ga/",
+        }
+    ]
+    assert records[0]["participant_people"] == []
     assert climate["sector_codes"] == ["SUSTAIN"]
     assert sea_level["sector_codes"] == ["SUSTAIN"]
     assert pandemic["sector_codes"] == ["HEALTH"]
@@ -1105,7 +1228,7 @@ def test_person_extractor_only_public_professional_fields():
         }
     )
     client = ActorStubToolClient({"people": [person]})
-    extractor = PersonExtractor(client)
+    extractor = PersonExtractor(client, people_enabled=True)
     doc = FetchedDoc.from_content(
         url="fixture://people", content="<html>Dr. Amina Example, Research Director</html>"
     )

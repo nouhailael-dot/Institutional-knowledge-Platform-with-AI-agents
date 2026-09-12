@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -108,10 +109,19 @@ class StaticExtractor:
 
     def __init__(self, records):
         self.records = records
+        self.extract_calls = 0
         self.llm_client = CountingToolClient({"events": []})
 
     def extract(self, doc):
-        return self.records
+        self.extract_calls += 1
+        return [
+            {
+                "access_type": "Public",
+                "event_type": "Conference",
+                **record,
+            }
+            for record in self.records
+        ]
 
 
 class StaticPersonExtractor(StaticExtractor):
@@ -155,7 +165,17 @@ def args(**overrides):
 def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
     config = load_config(PROJECT_ROOT)
 
-    assert sorted(config) == ["cost", "open_web_discovery", "routing", "sources"]
+    assert sorted(config) == [
+        "cost",
+        "event_qualification",
+        "open_web_discovery",
+        "routing",
+        "sources",
+    ]
+    qualification = dict(config["event_qualification"])
+    assert qualification["enabled"] is True
+    assert qualification["participant_extraction_enabled"] is True
+    assert qualification["forward_window_months"] == 12
     assert float(dict(config["cost"])["max_usd_per_run"]) == 0.50
     open_web = dict(config["open_web_discovery"])
     assert open_web["provider"] == "claude"
@@ -514,6 +534,47 @@ def test_status_attention_when_documents_fetch_but_zero_records_extract(tmp_path
     assert "**Reason:** documents fetched but zero records extracted" in digest
 
 
+@pytest.mark.parametrize("event_date", ["2026-09-08", "2027-09-10"])
+def test_structured_out_of_window_event_rejects_before_extractor_call(
+    event_date,
+    tmp_path,
+):
+    doc = FetchedDoc.from_content(
+        url="https://events.example/outside-window",
+        content=f'<html><time datetime="{event_date}">{event_date}</time></html>',
+    )
+    extractor = StaticExtractor(
+        [
+            {
+                "title": "Outside Window Conference",
+                "start_date": event_date,
+                "source_url": doc.url,
+                "extracted_at": "2026-09-09T00:00:00+00:00",
+                "sector_codes": [min(load_seeded_sector_codes(PROJECT_ROOT))],
+            }
+        ]
+    )
+
+    result = run_pipeline(
+        args(out=str(tmp_path / "audit.csv"), digest_out=str(tmp_path / "digest.md")),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        stage_store=InMemoryStageStore(),
+        source=StaticSource(doc),
+        extractor=extractor,
+        raw_store=RawContentStore(tmp_path / "raw"),
+        run_date=date(2026, 9, 9),
+    )
+
+    assert extractor.extract_calls == 0
+    assert extractor.llm_client.calls == 0
+    assert result["status"] == "succeeded"
+    assert result["stats"]["events_rejected_unqualified"] == 1
+    assert result["audit_rows"][0]["status"] == "rejected_date_window"
+    digest = (tmp_path / "digest.md").read_text(encoding="utf-8")
+    assert "| Rejected: neither path | 1 |" in digest
+
+
 def test_status_succeeded_when_records_extract_but_zero_are_in_sector(tmp_path):
     doc = fixture_doc()
     result = run_pipeline(
@@ -724,10 +785,11 @@ def test_person_pipeline_routes_to_review_without_sector_codes(tmp_path):
     stage_store = InMemoryStageStore()
 
     result = run_pipeline(
-        args(
-            source="people_fixture",
-            entity="person",
-            out=str(tmp_path / "audit.csv"),
+            args(
+                source="people_fixture",
+                entity="person",
+                enable_people_for_run=True,
+                out=str(tmp_path / "audit.csv"),
             digest_out=str(tmp_path / "digest.md"),
         ),
         root=PROJECT_ROOT,

@@ -50,6 +50,32 @@ def build_digest(
             f"| USD | ${float(cost_usd or 0.0):.6f} |",
         ]
     )
+    if entity_type == "event" and int(stats.get("events_qualification_evaluated", 0) or 0):
+        lines.extend(
+            [
+                "",
+                "| Event qualification | Count |",
+                "|---|---:|",
+                f"| Attendable | {_count(stats, 'events_qualified_attendable')} |",
+                f"| Minable | {_count(stats, 'events_qualified_minable')} |",
+                f"| Both paths | {_count(stats, 'events_qualified_both')} |",
+                f"| Rejected: neither path | {_count(stats, 'events_rejected_unqualified')} |",
+            ]
+        )
+    if entity_type == "event" and (
+        int(stats.get("participant_actors_extracted", 0) or 0)
+        or int(stats.get("participant_people_extracted", 0) or 0)
+    ):
+        lines.extend(
+            [
+                "",
+                "| Event participants | Count |",
+                "|---|---:|",
+                f"| Organisations extracted | {_count(stats, 'participant_actors_extracted')} |",
+                f"| People extracted | {_count(stats, 'participant_people_extracted')} |",
+                f"| Affiliations staged | {_count(stats, 'actor_person_relations_staged')} |",
+            ]
+        )
     if stats.get("audit_csv"):
         lines.extend(["", f"Audit CSV: `{stats['audit_csv']}`"])
     if stats.get("attention_required"):

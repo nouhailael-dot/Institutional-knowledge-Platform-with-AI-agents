@@ -36,10 +36,16 @@ class TriageDecision:
     actor_type_guess: str | None = None
     hub_matches: tuple[str, ...] = ()
     sector_codes: tuple[str, ...] = ()
-    partner_signals: dict[str, str | None] | None = None
-    partner_findability: float | None = None
+    engagement_signals: dict[str, str | None] | None = None
+    use_case_fit: dict[str, str | None] | None = None
+    condition_evidence: dict[str, str] | None = None
+    sector_relevance: float | None = None
+    engagement_route: float | None = None
+    strategic_ecosystem_value: float | None = None
     distinctiveness: float | None = None
     existing_actor_count: int | None = None
+    relevance_signals: dict[str, str | None] | None = None
+    is_professional_person_page: bool | None = None
     verdict: str | None = None
 
     @property
@@ -50,6 +56,7 @@ class TriageDecision:
             and self.fit_score is not None
             and self.is_own_page is not False
             and self.is_operating_org is not False
+            and self.is_professional_person_page is not False
         )
 
 
@@ -67,13 +74,20 @@ class CandidateRecord:
     triage_verdict: str
     triage_reason: str | None
     fit_score: float | None
+    is_own_page: bool | None = None
+    is_operating_org: bool | None = None
     actor_type_guess: str | None = None
     hub_matches: tuple[str, ...] = ()
     sector_codes: tuple[str, ...] = ()
-    partner_signals: dict[str, str | None] | None = None
-    partner_findability: float | None = None
+    engagement_signals: dict[str, str | None] | None = None
+    use_case_fit: dict[str, str | None] | None = None
+    condition_evidence: dict[str, str] | None = None
+    sector_relevance: float | None = None
+    engagement_route: float | None = None
+    strategic_ecosystem_value: float | None = None
     distinctiveness: float | None = None
     existing_actor_count: int | None = None
+    relevance_signals: dict[str, str | None] | None = None
 
     @classmethod
     def from_result(
@@ -86,8 +100,10 @@ class CandidateRecord:
         triage_verdict: str,
         triage_reason: str | None,
         fit_score: float | None,
+        triage_details: TriageDecision | None = None,
         actor_triage: TriageDecision | None = None,
     ) -> CandidateRecord:
+        details = triage_details or actor_triage
         return cls(
             candidate_id=str(uuid.uuid4()),
             run_id=run_id,
@@ -101,11 +117,20 @@ class CandidateRecord:
             triage_verdict=triage_verdict,
             triage_reason=triage_reason,
             fit_score=fit_score,
-            actor_type_guess=actor_triage.actor_type_guess if actor_triage else None,
-            hub_matches=actor_triage.hub_matches if actor_triage else (),
-            sector_codes=actor_triage.sector_codes if actor_triage else (),
-            partner_signals=actor_triage.partner_signals if actor_triage else None,
-            partner_findability=actor_triage.partner_findability if actor_triage else None,
-            distinctiveness=actor_triage.distinctiveness if actor_triage else None,
-            existing_actor_count=actor_triage.existing_actor_count if actor_triage else None,
+            is_own_page=details.is_own_page if details else None,
+            is_operating_org=details.is_operating_org if details else None,
+            actor_type_guess=details.actor_type_guess if details else None,
+            hub_matches=details.hub_matches if details else (),
+            sector_codes=details.sector_codes if details else (),
+            engagement_signals=details.engagement_signals if details else None,
+            use_case_fit=details.use_case_fit if details else None,
+            condition_evidence=details.condition_evidence if details else None,
+            sector_relevance=details.sector_relevance if details else None,
+            engagement_route=details.engagement_route if details else None,
+            strategic_ecosystem_value=(
+                details.strategic_ecosystem_value if details else None
+            ),
+            distinctiveness=details.distinctiveness if details else None,
+            existing_actor_count=details.existing_actor_count if details else None,
+            relevance_signals=details.relevance_signals if details else None,
         )

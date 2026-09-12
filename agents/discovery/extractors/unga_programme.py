@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import html
 import re
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from urllib.parse import urljoin
 
 from agents.discovery.extractors.event import EVENT_FIELDS, EVENT_TOOL_SCHEMA
@@ -78,15 +77,24 @@ def _record_from_item(item: str, doc: FetchedDoc) -> dict[str, object]:
             "recurring_pattern": None,
             "sponsoring_orgs": "United Nations General Assembly",
             "sector_codes": _sector_codes_from_title(title),
+            "participant_actors": [
+                {
+                    "name": "United Nations General Assembly",
+                    "participant_role": "convener",
+                    "actor_type": "intergovernmental_organization",
+                    "website": "https://www.un.org/en/ga/",
+                }
+            ],
+            "participant_people": [],
         }
     )
     record["source_url"] = doc.url
-    record["extracted_at"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    record["extracted_at"] = datetime.now(UTC).replace(microsecond=0).isoformat()
     record["prompt_version"] = PROMPT_VERSION
     return record
 
 
-def _date_range(text: str) -> tuple[Optional[str], Optional[str]]:
+def _date_range(text: str) -> tuple[str | None, str | None]:
     year_match = re.search(r"\b(20\d{2})\b", text)
     year = year_match.group(1) if year_match else ""
     month_names = "|".join(MONTHS)
@@ -99,12 +107,12 @@ def _ensure_year(value: str, year: str) -> str:
     return value if re.search(r"\b20\d{2}\b", value) or not year else f"{value} {year}"
 
 
-def _first_href(item: str, base_url: str) -> Optional[str]:
+def _first_href(item: str, base_url: str) -> str | None:
     match = re.search(r"<a[^>]+href=[\"']([^\"']+)[\"']", item, flags=re.IGNORECASE)
     return urljoin(base_url, html.unescape(match.group(1))) if match else None
 
 
-def _focus_from_title(title: object) -> Optional[str]:
+def _focus_from_title(title: object) -> str | None:
     text = str(title or "").lower()
     if "climate" in text or "sea level" in text:
         return "Climate and environment"
@@ -131,7 +139,7 @@ def _sector_codes_from_title(title: object) -> list[str]:
     return codes
 
 
-def _clean_text(value: object) -> Optional[str]:
+def _clean_text(value: object) -> str | None:
     text = html.unescape(str(value or ""))
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()

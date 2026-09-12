@@ -6,6 +6,7 @@ import argparse
 import importlib
 import logging
 from dataclasses import replace
+from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -24,6 +25,13 @@ from agents.common.resolve_route import (
     route_person,
 )
 from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
+from agents.discovery.event_qualification import (
+    actor_person_relation_record,
+    participant_actor_records,
+    participant_person_records,
+    qualify_event,
+    structured_page_date_rejection,
+)
 from agents.discovery.extractors.actor import ActorExtractor
 from agents.discovery.extractors.climate_week import ClimateWeekExtractor
 from agents.discovery.extractors.event import EventExtractor
@@ -151,6 +159,7 @@ def build_extractor(
         return PersonExtractor(
             llm_client,
             max_tokens=int(source_config.get("max_tokens", 2048)),
+            people_enabled=bool(source_config.get("people_enabled", False)),
         )
     if source_config.get("extractor") == "unga_guide":
         return UngaGuideExtractor(
@@ -159,6 +168,7 @@ def build_extractor(
             coming_soon_markers=[
                 str(value) for value in source_config.get("coming_soon_markers", [])
             ],
+            people_enabled=bool(source_config.get("people_enabled", False)),
         )
     if source_config.get("extractor") == "unga_programme":
         return UngaProgrammeExtractor(
@@ -170,6 +180,7 @@ def build_extractor(
         row_batch_size=int(source_config.get("event_row_batch_size", 25)),
         min_row_count=int(source_config.get("min_event_row_count", 0) or 0),
         untrusted_content=bool(source_config.get("untrusted_content", False)),
+        people_enabled=bool(source_config.get("people_enabled", False)),
     )
 
 
@@ -184,12 +195,14 @@ def run_pipeline(
     extractor=None,
     raw_store: RawContentStore | None = None,
     actor_resolver=None,
+    run_date: date | None = None,
 ) -> dict[str, object]:
     root = root or project_root()
     config = load_config(root)
     replay_run_id = getattr(args, "replay", None)
     live = bool(getattr(args, "live", False))
     offline = bool(getattr(args, "offline", False))
+    run_date = run_date or datetime.now(UTC).date()
     if live and offline:
         raise ValueError("--offline cannot be combined with --live")
     owned_session = False
@@ -240,6 +253,23 @@ def run_pipeline(
             source_config = dict(dict(config.get("sources", {})).get(source_name, {}))
         if entity_type not in source.entity_types:
             raise ValueError(f"source {source_name!r} does not support entity {entity_type!r}")
+
+    people_enabled = bool(
+        dict(config.get("open_web_discovery", {})).get("people_enabled", False)
+    )
+    people_enabled_for_run = bool(getattr(args, "enable_people_for_run", False))
+    if people_enabled_for_run and live:
+        raise RuntimeError("--enable-people-for-run cannot be combined with --live")
+    people_enabled = people_enabled or people_enabled_for_run
+    person_create_preview = bool(getattr(args, "preview_person_create", False))
+    if entity_type == "person" and not people_enabled:
+        raise RuntimeError(
+            "person discovery is disabled pending TARGETING_POLICY.md section 6 approval"
+        )
+    if person_create_preview and live:
+        raise RuntimeError("--preview-person-create cannot be combined with --live")
+    source_config["people_enabled"] = people_enabled
+    qualification_config = dict(config.get("event_qualification", {}))
 
     cost_meter = CostMeter(max_usd=float(dict(config.get("cost", {})).get("max_usd_per_run", 0.0)))
     raw_store = raw_store or RawContentStore.from_config(root, source_config)
@@ -304,6 +334,10 @@ def run_pipeline(
                     stats=stats,
                     audit_rows=audit_rows,
                     discovered_domain=_discovered_domain(source_name, doc.url),
+                    qualification_config=qualification_config,
+                    people_enabled=people_enabled,
+                    person_create_preview=person_create_preview,
+                    run_date=run_date,
                 )
                 cost_meter.enforce()
         else:
@@ -344,6 +378,10 @@ def run_pipeline(
                     root=root,
                     stats=stats,
                     audit_rows=audit_rows,
+                    qualification_config=qualification_config,
+                    people_enabled=people_enabled,
+                    person_create_preview=person_create_preview,
+                    run_date=run_date,
                 )
                 cost_meter.enforce()
 
@@ -464,7 +502,47 @@ def _extract_stage_route_promote(
     audit_rows: list[dict[str, object]],
     actor_resolver=None,
     discovered_domain: str | None = None,
+    qualification_config: dict[str, object] | None = None,
+    people_enabled: bool = False,
+    person_create_preview: bool = False,
+    run_date: date | None = None,
 ) -> None:
+    if entity_type == "person" and not people_enabled:
+        raise RuntimeError(
+            "person discovery is disabled pending TARGETING_POLICY.md section 6 approval"
+        )
+    if person_create_preview and live:
+        raise RuntimeError("person create preview cannot be combined with live writes")
+    if entity_type == "event" and bool((qualification_config or {}).get("enabled", False)):
+        preflight_reason = structured_page_date_rejection(
+            doc.content,
+            run_date=run_date or datetime.now(UTC).date(),
+            config=qualification_config or {},
+        )
+        if preflight_reason:
+            stats["events_qualification_evaluated"] = int(
+                stats.get("events_qualification_evaluated", 0) or 0
+            ) + 1
+            stats["events_rejected_unqualified"] = int(
+                stats.get("events_rejected_unqualified", 0) or 0
+            ) + 1
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": source_name,
+                    "entity_type": entity_type,
+                    "source_url": doc.url,
+                    "content_hash": doc.content_hash,
+                    "natural_key": "",
+                    "zone": "rejected",
+                    "score": "",
+                    "target_entity_id": "",
+                    "candidate_ids": [],
+                    "status": "rejected_date_window",
+                    "error": preflight_reason,
+                }
+            )
+            return
     extracted = extractor.extract(doc)
     if entity_type == "event":
         normalized = [normalize_event_record(record) for record in extracted]
@@ -475,6 +553,15 @@ def _extract_stage_route_promote(
     else:
         raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
     normalized = _dedupe_by_natural_key(normalized)
+    if entity_type == "event" and bool((qualification_config or {}).get("enabled", False)):
+        for record in normalized:
+            qualification = qualify_event(
+                record,
+                run_date=run_date or datetime.now(UTC).date(),
+                config=qualification_config or {},
+            )
+            record.update(qualification.payload())
+            _count_event_qualification(stats, qualification)
     if discovered_domain:
         normalized = [
             {**record, DISCOVERED_DOMAIN_PAYLOAD_KEY: discovered_domain}
@@ -492,6 +579,7 @@ def _extract_stage_route_promote(
     stats["records_in_sector"] += in_sector_count
     stats["records_out_of_sector"] += out_of_sector_count
     stats["records_relevant"] += in_sector_count
+    participant_actor_resolver = actor_resolver
     for record in classified:
         staged = stage_record(
             stage_store,
@@ -520,6 +608,26 @@ def _extract_stage_route_promote(
                 }
             )
             continue
+        if entity_type == "event" and record.get("qualification_accepted") is False:
+            staged.status = "rejected_unqualified"
+            stage_store.upsert(staged)
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": source_name,
+                    "entity_type": entity_type,
+                    "source_url": record.get("source_url"),
+                    "content_hash": doc.content_hash,
+                    "natural_key": record.get("natural_key"),
+                    "zone": "rejected",
+                    "score": "",
+                    "target_entity_id": "",
+                    "candidate_ids": [],
+                    "status": "rejected_unqualified",
+                    "error": record.get("qualification_reason"),
+                }
+            )
+            continue
         if entity_type == "event":
             decision = route_event(record, candidates)
             decision = _review_discovered_event_absorb(
@@ -534,11 +642,24 @@ def _extract_stage_route_promote(
             decision = route_actor(record, actor_resolver)
             decision = guard_actor_absorb_route(staged, decision)
         elif entity_type == "person":
-            decision = route_person(record, candidates)
+            decision = route_person(
+                record,
+                candidates,
+                preview_create=person_create_preview,
+            )
         else:
             raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
         staged = mark_routed(stage_store, staged, decision)
-        result = promote(staged, decision, session=session, live=live)
+        if entity_type == "person":
+            result = promote(
+                staged,
+                decision,
+                session=session,
+                live=live,
+                person_create_preview=person_create_preview,
+            )
+        else:
+            result = promote(staged, decision, session=session, live=live)
         stats["records_promoted"] += 0 if result.dry_run else 1
         _count_zone(stats, decision.zone)
         audit_rows.append(
@@ -557,6 +678,25 @@ def _extract_stage_route_promote(
                 "error": "",
             }
         )
+        if entity_type == "event" and bool(
+            (qualification_config or {}).get("participant_extraction_enabled", False)
+        ):
+            participant_actor_resolver = _stage_event_participants(
+                event=record,
+                doc=doc,
+                raw_document_id=raw_document_id,
+                run_id=run_id,
+                source_name=source_name,
+                stage_store=stage_store,
+                session=session,
+                live=live,
+                actor_resolver=participant_actor_resolver,
+                people_enabled=people_enabled,
+                root=root,
+                stats=stats,
+                audit_rows=audit_rows,
+                discovered_domain=discovered_domain,
+            )
 
 
 def _review_discovered_event_absorb(
@@ -606,6 +746,216 @@ def _review_discovered_event_absorb(
             "route_policy": "discovered domains never auto-absorb",
         },
     )
+
+
+def _count_event_qualification(stats: dict[str, object], qualification) -> None:
+    stats["events_qualification_evaluated"] = int(
+        stats.get("events_qualification_evaluated", 0) or 0
+    ) + 1
+    if qualification.attendable:
+        stats["events_qualified_attendable"] = int(
+            stats.get("events_qualified_attendable", 0) or 0
+        ) + 1
+    if qualification.minable:
+        stats["events_qualified_minable"] = int(
+            stats.get("events_qualified_minable", 0) or 0
+        ) + 1
+    if qualification.attendable and qualification.minable:
+        stats["events_qualified_both"] = int(
+            stats.get("events_qualified_both", 0) or 0
+        ) + 1
+    if not qualification.accepted:
+        stats["events_rejected_unqualified"] = int(
+            stats.get("events_rejected_unqualified", 0) or 0
+        ) + 1
+
+
+def _stage_event_participants(
+    *,
+    event: dict[str, object],
+    doc: FetchedDoc,
+    raw_document_id: str,
+    run_id: str,
+    source_name: str,
+    stage_store,
+    session,
+    live: bool,
+    actor_resolver,
+    people_enabled: bool,
+    root: Path,
+    stats: dict[str, object],
+    audit_rows: list[dict[str, object]],
+    discovered_domain: str | None,
+):
+    actors = participant_actor_records(event)
+    people = participant_person_records(event, people_enabled=people_enabled)
+    stats["participant_actors_extracted"] = int(
+        stats.get("participant_actors_extracted", 0) or 0
+    ) + len(actors)
+    stats["participant_people_extracted"] = int(
+        stats.get("participant_people_extracted", 0) or 0
+    ) + len(people)
+
+    if actors and actor_resolver is None:
+        if session is None:
+            raise RuntimeError(
+                "event participant actor routing requires an EntityResolver or database session"
+            )
+        actor_resolver = load_actor_resolver_class()(session, project_root=root)
+
+    for actor in actors:
+        normalized = normalize_actor_record(actor)
+        if discovered_domain:
+            normalized[DISCOVERED_DOMAIN_PAYLOAD_KEY] = discovered_domain
+        classified = classify_sector_matches([normalized], project_root=root)[0]
+        staged = stage_record(
+            stage_store,
+            run_id=run_id,
+            raw_document_id=raw_document_id,
+            entity_type="actor",
+            record=classified,
+            prompt_version=str(actor.get("prompt_version") or "event_participant_v1"),
+        )
+        stats["records_staged"] = int(stats.get("records_staged", 0) or 0) + 1
+        stats["participant_actors_staged"] = int(
+            stats.get("participant_actors_staged", 0) or 0
+        ) + 1
+        if staged.sector_match == OUT_OF_SECTOR:
+            audit_rows.append(
+                _participant_audit_row(
+                    run_id=run_id,
+                    source_name=source_name,
+                    entity_type="actor",
+                    doc=doc,
+                    record=classified,
+                    status="out_of_sector",
+                    zone=OUT_OF_SECTOR,
+                )
+            )
+            continue
+        route = guard_actor_absorb_route(staged, route_actor(classified, actor_resolver))
+        if discovered_domain and route.zone == "absorb":
+            route = replace(
+                route,
+                zone="review",
+                metadata={
+                    **dict(route.metadata or {}),
+                    "discovered_domain": discovered_domain,
+                    "route_policy": "discovered domains never auto-absorb",
+                },
+            )
+        staged = mark_routed(stage_store, staged, route)
+        result = promote(staged, route, session=session, live=live)
+        stats["records_promoted"] = int(stats.get("records_promoted", 0) or 0) + (
+            0 if result.dry_run else 1
+        )
+        _count_zone(stats, route.zone)
+        audit_rows.append(
+            _participant_audit_row(
+                run_id=run_id,
+                source_name=source_name,
+                entity_type="actor",
+                doc=doc,
+                record=classified,
+                status=result.action,
+                zone=route.zone,
+                score=route.score,
+                target_entity_id=route.target_entity_id,
+                candidate_ids=route.candidate_ids,
+            )
+        )
+
+    person_candidates = []
+    if people and session is not None:
+        person_candidates = load_person_candidates(session)
+    for person in people:
+        normalized = normalize_person_record(person)
+        if discovered_domain:
+            normalized[DISCOVERED_DOMAIN_PAYLOAD_KEY] = discovered_domain
+        normalized["sector_match"] = IN_SECTOR
+        staged = stage_record(
+            stage_store,
+            run_id=run_id,
+            raw_document_id=raw_document_id,
+            entity_type="person",
+            record=normalized,
+            prompt_version=str(person.get("prompt_version") or "event_participant_v1"),
+        )
+        stats["records_staged"] = int(stats.get("records_staged", 0) or 0) + 1
+        stats["participant_people_staged"] = int(
+            stats.get("participant_people_staged", 0) or 0
+        ) + 1
+        route = route_person(normalized, person_candidates)
+        staged = mark_routed(stage_store, staged, route)
+        result = promote(staged, route, session=session, live=live)
+        stats["records_promoted"] = int(stats.get("records_promoted", 0) or 0) + (
+            0 if result.dry_run else 1
+        )
+        _count_zone(stats, route.zone)
+        audit_rows.append(
+            _participant_audit_row(
+                run_id=run_id,
+                source_name=source_name,
+                entity_type="person",
+                doc=doc,
+                record=normalized,
+                status=result.action,
+                zone=route.zone,
+                score=route.score,
+                target_entity_id=route.target_entity_id,
+                candidate_ids=route.candidate_ids,
+            )
+        )
+
+        relation = actor_person_relation_record(person, event=event)
+        if relation is None:
+            continue
+        relation["sector_match"] = IN_SECTOR
+        relation_staged = stage_record(
+            stage_store,
+            run_id=run_id,
+            raw_document_id=raw_document_id,
+            entity_type="actor_person",
+            record=relation,
+            prompt_version="event_participant_v1",
+        )
+        relation_staged.status = "awaiting_person_review"
+        stage_store.upsert(relation_staged)
+        stats["records_staged"] = int(stats.get("records_staged", 0) or 0) + 1
+        stats["actor_person_relations_staged"] = int(
+            stats.get("actor_person_relations_staged", 0) or 0
+        ) + 1
+
+    return actor_resolver
+
+
+def _participant_audit_row(
+    *,
+    run_id: str,
+    source_name: str,
+    entity_type: str,
+    doc: FetchedDoc,
+    record: dict[str, object],
+    status: str,
+    zone: str,
+    score: object = "",
+    target_entity_id: object = "",
+    candidate_ids: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "run_id": run_id,
+        "source": source_name,
+        "entity_type": entity_type,
+        "source_url": record.get("source_url"),
+        "content_hash": doc.content_hash,
+        "natural_key": record.get("natural_key"),
+        "zone": zone,
+        "score": score,
+        "target_entity_id": target_entity_id,
+        "candidate_ids": candidate_ids or [],
+        "status": status,
+        "error": "",
+    }
 
 
 def _storage_path_for_doc(
@@ -692,6 +1042,8 @@ def _count_zone(stats: dict[str, int], zone: str) -> None:
         stats["queued_for_review"] += 1
     elif zone == "create":
         stats["created"] += 1
+    elif zone == "skip":
+        stats["already_held"] = int(stats.get("already_held", 0) or 0) + 1
 
 
 def _dedupe_by_natural_key(records: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -738,6 +1090,12 @@ def _determine_run_status(stats: dict[str, object], *, source=None) -> tuple[str
                 f"staged {records_staged} record(s): {records_in_sector} in-sector, "
                 f"{records_out_of_sector} out-of-sector"
             ),
+        )
+    rejected_unqualified = int(stats.get("events_rejected_unqualified", 0) or 0)
+    if rejected_unqualified > 0:
+        return (
+            "succeeded",
+            f"rejected {rejected_unqualified} event(s) that failed both qualification paths",
         )
     if documents_fetched > skipped_unchanged and records_extracted == 0:
         return "attention", "documents fetched but zero records extracted"
@@ -817,6 +1175,7 @@ def _empty_stats() -> dict[str, int]:
         "absorbed": 0,
         "queued_for_review": 0,
         "created": 0,
+        "already_held": 0,
         "failures": 0,
     }
 
@@ -827,6 +1186,16 @@ def parse_args(argv: list[str] | None = None):
     parser.add_argument("--entity")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--live", action="store_true", help="commit writes; absent means dry-run")
+    parser.add_argument(
+        "--preview-person-create",
+        action="store_true",
+        help="dry-run person identity routes using create/skip/review; never permits writes",
+    )
+    parser.add_argument(
+        "--enable-people-for-run",
+        action="store_true",
+        help="enable person extraction for this dry run only; never permits live writes",
+    )
     parser.add_argument(
         "--offline",
         action="store_true",

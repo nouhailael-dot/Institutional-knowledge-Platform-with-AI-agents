@@ -74,7 +74,6 @@ def normalize_person_record(record: dict[str, object]) -> dict[str, object]:
     out["natural_key"] = person_natural_key(
         str(out.get("name") or ""),
         out.get("affiliation"),
-        out.get("public_profile_url"),
     )
     out["entity_type"] = "person"
     return out
@@ -176,12 +175,10 @@ def actor_natural_key(name: str, website: object = None) -> str:
 def person_natural_key(
     name: str,
     affiliation: object = None,
-    public_profile_url: object = None,
 ) -> str:
     name_key = normalize_key_text(name)
     affiliation_key = normalize_key_text(str(affiliation or ""))
-    profile_key = _website_key(public_profile_url)
-    return "|".join(part for part in [name_key, affiliation_key, profile_key] if part)
+    return "|".join(part for part in [name_key, affiliation_key] if part)
 
 
 def _website_key(value: object) -> str:

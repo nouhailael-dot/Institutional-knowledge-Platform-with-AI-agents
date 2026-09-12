@@ -138,16 +138,21 @@ def guard_discovered_domain_route(
             "records from discovered domains must not use the absorb route; "
             f"domain={domain!r}"
         )
-    if route.zone not in {"create", "review"}:
+    if route.zone not in {"create", "review", "skip"}:
         raise RuntimeError(
-            "records from discovered domains may route only to create or review; "
+            "records from discovered domains may route only to create, review, or skip; "
             f"got {route.zone!r}"
         )
     return route
 
 
 def promote(
-    staged: StagedRecord, route: RouteDecision, session=None, *, live: bool = False
+    staged: StagedRecord,
+    route: RouteDecision,
+    session=None,
+    *,
+    live: bool = False,
+    person_create_preview: bool = False,
 ) -> PromotionResult:
     if staged.sector_match == "out_of_sector":
         raise RuntimeError("out_of_sector staged records must not be promoted")
@@ -155,7 +160,13 @@ def promote(
     if staged.entity_type == "actor":
         return _promote_actor(staged, route, session=session, live=live)
     if staged.entity_type == "person":
-        return _promote_person(staged, route, session=session, live=live)
+        return _promote_person(
+            staged,
+            route,
+            session=session,
+            live=live,
+            create_preview=person_create_preview,
+        )
     if staged.entity_type != "event":
         raise NotImplementedError(
             "promotion supports only entity_type='event', entity_type='actor', "
@@ -531,10 +542,29 @@ def _insert_actor_review(session, actor_id_a: str, actor_id_b: str, route: Route
 
 
 def _promote_person(
-    staged: StagedRecord, route: RouteDecision, session=None, *, live: bool = False
+    staged: StagedRecord,
+    route: RouteDecision,
+    session=None,
+    *,
+    live: bool = False,
+    create_preview: bool = False,
 ) -> PromotionResult:
+    if route.zone == "skip":
+        return PromotionResult(
+            action="already_held",
+            entity_type="person",
+            zone="skip",
+            entity_id=route.target_entity_id,
+            dry_run=True,
+        )
+    if route.zone == "create":
+        if not create_preview:
+            raise RuntimeError("person records must route to review only")
+        if live:
+            raise RuntimeError("person create preview cannot be used with live writes")
+        return _dry_run_preview(staged, route)
     if route.zone != "review":
-        raise RuntimeError("person records must route to review only")
+        raise RuntimeError(f"unknown person route zone {route.zone!r}")
     if session is None:
         if live:
             raise ValueError("live promotion requires a database session")
@@ -619,6 +649,88 @@ def _insert_person_review(
         },
     )
     return person_review_id
+
+
+def apply_approved_person_affiliation_change(
+    session,
+    *,
+    person_id: str,
+    previous_actor_id: str,
+    new_actor_id: str,
+    previous_affiliation: str,
+    new_affiliation: str,
+    role: str,
+    source_url: str,
+    changed_at: str,
+    live: bool = False,
+) -> str:
+    """Apply a reviewer-approved current-affiliation change and log its history."""
+    required = {
+        "person_id": person_id,
+        "previous_actor_id": previous_actor_id,
+        "new_actor_id": new_actor_id,
+        "previous_affiliation": previous_affiliation,
+        "new_affiliation": new_affiliation,
+        "role": role,
+        "source_url": source_url,
+        "changed_at": changed_at,
+    }
+    missing = [name for name, value in required.items() if not str(value or "").strip()]
+    if missing:
+        raise ValueError(f"person affiliation change is missing: {', '.join(missing)}")
+    if previous_actor_id == new_actor_id or previous_affiliation == new_affiliation:
+        raise ValueError("person affiliation change requires distinct previous and new values")
+
+    change_id = str(uuid.uuid4())
+    transaction = session.begin()
+    try:
+        result = session.execute(
+            text(
+                "UPDATE actor_person SET actor_id = CAST(:new_actor_id AS uuid), "
+                "role = :role, is_current = TRUE, start_date = CAST(:changed_at AS date), "
+                "end_date = NULL "
+                "WHERE person_id = CAST(:person_id AS uuid) "
+                "AND actor_id = CAST(:previous_actor_id AS uuid) "
+                "AND is_current IS NOT FALSE"
+            ),
+            {
+                "person_id": person_id,
+                "previous_actor_id": previous_actor_id,
+                "new_actor_id": new_actor_id,
+                "role": role,
+                "changed_at": changed_at,
+            },
+        )
+        if result.rowcount != 1:
+            raise RuntimeError(
+                "person affiliation change guard matched zero or multiple current relationships"
+            )
+        session.execute(
+            text(
+                "INSERT INTO person_change_log (person_change_id, person_id, field_name, "
+                "previous_value, new_value, source_url, changed_at) "
+                "VALUES (CAST(:person_change_id AS uuid), CAST(:person_id AS uuid), "
+                "'affiliation', :previous_value, :new_value, :source_url, "
+                "CAST(:changed_at AS timestamptz))"
+            ),
+            {
+                "person_change_id": change_id,
+                "person_id": person_id,
+                "previous_value": previous_affiliation,
+                "new_value": new_affiliation,
+                "source_url": source_url,
+                "changed_at": changed_at,
+            },
+        )
+    except Exception:
+        transaction.rollback()
+        raise
+
+    if live:
+        transaction.commit()
+    else:
+        transaction.rollback()
+    return change_id
 
 
 def _gap_sql(field_name: str) -> str:

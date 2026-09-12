@@ -1,0 +1,386 @@
+"""Deterministic event qualification and participant record projection."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import asdict, dataclass
+from datetime import date
+
+from agents.discovery.normalize import normalize_key_text, parse_date_to_iso
+
+EVENT_PARTICIPANT_ACTOR_FIELDS = (
+    "name",
+    "participant_role",
+    "actor_type",
+    "website",
+)
+EVENT_PARTICIPANT_PERSON_FIELDS = (
+    "name",
+    "affiliation",
+    "role",
+    "public_profile_url",
+)
+
+
+@dataclass(frozen=True)
+class EventQualification:
+    accepted: bool
+    attendable: bool
+    minable: bool
+    paths: tuple[str, ...]
+    reason: str
+    run_date: str
+    window_end: str
+
+    def payload(self) -> dict[str, object]:
+        values = asdict(self)
+        values["paths"] = list(self.paths)
+        return {f"qualification_{key}": value for key, value in values.items()}
+
+
+def qualify_event(
+    record: dict[str, object],
+    *,
+    run_date: date,
+    config: dict[str, object],
+) -> EventQualification:
+    window_months = int(config.get("forward_window_months", 12) or 12)
+    if window_months <= 0:
+        raise ValueError("event qualification forward_window_months must be positive")
+    window_end = _add_months(run_date, window_months)
+    start_date = _event_date(record)
+
+    if start_date is None:
+        return _rejected("missing start date", run_date, window_end)
+    if start_date < run_date:
+        return _rejected(
+            f"event date {start_date.isoformat()} is before run date {run_date.isoformat()}",
+            run_date,
+            window_end,
+        )
+    if start_date > window_end:
+        return _rejected(
+            f"event date {start_date.isoformat()} is after window end {window_end.isoformat()}",
+            run_date,
+            window_end,
+        )
+    if not list(record.get("sector_codes") or []):
+        return _rejected("event has no seeded-sector match", run_date, window_end)
+
+    minable = _has_named_participants(record)
+    registration_open = _registration_is_open(record, config)
+    institutional_value = _has_institutional_value(record, config)
+    attendable = registration_open and institutional_value
+    paths = tuple(
+        path
+        for path, qualifies in (("attendable", attendable), ("minable", minable))
+        if qualifies
+    )
+    if paths:
+        return EventQualification(
+            accepted=True,
+            attendable=attendable,
+            minable=minable,
+            paths=paths,
+            reason=f"qualified as {' and '.join(paths)}",
+            run_date=run_date.isoformat(),
+            window_end=window_end.isoformat(),
+        )
+
+    failed: list[str] = []
+    if not registration_open:
+        failed.append("registration is not open to external organisations")
+    if not institutional_value:
+        failed.append("scale or topic does not justify institutional attendance")
+    failed.append("no named speakers, sponsors, exhibitors, or conveners")
+    return _rejected("; ".join(failed), run_date, window_end)
+
+
+def structured_page_date_rejection(
+    content: str,
+    *,
+    run_date: date,
+    config: dict[str, object],
+) -> str | None:
+    """Reject a single-date structured page before an extraction model is called."""
+    raw_dates = [
+        *re.findall(r"<time[^>]+datetime=[\"']([^\"']+)[\"']", content, re.IGNORECASE),
+        *re.findall(r'[\"\']startDate[\"\']\s*:\s*[\"\']([^\"\']+)', content, re.IGNORECASE),
+    ]
+    parsed_dates = sorted(
+        {
+            parsed
+            for value in raw_dates
+            if (parsed := _parse_structured_date(value)) is not None
+        }
+    )
+    if len(parsed_dates) != 1:
+        return None
+    start_date = parsed_dates[0]
+    window_months = int(config.get("forward_window_months", 12) or 12)
+    window_end = _add_months(run_date, window_months)
+    if start_date < run_date:
+        return f"event date {start_date.isoformat()} is before run date {run_date.isoformat()}"
+    if start_date > window_end:
+        return f"event date {start_date.isoformat()} is after window end {window_end.isoformat()}"
+    return None
+
+
+def participant_actor_records(event: dict[str, object]) -> list[dict[str, object]]:
+    raw_value = event.get("participant_actors") or []
+    if not isinstance(raw_value, list):
+        raise TypeError("event participant_actors must be a list")
+    raw_participants = list(raw_value)
+    for person in list(event.get("participant_people") or []):
+        if not isinstance(person, dict) or not str(person.get("affiliation") or "").strip():
+            continue
+        raw_participants.append(
+            {
+                "name": person.get("affiliation"),
+                "participant_role": "speaker affiliation",
+                "actor_type": None,
+                "website": None,
+            }
+        )
+    records: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for raw in raw_participants:
+        if not isinstance(raw, dict):
+            continue
+        projected = {field: raw.get(field) for field in EVENT_PARTICIPANT_ACTOR_FIELDS}
+        name = str(projected.get("name") or "").strip()
+        key = normalize_key_text(name)
+        if not name or not key or key in seen:
+            continue
+        seen.add(key)
+        role = str(projected.pop("participant_role", None) or "participant").strip()
+        records.append(
+            {
+                **projected,
+                "name": name,
+                "actor_type_raw": f"event {role}",
+                "primary_lifecycle_role": role.title(),
+                "current_activities": _event_context(event, role),
+                "sector_codes": list(event.get("sector_codes") or []),
+                "source_url": event.get("source_url"),
+                "extracted_at": event.get("extracted_at"),
+                "prompt_version": event.get("prompt_version"),
+            }
+        )
+    return records
+
+
+def participant_person_records(
+    event: dict[str, object],
+    *,
+    people_enabled: bool,
+) -> list[dict[str, object]]:
+    raw_participants = event.get("participant_people") or []
+    if not isinstance(raw_participants, list):
+        raise TypeError("event participant_people must be a list")
+    if raw_participants and not people_enabled:
+        raise RuntimeError(
+            "event person extraction is disabled pending TARGETING_POLICY.md section 6 approval"
+        )
+    records: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw in raw_participants:
+        if not isinstance(raw, dict):
+            continue
+        projected = {field: raw.get(field) for field in EVENT_PARTICIPANT_PERSON_FIELDS}
+        name = str(projected.get("name") or "").strip()
+        affiliation = str(projected.get("affiliation") or "").strip()
+        key = (normalize_key_text(name), normalize_key_text(affiliation))
+        if not name or not key[0] or key in seen:
+            continue
+        seen.add(key)
+        records.append(
+            {
+                **projected,
+                "name": name,
+                "source_url": event.get("source_url"),
+                "extracted_at": event.get("extracted_at"),
+                "prompt_version": event.get("prompt_version"),
+            }
+        )
+    return records
+
+
+def actor_person_relation_record(
+    person: dict[str, object],
+    *,
+    event: dict[str, object],
+) -> dict[str, object] | None:
+    name = str(person.get("name") or "").strip()
+    affiliation = str(person.get("affiliation") or "").strip()
+    if not name or not affiliation:
+        return None
+    role = str(person.get("role") or "participant").strip()
+    return {
+        "person_name": name,
+        "actor_name": affiliation,
+        "role": role,
+        "event_name": event.get("name") or event.get("title"),
+        "natural_key": "|".join(
+            [normalize_key_text(name), normalize_key_text(affiliation), normalize_key_text(role)]
+        ),
+        "sector_codes": list(event.get("sector_codes") or []),
+        "source_url": event.get("source_url"),
+        "extracted_at": event.get("extracted_at"),
+        "prompt_version": event.get("prompt_version"),
+    }
+
+
+def _event_date(record: dict[str, object]) -> date | None:
+    value = record.get("start_date") or record.get("next_date")
+    if value is None:
+        return None
+    parsed = parse_date_to_iso(value)
+    return date.fromisoformat(parsed) if parsed else None
+
+
+def _parse_structured_date(value: str) -> date | None:
+    try:
+        parsed = parse_date_to_iso(value)
+    except ValueError:
+        return None
+    return date.fromisoformat(parsed) if parsed else None
+
+
+def _add_months(value: date, months: int) -> date:
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = value.day
+    while day > 28:
+        try:
+            return date(year, month, day)
+        except ValueError:
+            day -= 1
+    return date(year, month, day)
+
+
+def _registration_is_open(
+    record: dict[str, object],
+    config: dict[str, object],
+) -> bool:
+    explicit = record.get("registration_open")
+    if isinstance(explicit, bool):
+        return explicit
+    text = " ".join(
+        str(record.get(field) or "")
+        for field in ("access_type", "description", "event_type")
+    ).casefold()
+    closed_terms = _terms(
+        config,
+        "closed_registration_terms",
+        ["invite-only", "invitation only", "members only", "private event", "closed"],
+    )
+    if any(term in text for term in closed_terms):
+        return False
+    open_terms = _terms(
+        config,
+        "open_registration_terms",
+        ["public", "open registration", "register", "registration", "tickets", "rsvp"],
+    )
+    return any(term in text for term in open_terms)
+
+
+def _has_institutional_value(
+    record: dict[str, object],
+    config: dict[str, object],
+) -> bool:
+    explicit = record.get("institutional_attendance")
+    if isinstance(explicit, bool):
+        return explicit
+    title = re.sub(
+        r"^climate\s+week\s+nyc\s*:\s*",
+        "",
+        str(record.get("title") or record.get("name") or ""),
+        flags=re.IGNORECASE,
+    )
+    title_and_location = f"{title} {record.get('location') or ''}".casefold()
+    excluded_terms = _terms(
+        config,
+        "neighbourhood_exclusion_terms",
+        ["library", "storytime", "for children", "for teens", "for kids"],
+    )
+    if any(term in title_and_location for term in excluded_terms):
+        return False
+
+    minimum_attendance = int(config.get("minimum_expected_attendance", 100) or 100)
+    attendance = _first_integer(record.get("expected_attendance"))
+    if attendance is not None and attendance >= minimum_attendance:
+        return True
+    text = " ".join(
+        str(record.get(field) or "")
+        for field in ("title", "event_type", "description")
+    ).casefold()
+    institutional_terms = _terms(
+        config,
+        "institutional_value_terms",
+        [
+            "conference",
+            "congress",
+            "convening",
+            "dialogue",
+            "expo",
+            "festival",
+            "forum",
+            "leadership",
+            "roundtable",
+            "summit",
+            "symposium",
+        ],
+    )
+    audience_terms = _terms(
+        config,
+        "institutional_audience_terms",
+        ["business leaders", "industry leaders", "institutions", "investors", "policymakers"],
+    )
+    return any(term in text for term in [*institutional_terms, *audience_terms])
+
+
+def _has_named_participants(record: dict[str, object]) -> bool:
+    explicit = record.get("has_named_participants")
+    if isinstance(explicit, bool):
+        return explicit
+    for key in ("participant_actors", "participant_people"):
+        values = record.get(key) or []
+        if isinstance(values, list) and any(
+            isinstance(item, dict) and str(item.get("name") or "").strip()
+            for item in values
+        ):
+            return True
+    return bool(str(record.get("sponsoring_orgs") or "").strip())
+
+
+def _event_context(event: dict[str, object], role: str) -> str:
+    title = str(event.get("name") or event.get("title") or "event").strip()
+    return f"Published as {role} for {title}."
+
+
+def _first_integer(value: object) -> int | None:
+    match = re.search(r"\d[\d,]*", str(value or ""))
+    return int(match.group(0).replace(",", "")) if match else None
+
+
+def _terms(
+    config: dict[str, object],
+    key: str,
+    default: list[str],
+) -> list[str]:
+    values = config.get(key, default)
+    return [str(value).strip().casefold() for value in list(values or []) if str(value).strip()]
+
+
+def _rejected(reason: str, run_date: date, window_end: date) -> EventQualification:
+    return EventQualification(
+        accepted=False,
+        attendable=False,
+        minable=False,
+        paths=(),
+        reason=reason,
+        run_date=run_date.isoformat(),
+        window_end=window_end.isoformat(),
+    )

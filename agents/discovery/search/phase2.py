@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from sqlalchemy import text
 
 from agents.common.cost import CostLimitExceeded
 from agents.common.raw_storage import RawContentStore
-from agents.common.resolve_route import load_event_candidates
+from agents.common.resolve_route import load_event_candidates, load_person_candidates
 from agents.discovery.extractors.event import EventExtractor
+from agents.discovery.extractors.person import PersonExtractor
 from agents.discovery.run import (
     _extract_stage_route_promote,
     _skip_audit_row,
@@ -40,7 +42,7 @@ class OpenWebEventSource:
     """Fetch only URLs accepted by search triage, one level deep."""
 
     name = "open_web_search"
-    entity_types = ("event",)
+    entity_types = ("event", "person")
 
     def __init__(self, config: dict[str, object], *, http=None):
         self.config = config
@@ -165,13 +167,42 @@ def plan_event_fetches(
     domain_store,
     config: dict[str, object],
 ) -> FetchPlan:
+    return _plan_fetches(
+        candidates,
+        entity_type="event",
+        domain_store=domain_store,
+        config=config,
+    )
+
+
+def plan_person_fetches(
+    candidates: list[CandidateRecord],
+    *,
+    domain_store,
+    config: dict[str, object],
+) -> FetchPlan:
+    return _plan_fetches(
+        candidates,
+        entity_type="person",
+        domain_store=domain_store,
+        config=config,
+    )
+
+
+def _plan_fetches(
+    candidates: list[CandidateRecord],
+    *,
+    entity_type: str,
+    domain_store,
+    config: dict[str, object],
+) -> FetchPlan:
     max_pages = _positive_cap(config, "max_pages_fetched", 30)
     max_new_domains = _positive_cap(config, "max_new_domains", 10)
-    floor = float(dict(config.get("fetch_fit_floor", {}) or {}).get("event", 0.60))
+    floor = float(dict(config.get("fetch_fit_floor", {}) or {}).get(entity_type, 0.60))
     eligible = [
         candidate
         for candidate in candidates
-        if candidate.entity_type == "event"
+        if candidate.entity_type == entity_type
         and candidate.triage_verdict == "accepted"
         and candidate.fit_score is not None
         and candidate.fit_score >= floor
@@ -231,13 +262,34 @@ def fetch_extract_stage_events(
     stage_store=None,
     domain_store=None,
     event_candidates=None,
+    person_candidates=None,
+    actor_resolver=None,
+    run_date: date | None = None,
+    person_create_preview: bool = False,
+    _entity_type: str = "event",
 ) -> list[str]:
+    if _entity_type not in {"event", "person"}:
+        raise ValueError("open-web Phase 2 supports only event or person")
+    if _entity_type == "person" and not bool(config.get("people_enabled", False)):
+        raise RuntimeError(
+            "open-web person fetch is disabled pending TARGETING_POLICY.md section 6 approval"
+        )
+    if person_create_preview and live:
+        raise RuntimeError("person create preview cannot be combined with live writes")
     source = source or OpenWebEventSource(config)
-    extractor = extractor or EventExtractor(
-        _extraction_client(config, cost_meter),
-        max_tokens=int(config.get("extraction_max_tokens", 2048)),
-        untrusted_content=True,
-    )
+    if extractor is None and _entity_type == "event":
+        extractor = EventExtractor(
+            _extraction_client(config, cost_meter),
+            max_tokens=int(config.get("extraction_max_tokens", 2048)),
+            untrusted_content=True,
+            people_enabled=bool(config.get("people_enabled", False)),
+        )
+    elif extractor is None:
+        extractor = PersonExtractor(
+            _extraction_client(config, cost_meter),
+            max_tokens=int(config.get("extraction_max_tokens", 2048)),
+            people_enabled=True,
+        )
     raw_store = raw_store or RawContentStore.from_config(root, config)
     stage_store = stage_store or (
         InMemoryStageStore() if session is None else SQLStageStore(session)
@@ -245,13 +297,25 @@ def fetch_extract_stage_events(
     domain_store = domain_store or (
         InMemoryDiscoveredDomainStore() if session is None else SQLDiscoveredDomainStore(session)
     )
-    event_candidates = (
-        list(event_candidates)
-        if event_candidates is not None
-        else ([] if session is None else load_event_candidates(session))
-    )
+    if _entity_type == "event":
+        canonical_candidates = (
+            list(event_candidates)
+            if event_candidates is not None
+            else ([] if session is None else load_event_candidates(session))
+        )
+    else:
+        canonical_candidates = (
+            list(person_candidates)
+            if person_candidates is not None
+            else ([] if session is None else load_person_candidates(session))
+        )
 
-    plan = plan_event_fetches(candidates, domain_store=domain_store, config=config)
+    plan = _plan_fetches(
+        candidates,
+        entity_type=_entity_type,
+        domain_store=domain_store,
+        config=config,
+    )
     stats["fetch_candidates"] = plan.eligible_pages
     stats["pages_selected"] = len(plan.candidates)
     stats["new_domains_eligible"] = plan.eligible_new_domains
@@ -299,7 +363,9 @@ def fetch_extract_stage_events(
             )
             if prior_raw is not None:
                 stats["skipped_unchanged"] += 1
-                audit_rows.append(_skip_audit_row(run_id, "open_web_search", "event", doc))
+                audit_rows.append(
+                    _skip_audit_row(run_id, "open_web_search", _entity_type, doc)
+                )
                 continue
 
             before_extracted = int(stats["records_extracted"])
@@ -310,17 +376,21 @@ def fetch_extract_stage_events(
                     raw_document_id=raw_document_id,
                     run_id=run_id,
                     source_name="open_web_search",
-                    entity_type="event",
+                    entity_type=_entity_type,
                     extractor=extractor,
                     stage_store=stage_store,
                     session=session,
                     live=live,
-                    candidates=event_candidates,
-                    actor_resolver=None,
+                    candidates=canonical_candidates,
                     root=root,
                     stats=stats,
                     audit_rows=audit_rows,
                     discovered_domain=final_domain,
+                    qualification_config=dict(config.get("event_qualification", {})),
+                    people_enabled=bool(config.get("people_enabled", False)),
+                    person_create_preview=person_create_preview,
+                    run_date=run_date or datetime.now(UTC).date(),
+                    actor_resolver=actor_resolver,
                 )
             finally:
                 domain_store.add_counts(
@@ -338,7 +408,7 @@ def fetch_extract_stage_events(
                 {
                     "run_id": run_id,
                     "source": "open_web_search",
-                    "entity_type": "event",
+                    "entity_type": _entity_type,
                     "source_url": candidate.url,
                     "content_hash": "",
                     "natural_key": "",
@@ -356,6 +426,11 @@ def fetch_extract_stage_events(
             f"open-web fetch/extract failures: {stats['fetch_failures']} page(s)"
         )
     return attention_reasons
+
+
+def fetch_extract_stage_people(**kwargs) -> list[str]:
+    """Run accepted expertise or bounded-capture pages through person ingest."""
+    return fetch_extract_stage_events(_entity_type="person", **kwargs)
 
 
 def _extraction_client(config: dict[str, object], cost_meter):

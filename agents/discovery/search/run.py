@@ -10,6 +10,7 @@ import argparse
 import inspect
 import logging
 from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -18,7 +19,7 @@ from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.llm import ClaudeToolClient
 from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.search.models import CandidateRecord, SearchResult, TriageDecision
-from agents.discovery.search.phase2 import fetch_extract_stage_events
+from agents.discovery.search.phase2 import fetch_extract_stage_events, fetch_extract_stage_people
 from agents.discovery.search.providers import SearchProvider, build_search_provider
 from agents.discovery.search.query_generation import (
     QueryBundle,
@@ -26,22 +27,25 @@ from agents.discovery.search.query_generation import (
     load_event_reference_examples,
     load_seeded_sectors,
 )
-from agents.discovery.search.report import write_candidate_report
+from agents.discovery.search.report import write_candidate_report, write_rejection_report
 from agents.discovery.search.store import InMemorySearchCandidateStore, SQLSearchCandidateStore
 from agents.discovery.search.triage import (
     TRIAGE_INCOMPLETE_REASON_PREFIX,
     SearchTriageClient,
     actor_fit_weights,
-    actor_partner_findability_floor,
+    actor_rejection_thresholds,
     blocklist_domains_for_entity,
     deterministic_rejection,
-    has_partner_route,
+    fails_all_actor_conditions,
+    has_engagement_route,
+    has_person_topic_evidence,
     is_triage_incomplete,
     known_source_domains,
     load_actor_hub_sector_counts,
     load_actor_triage_reference_examples,
     load_existing_actor_domains,
     normalized_domain,
+    person_scope_rejection,
     triage_verdict,
 )
 
@@ -79,6 +83,9 @@ def run_search_triage(
     stage_store=None,
     domain_store=None,
     event_candidates=None,
+    person_candidates=None,
+    actor_resolver=None,
+    run_date: date | None = None,
 ) -> dict[str, object]:
     root = root or project_root()
     full_config = load_sources_config(root)
@@ -91,6 +98,18 @@ def run_search_triage(
         raise ValueError("--entity must be one of event, actor, person")
     live = bool(getattr(args, "live", False))
     offline = bool(getattr(args, "offline", False))
+    person_create_preview = bool(getattr(args, "preview_person_create", False))
+    people_enabled_for_run = bool(getattr(args, "enable_people_for_run", False))
+    if people_enabled_for_run and live:
+        raise RuntimeError("--enable-people-for-run cannot be combined with --live")
+    if people_enabled_for_run:
+        config["people_enabled"] = True
+    if entity_type == "person" and not bool(config.get("people_enabled", False)):
+        raise RuntimeError(
+            "open-web people discovery is disabled pending TARGETING_POLICY.md section 6 approval"
+        )
+    if person_create_preview and live:
+        raise RuntimeError("--preview-person-create cannot be combined with --live")
     owned_session = False
     if session is None and not offline:
         from src.db.session import SessionLocal
@@ -112,6 +131,11 @@ def run_search_triage(
     query_generator = query_generator or QueryGenerator(llm_client, config)
     triage_client = triage_client or SearchTriageClient(llm_client, config)
     report_path = _report_path(root, getattr(args, "report_out", None))
+    rejection_report_path = _rejection_report_path(
+        root,
+        getattr(args, "rejection_report_out", None),
+        report_path=report_path,
+    )
     audit_path = _audit_path(root, getattr(args, "audit_out", None))
 
     run_id = run_log.start_run(
@@ -138,9 +162,22 @@ def run_search_triage(
         if entity_type == "actor":
             _attach_actor_query_metadata(stats, bundle.metadata or {})
             weights = actor_fit_weights(config)
-            stats["actor_partner_findability_floor"] = actor_partner_findability_floor(config)
-            stats["actor_fit_weight_partner_findability"] = weights["partner_findability"]
-            stats["actor_fit_weight_distinctiveness"] = weights["distinctiveness"]
+            thresholds = actor_rejection_thresholds(config)
+            for name, threshold in thresholds.items():
+                stats[f"actor_{name}_floor"] = threshold
+            for name, weight in weights.items():
+                stats[f"actor_fit_weight_{name}"] = weight
+        elif entity_type == "person":
+            stats["person_relevance_floor"] = float(
+                dict(config.get("accept_floor", {}) or {}).get("person", 0.75)
+            )
+            stats["person_query_distinct_hubs"] = int(
+                dict(bundle.metadata or {}).get("distinct_hubs_covered") or 0
+            )
+            stats["person_query_sector_codes"] = ", ".join(
+                str(value)
+                for value in dict(bundle.metadata or {}).get("sector_codes_covered", []) or []
+            )
 
         attention_reasons: list[str] = []
         queries = bundle.queries
@@ -213,7 +250,12 @@ def run_search_triage(
                 fetch_extract_stage_events(
                     run_id=run_id,
                     candidates=candidate_rows,
-                    config=config,
+                    config={
+                        **config,
+                        "event_qualification": dict(
+                            full_config.get("event_qualification", {})
+                        ),
+                    },
                     root=root,
                     session=session,
                     live=live,
@@ -227,6 +269,32 @@ def run_search_triage(
                     stage_store=stage_store,
                     domain_store=domain_store,
                     event_candidates=event_candidates,
+                    actor_resolver=actor_resolver,
+                    run_date=run_date,
+                )
+            )
+        elif entity_type == "person" and bool(config.get("fetch_enabled", False)):
+            attention_reasons.extend(
+                fetch_extract_stage_people(
+                    run_id=run_id,
+                    candidates=candidate_rows,
+                    config=config,
+                    root=root,
+                    session=session,
+                    live=live,
+                    run_log=run_log,
+                    cost_meter=cost_meter,
+                    stats=stats,
+                    audit_rows=audit_rows,
+                    source=fetch_source,
+                    extractor=extractor,
+                    raw_store=raw_store,
+                    stage_store=stage_store,
+                    domain_store=domain_store,
+                    person_candidates=person_candidates,
+                    actor_resolver=actor_resolver,
+                    run_date=run_date,
+                    person_create_preview=person_create_preview,
                 )
             )
 
@@ -236,8 +304,17 @@ def run_search_triage(
         stats["triage_incomplete"] = sum(
             1 for row in candidate_rows if row.triage_verdict == "triage_incomplete"
         )
+        if entity_type == "person":
+            floor = float(dict(config.get("accept_floor", {}) or {}).get("person", 0.75))
+            stats["person_rejected_below_floor"] = sum(
+                1
+                for row in candidate_rows
+                if row.fit_score is not None
+                and row.fit_score < floor
+                and row.triage_verdict == "rejected"
+            )
         if entity_type == "actor":
-            _attach_actor_partner_stats(stats, candidate_rows)
+            _attach_actor_engagement_stats(stats, candidate_rows, config=config)
         if stats["triage_incomplete"]:
             attention_reasons.append(
                 f"triage_incomplete: {stats['triage_incomplete']} candidate(s) "
@@ -264,6 +341,13 @@ def run_search_triage(
             queries=generated_queries,
             candidates=candidate_rows,
         )
+        write_rejection_report(
+            rejection_report_path,
+            run_id=run_id,
+            status=status,
+            status_reason=status_reason,
+            candidates=candidate_rows,
+        )
         return {
             "run_id": run_id,
             "status": status,
@@ -272,6 +356,7 @@ def run_search_triage(
             "queries": generated_queries,
             "candidates": candidate_rows,
             "report_path": str(report_path),
+            "rejection_report_path": str(rejection_report_path),
             "audit_path": str(audit_path),
             "exit_code": 1 if status == "attention" else 0,
         }
@@ -297,6 +382,13 @@ def run_search_triage(
             queries=generated_queries,
             candidates=candidate_rows,
         )
+        write_rejection_report(
+            rejection_report_path,
+            run_id=run_id,
+            status="attention",
+            status_reason=status_reason,
+            candidates=candidate_rows,
+        )
         return {
             "run_id": run_id,
             "status": "attention",
@@ -305,6 +397,7 @@ def run_search_triage(
             "queries": generated_queries,
             "candidates": candidate_rows,
             "report_path": str(report_path),
+            "rejection_report_path": str(rejection_report_path),
             "audit_path": str(audit_path),
             "exit_code": 1,
         }
@@ -328,6 +421,13 @@ def run_search_triage(
             status_reason=str(exc),
             stats=stats,
             queries=generated_queries,
+            candidates=candidate_rows,
+        )
+        write_rejection_report(
+            rejection_report_path,
+            run_id=run_id,
+            status="failed",
+            status_reason=str(exc),
             candidates=candidate_rows,
         )
         raise
@@ -361,7 +461,11 @@ def _deterministic_triage(
     pending: list[SearchResult] = []
     configured_domains = known_source_domains(full_config)
     blocklist_domains = blocklist_domains_for_entity(entity_type, config)
-    existing_actor_domains = load_existing_actor_domains(session) if entity_type == "actor" else []
+    existing_actor_domains = (
+        load_existing_actor_domains(session)
+        if entity_type in {"actor", "person"}
+        else []
+    )
     if entity_type == "actor":
         stats["actor_existing_domain_blocklist_count"] = len(existing_actor_domains)
     for result in results:
@@ -371,12 +475,19 @@ def _deterministic_triage(
             raw_lookup=store,
             blocklist_domains=blocklist_domains,
             known_source_domains=configured_domains,
-            existing_actor_domains=existing_actor_domains,
+            existing_actor_domains=(existing_actor_domains if entity_type == "actor" else []),
             non_content_paths=config.get("non_content_path_fragments", []) or [],
             reject_seen_raw_urls=not (
-                entity_type == "event" and bool(config.get("fetch_enabled", False))
+                entity_type in {"event", "person"}
+                and bool(config.get("fetch_enabled", False))
             ),
         )
+        if rejected is None and entity_type == "person":
+            rejected = person_scope_rejection(
+                result,
+                held_actor_domains=existing_actor_domains,
+                config=config,
+            )
         if rejected is not None:
             stats["deterministic_rejected"] += 1
             candidate_rows.append(
@@ -414,23 +525,43 @@ def _attach_actor_query_metadata(stats: dict[str, object], metadata: dict[str, o
     stats["actor_selected_thinnest_hubs"] = "; ".join(selected_hubs)
 
 
-def _attach_actor_partner_stats(
+def _attach_actor_engagement_stats(
     stats: dict[str, object],
     candidate_rows: list[CandidateRecord],
+    *,
+    config: dict[str, object],
 ) -> None:
     evaluated = [
         row
         for row in candidate_rows
-        if row.partner_signals is not None
+        if row.engagement_signals is not None
         and not str(row.triage_reason or "").lower().startswith(
             TRIAGE_INCOMPLETE_REASON_PREFIX
         )
     ]
-    route_rejected = sum(row.triage_reason == "no partner route" for row in evaluated)
-    stats["actor_partner_evaluated"] = len(evaluated)
-    stats["actor_partner_route_rejected"] = route_rejected
-    stats["actor_partner_route_rejected_proportion"] = (
-        route_rejected / len(evaluated) if evaluated else 0.0
+    thresholds = actor_rejection_thresholds(config)
+    three_condition_rejected = sum(
+        row.triage_reason
+        == "low sector relevance; no engagement route; no strategic ecosystem value"
+        for row in evaluated
+    )
+    legacy_floor_rejected = sum(
+        (
+            not has_engagement_route(row, floor=thresholds["engagement_route"])
+            or not any((row.engagement_signals or {}).values())
+        )
+        and row.is_own_page is not False
+        and row.is_operating_org is not False
+        for row in evaluated
+    )
+    stats["actor_engagement_evaluated"] = len(evaluated)
+    stats["actor_three_condition_rejected"] = three_condition_rejected
+    stats["actor_three_condition_rejected_proportion"] = (
+        three_condition_rejected / len(evaluated) if evaluated else 0.0
+    )
+    stats["actor_legacy_single_floor_would_reject"] = legacy_floor_rejected
+    stats["actor_legacy_single_floor_would_reject_proportion"] = (
+        legacy_floor_rejected / len(evaluated) if evaluated else 0.0
     )
 
 
@@ -482,11 +613,12 @@ def _llm_triage(
     if not results:
         return {}
     sectors = load_seeded_sectors(root)
-    references = (
-        load_actor_triage_reference_examples(session)
-        if entity_type == "actor"
-        else load_event_reference_examples(session)
-    )
+    if entity_type == "actor":
+        references = load_actor_triage_reference_examples(session)
+    elif entity_type == "event":
+        references = load_event_reference_examples(session)
+    else:
+        references = []
     actor_context = None
     if entity_type == "actor":
         actor_context = {
@@ -496,10 +628,18 @@ def _llm_triage(
                 actor_query_metadata or {},
             ),
         }
+    elif entity_type == "person":
+        actor_context = {
+            "candidate_hubs": _candidate_hubs_from_query_plan(
+                results,
+                actor_query_metadata or {},
+            )
+        }
     decisions: dict[str, TriageDecision] = {}
-    batch_size = int(config.get("triage_batch_size", 20))
+    batch_size_key = "actor_triage_batch_size" if entity_type == "actor" else "triage_batch_size"
+    batch_size = int(config.get(batch_size_key, config.get("triage_batch_size", 20)))
     if batch_size <= 0:
-        raise RuntimeError("open_web_discovery.triage_batch_size must be positive")
+        raise RuntimeError(f"open_web_discovery.{batch_size_key} must be positive")
     for index in range(0, len(results), batch_size):
         batch = results[index : index + batch_size]
         batch_decisions = _triage_batch_with_retry(
@@ -746,9 +886,7 @@ def _append_llm_triaged_rows(
 ) -> None:
     floors = dict(config.get("accept_floor", {}) or {})
     floor = float(floors.get(entity_type, 0.5))
-    partner_floor = (
-        actor_partner_findability_floor(config) if entity_type == "actor" else None
-    )
+    actor_thresholds = actor_rejection_thresholds(config) if entity_type == "actor" else None
     decided_urls = set(decisions)
     capped_urls = {
         row.url
@@ -771,13 +909,31 @@ def _append_llm_triaged_rows(
             decision,
             floor=floor,
             entity_type=entity_type,
-            partner_floor=partner_floor,
+            actor_thresholds=actor_thresholds,
         )
         reason = decision.reason
-        if entity_type == "actor" and verdict == "rejected" and decision.accepted:
-            if not has_partner_route(decision, floor=float(partner_floor or 0.0)):
-                reason = "no partner route"
+        if (
+            entity_type == "actor"
+            and verdict == "rejected"
+            and actor_thresholds is not None
+            and decision.is_own_page is not False
+            and decision.is_operating_org is not False
+            and fails_all_actor_conditions(decision, thresholds=actor_thresholds)
+        ):
+            reason = (
+                "low sector relevance; no engagement route; "
+                "no strategic ecosystem value"
+            )
         elif (
+            entity_type == "person"
+            and verdict == "rejected"
+            and decision.accepted
+            and not has_person_topic_evidence(decision)
+        ):
+            reason = "insufficient direct sector and topic evidence"
+        elif (
+            entity_type != "actor"
+            and
             result.url in decided_urls
             and verdict == "rejected"
             and decision.fit_score is not None
@@ -793,7 +949,9 @@ def _append_llm_triaged_rows(
                 triage_verdict=verdict,
                 triage_reason=reason,
                 fit_score=decision.fit_score,
-                actor_triage=decision if entity_type == "actor" else None,
+                triage_details=(
+                    decision if entity_type in {"actor", "person"} else None
+                ),
             )
         )
 
@@ -842,6 +1000,7 @@ def _empty_stats() -> dict[str, object]:
         "absorbed": 0,
         "queued_for_review": 0,
         "created": 0,
+        "already_held": 0,
         "failures": 0,
         "cost_usd": 0.0,
     }
@@ -852,6 +1011,19 @@ def _report_path(root: Path, explicit: str | None) -> Path:
         path = Path(explicit)
         return path if path.is_absolute() else root / path
     return root / "agents" / "runs" / "open-web-discovery.md"
+
+
+def _rejection_report_path(
+    root: Path,
+    explicit: str | None,
+    *,
+    report_path: Path,
+) -> Path:
+    if explicit:
+        path = Path(explicit)
+        return path if path.is_absolute() else root / path
+    suffix = report_path.suffix or ".md"
+    return report_path.with_name(f"{report_path.stem}-rejections{suffix}")
 
 
 def _audit_path(root: Path, explicit: str | None) -> Path:
@@ -865,9 +1037,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entity", choices=["event", "actor", "person"], required=True)
     parser.add_argument("--report-out")
+    parser.add_argument("--rejection-report-out")
     parser.add_argument("--audit-out")
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument(
+        "--preview-person-create",
+        action="store_true",
+        help="dry-run person identity routes using create/skip/review; never permits writes",
+    )
+    parser.add_argument(
+        "--enable-people-for-run",
+        action="store_true",
+        help="enable person discovery for this dry run only; never permits live writes",
+    )
     return parser
 
 

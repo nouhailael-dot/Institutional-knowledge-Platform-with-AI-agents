@@ -125,7 +125,15 @@ def load_event_candidates(session) -> list[dict[str, object]]:
 def load_person_candidates(session) -> list[dict[str, object]]:
     rows = (
         session.execute(
-            text("SELECT person_id::text AS person_id, full_name, title, linkedin_url FROM person")
+            text(
+                "SELECT p.person_id::text AS person_id, p.full_name, p.title, p.linkedin_url, "
+                "a.actor_id::text AS actor_id, a.name AS affiliation, ap.role "
+                "FROM person p "
+                "LEFT JOIN actor_person ap ON ap.person_id = p.person_id "
+                "AND ap.is_current IS NOT FALSE "
+                "LEFT JOIN actor a ON a.actor_id = ap.actor_id "
+                "ORDER BY p.full_name, a.name"
+            )
         )
         .mappings()
         .all()
@@ -136,12 +144,14 @@ def load_person_candidates(session) -> list[dict[str, object]]:
 def route_person(
     record: dict[str, object],
     candidates: Iterable[dict[str, object]],
+    *,
+    preview_create: bool = False,
 ) -> RouteDecision:
-    """Route people to human review only.
+    """Resolve name plus affiliation deterministically.
 
-    Exact-name matches become reviewer hints, not automatic absorbs. There is no
-    person ER model, and individual name collisions are too risky for automatic
-    canonical writes.
+    The standing policy still routes new people to review. ``preview_create`` is
+    a dry-run-only caller option that exposes the architecture's proposed create
+    route without authorizing a canonical write.
     """
     name = str(record.get("name") or "").strip()
     if not name:
@@ -149,23 +159,104 @@ def route_person(
 
     from agents.discovery.normalize import normalize_key_text
 
-    record_key = normalize_key_text(name)
-    exact_matches = [
+    name_key = normalize_key_text(name)
+    name_matches = [
         candidate
         for candidate in candidates
-        if normalize_key_text(str(candidate.get("full_name") or "")) == record_key
+        if normalize_key_text(str(candidate.get("full_name") or "")) == name_key
     ]
-    if exact_matches:
-        candidate = exact_matches[0]
+    affiliation_key = normalize_key_text(str(record.get("affiliation") or ""))
+    if not affiliation_key:
+        return RouteDecision(
+            zone="review",
+            score=0.0,
+            metadata={"identity_reason": "affiliation is required for deterministic identity"},
+        )
+    key_matches = [
+        candidate
+        for candidate in name_matches
+        if normalize_key_text(str(candidate.get("affiliation") or "")) == affiliation_key
+    ]
+    if key_matches:
+        candidate = key_matches[0]
+        conflicts = _person_detail_conflicts(record, candidate)
+        if preview_create and not conflicts:
+            return RouteDecision(
+                zone="skip",
+                score=1.0,
+                target_entity_id=_person_candidate_id(candidate),
+                candidate_ids=[_person_candidate_id(match) for match in key_matches],
+                metadata={
+                    "candidate_name": str(candidate.get("full_name") or ""),
+                    "identity_reason": "already held with matching name and affiliation",
+                },
+            )
         return RouteDecision(
             zone="review",
             score=1.0,
             target_entity_id=_person_candidate_id(candidate),
-            candidate_ids=[_person_candidate_id(match) for match in exact_matches],
-            metadata={"candidate_name": str(candidate.get("full_name") or "")},
+            candidate_ids=[_person_candidate_id(match) for match in key_matches],
+            metadata={
+                "candidate_name": str(candidate.get("full_name") or ""),
+                "identity_reason": (
+                    "matching name and affiliation has conflicting details"
+                    if conflicts
+                    else "standing policy requires person review"
+                ),
+                "conflicting_fields": conflicts,
+            },
         )
 
-    return RouteDecision(zone="review", score=0.0)
+    if name_matches:
+        candidate = name_matches[0]
+        return RouteDecision(
+            zone="review",
+            score=1.0,
+            target_entity_id=_person_candidate_id(candidate),
+            candidate_ids=[_person_candidate_id(match) for match in name_matches],
+            metadata={
+                "candidate_name": str(candidate.get("full_name") or ""),
+                "identity_reason": "same normalized name with a different affiliation",
+                "candidate_affiliations": sorted(
+                    {
+                        str(match.get("affiliation") or "").strip()
+                        for match in name_matches
+                        if str(match.get("affiliation") or "").strip()
+                    }
+                ),
+            },
+        )
+
+    return RouteDecision(
+        zone="create" if preview_create else "review",
+        score=0.0,
+        metadata={
+            "identity_reason": (
+                "normalized name and affiliation are not held"
+                if preview_create
+                else "standing policy requires person review"
+            )
+        },
+    )
+
+
+def _person_detail_conflicts(
+    record: dict[str, object],
+    candidate: dict[str, object],
+) -> list[str]:
+    conflicts: list[str] = []
+    field_pairs = (
+        ("role", candidate.get("role") or candidate.get("title")),
+        ("public_profile_url", candidate.get("linkedin_url")),
+    )
+    for record_field, candidate_value in field_pairs:
+        incoming = " ".join(str(record.get(record_field) or "").split()).casefold()
+        existing = " ".join(str(candidate_value or "").split()).casefold()
+        if not incoming or not existing:
+            continue
+        if incoming != existing and record_field not in conflicts:
+            conflicts.append(record_field)
+    return conflicts
 
 
 def route_event(

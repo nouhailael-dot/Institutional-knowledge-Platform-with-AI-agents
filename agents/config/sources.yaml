@@ -1,6 +1,35 @@
 {
   "cost": { "max_usd_per_run": 0.50 },
   "routing": { "event_fuzzy_review_threshold": 0.88 },
+  "event_qualification":
+    {
+      "enabled": true,
+      "participant_extraction_enabled": true,
+      "forward_window_months": 12,
+      "minimum_expected_attendance": 100,
+      "open_registration_terms":
+        ["public", "open registration", "register", "registration", "tickets", "rsvp"],
+      "closed_registration_terms":
+        ["invite-only", "invitation only", "members only", "private event", "closed"],
+      "institutional_value_terms":
+        [
+          "conference",
+          "congress",
+          "convening",
+          "dialogue",
+          "expo",
+          "festival",
+          "forum",
+          "leadership",
+          "roundtable",
+          "summit",
+          "symposium",
+        ],
+      "institutional_audience_terms":
+        ["business leaders", "industry leaders", "institutions", "investors", "policymakers"],
+      "neighbourhood_exclusion_terms":
+        ["library", "storytime", "for children", "for teens", "for kids", "journaling"],
+    },
   "open_web_discovery":
     {
       "provider": "claude",
@@ -10,11 +39,12 @@
       "web_search_max_uses": 1,
       "results_per_query": 10,
       "triage_batch_size": 8,
+      "actor_triage_batch_size": 4,
       "triage_max_tokens": 8000,
       "max_searches": 40,
       "max_candidates_triaged": 200,
       "fetch_enabled": true,
-      "fetch_fit_floor": { "event": 0.60 },
+      "fetch_fit_floor": { "event": 0.60, "person": 0.95 },
       "max_pages_fetched": 30,
       "max_new_domains": 10,
       "raw_storage_dir": "agents/raw_documents",
@@ -31,11 +61,23 @@
       "max_usd_per_run": 5.00,
       "forward_window_days": 365,
       "people_enabled": false,
+      "person_query_limit": 40,
+      "person_institutional_domain_suffixes":
+        [".edu", ".gov", ".mil", ".int", ".org", ".ac.uk", ".ac.ma"],
+      "person_blocklist_domains":
+        ["academia.edu", "researchgate.net", "rocketreach.co", "zoominfo.com"],
       "query_excluded_sectors": ["CROSS", "DIASPORA"],
       "accept_floor": { "event": 0.60, "actor": 0.70, "person": 0.95 },
-      "actor_partner_findability_floor": 0.20,
+      "actor_sector_relevance_floor": 0.35,
+      "actor_engagement_route_floor": 0.20,
+      "actor_strategic_ecosystem_value_floor": 0.35,
       "actor_fit_weights":
-        { "partner_findability": 0.80, "distinctiveness": 0.20 },
+        {
+          "sector_relevance": 0.30,
+          "engagement_route": 0.35,
+          "strategic_ecosystem_value": 0.25,
+          "distinctiveness": 0.10,
+        },
       "blocklist_domains":
         [
           "facebook.com",
@@ -64,7 +106,18 @@
           "globenewswire.com",
         ],
       "non_content_path_fragments":
-        ["/login", "/cart", "/privacy", "/privacy-policy", "/terms", "/tag/"],
+        [
+          "/login",
+          "/signin",
+          "/sign-in",
+          "/auth/",
+          "/account/",
+          "/cart",
+          "/privacy",
+          "/privacy-policy",
+          "/terms",
+          "/tag/",
+        ],
       "search_model": "claude-haiku-4-5",
       "search_llm_pricing":
         { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },

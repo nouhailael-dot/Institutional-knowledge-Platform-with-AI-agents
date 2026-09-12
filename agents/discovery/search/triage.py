@@ -14,24 +14,64 @@ from agents.discovery.search.models import SearchResult, TriageDecision
 
 logger = logging.getLogger(__name__)
 TRIAGE_INCOMPLETE_REASON_PREFIX = "triage incomplete:"
-PARTNER_SIGNAL_NAMES = (
-    "collaboration_surface",
-    "open_programmes",
-    "precedent",
-    "route_in",
-    "complementarity",
+ENGAGEMENT_ROUTE_SIGNAL_NAMES = (
+    "partnerships_and_research",
+    "memberships",
+    "leadership_networks",
+    "ecosystem_platforms",
+    "hosted_visits",
+    "executive_programmes",
+    "event_participation",
+    "introductions",
 )
-DEFAULT_ACTOR_PARTNER_FINDABILITY_FLOOR = 0.20
+ACTOR_USE_CASES = (
+    ("research_collaboration", "research collaboration"),
+    ("learning_expeditions", "learning expeditions"),
+    ("executive_education", "executive education"),
+    ("mentorship", "mentorship"),
+    ("student_and_faculty_mobility", "student and faculty mobility"),
+    ("open_innovation", "open innovation"),
+    ("corporate_engagement", "corporate engagement"),
+    ("opportunity_development", "opportunity development"),
+)
+ACTOR_USE_CASE_NAMES = tuple(name for name, _label in ACTOR_USE_CASES)
+ACTOR_REJECTION_CONDITION_NAMES = (
+    "sector_relevance",
+    "engagement_route",
+    "strategic_ecosystem_value",
+)
+PERSON_RELEVANCE_SIGNAL_NAMES = (
+    "sector_intersection",
+    "hub_or_held_affiliation",
+    "actionable_role",
+    "topic_evidence",
+)
+DEFAULT_ACTOR_REJECTION_THRESHOLDS = {
+    "sector_relevance": 0.35,
+    "engagement_route": 0.20,
+    "strategic_ecosystem_value": 0.35,
+}
 DEFAULT_ACTOR_FIT_WEIGHTS = {
-    "partner_findability": 0.80,
-    "distinctiveness": 0.20,
+    "sector_relevance": 0.30,
+    "engagement_route": 0.35,
+    "strategic_ecosystem_value": 0.25,
+    "distinctiveness": 0.10,
 }
 ACTOR_TRIAGE_SYSTEM_PROMPT = (
-    "Evaluate actor candidates for GHUS open-web discovery, whose primary purpose is "
-    "finding actionable partners for UM6P research groups. Use only the search-result "
-    "title, snippet, URL, seeded sectors, public actor reference examples, and supplied "
-    "deterministic coverage context. Do not infer facts from pages that have not been "
-    "fetched. Evidence must come from a result published on the organisation's own site."
+    "Evaluate actor candidates for GHUS open-web discovery across eight use cases: "
+    "research collaboration, learning expeditions, executive education, mentorship, "
+    "student and faculty mobility, open innovation, corporate engagement, and opportunity "
+    "development. Use only the search-result title, snippet, URL, seeded sectors, public "
+    "actor reference examples, and supplied deterministic coverage context. Do not infer "
+    "facts from pages that have not been fetched. Evidence must come from a result published "
+    "on the organisation's own site."
+)
+PERSON_TRIAGE_SYSTEM_PROMPT = (
+    "Evaluate the professional relevance of person-page search candidates for GHUS. "
+    "Use only the search-result title, snippet, URL, seeded sectors, and supplied hub "
+    "context. Return a short evidence string or null for every relevance signal. "
+    "Judge relevance only. Never decide whether two people are the same person, never "
+    "return an identity key or route, and never collect contact or personal details."
 )
 ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST = (
     "geekwire.com",
@@ -44,6 +84,24 @@ ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST = (
     "businesswire.com",
     "prnewswire.com",
     "globenewswire.com",
+)
+PERSON_DIRECTORY_AND_PROFILE_BLOCKLIST = (
+    "academia.edu",
+    "crunchbase.com",
+    "google.com",
+    "linkedin.com",
+    "researchgate.net",
+    "rocketreach.co",
+    "zoominfo.com",
+)
+DEFAULT_PERSON_INSTITUTIONAL_SUFFIXES = (
+    ".edu",
+    ".gov",
+    ".mil",
+    ".int",
+    ".org",
+    ".ac.uk",
+    ".ac.ma",
 )
 
 DEFAULT_NON_CONTENT_PATHS = (
@@ -88,6 +146,10 @@ class SearchTriageClient:
     ) -> dict[str, TriageDecision]:
         if not candidates:
             return {}
+        if entity_type == "person" and not bool(self.config.get("people_enabled", False)):
+            raise RuntimeError(
+                "person relevance triage is disabled pending TARGETING_POLICY.md section 6 approval"
+            )
         candidate_payloads = [candidate.__dict__ for candidate in candidates]
         user_payload = _triage_user_payload(
             entity_type=entity_type,
@@ -101,6 +163,8 @@ class SearchTriageClient:
             system=(
                 ACTOR_TRIAGE_SYSTEM_PROMPT
                 if entity_type == "actor"
+                else PERSON_TRIAGE_SYSTEM_PROMPT
+                if entity_type == "person"
                 else (
                     "Triage search results for GHUS open-web discovery. "
                     "Use only the title, snippet, URL, sectors, and reference examples. "
@@ -110,10 +174,16 @@ class SearchTriageClient:
             user=json.dumps(user_payload, ensure_ascii=False, sort_keys=True),
             tool_name="triage_open_web_candidates",
             tool_description=(
-                "Return actor identity, partner evidence, deterministic distinctiveness, "
-                "fit score, and verdict."
+                "Return actor identity, per-use-case fit, engagement evidence, and evidence "
+                "for each actor rejection condition. The application computes engagement "
+                "route, fit, and verdict."
                 if entity_type == "actor"
-                else "Return deterministic-search survivors with fit scores and reasons."
+                else (
+                    "Return professional-page status, relevance evidence, sector/hub matches, "
+                    "a relevance score, and reasoning. Do not return identity decisions."
+                    if entity_type == "person"
+                    else "Return deterministic-search survivors with fit scores and reasons."
+                )
             ),
             input_schema=_triage_input_schema(entity_type),
             max_tokens=int(self.config.get("triage_max_tokens", 2048)),
@@ -137,6 +207,8 @@ class SearchTriageClient:
                     actor_context=actor_context,
                     config=self.config,
                 )
+            elif entity_type == "person":
+                decisions[url] = _person_decision_from_item(item, url=url)
             else:
                 decisions[url] = TriageDecision(
                     url=url,
@@ -192,10 +264,33 @@ def _triage_user_payload(
         ),
     }
     if entity_type != "actor":
+        if entity_type == "person":
+            payload.update(
+                {
+                    "candidate_hub_context": _candidate_hubs(actor_context),
+                    "person_relevance_rule": (
+                        "For each signal return a short quote or paraphrase from the result, or "
+                        "null when the result does not establish it. The signals are: "
+                        "sector_intersection (research intersects a seeded sector); "
+                        "hub_or_held_affiliation (affiliation is in a hub or is an organisation "
+                        "already held); actionable_role (lab head, programme director, "
+                        "partnerships lead, principal investigator, or comparable senior role); "
+                        "topic_evidence (evidence of actual work on the topic, not a passing "
+                        "mention). Reject confidently and accept provisionally."
+                    ),
+                    "identity_boundary": (
+                        "Do not return a natural key, duplicate judgment, identity match, or "
+                        "routing decision. Identity is computed later by deterministic code."
+                    ),
+                    "relevance_floor": float(
+                        dict(config.get("accept_floor", {}) or {}).get("person", 0.75)
+                    ),
+                }
+            )
         return payload
 
     weights = actor_fit_weights(config)
-    floor = actor_partner_findability_floor(config)
+    thresholds = actor_rejection_thresholds(config)
     payload["candidates"] = _actor_candidates_with_context(
         candidates,
         sectors=sectors,
@@ -211,35 +306,51 @@ def _triage_user_payload(
                 "rejected. Use reason 'not the organisation's own page' when the publisher test "
                 "fails."
             ),
-            "partner_findability_rule": (
-                "Find collaboration evidence visible in the organisation's own result. For each "
-                "named signal, return a short quote or paraphrase of the evidence, or null when "
-                "the title and snippet do not establish it. Never return a boolean. The signals "
-                "are: collaboration_surface (partnerships, industry collaboration, or technology "
-                "transfer); open_programmes (membership, affiliate, sponsored research, visiting "
-                "researcher, or open calls); precedent (existing university or research-institute "
-                "partnerships, especially international); route_in (named partnerships contact, "
-                "call for partners, or bookable/shared facilities); complementarity (capability, "
-                "infrastructure, or market access UM6P lacks, or a stated need UM6P could meet)."
+            "actor_use_cases": [label for _name, label in ACTOR_USE_CASES],
+            "use_case_fit_rule": (
+                "For every actor use case, return a short quote or paraphrase from the supplied "
+                "result when the candidate plausibly serves it, or null. Never return a boolean. "
+                "Do not award research_collaboration merely because the candidate is a large "
+                "company: a corporate visitor programme supports learning_expeditions and "
+                "corporate_engagement unless research collaboration is separately evidenced. "
+                "A university lab with collaboration and visiting-student evidence supports "
+                "research_collaboration and student_and_faculty_mobility."
             ),
-            "partner_floor_rule": (
-                f"Partner-findability must be at least {floor:.2f} and have at least one evidence "
-                "string to pass. Otherwise return verdict='reject' and reason='no partner route'."
+            "engagement_route_rule": (
+                "Identify practical routes into the organisation. A partnerships page is not "
+                "required. For each named route signal, return a short quote or paraphrase from "
+                "the result, or null; never return a boolean. Count partnerships and research "
+                "programmes, memberships, leadership networks, ecosystem platforms, hosted "
+                "visits, executive programmes, event participation, and introductions. The "
+                "application derives engagement_route as the share of eight use cases with "
+                "evidence. Do not return engagement_route. A missing route lowers fit but never "
+                "rejects alone."
+            ),
+            "three_condition_rejection_rule": (
+                "Score sector_relevance and strategic_ecosystem_value, and explain all three "
+                "conditions separately. sector_relevance measures relevance to the seeded "
+                "sectors. The application derives engagement_route from use_case_fit. "
+                "strategic_ecosystem_value measures whether the organisation could add strategic "
+                "ecosystem value across the eight use cases based only on supplied evidence. "
+                "Return a concise evidence string for every condition, including an explicit "
+                "no-evidence statement when evidence is absent. Do not return engagement_route or "
+                "a verdict. The application rejects only when all three scores are below their "
+                "configured thresholds."
             ),
             "distinctiveness_rule": (
                 "Each candidate's coverage_context contains only hub/sector labels and aggregate "
                 "counts. Reference existing_actor_count in the reasoning when useful. The "
-                "application computes distinctiveness as 1 / (1 + existing_actor_count) and "
-                "overwrites the returned distinctiveness. Do not infer it from prominence. "
+                "application computes distinctiveness as 1 / (1 + existing_actor_count). Do not "
+                "return or infer distinctiveness from prominence. "
                 "Distinctiveness changes ranking only and must never cause rejection."
             ),
             "fit_score_rule": (
-                "The application recomputes fit_score as partner_findability * "
-                f"{weights['partner_findability']:.2f} + deterministic distinctiveness * "
-                f"{weights['distinctiveness']:.2f}. Partner-findability dominates."
+                "The application computes fit_score from sector_relevance, engagement_route, "
+                "strategic_ecosystem_value, and deterministic distinctiveness using the supplied "
+                "weights. Do not return fit_score."
             ),
             "actor_fit_weights": weights,
-            "actor_partner_findability_floor": floor,
+            "actor_rejection_thresholds": thresholds,
         }
     )
     return payload
@@ -248,6 +359,8 @@ def _triage_user_payload(
 def _triage_input_schema(entity_type: str) -> dict[str, object]:
     if entity_type == "actor":
         item_schema = _actor_triage_item_schema()
+    elif entity_type == "person":
+        item_schema = _person_triage_item_schema()
     else:
         item_schema = {
             "type": "object",
@@ -281,6 +394,7 @@ def _triage_input_schema(entity_type: str) -> dict[str, object]:
 
 def _actor_triage_item_schema() -> dict[str, object]:
     evidence_value = {"type": ["string", "null"], "minLength": 1, "maxLength": 240}
+    condition_evidence_value = {"type": "string", "minLength": 1, "maxLength": 240}
     properties: dict[str, object] = {
         "url": {"type": "string"},
         "is_own_page": {"type": "boolean"},
@@ -288,16 +402,57 @@ def _actor_triage_item_schema() -> dict[str, object]:
         "actor_type_guess": {"type": ["string", "null"]},
         "hub_matches": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
         "sector_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
-        "partner_signals": {
+        "engagement_signals": {
             "type": "object",
-            "properties": {name: evidence_value for name in PARTNER_SIGNAL_NAMES},
-            "required": list(PARTNER_SIGNAL_NAMES),
+            "properties": {
+                name: evidence_value for name in ENGAGEMENT_ROUTE_SIGNAL_NAMES
+            },
+            "required": list(ENGAGEMENT_ROUTE_SIGNAL_NAMES),
             "additionalProperties": False,
         },
-        "partner_findability": {"type": "number", "minimum": 0, "maximum": 1},
-        "distinctiveness": {"type": "number", "minimum": 0, "maximum": 1},
-        "fit_score": {"type": "number", "minimum": 0, "maximum": 1},
-        "verdict": {"type": "string", "enum": ["accept", "reject"]},
+        "use_case_fit": {
+            "type": "object",
+            "properties": {name: evidence_value for name in ACTOR_USE_CASE_NAMES},
+            "required": list(ACTOR_USE_CASE_NAMES),
+            "additionalProperties": False,
+        },
+        "condition_evidence": {
+            "type": "object",
+            "properties": {
+                name: condition_evidence_value
+                for name in ACTOR_REJECTION_CONDITION_NAMES
+            },
+            "required": list(ACTOR_REJECTION_CONDITION_NAMES),
+            "additionalProperties": False,
+        },
+        "sector_relevance": {"type": "number", "minimum": 0, "maximum": 1},
+        "strategic_ecosystem_value": {"type": "number", "minimum": 0, "maximum": 1},
+        "reason": {"type": "string", "minLength": 1, "maxLength": 300},
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+        "additionalProperties": False,
+    }
+
+
+def _person_triage_item_schema() -> dict[str, object]:
+    evidence_value = {"type": ["string", "null"], "minLength": 1, "maxLength": 240}
+    properties: dict[str, object] = {
+        "url": {"type": "string"},
+        "is_professional_person_page": {"type": "boolean"},
+        "sector_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
+        "hub_matches": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
+        "relevance_signals": {
+            "type": "object",
+            "properties": {
+                name: evidence_value for name in PERSON_RELEVANCE_SIGNAL_NAMES
+            },
+            "required": list(PERSON_RELEVANCE_SIGNAL_NAMES),
+            "additionalProperties": False,
+        },
+        "relevance_score": {"type": "number", "minimum": 0, "maximum": 1},
         "reason": {"type": "string", "minLength": 1, "maxLength": 300},
     }
     return {
@@ -315,12 +470,18 @@ def _actor_decision_from_item(
     actor_context: dict[str, object] | None,
     config: dict[str, object],
 ) -> TriageDecision:
-    signals = _clean_partner_signals(item.get("partner_signals"))
-    partner_findability = _coerce_score(item.get("partner_findability"))
-    if partner_findability is None:
-        partner_findability = sum(value is not None for value in signals.values()) / len(
-            PARTNER_SIGNAL_NAMES
-        )
+    signals = _clean_evidence_signals(
+        item.get("engagement_signals"),
+        names=ENGAGEMENT_ROUTE_SIGNAL_NAMES,
+    )
+    use_case_fit = _clean_evidence_signals(
+        item.get("use_case_fit"),
+        names=ACTOR_USE_CASE_NAMES,
+    )
+    condition_evidence = _clean_condition_evidence(item.get("condition_evidence"))
+    sector_relevance = _coerce_score(item.get("sector_relevance"))
+    engagement_route = actor_engagement_route_score(use_case_fit)
+    strategic_ecosystem_value = _coerce_score(item.get("strategic_ecosystem_value"))
 
     hub_matches = _clean_string_tuple(item.get("hub_matches"))
     sector_codes = tuple(value.upper() for value in _clean_string_tuple(item.get("sector_codes")))
@@ -331,7 +492,18 @@ def _actor_decision_from_item(
         actor_context=actor_context,
     )
     distinctiveness = actor_distinctiveness_score(existing_actor_count)
-    fit_score = actor_fit_score(partner_findability, distinctiveness, config=config)
+    fit_score = None
+    if all(
+        score is not None
+        for score in (sector_relevance, engagement_route, strategic_ecosystem_value)
+    ):
+        fit_score = actor_fit_score(
+            sector_relevance,
+            engagement_route,
+            strategic_ecosystem_value,
+            distinctiveness,
+            config=config,
+        )
 
     legacy_entity_type = item.get("is_entity_type")
     is_operating_org = _coerce_optional_bool(
@@ -342,9 +514,7 @@ def _actor_decision_from_item(
         item.get("is_own_page"),
         fallback=legacy_entity_type,
     )
-    plausible_sector = bool(
-        item.get("plausible_sector") if "plausible_sector" in item else sector_codes
-    )
+    plausible_sector = sector_relevance is not None
     decision = TriageDecision(
         url=url,
         is_entity_type=bool(
@@ -358,31 +528,71 @@ def _actor_decision_from_item(
         actor_type_guess=_clean_optional_string(item.get("actor_type_guess")),
         hub_matches=hub_matches,
         sector_codes=sector_codes,
-        partner_signals=signals,
-        partner_findability=partner_findability,
+        engagement_signals=signals,
+        use_case_fit=use_case_fit,
+        condition_evidence=condition_evidence,
+        sector_relevance=sector_relevance,
+        engagement_route=engagement_route,
+        strategic_ecosystem_value=strategic_ecosystem_value,
         distinctiveness=distinctiveness,
         existing_actor_count=existing_actor_count,
-        verdict=str(item.get("verdict") or "").strip().lower() or None,
     )
     verdict = triage_verdict(
         decision,
         floor=0.0,
         entity_type="actor",
-        partner_floor=actor_partner_findability_floor(config),
+        actor_thresholds=actor_rejection_thresholds(config),
     )
     reason = decision.reason
-    if verdict == "rejected" and decision.accepted and not has_partner_route(
-        decision,
-        floor=actor_partner_findability_floor(config),
+    if (
+        verdict == "rejected"
+        and decision.is_own_page is not False
+        and decision.is_operating_org is not False
+        and fails_all_actor_conditions(
+            decision,
+            thresholds=actor_rejection_thresholds(config),
+        )
     ):
-        reason = "no partner route"
+        reason = "low sector relevance; no engagement route; no strategic ecosystem value"
     return replace(decision, verdict=verdict, reason=reason)
 
 
-def _clean_partner_signals(value: object) -> dict[str, str | None]:
+def _person_decision_from_item(item: dict[str, object], *, url: str) -> TriageDecision:
+    professional_page = bool(item.get("is_professional_person_page"))
+    sector_codes = tuple(value.upper() for value in _clean_string_tuple(item.get("sector_codes")))
+    signals = _clean_evidence_signals(
+        item.get("relevance_signals"),
+        names=PERSON_RELEVANCE_SIGNAL_NAMES,
+    )
+    return TriageDecision(
+        url=url,
+        is_entity_type=professional_page,
+        plausible_sector=bool(sector_codes),
+        fit_score=_coerce_score(item.get("relevance_score")),
+        reason=_clean_decision_reason(item.get("reason")),
+        is_professional_person_page=professional_page,
+        hub_matches=_clean_string_tuple(item.get("hub_matches")),
+        sector_codes=sector_codes,
+        relevance_signals=signals,
+    )
+
+
+def _clean_condition_evidence(value: object) -> dict[str, str]:
+    evidence = _clean_evidence_signals(value, names=ACTOR_REJECTION_CONDITION_NAMES)
+    return {
+        name: detail or "No evidence found in the supplied search result."
+        for name, detail in evidence.items()
+    }
+
+
+def _clean_evidence_signals(
+    value: object,
+    *,
+    names: Iterable[str],
+) -> dict[str, str | None]:
     mapping = value if isinstance(value, dict) else {}
     signals: dict[str, str | None] = {}
-    for name in PARTNER_SIGNAL_NAMES:
+    for name in names:
         evidence = mapping.get(name)
         if isinstance(evidence, bool) or evidence is None:
             signals[name] = None
@@ -476,7 +686,8 @@ def load_actor_hub_sector_counts(session) -> dict[tuple[str, str], int]:
                 "THEN actor.actor_id END) AS actor_count "
                 "FROM hub h CROSS JOIN sector s "
                 "LEFT JOIN hub_actor ON hub_actor.hub_id = h.hub_id "
-                "LEFT JOIN actor ON actor.actor_id = hub_actor.actor_id "
+                "LEFT JOIN actor ON actor.actor_id "
+                "= hub_actor.actor_id "
                 "AND actor.merged_into_actor_id IS NULL "
                 "AND (actor.actor_type IS NULL OR lower(actor.actor_type) <> 'aggregate') "
                 "LEFT JOIN actor_sector ON actor_sector.actor_id = actor.actor_id "
@@ -502,42 +713,34 @@ def load_actor_hub_sector_counts(session) -> dict[tuple[str, str], int]:
     return counts
 
 
-def actor_partner_findability_floor(config: dict[str, object]) -> float:
-    return _bounded_config_score(
-        config.get(
-            "actor_partner_findability_floor",
-            DEFAULT_ACTOR_PARTNER_FINDABILITY_FLOOR,
-        ),
-        key="actor_partner_findability_floor",
-    )
+def actor_rejection_thresholds(config: dict[str, object]) -> dict[str, float]:
+    return {
+        name: _bounded_config_score(
+            config.get(
+                f"actor_{name}_floor",
+                DEFAULT_ACTOR_REJECTION_THRESHOLDS[name],
+            ),
+            key=f"actor_{name}_floor",
+        )
+        for name in ACTOR_REJECTION_CONDITION_NAMES
+    }
 
 
 def actor_fit_weights(config: dict[str, object]) -> dict[str, float]:
     configured = dict(config.get("actor_fit_weights", {}) or {})
     try:
-        partner_weight = float(
-            configured.get(
-                "partner_findability",
-                DEFAULT_ACTOR_FIT_WEIGHTS["partner_findability"],
-            )
-        )
-        distinctiveness_weight = float(
-            configured.get(
-                "distinctiveness",
-                DEFAULT_ACTOR_FIT_WEIGHTS["distinctiveness"],
-            )
-        )
+        weights = {
+            name: float(configured.get(name, DEFAULT_ACTOR_FIT_WEIGHTS[name]))
+            for name in (*ACTOR_REJECTION_CONDITION_NAMES, "distinctiveness")
+        }
     except (TypeError, ValueError) as exc:
         raise RuntimeError("open_web_discovery.actor_fit_weights must be numeric") from exc
-    if partner_weight < 0 or distinctiveness_weight < 0:
+    if any(weight < 0 for weight in weights.values()):
         raise RuntimeError("open_web_discovery.actor_fit_weights must be non-negative")
-    total = partner_weight + distinctiveness_weight
+    total = sum(weights.values())
     if total <= 0:
         raise RuntimeError("open_web_discovery.actor_fit_weights must have a positive total")
-    return {
-        "partner_findability": partner_weight / total,
-        "distinctiveness": distinctiveness_weight / total,
-    }
+    return {name: weight / total for name, weight in weights.items()}
 
 
 def actor_distinctiveness_score(existing_actor_count: int | None) -> float:
@@ -546,8 +749,15 @@ def actor_distinctiveness_score(existing_actor_count: int | None) -> float:
     return 1.0 / (1.0 + max(0, int(existing_actor_count)))
 
 
+def actor_engagement_route_score(use_case_fit: dict[str, str | None]) -> float:
+    evidenced = sum(bool(use_case_fit.get(name)) for name in ACTOR_USE_CASE_NAMES)
+    return evidenced / len(ACTOR_USE_CASE_NAMES)
+
+
 def actor_fit_score(
-    partner_findability: float,
+    sector_relevance: float,
+    engagement_route: float,
+    strategic_ecosystem_value: float,
     distinctiveness: float,
     *,
     config: dict[str, object],
@@ -557,7 +767,9 @@ def actor_fit_score(
         0.0,
         min(
             1.0,
-            partner_findability * weights["partner_findability"]
+            sector_relevance * weights["sector_relevance"]
+            + engagement_route * weights["engagement_route"]
+            + strategic_ecosystem_value * weights["strategic_ecosystem_value"]
             + distinctiveness * weights["distinctiveness"],
         ),
     )
@@ -667,11 +879,30 @@ def _normal_key(value: object) -> str:
     return " ".join(str(value or "").split()).casefold()
 
 
-def has_partner_route(decision: TriageDecision, *, floor: float) -> bool:
-    signals = decision.partner_signals or {}
-    has_evidence = any(bool(value) for value in signals.values())
-    score = decision.partner_findability
-    return has_evidence and score is not None and score >= floor
+def has_engagement_route(decision: TriageDecision, *, floor: float) -> bool:
+    score = decision.engagement_route
+    return score is not None and score >= floor
+
+
+def fails_all_actor_conditions(
+    decision: TriageDecision,
+    *,
+    thresholds: dict[str, float],
+) -> bool:
+    scores = {
+        "sector_relevance": decision.sector_relevance,
+        "engagement_route": decision.engagement_route,
+        "strategic_ecosystem_value": decision.strategic_ecosystem_value,
+    }
+    return all(
+        score is not None and score < thresholds[name]
+        for name, score in scores.items()
+    )
+
+
+def has_person_topic_evidence(decision: TriageDecision) -> bool:
+    signals = decision.relevance_signals or {}
+    return bool(signals.get("sector_intersection") and signals.get("topic_evidence"))
 
 
 def deterministic_rejection(
@@ -717,7 +948,48 @@ def blocklist_domains_for_entity(entity_type: str, config: dict[str, object]) ->
     if entity_type == "actor":
         domains.extend(ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST)
         domains.extend(config.get("actor_blocklist_domains", []) or [])
+    elif entity_type == "person":
+        domains.extend(ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST)
+        domains.extend(PERSON_DIRECTORY_AND_PROFILE_BLOCKLIST)
+        domains.extend(config.get("actor_blocklist_domains", []) or [])
+        domains.extend(config.get("person_blocklist_domains", []) or [])
     return sorted(set(_normalized_domains(domains)))
+
+
+def person_scope_rejection(
+    result: SearchResult,
+    *,
+    held_actor_domains: Iterable[str],
+    config: dict[str, object],
+) -> DeterministicReject | None:
+    """Admit only institution-owned or explicitly approved self-published pages."""
+    domain = normalized_domain(result.url)
+    allowed_domains = _normalized_domains(
+        [
+            *held_actor_domains,
+            *(config.get("person_allowed_domains", []) or []),
+        ]
+    )
+    if any(_domain_matches(domain, allowed) for allowed in allowed_domains):
+        return None
+
+    suffixes = tuple(
+        str(value).strip().lower()
+        for value in (
+            config.get("person_institutional_domain_suffixes")
+            or DEFAULT_PERSON_INSTITUTIONAL_SUFFIXES
+        )
+        if str(value).strip()
+    )
+    if any(domain.endswith(suffix) for suffix in suffixes):
+        return None
+    labels = domain.split(".")
+    if len(labels) >= 3 and labels[-2] in {"ac", "edu"} and len(labels[-1]) == 2:
+        return None
+    return DeterministicReject(
+        "not an institutional or approved self-published professional page",
+        domain=domain,
+    )
 
 
 def load_existing_actor_domains(session) -> list[str]:
@@ -764,20 +1036,31 @@ def triage_verdict(
     *,
     floor: float,
     entity_type: str | None = None,
-    partner_floor: float | None = None,
+    actor_thresholds: dict[str, float] | None = None,
 ) -> str:
     if is_triage_incomplete(decision):
         return "triage_incomplete"
+    is_actor_decision = entity_type == "actor" or decision.engagement_signals is not None
+    if is_actor_decision:
+        if (
+            not decision.is_entity_type
+            or decision.is_own_page is False
+            or decision.is_operating_org is False
+            or decision.fit_score is None
+        ):
+            return "rejected"
+        thresholds = actor_thresholds or {
+            name: floor for name in ACTOR_REJECTION_CONDITION_NAMES
+        }
+        return "rejected" if fails_all_actor_conditions(
+            decision,
+            thresholds=thresholds,
+        ) else "accepted"
     if not decision.accepted:
         return "rejected"
-    is_actor_decision = entity_type == "actor" or decision.partner_signals is not None
-    if is_actor_decision:
-        required_partner_score = floor if partner_floor is None else partner_floor
-        return (
-            "accepted"
-            if has_partner_route(decision, floor=required_partner_score)
-            else "rejected"
-        )
+    is_person_decision = entity_type == "person" or decision.relevance_signals is not None
+    if is_person_decision and not has_person_topic_evidence(decision):
+        return "rejected"
     if float(decision.fit_score or 0.0) < floor:
         return "rejected"
     return "accepted"

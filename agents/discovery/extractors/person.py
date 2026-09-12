@@ -46,12 +46,23 @@ class PersonExtractor:
     prompt_version = PROMPT_VERSION
     json_schema = PERSON_TOOL_SCHEMA
 
-    def __init__(self, llm_client, *, max_tokens: int = 2048):
+    def __init__(
+        self,
+        llm_client,
+        *,
+        max_tokens: int = 2048,
+        people_enabled: bool = False,
+    ):
         self.llm_client = llm_client
         self.max_tokens = max_tokens
+        self.people_enabled = people_enabled
         self.attention_reasons: list[str] = []
 
     def extract(self, doc: FetchedDoc) -> list[dict]:
+        if not self.people_enabled:
+            raise RuntimeError(
+                "person extraction is disabled pending TARGETING_POLICY.md section 6 approval"
+            )
         payload = self.llm_client.extract_with_tool(
             system=self._system_prompt(),
             user=self._user_prompt(doc),

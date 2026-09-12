@@ -5,6 +5,7 @@ import uuid
 from argparse import Namespace
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from agents.common.cost import CostMeter
@@ -93,6 +94,8 @@ class StaticEventExtractor:
             {
                 "title": f"Climate Event {slug}",
                 "start_date": "2027-03-10",
+                "access_type": "Public",
+                "event_type": "Conference",
                 "source_url": doc.url,
                 "extracted_at": "2026-09-08T00:00:00+00:00",
                 "sector_codes": [self.sector_code],
@@ -108,6 +111,59 @@ class CostAddingExtractor(StaticEventExtractor):
     def extract(self, doc):
         self.cost_meter.add(0.06, label="test extraction")
         return super().extract(doc)
+
+
+class ParticipantEventExtractor(StaticEventExtractor):
+    def extract(self, doc):
+        records = super().extract(doc)
+        records[0]["participant_actors"] = [
+            {
+                "name": "Example Event Sponsor",
+                "participant_role": "sponsor",
+                "actor_type": "company",
+                "website": "https://events.example/sponsor",
+            }
+        ]
+        return records
+
+
+class SpeakerEventExtractor(ParticipantEventExtractor):
+    def extract(self, doc):
+        records = super().extract(doc)
+        records[0]["participant_people"] = [
+            {
+                "name": "Dr. Amina Example",
+                "affiliation": "Example Research Institute",
+                "role": "Research Director",
+                "public_profile_url": "https://events.example/amina",
+                "email": "must-not-pass@example.org",
+                "description": "must not pass",
+            }
+        ]
+        return records
+
+
+class AbsorbingActorResolver:
+    HIGH = 0.96
+    LOW = 0.18
+    model_name = "test-combiner"
+
+    def _candidates(self, name):
+        return pd.DataFrame(
+            [
+                {
+                    "actor_id": "actor-1",
+                    "name": name,
+                    "description": "Existing actor",
+                    "hubs": "",
+                }
+            ]
+        )
+
+    def _score(self, record, candidates):
+        scored = candidates.copy()
+        scored["score"] = [0.99]
+        return scored
 
 
 class CaptureToolClient:
@@ -207,6 +263,84 @@ def test_promote_rejects_discovered_domain_absorb_even_in_dry_run():
             session=None,
             live=False,
         )
+
+
+def test_discovered_event_sponsor_uses_er_bridge_but_cannot_auto_absorb(
+    monkeypatch,
+    tmp_path,
+):
+    sector_code = _seeded_sector_code()
+    config = _config()
+    monkeypatch.setattr(search_run, "load_sources_config", lambda _root: config)
+    stage_store = InMemoryStageStore()
+
+    result = search_run.run_search_triage(
+        _args(tmp_path),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        store=search_run.InMemorySearchCandidateStore(),
+        search_provider=StaticSearchProvider(
+            [_search_result("https://events.example/sponsored-event")]
+        ),
+        query_generator=StaticQueryGenerator(),
+        triage_client=AcceptingTriageClient(),
+        cost_meter=CostMeter(max_usd=5),
+        fetch_source=StaticFetchSource(),
+        extractor=ParticipantEventExtractor(sector_code),
+        raw_store=RawContentStore(tmp_path / "raw"),
+        stage_store=stage_store,
+        domain_store=InMemoryDiscoveredDomainStore(),
+        event_candidates=[],
+        actor_resolver=AbsorbingActorResolver(),
+    )
+
+    actor_rows = [row for row in stage_store.rows.values() if row.entity_type == "actor"]
+    assert result["status"] == "succeeded"
+    assert len(actor_rows) == 1
+    assert actor_rows[0].route["zone"] == "review"
+    assert actor_rows[0].route["metadata"]["route_policy"] == (
+        "discovered domains never auto-absorb"
+    )
+
+
+def test_enabled_event_people_stage_review_and_actor_person_affiliation(
+    monkeypatch,
+    tmp_path,
+):
+    sector_code = _seeded_sector_code()
+    config = _config(people_enabled=True)
+    monkeypatch.setattr(search_run, "load_sources_config", lambda _root: config)
+    stage_store = InMemoryStageStore()
+
+    search_run.run_search_triage(
+        _args(tmp_path),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        store=search_run.InMemorySearchCandidateStore(),
+        search_provider=StaticSearchProvider(
+            [_search_result("https://events.example/speaker-event")]
+        ),
+        query_generator=StaticQueryGenerator(),
+        triage_client=AcceptingTriageClient(),
+        cost_meter=CostMeter(max_usd=5),
+        fetch_source=StaticFetchSource(),
+        extractor=SpeakerEventExtractor(sector_code),
+        raw_store=RawContentStore(tmp_path / "raw"),
+        stage_store=stage_store,
+        domain_store=InMemoryDiscoveredDomainStore(),
+        event_candidates=[],
+        actor_resolver=AbsorbingActorResolver(),
+    )
+
+    person = next(row for row in stage_store.rows.values() if row.entity_type == "person")
+    relation = next(
+        row for row in stage_store.rows.values() if row.entity_type == "actor_person"
+    )
+    assert person.route["zone"] == "review"
+    assert "email" not in person.normalized_payload
+    assert "description" not in person.normalized_payload
+    assert relation.status == "awaiting_person_review"
+    assert relation.normalized_payload["actor_name"] == "Example Research Institute"
 
 
 def test_phase2_refetches_seen_url_then_skips_unchanged_extraction(monkeypatch, tmp_path):
@@ -479,7 +613,15 @@ def _config(**overrides):
         "max_usd_per_run": 5,
     }
     open_web.update(overrides)
-    return {"open_web_discovery": open_web, "sources": {}}
+    return {
+        "event_qualification": {
+            "enabled": True,
+            "participant_extraction_enabled": True,
+            "forward_window_months": 12,
+        },
+        "open_web_discovery": open_web,
+        "sources": {},
+    }
 
 
 def _args(tmp_path):

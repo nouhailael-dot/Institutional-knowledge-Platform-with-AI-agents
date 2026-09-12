@@ -9,16 +9,22 @@ The reporting agent is out of scope. Agent 3 is new-sector discovery, owned by a
 Open-web Phase 1 runs before configured-source fetching. It searches for
 candidate pages, rejects obvious bad/known results deterministically, sends only
 the survivors to Claude for fit triage, writes every candidate to
-`search_candidate`, and produces a markdown report:
+`search_candidate`, and produces a complete markdown report plus a rejection-only
+report grouped by reason:
 
 ```powershell
 python -m agents.discovery.search.run --entity event --report-out agents/runs/open-web-events.md
 python -m agents.discovery.search.run --entity actor --report-out agents/runs/open-web-actors.md
 ```
 
-For events, Phase 2 fetches accepted candidate pages and sends them through the
-existing extract, normalize, sector-filter, stage, and deterministic route path.
-Actor and person runs still stop after Phase 1 triage. Claude native web search is the default provider because its
+The rejection report is written beside the complete report with
+`-rejections.md` appended to its stem. `--rejection-report-out` can set a
+different path. Report generation never deletes candidates.
+
+For events and enabled person expertise runs, Phase 2 fetches accepted candidate
+pages and sends them through the existing extract, normalize, stage, and
+deterministic route path. Actor runs still stop after Phase 1 triage. Claude
+native web search is the default provider because its
 server-side search spend is added to the same `CostMeter` as query generation
 and triage, so `max_usd_per_run` aborts runaway searches cleanly. Brave Search
 is retained as a fallback and reads its key from `BRAVE_SEARCH_API_KEY` only
@@ -33,9 +39,9 @@ query-generation context. Actors use database actors only, excluding
 Caps are hard stops: `max_searches`, `max_candidates_triaged`, and
 `max_usd_per_run` close the run as `attention` with a visible reason rather than
 silently truncating. Phase 1-only paths reject URLs already seen in
-`raw_document` by URL. Phase 2 event runs re-fetch accepted URLs and compare the
-new content hash, so changed pages can be extracted while unchanged pages skip
-the extraction call.
+`raw_document` by URL. Phase 2 event and person runs re-fetch accepted URLs and
+compare the new content hash, so changed pages can be extracted while unchanged
+pages skip the extraction call.
 
 Phase 2 fetches at most 30 accepted pages and admits at most 10 previously unseen
 domains per run. Both are hard, config-driven caps; hitting either closes the run
@@ -130,11 +136,48 @@ The score distribution script reports mean, median, share above HIGH, and the sa
 
 Actor sources must be built around organisation profiles with enough evidence to support ER: at minimum name plus context such as description, country, website, or other profile fields. Event-listing organiser strings are not actor discovery sources.
 
+Actor triage serves eight use cases: research collaboration, learning
+expeditions, executive education, mentorship, student and faculty mobility,
+open innovation, corporate engagement, and opportunity development. An actor is
+rejected for fit only when sector relevance, engagement route, and strategic
+ecosystem value all fall below their configured thresholds. Engagement routes
+include memberships, leadership networks, ecosystem platforms, hosted visits,
+executive programmes, event participation, and introductions as well as formal
+partnerships. The former `complementarity` signal is intentionally absent because
+the system has no evidence of UM6P capability gaps; it may return only after a
+reviewed UM6P capability document is supplied as explicit triage context.
+
 ## Person Discovery
 
 E2 person discovery extracts only public professional fields: name, affiliation, role, public profile URL, and research area. It intentionally excludes contact details and biographical detail beyond professional role.
 
-People are review-only. No discovered person is auto-created or auto-absorbed into the canonical `person` table; exact name matches are only hints for reviewers. Person review rows go to the agent-owned `person_review_queue` table and carry a `source_id` provenance link in the same transaction as the queue row. The person extractor and promote branch exist and are tested, but no active person source is configured; `sci_people` remains disabled until the personal-data basis in `TARGETING_POLICY.md` section 6 is approved.
+The two acquisition modes share the same staged ingestion path. Expertise mode
+builds deterministic queries from seeded sectors and hub themes, never from held
+person names. Capture mode accepts only pages bounded by held actors; qualified
+event pages already feed their published participants into the same person
+staging and review path. Stored profile re-verification compares content hashes,
+skips unchanged pages, and sends a 404 to review as a probable move without
+deleting the person.
+
+Production handling remains review-only. No discovered person is auto-created
+or auto-absorbed into the canonical `person` table. The
+`--enable-people-for-run --preview-person-create` exposes deterministic
+create/skip/review outcomes for one dry run only; either override raises if
+combined with `--live`. Person review
+rows go to `person_review_queue` with provenance. Reviewer-approved affiliation
+changes retain current state in `actor_person` and write history to
+`person_change_log`; apply `agents/sql/130_person_change_log.sql` before using
+that approval action.
+
+```powershell
+python -m agents.discovery.search.run --entity person --enable-people-for-run --preview-person-create
+```
+
+Person records may appear in exports and demos. This widens disclosure beyond
+the internal database: `TARGETING_POLICY.md` section 6 approval must explicitly
+cover expertise discovery, UM6P faculty, and named-person exports and demos.
+The shipped switch remains `people_enabled: false`, and `sci_people` remains
+disabled until that approval and its lawful basis are recorded.
 
 ## Event Sources
 

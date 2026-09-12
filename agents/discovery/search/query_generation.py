@@ -141,17 +141,6 @@ ACTOR_TYPE_ROTATION_GROUPS = (
         ("federal agency", "government agency", "state agency"),
     ),
     (
-        "UN / intergovernmental",
-        (
-            "intergovernmental organization",
-            "multilateral development bank",
-            "un agency",
-            "un committee",
-            "un programme",
-            "un secretariat",
-        ),
-    ),
-    (
         "ecosystem convenor",
         ("consortium", "industry association", "nonprofit"),
     ),
@@ -160,6 +149,41 @@ ACTOR_TYPE_ROTATION_GROUPS = (
         ("accelerator", "startup", "venture capital"),
     ),
 )
+HUB_QUERY_EXCLUDED_ACTOR_TYPES = {
+    "intergovernmental organization",
+    "multilateral development bank",
+    "un agency",
+    "un committee",
+    "un programme",
+    "un secretariat",
+}
+PERSON_RESEARCH_TOPICS = {
+    "AGRI": ("crop science", "soil science", "agricultural biotechnology"),
+    "WATER": ("membrane desalination", "water reuse", "water resources"),
+    "AI": ("applied artificial intelligence", "machine learning systems", "responsible AI"),
+    "ENERGY": ("green hydrogen", "battery storage", "renewable energy systems"),
+    "MINING": ("critical minerals", "mineral processing", "mining technology"),
+    "CHEM": ("specialty chemicals", "catalysis", "materials chemistry"),
+    "HEALTH": ("biomedical research", "public health innovation", "medical technology"),
+    "SUSTAIN": ("climate resilience", "circular economy", "decarbonization"),
+}
+PERSON_EXPERTISE_ROLES = (
+    "university researcher",
+    "research institute scientist",
+    "national laboratory researcher",
+    "principal investigator",
+    "research programme director",
+)
+HUB_THEME_SECTOR_CODES = {
+    "agriculture": "AGRI",
+    "water": "WATER",
+    "AI": "AI",
+    "energy": "ENERGY",
+    "critical minerals": "MINING",
+    "specialty chemicals": "CHEM",
+    "health": "HEALTH",
+    "sustainability": "SUSTAIN",
+}
 
 
 @dataclass(frozen=True)
@@ -248,8 +272,28 @@ class QueryGenerator:
             )
         else:
             references = []
-            deterministic = []
-            prompt_context = {"entity_type": "person", "sectors": sectors}
+            hubs = load_actor_query_hubs(session)
+            max_queries = int(
+                self.config.get("person_query_limit")
+                or self.config.get("max_searches", 40)
+            )
+            deterministic, metadata = _person_expertise_queries(
+                sectors,
+                hubs,
+                max_queries=max_queries,
+                rotation_seed=_person_query_rotation_seed(self.today, self.config),
+            )
+            queries = _distinct_queries(deterministic)
+            if not queries:
+                raise RuntimeError("query generation returned zero queries for person")
+            return QueryBundle(
+                entity_type=entity_type,
+                queries=queries,
+                deterministic_queries=deterministic,
+                llm_queries=[],
+                reference_count=0,
+                metadata=metadata,
+            )
 
         llm_queries = self._llm_queries(prompt_context)
         queries = _distinct_queries([*deterministic, *llm_queries])
@@ -429,7 +473,7 @@ def load_actor_types(session) -> list[str]:
                 "SELECT DISTINCT actor_type FROM actor "
                 "WHERE actor_type IS NOT NULL "
                 "AND btrim(actor_type) <> '' "
-                "AND lower(actor_type) <> 'aggregate' "
+                "AND lower(actor_type) NOT IN ('aggregate', 'other') "
                 "ORDER BY actor_type"
             )
         )
@@ -439,7 +483,7 @@ def load_actor_types(session) -> list[str]:
     return [
         actor_type
         for actor_type in _distinct_queries(str(row.get("actor_type") or "").strip() for row in rows)
-        if actor_type.lower() != "aggregate"
+        if actor_type.lower() not in {"aggregate", "other"}
     ]
 
 
@@ -471,9 +515,7 @@ def load_actor_query_hubs(session) -> list[dict[str, object]]:
         if not name or name == "Mining Hubs":
             continue
         theme = _hub_theme(name)
-        geographies = _hub_geographies(name)
-        if not geographies:
-            geographies = _hub_geographies_from_columns(hub)
+        geographies = _hub_geographies(name, row=hub)
         if not theme or not geographies:
             continue
         actor_count = hub.get("actor_count")
@@ -534,6 +576,126 @@ def _actor_seed_queries(references: list[dict[str, object]]) -> list[str]:
     return _distinct_queries(queries)
 
 
+def _person_expertise_queries(
+    sectors: list[dict[str, str]],
+    hubs: list[dict[str, object]],
+    *,
+    max_queries: int,
+    rotation_seed: int = 0,
+) -> tuple[list[str], dict[str, object]]:
+    if max_queries <= 0:
+        raise RuntimeError("open_web_discovery person query limit must be positive")
+
+    sector_by_code = {
+        str(sector.get("code") or "").strip().upper(): sector
+        for sector in sectors
+        if str(sector.get("code") or "").strip()
+    }
+    plans: list[dict[str, object]] = []
+    for hub in sorted(
+        hubs,
+        key=lambda item: (int(item.get("actor_count") or 0), str(item.get("name") or "")),
+    ):
+        theme = str(hub.get("theme") or "").strip()
+        code = HUB_THEME_SECTOR_CODES.get(theme)
+        geographies = [
+            str(value).strip()
+            for value in hub.get("geographies", []) or []
+            if str(value).strip()
+        ]
+        if not code or code not in sector_by_code or not geographies:
+            continue
+        plans.append(
+            {
+                "hub_name": str(hub.get("name") or "").strip(),
+                "actor_count": int(hub.get("actor_count") or 0),
+                "sector_code": code,
+                "sector_name": str(sector_by_code[code]["name"]),
+                "topics": list(PERSON_RESEARCH_TOPICS.get(code, (theme,))),
+                "geographies": geographies,
+            }
+        )
+
+    for code, sector in sector_by_code.items():
+        plans.append(
+            {
+                "hub_name": "",
+                "actor_count": None,
+                "sector_code": code,
+                "sector_name": str(sector["name"]),
+                "topics": list(
+                    PERSON_RESEARCH_TOPICS.get(code, (str(sector["name"]),))
+                ),
+                "geographies": ["United States"],
+            }
+        )
+
+    if not plans:
+        raise RuntimeError("person query generation requires a searchable seeded sector")
+
+    queries: list[str] = []
+    query_plan: list[dict[str, object]] = []
+    seen: set[str] = set()
+    pass_index = 0
+    max_passes = max(len(PERSON_EXPERTISE_ROLES), 1) * 3
+    while len(queries) < max_queries and pass_index < max_passes:
+        added = False
+        for plan_index, plan in enumerate(plans):
+            if len(queries) >= max_queries:
+                break
+            topics = [str(value) for value in plan["topics"]]
+            geographies = [str(value) for value in plan["geographies"]]
+            topic = topics[(rotation_seed + pass_index + plan_index) % len(topics)]
+            role = PERSON_EXPERTISE_ROLES[
+                (rotation_seed + pass_index) % len(PERSON_EXPERTISE_ROLES)
+            ]
+            geography = geographies[
+                ((rotation_seed + pass_index) // len(topics)) % len(geographies)
+            ]
+            query = f'"{topic}" {role} {geography}'
+            key = query.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            queries.append(query)
+            query_plan.append(
+                {
+                    "query": query,
+                    "hub_name": plan["hub_name"],
+                    "actor_count": plan["actor_count"],
+                    "sector_code": plan["sector_code"],
+                    "sector_name": plan["sector_name"],
+                    "topic": topic,
+                    "geography": geography,
+                    "pass_index": pass_index,
+                }
+            )
+            added = True
+        if not added:
+            break
+        pass_index += 1
+
+    return queries, {
+        "query_mode": "expertise",
+        "rotation_seed": rotation_seed,
+        "query_plan": query_plan,
+        "distinct_hubs_covered": len(
+            {str(item["hub_name"]) for item in query_plan if item["hub_name"]}
+        ),
+        "sector_codes_covered": sorted(
+            {str(item["sector_code"]) for item in query_plan}
+        ),
+    }
+
+
+def _person_query_rotation_seed(today: date, config: dict[str, object]) -> int:
+    configured = config.get("person_query_rotation_seed")
+    if configured is not None:
+        return int(configured)
+    iso_year, iso_week, _weekday = today.isocalendar()
+    return (iso_year * 53) + iso_week
+
+
 def _actor_grid_queries(
     actor_types: list[str],
     hubs: list[dict[str, object]],
@@ -543,7 +705,7 @@ def _actor_grid_queries(
     types_per_hub: int = 3,
 ) -> tuple[list[str], dict[str, object]]:
     if not actor_types:
-        raise RuntimeError("actor query generation requires at least one non-aggregate actor_type")
+        raise RuntimeError("actor query generation requires at least one searchable actor_type")
     if not hubs:
         raise RuntimeError("actor query generation requires at least one non-category hub")
     if max_queries <= 0:
@@ -552,9 +714,14 @@ def _actor_grid_queries(
         raise RuntimeError("open_web_discovery.actor_type_queries_per_hub must be positive")
 
     readable_types = [_actor_type_query_phrase(actor_type) for actor_type in actor_types]
-    readable_types = [phrase for phrase in _distinct_queries(readable_types) if phrase != "aggregate"]
+    readable_types = [
+        phrase
+        for phrase in _distinct_queries(readable_types)
+        if phrase not in {"aggregate", "other"}
+        and phrase.casefold() not in HUB_QUERY_EXCLUDED_ACTOR_TYPES
+    ]
     if not readable_types:
-        raise RuntimeError("actor query generation found no searchable non-aggregate actor types")
+        raise RuntimeError("actor query generation found no searchable hub actor types")
 
     sorted_hubs = sorted(
         hubs,
@@ -770,9 +937,12 @@ def _hub_theme(name: str) -> str:
         return "specialty chemicals"
     if re.search(r"\b(water|aquifer|desalination|irrigation)\b", text):
         return "water"
-    if re.search(r"\b(agriculture|agricultural|agtech|food|soil|crop|crops)\b", text):
+    if re.search(
+        r"\b(agriculture|agricultural|agtech|ag|ag-biotech|food|plant science|soil|crop|crops)\b",
+        text,
+    ):
         return "agriculture"
-    if re.search(r"\b(health|biomedical|biohealth|medicine|medical)\b", text):
+    if re.search(r"\b(health|biomedical|biohealth|medicine|medical|clinical|nic)\b", text):
         return "health"
     if re.search(r"\b(energy|hydrogen|battery|batteries|solar|grid)\b", text):
         return "energy"
@@ -781,27 +951,45 @@ def _hub_theme(name: str) -> str:
     return ""
 
 
-def _hub_geographies(name: str) -> list[str]:
+def _hub_geographies(
+    name: str,
+    *,
+    row: dict[str, object] | None = None,
+) -> list[str]:
     parenthetical = re.search(r"\(([^)]*)\)", name)
     if parenthetical:
-        return _clean_geography_terms(parenthetical.group(1), qualifier=_leading_place_words(name))
-    return _clean_geography_terms(_leading_place_words(name))
+        terms = _clean_geography_terms(
+            parenthetical.group(1),
+            qualifier=_state_qualifier(_leading_place_words(name)),
+        )
+        if terms:
+            return terms
+        column_terms = _hub_geographies_from_columns(row or {})
+        if column_terms:
+            return column_terms
+    leading_terms = _clean_geography_terms(_leading_place_words(name))
+    if leading_terms:
+        return leading_terms[:1]
+    return _hub_geographies_from_columns(row or {})
 
 
 def _hub_geographies_from_columns(row: dict[str, object]) -> list[str]:
-    parts = [
-        str(row.get("primary_city") or "").strip(),
-        str(row.get("state") or "").strip(),
-        str(row.get("region") or "").strip(),
-        str(row.get("country") or "").strip(),
-    ]
-    return _distinct_queries(" ".join(part for part in parts[:2] if part) or part for part in parts if part)
+    city = _clean_geography_term(str(row.get("primary_city") or ""))
+    state = _clean_geography_term(str(row.get("state") or ""))
+    if city:
+        return [" ".join(part for part in (city, state) if part)]
+    for key in ("region", "state", "country"):
+        value = _clean_geography_term(str(row.get(key) or ""))
+        if value and value.casefold() not in {"usa", "united states"}:
+            return [value]
+    return []
 
 
 def _leading_place_words(name: str) -> str:
     outside_parenthetical = re.sub(r"\([^)]*\)", "", name)
     theme_match = re.search(
         r"\b(water|ai|artificial intelligence|critical minerals?|mining|mine|mineral|"
+        r"advanced materials?|"
         r"specialty chemicals?|chemicals?|chemistry|catalysis|agriculture|agricultural|"
         r"agtech|food|soil|crop|crops|health|biomedical|biohealth|medicine|medical|"
         r"energy|hydrogen|battery|batteries|solar|grid|sustainability|sustainable|"
@@ -810,6 +998,12 @@ def _leading_place_words(name: str) -> str:
         flags=re.IGNORECASE,
     )
     candidate = outside_parenthetical[: theme_match.start()] if theme_match else outside_parenthetical
+    candidate = re.sub(
+        r"\b(clean|academic)\b.*$",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    )
     candidate = re.sub(r"\bhub(s)?\b", "", candidate, flags=re.IGNORECASE)
     return " ".join(candidate.replace("-", " ").split()).strip(" ,")
 
@@ -819,15 +1013,71 @@ def _clean_geography_terms(value: str, *, qualifier: str = "") -> list[str]:
     terms: list[str] = []
     clean_qualifier = " ".join(qualifier.split()).strip()
     for raw in raw_terms:
-        term = " ".join(str(raw or "").split()).strip(" ,")
+        term = _clean_geography_term(str(raw or ""))
         if not term:
-            continue
-        if term.lower() in {"hub", "hubs", "usa", "united states"}:
             continue
         if clean_qualifier and clean_qualifier.lower() not in term.lower():
             term = f"{term} {clean_qualifier}"
         terms.append(term)
     return _distinct_queries(terms)
+
+
+def _clean_geography_term(value: str) -> str:
+    term = " ".join(value.split()).strip(" ,")
+    if not term:
+        return ""
+    lowered = term.casefold()
+    if lowered in {
+        "hub",
+        "hubs",
+        "usa",
+        "united states",
+        "berkeley",
+        "stanford",
+        "ucla",
+        "lbnl",
+        "ucsf",
+        "nyu",
+        "cornell",
+        "cornell tech",
+        "mit",
+        "harvard",
+        "mount sinai",
+        "usc",
+        "caltech",
+        "big tech ai",
+        "columbia",
+    }:
+        return ""
+    if re.search(
+        r"\b(university|college|institute|school|academy|laboratory|lab|ecosystem)\b",
+        lowered,
+    ):
+        return ""
+    if re.match(r"^(uc|u\.c\.)\s+", lowered):
+        return ""
+    if lowered.startswith("state of "):
+        term = term[9:].strip()
+    if term.casefold() in {"nyc", "greater nyc"}:
+        return "New York City"
+    return term
+
+
+def _state_qualifier(value: str) -> str:
+    normalized = " ".join(value.replace("–", "-").replace("—", "-").split()).strip()
+    if normalized.casefold() in {
+        "arizona",
+        "california",
+        "colorado",
+        "massachusetts",
+        "missouri",
+        "nevada",
+        "pennsylvania",
+        "texas",
+        "utah",
+    }:
+        return normalized
+    return ""
 
 
 def _configured_event_sources(project_root: Path) -> list[dict[str, object]]:
