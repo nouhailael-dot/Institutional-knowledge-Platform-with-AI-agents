@@ -271,6 +271,11 @@ class EventExtractor:
             "or fill missing fields. If the page has no events, return an empty "
             "events array. Extract named sponsoring, convening, exhibiting, hosting, "
             "and organizing entities into participant_actors."
+            " sector_codes is the one exception to the no-inference rule: it is a "
+            "classification judgment, not a fact to find on the page. Assign every "
+            "listed code whose subject matter the event covers, judging from its "
+            "title, description, and themes. Return an empty array only when no "
+            "listed code applies. Never invent a code outside the list."
         )
         if self.people_enabled:
             prompt += (

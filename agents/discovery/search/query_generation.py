@@ -743,7 +743,8 @@ def _actor_use_case_queries(
         attempt += 1
 
         geographies = list(plan.get("geographies") or [])
-        theme = str(plan.get("theme") or "").strip()
+        theme = str(plan.get("theme") or "").strip() or _hub_theme(
+            str(plan.get("hub_name") or plan.get("name") or ""))
         if not geographies or not theme:
             continue
 
