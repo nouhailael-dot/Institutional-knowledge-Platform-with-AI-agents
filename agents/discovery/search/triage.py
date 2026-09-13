@@ -183,7 +183,20 @@ class SearchTriageClient:
                     "Do not infer facts from pages you have not fetched."
                 )
             ),
-            user=json.dumps(user_payload, ensure_ascii=False, sort_keys=True),
+            # Split so the stable prefix (sectors, references, rules) is cached and
+            # only the candidate list varies. json.dumps(sort_keys=True) previously
+            # put "candidates" ahead of "reference_examples" and "sectors", which
+            # placed the varying content first and defeated prefix caching entirely.
+            cached_user=json.dumps(
+                {k: v for k, v in user_payload.items() if k != "candidates"},
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            user=json.dumps(
+                {"candidates": user_payload.get("candidates", [])},
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
             tool_name="triage_open_web_candidates",
             tool_description=(
                 "Return actor identity, per-use-case fit, engagement evidence, and evidence "

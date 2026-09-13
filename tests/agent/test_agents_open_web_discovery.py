@@ -845,11 +845,12 @@ def test_search_triage_client_actor_prompt_requires_organisation_own_page():
         ],
     )
 
-    user_payload = json.loads(client.calls[0]["user"])
-    assert "not published by the organisation itself" in user_payload["actor_quality_rule"]
-    assert "not the organisation's own page" in user_payload["actor_quality_rule"]
-    assert "news or press page on own domain" in user_payload["actor_quality_rule"]
-    assert user_payload["reference_examples"] == [
+    # Stable rules now travel in the cached prefix block; only candidates vary.
+    cached_payload = json.loads(client.calls[0]["cached_user"])
+    assert "not published by the organisation itself" in cached_payload["actor_quality_rule"]
+    assert "not the organisation's own page" in cached_payload["actor_quality_rule"]
+    assert "news or press page on own domain" in cached_payload["actor_quality_rule"]
+    assert cached_payload["reference_examples"] == [
         {
             "name": "Reference Lab",
             "actor_type": "university_lab",
@@ -883,7 +884,7 @@ def test_search_triage_client_actor_prompt_requires_organisation_own_page():
     assert "engagement_route" not in schema["properties"]
     condition_schema = schema["properties"]["condition_evidence"]
     assert set(condition_schema["properties"]) == set(ACTOR_REJECTION_CONDITION_NAMES)
-    assert user_payload["actor_use_cases"] == [
+    assert cached_payload["actor_use_cases"] == [
         "research collaboration",
         "learning expeditions",
         "executive education",
@@ -893,10 +894,10 @@ def test_search_triage_client_actor_prompt_requires_organisation_own_page():
         "corporate engagement",
         "opportunity development",
     ]
-    assert "complementarity" not in json.dumps(user_payload).lower()
-    assert "memberships" in user_payload["engagement_route_rule"]
-    assert "hosted visits" in user_payload["engagement_route_rule"]
-    assert "alone" in user_payload["engagement_route_rule"]
+    assert "complementarity" not in json.dumps(cached_payload).lower()
+    assert "memberships" in cached_payload["engagement_route_rule"]
+    assert "hosted visits" in cached_payload["engagement_route_rule"]
+    assert "alone" in cached_payload["engagement_route_rule"]
 
 
 def test_search_triage_client_replaces_url_shaped_reasons():
