@@ -312,7 +312,6 @@ def run_search_triage(
                 )
             )
 
-        stats["candidates_written"] = store.write_candidates(candidate_rows)
         stats["accepted"] = sum(1 for row in candidate_rows if row.triage_verdict == "accepted")
         stats["rejected"] = sum(1 for row in candidate_rows if row.triage_verdict == "rejected")
         stats["triage_incomplete"] = sum(
@@ -338,14 +337,11 @@ def run_search_triage(
         stats["cost"] = cost_meter.snapshot()
         status = "attention" if attention_reasons else "succeeded"
         status_reason = "; ".join(attention_reasons)
+
+        # Reports are written before any database write. Triage results cannot be
+        # recovered if a DB failure discards them; the rows can be reconstructed
+        # from the report. A paid run was lost this way in September 2026.
         write_audit_csv(audit_path, audit_rows)
-        run_log.close_run(
-            run_id,
-            status=status,
-            stats=stats,
-            cost_usd=cost_meter.spent_usd,
-            status_reason=status_reason,
-        )
         write_candidate_report(
             report_path,
             run_id=run_id,
@@ -361,6 +357,27 @@ def run_search_triage(
             status=status,
             status_reason=status_reason,
             candidates=candidate_rows,
+        )
+
+        try:
+            stats["candidates_written"] = store.write_candidates(candidate_rows)
+        except Exception as exc:  # noqa: BLE001 - reports are already safe on disk
+            logger.error(
+                "candidate persistence failed after reports were written: %s", exc
+            )
+            _rollback_session(session)
+            stats["candidates_written"] = 0
+            status = "attention"
+            status_reason = "; ".join(
+                filter(None, [status_reason, f"candidate persistence failed: {exc}"])
+            )
+
+        run_log.close_run(
+            run_id,
+            status=status,
+            stats=stats,
+            cost_usd=cost_meter.spent_usd,
+            status_reason=status_reason,
         )
         return {
             "run_id": run_id,
@@ -377,16 +394,8 @@ def run_search_triage(
     except CostLimitExceeded as exc:
         stats["cost_usd"] = cost_meter.spent_usd
         stats["cost"] = cost_meter.snapshot()
-        stats["candidates_written"] = store.write_candidates(candidate_rows)
         status_reason = f"max_usd_per_run cap hit: {exc}"
         write_audit_csv(audit_path, audit_rows)
-        run_log.close_run(
-            run_id,
-            status="attention",
-            stats=stats,
-            cost_usd=cost_meter.spent_usd,
-            status_reason=status_reason,
-        )
         write_candidate_report(
             report_path,
             run_id=run_id,
@@ -402,6 +411,19 @@ def run_search_triage(
             status="attention",
             status_reason=status_reason,
             candidates=candidate_rows,
+        )
+        try:
+            stats["candidates_written"] = store.write_candidates(candidate_rows)
+        except Exception as write_exc:  # noqa: BLE001 - reports already on disk
+            logger.error("candidate persistence failed: %s", write_exc)
+            _rollback_session(session)
+            stats["candidates_written"] = 0
+        run_log.close_run(
+            run_id,
+            status="attention",
+            stats=stats,
+            cost_usd=cost_meter.spent_usd,
+            status_reason=status_reason,
         )
         return {
             "run_id": run_id,
@@ -421,15 +443,7 @@ def run_search_triage(
         stats["failures"] += 1
         stats["cost_usd"] = cost_meter.spent_usd
         stats["cost"] = cost_meter.snapshot()
-        stats["candidates_written"] = store.write_candidates(candidate_rows)
         write_audit_csv(audit_path, audit_rows)
-        run_log.fail_run(
-            run_id,
-            error=str(exc),
-            stats=stats,
-            cost_usd=cost_meter.spent_usd,
-            status_reason=status_reason,
-        )
         write_candidate_report(
             report_path,
             run_id=run_id,
@@ -446,6 +460,22 @@ def run_search_triage(
             status_reason=status_reason,
             candidates=candidate_rows,
         )
+        try:
+            stats["candidates_written"] = store.write_candidates(candidate_rows)
+        except Exception as write_exc:  # noqa: BLE001 - reports already on disk
+            logger.error("candidate persistence failed: %s", write_exc)
+            _rollback_session(session)
+            stats["candidates_written"] = 0
+        try:
+            run_log.fail_run(
+                run_id,
+                error=str(exc),
+                stats=stats,
+                cost_usd=cost_meter.spent_usd,
+                status_reason=status_reason,
+            )
+        except Exception as log_exc:  # noqa: BLE001 - never mask the original error
+            logger.error("fail_run could not be recorded: %s", log_exc)
         raise
     finally:
         if owned_session and session is not None:
