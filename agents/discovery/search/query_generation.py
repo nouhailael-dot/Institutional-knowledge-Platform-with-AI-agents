@@ -281,6 +281,7 @@ class QueryGenerator:
                 rotation_seed=_actor_type_rotation_seed(self.today, self.config),
                 types_per_hub=types_per_hub,
             )
+            deterministic = deterministic + list(metadata.get("use_case_queries") or [])
             references = []
             llm_queries = []
             queries = _distinct_queries(deterministic)
@@ -821,14 +822,11 @@ def _actor_grid_queries(
     ]
     plans = [plan for plan in plans if plan["geographies"] and plan["actor_types"]]
 
-    use_case_budget = max(0, int(max_queries * use_case_share))
-    grid_budget = max(1, max_queries - use_case_budget)
-
     queries: list[str] = []
     query_plan: list[dict[str, object]] = []
     seen_queries: set[str] = set()
     pass_index = 0
-    while len(queries) < grid_budget:
+    while len(queries) < max_queries:
         added_this_pass = False
         for plan in plans:
             if len(queries) >= max_queries:
@@ -850,8 +848,6 @@ def _actor_grid_queries(
         rotation_seed=rotation_seed,
         seen_queries=seen_queries,
     )
-    queries.extend(use_case_queries)
-    query_plan.extend(use_case_plan)
 
     selected_hubs = _selected_hub_metadata(plans, query_plan)
     grid_size = sum(
@@ -872,6 +868,9 @@ def _actor_grid_queries(
         "selected_hubs": selected_hubs,
         "distinct_hubs_covered": len(selected_hubs),
         "query_plan": query_plan,
+        "use_case_queries": use_case_queries,
+        "use_case_query_plan": use_case_plan,
+        "use_case_query_count": len(use_case_queries),
     }
 
 
