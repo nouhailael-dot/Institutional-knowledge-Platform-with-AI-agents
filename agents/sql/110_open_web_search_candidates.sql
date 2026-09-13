@@ -13,8 +13,12 @@ CREATE TABLE IF NOT EXISTS search_candidate (
     triage_verdict text NOT NULL,
     triage_reason text,
     fit_score numeric(4, 3),
+    duplicate_of uuid,
     created_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE search_candidate
+    ADD COLUMN IF NOT EXISTS duplicate_of uuid;
 
 CREATE INDEX IF NOT EXISTS ix_search_candidate_run_entity_score
     ON search_candidate (run_id, entity_type, fit_score DESC);

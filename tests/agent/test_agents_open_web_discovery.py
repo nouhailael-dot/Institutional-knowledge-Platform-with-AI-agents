@@ -12,7 +12,7 @@ from agents.common.config import load_sources_config
 from agents.common.cost import CostMeter
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery.search import run as search_run
-from agents.discovery.search.models import SearchResult, TriageDecision
+from agents.discovery.search.models import CandidateRecord, SearchResult, TriageDecision
 from agents.discovery.search.providers import (
     WEB_SEARCH_USD_PER_REQUEST,
     BraveSearchProvider,
@@ -33,7 +33,7 @@ from agents.discovery.search.query_generation import (
     load_actor_types,
     normalize_event_geography,
 )
-from agents.discovery.search.store import InMemorySearchCandidateStore
+from agents.discovery.search.store import InMemorySearchCandidateStore, SQLSearchCandidateStore
 from agents.discovery.search.triage import (
     ACTOR_REJECTION_CONDITION_NAMES,
     ACTOR_USE_CASE_NAMES,
@@ -41,9 +41,11 @@ from agents.discovery.search.triage import (
     SearchTriageClient,
     actor_distinctiveness_score,
     actor_engagement_route_score,
+    blocklist_domains_for_entity,
     deterministic_rejection,
     load_actor_hub_sector_counts,
     load_actor_triage_reference_examples,
+    normalized_domain,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -174,6 +176,27 @@ class CapturingSession:
     def execute(self, statement, params=None):
         self.statements.append(str(statement))
         return MappingRows(self.rows)
+
+
+class ScalarRows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def scalars(self):
+        return self
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class ScalarSession:
+    def __init__(self, rows):
+        self.rows = rows
+        self.statements: list[str] = []
+
+    def execute(self, statement, params=None):
+        self.statements.append(str(statement))
+        return ScalarRows(self.rows)
 
 
 class RoutedSession:
@@ -825,6 +848,7 @@ def test_search_triage_client_actor_prompt_requires_organisation_own_page():
     user_payload = json.loads(client.calls[0]["user"])
     assert "not published by the organisation itself" in user_payload["actor_quality_rule"]
     assert "not the organisation's own page" in user_payload["actor_quality_rule"]
+    assert "news or press page on own domain" in user_payload["actor_quality_rule"]
     assert user_payload["reference_examples"] == [
         {
             "name": "Reference Lab",
@@ -1046,6 +1070,7 @@ def test_actor_rejects_only_when_all_three_conditions_fail(monkeypatch, tmp_path
     assert result["stats"]["actor_legacy_single_floor_would_reject"] == 2
     report = Path(result["report_path"]).read_text(encoding="utf-8")
     assert "#### Actor evidence" in report
+    assert "Duplicate Of" in report
     assert "Engagement route" in report
     assert "Use-case evidence counts:" in report
     assert "mentorship: 1" in report
@@ -1206,6 +1231,64 @@ def test_deterministic_rejections_happen_before_llm_triage(monkeypatch, tmp_path
     assert triage.calls == []
 
 
+def test_run_loads_seen_urls_once_without_per_candidate_queries(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch)
+
+    class CountingStore(InMemorySearchCandidateStore):
+        def __init__(self):
+            super().__init__(seen_raw_urls={"https://seen.example/one"})
+            self.load_calls = 0
+            self.lookup_calls = 0
+
+        def load_seen_raw_urls(self):
+            self.load_calls += 1
+            return super().load_seen_raw_urls()
+
+        def has_seen_raw_url(self, url):
+            self.lookup_calls += 1
+            return super().has_seen_raw_url(url)
+
+    store = CountingStore()
+    provider = StaticSearchProvider(
+        {
+            "q": [
+                _result("https://seen.example/one", "q"),
+                _result("https://seen.example/two", "q"),
+            ]
+        }
+    )
+
+    search_run.run_search_triage(
+        _args(tmp_path),
+        root=PROJECT_ROOT,
+        session=CapturingSession([]),
+        run_log=InMemoryRunLog(),
+        store=store,
+        search_provider=provider,
+        query_generator=StaticQueryGenerator(["q"]),
+        triage_client=RecordingTriageClient(),
+    )
+
+    assert store.load_calls == 1
+    assert store.lookup_calls == 0
+
+
+def test_sql_store_caches_bulk_seen_url_snapshot():
+    session = ScalarSession(
+        ["https://seen.example/one", "https://seen.example/two", None]
+    )
+    store = SQLSearchCandidateStore(session)
+
+    assert store.load_seen_raw_urls() == {
+        "https://seen.example/one",
+        "https://seen.example/two",
+    }
+    assert store.has_seen_raw_url("https://seen.example/one") is True
+    assert store.has_seen_raw_url("https://fresh.example/page") is False
+    assert len(session.statements) == 1
+    assert "SELECT DISTINCT url FROM raw_document" in session.statements[0]
+
+
 def test_existing_actor_domain_is_rejected_before_llm_triage(monkeypatch, tmp_path):
     _install_open_web_config(monkeypatch)
     store = InMemorySearchCandidateStore()
@@ -1264,6 +1347,49 @@ def test_actor_news_domain_is_rejected_before_llm_triage(monkeypatch, tmp_path):
     assert triage.calls == []
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://newsroom.example.org/product-launch",
+        "https://example.org/news/product-launch",
+    ],
+)
+def test_actor_own_domain_news_pages_are_rejected_deterministically(url):
+    rejected = deterministic_rejection(
+        _result(url, "q"),
+        raw_lookup=InMemorySearchCandidateStore(),
+        blocklist_domains=[],
+        known_source_domains=[],
+        entity_type="actor",
+    )
+
+    assert rejected is not None
+    assert rejected.reason == "news or press page on own domain"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example.org/about",
+        "https://example.org/labs/energy-programme",
+    ],
+)
+def test_actor_own_domain_organisation_pages_pass_deterministic_news_gate(url):
+    rejected = deterministic_rejection(
+        _result(url, "q"),
+        raw_lookup=InMemorySearchCandidateStore(),
+        blocklist_domains=[],
+        known_source_domains=[],
+        entity_type="actor",
+    )
+
+    assert rejected is None
+
+
+def test_mines_newsroom_is_actor_blocklisted():
+    assert "minesnewsroom.com" in blocklist_domains_for_entity("actor", {})
+
+
 def test_conference_aggregators_are_rejected_deterministically():
     domains = [
         "allconferencealert.com",
@@ -1314,6 +1440,38 @@ def test_duplicate_urls_collapse_before_triage_and_keep_all_queries(monkeypatch,
     assert len(store.candidates) == 1
     assert store.candidates[0].url == "https://dup.example/event"
     assert store.candidates[0].query == "q1 | q2"
+
+
+def test_four_accepted_urls_on_one_domain_collapse_to_one():
+    candidates = [
+        _accepted_actor_candidate("https://ccst.us/about", score=0.4),
+        _accepted_actor_candidate("https://ccst.us/programmes", score=0.8),
+        _accepted_actor_candidate("https://www.ccst.us/reports/one", score=0.6),
+        _accepted_actor_candidate("https://labs.ccst.us/research", score=0.7),
+    ]
+
+    collapsed = search_run._collapse_accepted_actor_domains(candidates)
+
+    assert collapsed == 3
+    survivor = candidates[1]
+    assert survivor.triage_verdict == "accepted"
+    duplicates = [candidate for candidate in candidates if candidate is not survivor]
+    assert all(candidate.triage_verdict == "duplicate" for candidate in duplicates)
+    assert all(candidate.duplicate_of == survivor.candidate_id for candidate in duplicates)
+
+
+def test_institutional_subdomains_collapse_together():
+    candidates = [
+        _accepted_actor_candidate("https://epic.uchicago.edu/lab", score=0.8),
+        _accepted_actor_candidate("https://urbanlabs.uchicago.edu/lab", score=0.7),
+    ]
+
+    collapsed = search_run._collapse_accepted_actor_domains(candidates)
+
+    assert collapsed == 1
+    assert candidates[0].triage_verdict == "accepted"
+    assert candidates[1].triage_verdict == "duplicate"
+    assert candidates[1].duplicate_of == candidates[0].candidate_id
 
 
 def test_every_search_result_gets_candidate_row(monkeypatch, tmp_path):
@@ -1519,6 +1677,75 @@ def test_malformed_triage_response_does_not_kill_run(monkeypatch, tmp_path):
     assert store.candidates[0].triage_reason == (
         "triage incomplete: batch failed after split retry"
     )
+
+
+def test_api_credit_error_aborts_without_split_retry(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch, triage_batch_size=2)
+    provider = StaticSearchProvider(
+        {
+            "q": [
+                _result("https://one.example/page", "q"),
+                _result("https://two.example/page", "q"),
+                _result("https://three.example/page", "q"),
+            ]
+        }
+    )
+    triage = SequencedTriageClient(
+        [RuntimeError("invalid_request_error: API credit balance is too low")]
+    )
+    run_log = InMemoryRunLog()
+
+    with pytest.raises(search_run.ApiCreditExhaustedError, match="API credit exhausted"):
+        search_run.run_search_triage(
+            _args(tmp_path),
+            root=PROJECT_ROOT,
+            session=CapturingSession([]),
+            run_log=run_log,
+            store=InMemorySearchCandidateStore(),
+            search_provider=provider,
+            query_generator=StaticQueryGenerator(["q"]),
+            triage_client=triage,
+        )
+
+    assert [len(call) for call in triage.calls] == [2]
+    failed_run = next(iter(run_log.runs.values()))
+    assert failed_run.status == "failed"
+    assert failed_run.status_reason == "API credit exhausted"
+
+
+def test_failed_run_rolls_back_before_failure_write(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch)
+    events: list[str] = []
+
+    class RollbackSession:
+        def rollback(self):
+            events.append("rollback")
+
+    class RollbackAwareRunLog(InMemoryRunLog):
+        def fail_run(self, run_id, **kwargs):
+            events.append("fail_run")
+            return super().fail_run(run_id, **kwargs)
+
+    class DroppedConnectionProvider:
+        name = "dropped-connection"
+
+        def search(self, query, *, count=10):
+            raise ConnectionError("database connection dropped")
+
+    run_log = RollbackAwareRunLog()
+    with pytest.raises(ConnectionError, match="database connection dropped"):
+        search_run.run_search_triage(
+            _args(tmp_path),
+            root=PROJECT_ROOT,
+            session=RollbackSession(),
+            run_log=run_log,
+            store=InMemorySearchCandidateStore(),
+            search_provider=DroppedConnectionProvider(),
+            query_generator=StaticQueryGenerator(["q"]),
+            triage_client=RecordingTriageClient(),
+        )
+
+    assert events == ["rollback", "fail_run"]
 
 
 def test_max_usd_cap_closes_attention_before_search(monkeypatch, tmp_path):
@@ -1730,6 +1957,7 @@ def test_open_web_candidate_sql_migration_exists():
 
     assert "CREATE TABLE IF NOT EXISTS search_candidate" in sql
     assert "triage_verdict text NOT NULL" in sql
+    assert "duplicate_of uuid" in sql
 
 
 def _args(tmp_path: Path, *, entity: str = "event", offline: bool = True) -> Namespace:
@@ -1750,6 +1978,18 @@ def _result(url: str, query: str) -> SearchResult:
         snippet="Snippet",
         provider="stub",
         query=query,
+    )
+
+
+def _accepted_actor_candidate(url: str, *, score: float) -> CandidateRecord:
+    return CandidateRecord.from_result(
+        run_id="actor-run",
+        entity_type="actor",
+        result=_result(url, "q"),
+        domain=normalized_domain(url),
+        triage_verdict="accepted",
+        triage_reason="accepted actor page",
+        fit_score=score,
     )
 
 

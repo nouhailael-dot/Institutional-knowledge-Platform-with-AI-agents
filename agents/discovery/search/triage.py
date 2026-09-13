@@ -63,8 +63,10 @@ ACTOR_TRIAGE_SYSTEM_PROMPT = (
     "student and faculty mobility, open innovation, corporate engagement, and opportunity "
     "development. Use only the search-result title, snippet, URL, seeded sectors, public "
     "actor reference examples, and supplied deterministic coverage context. Do not infer "
-    "facts from pages that have not been fetched. Evidence must come from a result published "
-    "on the organisation's own site."
+    "facts from pages that have not been fetched. Evidence must come from a substantive "
+    "organisational, programme, lab, or about page on the organisation's own site. News "
+    "articles, press releases, announcements, and blog posts are coverage even when they are "
+    "published on the organisation's own domain."
 )
 PERSON_TRIAGE_SYSTEM_PROMPT = (
     "Evaluate the professional relevance of person-page search candidates for GHUS. "
@@ -84,6 +86,16 @@ ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST = (
     "businesswire.com",
     "prnewswire.com",
     "globenewswire.com",
+    "minesnewsroom.com",
+)
+ACTOR_NEWS_HOST_PREFIXES = ("newsroom.", "news.", "press.")
+ACTOR_NEWS_PATH_FRAGMENTS = (
+    "/news/",
+    "/press/",
+    "/newsroom/",
+    "/announcements/",
+    "/blog/",
+    "/media/",
 )
 PERSON_DIRECTORY_AND_PROFILE_BLOCKLIST = (
     "academia.edu",
@@ -300,11 +312,15 @@ def _triage_user_payload(
         {
             "actor_quality_rule": (
                 "Reject any candidate that is not published by the organisation itself or is "
-                "not a real operating organisation. Press coverage, conference speaker bios, "
-                "directory listings, third-party funding announcements, aggregator profiles, "
-                "grouping pages, consortium listings, category pages, and bare projects must be "
-                "rejected. Use reason 'not the organisation's own page' when the publisher test "
-                "fails."
+                "not a real operating organisation. The page itself must be a substantive "
+                "organisational, programme, lab, or about page. A news article, press release, "
+                "announcement, or blog post that reports on the organisation is coverage even "
+                "when published on the organisation's own domain. Set is_own_page to false and "
+                "use reason exactly 'news or press page on own domain' for those own-domain "
+                "coverage pages. Conference speaker bios, directory listings, third-party "
+                "funding announcements, aggregator profiles, grouping pages, consortium "
+                "listings, category pages, and bare projects must also be rejected. Use reason "
+                "'not the organisation's own page' when the publisher test fails."
             ),
             "actor_use_cases": [label for _name, label in ACTOR_USE_CASES],
             "use_case_fit_rule": (
@@ -914,6 +930,7 @@ def deterministic_rejection(
     existing_actor_domains: Iterable[str] = (),
     non_content_paths: Iterable[str] = DEFAULT_NON_CONTENT_PATHS,
     reject_seen_raw_urls: bool = True,
+    entity_type: str | None = None,
 ) -> DeterministicReject | None:
     parsed = urlparse(result.url or "")
     if parsed.scheme not in ("http", "https") or "." not in parsed.netloc:
@@ -924,6 +941,11 @@ def deterministic_rejection(
     for existing in _normalized_domains(existing_actor_domains):
         if _domain_matches(domain, existing):
             return DeterministicReject("actor already in database", domain=domain)
+    if entity_type == "actor" and _is_actor_news_or_press_page(
+        domain=domain,
+        path=parsed.path,
+    ):
+        return DeterministicReject("news or press page on own domain", domain=domain)
     if reject_seen_raw_urls and raw_lookup.has_seen_raw_url(result.url):
         return DeterministicReject(
             "already in raw_document; Phase 1 does not fetch pages to recompute content hash",
@@ -1077,6 +1099,31 @@ def normalized_domain(url: str) -> str:
     parsed = urlparse(text_value if "://" in text_value else f"https://{text_value}")
     host = (parsed.hostname or "").lower().strip(".")
     return host.removeprefix("www.")
+
+
+def registrable_domain(url_or_domain: str) -> str:
+    domain = normalized_domain(url_or_domain)
+    labels = domain.split(".")
+    if len(labels) <= 2:
+        return domain
+    if len(labels[-1]) == 2 and labels[-2] in {
+        "ac",
+        "co",
+        "com",
+        "edu",
+        "gov",
+        "net",
+        "org",
+    }:
+        return ".".join(labels[-3:])
+    return ".".join(labels[-2:])
+
+
+def _is_actor_news_or_press_page(*, domain: str, path: str) -> bool:
+    lowered_path = str(path or "").casefold()
+    return domain.startswith(ACTOR_NEWS_HOST_PREFIXES) or any(
+        fragment in lowered_path for fragment in ACTOR_NEWS_PATH_FRAGMENTS
+    )
 
 
 def _normalized_domains(domains: Iterable[str]) -> list[str]:

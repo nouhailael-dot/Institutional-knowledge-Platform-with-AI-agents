@@ -8,9 +8,22 @@
       "forward_window_months": 12,
       "minimum_expected_attendance": 100,
       "open_registration_terms":
-        ["public", "open registration", "register", "registration", "tickets", "rsvp"],
+        [
+          "public",
+          "open registration",
+          "register",
+          "registration",
+          "tickets",
+          "rsvp",
+        ],
       "closed_registration_terms":
-        ["invite-only", "invitation only", "members only", "private event", "closed"],
+        [
+          "invite-only",
+          "invitation only",
+          "members only",
+          "private event",
+          "closed",
+        ],
       "institutional_value_terms":
         [
           "conference",
@@ -26,9 +39,22 @@
           "symposium",
         ],
       "institutional_audience_terms":
-        ["business leaders", "industry leaders", "institutions", "investors", "policymakers"],
+        [
+          "business leaders",
+          "industry leaders",
+          "institutions",
+          "investors",
+          "policymakers",
+        ],
       "neighbourhood_exclusion_terms":
-        ["library", "storytime", "for children", "for teens", "for kids", "journaling"],
+        [
+          "library",
+          "storytime",
+          "for children",
+          "for teens",
+          "for kids",
+          "journaling",
+        ],
     },
   "open_web_discovery":
     {
@@ -125,10 +151,7 @@
       "triage_llm_pricing":
         { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
     },
-  "sources":
-    {
-      "climate_week":
-        {
+  "sources": { "climate_week": {
           "entity_types": ["event"],
           "listing_url": "https://www.climateweeknyc.org/event-search",
           "raw_storage_dir": "agents/raw_documents",
@@ -166,8 +189,7 @@
           "max_retries": 3,
           "user_agent_product": "GHUS-AgentDiscovery/0.1",
           "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
-        },
-      "unga_programme": {
+        }, "unga_programme": {
           "entity_types": ["event"],
           "meeting_url": "https://www.un.org/en/ga/81/meetings/",
           "seed_urls": ["https://www.un.org/en/ga/81/meetings/"],
@@ -188,8 +210,7 @@
           "claude_model": "claude-haiku-4-5",
           "llm_pricing":
             { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
-        },
-      "unga_guide": {
+        }, "unga_guide": {
           "entity_types": ["event"],
           "listing_url": "https://ungaguide.com/",
           "seed_urls": ["https://ungaguide.com/"],
@@ -211,23 +232,5 @@
           "claude_model": "claude-haiku-4-5",
           "llm_pricing":
             { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
-        },
-      "sci_people":
-        {
-          "disabled": true,
-          "disabled_reason": "TARGETING_POLICY.md section 6 personal-data lawful basis pending supervisor approval",
-          "adapter": "agents.discovery.sources.configured_pages:ConfiguredPagesAdapter",
-          "entity_types": ["person"],
-          "seed_urls": ["https://sci.um6p.ma/research/our-people/faculty/"],
-          "raw_storage_dir": "agents/raw_documents",
-          "rate_limit_s": 1.0,
-          "timeout_s": 20.0,
-          "max_retries": 3,
-          "user_agent_product": "GHUS-AgentDiscovery/0.1",
-          "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL",
-          "claude_model": "claude-haiku-4-5",
-          "llm_pricing":
-            { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
-        },
-    },
+        }, "sci_people": { "disabled": true, "disabled_reason": "TARGETING_POLICY.md section 6 personal-data lawful basis pending supervisor approval", "adapter": "agents.discovery.sources.configured_pages:ConfiguredPagesAdapter", "entity_types": ["person"], "seed_urls": ["https://sci.um6p.ma/research/our-people/faculty/"], "raw_storage_dir": "agents/raw_documents", "rate_limit_s": 1.0, "timeout_s": 20.0, "max_retries": 3, "user_agent_product": "GHUS-AgentDiscovery/0.1", "contact_email_env": "GHUS_AGENT_CONTACT_EMAIL", "claude_model": "claude-haiku-4-5", "llm_pricing": { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 } } },
 }

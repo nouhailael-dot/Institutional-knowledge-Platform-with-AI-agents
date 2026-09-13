@@ -46,10 +46,17 @@ from agents.discovery.search.triage import (
     load_existing_actor_domains,
     normalized_domain,
     person_scope_rejection,
+    registrable_domain,
     triage_verdict,
 )
 
 logger = logging.getLogger(__name__)
+
+API_CREDIT_EXHAUSTED_STATUS_REASON = "API credit exhausted"
+
+
+class ApiCreditExhaustedError(RuntimeError):
+    """Raised when the LLM provider rejects a request for insufficient credit."""
 
 
 def project_root() -> Path:
@@ -150,6 +157,9 @@ def run_search_triage(
     generated_queries: dict[str, list[str]] = {entity_type: []}
 
     try:
+        raw_lookup = InMemorySearchCandidateStore(
+            seen_raw_urls=store.load_seen_raw_urls()
+        )
         bundle: QueryBundle = query_generator.generate(
             entity_type, session=session, project_root=root
         )
@@ -203,7 +213,7 @@ def run_search_triage(
             run_id=run_id,
             entity_type=entity_type,
             results=deduplicated_results,
-            store=store,
+            raw_lookup=raw_lookup,
             config=config,
             full_config=full_config,
             session=session,
@@ -244,6 +254,10 @@ def run_search_triage(
             config=config,
             candidate_rows=candidate_rows,
         )
+        if entity_type == "actor":
+            stats["actor_domain_duplicates_collapsed"] = (
+                _collapse_accepted_actor_domains(candidate_rows)
+            )
 
         if entity_type == "event" and bool(config.get("fetch_enabled", False)):
             attention_reasons.extend(
@@ -402,6 +416,8 @@ def run_search_triage(
             "exit_code": 1,
         }
     except Exception as exc:
+        status_reason = _failure_status_reason(exc)
+        _rollback_session(session)
         stats["failures"] += 1
         stats["cost_usd"] = cost_meter.spent_usd
         stats["cost"] = cost_meter.snapshot()
@@ -412,13 +428,13 @@ def run_search_triage(
             error=str(exc),
             stats=stats,
             cost_usd=cost_meter.spent_usd,
-            status_reason=str(exc),
+            status_reason=status_reason,
         )
         write_candidate_report(
             report_path,
             run_id=run_id,
             status="failed",
-            status_reason=str(exc),
+            status_reason=status_reason,
             stats=stats,
             queries=generated_queries,
             candidates=candidate_rows,
@@ -427,7 +443,7 @@ def run_search_triage(
             rejection_report_path,
             run_id=run_id,
             status="failed",
-            status_reason=str(exc),
+            status_reason=status_reason,
             candidates=candidate_rows,
         )
         raise
@@ -446,12 +462,38 @@ def _build_llm_client(config: dict[str, object], cost_meter: CostMeter) -> Claud
     )
 
 
+def _failure_status_reason(exc: Exception) -> str:
+    if isinstance(exc, ApiCreditExhaustedError) or _is_api_credit_exhausted(exc):
+        return API_CREDIT_EXHAUSTED_STATUS_REASON
+    return str(exc)
+
+
+def _is_api_credit_exhausted(exc: Exception) -> bool:
+    details = [str(exc), repr(exc)]
+    for attribute in ("body", "message", "response"):
+        value = getattr(exc, attribute, None)
+        if value is not None:
+            details.append(repr(value))
+    error_text = " ".join(details).casefold()
+    return "invalid_request_error" in error_text and "credit" in error_text
+
+
+def _rollback_session(session) -> None:
+    rollback = getattr(session, "rollback", None)
+    if not callable(rollback):
+        return
+    try:
+        rollback()
+    except Exception:  # Preserve the original run failure.
+        logger.exception("Could not roll back the session before recording run failure")
+
+
 def _deterministic_triage(
     *,
     run_id: str,
     entity_type: str,
     results: list[SearchResult],
-    store,
+    raw_lookup,
     config: dict[str, object],
     full_config: dict[str, object],
     session,
@@ -472,7 +514,7 @@ def _deterministic_triage(
         domain = normalized_domain(result.url)
         rejected = deterministic_rejection(
             result,
-            raw_lookup=store,
+            raw_lookup=raw_lookup,
             blocklist_domains=blocklist_domains,
             known_source_domains=configured_domains,
             existing_actor_domains=(existing_actor_domains if entity_type == "actor" else []),
@@ -481,6 +523,7 @@ def _deterministic_triage(
                 entity_type in {"event", "person"}
                 and bool(config.get("fetch_enabled", False))
             ),
+            entity_type=entity_type,
         )
         if rejected is None and entity_type == "person":
             rejected = person_scope_rejection(
@@ -507,6 +550,38 @@ def _deterministic_triage(
     if not pending:
         logger.warning("open-web deterministic triage left zero candidates for LLM triage")
     return pending
+
+
+def _collapse_accepted_actor_domains(candidate_rows: list[CandidateRecord]) -> int:
+    grouped: dict[str, list[tuple[int, CandidateRecord]]] = {}
+    for index, candidate in enumerate(candidate_rows):
+        if candidate.entity_type != "actor" or candidate.triage_verdict != "accepted":
+            continue
+        domain = registrable_domain(candidate.domain)
+        if domain:
+            grouped.setdefault(domain, []).append((index, candidate))
+
+    collapsed = 0
+    for candidates in grouped.values():
+        if len(candidates) < 2:
+            continue
+        survivor_index, survivor = max(
+            candidates,
+            key=lambda item: (
+                -1.0 if item[1].fit_score is None else item[1].fit_score,
+                -item[0],
+            ),
+        )
+        for index, candidate in candidates:
+            if index == survivor_index:
+                continue
+            candidate_rows[index] = replace(
+                candidate,
+                triage_verdict="duplicate",
+                duplicate_of=survivor.candidate_id,
+            )
+            collapsed += 1
+    return collapsed
 
 
 def _attach_actor_query_metadata(stats: dict[str, object], metadata: dict[str, object]) -> None:
@@ -730,7 +805,9 @@ def _triage_once(
         if actor_context is not None and _triage_supports_actor_context(triage_client):
             kwargs["actor_context"] = actor_context
         return triage_client.triage(batch, **kwargs)
-    except Exception as exc:  # noqa: BLE001 - a malformed/failed LLM batch must not kill the run.
+    except Exception as exc:  # A malformed/failed LLM batch must not kill the run.
+        if _is_api_credit_exhausted(exc):
+            raise ApiCreditExhaustedError(API_CREDIT_EXHAUSTED_STATUS_REASON) from exc
         logger.warning("LLM triage call failed for %d candidate(s): %s", len(batch), exc)
         return None
 

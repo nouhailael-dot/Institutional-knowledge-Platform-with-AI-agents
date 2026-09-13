@@ -88,6 +88,7 @@ class CandidateRecord:
     distinctiveness: float | None = None
     existing_actor_count: int | None = None
     relevance_signals: dict[str, str | None] | None = None
+    duplicate_of: str | None = None
 
     @classmethod
     def from_result(

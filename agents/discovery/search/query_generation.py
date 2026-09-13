@@ -186,6 +186,30 @@ HUB_THEME_SECTOR_CODES = {
 }
 
 
+# Query templates that point at specific GHUS use cases. The hub grid finds
+# research labs; it never finds an executive education office, which is why
+# those use cases fired 0-2 times across 200 candidates in run 5268566e.
+ACTOR_USE_CASE_QUERY_TEMPLATES: dict[str, tuple[str, ...]] = {
+    "executive_education": ("executive education program {theme} {geo}",),
+    "learning_expeditions": (
+        "site visit program {theme} {geo}",
+        "industry tour {theme} {geo}",
+    ),
+    "mentorship": (
+        "mentorship program {theme} {geo}",
+        "fellowship program {theme} {geo}",
+    ),
+    "student_and_faculty_mobility": (
+        "visiting researcher program {theme} {geo}",
+        "exchange program {theme} {geo}",
+    ),
+    "open_innovation": (
+        "open innovation challenge {theme} {geo}",
+        "innovation hub {theme} {geo}",
+    ),
+    "corporate_engagement": ("industry partnership program {theme} {geo}",),
+}
+
 @dataclass(frozen=True)
 class QueryBundle:
     entity_type: str
@@ -696,6 +720,61 @@ def _person_query_rotation_seed(today: date, config: dict[str, object]) -> int:
     return (iso_year * 53) + iso_week
 
 
+def _actor_use_case_queries(
+    plans: list[dict[str, object]],
+    *,
+    max_queries: int,
+    rotation_seed: int,
+    seen_queries: set[str],
+) -> tuple[list[str], list[dict[str, object]]]:
+    """Queries aimed at specific use cases, cycling hubs and use cases together."""
+    if max_queries <= 0 or not plans:
+        return [], []
+
+    use_cases = sorted(ACTOR_USE_CASE_QUERY_TEMPLATES)
+    queries: list[str] = []
+    plan_items: list[dict[str, object]] = []
+    attempt = 0
+    max_attempts = len(plans) * len(use_cases) * 4
+
+    while len(queries) < max_queries and attempt < max_attempts:
+        plan = plans[(rotation_seed + attempt) % len(plans)]
+        use_case = use_cases[(rotation_seed + attempt) % len(use_cases)]
+        attempt += 1
+
+        geographies = list(plan.get("geographies") or [])
+        theme = str(plan.get("theme") or "").strip()
+        if not geographies or not theme:
+            continue
+
+        templates = ACTOR_USE_CASE_QUERY_TEMPLATES[use_case]
+        template = templates[attempt % len(templates)]
+        geo = str(geographies[attempt % len(geographies)]).strip()
+        if not geo:
+            continue
+
+        query = " ".join(template.format(theme=theme, geo=geo).split())
+        if query.lower() in seen_queries:
+            continue
+
+        seen_queries.add(query.lower())
+        queries.append(query)
+        plan_items.append(
+            {
+                "query": query,
+                "hub_id": plan.get("hub_id"),
+                "hub_name": plan.get("name"),
+                "actor_count": plan.get("actor_count"),
+                "theme": theme,
+                "geography": geo,
+                "use_case": use_case,
+                "query_type": "use_case",
+            }
+        )
+
+    return queries, plan_items
+
+
 def _actor_grid_queries(
     actor_types: list[str],
     hubs: list[dict[str, object]],
@@ -703,6 +782,7 @@ def _actor_grid_queries(
     max_queries: int,
     rotation_seed: int = 0,
     types_per_hub: int = 3,
+    use_case_share: float = 0.30,
 ) -> tuple[list[str], dict[str, object]]:
     if not actor_types:
         raise RuntimeError("actor query generation requires at least one searchable actor_type")
@@ -740,11 +820,14 @@ def _actor_grid_queries(
     ]
     plans = [plan for plan in plans if plan["geographies"] and plan["actor_types"]]
 
+    use_case_budget = max(0, int(max_queries * use_case_share))
+    grid_budget = max(1, max_queries - use_case_budget)
+
     queries: list[str] = []
     query_plan: list[dict[str, object]] = []
     seen_queries: set[str] = set()
     pass_index = 0
-    while len(queries) < max_queries:
+    while len(queries) < grid_budget:
         added_this_pass = False
         for plan in plans:
             if len(queries) >= max_queries:
@@ -759,6 +842,15 @@ def _actor_grid_queries(
         if not added_this_pass:
             break
         pass_index += 1
+
+    use_case_queries, use_case_plan = _actor_use_case_queries(
+        plans,
+        max_queries=max_queries - len(queries),
+        rotation_seed=rotation_seed,
+        seen_queries=seen_queries,
+    )
+    queries.extend(use_case_queries)
+    query_plan.extend(use_case_plan)
 
     selected_hubs = _selected_hub_metadata(plans, query_plan)
     grid_size = sum(
@@ -1024,6 +1116,9 @@ def _clean_geography_terms(value: str, *, qualifier: str = "") -> list[str]:
 
 def _clean_geography_term(value: str) -> str:
     term = " ".join(value.split()).strip(" ,")
+    term = re.sub(r"\([^)]*\)", " ", term)
+    term = re.sub(r"[()\[\]]", " ", term)
+    term = " ".join(term.split()).strip(" ,-")
     if not term:
         return ""
     lowered = term.casefold()

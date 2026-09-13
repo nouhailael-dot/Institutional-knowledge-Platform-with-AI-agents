@@ -66,19 +66,21 @@ def write_candidate_report(
                 "",
                 f"### {entity_type}",
                 "",
-                "| Score | Verdict | Domain | Title | URL | Reason | Query |",
-                "| ---: | --- | --- | --- | --- | --- | --- |",
+                "| Score | Verdict | Domain | Title | URL | Reason | Duplicate Of | Query |",
+                "| ---: | --- | --- | --- | --- | --- | --- | --- |",
             ]
         )
         for row in rows:
             lines.append(
-                "| {score} | {verdict} | {domain} | {title} | {url} | {reason} | {query} |".format(
+                "| {score} | {verdict} | {domain} | {title} | {url} | {reason} | "
+                "{duplicate_of} | {query} |".format(
                     score="n/a" if row.fit_score is None else f"{row.fit_score:.3f}",
                     verdict=_escape(row.triage_verdict),
                     domain=_escape(row.domain),
                     title=_escape(row.title or ""),
                     url=_escape(row.url),
                     reason=_escape(row.triage_reason or ""),
+                    duplicate_of=_escape(row.duplicate_of or ""),
                     query=_escape(row.query),
                 )
             )
