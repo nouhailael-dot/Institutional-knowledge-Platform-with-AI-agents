@@ -831,7 +831,7 @@ def _actor_grid_queries(
     while len(queries) < grid_budget:
         added_this_pass = False
         for plan in plans:
-            if len(queries) >= max_queries:
+            if len(queries) >= grid_budget:
                 break
             query_item = _query_for_plan_pass(plan, pass_index, seen_queries)
             if query_item is None:
