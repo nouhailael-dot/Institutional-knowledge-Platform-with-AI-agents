@@ -67,7 +67,7 @@
       "triage_batch_size": 8,
       "actor_triage_batch_size": 4,
       "triage_max_tokens": 8000,
-      "max_searches": 55,
+      "max_searches": 40,
       "max_candidates_triaged": 200,
       "fetch_enabled": true,
       "fetch_fit_floor": { "event": 0.60, "person": 0.95 },

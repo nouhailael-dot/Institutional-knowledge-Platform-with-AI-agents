@@ -783,7 +783,7 @@ def _actor_grid_queries(
     max_queries: int,
     rotation_seed: int = 0,
     types_per_hub: int = 3,
-    use_case_share: float = 0.30,
+    use_case_queries_count: int = 12,
 ) -> tuple[list[str], dict[str, object]]:
     if not actor_types:
         raise RuntimeError("actor query generation requires at least one searchable actor_type")
@@ -831,7 +831,7 @@ def _actor_grid_queries(
     while len(queries) < grid_budget:
         added_this_pass = False
         for plan in plans:
-            if len(queries) >= grid_budget:
+            if len(queries) >= max_queries:
                 break
             query_item = _query_for_plan_pass(plan, pass_index, seen_queries)
             if query_item is None:
@@ -846,7 +846,7 @@ def _actor_grid_queries(
 
     use_case_queries, use_case_plan = _actor_use_case_queries(
         plans,
-        max_queries=max_queries - len(queries),
+        max_queries=use_case_queries_count,
         rotation_seed=rotation_seed,
         seen_queries=seen_queries,
     )
