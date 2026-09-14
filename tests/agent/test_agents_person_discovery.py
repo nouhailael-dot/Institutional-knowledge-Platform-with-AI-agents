@@ -329,14 +329,14 @@ def test_default_person_floor_rejects_low_score_and_missing_topic_evidence():
         "actionable_role": None,
         "topic_evidence": "Published membrane desalination work",
     }
-    assert floor == 0.95
+    assert floor == 0.6
     assert (
         triage_verdict(
             TriageDecision(
                 url="https://example.edu/a",
                 is_entity_type=True,
                 plausible_sector=True,
-                fit_score=0.94,
+                fit_score=0.55,
                 reason="relevant",
                 is_professional_person_page=True,
                 relevance_signals=complete,

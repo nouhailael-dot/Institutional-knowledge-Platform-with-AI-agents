@@ -22,6 +22,11 @@ class StepOutcome:
 
     @property
     def failed(self) -> bool:
+        # A step reporting "attention" has done its job and hit a configured cap or
+        # returned a partial result. Open-web discovery exits 1 in that case and hits
+        # a cap on every run, so a non-zero exit alone must not fail the weekly job.
+        if self.status == "attention":
+            return False
         return self.exit_code != 0 or self.status in {"failed", "missing_digest", "unknown"}
 
 
