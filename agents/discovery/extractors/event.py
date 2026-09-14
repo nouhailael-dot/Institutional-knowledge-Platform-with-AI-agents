@@ -59,7 +59,32 @@ EVENT_TOOL_SCHEMA: dict[str, Any] = {
                     "sponsoring_orgs": {"type": ["string", "null"]},
                     "sector_codes": {
                         "type": ["array", "null"],
-                        "items": {"type": "string"},
+                        "items": {
+                            "type": "string",
+                            "enum": [
+                                "AGRI",
+                                "WATER",
+                                "AI",
+                                "ENERGY",
+                                "MINING",
+                                "CHEM",
+                                "HEALTH",
+                                "SUSTAIN",
+                                "DIASPORA",
+                                "CROSS",
+                            ],
+                        },
+                        "description": (
+                            "Seeded GHUS sector codes this event covers. "
+                            "AGRI=Agriculture, WATER=Water, AI=Artificial Intelligence, "
+                            "ENERGY=Energy Transition, MINING=Mining, "
+                            "CHEM=Specialty Chemicals, HEALTH=Healthcare, "
+                            "SUSTAIN=Sustainability, DIASPORA=African Diaspora, "
+                            "CROSS=Cross-Thematic. Assign every code the event covers. "
+                            "Use CROSS only when the event genuinely spans two or more "
+                            "named sectors, never as a fallback. Return an empty array "
+                            "when no code applies."
+                        ),
                     },
                 },
                 "required": EVENT_FIELDS,

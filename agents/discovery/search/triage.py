@@ -105,6 +105,13 @@ PERSON_DIRECTORY_AND_PROFILE_BLOCKLIST = (
     "researchgate.net",
     "rocketreach.co",
     "zoominfo.com",
+    "wikipedia.org",
+    "researchgate.net",
+    "semanticscholar.org",
+    "orcid.org",
+    "scholar.google.com",
+    "muckrack.com",
+    "zoominfo.com",
 )
 DEFAULT_PERSON_INSTITUTIONAL_SUFFIXES = (
     ".edu",
@@ -288,6 +295,17 @@ def _triage_user_payload(
             "If a candidate is hard to judge, reject it and explain the uncertainty."
         ),
     }
+    if entity_type == "event":
+        payload["decision_rule"] = (
+            "Return exactly one decision object for every candidate URL provided. "
+            "Judge only whether this is plausibly the page of a single real event, "
+            "not whether the snippet proves it. A thin snippet, a homepage, or a "
+            "missing date is expected and is never grounds for rejection: accepted "
+            "pages are fetched afterwards and the name, date, and location are "
+            "extracted from the page itself. Reject aggregator or directory listings "
+            "covering many events, news articles about events, and pages that are "
+            "clearly not about an event at all."
+        )
     if entity_type != "actor":
         if entity_type == "person":
             payload.update(
