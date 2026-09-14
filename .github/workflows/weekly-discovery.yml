@@ -82,5 +82,6 @@ jobs:
             agents/runs/*-audit.csv
             agents/runs/*-digest.md
             agents/runs/open-web-*-report.md
+            agents/runs/open-web-*-audit.csv
             agents/runs/source-outcomes.md
           if-no-files-found: warn

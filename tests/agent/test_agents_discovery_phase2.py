@@ -1110,7 +1110,10 @@ def test_weekly_orchestrator_runs_every_source_and_downstream_after_source_failu
     assert modules[-2:] == ["agents.enrichment.run", "agents.index.refresh"]
     assert outcome.exit_code == 1
     summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
-    assert "Discovery succeeded: open_web_event, unga_programme, unga_guide" in summary
+    assert (
+            "Discovery succeeded: open_web_event, open_web_actor, unga_programme, unga_guide"
+            in summary
+        )
     assert "Discovery failed: climate_week(status=failed,exit=1)" in summary
     assert "Downstream succeeded: enrichment, index_refresh" in summary
 
@@ -1140,10 +1143,10 @@ def test_weekly_orchestrator_missing_digest_is_failure_but_continues(tmp_path):
 
     outcome = weekly_discovery.run_weekly(runs_dir=tmp_path, runner=runner)
 
-    assert len(commands) == 6
+    assert len(commands) == 7
     assert outcome.exit_code == 1
-    assert outcome.discovery[1].name == "climate_week"
-    assert outcome.discovery[1].status == "missing_digest"
+    assert outcome.discovery[2].name == "climate_week"
+    assert outcome.discovery[2].status == "missing_digest"
     summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
     assert "climate_week(status=missing_digest,exit=1)" in summary
 
