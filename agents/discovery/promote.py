@@ -8,6 +8,7 @@ existing review_queue table is actor-specific.
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -211,15 +212,17 @@ def promote(
                 fields_absorbed=fields,
             )
         elif route.zone == "review":
-            if not route.target_entity_id:
+            review_kind = str(dict(route.metadata or {}).get("review_kind") or "fuzzy_match")
+            if review_kind != "rubric_band" and not route.target_entity_id:
                 raise ValueError("event review route requires target_entity_id")
-            _insert_event_review(session, staged, route)
+            review_id = _insert_event_review(session, staged, route)
             result = PromotionResult(
                 action="queued_for_review",
                 entity_type="event",
                 zone="review",
                 entity_id=route.target_entity_id,
                 dry_run=False,
+                review_id=review_id,
             )
         else:
             raise ValueError(f"unknown route zone {route.zone!r}")
@@ -325,6 +328,8 @@ def _mark_index_dirty(session, *, entity_type: str, entity_id: str) -> None:
 
 def _insert_event_review(session, staged: StagedRecord, route: RouteDecision) -> str:
     metadata = dict(route.metadata or {})
+    if metadata.get("review_kind") == "rubric_band":
+        return _insert_event_rubric_review(session, staged, route, metadata)
     staged_title = str(metadata.get("staged_title") or staged.normalized_payload.get("name") or "")
     candidate_title = str(metadata.get("candidate_title") or "")
     shared_start_date = (
@@ -358,6 +363,57 @@ def _insert_event_review(session, staged: StagedRecord, route: RouteDecision) ->
             "staged_title": staged_title,
             "candidate_title": candidate_title,
             "shared_start_date": shared_start_date,
+        },
+    )
+    return event_review_id
+
+
+def _insert_event_rubric_review(
+    session,
+    staged: StagedRecord,
+    route: RouteDecision,
+    metadata: dict[str, object],
+) -> str:
+    staged_title = str(
+        metadata.get("staged_title") or staged.normalized_payload.get("name") or ""
+    ).strip()
+    if not staged_title:
+        raise ValueError("event rubric review requires a staged title")
+    rubric = metadata.get("rubric")
+    if not isinstance(rubric, dict):
+        raise TypeError("event rubric review requires rubric evidence")
+    event_review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO event_review_queue (event_review_id, staged_record_id, "
+            "candidate_event_id, similarity_score, staged_title, candidate_title, "
+            "shared_start_date, status, reviewer, review_kind, search_candidate_id, rubric, "
+            "score_breakdown, qualification_paths, rerank_position, rerank_reason) "
+            "VALUES (CAST(:event_review_id AS uuid), CAST(:staged_record_id AS uuid), "
+            "CAST(:candidate_event_id AS uuid), :similarity_score, :staged_title, "
+            ":candidate_title, CAST(:shared_start_date AS date), 'pending', NULL, "
+            "'rubric_band', CAST(:search_candidate_id AS uuid), CAST(:rubric AS jsonb), "
+            "CAST(:score_breakdown AS jsonb), CAST(:qualification_paths AS jsonb), "
+            ":rerank_position, :rerank_reason)"
+        ),
+        {
+            "event_review_id": event_review_id,
+            "staged_record_id": staged.staged_record_id,
+            "candidate_event_id": route.target_entity_id,
+            "similarity_score": route.score,
+            "staged_title": staged_title,
+            "candidate_title": metadata.get("candidate_title"),
+            "shared_start_date": metadata.get("shared_start_date"),
+            "search_candidate_id": metadata.get("search_candidate_id"),
+            "rubric": json.dumps(rubric, sort_keys=True),
+            "score_breakdown": json.dumps(
+                metadata.get("score_breakdown") or {}, sort_keys=True
+            ),
+            "qualification_paths": json.dumps(
+                metadata.get("qualification_paths") or [], sort_keys=True
+            ),
+            "rerank_position": metadata.get("rerank_position"),
+            "rerank_reason": metadata.get("rerank_reason"),
         },
     )
     return event_review_id

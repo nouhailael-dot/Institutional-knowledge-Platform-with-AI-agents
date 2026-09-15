@@ -95,6 +95,7 @@ class CandidateRecord:
     record_preview: dict[str, object] | None = None
     score_breakdown: dict[str, float] | None = None
     score_band: str | None = None
+    qualification_paths: tuple[str, ...] = ()
     rerank_position: int | None = None
     rerank_reason: str | None = None
 
@@ -144,7 +145,7 @@ class CandidateRecord:
             relevance_signals=details.relevance_signals if details else None,
             gate_fetch=(
                 details.is_entity_type
-                if entity_type == "actor" and details is not None
+                if entity_type in {"actor", "event"} and details is not None
                 else None
             ),
         )

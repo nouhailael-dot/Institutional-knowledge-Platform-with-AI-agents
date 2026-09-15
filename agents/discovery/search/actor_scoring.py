@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 import json
-import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from agents.discovery.extractors.actor import ACTOR_RECORD_FIELDS, actor_record_schema
 from agents.discovery.search.models import CandidateRecord
+from agents.discovery.search.rubric_scoring import (
+    ListwiseReranker,
+    configured_weights,
+    evidence_item_schema,
+    read_cached_analysis,
+    rerank_top_candidates,
+    score_band,
+    score_thresholds,
+    validate_evidence_item,
+    weighted_score,
+    write_cached_analysis,
+)
 from agents.discovery.search.triage import ACTOR_USE_CASES
 from agents.discovery.sources.base import FetchedDoc
-
-logger = logging.getLogger(__name__)
 
 PROMPT_VERSION = "actor_rubric_record_v1"
 RUBRIC_ITEM_NAMES = (
@@ -226,57 +235,14 @@ class ActorRubricExtractor:
         )
 
 
-class ActorListwiseReranker:
+class ActorListwiseReranker(ListwiseReranker):
     def __init__(self, llm_client, *, max_tokens: int = 2048):
-        self.llm_client = llm_client
-        self.max_tokens = max_tokens
-
-    def rerank_group(
-        self,
-        candidates: list[CandidateRecord],
-    ) -> list[tuple[str, str]]:
-        if not candidates:
-            return []
-        payload = self.llm_client.extract_with_tool(
-            system=(
-                "Order actor candidates from best to worst for practical GHUS engagement. "
-                "Use only the supplied rubric evidence and record preview. Do not rescore them."
-            ),
-            user=json.dumps(
-                {
-                    "candidates": [
-                        {
-                            "url": candidate.url,
-                            "record": candidate.record_preview,
-                            "rubric": candidate.rubric,
-                            "rubric_score": candidate.fit_score,
-                        }
-                        for candidate in candidates
-                    ]
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
-            tool_name="rank_actor_candidates",
-            tool_description="Return every supplied URL once, ordered best to worst, with a rationale.",
-            input_schema=_rerank_schema(),
-            max_tokens=self.max_tokens,
+        super().__init__(
+            llm_client,
+            entity_type="actor",
+            objective="practical GHUS engagement",
+            max_tokens=max_tokens,
         )
-        ordered = payload.get("candidates") if isinstance(payload, dict) else None
-        if not isinstance(ordered, list):
-            raise TypeError("actor listwise rerank returned a non-list candidates value")
-        expected = {candidate.url for candidate in candidates}
-        result: list[tuple[str, str]] = []
-        for item in ordered:
-            if not isinstance(item, dict):
-                continue
-            url = str(item.get("url") or "").strip()
-            rationale = str(item.get("rationale") or "").strip()
-            if url in expected and url not in {entry[0] for entry in result} and rationale:
-                result.append((url, rationale))
-        if {url for url, _reason in result} != expected:
-            raise RuntimeError("actor listwise rerank did not return every candidate exactly once")
-        return result
 
 
 class PreExtractedActorExtractor:
@@ -306,15 +272,7 @@ def actor_rubric_record_schema(
     sector_codes: list[str],
     hub_names: list[str],
 ) -> dict[str, object]:
-    item_schema = {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "present": {"type": "boolean"},
-            "evidence": {"type": ["string", "null"], "maxLength": 500},
-        },
-        "required": ["present", "evidence"],
-    }
+    item_schema = evidence_item_schema()
     rubric_properties: dict[str, object] = {
         name: item_schema for name in RUBRIC_ITEM_NAMES
     }
@@ -410,56 +368,41 @@ def score_actor_rubric(
     values["sector_coverage"] = float(bool(rubric_sector_codes(rubric)))
     values["hub_match"] = float(bool(rubric_hub_matches(rubric)))
     values["distinctiveness"] = distinctiveness
-    contributions = {
-        name: round(values[name] * weights[name], 6) for name in SCORE_COMPONENT_NAMES
-    }
+    scored = weighted_score(values, weights=weights)
     return ActorScore(
-        total=round(sum(contributions.values()), 6),
-        contributions=contributions,
+        total=scored.total,
+        contributions=scored.contributions,
         existing_actor_count=existing_actor_count,
         distinctiveness=round(distinctiveness, 6),
     )
 
 
 def actor_rubric_weights(config: dict[str, object]) -> dict[str, float]:
-    configured = dict(config.get("actor_rubric_weights", {}) or {})
-    unknown = set(configured) - set(SCORE_COMPONENT_NAMES)
-    if unknown:
-        raise RuntimeError(f"unknown actor rubric weight(s): {sorted(unknown)}")
-    try:
-        weights = {
-            name: float(configured.get(name, DEFAULT_RUBRIC_WEIGHTS[name]))
-            for name in SCORE_COMPONENT_NAMES
-        }
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError("open_web_discovery.actor_rubric_weights must be numeric") from exc
-    if any(value < 0 for value in weights.values()):
-        raise RuntimeError("open_web_discovery.actor_rubric_weights must be non-negative")
-    total = sum(weights.values())
-    if abs(total - 1.0) > 1e-9:
-        raise RuntimeError("open_web_discovery.actor_rubric_weights must sum to 1.0")
-    return weights
+    return configured_weights(
+        config,
+        entity_type="actor",
+        component_names=SCORE_COMPONENT_NAMES,
+        defaults=DEFAULT_RUBRIC_WEIGHTS,
+    )
 
 
 def actor_score_thresholds(config: dict[str, object]) -> tuple[float, float]:
-    values = dict(config.get("actor_score_thresholds", {}) or {})
-    try:
-        auto_low = float(values.get("auto_low", DEFAULT_AUTO_LOW))
-        auto_high = float(values.get("auto_high", DEFAULT_AUTO_HIGH))
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError("actor score thresholds must be numeric") from exc
-    if not 0.0 <= auto_low < auto_high <= 1.0:
-        raise RuntimeError("actor score thresholds require 0 <= auto_low < auto_high <= 1")
-    return auto_low, auto_high
+    return score_thresholds(
+        config,
+        entity_type="actor",
+        default_low=DEFAULT_AUTO_LOW,
+        default_high=DEFAULT_AUTO_HIGH,
+    )
 
 
 def actor_score_band(score: float, config: dict[str, object]) -> str:
-    auto_low, auto_high = actor_score_thresholds(config)
-    if score >= auto_high:
-        return "auto_high"
-    if score < auto_low:
-        return "auto_low"
-    return "review"
+    return score_band(
+        score,
+        config,
+        entity_type="actor",
+        default_low=DEFAULT_AUTO_LOW,
+        default_high=DEFAULT_AUTO_HIGH,
+    )
 
 
 def rerank_top_actor_candidates(
@@ -468,44 +411,12 @@ def rerank_top_actor_candidates(
     reranker: ActorListwiseReranker,
     config: dict[str, object],
 ) -> tuple[list[CandidateRecord], list[str]]:
-    top_n = _positive_int(config.get("actor_rerank_top_n", 40), "actor_rerank_top_n")
-    group_size = _positive_int(
-        config.get("actor_rerank_group_size", 10), "actor_rerank_group_size"
+    return rerank_top_candidates(
+        candidates,
+        reranker=reranker,
+        config=config,
+        entity_type="actor",
     )
-    if group_size > 10:
-        raise RuntimeError("open_web_discovery.actor_rerank_group_size cannot exceed 10")
-    scored = sorted(
-        [candidate for candidate in candidates if candidate.fit_score is not None],
-        key=lambda candidate: (-float(candidate.fit_score or 0.0), candidate.url),
-    )
-    top = scored[:top_n]
-    updates: dict[str, tuple[int, str]] = {}
-    attention: list[str] = []
-    position = 1
-    for start in range(0, len(top), group_size):
-        group = top[start : start + group_size]
-        try:
-            order = reranker.rerank_group(group)
-        except Exception as exc:  # noqa: BLE001 - keep deterministic order and surface attention.
-            logger.warning("actor listwise rerank group failed: %s", exc)
-            attention.append(f"actor rerank failed for group starting {start + 1}: {exc}")
-            order = [
-                (candidate.url, "deterministic rubric order retained after rerank failure")
-                for candidate in group
-            ]
-        for url, rationale in order:
-            updates[url] = (position, rationale)
-            position += 1
-    return [
-        replace(
-            candidate,
-            rerank_position=updates[candidate.url][0],
-            rerank_reason=updates[candidate.url][1],
-        )
-        if candidate.url in updates
-        else candidate
-        for candidate in candidates
-    ], attention
 
 
 def rubric_sector_codes(rubric: dict[str, object]) -> tuple[str, ...]:
@@ -569,20 +480,7 @@ def _validate_rubric(
 
 
 def _validate_item(value: object, name: str) -> None:
-    if not isinstance(value, dict) or set(value) != {"present", "evidence"}:
-        raise RuntimeError(f"actor rubric item {name!r} must contain present and evidence")
-    present = value.get("present")
-    evidence = value.get("evidence")
-    if not isinstance(present, bool):
-        raise TypeError(f"actor rubric item {name!r} present must be boolean")
-    if evidence is not None and (
-        not isinstance(evidence, str) or not evidence.strip()
-    ):
-        raise RuntimeError(f"actor rubric item {name!r} evidence must be text or null")
-    if present and evidence is None:
-        raise RuntimeError(f"actor rubric item {name!r} needs evidence when present is true")
-    if not present and evidence is not None:
-        raise RuntimeError(f"actor rubric item {name!r} must use null evidence when absent")
+    validate_evidence_item(value, entity_type="actor", name=name)
 
 
 def _validate_evidence_match(value: object, *, key: str, name: str) -> None:
@@ -600,47 +498,12 @@ def _rubric_present(value: object) -> bool:
     return isinstance(value, dict) and value.get("present") is True
 
 
-def _rerank_schema() -> dict[str, object]:
-    return {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            "candidates": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "url": {"type": "string"},
-                        "rationale": {"type": "string", "minLength": 1, "maxLength": 300},
-                    },
-                    "required": ["url", "rationale"],
-                },
-            }
-        },
-        "required": ["candidates"],
-    }
-
-
-def _positive_int(value: object, key: str) -> int:
-    try:
-        result = int(value)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(f"open_web_discovery.{key} must be an integer") from exc
-    if result <= 0:
-        raise RuntimeError(f"open_web_discovery.{key} must be positive")
-    return result
-
-
 def write_analysis_cache(path: Path, analysis: ActorPageAnalysis) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {"prompt_version": PROMPT_VERSION, "rubric": analysis.rubric, "record": analysis.record},
-            ensure_ascii=False,
-            sort_keys=True,
-        ),
-        encoding="utf-8",
+    write_cached_analysis(
+        path,
+        prompt_version=PROMPT_VERSION,
+        rubric=analysis.rubric,
+        record=analysis.record,
     )
 
 
@@ -651,10 +514,8 @@ def read_analysis_cache(
     sector_codes: list[str],
     hub_names: list[str],
 ) -> ActorPageAnalysis | None:
-    if not path.exists():
-        return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if payload.get("prompt_version") != PROMPT_VERSION:
+    payload = read_cached_analysis(path, prompt_version=PROMPT_VERSION)
+    if payload is None:
         return None
     return validate_actor_analysis(
         payload,

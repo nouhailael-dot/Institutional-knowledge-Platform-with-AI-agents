@@ -37,6 +37,12 @@ ACTOR_TRIAGE_SYSTEM_PROMPT = (
     "snippet is expected and is not grounds for rejection. Return only fetch and a one-line "
     "reason for every URL. Do not score, rank, infer page facts, or decide entity identity."
 )
+EVENT_TRIAGE_SYSTEM_PROMPT = (
+    "Apply a recall-oriented binary fetch gate to event search results. Decide only whether "
+    "the URL is plausibly the page of one real event worth fetching. A thin snippet, homepage, "
+    "or missing date is not grounds for rejection. Reject clear aggregators, directories, news "
+    "coverage, and non-event pages. Return only fetch and a one-line reason for every URL."
+)
 PERSON_TRIAGE_SYSTEM_PROMPT = (
     "Evaluate the professional relevance of person-page search candidates for GHUS. "
     "Use only the search-result title, snippet, URL, seeded sectors, and supplied hub "
@@ -151,6 +157,8 @@ class SearchTriageClient:
             system=(
                 ACTOR_TRIAGE_SYSTEM_PROMPT
                 if entity_type == "actor"
+                else EVENT_TRIAGE_SYSTEM_PROMPT
+                if entity_type == "event"
                 else PERSON_TRIAGE_SYSTEM_PROMPT
                 if entity_type == "person"
                 else (
@@ -175,8 +183,8 @@ class SearchTriageClient:
             ),
             tool_name="triage_open_web_candidates",
             tool_description=(
-                "Return one binary fetch decision and one-line reason for every actor URL."
-                if entity_type == "actor"
+                "Return one binary fetch decision and one-line reason for every URL."
+                if entity_type in {"actor", "event"}
                 else (
                     "Return professional-page status, relevance evidence, sector/hub matches, "
                     "a relevance score, and reasoning. Do not return identity decisions."
@@ -199,8 +207,10 @@ class SearchTriageClient:
             url = str(item.get("url") or "").strip()
             if not url:
                 continue
-            if entity_type == "actor":
-                decisions[url] = _actor_gate_decision_from_item(item, url=url)
+            if entity_type in {"actor", "event"}:
+                decisions[url] = _gate_decision_from_item(
+                    item, url=url, entity_type=entity_type
+                )
             elif entity_type == "person":
                 decisions[url] = _person_decision_from_item(item, url=url)
             else:
@@ -256,6 +266,18 @@ def _triage_user_payload(
                 "score and no other fields."
             ),
         }
+    if entity_type == "event":
+        return {
+            "entity_type": "event",
+            "candidates": candidates,
+            "decision_rule": (
+                "Return exactly one object for every candidate URL. Set fetch=true when the "
+                "result could plausibly lead to one real event page. Bias toward recall. A thin "
+                "snippet, homepage, or missing date is never a rejection reason. Set fetch=false "
+                "only for clear event aggregators or directories, news coverage about an event, "
+                "or pages clearly unrelated to a discrete event. Return no score or other fields."
+            ),
+        }
     payload: dict[str, object] = {
         "entity_type": entity_type,
         "sectors": sectors,
@@ -266,17 +288,6 @@ def _triage_user_payload(
             "If a candidate is hard to judge, reject it and explain the uncertainty."
         ),
     }
-    if entity_type == "event":
-        payload["decision_rule"] = (
-            "Return exactly one decision object for every candidate URL provided. "
-            "Judge only whether this is plausibly the page of a single real event, "
-            "not whether the snippet proves it. A thin snippet, a homepage, or a "
-            "missing date is expected and is never grounds for rejection: accepted "
-            "pages are fetched afterwards and the name, date, and location are "
-            "extracted from the page itself. Reject aggregator or directory listings "
-            "covering many events, news articles about events, and pages that are "
-            "clearly not about an event at all."
-        )
     if entity_type == "person":
         payload.update(
             {
@@ -304,8 +315,8 @@ def _triage_user_payload(
 
 
 def _triage_input_schema(entity_type: str) -> dict[str, object]:
-    if entity_type == "actor":
-        item_schema = _actor_triage_item_schema()
+    if entity_type in {"actor", "event"}:
+        item_schema = _gate_item_schema()
     elif entity_type == "person":
         item_schema = _person_triage_item_schema()
     else:
@@ -339,7 +350,7 @@ def _triage_input_schema(entity_type: str) -> dict[str, object]:
     }
 
 
-def _actor_triage_item_schema() -> dict[str, object]:
+def _gate_item_schema() -> dict[str, object]:
     properties = {
         "url": {"type": "string"},
         "fetch": {"type": "boolean"},
@@ -353,10 +364,12 @@ def _actor_triage_item_schema() -> dict[str, object]:
     }
 
 
-def _actor_gate_decision_from_item(item: dict[str, object], *, url: str) -> TriageDecision:
+def _gate_decision_from_item(
+    item: dict[str, object], *, url: str, entity_type: str
+) -> TriageDecision:
     fetch = item.get("fetch")
     if not isinstance(fetch, bool):
-        raise TriageResponseError("actor gate fetch must be boolean")
+        raise TriageResponseError(f"{entity_type} gate fetch must be boolean")
     return TriageDecision(
         url=url,
         is_entity_type=fetch,

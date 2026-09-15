@@ -12,6 +12,7 @@ from sqlalchemy import text
 from agents.common.cost import CostLimitExceeded
 from agents.common.raw_storage import RawContentStore
 from agents.common.resolve_route import load_event_candidates, load_person_candidates
+from agents.discovery.event_qualification import qualify_event
 from agents.discovery.extractors.event import EventExtractor
 from agents.discovery.extractors.person import PersonExtractor
 from agents.discovery.run import (
@@ -34,6 +35,26 @@ from agents.discovery.search.actor_scoring import (
     rubric_sector_codes,
     score_actor_rubric,
     write_analysis_cache,
+)
+from agents.discovery.search.event_scoring import (
+    PROMPT_VERSION as EVENT_ANALYSIS_VERSION,
+)
+from agents.discovery.search.event_scoring import (
+    EventListwiseReranker,
+    EventPageAnalysis,
+    EventRubricExtractor,
+    PreExtractedEventExtractor,
+    event_score_band,
+    event_score_thresholds,
+    legacy_event_analysis,
+    rerank_top_event_candidates,
+    score_event_rubric,
+)
+from agents.discovery.search.event_scoring import (
+    read_analysis_cache as read_event_analysis_cache,
+)
+from agents.discovery.search.event_scoring import (
+    write_analysis_cache as write_event_analysis_cache,
 )
 from agents.discovery.search.models import CandidateRecord
 from agents.discovery.search.triage import (
@@ -58,9 +79,23 @@ class FetchPlan:
 
 
 @dataclass(frozen=True)
-class ActorFetchOutcome:
+class ScoredFetchOutcome:
     attention_reasons: list[str]
     candidates: list[CandidateRecord]
+
+
+ActorFetchOutcome = ScoredFetchOutcome
+EventFetchOutcome = ScoredFetchOutcome
+
+
+class _DeterministicReranker:
+    """Test/injected-extractor fallback that preserves rubric ordering."""
+
+    def rerank_group(self, candidates: list[CandidateRecord]) -> list[tuple[str, str]]:
+        return [
+            (candidate.url, "deterministic rubric order retained for injected extractor")
+            for candidate in candidates
+        ]
 
 
 class OpenWebEventSource:
@@ -197,6 +232,7 @@ def plan_event_fetches(
         entity_type="event",
         domain_store=domain_store,
         config=config,
+        require_fit_score=False,
     )
 
 
@@ -530,6 +566,370 @@ def fetch_score_stage_actors(
     return ActorFetchOutcome(attention_reasons=attention_reasons, candidates=final)
 
 
+def fetch_score_stage_events(
+    *,
+    run_id: str,
+    candidates: list[CandidateRecord],
+    config: dict[str, object],
+    root: Path,
+    session,
+    live: bool,
+    run_log,
+    cost_meter,
+    stats: dict[str, object],
+    audit_rows: list[dict[str, object]],
+    sector_codes: list[str],
+    hub_names: list[str],
+    source=None,
+    rubric_extractor=None,
+    reranker=None,
+    participant_extractor=None,
+    raw_store=None,
+    stage_store=None,
+    domain_store=None,
+    event_candidates=None,
+    actor_resolver=None,
+    run_date: date | None = None,
+) -> EventFetchOutcome:
+    """Fetch gated events, score page evidence, then route by score and qualification."""
+    if not sector_codes:
+        raise RuntimeError("event rubric pipeline requires seeded sector codes")
+    current_date = run_date or datetime.now(UTC).date()
+    source = source or OpenWebEventSource(config)
+    injected_extractor = rubric_extractor is not None
+    shared_client = None if injected_extractor else _extraction_client(config, cost_meter)
+    rubric_extractor = rubric_extractor or EventRubricExtractor(
+        shared_client,
+        max_tokens=int(config.get("event_rubric_max_tokens", 4096)),
+    )
+    if reranker is None:
+        reranker = (
+            _DeterministicReranker()
+            if injected_extractor
+            else EventListwiseReranker(
+                shared_client,
+                max_tokens=int(config.get("event_rerank_max_tokens", 2048)),
+            )
+        )
+    if participant_extractor is None:
+        participant_extractor = (
+            rubric_extractor
+            if injected_extractor
+            else EventExtractor(
+                shared_client,
+                max_tokens=int(config.get("extraction_max_tokens", 2048)),
+                untrusted_content=True,
+                people_enabled=bool(config.get("people_enabled", False)),
+            )
+        )
+    raw_store = raw_store or RawContentStore.from_config(root, config)
+    stage_store = stage_store or (
+        InMemoryStageStore() if session is None else SQLStageStore(session)
+    )
+    domain_store = domain_store or (
+        InMemoryDiscoveredDomainStore() if session is None else SQLDiscoveredDomainStore(session)
+    )
+    canonical_candidates = (
+        list(event_candidates)
+        if event_candidates is not None
+        else ([] if session is None else load_event_candidates(session))
+    )
+    plan = plan_event_fetches(candidates, domain_store=domain_store, config=config)
+    stats["fetch_candidates"] = plan.eligible_pages
+    stats["pages_selected"] = len(plan.candidates)
+    stats["new_domains_eligible"] = plan.eligible_new_domains
+    stats["blocked_domains_skipped"] = plan.blocked_domains_skipped
+    attention_reasons = _cap_attention_reasons(plan, config)
+    by_id = {candidate.candidate_id: candidate for candidate in candidates}
+    docs: dict[
+        str,
+        tuple[FetchedDoc, str, str, list[dict[str, object]], list[dict[str, object]], bool],
+    ] = {}
+
+    for candidate in plan.candidates:
+        candidate_domain = candidate.domain or normalized_domain(candidate.url)
+        domain_store.touch(candidate_domain)
+        page_fetched = False
+        try:
+            doc = source.fetch(candidate.url)
+            page_fetched = True
+            final_domain = normalized_domain(doc.url)
+            if not final_domain:
+                raise RuntimeError(f"fetched open-web page has invalid final URL {doc.url!r}")
+            if final_domain != candidate_domain:
+                raise RuntimeError(
+                    "open-web candidate redirected across domains after admission: "
+                    f"{candidate_domain!r} to {final_domain!r}"
+                )
+            domain_store.touch(final_domain)
+            stats["pages_fetched"] += 1
+            domain_store.add_counts(final_domain, pages_fetched=1)
+            prior_raw = run_log.find_raw_document(url=doc.url, content_hash=doc.content_hash)
+            storage_path = _storage_path_for_doc(
+                raw_store, run_id=run_id, doc=doc, prior_raw=prior_raw
+            )
+            raw_document_id = run_log.write_raw_document(
+                run_id=run_id, doc=doc, storage_path=storage_path
+            )
+            cache_path = (
+                raw_store.base_dir
+                / "event_analysis"
+                / f"{doc.content_hash}.{EVENT_ANALYSIS_VERSION}.json"
+            )
+            analysis = read_event_analysis_cache(
+                cache_path,
+                sector_codes=sector_codes,
+                run_date=current_date,
+            )
+            participant_actors: list[dict[str, object]] = []
+            participant_people: list[dict[str, object]] = []
+            unchanged = prior_raw is not None
+            if unchanged:
+                stats["skipped_unchanged"] += 1
+                audit_rows.append(
+                    _skip_audit_row(run_id, "open_web_search", "event", doc)
+                )
+                if analysis is None:
+                    reason = (
+                        "unchanged event page has no rubric cache; use stored-page replay "
+                        "to initialize the new scorer"
+                    )
+                    logger.warning("%s: %s", candidate.url, reason)
+                    by_id[candidate.candidate_id] = replace(
+                        candidate,
+                        page_fetched=True,
+                        triage_verdict="skipped_unchanged",
+                        triage_reason=reason,
+                    )
+                    continue
+            if analysis is None:
+                extracted = (
+                    rubric_extractor.extract(
+                        doc,
+                        sector_codes=sector_codes,
+                        hub_names=hub_names,
+                        run_date=current_date,
+                    )
+                    if isinstance(rubric_extractor, EventRubricExtractor)
+                    else rubric_extractor.extract(doc)
+                )
+                if isinstance(extracted, EventPageAnalysis):
+                    analysis = extracted
+                elif isinstance(extracted, list):
+                    if len(extracted) != 1 or not isinstance(extracted[0], dict):
+                        raise RuntimeError(
+                            "event gate page must extract exactly one event record"
+                        )
+                    raw_record = extracted[0]
+                    analysis = legacy_event_analysis(
+                        raw_record,
+                        sector_codes=sector_codes,
+                        run_date=current_date,
+                    )
+                    participant_actors = [
+                        item
+                        for item in list(raw_record.get("participant_actors") or [])
+                        if isinstance(item, dict)
+                    ]
+                    participant_people = [
+                        item
+                        for item in list(raw_record.get("participant_people") or [])
+                        if isinstance(item, dict)
+                    ]
+                else:
+                    raise TypeError("event rubric extractor returned an unsupported result")
+                write_event_analysis_cache(cache_path, analysis)
+                stats["event_pages_analyzed"] = int(
+                    stats.get("event_pages_analyzed", 0) or 0
+                ) + 1
+            score = score_event_rubric(analysis.rubric, config=config)
+            qualification = qualify_event(
+                {
+                    **analysis.record,
+                    "participant_actors": participant_actors,
+                    "participant_people": participant_people,
+                },
+                run_date=current_date,
+                config=dict(config.get("event_qualification", {})),
+                rubric=analysis.rubric,
+            )
+            by_id[candidate.candidate_id] = replace(
+                candidate,
+                page_fetched=True,
+                fit_score=score.total,
+                rubric=analysis.rubric,
+                record_preview=analysis.record,
+                score_breakdown=score.contributions,
+                score_band=event_score_band(score.total, config),
+                sector_codes=tuple(analysis.record.get("sector_codes") or []),
+                qualification_paths=qualification.paths,
+            )
+            docs[candidate.candidate_id] = (
+                doc,
+                final_domain,
+                raw_document_id,
+                participant_actors,
+                participant_people,
+                unchanged,
+            )
+            cost_meter.enforce()
+        except CostLimitExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001 - one untrusted page must not stop the batch.
+            logger.warning("open-web event fetch/rubric failed for %s: %s", candidate.url, exc)
+            stats["fetch_failures"] += 1
+            by_id[candidate.candidate_id] = replace(
+                candidate,
+                page_fetched=page_fetched,
+                triage_verdict="analysis_failed",
+                triage_reason=f"event fetch or rubric failed: {exc}",
+                score_band="analysis_failed",
+            )
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": "open_web_search",
+                    "entity_type": "event",
+                    "source_url": candidate.url,
+                    "content_hash": "",
+                    "natural_key": "",
+                    "zone": "",
+                    "score": "",
+                    "target_entity_id": "",
+                    "candidate_ids": [],
+                    "status": "fetch_or_rubric_failed",
+                    "error": str(exc),
+                }
+            )
+
+    updated = [by_id[candidate.candidate_id] for candidate in candidates]
+    scored = [candidate for candidate in updated if candidate.rubric is not None]
+    reranked, rerank_attention = rerank_top_event_candidates(
+        scored,
+        reranker=reranker,
+        config=config,
+    )
+    attention_reasons.extend(rerank_attention)
+    reranked_by_id = {candidate.candidate_id: candidate for candidate in reranked}
+    updated = [reranked_by_id.get(candidate.candidate_id, candidate) for candidate in updated]
+
+    final: list[CandidateRecord] = []
+    for candidate in updated:
+        if candidate.rubric is None:
+            final.append(candidate)
+            continue
+        band = candidate.score_band or event_score_band(float(candidate.fit_score or 0.0), config)
+        verdict = "accepted" if band == "auto_high" else "rejected" if band == "auto_low" else "review"
+        reason = f"event rubric score {float(candidate.fit_score or 0.0):.3f} -> {band}"
+        record = candidate.record_preview or {}
+        if band != "auto_low" and not record.get("title"):
+            band = "auto_low"
+            verdict = "rejected"
+            reason = "event page did not yield a required title"
+        elif band == "auto_high" and not candidate.qualification_paths:
+            band = "review"
+            verdict = "review"
+            reason = "event rubric auto_high but neither qualification path is satisfied"
+        final.append(
+            replace(
+                candidate,
+                triage_verdict=verdict,
+                triage_reason=reason,
+                score_band=band,
+            )
+        )
+
+    routable = [
+        candidate
+        for candidate in final
+        if candidate.score_band in {"auto_high", "review"}
+    ]
+    for candidate in routable:
+        doc_entry = docs.get(candidate.candidate_id)
+        if doc_entry is None:
+            raise RuntimeError(
+                f"routable event candidate has no fetched document: {candidate.url}"
+            )
+        doc, domain, raw_document_id, participant_actors, participant_people, unchanged = doc_entry
+        if unchanged:
+            continue
+        if (
+            candidate.score_band == "auto_high"
+            and "minable" in candidate.qualification_paths
+            and not participant_actors
+            and not participant_people
+        ):
+            participant_records = participant_extractor.extract(doc)
+            if participant_records:
+                participant_record = participant_records[0]
+                participant_actors = [
+                    item
+                    for item in list(participant_record.get("participant_actors") or [])
+                    if isinstance(item, dict)
+                ]
+                participant_people = [
+                    item
+                    for item in list(participant_record.get("participant_people") or [])
+                    if isinstance(item, dict)
+                ]
+            cost_meter.enforce()
+        before_extracted = int(stats["records_extracted"])
+        before_promoted = int(stats["records_promoted"])
+        try:
+            _extract_stage_route_promote(
+                doc=doc,
+                raw_document_id=raw_document_id,
+                run_id=run_id,
+                source_name="open_web_search",
+                entity_type="event",
+                extractor=PreExtractedEventExtractor(
+                    candidate.record_preview or {},
+                    participant_actors=participant_actors,
+                    participant_people=participant_people,
+                ),
+                stage_store=stage_store,
+                session=session,
+                live=live,
+                candidates=canonical_candidates,
+                root=root,
+                stats=stats,
+                audit_rows=audit_rows,
+                discovered_domain=domain,
+                qualification_config=dict(config.get("event_qualification", {})),
+                people_enabled=bool(config.get("people_enabled", False)),
+                run_date=current_date,
+                actor_resolver=actor_resolver,
+                event_rubric=candidate.rubric,
+                event_review_metadata=(
+                    {
+                        "review_kind": "rubric_band",
+                        "search_candidate_id": candidate.candidate_id,
+                        "rubric_score": candidate.fit_score,
+                        "rubric": candidate.rubric,
+                        "score_breakdown": candidate.score_breakdown,
+                        "rerank_position": candidate.rerank_position,
+                        "rerank_reason": candidate.rerank_reason,
+                        "qualification_paths": list(candidate.qualification_paths),
+                    }
+                    if candidate.score_band == "review"
+                    else None
+                ),
+            )
+        finally:
+            domain_store.add_counts(
+                domain,
+                records_extracted=int(stats["records_extracted"]) - before_extracted,
+                records_promoted=int(stats["records_promoted"]) - before_promoted,
+            )
+
+    _attach_event_band_stats(stats, final, config=config)
+    if stats["fetch_failures"]:
+        attention_reasons.append(
+            f"open-web event fetch/rubric failures: {stats['fetch_failures']} page(s)"
+        )
+    return EventFetchOutcome(attention_reasons=attention_reasons, candidates=final)
+
+
 def fetch_extract_stage_events(
     *,
     run_id: str,
@@ -746,6 +1146,26 @@ def _attach_actor_band_stats(
         count = sum(candidate.score_band == band for candidate in scored)
         stats[f"actor_band_{band}"] = count
         stats[f"actor_band_{band}_proportion"] = count / len(scored) if scored else 0.0
+
+
+def _attach_event_band_stats(
+    stats: dict[str, object], candidates: list[CandidateRecord], *, config: dict[str, object]
+) -> None:
+    scored = [candidate for candidate in candidates if candidate.rubric is not None]
+    auto_low, auto_high = event_score_thresholds(config)
+    stats["event_score_auto_low"] = auto_low
+    stats["event_score_auto_high"] = auto_high
+    stats["event_scored"] = len(scored)
+    for band in ("auto_high", "review", "auto_low"):
+        count = sum(candidate.score_band == band for candidate in scored)
+        stats[f"event_band_{band}"] = count
+        stats[f"event_band_{band}_proportion"] = count / len(scored) if scored else 0.0
+    for path in ("attendable", "minable"):
+        count = sum(path in candidate.qualification_paths for candidate in scored)
+        stats[f"event_qualification_{path}"] = count
+        stats[f"event_qualification_{path}_proportion"] = (
+            count / len(scored) if scored else 0.0
+        )
 
 
 def _extraction_client(config: dict[str, object], cost_meter):

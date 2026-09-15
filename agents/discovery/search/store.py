@@ -49,6 +49,7 @@ class SQLSearchCandidateStore:
             row = candidate.__dict__.copy()
             for field in ("rubric", "record_preview", "score_breakdown"):
                 row[field] = json.dumps(row[field], sort_keys=True) if row[field] is not None else None
+            row["qualification_paths"] = json.dumps(list(candidate.qualification_paths))
             rows.append(row)
         if not rows:
             return 0
@@ -57,14 +58,15 @@ class SQLSearchCandidateStore:
                 "INSERT INTO search_candidate (candidate_id, run_id, entity_type, query, "
                 "provider, url, title, snippet, domain, triage_verdict, triage_reason, fit_score, "
                 "duplicate_of, gate_fetch, page_fetched, rubric, record_preview, "
-                "score_breakdown, score_band, "
+                "score_breakdown, score_band, qualification_paths, "
                 "existing_actor_count, distinctiveness, rerank_position, rerank_reason) "
                 "VALUES (CAST(:candidate_id AS uuid), CAST(:run_id AS uuid), :entity_type, "
                 ":query, :provider, :url, :title, :snippet, :domain, :triage_verdict, "
                 ":triage_reason, :fit_score, CAST(:duplicate_of AS uuid), :gate_fetch, "
                 ":page_fetched, "
                 "CAST(:rubric AS jsonb), CAST(:record_preview AS jsonb), "
-                "CAST(:score_breakdown AS jsonb), :score_band, :existing_actor_count, "
+                "CAST(:score_breakdown AS jsonb), :score_band, "
+                "CAST(:qualification_paths AS jsonb), :existing_actor_count, "
                 ":distinctiveness, :rerank_position, :rerank_reason)"
             ),
             rows,

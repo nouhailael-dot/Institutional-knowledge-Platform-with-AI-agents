@@ -506,6 +506,8 @@ def _extract_stage_route_promote(
     people_enabled: bool = False,
     person_create_preview: bool = False,
     run_date: date | None = None,
+    event_rubric: dict[str, object] | None = None,
+    event_review_metadata: dict[str, object] | None = None,
 ) -> None:
     if entity_type == "person" and not people_enabled:
         raise RuntimeError(
@@ -513,7 +515,11 @@ def _extract_stage_route_promote(
         )
     if person_create_preview and live:
         raise RuntimeError("person create preview cannot be combined with live writes")
-    if entity_type == "event" and bool((qualification_config or {}).get("enabled", False)):
+    if (
+        entity_type == "event"
+        and event_rubric is None
+        and bool((qualification_config or {}).get("enabled", False))
+    ):
         preflight_reason = structured_page_date_rejection(
             doc.content,
             run_date=run_date or datetime.now(UTC).date(),
@@ -559,6 +565,7 @@ def _extract_stage_route_promote(
                 record,
                 run_date=run_date or datetime.now(UTC).date(),
                 config=qualification_config or {},
+                rubric=event_rubric,
             )
             record.update(qualification.payload())
             _count_event_qualification(stats, qualification)
@@ -651,7 +658,11 @@ def _extract_stage_route_promote(
                 }
             )
             continue
-        if entity_type == "event" and record.get("qualification_accepted") is False:
+        if (
+            entity_type == "event"
+            and event_review_metadata is None
+            and record.get("qualification_accepted") is False
+        ):
             staged.status = "rejected_unqualified"
             stage_store.upsert(staged)
             audit_rows.append(
@@ -673,12 +684,25 @@ def _extract_stage_route_promote(
             continue
         if entity_type == "event":
             decision = route_event(record, candidates)
-            decision = _review_discovered_event_absorb(
-                record,
-                decision,
-                candidates,
-                discovered_domain=discovered_domain,
-            )
+            if event_review_metadata is not None:
+                decision = replace(
+                    decision,
+                    zone="review",
+                    score=float(event_review_metadata.get("rubric_score") or 0.0),
+                    metadata={
+                        **dict(decision.metadata or {}),
+                        **event_review_metadata,
+                        "staged_title": record.get("name") or record.get("title"),
+                        "shared_start_date": record.get("start_date") or record.get("next_date"),
+                    },
+                )
+            else:
+                decision = _review_discovered_event_absorb(
+                    record,
+                    decision,
+                    candidates,
+                    discovered_domain=discovered_domain,
+                )
         elif entity_type == "actor":
             if actor_resolver is None:
                 raise RuntimeError("actor routing requires an EntityResolver")

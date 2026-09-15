@@ -47,16 +47,37 @@ def qualify_event(
     *,
     run_date: date,
     config: dict[str, object],
+    rubric: dict[str, object] | None = None,
 ) -> EventQualification:
     window_months = int(config.get("forward_window_months", 12) or 12)
     if window_months <= 0:
         raise ValueError("event qualification forward_window_months must be positive")
     window_end = _add_months(run_date, window_months)
-    minable = _has_named_participants(record)
     start_date = _event_date(record)
-
     if start_date is None:
         return _rejected("missing start date", run_date, window_end)
+    if rubric is None and start_date > window_end:
+        return _rejected(
+            f"event date {start_date.isoformat()} is after window end {window_end.isoformat()}",
+            run_date,
+            window_end,
+        )
+    if not list(record.get("sector_codes") or []):
+        return _rejected("event has no seeded-sector match", run_date, window_end)
+
+    if rubric is None:
+        date_within_window = run_date <= start_date <= window_end
+        registration_open = _registration_is_open(record, config)
+        institutional_value = _has_institutional_value(record, config)
+        minable = _has_named_participants(record)
+    else:
+        date_within_window = _rubric_present(rubric, "date_within_window")
+        registration_open = _rubric_present(rubric, "open_external_registration")
+        institutional_value = _rubric_present(rubric, "institutional_scale")
+        minable = _rubric_present(rubric, "named_speakers") or (
+            _named_event_organisation_count(record) >= 3
+        )
+    attendable = date_within_window and registration_open and institutional_value
     if start_date < run_date:
         if not minable:
             return _rejected(
@@ -65,8 +86,6 @@ def qualify_event(
                 run_date,
                 window_end,
             )
-        if not list(record.get("sector_codes") or []):
-            return _rejected("event has no seeded-sector match", run_date, window_end)
         return EventQualification(
             accepted=True,
             attendable=False,
@@ -81,18 +100,6 @@ def qualify_event(
             run_date=run_date.isoformat(),
             window_end=window_end.isoformat(),
         )
-    if start_date > window_end:
-        return _rejected(
-            f"event date {start_date.isoformat()} is after window end {window_end.isoformat()}",
-            run_date,
-            window_end,
-        )
-    if not list(record.get("sector_codes") or []):
-        return _rejected("event has no seeded-sector match", run_date, window_end)
-
-    registration_open = _registration_is_open(record, config)
-    institutional_value = _has_institutional_value(record, config)
-    attendable = registration_open and institutional_value
     paths = tuple(
         path
         for path, qualifies in (("attendable", attendable), ("minable", minable))
@@ -118,6 +125,19 @@ def qualify_event(
         failed.append("scale or topic does not justify institutional attendance")
     failed.append("fewer than three named participants and no named speakers")
     return _rejected("; ".join(failed), run_date, window_end)
+
+
+def event_date_within_window(
+    record: dict[str, object],
+    *,
+    run_date: date,
+    config: dict[str, object],
+) -> bool:
+    window_months = int(config.get("forward_window_months", 12) or 12)
+    if window_months <= 0:
+        raise ValueError("event qualification forward_window_months must be positive")
+    start_date = _event_date(record)
+    return bool(start_date and run_date <= start_date <= _add_months(run_date, window_months))
 
 
 def structured_page_date_rejection(
@@ -364,6 +384,37 @@ def _has_institutional_value(
         ["business leaders", "industry leaders", "institutions", "investors", "policymakers"],
     )
     return any(term in text for term in [*institutional_terms, *audience_terms])
+
+
+def _rubric_present(rubric: dict[str, object], name: str) -> bool:
+    item = rubric.get(name)
+    return isinstance(item, dict) and item.get("present") is True
+
+
+def _named_event_organisation_count(record: dict[str, object]) -> int:
+    names: set[str] = set()
+    raw_participants = record.get("participant_actors") or []
+    if isinstance(raw_participants, list):
+        for item in raw_participants:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("participant_role") or "").strip().casefold()
+            if role not in {"sponsor", "exhibitor", "convener"}:
+                continue
+            key = normalize_key_text(str(item.get("name") or ""))
+            if key:
+                names.add(key)
+    sponsoring_orgs = str(record.get("sponsoring_orgs") or "").strip()
+    if sponsoring_orgs:
+        for name in re.split(
+            r"\s*(?:[,;\n]|\band\b|\bin collaboration with\b|\bin partnership with\b)\s*",
+            sponsoring_orgs,
+            flags=re.IGNORECASE,
+        ):
+            key = normalize_key_text(name)
+            if key:
+                names.add(key)
+    return len(names)
 
 
 def _has_named_participants(record: dict[str, object]) -> bool:

@@ -8,7 +8,22 @@ from collections import defaultdict
 from pathlib import Path
 
 from agents.discovery.extractors.actor import ACTOR_RECORD_FIELDS
+from agents.discovery.extractors.event import EVENT_FIELDS
 from agents.discovery.search.models import CandidateRecord
+
+EVENT_REPORT_FIELDS = (
+    "name",
+    "start_date",
+    "end_date",
+    "location",
+    "city",
+    "state",
+    "country",
+    "website",
+    "description",
+    "sponsoring_orgs",
+    "sector_codes",
+)
 
 
 def write_candidate_report(
@@ -131,6 +146,51 @@ def write_candidate_report(
                         )
                         + " |"
                     )
+        elif entity_type == "event":
+            event_rows = [row for row in rows if row.page_fetched and row.rubric is not None]
+            if event_rows:
+                lines.extend(
+                    [
+                        "",
+                        "#### Fetched event record previews",
+                        "",
+                        "| "
+                        + " | ".join(
+                            [
+                                *[field.replace("_", " ").title() for field in EVENT_REPORT_FIELDS],
+                                "Rubric Score",
+                                "Qualification Paths",
+                                "Rerank Position",
+                                "Band",
+                                "Rubric Evidence",
+                            ]
+                        )
+                        + " |",
+                        "| "
+                        + " | ".join(["---"] * (len(EVENT_REPORT_FIELDS) + 5))
+                        + " |",
+                    ]
+                )
+                for row in event_rows:
+                    record = row.record_preview or {}
+                    lines.append(
+                        "| "
+                        + " | ".join(
+                            _escape(_display(_event_record_value(record, field)))
+                            for field in EVENT_REPORT_FIELDS
+                        )
+                        + " | "
+                        + " | ".join(
+                            [
+                                _format_score(row.fit_score),
+                                _escape(", ".join(row.qualification_paths)),
+                                str(row.rerank_position or ""),
+                                _escape(row.score_band or ""),
+                                _escape(_rubric_summary(row.rubric or {})),
+                            ]
+                        )
+                        + " |"
+                    )
         elif entity_type == "person":
             person_rows = [row for row in rows if row.relevance_signals is not None]
             if person_rows:
@@ -157,8 +217,16 @@ def write_candidate_report(
 
 
 def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -> None:
-    """Write fetched actor previews as a flat reviewer-ready CSV."""
+    """Write fetched record previews as a flat reviewer-ready CSV."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    event_rows = [
+        candidate
+        for candidate in candidates
+        if candidate.entity_type == "event" and candidate.page_fetched and candidate.rubric
+    ]
+    if event_rows:
+        _write_event_spreadsheet(path, event_rows)
+        return
     fields = [
         "candidate_id",
         "url",
@@ -192,6 +260,43 @@ def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -
                     "rerank_position": candidate.rerank_position,
                     "rerank_rationale": candidate.rerank_reason,
                     "band": candidate.score_band,
+                    "rubric_evidence": json.dumps(
+                        candidate.rubric, ensure_ascii=False, sort_keys=True
+                    ),
+                }
+            )
+
+
+def _write_event_spreadsheet(path: Path, rows: list[CandidateRecord]) -> None:
+    fields = [
+        "candidate_id",
+        "url",
+        *EVENT_REPORT_FIELDS,
+        "rubric_score",
+        "qualification_paths",
+        "band",
+        "rerank_position",
+        "rerank_rationale",
+        "rubric_evidence",
+    ]
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for candidate in rows:
+            record = candidate.record_preview or {}
+            writer.writerow(
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "url": candidate.url,
+                    **{
+                        field: _display(_event_record_value(record, field))
+                        for field in EVENT_REPORT_FIELDS
+                    },
+                    "rubric_score": candidate.fit_score,
+                    "qualification_paths": "; ".join(candidate.qualification_paths),
+                    "band": candidate.score_band,
+                    "rerank_position": candidate.rerank_position,
+                    "rerank_rationale": candidate.rerank_reason,
                     "rubric_evidence": json.dumps(
                         candidate.rubric, ensure_ascii=False, sort_keys=True
                     ),
@@ -290,8 +395,18 @@ def _display(value: object) -> str:
     return str(value)
 
 
+def _event_record_value(record: dict[str, object], field: str) -> object:
+    if field == "name":
+        return record.get("title")
+    if field == "sector_codes":
+        return record.get("sector_codes") or []
+    if field not in EVENT_FIELDS:
+        return None
+    return record.get(field)
+
+
 def _candidate_sort_key(row: CandidateRecord) -> tuple[object, ...]:
-    if row.entity_type == "actor" and row.rerank_position is not None:
+    if row.entity_type in {"actor", "event"} and row.rerank_position is not None:
         return (0, row.rerank_position, row.domain, row.title or "")
     return (
         1,

@@ -23,6 +23,8 @@ EVENT_FIELDS = [
     "end_date",
     "description",
     "location",
+    "city",
+    "state",
     "country",
     "website",
     "thematic_focus",
@@ -49,6 +51,8 @@ EVENT_TOOL_SCHEMA: dict[str, Any] = {
                     "end_date": {"type": ["string", "null"]},
                     "description": {"type": ["string", "null"]},
                     "location": {"type": ["string", "null"]},
+                    "city": {"type": ["string", "null"]},
+                    "state": {"type": ["string", "null"]},
                     "country": {"type": ["string", "null"]},
                     "website": {"type": ["string", "null"]},
                     "thematic_focus": {"type": ["string", "null"]},
@@ -377,6 +381,11 @@ def _event_tool_schema(*, people_enabled: bool) -> dict[str, Any]:
         item_schema["properties"]["participant_people"] = PARTICIPANT_PERSON_SCHEMA
         item_schema["required"].append("participant_people")
     return schema
+
+
+def event_record_schema() -> dict[str, Any]:
+    """Return the single-event schema used inside ``EVENT_TOOL_SCHEMA``."""
+    return copy.deepcopy(EVENT_TOOL_SCHEMA["properties"]["events"]["items"])
 
 
 def _participant_items(

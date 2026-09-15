@@ -20,11 +20,12 @@ from agents.common.llm import ClaudeToolClient
 from agents.common.resolve_route import load_actor_resolver_class
 from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.search.actor_scoring import actor_rubric_weights, actor_score_thresholds
+from agents.discovery.search.event_scoring import event_rubric_weights, event_score_thresholds
 from agents.discovery.search.models import CandidateRecord, SearchResult, TriageDecision
 from agents.discovery.search.phase2 import (
-    fetch_extract_stage_events,
     fetch_extract_stage_people,
     fetch_score_stage_actors,
+    fetch_score_stage_events,
 )
 from agents.discovery.search.providers import SearchProvider, build_search_provider
 from agents.discovery.search.query_generation import (
@@ -187,6 +188,12 @@ def run_search_triage(
             stats["actor_score_auto_high"] = auto_high
             for name, weight in actor_rubric_weights(config).items():
                 stats[f"actor_rubric_weight_{name}"] = weight
+        elif entity_type == "event":
+            auto_low, auto_high = event_score_thresholds(config)
+            stats["event_score_auto_low"] = auto_low
+            stats["event_score_auto_high"] = auto_high
+            for name, weight in event_rubric_weights(config).items():
+                stats[f"event_rubric_weight_{name}"] = weight
         elif entity_type == "person":
             stats["person_relevance_floor"] = float(
                 dict(config.get("accept_floor", {}) or {}).get("person", 0.75)
@@ -324,33 +331,37 @@ def run_search_triage(
             candidate_rows = actor_outcome.candidates
             attention_reasons.extend(actor_outcome.attention_reasons)
         elif entity_type == "event" and bool(config.get("fetch_enabled", False)):
-            attention_reasons.extend(
-                fetch_extract_stage_events(
-                    run_id=run_id,
-                    candidates=candidate_rows,
-                    config={
-                        **config,
-                        "event_qualification": dict(
-                            full_config.get("event_qualification", {})
-                        ),
-                    },
-                    root=root,
-                    session=session,
-                    live=live,
-                    run_log=run_log,
-                    cost_meter=cost_meter,
-                    stats=stats,
-                    audit_rows=audit_rows,
-                    source=fetch_source,
-                    extractor=extractor,
-                    raw_store=raw_store,
-                    stage_store=stage_store,
-                    domain_store=domain_store,
-                    event_candidates=event_candidates,
-                    actor_resolver=actor_resolver,
-                    run_date=run_date,
-                )
+            hubs = load_actor_query_hubs(session) if session is not None else []
+            event_outcome = fetch_score_stage_events(
+                run_id=run_id,
+                candidates=candidate_rows,
+                config={
+                    **config,
+                    "event_qualification": dict(full_config.get("event_qualification", {})),
+                },
+                root=root,
+                session=session,
+                live=live,
+                run_log=run_log,
+                cost_meter=cost_meter,
+                stats=stats,
+                audit_rows=audit_rows,
+                sector_codes=[
+                    str(sector.get("code") or "").upper()
+                    for sector in load_seeded_sectors(root)
+                ],
+                hub_names=[str(hub.get("name") or "").strip() for hub in hubs],
+                source=fetch_source,
+                rubric_extractor=extractor,
+                raw_store=raw_store,
+                stage_store=stage_store,
+                domain_store=domain_store,
+                event_candidates=event_candidates,
+                actor_resolver=actor_resolver,
+                run_date=run_date,
             )
+            candidate_rows = event_outcome.candidates
+            attention_reasons.extend(event_outcome.attention_reasons)
         elif entity_type == "person" and bool(config.get("fetch_enabled", False)):
             attention_reasons.extend(
                 fetch_extract_stage_people(
@@ -758,7 +769,11 @@ def _llm_triage(
             )
         }
     decisions: dict[str, TriageDecision] = {}
-    batch_size_key = "actor_triage_batch_size" if entity_type == "actor" else "triage_batch_size"
+    batch_size_key = (
+        f"{entity_type}_triage_batch_size"
+        if entity_type in {"actor", "event"}
+        else "triage_batch_size"
+    )
     batch_size = int(config.get(batch_size_key, config.get("triage_batch_size", 20)))
     if batch_size <= 0:
         raise RuntimeError(f"open_web_discovery.{batch_size_key} must be positive")
@@ -1030,9 +1045,9 @@ def _append_llm_triaged_rows(
             )
         verdict = (
             "triage_incomplete"
-            if entity_type == "actor" and is_triage_incomplete(decision)
+            if entity_type in {"actor", "event"} and is_triage_incomplete(decision)
             else ("accepted" if decision.is_entity_type else "rejected")
-            if entity_type == "actor"
+            if entity_type in {"actor", "event"}
             else triage_verdict(
                 decision,
                 floor=floor,
@@ -1048,7 +1063,7 @@ def _append_llm_triaged_rows(
         ):
             reason = "insufficient direct sector and topic evidence"
         elif (
-            entity_type != "actor"
+            entity_type not in {"actor", "event"}
             and
             result.url in decided_urls
             and verdict == "rejected"
@@ -1066,7 +1081,7 @@ def _append_llm_triaged_rows(
                 triage_reason=reason,
                 fit_score=decision.fit_score,
                 triage_details=(
-                    decision if entity_type in {"actor", "person"} else None
+                    decision if entity_type in {"actor", "event", "person"} else None
                 ),
             )
         )
