@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Iterable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from sqlalchemy import text
@@ -14,16 +14,6 @@ from agents.discovery.search.models import SearchResult, TriageDecision
 
 logger = logging.getLogger(__name__)
 TRIAGE_INCOMPLETE_REASON_PREFIX = "triage incomplete:"
-ENGAGEMENT_ROUTE_SIGNAL_NAMES = (
-    "partnerships_and_research",
-    "memberships",
-    "leadership_networks",
-    "ecosystem_platforms",
-    "hosted_visits",
-    "executive_programmes",
-    "event_participation",
-    "introductions",
-)
 ACTOR_USE_CASES = (
     ("research_collaboration", "research collaboration"),
     ("learning_expeditions", "learning expeditions"),
@@ -35,38 +25,17 @@ ACTOR_USE_CASES = (
     ("opportunity_development", "opportunity development"),
 )
 ACTOR_USE_CASE_NAMES = tuple(name for name, _label in ACTOR_USE_CASES)
-ACTOR_REJECTION_CONDITION_NAMES = (
-    "sector_relevance",
-    "engagement_route",
-    "strategic_ecosystem_value",
-)
 PERSON_RELEVANCE_SIGNAL_NAMES = (
     "sector_intersection",
     "hub_or_held_affiliation",
     "actionable_role",
     "topic_evidence",
 )
-DEFAULT_ACTOR_REJECTION_THRESHOLDS = {
-    "sector_relevance": 0.35,
-    "engagement_route": 0.20,
-    "strategic_ecosystem_value": 0.35,
-}
-DEFAULT_ACTOR_FIT_WEIGHTS = {
-    "sector_relevance": 0.30,
-    "engagement_route": 0.35,
-    "strategic_ecosystem_value": 0.25,
-    "distinctiveness": 0.10,
-}
 ACTOR_TRIAGE_SYSTEM_PROMPT = (
-    "Evaluate actor candidates for GHUS open-web discovery across eight use cases: "
-    "research collaboration, learning expeditions, executive education, mentorship, "
-    "student and faculty mobility, open innovation, corporate engagement, and opportunity "
-    "development. Use only the search-result title, snippet, URL, seeded sectors, public "
-    "actor reference examples, and supplied deterministic coverage context. Do not infer "
-    "facts from pages that have not been fetched. Evidence must come from a substantive "
-    "organisational, programme, lab, or about page on the organisation's own site. News "
-    "articles, press releases, announcements, and blog posts are coverage even when they are "
-    "published on the organisation's own domain."
+    "Apply a recall-oriented binary fetch gate to actor search results. Decide only whether "
+    "the URL is plausibly an organisation's own substantive page worth fetching. A thin "
+    "snippet is expected and is not grounds for rejection. Return only fetch and a one-line "
+    "reason for every URL. Do not score, rank, infer page facts, or decide entity identity."
 )
 PERSON_TRIAGE_SYSTEM_PROMPT = (
     "Evaluate the professional relevance of person-page search candidates for GHUS. "
@@ -206,9 +175,7 @@ class SearchTriageClient:
             ),
             tool_name="triage_open_web_candidates",
             tool_description=(
-                "Return actor identity, per-use-case fit, engagement evidence, and evidence "
-                "for each actor rejection condition. The application computes engagement "
-                "route, fit, and verdict."
+                "Return one binary fetch decision and one-line reason for every actor URL."
                 if entity_type == "actor"
                 else (
                     "Return professional-page status, relevance evidence, sector/hub matches, "
@@ -233,12 +200,7 @@ class SearchTriageClient:
             if not url:
                 continue
             if entity_type == "actor":
-                decisions[url] = _actor_decision_from_item(
-                    item,
-                    url=url,
-                    actor_context=actor_context,
-                    config=self.config,
-                )
+                decisions[url] = _actor_gate_decision_from_item(item, url=url)
             elif entity_type == "person":
                 decisions[url] = _person_decision_from_item(item, url=url)
             else:
@@ -281,14 +243,23 @@ def _triage_user_payload(
     actor_context: dict[str, object] | None,
     config: dict[str, object],
 ) -> dict[str, object]:
+    if entity_type == "actor":
+        return {
+            "entity_type": "actor",
+            "candidates": candidates,
+            "decision_rule": (
+                "Return exactly one object for every candidate URL. Set fetch=true when this "
+                "could plausibly be an organisation's own substantive page. Bias toward recall: "
+                "snippets are incomplete and the fetched page performs the real assessment. Set "
+                "fetch=false only when the result itself clearly shows a third-party, news, "
+                "directory, category, consortium-listing, or non-organisation page. Return no "
+                "score and no other fields."
+            ),
+        }
     payload: dict[str, object] = {
         "entity_type": entity_type,
         "sectors": sectors,
-        "reference_examples": (
-            _public_actor_reference_examples(references)
-            if entity_type == "actor"
-            else references
-        ),
+        "reference_examples": references,
         "candidates": candidates,
         "decision_rule": (
             "Return exactly one decision object for every candidate URL provided. "
@@ -306,100 +277,29 @@ def _triage_user_payload(
             "covering many events, news articles about events, and pages that are "
             "clearly not about an event at all."
         )
-    if entity_type != "actor":
-        if entity_type == "person":
-            payload.update(
-                {
-                    "candidate_hub_context": _candidate_hubs(actor_context),
-                    "person_relevance_rule": (
-                        "For each signal return a short quote or paraphrase from the result, or "
-                        "null when the result does not establish it. The signals are: "
-                        "sector_intersection (research intersects a seeded sector); "
-                        "hub_or_held_affiliation (affiliation is in a hub or is an organisation "
-                        "already held); actionable_role (lab head, programme director, "
-                        "partnerships lead, principal investigator, or comparable senior role); "
-                        "topic_evidence (evidence of actual work on the topic, not a passing "
-                        "mention). Reject confidently and accept provisionally."
-                    ),
-                    "identity_boundary": (
-                        "Do not return a natural key, duplicate judgment, identity match, or "
-                        "routing decision. Identity is computed later by deterministic code."
-                    ),
-                    "relevance_floor": float(
-                        dict(config.get("accept_floor", {}) or {}).get("person", 0.75)
-                    ),
-                }
-            )
-        return payload
-
-    weights = actor_fit_weights(config)
-    thresholds = actor_rejection_thresholds(config)
-    payload["candidates"] = _actor_candidates_with_context(
-        candidates,
-        sectors=sectors,
-        actor_context=actor_context,
-    )
-    payload.update(
-        {
-            "actor_quality_rule": (
-                "Reject any candidate that is not published by the organisation itself or is "
-                "not a real operating organisation. The page itself must be a substantive "
-                "organisational, programme, lab, or about page. A news article, press release, "
-                "announcement, or blog post that reports on the organisation is coverage even "
-                "when published on the organisation's own domain. Set is_own_page to false and "
-                "use reason exactly 'news or press page on own domain' for those own-domain "
-                "coverage pages. Conference speaker bios, directory listings, third-party "
-                "funding announcements, aggregator profiles, grouping pages, consortium "
-                "listings, category pages, and bare projects must also be rejected. Use reason "
-                "'not the organisation's own page' when the publisher test fails."
-            ),
-            "actor_use_cases": [label for _name, label in ACTOR_USE_CASES],
-            "use_case_fit_rule": (
-                "For every actor use case, return a short quote or paraphrase from the supplied "
-                "result when the candidate plausibly serves it, or null. Never return a boolean. "
-                "Do not award research_collaboration merely because the candidate is a large "
-                "company: a corporate visitor programme supports learning_expeditions and "
-                "corporate_engagement unless research collaboration is separately evidenced. "
-                "A university lab with collaboration and visiting-student evidence supports "
-                "research_collaboration and student_and_faculty_mobility."
-            ),
-            "engagement_route_rule": (
-                "Identify practical routes into the organisation. A partnerships page is not "
-                "required. For each named route signal, return a short quote or paraphrase from "
-                "the result, or null; never return a boolean. Count partnerships and research "
-                "programmes, memberships, leadership networks, ecosystem platforms, hosted "
-                "visits, executive programmes, event participation, and introductions. The "
-                "application derives engagement_route as the share of eight use cases with "
-                "evidence. Do not return engagement_route. A missing route lowers fit but never "
-                "rejects alone."
-            ),
-            "three_condition_rejection_rule": (
-                "Score sector_relevance and strategic_ecosystem_value, and explain all three "
-                "conditions separately. sector_relevance measures relevance to the seeded "
-                "sectors. The application derives engagement_route from use_case_fit. "
-                "strategic_ecosystem_value measures whether the organisation could add strategic "
-                "ecosystem value across the eight use cases based only on supplied evidence. "
-                "Return a concise evidence string for every condition, including an explicit "
-                "no-evidence statement when evidence is absent. Do not return engagement_route or "
-                "a verdict. The application rejects only when all three scores are below their "
-                "configured thresholds."
-            ),
-            "distinctiveness_rule": (
-                "Each candidate's coverage_context contains only hub/sector labels and aggregate "
-                "counts. Reference existing_actor_count in the reasoning when useful. The "
-                "application computes distinctiveness as 1 / (1 + existing_actor_count). Do not "
-                "return or infer distinctiveness from prominence. "
-                "Distinctiveness changes ranking only and must never cause rejection."
-            ),
-            "fit_score_rule": (
-                "The application computes fit_score from sector_relevance, engagement_route, "
-                "strategic_ecosystem_value, and deterministic distinctiveness using the supplied "
-                "weights. Do not return fit_score."
-            ),
-            "actor_fit_weights": weights,
-            "actor_rejection_thresholds": thresholds,
-        }
-    )
+    if entity_type == "person":
+        payload.update(
+            {
+                "candidate_hub_context": _candidate_hubs(actor_context),
+                "person_relevance_rule": (
+                    "For each signal return a short quote or paraphrase from the result, or "
+                    "null when the result does not establish it. The signals are: "
+                    "sector_intersection (research intersects a seeded sector); "
+                    "hub_or_held_affiliation (affiliation is in a hub or is an organisation "
+                    "already held); actionable_role (lab head, programme director, "
+                    "partnerships lead, principal investigator, or comparable senior role); "
+                    "topic_evidence (evidence of actual work on the topic, not a passing "
+                    "mention). Reject confidently and accept provisionally."
+                ),
+                "identity_boundary": (
+                    "Do not return a natural key, duplicate judgment, identity match, or "
+                    "routing decision. Identity is computed later by deterministic code."
+                ),
+                "relevance_floor": float(
+                    dict(config.get("accept_floor", {}) or {}).get("person", 0.75)
+                ),
+            }
+        )
     return payload
 
 
@@ -440,40 +340,9 @@ def _triage_input_schema(entity_type: str) -> dict[str, object]:
 
 
 def _actor_triage_item_schema() -> dict[str, object]:
-    evidence_value = {"type": ["string", "null"], "minLength": 1, "maxLength": 240}
-    condition_evidence_value = {"type": "string", "minLength": 1, "maxLength": 240}
-    properties: dict[str, object] = {
+    properties = {
         "url": {"type": "string"},
-        "is_own_page": {"type": "boolean"},
-        "is_operating_org": {"type": "boolean"},
-        "actor_type_guess": {"type": ["string", "null"]},
-        "hub_matches": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
-        "sector_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
-        "engagement_signals": {
-            "type": "object",
-            "properties": {
-                name: evidence_value for name in ENGAGEMENT_ROUTE_SIGNAL_NAMES
-            },
-            "required": list(ENGAGEMENT_ROUTE_SIGNAL_NAMES),
-            "additionalProperties": False,
-        },
-        "use_case_fit": {
-            "type": "object",
-            "properties": {name: evidence_value for name in ACTOR_USE_CASE_NAMES},
-            "required": list(ACTOR_USE_CASE_NAMES),
-            "additionalProperties": False,
-        },
-        "condition_evidence": {
-            "type": "object",
-            "properties": {
-                name: condition_evidence_value
-                for name in ACTOR_REJECTION_CONDITION_NAMES
-            },
-            "required": list(ACTOR_REJECTION_CONDITION_NAMES),
-            "additionalProperties": False,
-        },
-        "sector_relevance": {"type": "number", "minimum": 0, "maximum": 1},
-        "strategic_ecosystem_value": {"type": "number", "minimum": 0, "maximum": 1},
+        "fetch": {"type": "boolean"},
         "reason": {"type": "string", "minLength": 1, "maxLength": 300},
     }
     return {
@@ -482,6 +351,20 @@ def _actor_triage_item_schema() -> dict[str, object]:
         "required": list(properties),
         "additionalProperties": False,
     }
+
+
+def _actor_gate_decision_from_item(item: dict[str, object], *, url: str) -> TriageDecision:
+    fetch = item.get("fetch")
+    if not isinstance(fetch, bool):
+        raise TriageResponseError("actor gate fetch must be boolean")
+    return TriageDecision(
+        url=url,
+        is_entity_type=fetch,
+        plausible_sector=fetch,
+        fit_score=None,
+        reason=_clean_decision_reason(item.get("reason")),
+        verdict="accepted" if fetch else "rejected",
+    )
 
 
 def _person_triage_item_schema() -> dict[str, object]:
@@ -510,100 +393,6 @@ def _person_triage_item_schema() -> dict[str, object]:
     }
 
 
-def _actor_decision_from_item(
-    item: dict[str, object],
-    *,
-    url: str,
-    actor_context: dict[str, object] | None,
-    config: dict[str, object],
-) -> TriageDecision:
-    signals = _clean_evidence_signals(
-        item.get("engagement_signals"),
-        names=ENGAGEMENT_ROUTE_SIGNAL_NAMES,
-    )
-    use_case_fit = _clean_evidence_signals(
-        item.get("use_case_fit"),
-        names=ACTOR_USE_CASE_NAMES,
-    )
-    condition_evidence = _clean_condition_evidence(item.get("condition_evidence"))
-    sector_relevance = _coerce_score(item.get("sector_relevance"))
-    engagement_route = actor_engagement_route_score(use_case_fit)
-    strategic_ecosystem_value = _coerce_score(item.get("strategic_ecosystem_value"))
-
-    hub_matches = _clean_string_tuple(item.get("hub_matches"))
-    sector_codes = tuple(value.upper() for value in _clean_string_tuple(item.get("sector_codes")))
-    existing_actor_count = _existing_actor_count_for_candidate(
-        url=url,
-        hub_matches=hub_matches,
-        sector_codes=sector_codes,
-        actor_context=actor_context,
-    )
-    distinctiveness = actor_distinctiveness_score(existing_actor_count)
-    fit_score = None
-    if all(
-        score is not None
-        for score in (sector_relevance, engagement_route, strategic_ecosystem_value)
-    ):
-        fit_score = actor_fit_score(
-            sector_relevance,
-            engagement_route,
-            strategic_ecosystem_value,
-            distinctiveness,
-            config=config,
-        )
-
-    legacy_entity_type = item.get("is_entity_type")
-    is_operating_org = _coerce_optional_bool(
-        item.get("is_operating_org"),
-        fallback=legacy_entity_type,
-    )
-    is_own_page = _coerce_optional_bool(
-        item.get("is_own_page"),
-        fallback=legacy_entity_type,
-    )
-    plausible_sector = sector_relevance is not None
-    decision = TriageDecision(
-        url=url,
-        is_entity_type=bool(
-            legacy_entity_type if legacy_entity_type is not None else is_operating_org
-        ),
-        plausible_sector=plausible_sector,
-        fit_score=fit_score,
-        reason=_clean_decision_reason(item.get("reason")),
-        is_own_page=is_own_page,
-        is_operating_org=is_operating_org,
-        actor_type_guess=_clean_optional_string(item.get("actor_type_guess")),
-        hub_matches=hub_matches,
-        sector_codes=sector_codes,
-        engagement_signals=signals,
-        use_case_fit=use_case_fit,
-        condition_evidence=condition_evidence,
-        sector_relevance=sector_relevance,
-        engagement_route=engagement_route,
-        strategic_ecosystem_value=strategic_ecosystem_value,
-        distinctiveness=distinctiveness,
-        existing_actor_count=existing_actor_count,
-    )
-    verdict = triage_verdict(
-        decision,
-        floor=0.0,
-        entity_type="actor",
-        actor_thresholds=actor_rejection_thresholds(config),
-    )
-    reason = decision.reason
-    if (
-        verdict == "rejected"
-        and decision.is_own_page is not False
-        and decision.is_operating_org is not False
-        and fails_all_actor_conditions(
-            decision,
-            thresholds=actor_rejection_thresholds(config),
-        )
-    ):
-        reason = "low sector relevance; no engagement route; no strategic ecosystem value"
-    return replace(decision, verdict=verdict, reason=reason)
-
-
 def _person_decision_from_item(item: dict[str, object], *, url: str) -> TriageDecision:
     professional_page = bool(item.get("is_professional_person_page"))
     sector_codes = tuple(value.upper() for value in _clean_string_tuple(item.get("sector_codes")))
@@ -622,14 +411,6 @@ def _person_decision_from_item(item: dict[str, object], *, url: str) -> TriageDe
         sector_codes=sector_codes,
         relevance_signals=signals,
     )
-
-
-def _clean_condition_evidence(value: object) -> dict[str, str]:
-    evidence = _clean_evidence_signals(value, names=ACTOR_REJECTION_CONDITION_NAMES)
-    return {
-        name: detail or "No evidence found in the supplied search result."
-        for name, detail in evidence.items()
-    }
 
 
 def _clean_evidence_signals(
@@ -658,68 +439,6 @@ def _clean_string_tuple(value: object) -> tuple[str, ...]:
         if text_value and text_value not in cleaned:
             cleaned.append(text_value)
     return tuple(cleaned)
-
-
-def _clean_optional_string(value: object) -> str | None:
-    if value is None or isinstance(value, bool):
-        return None
-    cleaned = str(value).strip()
-    return cleaned or None
-
-
-def _coerce_optional_bool(value: object, *, fallback: object = None) -> bool:
-    selected = fallback if value is None else value
-    return bool(selected)
-
-
-def load_actor_triage_reference_examples(
-    session,
-    *,
-    limit: int = 20,
-) -> list[dict[str, object]]:
-    if session is None:
-        return []
-    rows = (
-        session.execute(
-            text(
-                "SELECT actor.name, actor.actor_type, "
-                "array_remove(array_agg(DISTINCT upper(sector.code)), NULL) AS sectors "
-                "FROM actor "
-                "LEFT JOIN actor_sector ON actor_sector.actor_id = actor.actor_id "
-                "LEFT JOIN sector ON sector.sector_id = actor_sector.sector_id "
-                "WHERE actor.merged_into_actor_id IS NULL "
-                "AND (actor.actor_type IS NULL OR lower(actor.actor_type) <> 'aggregate') "
-                "GROUP BY actor.actor_id, actor.name, actor.actor_type, actor.updated_at "
-                "ORDER BY actor.updated_at DESC NULLS LAST, actor.name "
-                "LIMIT :limit"
-            ),
-            {"limit": limit},
-        )
-        .mappings()
-        .all()
-    )
-    return _public_actor_reference_examples([dict(row) for row in rows])[:limit]
-
-
-def _public_actor_reference_examples(
-    references: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    public: list[dict[str, object]] = []
-    for reference in references[:20]:
-        name = str(reference.get("name") or "").strip()
-        if not name:
-            continue
-        raw_sectors = reference.get("sectors") or reference.get("sector_codes") or []
-        if isinstance(raw_sectors, str):
-            raw_sectors = [raw_sectors]
-        public.append(
-            {
-                "name": name,
-                "actor_type": str(reference.get("actor_type") or "").strip(),
-                "sectors": [value.upper() for value in _clean_string_tuple(raw_sectors)],
-            }
-        )
-    return public
 
 
 def load_actor_hub_sector_counts(session) -> dict[tuple[str, str], int]:
@@ -760,120 +479,7 @@ def load_actor_hub_sector_counts(session) -> dict[tuple[str, str], int]:
     return counts
 
 
-def actor_rejection_thresholds(config: dict[str, object]) -> dict[str, float]:
-    return {
-        name: _bounded_config_score(
-            config.get(
-                f"actor_{name}_floor",
-                DEFAULT_ACTOR_REJECTION_THRESHOLDS[name],
-            ),
-            key=f"actor_{name}_floor",
-        )
-        for name in ACTOR_REJECTION_CONDITION_NAMES
-    }
-
-
-def actor_fit_weights(config: dict[str, object]) -> dict[str, float]:
-    configured = dict(config.get("actor_fit_weights", {}) or {})
-    try:
-        weights = {
-            name: float(configured.get(name, DEFAULT_ACTOR_FIT_WEIGHTS[name]))
-            for name in (*ACTOR_REJECTION_CONDITION_NAMES, "distinctiveness")
-        }
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError("open_web_discovery.actor_fit_weights must be numeric") from exc
-    if any(weight < 0 for weight in weights.values()):
-        raise RuntimeError("open_web_discovery.actor_fit_weights must be non-negative")
-    total = sum(weights.values())
-    if total <= 0:
-        raise RuntimeError("open_web_discovery.actor_fit_weights must have a positive total")
-    return {name: weight / total for name, weight in weights.items()}
-
-
-def actor_distinctiveness_score(existing_actor_count: int | None) -> float:
-    if existing_actor_count is None:
-        return 0.0
-    return 1.0 / (1.0 + max(0, int(existing_actor_count)))
-
-
-def actor_engagement_route_score(use_case_fit: dict[str, str | None]) -> float:
-    evidenced = sum(bool(use_case_fit.get(name)) for name in ACTOR_USE_CASE_NAMES)
-    return evidenced / len(ACTOR_USE_CASE_NAMES)
-
-
-def actor_fit_score(
-    sector_relevance: float,
-    engagement_route: float,
-    strategic_ecosystem_value: float,
-    distinctiveness: float,
-    *,
-    config: dict[str, object],
-) -> float:
-    weights = actor_fit_weights(config)
-    return max(
-        0.0,
-        min(
-            1.0,
-            sector_relevance * weights["sector_relevance"]
-            + engagement_route * weights["engagement_route"]
-            + strategic_ecosystem_value * weights["strategic_ecosystem_value"]
-            + distinctiveness * weights["distinctiveness"],
-        ),
-    )
-
-
-def _bounded_config_score(value: object, *, key: str) -> float:
-    try:
-        score = float(value)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(f"open_web_discovery.{key} must be numeric") from exc
-    if not 0.0 <= score <= 1.0:
-        raise RuntimeError(f"open_web_discovery.{key} must be between 0 and 1")
-    return score
-
-
-def _actor_candidates_with_context(
-    candidates: list[dict[str, object]],
-    *,
-    sectors: list[dict[str, str]],
-    actor_context: dict[str, object] | None,
-) -> list[dict[str, object]]:
-    coverage = _actor_coverage_counts(actor_context)
-    candidate_hubs = _candidate_hubs(actor_context)
-    sector_codes = [
-        str(sector.get("code") or "").strip().upper()
-        for sector in sectors
-        if str(sector.get("code") or "").strip()
-    ]
-    contextualized: list[dict[str, object]] = []
-    for candidate in candidates:
-        hubs = candidate_hubs.get(str(candidate.get("url") or ""), ())
-        hub_context = []
-        for hub_name in hubs:
-            sector_counts = []
-            for sector_code in sector_codes:
-                count = coverage.get((_normal_key(hub_name), sector_code))
-                if count is None:
-                    continue
-                sector_counts.append(
-                    {
-                        "sector_code": sector_code,
-                        "existing_actor_count": count,
-                    }
-                )
-            hub_context.append(
-                {
-                    "hub_name": hub_name,
-                    "sector_counts": sector_counts,
-                }
-            )
-        candidate_payload = dict(candidate)
-        candidate_payload["coverage_context"] = {"likely_hubs": hub_context}
-        contextualized.append(candidate_payload)
-    return contextualized
-
-
-def _existing_actor_count_for_candidate(
+def existing_actor_count_for_candidate(
     *,
     url: str,
     hub_matches: tuple[str, ...],
@@ -924,27 +530,6 @@ def _candidate_hubs(
 
 def _normal_key(value: object) -> str:
     return " ".join(str(value or "").split()).casefold()
-
-
-def has_engagement_route(decision: TriageDecision, *, floor: float) -> bool:
-    score = decision.engagement_route
-    return score is not None and score >= floor
-
-
-def fails_all_actor_conditions(
-    decision: TriageDecision,
-    *,
-    thresholds: dict[str, float],
-) -> bool:
-    scores = {
-        "sector_relevance": decision.sector_relevance,
-        "engagement_route": decision.engagement_route,
-        "strategic_ecosystem_value": decision.strategic_ecosystem_value,
-    }
-    return all(
-        score is not None and score < thresholds[name]
-        for name, score in scores.items()
-    )
 
 
 def has_person_topic_evidence(decision: TriageDecision) -> bool:
@@ -1089,26 +674,9 @@ def triage_verdict(
     *,
     floor: float,
     entity_type: str | None = None,
-    actor_thresholds: dict[str, float] | None = None,
 ) -> str:
     if is_triage_incomplete(decision):
         return "triage_incomplete"
-    is_actor_decision = entity_type == "actor" or decision.engagement_signals is not None
-    if is_actor_decision:
-        if (
-            not decision.is_entity_type
-            or decision.is_own_page is False
-            or decision.is_operating_org is False
-            or decision.fit_score is None
-        ):
-            return "rejected"
-        thresholds = actor_thresholds or {
-            name: floor for name in ACTOR_REJECTION_CONDITION_NAMES
-        }
-        return "rejected" if fails_all_actor_conditions(
-            decision,
-            thresholds=thresholds,
-        ) else "accepted"
     if not decision.accepted:
         return "rejected"
     is_person_decision = entity_type == "person" or decision.relevance_signals is not None

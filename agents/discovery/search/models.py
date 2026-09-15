@@ -89,6 +89,14 @@ class CandidateRecord:
     existing_actor_count: int | None = None
     relevance_signals: dict[str, str | None] | None = None
     duplicate_of: str | None = None
+    gate_fetch: bool | None = None
+    page_fetched: bool = False
+    rubric: dict[str, object] | None = None
+    record_preview: dict[str, object] | None = None
+    score_breakdown: dict[str, float] | None = None
+    score_band: str | None = None
+    rerank_position: int | None = None
+    rerank_reason: str | None = None
 
     @classmethod
     def from_result(
@@ -134,4 +142,9 @@ class CandidateRecord:
             distinctiveness=details.distinctiveness if details else None,
             existing_actor_count=details.existing_actor_count if details else None,
             relevance_signals=details.relevance_signals if details else None,
+            gate_fetch=(
+                details.is_entity_type
+                if entity_type == "actor" and details is not None
+                else None
+            ),
         )

@@ -35,16 +35,10 @@ from agents.discovery.search.query_generation import (
 )
 from agents.discovery.search.store import InMemorySearchCandidateStore, SQLSearchCandidateStore
 from agents.discovery.search.triage import (
-    ACTOR_REJECTION_CONDITION_NAMES,
-    ACTOR_USE_CASE_NAMES,
-    ENGAGEMENT_ROUTE_SIGNAL_NAMES,
     SearchTriageClient,
-    actor_distinctiveness_score,
-    actor_engagement_route_score,
     blocklist_domains_for_entity,
     deterministic_rejection,
     load_actor_hub_sector_counts,
-    load_actor_triage_reference_examples,
     normalized_domain,
 )
 
@@ -100,35 +94,6 @@ class RecordingTriageClient:
 
     def triage(self, candidates, *, entity_type, sectors, references):
         self.calls.append(list(candidates))
-        actor_fields = {}
-        if entity_type == "actor":
-            actor_fields = {
-                "is_own_page": True,
-                "is_operating_org": True,
-                "engagement_signals": {
-                    name: (
-                        "Membership programme provides a route into the organisation"
-                        if name == "memberships"
-                        else None
-                    )
-                    for name in ENGAGEMENT_ROUTE_SIGNAL_NAMES
-                },
-                "use_case_fit": {
-                    name: (
-                        "Public programme supports this use case"
-                        if name in {"learning_expeditions", "corporate_engagement"}
-                        else None
-                    )
-                    for name in ACTOR_USE_CASE_NAMES
-                },
-                "condition_evidence": {
-                    name: "Evidence supports this condition"
-                    for name in ACTOR_REJECTION_CONDITION_NAMES
-                },
-                "sector_relevance": 0.8,
-                "engagement_route": 0.8,
-                "strategic_ecosystem_value": 0.8,
-            }
         return {
             candidate.url: TriageDecision(
                 url=candidate.url,
@@ -136,7 +101,6 @@ class RecordingTriageClient:
                 plausible_sector=True,
                 fit_score=self.score,
                 reason="matches reference set",
-                **actor_fields,
             )
             for candidate in candidates
         }
@@ -523,6 +487,7 @@ def test_actor_type_subset_is_small_and_rotates_across_runs():
     assert max(actor_type_counts) < full_type_count
     assert metadata_a["selected_hubs"][0]["actor_types"] != metadata_b["selected_hubs"][0]["actor_types"]
     assert metadata_a["actor_type_rotation_groups"]
+    assert metadata_a["actor_type_enum"] == actor_types
 
 
 def test_actor_reference_set_excludes_aggregates_and_merged_actors():
@@ -644,7 +609,7 @@ def test_representative_terms_filter_noise_and_cap_to_two_terms():
     assert chemicals_terms == []
 
 
-def test_open_web_triage_token_budget_matches_configured_batch_size():
+def test_open_web_actor_scoring_configuration_is_complete():
     config = load_sources_config(PROJECT_ROOT)["open_web_discovery"]
     batch_size = int(config["triage_batch_size"])
     actor_batch_size = int(config["actor_triage_batch_size"])
@@ -654,28 +619,15 @@ def test_open_web_triage_token_budget_matches_configured_batch_size():
     assert actor_batch_size == 4
     assert max_tokens >= 8000
     assert max_tokens >= batch_size * 1000
-    evidence_chars_per_actor = (
-        len(ENGAGEMENT_ROUTE_SIGNAL_NAMES)
-        + len(ACTOR_USE_CASE_NAMES)
-        + len(ACTOR_REJECTION_CONDITION_NAMES)
-    ) * 240
-    estimated_structure_chars_per_actor = 300 + 1200
-    estimated_actor_tokens = (
-        actor_batch_size
-        * (evidence_chars_per_actor + estimated_structure_chars_per_actor)
-        // 4
-    )
-    assert estimated_actor_tokens == 6060
-    assert estimated_actor_tokens < max_tokens
-    assert config["actor_sector_relevance_floor"] == pytest.approx(0.35)
-    assert config["actor_engagement_route_floor"] == pytest.approx(0.20)
-    assert config["actor_strategic_ecosystem_value_floor"] == pytest.approx(0.35)
-    assert config["actor_fit_weights"] == {
-        "sector_relevance": 0.30,
-        "engagement_route": 0.35,
-        "strategic_ecosystem_value": 0.25,
-        "distinctiveness": 0.10,
+    assert config["actor_rubric_max_tokens"] == 4096
+    assert config["actor_rerank_max_tokens"] == 2048
+    assert config["actor_rerank_top_n"] == 40
+    assert config["actor_rerank_group_size"] == 10
+    assert config["actor_score_thresholds"] == {
+        "auto_low": 0.30,
+        "auto_high": 0.70,
     }
+    assert sum(config["actor_rubric_weights"].values()) == pytest.approx(1.0)
 
 
 def test_claude_web_search_provider_parses_multi_block_response_by_type():
@@ -819,85 +771,29 @@ def test_search_triage_client_actor_prompt_requires_organisation_own_page():
                 "candidates": [
                     {
                         "url": candidate.url,
-                        "is_entity_type": False,
-                        "plausible_sector": False,
-                        "fit_score": None,
-                        "reason": "not the organisation's own page",
+                        "fetch": True,
+                        "reason": "plausibly the organisation's own substantive page",
                     }
                 ]
             }
         ]
     )
 
-    SearchTriageClient(client, {}).triage(
+    decisions = SearchTriageClient(client, {}).triage(
         [candidate],
         entity_type="actor",
         sectors=[],
-        references=[
-            {
-                "actor_id": "internal-id",
-                "name": "Reference Lab",
-                "actor_type": "university_lab",
-                "sectors": ["water"],
-                "description": "must not leave the application",
-                "website": "https://reference.example",
-            }
-        ],
+        references=[],
     )
 
-    # Stable rules now travel in the cached prefix block; only candidates vary.
-    cached_payload = json.loads(client.calls[0]["cached_user"])
-    assert "not published by the organisation itself" in cached_payload["actor_quality_rule"]
-    assert "not the organisation's own page" in cached_payload["actor_quality_rule"]
-    assert "news or press page on own domain" in cached_payload["actor_quality_rule"]
-    assert cached_payload["reference_examples"] == [
-        {
-            "name": "Reference Lab",
-            "actor_type": "university_lab",
-            "sectors": ["WATER"],
-        }
-    ]
+    assert decisions[candidate.url].is_entity_type is True
+    assert decisions[candidate.url].verdict == "accepted"
+    assert decisions[candidate.url].fit_score is None
+    payload = json.loads(client.calls[0]["cached_user"])
+    assert "Bias toward recall" in payload["decision_rule"]
     schema = client.calls[0]["input_schema"]["properties"]["candidates"]["items"]
-    assert {
-        "is_own_page",
-        "is_operating_org",
-        "actor_type_guess",
-        "hub_matches",
-        "sector_codes",
-        "engagement_signals",
-        "use_case_fit",
-        "condition_evidence",
-        "sector_relevance",
-        "strategic_ecosystem_value",
-        "reason",
-    }.issubset(schema["properties"])
-    assert "complementarity" not in json.dumps(schema).lower()
-    signal_schema = schema["properties"]["engagement_signals"]
-    assert set(signal_schema["properties"]) == set(ENGAGEMENT_ROUTE_SIGNAL_NAMES)
-    use_case_schema = schema["properties"]["use_case_fit"]
-    assert set(use_case_schema["properties"]) == set(ACTOR_USE_CASE_NAMES)
-    assert all(
-        field_schema["type"] == ["string", "null"]
-        and field_schema["minLength"] == 1
-        for field_schema in use_case_schema["properties"].values()
-    )
-    assert "engagement_route" not in schema["properties"]
-    condition_schema = schema["properties"]["condition_evidence"]
-    assert set(condition_schema["properties"]) == set(ACTOR_REJECTION_CONDITION_NAMES)
-    assert cached_payload["actor_use_cases"] == [
-        "research collaboration",
-        "learning expeditions",
-        "executive education",
-        "mentorship",
-        "student and faculty mobility",
-        "open innovation",
-        "corporate engagement",
-        "opportunity development",
-    ]
-    assert "complementarity" not in json.dumps(cached_payload).lower()
-    assert "memberships" in cached_payload["engagement_route_rule"]
-    assert "hosted visits" in cached_payload["engagement_route_rule"]
-    assert "alone" in cached_payload["engagement_route_rule"]
+    assert set(schema["properties"]) == {"url", "fetch", "reason"}
+    assert "score" not in json.dumps(schema).lower()
 
 
 def test_search_triage_client_replaces_url_shaped_reasons():
@@ -908,34 +804,7 @@ def test_search_triage_client_replaces_url_shaped_reasons():
                 "candidates": [
                     {
                         "url": candidate.url,
-                        "is_own_page": True,
-                        "is_operating_org": True,
-                        "actor_type_guess": "research_organization",
-                        "hub_matches": ["Colorado Water Hub"],
-                        "sector_codes": ["WATER"],
-                        "engagement_signals": {
-                            name: (
-                                "Industry partnerships programme"
-                                if name == "partnerships_and_research"
-                                else None
-                            )
-                            for name in ENGAGEMENT_ROUTE_SIGNAL_NAMES
-                        },
-                        "use_case_fit": {
-                            name: (
-                                "Hosts industry visits"
-                                if name in {"learning_expeditions", "corporate_engagement"}
-                                else None
-                            )
-                            for name in ACTOR_USE_CASE_NAMES
-                        },
-                        "condition_evidence": {
-                            "sector_relevance": "Matches the water sector",
-                            "engagement_route": "Industry partnerships programme",
-                            "strategic_ecosystem_value": "Runs a regional platform",
-                        },
-                        "sector_relevance": 0.8,
-                        "strategic_ecosystem_value": 0.7,
+                        "fetch": True,
                         "reason": "https://fresh.example/about",
                     }
                 ]
@@ -952,200 +821,57 @@ def test_search_triage_client_replaces_url_shaped_reasons():
 
     assert decisions[candidate.url].reason == "LLM returned URL instead of reasoning"
     assert not decisions[candidate.url].reason.startswith("http")
-    assert decisions[candidate.url].engagement_route == pytest.approx(0.25)
+    assert decisions[candidate.url].fit_score is None
 
 
-def test_actor_engagement_route_is_derived_from_use_case_evidence():
-    one = _result("https://one-use.example/about", "q")
-    three = _result("https://three-uses.example/about", "q")
-    one_item = _actor_triage_item(
-        one.url,
-        sector_relevance=0.8,
-        strategic_ecosystem_value=0.7,
-        use_case_names=("learning_expeditions",),
-    )
-    one_item["use_case_fit"]["mentorship"] = False
-    one_item["use_case_fit"]["open_innovation"] = "   "
+def test_actor_gate_returns_no_model_score():
+    candidate = _result("https://candidate.example/about", "q")
     client = StubToolClient(
         [
             {
                 "candidates": [
-                    one_item,
-                    _actor_triage_item(
-                        three.url,
-                        sector_relevance=0.8,
-                        strategic_ecosystem_value=0.7,
-                        use_case_names=(
-                            "research_collaboration",
-                            "student_and_faculty_mobility",
-                            "open_innovation",
-                        ),
-                    ),
+                    {
+                        "url": candidate.url,
+                        "fetch": False,
+                        "reason": "clearly a third-party directory page",
+                    }
                 ]
             }
         ]
     )
 
-    decisions = SearchTriageClient(client, {}).triage(
-        [one, three],
-        entity_type="actor",
-        sectors=[],
-        references=[],
-    )
+    decision = SearchTriageClient(client, {}).triage(
+        [candidate], entity_type="actor", sectors=[], references=[]
+    )[candidate.url]
 
-    one_fit = decisions[one.url].use_case_fit
-    three_fit = decisions[three.url].use_case_fit
-    assert one_fit is not None
-    assert three_fit is not None
-    assert all(value is None or (isinstance(value, str) and value.strip()) for value in one_fit.values())
-    assert decisions[one.url].engagement_route == pytest.approx(1 / 8)
-    assert decisions[three.url].engagement_route == pytest.approx(3 / 8)
-    assert decisions[three.url].engagement_route > decisions[one.url].engagement_route
-    assert actor_engagement_route_score(three_fit) == pytest.approx(3 / 8)
+    assert decision.verdict == "rejected"
+    assert decision.fit_score is None
+    assert decision.reason == "clearly a third-party directory page"
 
 
-def test_actor_rejects_only_when_all_three_conditions_fail(monkeypatch, tmp_path):
-    _install_open_web_config(monkeypatch)
-    relevant_without_route = _result("https://relevant.example/about", "q")
-    fails_all = _result("https://irrelevant.example/about", "q")
-    client = StubToolClient(
-        [
-            {
-                "candidates": [
-                    _actor_triage_item(
-                        relevant_without_route.url,
-                        sector_relevance=0.9,
-                        strategic_ecosystem_value=0.6,
-                    ),
-                    _actor_triage_item(
-                        fails_all.url,
-                        sector_relevance=0.1,
-                        strategic_ecosystem_value=0.1,
-                        use_case_names=("mentorship",),
-                    ),
-                ]
-            }
-        ]
-    )
-    triage = SearchTriageClient(
-        client,
-        {
-            "triage_max_tokens": 8000,
-            "actor_sector_relevance_floor": 0.35,
-            "actor_engagement_route_floor": 0.2,
-            "actor_strategic_ecosystem_value_floor": 0.35,
-            "actor_fit_weights": {
-                "sector_relevance": 0.3,
-                "engagement_route": 0.35,
-                "strategic_ecosystem_value": 0.25,
-                "distinctiveness": 0.1,
-            },
-        },
-    )
-    provider = StaticSearchProvider({"q": [relevant_without_route, fails_all]})
-    args = _args(tmp_path, entity="actor")
-    args.audit_out = str(tmp_path / "audit.csv")
+def test_actor_score_band_uses_configured_wide_review_band():
+    from agents.discovery.search.actor_scoring import actor_score_band
 
-    result = search_run.run_search_triage(
-        args,
-        root=PROJECT_ROOT,
-        run_log=InMemoryRunLog(),
-        store=InMemorySearchCandidateStore(),
-        search_provider=provider,
-        query_generator=StaticQueryGenerator(["q"]),
-        triage_client=triage,
-    )
+    config = {"actor_score_thresholds": {"auto_low": 0.30, "auto_high": 0.70}}
 
-    rows = {row.url: row for row in result["candidates"]}
-    assert rows[relevant_without_route.url].triage_verdict == "accepted"
-    assert all(
-        value is None
-        for value in rows[relevant_without_route.url].engagement_signals.values()
-    )
-    assert rows[relevant_without_route.url].fit_score == pytest.approx(0.42)
-    assert rows[fails_all.url].triage_verdict == "rejected"
-    assert rows[fails_all.url].triage_reason == (
-        "low sector relevance; no engagement route; no strategic ecosystem value"
-    )
-    assert result["stats"]["actor_three_condition_rejected"] == 1
-    assert result["stats"]["actor_legacy_single_floor_would_reject"] == 2
-    report = Path(result["report_path"]).read_text(encoding="utf-8")
-    assert "#### Actor evidence" in report
-    assert "Duplicate Of" in report
-    assert "Engagement route" in report
-    assert "Use-case evidence counts:" in report
-    assert "mentorship: 1" in report
-    assert "research collaboration: 0" in report
-    rejection_report = Path(result["rejection_report_path"]).read_text(encoding="utf-8")
-    assert "Rejected candidates: **1**" in rejection_report
-    assert "## low sector relevance; no engagement route; no strategic ecosystem value (1)" in rejection_report
-    assert relevant_without_route.url not in rejection_report
+    assert actor_score_band(0.29, config) == "auto_low"
+    assert actor_score_band(0.30, config) == "review"
+    assert actor_score_band(0.69, config) == "review"
+    assert actor_score_band(0.70, config) == "auto_high"
 
 
-def test_actor_distinctiveness_uses_database_count_and_configured_weights():
-    candidate = _result("https://open.example/partners", "water research Boulder")
-    client = StubToolClient(
-        [
-            {
-                "candidates": [
-                    _actor_triage_item(
-                        candidate.url,
-                        sector_relevance=0.8,
-                        strategic_ecosystem_value=0.6,
-                        engagement_evidence="Sponsored research partnerships are open",
-                        use_case_names=(
-                            "research_collaboration",
-                            "student_and_faculty_mobility",
-                            "open_innovation",
-                            "corporate_engagement",
-                        ),
-                        hub_matches=["Colorado Water Hub"],
-                        sector_codes=["WATER"],
-                    )
-                ]
-            }
-        ]
-    )
-    triage = SearchTriageClient(
-        client,
-        {
-            "actor_fit_weights": {
-                "sector_relevance": 0.2,
-                "engagement_route": 0.3,
-                "strategic_ecosystem_value": 0.1,
-                "distinctiveness": 0.4,
-            },
-        },
-    )
+def test_actor_distinctiveness_is_deterministic_from_database_count():
+    from agents.discovery.search.actor_scoring import score_actor_rubric
 
-    decisions = triage.triage(
-        [candidate],
-        entity_type="actor",
-        sectors=[{"code": "WATER", "name": "Water"}],
-        references=[],
-        actor_context={
-            "coverage_counts": {("Colorado Water Hub", "WATER"): 4},
-            "candidate_hubs": {candidate.url: ("Colorado Water Hub",)},
-        },
-    )
+    rubric = _empty_actor_rubric()
+    config = load_sources_config(PROJECT_ROOT)["open_web_discovery"]
 
-    decision = decisions[candidate.url]
-    assert decision.existing_actor_count == 4
-    assert decision.distinctiveness == pytest.approx(actor_distinctiveness_score(4))
-    assert decision.distinctiveness == pytest.approx(0.2)
-    assert decision.fit_score == pytest.approx(0.45)
-    context = json.loads(client.calls[0]["user"])["candidates"][0]["coverage_context"]
-    assert context == {
-        "likely_hubs": [
-            {
-                "hub_name": "Colorado Water Hub",
-                "sector_counts": [
-                    {"sector_code": "WATER", "existing_actor_count": 4}
-                ],
-            }
-        ]
-    }
-    assert "actor" not in json.dumps(context).lower().replace("existing_actor_count", "")
+    score = score_actor_rubric(rubric, existing_actor_count=4, config=config)
+
+    assert score.existing_actor_count == 4
+    assert score.distinctiveness == pytest.approx(0.2)
+    assert score.contributions["distinctiveness"] == pytest.approx(0.02)
+    assert score.total == pytest.approx(0.02)
 
 
 def test_actor_hub_sector_counts_are_loaded_without_actor_details():
@@ -1167,37 +893,6 @@ def test_actor_hub_sector_counts_are_loaded_without_actor_details():
     assert "lower(actor.actor_type) <> 'aggregate'" in sql
     assert "actor.name" not in sql
     assert "actor.description" not in sql
-
-
-def test_actor_triage_references_load_only_public_calibration_fields():
-    session = CapturingSession(
-        [
-            {
-                "name": "Reference Lab",
-                "actor_type": "university_lab",
-                "sectors": ["WATER", "AI"],
-                "actor_id": "must-not-pass-through",
-                "description": "must-not-pass-through",
-                "website": "https://must-not-pass-through.example",
-            }
-        ]
-    )
-
-    references = load_actor_triage_reference_examples(session)
-
-    assert references == [
-        {
-            "name": "Reference Lab",
-            "actor_type": "university_lab",
-            "sectors": ["WATER", "AI"],
-        }
-    ]
-    sql = "\n".join(session.statements)
-    assert "actor.name" in sql
-    assert "actor.actor_type" in sql
-    assert "sector.code" in sql
-    assert "description" not in sql
-    assert "website" not in sql
 
 
 def test_deterministic_rejections_happen_before_llm_triage(monkeypatch, tmp_path):
@@ -2006,15 +1701,7 @@ def _install_open_web_config(monkeypatch, **overrides) -> None:
         "forward_window_days": 365,
         "people_enabled": False,
         "accept_floor": {"event": 0.60, "actor": 0.70, "person": 0.95},
-        "actor_sector_relevance_floor": 0.35,
-        "actor_engagement_route_floor": 0.20,
-        "actor_strategic_ecosystem_value_floor": 0.35,
-        "actor_fit_weights": {
-            "sector_relevance": 0.30,
-            "engagement_route": 0.35,
-            "strategic_ecosystem_value": 0.25,
-            "distinctiveness": 0.10,
-        },
+        "actor_score_thresholds": {"auto_low": 0.30, "auto_high": 0.70},
         "blocklist_domains": ["blocked.example"],
         "non_content_path_fragments": ["/privacy"],
         "search_model": "claude-haiku-4-5",
@@ -2030,41 +1717,15 @@ def _install_open_web_config(monkeypatch, **overrides) -> None:
     monkeypatch.setattr(search_run, "load_sources_config", lambda root=None: config)
 
 
-def _actor_triage_item(
-    url: str,
-    *,
-    sector_relevance: float,
-    strategic_ecosystem_value: float,
-    engagement_evidence: str | None = None,
-    use_case_names: tuple[str, ...] = (),
-    hub_matches: list[str] | None = None,
-    sector_codes: list[str] | None = None,
-) -> dict[str, object]:
+def _empty_actor_rubric() -> dict[str, object]:
+    from agents.discovery.search.actor_scoring import RUBRIC_ITEM_NAMES, USE_CASE_NAMES
+
+    absent = {"present": False, "evidence": None}
     return {
-        "url": url,
-        "is_own_page": True,
-        "is_operating_org": True,
-        "actor_type_guess": "research_organization",
-        "hub_matches": hub_matches or ["Colorado Water Hub"],
-        "sector_codes": sector_codes or ["WATER"],
-        "engagement_signals": {
-            name: engagement_evidence if name == "partnerships_and_research" else None
-            for name in ENGAGEMENT_ROUTE_SIGNAL_NAMES
-        },
-        "use_case_fit": {
-            name: "Candidate evidence supports this use case"
-            if name in use_case_names
-            else None
-            for name in ACTOR_USE_CASE_NAMES
-        },
-        "condition_evidence": {
-            "sector_relevance": "Sector relevance assessed from the result",
-            "engagement_route": engagement_evidence or "No engagement route found",
-            "strategic_ecosystem_value": "Strategic ecosystem value assessed from the result",
-        },
-        "sector_relevance": sector_relevance,
-        "strategic_ecosystem_value": strategic_ecosystem_value,
-        "reason": "Actor conditions assessed",
+        **{name: dict(absent) for name in RUBRIC_ITEM_NAMES},
+        "use_cases": {name: dict(absent) for name in USE_CASE_NAMES},
+        "sector_codes": [],
+        "hub_matches": [],
     }
 
 

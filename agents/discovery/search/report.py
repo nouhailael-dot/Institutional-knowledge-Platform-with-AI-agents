@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import csv
+import json
 from collections import defaultdict
 from pathlib import Path
 
+from agents.discovery.extractors.actor import ACTOR_RECORD_FIELDS
 from agents.discovery.search.models import CandidateRecord
-from agents.discovery.search.triage import ACTOR_USE_CASES
 
 
 def write_candidate_report(
@@ -57,10 +59,7 @@ def write_candidate_report(
 
     lines.append("## Candidates")
     for entity_type in sorted(grouped):
-        rows = sorted(
-            grouped[entity_type],
-            key=lambda row: (-1.0 if row.fit_score is None else -row.fit_score, row.domain, row.title or ""),
-        )
+        rows = sorted(grouped[entity_type], key=_candidate_sort_key)
         lines.extend(
             [
                 "",
@@ -85,58 +84,52 @@ def write_candidate_report(
                 )
             )
         if entity_type == "actor":
-            actor_rows = [row for row in rows if row.engagement_signals is not None]
+            actor_rows = [row for row in rows if row.page_fetched]
             if actor_rows:
-                use_case_counts = {
-                    name: sum(bool((row.use_case_fit or {}).get(name)) for row in actor_rows)
-                    for name, _label in ACTOR_USE_CASES
-                }
+                record_headers = [field.replace("_", " ").title() for field in ACTOR_RECORD_FIELDS]
                 lines.extend(
                     [
                         "",
-                        "#### Actor evidence",
+                        "#### Fetched actor record previews",
                         "",
-                        "Use-case evidence counts: "
-                        + "; ".join(
-                            f"{label}: {use_case_counts[name]}"
-                            for name, label in ACTOR_USE_CASES
-                        ),
-                        "",
-                        (
-                            "| Domain | Sector relevance | Engagement route | Strategic value | "
-                            "Distinctiveness | Existing actors | Hubs | Sectors | Route signals | "
-                            "Use-case fit | Condition evidence |"
-                        ),
-                        "| --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- | --- |",
+                        "| "
+                        + " | ".join(
+                            [
+                                *record_headers,
+                                "Sectors",
+                                "Hubs",
+                                "Rubric Score",
+                                "Rerank Position",
+                                "Band",
+                                "Rubric Evidence",
+                            ]
+                        )
+                        + " |",
+                        "| "
+                        + " | ".join(["---"] * (len(ACTOR_RECORD_FIELDS) + 6))
+                        + " |",
                     ]
                 )
                 for row in actor_rows:
+                    record = row.record_preview or {}
                     lines.append(
-                        "| {domain} | {sector} | {engagement} | {strategic} | "
-                        "{distinctiveness} | {count} | {hubs} | {sectors} | {signals} | "
-                        "{use_cases} | {conditions} |".format(
-                            domain=_escape(row.domain),
-                            sector=_format_score(row.sector_relevance),
-                            engagement=_format_score(row.engagement_route),
-                            strategic=_format_score(row.strategic_ecosystem_value),
-                            distinctiveness=_format_score(row.distinctiveness),
-                            count=(
-                                "n/a"
-                                if row.existing_actor_count is None
-                                else str(row.existing_actor_count)
-                            ),
-                            hubs=_escape(", ".join(row.hub_matches)),
-                            sectors=_escape(", ".join(row.sector_codes)),
-                            signals=_escape(
-                                _evidence_signal_summary(row.engagement_signals or {})
-                            ),
-                            use_cases=_escape(
-                                _evidence_signal_summary(row.use_case_fit or {})
-                            ),
-                            conditions=_escape(
-                                _evidence_signal_summary(row.condition_evidence or {})
-                            ),
+                        "| "
+                        + " | ".join(
+                            _escape(_display(record.get(field)))
+                            for field in ACTOR_RECORD_FIELDS
                         )
+                        + " | "
+                        + " | ".join(
+                            [
+                                _escape(", ".join(row.sector_codes)),
+                                _escape(", ".join(row.hub_matches)),
+                                _format_score(row.fit_score),
+                                str(row.rerank_position or ""),
+                                _escape(row.score_band or ""),
+                                _escape(_rubric_summary(row.rubric or {})),
+                            ]
+                        )
+                        + " |"
                     )
         elif entity_type == "person":
             person_rows = [row for row in rows if row.relevance_signals is not None]
@@ -161,6 +154,49 @@ def write_candidate_report(
                         )
                     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -> None:
+    """Write fetched actor previews as a flat reviewer-ready CSV."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = [
+        "candidate_id",
+        "url",
+        *ACTOR_RECORD_FIELDS,
+        "sector_codes",
+        "hub_matches",
+        "rubric_score",
+        "rerank_position",
+        "rerank_rationale",
+        "band",
+        "rubric_evidence",
+    ]
+    rows = [
+        candidate
+        for candidate in candidates
+        if candidate.entity_type == "actor" and candidate.page_fetched
+    ]
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for candidate in rows:
+            record = candidate.record_preview or {}
+            writer.writerow(
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "url": candidate.url,
+                    **{field: _display(record.get(field)) for field in ACTOR_RECORD_FIELDS},
+                    "sector_codes": "; ".join(candidate.sector_codes),
+                    "hub_matches": "; ".join(candidate.hub_matches),
+                    "rubric_score": candidate.fit_score,
+                    "rerank_position": candidate.rerank_position,
+                    "rerank_rationale": candidate.rerank_reason,
+                    "band": candidate.score_band,
+                    "rubric_evidence": json.dumps(
+                        candidate.rubric, ensure_ascii=False, sort_keys=True
+                    ),
+                }
+            )
 
 
 def write_rejection_report(
@@ -227,3 +263,39 @@ def _evidence_signal_summary(signals: dict[str, str | None]) -> str:
         for name, evidence in signals.items()
         if evidence
     ) or "none"
+
+
+def _rubric_summary(rubric: dict[str, object]) -> str:
+    parts: list[str] = []
+    for name, value in rubric.items():
+        if name == "use_cases" and isinstance(value, dict):
+            for use_case, item in value.items():
+                if isinstance(item, dict) and item.get("present") is True:
+                    parts.append(f"{use_case}: {item.get('evidence')}")
+        elif name in {"sector_codes", "hub_matches"} and isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    label = item.get("code") or item.get("name")
+                    parts.append(f"{name}.{label}: {item.get('evidence')}")
+        elif isinstance(value, dict) and value.get("present") is True:
+            parts.append(f"{name}: {value.get('evidence')}")
+    return "; ".join(parts) or "none"
+
+
+def _display(value: object) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, (list, dict)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return str(value)
+
+
+def _candidate_sort_key(row: CandidateRecord) -> tuple[object, ...]:
+    if row.entity_type == "actor" and row.rerank_position is not None:
+        return (0, row.rerank_position, row.domain, row.title or "")
+    return (
+        1,
+        -1.0 if row.fit_score is None else -row.fit_score,
+        row.domain,
+        row.title or "",
+    )

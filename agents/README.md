@@ -23,7 +23,8 @@ different path. Report generation never deletes candidates.
 
 For events and enabled person expertise runs, Phase 2 fetches accepted candidate
 pages and sends them through the existing extract, normalize, stage, and
-deterministic route path. Actor runs still stop after Phase 1 triage. Claude
+deterministic route path. Actor runs use a binary fetch gate followed by fetched-page
+rubric extraction, deterministic scoring, and bounded listwise reranking. Claude
 native web search is the default provider because its
 server-side search spend is added to the same `CostMeter` as query generation
 and triage, so `max_usd_per_run` aborts runaway searches cleanly. Brave Search
@@ -41,7 +42,9 @@ Caps are hard stops: `max_searches`, `max_candidates_triaged`, and
 silently truncating. Phase 1-only paths reject URLs already seen in
 `raw_document` by URL. Phase 2 event and person runs re-fetch accepted URLs and
 compare the new content hash, so changed pages can be extracted while unchanged
-pages skip the extraction call.
+pages skip the extraction call. Actor page analyses are cached by content hash and
+rubric prompt version, so unchanged evidence is rescored reproducibly without a
+second rubric call.
 
 Phase 2 fetches at most 30 accepted pages and admits at most 10 previously unseen
 domains per run. Both are hard, config-driven caps; hitting either closes the run
@@ -61,10 +64,11 @@ response.
 
 Fetched open-web pages are also untrusted model input. Their raw content is stored
 and content-hashed before extraction, the prompt labels the page body as
-untrusted data, and the extractor can return only the forced event tool schema.
-No free-form model text is routed or staged, and no extraction tool has database
-write access. Records from discovered domains may route to create or review, but
-never absorb. Exact canonical matches are forced to event review, and
+untrusted data, and extractors can return only their forced tool schemas. The actor
+tool returns separate `rubric` and `record` objects; rubric judgment cannot fill
+record facts, and missing record facts are null. No free-form model text is routed
+or staged, and no extraction tool has database write access. Records from discovered
+domains may route to create or review, but never absorb. Exact canonical matches are forced to event review, and
 `agents/discovery/promote.py` raises if an absorb route reaches it anyway.
 
 ## Run
@@ -118,7 +122,9 @@ Every run writes `scrape_run.status_reason`, including successful cheap-week run
 
 `agents/config/sources.yaml` is parsed as YAML, not JSON. Keep using the `.yaml` file name; the shipped-config test loads this exact file so syntax errors fail before the Monday workflow.
 
-The default run cost ceiling is `$0.50`, which leaves headroom for a full Climate Week extraction that has measured around `$0.14`. If the ceiling is exceeded, discovery closes the run as `attention`, writes audit and digest artifacts for the partial staged work, and exits nonzero for CI.
+The open-web run cost ceiling is configured as `$5.00`. If the ceiling is exceeded,
+discovery closes the run as `attention`, writes audit and report artifacts for the
+partial work, and exits nonzero for CI.
 
 ## Claude SDK Compatibility
 
@@ -136,16 +142,29 @@ The score distribution script reports mean, median, share above HIGH, and the sa
 
 Actor sources must be built around organisation profiles with enough evidence to support ER: at minimum name plus context such as description, country, website, or other profile fields. Event-listing organiser strings are not actor discovery sources.
 
-Actor triage serves eight use cases: research collaboration, learning
-expeditions, executive education, mentorship, student and faculty mobility,
-open innovation, corporate engagement, and opportunity development. An actor is
-rejected for fit only when sector relevance, engagement route, and strategic
-ecosystem value all fall below their configured thresholds. Engagement routes
-include memberships, leadership networks, ecosystem platforms, hosted visits,
-executive programmes, event participation, and introductions as well as formal
-partnerships. The former `complementarity` signal is intentionally absent because
-the system has no evidence of UM6P capability gaps; it may return only after a
-reviewed UM6P capability document is supplied as explicit triage context.
+Actor triage is a recall-oriented binary gate: `fetch` and a one-line reason only.
+It produces no score. Each fetched page then receives one forced-tool call returning
+two separate objects: an evidence rubric and a canonical-shaped record preview. The
+record field list is derived from `src/db/models.py` through the existing actor
+extractor schema; identity, provenance, verification, confidence, and timestamp
+columns remain ingest-managed. `actor_type` is restricted to values loaded from the
+database, sector codes to the seeded enum, and absent page facts remain null.
+
+The rubric covers page ownership, operating evidence, partnerships and technology
+transfer, open programmes, partnership precedent, a named route in, network
+membership, the eight GHUS use cases, seeded sectors, and hub matches. Claude returns
+evidence and booleans, never a number. Code computes the score from configured
+weights plus database coverage distinctiveness. The top 40 are reranked in groups of
+10; reranking changes relative order only inside each group and does not change the
+deterministic score.
+
+Scores at or above `auto_high` proceed to the existing staging and frozen ER route.
+Scores below `auto_low` are rejected with their rubric; the interval between them is
+review-only. The markdown report and its sibling `-records.csv` contain one row per
+fetched actor with every record-preview field, sectors, hubs, deterministic score,
+rerank rationale, band, and rubric evidence. Apply
+`agents/sql/140_actor_rubric_candidates.sql` before persisting these fields to
+`search_candidate`.
 
 ## Person Discovery
 
@@ -235,11 +254,12 @@ TEMPORARY: `index_dirty` exists because `event` currently has no `updated_at`, s
 8. `search_doc` is a derived index rather than a fact store. Its rows are reconstructable from canonical rows that already carry provenance, so it deliberately does not get its own `source` rows. Every `search_doc` row must store `entity_type` and `entity_id` so the trail back to provenance stays explicit.
 9. `climate_week`, `unga_programme`, and `unga_guide` are protected as event-only sources. They must not derive actors from organiser strings: replay `3aeb1d49-677b-435f-8453-138ed889818c` staged 121 such actors with a median ER score of 0.029 because the source yielded bare names without description, country, or website. Adding actor discovery requires a source built around organisation profiles, not event listings.
 10. Open-web discovery is search-results only in Phase 1. Phase 2 may fetch only
-    accepted event candidates, one level deep, through the bounded robots-aware
-    path; it does not crawl links from those pages.
-11. Open-web actor and person reference examples come from the database only.
-    Aggregate actors and merged-away actors must not appear in the actor
-    reference set.
+    accepted event/person candidates or binary-gate-passed actor candidates, one
+    level deep, through the bounded robots-aware path; it does not crawl links from
+    those pages.
+11. The actor fetch gate receives only search-result fields and no database actor
+    examples. Database actor coverage counts affect only deterministic distinctiveness
+    after rubric extraction.
 12. Records from a discovered domain never auto-absorb until a human promotes
     that domain to trusted in a later phase.
 

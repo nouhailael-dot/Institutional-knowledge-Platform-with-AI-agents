@@ -860,6 +860,7 @@ def _actor_grid_queries(
     )
     return queries, {
         "actor_types": readable_types,
+        "actor_type_enum": list(actor_types),
         "actor_type_rotation_groups": _actor_type_rotation_group_metadata(type_buckets),
         "actor_type_rotation_seed": rotation_seed,
         "actor_types_per_hub": min(types_per_hub, len(type_buckets)),

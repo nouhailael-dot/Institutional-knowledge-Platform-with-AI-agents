@@ -84,6 +84,25 @@
       "extraction_max_tokens": 2048,
       "extraction_llm_pricing":
         { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
+      "actor_rubric_max_tokens": 4096,
+      "actor_rerank_max_tokens": 2048,
+      "actor_rerank_top_n": 40,
+      "actor_rerank_group_size": 10,
+      "actor_score_thresholds": { "auto_low": 0.30, "auto_high": 0.70 },
+      "actor_rubric_weights":
+        {
+          "own_organisational_page": 0.10,
+          "real_operating_entity": 0.15,
+          "partnerships_or_tech_transfer": 0.08,
+          "open_programmes": 0.07,
+          "partnership_precedent": 0.08,
+          "named_route_in": 0.08,
+          "network_membership": 0.04,
+          "use_cases": 0.20,
+          "sector_coverage": 0.07,
+          "hub_match": 0.03,
+          "distinctiveness": 0.10,
+        },
       "max_usd_per_run": 5.00,
       "forward_window_days": 365,
       "people_enabled": false,
@@ -94,16 +113,6 @@
         ["academia.edu", "researchgate.net", "rocketreach.co", "zoominfo.com"],
       "query_excluded_sectors": ["CROSS", "DIASPORA"],
       "accept_floor": { "event": 0.30, "actor": 0.70, "person": 0.60 },
-      "actor_sector_relevance_floor": 0.35,
-      "actor_engagement_route_floor": 0.20,
-      "actor_strategic_ecosystem_value_floor": 0.35,
-      "actor_fit_weights":
-        {
-          "sector_relevance": 0.30,
-          "engagement_route": 0.35,
-          "strategic_ecosystem_value": 0.25,
-          "distinctiveness": 0.10,
-        },
       "blocklist_domains":
         [
           "facebook.com",

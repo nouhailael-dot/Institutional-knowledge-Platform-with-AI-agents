@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 
 from sqlalchemy import text
@@ -43,17 +44,28 @@ class SQLSearchCandidateStore:
         return url in self.load_seen_raw_urls()
 
     def write_candidates(self, candidates: Iterable[CandidateRecord]) -> int:
-        rows = [candidate.__dict__ for candidate in candidates]
+        rows = []
+        for candidate in candidates:
+            row = candidate.__dict__.copy()
+            for field in ("rubric", "record_preview", "score_breakdown"):
+                row[field] = json.dumps(row[field], sort_keys=True) if row[field] is not None else None
+            rows.append(row)
         if not rows:
             return 0
         self.session.execute(
             text(
                 "INSERT INTO search_candidate (candidate_id, run_id, entity_type, query, "
                 "provider, url, title, snippet, domain, triage_verdict, triage_reason, fit_score, "
-                "duplicate_of) "
+                "duplicate_of, gate_fetch, page_fetched, rubric, record_preview, "
+                "score_breakdown, score_band, "
+                "existing_actor_count, distinctiveness, rerank_position, rerank_reason) "
                 "VALUES (CAST(:candidate_id AS uuid), CAST(:run_id AS uuid), :entity_type, "
                 ":query, :provider, :url, :title, :snippet, :domain, :triage_verdict, "
-                ":triage_reason, :fit_score, CAST(:duplicate_of AS uuid))"
+                ":triage_reason, :fit_score, CAST(:duplicate_of AS uuid), :gate_fetch, "
+                ":page_fetched, "
+                "CAST(:rubric AS jsonb), CAST(:record_preview AS jsonb), "
+                "CAST(:score_breakdown AS jsonb), :score_band, :existing_actor_count, "
+                ":distinctiveness, :rerank_position, :rerank_reason)"
             ),
             rows,
         )
