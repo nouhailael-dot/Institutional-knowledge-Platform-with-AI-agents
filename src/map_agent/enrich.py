@@ -9,6 +9,7 @@ import os
 
 import anthropic
 from dotenv import load_dotenv
+from src.map_agent.costs import paid_message
 
 load_dotenv()
 
@@ -160,7 +161,7 @@ def _format_known(entity: dict, entity_type: str) -> str:
     return "\n".join(lines) if lines else "(only the name is known)"
 
 
-def enrich_entity(entity: dict) -> dict:
+def enrich_entity(entity: dict, run=None) -> dict:
     """Take a partial entity, search for details, return a more complete version.
 
     The input must have '_entity_type' set by the discovery stage.
@@ -182,7 +183,7 @@ def enrich_entity(entity: dict) -> dict:
     client = _get_client()
 
     for _ in range(MAX_HOPS):
-        resp = client.messages.create(
+        resp = paid_message(client, run, "Enrichment",
             model=MODEL, max_tokens=MAX_TOKENS,
             system=system, tools=tools, messages=messages,
         )

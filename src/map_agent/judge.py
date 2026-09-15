@@ -15,6 +15,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import anthropic
 from dotenv import load_dotenv
+from src.map_agent.costs import paid_message
+from src.map_agent.run_store import MapStopped
 
 load_dotenv()
 
@@ -107,14 +109,14 @@ def _render_entity(entity: dict) -> str:
     return "\n".join(lines)
 
 
-def judge_entity(entity: dict, request: str) -> dict:
+def judge_entity(entity: dict, request: str, run=None) -> dict:
     """Grade one entity against the original request. Returns the judgment dict."""
     user_msg = (f"USER'S ORIGINAL REQUEST:\n{request}\n\n"
                 f"ENTITY TO JUDGE ({entity.get('_entity_type','?')}):\n"
                 f"{_render_entity(entity)}\n\n"
                 f"Judge this entity and call submit_judgment.")
     try:
-        resp = _get_client().messages.create(
+        resp = paid_message(_get_client(), run, "Verification",
             model=MODEL, max_tokens=MAX_TOKENS,
             system=_SYSTEM, tools=[_SUBMIT_JUDGMENT],
             messages=[{"role": "user", "content": user_msg}],
@@ -122,6 +124,8 @@ def judge_entity(entity: dict, request: str) -> dict:
         for block in resp.content:
             if block.type == "tool_use" and block.name == "submit_judgment":
                 return dict(block.input)
+    except MapStopped:
+        raise
     except Exception as e:
         return {"relevance_score": None, "is_relevant": None,
                 "reason": f"judge error: {e}"}
@@ -130,12 +134,22 @@ def judge_entity(entity: dict, request: str) -> dict:
             "reason": "judge did not return a verdict"}
 
 
-def judge_entities(entities: list[dict], request: str) -> list[dict]:
+def judge_entities(entities: list[dict], request: str, run=None) -> list[dict]:
     """Judge every entity concurrently. Annotates each with '_judge' (mutates)."""
     if not entities:
         return entities
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-        verdicts = pool.map(lambda e: judge_entity(e, request), entities)
-        for entity, verdict in zip(entities, verdicts):
-            entity["_judge"] = verdict
+    # Sequential calls keep cancellation responsive and avoid reserving the
+    # whole verification batch before the first verdict arrives.
+    for entity in entities:
+        entity["_judge"] = judge_entity(entity, request, run=run)
+        if run:
+            saved = run.store.get(run.id)["result"] or {"entities": {}}
+            kind = entity.get("_entity_type", "actor")
+            name = entity.get("name") or entity.get("full_name")
+            group = saved.setdefault("entities", {}).setdefault(kind, [])
+            for i, prior in enumerate(group):
+                if (prior.get("name") or prior.get("full_name")) == name:
+                    group[i] = entity
+                    break
+            run.checkpoint(saved)
     return entities

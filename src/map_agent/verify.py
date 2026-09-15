@@ -21,7 +21,7 @@ from src.map_agent.urlcheck import verify_links
 def verify(entities: list[dict], request: str,
            threshold: float = DEFAULT_THRESHOLD,
            check_links: bool = True,
-           run_judge: bool = True) -> list[dict]:
+           run_judge: bool = True, run=None) -> list[dict]:
     """Run the verification layers over `entities` (mutates in place).
 
     `request` is the user's ORIGINAL map description — the judge grades each
@@ -36,7 +36,7 @@ def verify(entities: list[dict], request: str,
         verify_links(entities)
 
     if run_judge:
-        judge_entities(entities, request)
+        judge_entities(entities, request, run=run)
 
     # Floor depends on judge scores; unjudged entities are left unflagged.
     apply_relevance_floor(entities, threshold)

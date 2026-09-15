@@ -9,6 +9,8 @@ import os
 
 import anthropic
 from dotenv import load_dotenv
+from src.map_agent.costs import paid_message
+from src.map_agent.run_store import MapStopped
 
 load_dotenv()
 
@@ -94,15 +96,17 @@ Given a user's description of a domain, venture, or program they want mapped, \
 produce a set of web-search tasks that will find relevant entities.
 
 Entity types you can target:
-- actor: organizations (startups, labs, accelerators, institutes, companies)
-- person: key individuals (founders, researchers, directors, speakers)
+- actor: organizations (startups, labs, accelerators, institutes, companies).
+- person: founders, researchers, directors, and other key people. Every person
+          must be tied to a named organization.
 - event: conferences, summits, workshops, demo days
        ** OPT-IN ONLY — see rule 7. **
 
 Rules:
 1. Scope is US only — all queries should target the United States.
-2. Produce 3-5 search tasks — never more. Each one is an expensive web-research \
-run, so make them count: distinct angles, no near-duplicate phrasings.
+2. Produce one to four distinct focused search tasks according to the topic's
+   breadth. Avoid near-duplicate queries. Research organizations first; the
+   backend separately looks for people in selected organizations if needed.
 3. Each query should be a realistic web-search string (what you'd type into Google).
 4. If the user's input mentions specific sub-domains, geographies, or roles, \
 create targeted queries for those.
@@ -113,6 +117,9 @@ create targeted queries for those.
    demo days, or "where does this community meet". A domain that merely happens
    to have conferences is NOT a request for them. When in doubt, leave events
    out; a search task is expensive and unasked-for events waste it.
+8. Do not create a separate `person` task. Use one actor task and collect only
+   key people encountered in the same bounded research. If the user explicitly
+   asks only for people, a person task is allowed instead.
 
 THE REQUEST IS A SPECIFICATION, NOT JUST A TOPIC. Separate the two:
 - The SUBJECT MATTER becomes your search queries.
@@ -236,8 +243,26 @@ def _get_client() -> anthropic.Anthropic:
 _EMPTY_REQS = {"hard_filters": [], "preferences": [], "result_limit": 0}
 
 
+def _bounded_tasks(tasks: list[dict]) -> list[dict]:
+    """Keep distinct, valid search angles within the controlled first-pass scope."""
+    bounded = []
+    seen = set()
+    for task in tasks:
+        if not isinstance(task, dict) or task.get("entity_type") not in ("actor", "person", "event"):
+            continue
+        query = " ".join(str(task.get("query") or "").split())[:400]
+        if not query or query.casefold() in seen:
+            continue
+        seen.add(query.casefold())
+        bounded.append({"entity_type": task["entity_type"], "query": query,
+                        "focus": str(task.get("focus") or "")[:500]})
+        if len(bounded) == 4:
+            break
+    return bounded
+
+
 def plan_search(description: str, doc_text: str | None = None,
-                actor_focus: str = "research") -> tuple[list[dict], dict]:
+                actor_focus: str = "research", run=None) -> tuple[list[dict], dict]:
     """Return (tasks, requirements).
 
     tasks:        [{entity_type, query, focus}, ...] — what to search for.
@@ -250,12 +275,12 @@ def plan_search(description: str, doc_text: str | None = None,
     as a parameter so a caller can still override it programmatically.
     """
     out = plan_conversation(description, doc_text, actor_focus=actor_focus,
-                            allow_questions=False)
+                            allow_questions=False, run=run)
     return out.get("tasks", []), out.get("requirements", dict(_EMPTY_REQS))
 
 
 def map_chat(messages: list[dict], doc_text: str | None = None,
-             actor_focus: str = "research") -> dict:
+             actor_focus: str = "research", run=None) -> dict:
     """One turn of the map-planning conversation.
 
     `messages` is the running exchange as plain {role, content} text turns, so it
@@ -288,10 +313,12 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
                    "what you know; make reasonable assumptions for anything still open.")
 
     try:
-        resp = _get_client().messages.create(
+        resp = paid_message(_get_client(), run, "Planning",
             model=MODEL, max_tokens=MAX_TOKENS, system=system,
             tools=[_SUBMIT_PLAN], messages=msgs, **kwargs,
         )
+    except MapStopped:
+        raise
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
@@ -301,7 +328,7 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
             reqs = block.input.get("requirements") or {}
             return {"status": "plan",
                     "summary": block.input.get("summary", ""),
-                    "tasks": block.input.get("tasks", []),
+                    "tasks": _bounded_tasks(block.input.get("tasks", [])),
                     "requirements": {**_EMPTY_REQS, **reqs}}
         if block.type == "text" and block.text.strip():
             text.append(block.text.strip())
@@ -322,7 +349,7 @@ def _opening_message(description: str, doc_text: str | None) -> str:
 def plan_conversation(description: str, doc_text: str | None = None,
                       history: list[dict] | None = None,
                       actor_focus: str = "research",
-                      allow_questions: bool = True) -> dict:
+                      allow_questions: bool = True, run=None) -> dict:
     """Plan a map, asking the user first if the request is genuinely ambiguous.
 
     A map costs real money and minutes, so it is worth a few cheap turns to get
@@ -350,13 +377,15 @@ def plan_conversation(description: str, doc_text: str | None = None,
         messages = [{"role": "user", "content": _opening_message(description, doc_text)}]
 
     try:
-        resp = _get_client().messages.create(
+        resp = paid_message(_get_client(), run, "Planning",
             model=MODEL, max_tokens=MAX_TOKENS, system=system, tools=tools,
             # Force a tool call: left free, the model answers ambiguous requests
             # with prose, which upstream code silently read as "no plan".
             tool_choice={"type": "any"},
             messages=messages,
         )
+    except MapStopped:
+        raise
     except Exception as e:
         return {"status": "error", "message": str(e), "history": messages}
 
@@ -377,7 +406,7 @@ def plan_conversation(description: str, doc_text: str | None = None,
         if block.name == "submit_plan":
             reqs = block.input.get("requirements") or {}
             return {"status": "plan",
-                    "tasks": block.input.get("tasks", []),
+                    "tasks": _bounded_tasks(block.input.get("tasks", [])),
                     "requirements": {**_EMPTY_REQS, **reqs},
                     "history": messages}
 
@@ -386,7 +415,7 @@ def plan_conversation(description: str, doc_text: str | None = None,
 
 
 def answer_clarification(history: list[dict], answers: str,
-                         actor_focus: str = "research") -> dict:
+                         actor_focus: str = "research", run=None) -> dict:
     """Continue a planning conversation with the user's reply. Same return shape.
 
     After one round of answers the planner must commit, so this call runs with
@@ -395,4 +424,4 @@ def answer_clarification(history: list[dict], answers: str,
     messages = list(history or []) + [
         {"role": "user", "content": f"ANSWERS:\n{answers}\n\nNow produce the plan."}]
     return plan_conversation("", None, history=messages,
-                             actor_focus=actor_focus, allow_questions=False)
+                             actor_focus=actor_focus, allow_questions=False, run=run)

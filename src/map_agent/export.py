@@ -40,7 +40,8 @@ FIELDS = {
         ("funding_summary", "Funding"), ("website", "Website"),
     ],
     "person": [
-        ("full_name", "Name"), ("title", "Title"), ("bio", "Bio"),
+        ("full_name", "Name"), ("organizations", "Organizations"),
+        ("title", "Title"), ("bio", "Bio"),
         ("email", "Email"), ("linkedin_url", "LinkedIn"),
     ],
     "event": [
@@ -66,15 +67,27 @@ def _sources_text(e: dict) -> str:
     return "\n".join(s.get("url", "") for s in (e.get("sources") or []) if s.get("url"))
 
 
+def _field_value(entity: dict, field: str):
+    """Human-readable value for scalar and relationship fields."""
+    value = entity.get(field)
+    if field == "organizations":
+        return "\n".join(
+            f"{x.get('actor_name')}{' — ' + x['title'] if x.get('title') else ''}"
+            for x in (value or []) if x.get("actor_name"))
+    return value
+
+
 def _selected(result: dict) -> dict[str, list]:
     """Selected entities per type, best-first (the pipeline already ordered them)."""
     out = {}
     for key, _ in GROUPS:
         items = (result.get("entities") or {}).get(key) or []
         picked = [e for e in items if e.get("_rank")]
+        selected = [e for e in items if e.get("_selected") is True]
+        has_selection = any("_selected" in e for e in items)
         # If nothing was ranked (a plain topic map with no requirements), the
         # whole list IS the result — export all of it rather than an empty file.
-        out[key] = picked or items
+        out[key] = picked or (selected if has_selection else items)
     return out
 
 
@@ -101,7 +114,7 @@ def to_xlsx(result: dict, request: str = "") -> bytes:
         for r, e in enumerate(rows, start=2):
             ws.cell(row=r, column=1, value=e.get("_rank") or (r - 1))
             for c, (field, _) in enumerate(cols, start=2):
-                ws.cell(row=r, column=c, value=e.get(field))
+                ws.cell(row=r, column=c, value=_field_value(e, field))
             ws.cell(row=r, column=len(cols) + 2, value=e.get("_why"))
             ws.cell(row=r, column=len(cols) + 3, value=_sources_text(e))
 
@@ -207,7 +220,7 @@ def to_pptx(result: dict, request: str = "") -> bytes:
             tf = body.text_frame; tf.word_wrap = True
             first = True
             for field, head in FIELDS[key]:
-                v = e.get(field)
+                v = _field_value(e, field)
                 if not v or field in ("name", "full_name", "website"):
                     continue
                 p = tf.paragraphs[0] if first else tf.add_paragraph()

@@ -14,6 +14,7 @@ import json
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
@@ -37,10 +38,23 @@ from src.map_agent.export import to_pptx, to_xlsx
 from src.map_agent.pipeline import build_map
 from src.map_agent.planner import map_chat
 from src.map_agent.verify import summarize, verify
+from src.map_agent.run_store import RunStore, RunContext, MapStopped
+from src.map_agent.search_backend import availability as research_availability
 from src.retrieve import retrieve
 from src.router import format_sql_answer, plan, run_sql
 
-app = FastAPI(title="UM6P Intelligence API")
+@lru_cache(maxsize=1)
+def map_store():
+    return RunStore()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    map_store().recover()
+    yield
+
+
+app = FastAPI(title="UM6P Intelligence API", lifespan=lifespan)
 FRONTEND = ROOT / "frontend"
 
 
@@ -224,17 +238,55 @@ def browse_events():
 # Phase 2 (verification) is on demand and fast enough to answer inline, and is
 # stateless — the frontend posts back the entities it already holds.
 #
-# Same in-memory posture as _DOC_STORES: nothing is written to Postgres, and the
-# store is capped so the process can't grow unbounded.
-_MAP_JOBS: dict[str, dict] = {}
-_MAP_CAP = 12
+# Maps and usage persist locally, independently of the production actor DB.
 _MAP_POOL = ThreadPoolExecutor(max_workers=2)   # a map is expensive; don't fan out
 
 
-def _evict_maps():
-    while len(_MAP_JOBS) > _MAP_CAP:
-        oldest = min(_MAP_JOBS, key=lambda k: _MAP_JOBS[k]["ts"])
-        _MAP_JOBS.pop(oldest, None)
+def map_record(job_id):
+    try:
+        return map_store().get(job_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown map session.")
+
+
+def public_map(job_id):
+    record = map_record(job_id)
+    return {k: record[k] for k in ("id", "status", "stage", "description", "result", "error",
+                                   "cost", "messages", "plan", "created", "updated")}
+
+
+@app.post("/api/map/session")
+def map_session():
+    return {"job_id": map_store().create()}
+
+
+@app.get("/api/maps")
+def maps_recent():
+    enabled, reason = research_availability()
+    return {"maps": map_store().recent(), "research_available": enabled, "research_disabled_reason": reason}
+
+
+def require_research():
+    enabled, reason = research_availability()
+    if not enabled:
+        raise HTTPException(status_code=503, detail=reason)
+
+
+@app.post("/api/map/upload")
+def map_upload(job_id: str = Form(...), file: UploadFile = File(...)):
+    record = map_record(job_id)
+    if record["status"] not in ("draft", "awaiting_reply"):
+        raise HTTPException(status_code=409, detail="This map cannot accept a new document.")
+    data = file.file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Please use a document smaller than 10 MB.")
+    try:
+        text = extract_text(data, file.filename)
+    except ExtractionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    # Build the Map only needs text; do not buy Ask embeddings for this upload.
+    map_store().update(job_id, doc_text=text[:6000])
+    return {"job_id": job_id, "name": file.filename}
 
 
 class ChatRequest(BaseModel):
@@ -242,6 +294,7 @@ class ChatRequest(BaseModel):
     as plain {role, content} turns; `doc_id` refers to an /api/upload document."""
     messages: list[dict]
     doc_id: str | None = None
+    job_id: str | None = None
 
 
 @app.post("/api/map/chat")
@@ -252,26 +305,51 @@ def map_chat_turn(payload: ChatRequest):
     asking something — show it and send the user's answer back with the thread.
     On "plan" it has decided: the caller starts POST /api/map with that plan.
     """
+    require_research()
     if not payload.messages:
         raise HTTPException(status_code=400, detail="messages is required")
+    description = "\n".join(str(m.get("content", "")) for m in payload.messages if m.get("role") == "user")
+    job_id = payload.job_id or map_store().create(description)
+    record = map_record(job_id)
+    try:
+        map_store().claim(job_id, "planning", "Planning", ("draft", "awaiting_reply"))
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     doc = _DOC_STORES.get(payload.doc_id) if payload.doc_id else None
-    return JSONResponse(jsonable_encoder(
-        map_chat(payload.messages, doc["text"] if doc else None)))
+    text = record["doc_text"] or (doc["text"][:6000] if doc else None)
+    map_store().update(job_id, description=description, messages=payload.messages, doc_text=text)
+    try:
+        result = map_chat(payload.messages, text, run=RunContext(map_store(), job_id))
+        messages = list(payload.messages)
+        if result.get("status") in ("reply", "plan"):
+            messages.append({"role": "assistant", "content": result.get("message") or result.get("summary", "")})
+        fields = {"messages": messages}
+        if result.get("status") == "plan":
+            fields["plan"] = result
+        map_store().update(job_id, **fields)
+        state = {"plan": "ready", "reply": "awaiting_reply"}.get(result.get("status"), "error")
+        map_store().finish(job_id, state, result.get("message") if state == "error" else None)
+    except Exception as exc:
+        map_store().finish(job_id, "error", str(exc))
+        result = {"status": "error", "message": str(exc)}
+    record = map_record(job_id)
+    if record["cancelled"]:
+        result = {"status": "error", "message": record["error"] or "Map stopped."}
+    return {**result, "job_id": job_id, "cost": record["cost"]}
 
 
 def _run_map_job(job_id: str, description: str, doc_text: str | None,
-                 do_enrich: bool, actor_focus: str, plan: dict | None):
+                 do_enrich: bool, actor_focus: str, plan: dict | None, attempt=None):
     """Worker body: run the pipeline, park the result on the job record."""
-    job = _MAP_JOBS.get(job_id)
-    if job is None:
-        return
+    context = RunContext(map_store(), job_id, attempt=attempt)
     try:
-        job["result"] = build_map(description, doc_text, do_enrich=do_enrich,
-                                  actor_focus=actor_focus, plan=plan)
-        job["status"] = "done"
+        context.check()
+        result = build_map(description, doc_text, do_enrich=do_enrich,
+                           actor_focus=actor_focus, plan=plan, run=context)
+        context.checkpoint(result)
+        map_store().finish(job_id, attempt=context.attempt)
     except Exception as exc:
-        job["status"] = "error"
-        job["error"] = str(exc)
+        map_store().finish(job_id, "error", str(exc), attempt=context.attempt)
 
 
 class MapRequest(BaseModel):
@@ -282,6 +360,7 @@ class MapRequest(BaseModel):
     doc_id: str | None = None
     enrich: bool = False
     actor_focus: str = "research"
+    job_id: str | None = None
 
 
 @app.post("/api/map")
@@ -293,6 +372,9 @@ def map_start(payload: MapRequest):
     defaults to "research" (~80/20 toward universities and national labs) and is
     deliberately NOT exposed in the UI.
     """
+    require_research()
+    if payload.enrich:
+        raise HTTPException(status_code=400, detail="Autonomous enrichment is disabled.")
     desc = (payload.description or "").strip()
     if not desc:
         raise HTTPException(status_code=400, detail="description is required")
@@ -300,29 +382,70 @@ def map_start(payload: MapRequest):
     doc = _DOC_STORES.get(payload.doc_id) if payload.doc_id else None
     doc_text = doc["text"] if doc else None
 
-    job_id = uuid4().hex
+    job_id = payload.job_id or map_store().create(desc)
+    record = map_record(job_id)
+    if not (record["plan"] or payload.plan or {}).get("tasks"):
+        raise HTTPException(status_code=400, detail="A search plan is required before research.")
+    try:
+        map_store().claim(job_id, "running", "Preparing research", ("draft", "ready"))
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    doc_text = record["doc_text"] or doc_text
+    approved_plan = record["plan"] or payload.plan
     focus = payload.actor_focus if payload.actor_focus in (
         "both", "companies", "research") else "research"
-    _MAP_JOBS[job_id] = {"status": "running", "result": None, "error": None,
-                         "description": desc, "ts": time.time()}
-    _evict_maps()
+    map_store().update(job_id, description=desc, doc_text=doc_text, plan=approved_plan)
     _MAP_POOL.submit(_run_map_job, job_id, desc, doc_text, payload.enrich,
-                     focus, payload.plan)
+                     focus, approved_plan, map_record(job_id)["attempt"])
     return {"job_id": job_id, "status": "running"}
 
 
 @app.get("/api/map/{job_id}")
 def map_status(job_id: str):
     """Poll a map job. status is running | done | error; result present when done."""
-    job = _MAP_JOBS.get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail="unknown job_id")
-    return JSONResponse(jsonable_encoder({
-        "status": job["status"],
-        "description": job["description"],
-        "result": job["result"],
-        "error": job["error"],
-    }))
+    return public_map(job_id)
+
+
+@app.post("/api/map/{job_id}/stop")
+def map_stop(job_id: str):
+    map_record(job_id)
+    map_store().stop(job_id)
+    return public_map(job_id)
+
+
+class BudgetExtensionRequest(BaseModel):
+    approve: bool = False
+
+
+@app.post("/api/map/{job_id}/budget-extension")
+def map_budget_extension(job_id: str, payload: BudgetExtensionRequest):
+    map_record(job_id)
+    if payload.approve is not True:
+        raise HTTPException(status_code=400, detail="Explicit approval is required to raise the total budget to $3.")
+    try:
+        map_store().approve_extension(job_id)
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return public_map(job_id)
+
+
+@app.post("/api/map/{job_id}/resume")
+def map_resume(job_id: str, payload: BudgetExtensionRequest):
+    require_research()
+    if payload.approve is not True:
+        raise HTTPException(status_code=400, detail="Explicit approval is required to continue paid research.")
+    record = map_record(job_id)
+    try:
+        map_store().resume(job_id)
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    try:
+        _MAP_POOL.submit(_run_map_job, job_id, record["description"], record["doc_text"],
+                         False, "research", record["plan"], map_record(job_id)["attempt"])
+    except Exception:
+        map_store().finish(job_id, "error", "Could not start the worker; no new API request was made.")
+        raise HTTPException(status_code=503, detail="Could not start the worker.")
+    return public_map(job_id)
 
 
 class VerifyRequest(BaseModel):
@@ -332,6 +455,7 @@ class VerifyRequest(BaseModel):
     request: str
     check_links: bool = True
     run_judge: bool = True
+    job_id: str | None = None
 
 
 @app.post("/api/map/verify")
@@ -343,13 +467,34 @@ def map_verify(payload: VerifyRequest):
     """
     if not payload.entities:
         return {"entities": [], "summary": summarize([])}
-    entities = verify(payload.entities, payload.request,
-                      check_links=payload.check_links,
-                      run_judge=payload.run_judge)
-    return JSONResponse(jsonable_encoder({
-        "entities": entities,
-        "summary": summarize(entities),
-    }))
+    if not payload.job_id:
+        raise HTTPException(status_code=400, detail="Open a saved map before verifying so its budget is tracked.")
+    record = map_record(payload.job_id)
+    try:
+        map_store().claim(payload.job_id, "verifying", "Verification", ("done", "error"))
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    context = RunContext(map_store(), payload.job_id)
+    entities = payload.entities
+    error = None
+    try:
+        verify(entities, record["description"], check_links=payload.check_links,
+               run_judge=payload.run_judge, run=context)
+    except Exception as exc:
+        error = str(exc)
+    # Preserve even a partially completed verification batch.
+    saved = map_record(payload.job_id)["result"] or {"entities": {}}
+    for entity in entities:
+        group = saved.setdefault("entities", {}).setdefault(entity.get("_entity_type", "actor"), [])
+        name = entity.get("name") or entity.get("full_name")
+        for index, old in enumerate(group):
+            if (old.get("name") or old.get("full_name")) == name:
+                group[index] = entity
+                break
+    context.checkpoint(saved)
+    map_store().finish(payload.job_id, "error" if error else "done", error)
+    return {"entities": entities, "summary": summarize(entities), "error": error,
+            "cost": map_record(payload.job_id)["cost"]}
 
 
 class ExportRequest(BaseModel):

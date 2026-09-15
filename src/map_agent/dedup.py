@@ -57,6 +57,10 @@ def _merge_pair(existing: dict, new: dict) -> dict:
         old = merged.get(k)
         if not old:
             merged[k] = v
+        elif k in ("sources", "people") and isinstance(old, list) and isinstance(v, list):
+            # Preserve evidence and people found by every search task. A later
+            # normalization pass de-duplicates people and records affiliations.
+            merged[k] = old + v
         elif isinstance(v, str) and isinstance(old, str) and len(v) > len(old):
             merged[k] = v
     return merged

@@ -256,12 +256,219 @@
     font-weight:700;padding:0 6px}
   .why{color:var(--accent-ink);font-size:12.5px;margin-top:8px;padding-left:10px;
     border-left:2px solid var(--accent-soft)}
+  .mpeople{margin-top:11px;border-top:1px solid var(--line);padding-top:9px}
+  .mpeople summary{cursor:pointer;color:var(--teal);font-size:13px;font-weight:600}
+  .mperson{padding:9px 0 6px;display:flex;gap:10px;align-items:flex-start}
+  .mperson+.mperson{border-top:1px solid var(--line)}
+  .mperson-main{min-width:0;flex:1}
+  .mperson-name{font-size:13.5px;font-weight:600}
+  .mperson-meta{font-size:12.5px;color:var(--muted)}
+  .mperson-links{font-size:12px;white-space:nowrap}
   .selnote{color:var(--muted);font-size:13px;margin:0 0 18px;padding:11px 14px;
     background:var(--surface-2);border-radius:var(--radius-sm);line-height:1.5}
   .resthead{margin:26px 0 12px;color:var(--muted);font-size:13px;font-weight:600}
   .thread{display:flex;flex-direction:column;gap:16px;margin:22px 0}
   .mprog{color:var(--muted);font-size:14px;display:flex;align-items:center;gap:10px;
     padding:26px 0}
+  /* Professional workspace: shared layout and interaction language. */
+  :root{color-scheme:light;--bg:#f6f7f9;--surface:#fff;--surface-2:#f9fafb;
+    --ink:#242831;--muted:#647080;--faint:#7b8491;--line:#e5e8ed;--line-strong:#cbd1da;
+    --accent:#d7410b;--accent-2:#ba3508;--accent-ink:#b5360b;--accent-soft:#fff0e9;
+    --teal:#14756d;--teal-soft:#e7f4f1;--violet:#6557ad;--violet-soft:#f0edfa;
+    --slate:#556072;--slate-soft:#edf0f4;--radius:12px;--radius-sm:8px;
+    --shadow-sm:0 1px 3px #18203005;--shadow:0 4px 20px #18203006;
+    --shadow-lg:0 12px 36px #18203012;--serif:var(--sans)}
+  body{background-image:none;font-size:14px}
+  button,a,input,select,textarea{touch-action:manipulation}
+  button{transition:background .16s,border-color .16s,box-shadow .16s}
+  :focus-visible{outline:3px solid #d7410b70;outline-offset:3px}
+  .sidebar{position:fixed;inset:0 auto 0 0;width:236px;background:var(--surface);border-right:1px solid var(--line);padding:30px 20px;display:flex;flex-direction:column;z-index:25}
+  .workspace-brand{padding:0 12px 30px}.brand-name{font-size:29px;font-weight:800;letter-spacing:3px;color:var(--accent)}
+  .brand-caption{font-size:10px;letter-spacing:1.5px;font-weight:650;color:var(--muted);margin-top:3px}
+  .nav-label,.eyebrow{font-size:10px;letter-spacing:1.7px;text-transform:uppercase;font-weight:700;color:var(--muted)}
+  .nav-label{padding:14px 12px}.workspace-nav{display:grid;gap:7px}
+  .nav-item{display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border:1px solid transparent;border-radius:8px;padding:13px 12px;color:var(--muted);font-weight:550;cursor:pointer;font-size:14px}
+  .nav-item:hover{background:var(--surface-2);color:var(--ink)}
+  .nav-item.active{background:var(--accent-soft);color:var(--accent-ink);border-color:#f5d5c7}
+  .nav-symbol{width:21px;height:21px;display:grid;place-items:center;font-size:20px;line-height:1}
+  .sidebar-foot{margin-top:auto;border-top:1px solid var(--line);padding:20px 12px 0;font-size:12px;color:var(--muted)}
+  .sidebar-foot strong{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+  .workspace-main{margin-left:236px;min-width:0}
+  .workspace-header{height:72px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;padding:0 42px;background:var(--surface);gap:15px}
+  .breadcrumb{color:var(--muted);font-size:12px}.breadcrumb span{margin:0 12px;color:#a4acb7}.breadcrumb strong{color:var(--ink);font-weight:550}
+  .workspace-tag{border:1px solid var(--line);padding:5px 10px;border-radius:6px;font-size:11px;color:var(--muted)}
+  .wrap{max-width:1240px;padding:40px 42px 70px;margin:0 auto}
+  .hero-h{font-family:var(--sans);font-size:32px;letter-spacing:-1px;font-weight:650;margin-bottom:12px}
+  .lead{font-size:14px;max-width:720px;line-height:1.8;color:var(--muted)}
+  .welcome{padding:28px 0 24px;text-align:left;max-width:none}.welcome .lead{margin-left:0}
+  .welcome .eyebrow{color:var(--accent-ink);margin-bottom:16px}
+  .prompt-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:30px 0 10px}
+  .prompt-card{position:relative;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 32px 20px 20px;cursor:pointer;color:var(--ink);line-height:1.6;font-size:13px;min-height:130px}
+  .prompt-card:hover{border-color:var(--accent);box-shadow:var(--shadow)}
+  .prompt-card small{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;font-weight:650}
+  .prompt-card .arrow{position:absolute;right:15px;bottom:19px;color:var(--accent)}
+  .card{box-shadow:var(--shadow-sm)}.pad{padding:22px}
+  .composer{border-top:0;background:var(--bg);padding-top:18px}.ask-form{gap:12px}
+  .input-shell textarea{background:var(--surface);min-height:64px;border-radius:10px}
+  .btn{border-radius:8px;font-weight:600;box-shadow:none}.example{border-radius:6px}
+  .subnav{background:transparent;border-bottom:1px solid var(--line);border-radius:0;padding:0;gap:25px;margin:22px 0;display:flex}
+  .subnav button{border-radius:0;background:transparent;padding:12px 2px;border:0;border-bottom:2px solid transparent;color:var(--muted)}
+  .subnav button.active{background:transparent;color:var(--accent-ink);border-bottom-color:var(--accent);box-shadow:none}
+  .filters{gap:16px}.filters input,.filters select{background:var(--surface);min-height:39px;border-radius:6px}
+  table.grid{border-collapse:separate;border-spacing:0;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:13px}
+  table.grid th{background:#f0f2f5;color:#596474;text-transform:uppercase;font-size:10px;letter-spacing:.8px;padding:14px 16px}
+  table.grid td{padding:15px 16px;border-bottom:1px solid var(--line)}
+  table.grid tr:last-child td{border-bottom:0}.count{font-size:12px;margin:22px 0 12px}
+  .mcard{padding:21px;margin-bottom:14px;border-radius:10px;transition:border-color .16s,box-shadow .16s}
+  .mcard:hover{box-shadow:var(--shadow);border-color:var(--line-strong)}
+  .mcard.pick{border-color:#e6b5a2;box-shadow:none;border-left:3px solid var(--accent)}
+  .mcard .mn{font-size:16px}.mpeople{background:var(--surface-2);margin:14px -8px -7px;padding:12px;border-radius:7px}
+  .mbar{padding:15px 0;border-bottom:1px solid var(--line)}.mprog{padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:10px;margin:20px 0}
+  .selnote{border:1px solid var(--line);background:var(--surface);padding:16px;line-height:1.8}
+  details summary{cursor:pointer}details[open]>summary{margin-bottom:10px}
+  .attach-row select{max-width:100%;padding:8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--ink)}
+  .chip{font-size:11px}.bubble.user{background:var(--accent-soft);color:var(--ink)}
+  @media(max-width:1100px){.sidebar{width:200px;padding:26px 14px}.workspace-main{margin-left:200px}.wrap{padding:30px 24px 60px}.workspace-header{padding:0 24px}.prompt-grid{gap:10px}.prompt-card{padding:16px 28px 16px 16px}}
+  @media(max-width:760px){.sidebar{position:static;width:auto;padding:14px 18px;border-right:0;border-bottom:1px solid var(--line)}.workspace-brand{padding:0 0 14px;display:flex;align-items:center;gap:14px}.brand-name{font-size:23px}.brand-caption{font-size:9px}.nav-label,.sidebar-foot{display:none}.workspace-nav{display:flex;gap:6px}.nav-item{flex:1;justify-content:center;padding:10px 6px;font-size:12px;gap:7px}.nav-symbol{font-size:16px}.workspace-main{margin-left:0}.workspace-header{height:50px;padding:0 18px}.workspace-tag{display:none}.wrap{padding:24px 18px 40px}.hero-h{font-size:27px}.welcome{padding-top:10px}.prompt-grid{grid-template-columns:1fr}.prompt-card{min-height:0;padding:14px 35px 14px 16px}.prompt-card small{margin-bottom:5px}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}table.grid{display:block;overflow-x:auto;white-space:nowrap}.metrics,.kv{grid-template-columns:1fr}.ask-form{flex-wrap:wrap}.input-shell{min-width:0;flex-basis:100%}.attach-row{max-width:100%;overflow-wrap:anywhere}.attach-row label{max-width:100%}.pad{padding:16px}}
+  @media(max-width:760px){.composer{position:static}.ask-form>.btn{min-height:44px;width:100%}.nav-item{white-space:nowrap;font-size:11px;gap:5px}}
+  .hub-suggestion{margin:14px 0;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;border-left:3px solid var(--teal)}
+  .hub-suggestion-title{display:flex;align-items:center;flex-wrap:wrap;gap:9px;font-size:12px;font-weight:600;margin-bottom:5px}
+  .hub-suggestion-name{font-weight:600;font-size:14px}.hub-suggestion .hint{font-size:12px;margin:5px 0;justify-content:flex-start}
+  /* Contrast separates navigation, workspace, and research content. */
+  :root{--bg:#eeece8;--line:#dddcd8;--surface-2:#f5f4f1;--shadow:0 5px 18px #2428310d}
+  .sidebar{background:#27292d;border-right-color:#27292d;color:#fff}
+  .brand-name{color:#fff}.brand-caption{color:#bbbcc0}
+  .workspace-brand{border-bottom:1px solid #414348;margin-bottom:16px}
+  .nav-label{color:#a7a9af}.nav-item{color:#d0d1d5}
+  .nav-item:hover{background:#36383d;color:#fff}
+  .nav-item.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .sidebar-foot{border-top-color:#414348;color:#aeb0b7}.sidebar-foot strong{color:#f0f0f2}
+  .workspace-header{background:#f8f7f4;border-bottom-color:#d9d7d2}
+  .workspace-tag{background:#eeece7;border-color:#dedbd4;color:#535b66}
+  .welcome{background:#e8e3db;border:1px solid #dcd4c8;border-top:3px solid var(--accent);border-radius:12px;padding:30px;margin-bottom:24px}
+  .prompt-card{border-color:#d7d2ca;box-shadow:0 2px 4px #30282005}
+  .prompt-card small{color:var(--accent-ink)}
+  .composer{background:var(--surface);padding:20px;border:1px solid #d7d4ce;border-radius:12px;box-shadow:var(--shadow)}
+  .card,.mcard{border-color:#d7d4ce;box-shadow:var(--shadow)}
+  .selnote{background:#f7e9df;border-color:#ead0bf}
+  table.grid th{background:#e3e4e5;color:#454e5b}
+  .subnav{border-bottom-color:#c9c5be}
+  .mgroup{border-bottom-color:#ccc7bf}
+  @media(max-width:760px){.workspace-brand{padding-bottom:14px;margin-bottom:12px}.welcome{padding:20px 16px}.composer{padding:16px}.nav-item{font-size:11px}}
+  /* ============================================================
+     MOTION LAYER — interaction and entrance only.
+     Purely presentational: no layout reflow, no behaviour change.
+     The reduced-motion guard below stays last and overrides all of it.
+     ============================================================ */
+  :root{
+    --ease:cubic-bezier(.22,.61,.36,1);      /* settles, doesn't bounce */
+    --ease-out:cubic-bezier(.16,1,.3,1);     /* long, confident decel */
+    --t-fast:.15s; --t-mid:.28s; --t-slow:.5s;
+  }
+
+  /* --- entrance: content arrives rather than appears --- */
+  /* Entrance animates TRANSFORM ONLY — never opacity. An animation that is
+     paused, deferred, or never started (hidden tab, throttled compositing)
+     holds its from-state; if that state were opacity:0 the page would render
+     blank. Worst case here is simply "no movement". */
+  @keyframes rise{from{transform:translateY(10px)}to{transform:none}}
+  @keyframes slide{from{transform:translateY(9px)}to{transform:none}}
+  @keyframes sheen{from{background-position:200% 0}to{background-position:-200% 0}}
+  @keyframes pulse-ring{0%{box-shadow:0 0 0 0 var(--accent-soft)}
+    70%{box-shadow:0 0 0 10px transparent}100%{box-shadow:0 0 0 0 transparent}}
+
+  /* NO fill-mode and no delay on anything that fades: an element's resting
+     state must be VISIBLE. With `both`, a run that never starts (hidden tab,
+     paused compositing) leaves content stuck at opacity 0 — a blank page.
+     Motion is enhancement only; the stagger is carried by transform, which is
+     safe to delay because its worst case is simply "no movement". */
+  .welcome,.filters,.mprog,.selnote,.hero-h,.lead{animation:rise var(--t-mid) var(--ease-out)}
+  .lead{animation-duration:var(--t-slow)}
+
+  /* staggered so a grid or a result list cascades in */
+  .prompt-card,.mgroup,.mcard,.msg{animation:slide .45s var(--ease-out)}
+  .prompt-card:nth-child(2),.mcard:nth-child(2){animation-delay:.06s}
+  .prompt-card:nth-child(3),.mcard:nth-child(3){animation-delay:.12s}
+  .mcard:nth-child(4){animation-delay:.18s}
+  .mcard:nth-child(5){animation-delay:.24s}
+  .mcard:nth-child(n+6){animation-delay:.3s}
+
+  /* --- sidebar: active state grows a rail, hover nudges --- */
+  .nav-item{position:relative;transition:background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease),transform var(--t-fast) var(--ease)}
+  .nav-item::before{content:"";position:absolute;left:0;top:50%;width:3px;height:0;
+    background:var(--accent);border-radius:0 3px 3px 0;transform:translateY(-50%);
+    transition:height var(--t-mid) var(--ease-out)}
+  .nav-item:hover{transform:translateX(3px)}
+  .nav-item.active::before{height:62%}
+  .nav-symbol{transition:transform var(--t-mid) var(--ease-out)}
+  .nav-item:hover .nav-symbol{transform:scale(1.14)}
+
+  /* --- prompt cards: lift, warm border, arrow travels --- */
+  .prompt-card{transition:transform var(--t-mid) var(--ease),
+    box-shadow var(--t-mid) var(--ease),border-color var(--t-fast) var(--ease)}
+  .prompt-card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg)}
+  .prompt-card .arrow{transition:transform var(--t-mid) var(--ease-out),
+    opacity var(--t-fast) var(--ease);opacity:.55}
+  .prompt-card:hover .arrow{transform:translate(3px,-3px);opacity:1}
+  .prompt-card:active{transform:translateY(-1px)}
+
+  /* --- buttons: press feedback, primary lifts --- */
+  .btn{transition:transform var(--t-fast) var(--ease),
+    box-shadow var(--t-mid) var(--ease),filter var(--t-fast) var(--ease)}
+  .btn:hover:not(:disabled){transform:translateY(-1px);
+    box-shadow:0 6px 18px -6px var(--accent)}
+  .btn:active:not(:disabled){transform:translateY(1px);box-shadow:none}
+  .example,.tc,.chip{transition:transform var(--t-fast) var(--ease),
+    border-color var(--t-fast) var(--ease),background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease)}
+  .example:hover,.tc:hover{transform:translateY(-2px)}
+  .example:active,.tc:active{transform:translateY(0)}
+
+  /* --- result cards: lift and warm the accent rail --- */
+  .mcard{transition:transform var(--t-mid) var(--ease),
+    box-shadow var(--t-mid) var(--ease),border-color var(--t-fast) var(--ease)}
+  .mcard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+  .mcard.pick{transition:border-left-width var(--t-mid) var(--ease-out),
+    transform var(--t-mid) var(--ease),box-shadow var(--t-mid) var(--ease)}
+  .mcard.pick:hover{border-left-width:5px}
+  .rank{transition:transform var(--t-mid) var(--ease-out)}
+  .mcard:hover .rank{transform:scale(1.1) rotate(-4deg)}
+
+  /* --- subnav: the underline grows from the centre --- */
+  .subnav button{position:relative;transition:color var(--t-fast) var(--ease)}
+  .subnav button::after{content:"";position:absolute;left:50%;right:50%;bottom:-1px;
+    height:2px;background:var(--accent);transition:left var(--t-mid) var(--ease-out),
+    right var(--t-mid) var(--ease-out)}
+  .subnav button:hover::after{left:20%;right:20%}
+  .subnav button.active::after{left:0;right:0}
+
+  /* --- inputs: focus blooms --- */
+  .input-shell textarea,.filters input,.filters select,.attach-row select{
+    transition:border-color var(--t-fast) var(--ease),
+      box-shadow var(--t-mid) var(--ease),background var(--t-fast) var(--ease)}
+  .input-shell textarea:focus{box-shadow:0 0 0 4px var(--accent-soft)}
+  .in-icon{transition:color var(--t-mid) var(--ease),transform var(--t-mid) var(--ease)}
+  .input-shell:focus-within .in-icon{color:var(--accent);transform:scale(1.08)}
+
+  /* --- table rows --- */
+  table.grid tbody tr{transition:background var(--t-fast) var(--ease),
+    box-shadow var(--t-fast) var(--ease)}
+
+  /* --- working state: a long map run should feel alive --- */
+  .mprog{position:relative;overflow:hidden}
+  .mprog::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(100deg,transparent 35%,var(--accent-soft) 50%,transparent 65%);
+    background-size:200% 100%;opacity:.55;animation:sheen 2.6s linear infinite}
+  .spin{animation:sp .7s linear infinite}
+  .btn:disabled .spin{animation:sp .55s linear infinite}
+
+  /* --- disclosure + links --- */
+  details summary{transition:color var(--t-fast) var(--ease)}
+  details summary:hover{color:var(--accent-ink)}
+  .msrc a{transition:border-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
+
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
 <script type="importmap">
 { "imports": {
@@ -367,13 +574,15 @@ function Ask(){
   <div>
     ${empty
       ? html`<div class="welcome">
-          <h1 class="hero-h">Ask the map.</h1>
+          <div class="eyebrow">Your research workspace</div>
+          <h1 class="hero-h">Turn information into insight.</h1>
           <p class="lead">Ask anything about the actors, hubs, and events we track across
             US innovation ecosystems. Every answer is grounded in the database with cited sources.</p>
-          <div class="hint">Try
-            ${examples.map((x,i)=>html`<button key=${i} class="example" type="button"
-              onClick=${()=>{setQ(x);ask(x);}}>${x}</button>`)}
+          <div class="prompt-grid">
+            ${examples.map((x,i)=>html`<button key=${i} class="prompt-card" type="button"
+              onClick=${()=>{setQ(x);}}><small>${["Discover expertise","Explore technology","Connect ecosystems"][i]}</small>${x}<span class="arrow" aria-hidden="true">↗</span></button>`)}
           </div>
+          <div class="hint">Choose a starting question, then select Ask to run it.</div>
         </div>`
       : html`
         <div class="conv-head"><span class="chip accent">💬 Conversation</span>
@@ -658,6 +867,10 @@ function Loading(){ return html`<div class="empty"><span class="spin"></span> Lo
 /* ------------------------------------------------------ Build the Map */
 const MGROUPS=[["actor","Organizations","accent"],["person","People","teal"],
                ["event","Events","violet"]];
+// People remain normalized in the payload for verification and export, but
+// the result view displays them under their organizations rather than as a
+// disconnected top-level section.
+const MDISPLAY_GROUPS=MGROUPS.filter(([k])=>k!=="person");
 const MFIELDS={
   actor:[["actor_type","Type"],["location_city","City"],["state","State"],
          ["primary_technical_focus","Focus"],
@@ -671,20 +884,73 @@ const MFIELDS={
 const ename=(e)=>e.full_name||e.name||"—";
 
 /* one result card: fields, sources (struck through when dead), judge verdict */
-function MapCard({e,request,onUpdate}){
+/* Existing-hub suggestions are read-only and never trigger research or DB writes.
+   Primary city is not a regional boundary: ambiguous and regional matches need review. */
+function hubLocationKey(value){
+  return String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+}
+function hubCountryKey(value){
+  const key=hubLocationKey(value);
+  return ["us","usa","u s","u s a","united states","united states of america"].includes(key)?"us":key;
+}
+function hubStateKey(value){
+  const names="Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|District of Columbia|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming".split("|");
+  const codes="AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ");
+  const key=hubLocationKey(value), index=names.findIndex(name=>hubLocationKey(name)===key);
+  return index<0?key:codes[index].toLowerCase();
+}
+function suggestExistingHub(actor,hubs){
+  const city=hubLocationKey(actor.city), country=hubCountryKey(actor.country), state=hubStateKey(actor.state);
+  if(!city||!country||(country==="us"&&!state))return {matches:[],reason:"Location is incomplete. Review the actor’s city, state, and country."};
+  const matches=hubs.filter(h=>{
+    if(!h.hub_id||!h.name||hubLocationKey(h.primary_city)!==city||hubCountryKey(h.country)!==country)return false;
+    const hubState=hubStateKey(h.state);
+    return country==="us"?hubState===state:(!state||!hubState||state===hubState);
+  });
+  return {matches,reason:matches.length===1?"City, state, and country match the hub’s recorded location. Membership still needs review.":matches.length>1?"Several existing hubs share this location. Review which ecosystem is relevant.":"No exact location match. The actor may belong to a broader regional hub; review is needed."};
+}
+let existingHubCatalog=null;
+function loadExistingHubCatalog(){
+  if(!existingHubCatalog)existingHubCatalog=fetch("/api/browse/hubs").then(r=>{
+    if(!r.ok)throw new Error("Hub directory unavailable");return r.json();
+  }).then(d=>{if(!Array.isArray(d.hubs))throw new Error("Invalid hub directory");return d.hubs;}).catch(error=>{existingHubCatalog=null;throw error;});
+  return existingHubCatalog;
+}
+function HubSuggestion({actor}){
+  const [hubs,setHubs]=useState(null),[error,setError]=useState(false),[attempt,setAttempt]=useState(0);
+  useEffect(()=>{let active=true;setError(false);loadExistingHubCatalog().then(data=>{if(active)setHubs(data);}).catch(()=>{if(active)setError(true);});return()=>{active=false;};},[attempt]);
+  const suggestion=hubs?suggestExistingHub(actor,hubs):null;
+  return html`<div class="hub-suggestion">
+    <div class="hub-suggestion-title">Ecosystem hub <span class="chip slate">${error?"Unavailable":!suggestion?"Checking directory":suggestion.matches.length===1?"Existing hub · suggested":"Needs review"}</span></div>
+    ${error?html`<div class="hint">Could not load existing hubs. <button class="example" onClick=${()=>setAttempt(x=>x+1)}>Retry</button></div>`:suggestion?html`
+      ${suggestion.matches.map(h=>html`<div key=${h.hub_id} class="hub-suggestion-name">${h.name}</div>`)}
+      <div class="hint">${suggestion.reason}</div>
+      ${suggestion.matches.length>0&&html`<details class="msrc"><summary>Match details</summary>
+        ${suggestion.matches.map(h=>html`<div key=${h.hub_id}>${h.name}: ${[h.primary_city,h.state,h.country].filter(Boolean).join(", ")}${h.primary_sectors?" · Topics: "+h.primary_sectors:""}</div>`)}
+        <div class="hint">Suggestion only. No database link has been created.</div>
+      </details>`}`:html`<div class="hint">Matching against existing hub locations. No web research.</div>`}
+  </div>`;
+}
+function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
   const [busy,setBusy]=useState(false);
   const j=e._judge||null, lc=e._link_check||null;
 
   async function verify(){
+    if(disabled||busy) return;
+    if(onBusy) onBusy(true);
     setBusy(true);
     try{
       const r=await fetch("/api/map/verify",{method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({entities:[e],request})});
+        body:JSON.stringify({entities:[e],request,job_id:jobId})});
       const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Verification failed.");
+      if(d.cost&&onCost) onCost(d.cost);
+      if(d.error&&onError) onError(d.error);
       if(d.entities&&d.entities[0]) onUpdate(d.entities[0]);
-    }catch(err){ /* leave the card as-is on failure */ }
+    }catch(err){ if(onError) onError(err.message); }
     setBusy(false);
+    if(onBusy) onBusy(false);
   }
 
   const badge = j && j.relevance_score!=null
@@ -702,12 +968,13 @@ function MapCard({e,request,onUpdate}){
       ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
       ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
       <span style=${{marginLeft:"auto"}}>
-        <button class="example" type="button" disabled=${busy} onClick=${verify}>
+        <button class="example" type="button" disabled=${busy||disabled} onClick=${verify}>
           ${busy?html`<span class="spin"></span>`:(j?"Re-verify":"Verify")}</button>
       </span>
     </div>
     ${e.description&&html`<div class="mdesc">${e.description}</div>`}
     ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
+    ${e._entity_type==="actor"&&html`<${HubSuggestion} actor=${e}/>`}
     <div class="mrow">
       ${(MFIELDS[e._entity_type]||[]).filter(([k])=>e[k]).map(([k,label])=>
         html`<span key=${k}>${label}: <b>${e[k]}</b></span>`)}
@@ -729,12 +996,38 @@ function MapCard({e,request,onUpdate}){
           ${s.supports&&html`<span class="dash"> — ${s.supports}</span>`}</div>`;
       })}
     </details>`}
+    ${e._entity_type==="actor"&&(e.people||[]).length>0&&html`
+      <details class="mpeople">
+        <summary>${e.people.length} key ${e.people.length===1?"person":"people"}</summary>
+        ${e.people.map((p,i)=>html`<div class="mperson" key=${(p.full_name||"")+i}>
+          <div class="mperson-main">
+            <div class="mperson-name">${p.full_name}</div>
+            ${p.title&&html`<div class="mperson-meta">${p.title}</div>`}
+            ${p.bio&&html`<div class="mperson-meta">${p.bio}</div>`}
+          </div>
+          ${(p.linkedin_url||p.email)&&html`<div class="mperson-links">
+            ${p.linkedin_url&&html`<a href=${p.linkedin_url} target="_blank"
+              rel="noopener noreferrer">LinkedIn</a>`}
+            ${p.linkedin_url&&p.email?" · ":""}
+            ${p.email&&html`<a href=${"mailto:"+p.email}>Email</a>`}
+          </div>`}
+        </div>`)}
+      </details>`}
     ${e._why&&html`<div class="why">${e._why}</div>`}
     ${j&&j.reason&&html`<div class="mnote">${j.reason}</div>`}
   </div>`;
 }
 
 function BuildMap(){
+  const [jobId,setJobId]=useState(null);
+  const [cost,setCost]=useState(null);
+  const [recent,setRecent]=useState([]);
+  const [researchAvailable,setResearchAvailable]=useState(false);
+  const [researchReason,setResearchReason]=useState("Live research is disabled until a controlled test is approved.");
+  const [runStatus,setRunStatus]=useState("draft");
+  const activeJob=useRef(null);
+  const stopped=useRef(false);
+  const generation=useRef(0);
   const [desc,setDesc]=useState("");
   const [busy,setBusy]=useState(false);
   const [phase,setPhase]=useState("");        // progress text while polling
@@ -757,6 +1050,86 @@ function BuildMap(){
 
   useEffect(()=>()=>clearTimeout(pollRef.current),[]);   // stop polling on unmount
 
+  useEffect(()=>{
+    refreshRecent();
+    let saved=null;
+    try{saved=localStorage.getItem("um6p.mapJobId");}catch(e){}
+    if(saved) restore(saved);
+  },[]);
+
+  function remember(id){
+    activeJob.current=id; setJobId(id);
+    try{if(id) localStorage.setItem("um6p.mapJobId",id);
+        else localStorage.removeItem("um6p.mapJobId");}catch(e){}
+  }
+
+  async function refreshRecent(){
+    try{const r=await fetch("/api/maps");
+      if(r.ok){const d=await r.json();setRecent(d.maps||[]);setResearchAvailable(d.research_available===true);
+        setResearchReason(d.research_disabled_reason||"Live research is disabled.");}
+    }catch(e){}
+  }
+
+  async function restore(id){
+    const version=++generation.current;
+    clearTimeout(pollRef.current); stopped.current=false;
+    try{
+      const r=await fetch("/api/map/"+id);
+      const d=await r.json();
+      if(version!==generation.current) return;
+      if(!r.ok) throw new Error(d.detail||"Could not load the saved map.");
+      remember(id); setMsgs(d.messages||[]); setRequest(d.description||"");
+      setDesc(""); setFile(null); setDocId(null); setSummary(null);
+      setRes(d.result); setCost(d.cost); setErr(d.error); setRunStatus(d.status);
+      const running=["running","planning","verifying"].includes(d.status);
+      setBusy(running); setPhase(running?d.stage:"");
+      if(running||d.cost.calls.some(c=>c.status==="pending")) poll(id);
+    }catch(e){if(version===generation.current){setErr(e.message);setBusy(false);}}
+  }
+
+  async function stop(){
+    if(!activeJob.current) return;
+    stopped.current=true;
+    try{
+      const r=await post("/api/map/"+activeJob.current+"/stop",{});
+      if(!r.ok) throw new Error("Could not stop the map. Its state has not been confirmed.");
+      const d=await r.json();
+      setCost(d.cost); setRes(d.result); setRunStatus(d.status);
+      setErr("Stopped. Saved results remain available. A request already sent may still be charged.");
+      setBusy(false); setPhase("");
+      clearTimeout(pollRef.current);
+      if(d.cost.calls.some(c=>c.status==="pending")) poll(activeJob.current);
+      refreshRecent();
+    }catch(e){setErr(e.message);}
+  }
+
+  async function extendBudget(){
+    if(!activeJob.current||busy||verifying||!cost?.can_extend) return;
+    const id=activeJob.current, version=generation.current;
+    try{
+      const r=await post("/api/map/"+id+"/budget-extension",{approve:true});
+      const d=await r.json();
+      if(version!==generation.current||id!==activeJob.current) return;
+      if(!r.ok) throw new Error(d.detail||"Could not confirm the budget extension.");
+      setCost(d.cost);
+    }catch(e){if(version===generation.current&&id===activeJob.current)setErr(e.message);}
+  }
+
+  async function continueResearch(){
+    if(!activeJob.current||busy||verifying||!researchAvailable||(!cost?.can_resume&&runStatus!=="ready")) return;
+    const id=activeJob.current, version=generation.current;
+    setBusy(true);setErr(null);stopped.current=false;
+    try{
+      const r=await post(runStatus==="ready"?"/api/map":"/api/map/"+id+"/resume",
+        runStatus==="ready"?{job_id:id,description:request}:{approve:true});
+      const d=await r.json();
+      if(version!==generation.current||id!==activeJob.current||stopped.current) return;
+      if(!r.ok) throw new Error(d.detail||"Could not continue research.");
+      if(d.cost)setCost(d.cost);
+      setRunStatus("running");setPhase("Continuing saved research");poll(id);
+    }catch(e){if(version===generation.current&&id===activeJob.current){setErr(e.message);setBusy(false);}}
+  }
+
   const examples=["Energy optimization research centers",
                   "Controlled environment agriculture in the US",
                   "Green hydrogen labs and pilot projects"];
@@ -768,25 +1141,41 @@ function BuildMap(){
      or decides it has enough and starts building — it never asks permission. */
   async function send(){
     const text=desc.trim();
-    if(!text||busy) return;
+    if(!text||busy||!researchAvailable) return;
+    if(!["draft","awaiting_reply"].includes(runStatus)){
+      setErr("Start a new map for another request. This map remains saved.");return;
+    }
+    const version=generation.current;
+    stopped.current=false;
     const thread=[...msgs,{role:"user",content:text}];
     setMsgs(thread); setDesc(""); setBusy(true); setErr(null);
     setPhase("Thinking…");
     try{
+      let mapId=activeJob.current;
+      if(!mapId){
+        const session=await post("/api/map/session",{});
+        if(!session.ok) throw new Error("Could not create a saved map session.");
+        mapId=(await session.json()).job_id; remember(mapId);
+      }
       let id=docId;
       if(file&&!id){                       // upload once, then refer to it by id
-        const fd=new FormData(); fd.append("file",file);
-        const up=await fetch("/api/upload",{method:"POST",body:fd});
+        const fd=new FormData(); fd.append("file",file); fd.append("job_id",mapId);
+        const up=await fetch("/api/map/upload",{method:"POST",body:fd});
         if(!up.ok) throw new Error((await up.json()).detail||"Could not read the document.");
-        id=(await up.json()).doc_id; setDocId(id);
+        id=mapId; setDocId(id);
       }
-      const r=await post("/api/map/chat",{messages:thread,doc_id:id});
+      if(stopped.current||version!==generation.current) return;
+      setRunStatus("planning"); poll(mapId);
+      const r=await post("/api/map/chat",{messages:thread,job_id:mapId});
       if(!r.ok) throw new Error((await r.json()).detail||"Could not reach the planner.");
       const d=await r.json();
+      if(stopped.current||version!==generation.current) return;
+      clearTimeout(pollRef.current); setCost(d.cost); refreshRecent();
 
       if(d.status==="reply"){
         setMsgs([...thread,{role:"assistant",content:d.message}]);
         setBusy(false); setPhase("");
+        setRunStatus("awaiting_reply");
         return;
       }
       if(d.status==="plan"){
@@ -794,18 +1183,22 @@ function BuildMap(){
         setMsgs([...thread,{role:"assistant",content:d.summary}]);
         setRequest(thread.filter(m=>m.role==="user").map(m=>m.content).join("\n"));
         setPhase("Searching the web… this takes a few minutes.");
+        setRunStatus("running");
         const rr=await post("/api/map",{
           description:thread.filter(m=>m.role==="user").map(m=>m.content).join("\n"),
-          doc_id:id, plan:{tasks:d.tasks,requirements:d.requirements}});
+          job_id:mapId, plan:{tasks:d.tasks,requirements:d.requirements}});
         if(!rr.ok) throw new Error((await rr.json()).detail||"Could not start the map.");
         poll((await rr.json()).job_id);
         return;
       }
       throw new Error(d.message||"The planner could not continue.");
-    }catch(e){ setErr(e.message); setBusy(false); setPhase(""); }
+    }catch(e){ if(version===generation.current){setErr(e.message); setBusy(false); setPhase("");
+      if(activeJob.current) poll(activeJob.current);}}
   }
 
   function reset(){
+    if(busy||verifying) return;
+    generation.current++; remember(null); setCost(null); setRunStatus("draft");
     clearTimeout(pollRef.current);
     setMsgs([]); setDesc(""); setRes(null); setSummary(null); setErr(null);
     setFile(null); setDocId(null); setBusy(false); setPhase("");
@@ -813,18 +1206,33 @@ function BuildMap(){
   }
 
   function poll(jobId){
+    clearTimeout(pollRef.current);
+    const version=generation.current;
     pollRef.current=setTimeout(async()=>{
       try{
-        const d=await fetch("/api/map/"+jobId).then(r=>r.json());
-        if(d.status==="running"){ poll(jobId); return; }
-        if(d.status==="error"){ setErr(d.error||"The map failed."); }
-        else { setRes(d.result); }
-      }catch(e){ setErr("Lost contact with the server."); }
+        const r=await fetch("/api/map/"+jobId);
+        if(!r.ok) throw new Error("Could not read the saved map.");
+        const d=await r.json();
+        if(version!==generation.current||activeJob.current!==jobId) return;
+        setCost(d.cost); setRunStatus(d.status);
+        if(d.result) setRes(d.result);
+        if(["running","planning","verifying"].includes(d.status)){
+          setPhase(d.stage); poll(jobId); return;
+        }
+        if(d.error) setErr(d.error);
+        if(d.status==="awaiting_reply") setMsgs(d.messages||[]);
+        if(d.cost.calls.some(c=>c.status==="pending")) poll(jobId);
+        refreshRecent();
+      }catch(e){
+        if(version!==generation.current||activeJob.current!==jobId) return;
+        setErr("Lost contact with the server. Progress already saved can be reopened after restart.");
+      }
       setBusy(false); setPhase("");
     },3000);
   }
 
   const all=()=>MGROUPS.flatMap(([k])=>(res&&res.entities&&res.entities[k])||[]);
+  const displayAll=()=>MDISPLAY_GROUPS.flatMap(([k])=>(res&&res.entities&&res.entities[k])||[]);
 
   const [exporting,setExporting]=useState("");
 
@@ -848,18 +1256,23 @@ function BuildMap(){
     const items=all();
     if(!items.length||verifying) return;
     setVerifying(true);
+    poll(jobId);
     try{
       const r=await fetch("/api/map/verify",{method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({entities:items,request})});
+        body:JSON.stringify({entities:items,request,job_id:jobId})});
       const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Verification failed.");
+      if(d.cost) setCost(d.cost);
+      if(d.error) setErr(d.error);
       const byKey={}; (d.entities||[]).forEach(x=>{byKey[x._entity_type+"|"+ename(x)]=x;});
       const next={}; MGROUPS.forEach(([k])=>{
         next[k]=((res.entities&&res.entities[k])||[]).map(x=>byKey[k+"|"+ename(x)]||x);
       });
       setRes({...res,entities:next}); setSummary(d.summary);
-    }catch(e){ setErr("Verification failed."); }
+    }catch(e){ setErr(e.message); }
     setVerifying(false);
+    poll(jobId);
   }
 
   function updateOne(updated){
@@ -876,6 +1289,40 @@ function BuildMap(){
     <p class="lead">Describe a domain, venture, or program. An agent searches the web for
       the US universities, labs, and research centers working on it — plus the people and
       events around them — then you can verify what it found.</p>
+
+    ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
+    <p class="hint">New maps have a $2 total budget, including planning and verification.
+      An extra $1 requires your approval. Existing saved budgets are unchanged.</p>
+    ${recent.length>0&&html`<div class="attach-row">
+      <label>Saved maps <select disabled=${busy||verifying} value=${jobId||""}
+        onChange=${e=>{if(e.target.value)restore(e.target.value);}}>
+        <option value="">Choose a map…</option>
+        ${recent.map(m=>html`<option value=${m.id} key=${m.id}>
+          ${(m.description||"Untitled map").slice(0,65)} — ${m.status}</option>`)}
+      </select></label>
+    </div>`}
+    ${cost&&html`<div class="selnote" aria-live="polite">
+      Estimated usage: $${cost.estimated_usd.toFixed(3)} / $${cost.budget_usd.toFixed(2)} budget.
+      ${cost.reserved_usd>0?" $"+cost.reserved_usd.toFixed(3)+" reserved or awaiting usage.":""}
+      ${!cost.usage_complete?" Some charges are unknown; further calls are blocked.":""}
+      ${cost.can_extend&&html`<div>
+        <button class="example" type="button" disabled=${busy||verifying} onClick=${extendBudget}>
+          Approve extra $1 — $3 total budget
+        </button>
+        <span class="hint">Approval only; this does not start or resume research.</span>
+      </div>`}
+      ${cost.budget_usd===3&&html`<div class="hint">$3 total budget approved. Research only continues when you explicitly start it.</div>`}
+      ${(cost.can_resume||runStatus==="ready")&&html`<div>
+        <button class="example" type="button" disabled=${busy||verifying||!researchAvailable} onClick=${continueResearch}>
+          ${runStatus==="ready"?"Start saved plan":"Continue unfinished research"} — uses remaining budget
+        </button>
+        <span class="hint">Reuses saved work; the total budget does not reset.</span>
+      </div>`}
+      <details><summary>Cost by stage</summary>
+        ${Object.entries(cost.by_stage).map(([stage,value])=>html`<div key=${stage}>${stage}: $${value.toFixed(4)}</div>`)}
+        <div class="hint">Estimates use provider-reported usage and configured prices; they are not a billing guarantee.</div>
+      </details>
+    </div>`}
 
     <div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>
       ${file
@@ -908,7 +1355,7 @@ function BuildMap(){
           value=${desc} onInput=${e=>setDesc(e.target.value)}
           onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}></textarea>
       </div>
-      <button class="btn" disabled=${busy}>${busy?html`<span class="spin"></span>`:"Send"}</button>
+      <button class="btn" disabled=${busy||!researchAvailable||!["draft","awaiting_reply"].includes(runStatus)}>${busy?html`<span class="spin"></span>`:"Send"}</button>
     </form>
 
     ${!msgs.length&&!busy&&!err&&html`<div class="attach-row">
@@ -916,26 +1363,32 @@ function BuildMap(){
         onClick=${()=>setDesc(x)}>${x}</button>`)}
     </div>`}
 
-    ${(msgs.length>0||res)&&!busy&&html`<div class="attach-row">
+    ${(msgs.length>0||res||jobId)&&!busy&&!verifying&&html`<div class="attach-row">
       <button class="example" type="button" onClick=${reset}>+ New map</button>
     </div>`}
 
     ${busy&&html`<div class="mprog"><span class="spin"></span> ${phase}</div>`}
+    ${(busy||verifying)&&jobId&&html`<button class="example" type="button" onClick=${stop}>Stop</button>`}
     ${err&&html`<div class="mprog" style=${{color:"var(--violet)"}}>${err}</div>`}
 
     ${res&&html`<div style=${{marginTop:"26px"}}>
+      ${res.coverage_note&&html`<div class="selnote">${res.partial?"Research is unfinished. ":""}${res.coverage_note}</div>`}
+      ${(res.coverage_gaps||[]).length>0&&html`<details class="selnote" open=${!!res.partial}>
+        <summary>Coverage gaps and remaining work (${res.coverage_gaps.length})</summary>
+        <ul>${res.coverage_gaps.map((gap,i)=>html`<li key=${i}>${gap}</li>`)}</ul>
+      </details>`}
       ${(res.failures||[]).length>0&&html`<div class="selnote"
         style=${{color:"var(--violet)"}}>
         ${res.failures.length} of the searches failed, so this map may be incomplete.
-        Worth re-running.</div>`}
+        Any collected results are saved.</div>`}
       ${total===0
         ? html`<div class="mprog">${(res.failures||[]).length>0
-            ? "The searches failed — nothing was returned. Try again in a moment."
+            ? "The searches failed. Check the saved status and cost before starting another map."
             : "No entities found for that description. Try being more specific, or naming the technology and geography."}</div>`
         : html`
           <div class="mbar">
             <span class="chip slate">${total} found</span>
-            <button class="example" type="button" disabled=${verifying} onClick=${verifyAll}>
+            <button class="example" type="button" disabled=${verifying||busy||!["done","error"].includes(runStatus)} onClick=${verifyAll}>
               ${verifying?html`<span class="spin"></span> Verifying…`:"Verify all"}</button>
             <button class="example" type="button" disabled=${!!exporting}
               onClick=${()=>download("xlsx")}>
@@ -953,8 +1406,8 @@ function BuildMap(){
           ${(()=>{
             // When the request carried requirements, the pipeline marks matches
             // with _rank. Show those first, then the rest under a divider.
-            const picked=all().some(e=>e._rank);
-            const section=(want)=>MGROUPS.map(([k,label,tone])=>{
+            const picked=displayAll().some(e=>e._rank);
+            const section=(want)=>MDISPLAY_GROUPS.map(([k,label,tone])=>{
               const items=((res.entities&&res.entities[k])||[])
                 .filter(e=>picked?(want?!!e._rank:!e._rank):true);
               if(!items.length) return null;
@@ -962,11 +1415,13 @@ function BuildMap(){
                 <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
                   <span class="n">${items.length}</span></div>
                 ${items.map((e,i)=>html`<${MapCard} key=${k+i} e=${e} request=${request}
-                  onUpdate=${updateOne}/>`)}
+                  jobId=${jobId} onCost=${setCost} onError=${setErr}
+                  onBusy=${v=>{setVerifying(v);poll(jobId);}}
+                  disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}/>`)}
               </div>`;
             });
             if(!picked) return section(true);
-            const rest=all().filter(e=>!e._rank).length;
+            const rest=displayAll().filter(e=>!e._rank).length;
             return html`${section(true)}
               ${rest>0&&html`<details>
                 <summary class="resthead">Also found — ${rest} not matching your
@@ -988,6 +1443,9 @@ function Browse(){
   const [k,setK]=useState("actors");
   const V={actors:Actors,hubs:Hubs,events:Events}[k];
   return html`<div>
+    <div class="eyebrow">Ecosystem directory</div>
+    <h1 class="hero-h">Explore the knowledge base.</h1>
+    <p class="lead">Browse organizations, ecosystem hubs, and events. Use filters to find what matters to your research.</p>
     <div class="subnav">
       ${["actors","hubs","events"].map(x=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${x[0].toUpperCase()+x.slice(1)}</button>`)}
@@ -999,18 +1457,26 @@ const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stro
   stroke-linecap="round"/></svg>`;
 function App(){
   const [tab,setTab]=useState("ask");
+  // Keep every page mounted when switching tabs. BuildMap owns the active job
+  // poll and its result state, so unmounting it makes a running map appear to
+  // stop even though the backend worker continues.
   return html`
-  <div class="topbar"><div class="topbar-in">
-    <div class="brand">${LOGO}
-      <div class="wordmark">UM6P Intelligence<span class="dot">.</span></div></div>
-    <div class="tabs">
-      <button class=${"tab"+(tab==="ask"?" active":"")} onClick=${()=>setTab("ask")}>Ask</button>
-      <button class=${"tab"+(tab==="browse"?" active":"")} onClick=${()=>setTab("browse")}>Browse</button>
-      <button class=${"tab"+(tab==="map"?" active":"")} onClick=${()=>setTab("map")}>Build the Map</button>
-    </div>
-  </div></div>
-  <div class="wrap">${tab==="ask"?html`<${Ask}/>`
-    :tab==="browse"?html`<${Browse}/>`:html`<${BuildMap}/>`}</div>`;
+  <aside class="sidebar">
+    <div class="workspace-brand"><div class="brand-name">UM6P</div><div class="brand-caption">GLOBAL HUBS · UNITED STATES</div></div>
+    <div class="nav-label">Intelligence platform</div>
+    <nav class="workspace-nav" aria-label="Main navigation">
+      ${[["ask","Ask","⌕"],["browse","Browse","▦"],["map","Build the Map","⊕"]].map(([id,label,symbol])=>html`
+        <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${symbol}</span>${label}</button>`)}
+    </nav>
+    <div class="sidebar-foot"><strong>Connected intelligence</strong>Organizations, people,<br/>and innovation ecosystems.</div>
+  </aside>
+  <div class="workspace-main">
+  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
+  <main class="wrap">
+    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}/></div>
+    <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
+    <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}/></div>
+  </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);
 </script>

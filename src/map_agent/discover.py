@@ -12,20 +12,51 @@ import os
 
 import anthropic
 from dotenv import load_dotenv
+from src.map_agent.costs import paid_message
 
 load_dotenv()
 
 MODEL = "claude-sonnet-5"
-MAX_TOKENS = 8192
-MAX_HOPS = 8
+MAX_TOKENS = 2048
+MAX_HOPS = 2
+FINALIZE_TOKENS = 1024
 
 _WEB_TOOLS = [
-    {"type": "web_search_20260209", "name": "web_search", "max_uses": 5},
-    {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 5,
-     "max_content_tokens": 4000},
+    {"type": "web_search_20260209", "name": "web_search", "max_uses": 1},
+    {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 2,
+     "max_content_tokens": 1600},
 ]
 
+_RESULT_LIMITS = {"actor": 10, "person": 8, "event": 8}
+
 # -- Per-entity-type schemas for the submit tool --
+
+_PERSON_ITEM = {
+    "type": "object",
+    "properties": {
+        "full_name":    {"type": "string", "description": "Person's full name."},
+        "organization_name": {"type": "string", "description": "Current organization this person belongs to."},
+        "title":        {"type": "string", "description": "Current role at this organization."},
+        "bio":          {"type": "string", "description": "Short professional bio (2-3 sentences)."},
+        "linkedin_url": {"type": "string", "description": "LinkedIn profile URL if found."},
+        "email":        {"type": "string", "description": "Professional email if publicly listed."},
+        "sources": {
+            "type": "array",
+            "description": "Official profile or other sources supporting this person's role.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "supports": {"type": "string"},
+                },
+                "required": ["url"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["full_name", "organization_name"],
+    "additionalProperties": False,
+}
 
 _ACTOR_ITEM = {
     "type": "object",
@@ -41,23 +72,15 @@ _ACTOR_ITEM = {
         "technical_approach":      {"type": "string", "description": "How they approach the problem."},
         "current_activities":      {"type": "string", "description": "What they are currently doing."},
         "funding_summary":         {"type": "string", "description": "Known funding info (rounds, amounts, investors)."},
+        "people": {
+            "type": "array",
+            "description": "Named founders, researchers, directors, or other key people who currently belong to this organization.",
+            "items": _PERSON_ITEM,
+        },
         # No estimated_trl: TRL is a judgment call and stays human-written,
         # same rule the enrichment agent follows for relevance/why-valuable.
     },
     "required": ["name"],
-    "additionalProperties": False,
-}
-
-_PERSON_ITEM = {
-    "type": "object",
-    "properties": {
-        "full_name":    {"type": "string", "description": "Person's full name."},
-        "title":        {"type": "string", "description": "Current job title and organization."},
-        "bio":          {"type": "string", "description": "Short professional bio (2-3 sentences)."},
-        "linkedin_url": {"type": "string", "description": "LinkedIn profile URL if found."},
-        "email":        {"type": "string", "description": "Professional email if publicly listed."},
-    },
-    "required": ["full_name"],
     "additionalProperties": False,
 }
 
@@ -121,8 +144,10 @@ def _submit_tool(entity_type: str) -> dict:
             "properties": {
                 "entities": {
                     "type": "array",
-                    "description": f"List of {entity_type}s found.",
+                    "description": f"Best matching {entity_type}s found, up to "
+                                   f"{_RESULT_LIMITS[entity_type]} results.",
                     "items": _ENTITY_SCHEMAS[entity_type],
+                    "maxItems": _RESULT_LIMITS[entity_type],
                 },
             },
             "required": ["entities"],
@@ -138,7 +163,8 @@ find {entity_type}s matching a search task.
 Instructions:
 1. Use web_search to run the query (and variations if needed).
 2. Use web_fetch to read promising pages for details.
-3. Extract EVERY relevant {entity_type} you find — aim for completeness.
+3. Return only the strongest relevant {entity_type}s, up to the tool's result
+   limit. Prioritize direct relevance and credible evidence.
 4. Fill in as many fields as you can from credible sources.
 5. For each entity, record the 'sources' you used — at minimum the page you
    found it on, plus what each source backs up. This is required for later
@@ -151,7 +177,13 @@ Rules:
 - If a field isn't available, omit it (only 'name' is required).
 - Every entity MUST carry at least one source URL. Do not invent URLs — only
   use pages you actually searched or fetched.
-- Be efficient: a few searches, read 2-3 key pages, then submit. Don't over-fetch."""
+- When finding actors, include key people only when they appear on pages you
+  already need for the organization. Do not perform extra searches or fetches
+  solely to find people. Put any such people inside the actor's `people` list.
+- When finding people, every person must include `organization_name`; prefer
+  official team, faculty, lab, or leadership pages as evidence.
+- Be efficient: run one focused search, read no more than two key pages, then
+  submit. Do not broaden the query or keep researching for completeness."""
 # NB: no "don't write code" rule here. The _20260209 web tools do their dynamic
 # filtering via code execution under the hood, so the code_execution blocks seen
 # in traces are the tool working as designed — telling the model to avoid them
@@ -201,7 +233,7 @@ def server_tool_errors(content) -> list[str]:
     return out
 
 
-def discover(query: str, entity_type: str, focus: str = "") -> list[dict]:
+def discover(query: str, entity_type: str, focus: str = "", run=None) -> list[dict]:
     """Search the web for entities matching the query. Returns a list of dicts.
 
     Each dict has keys matching the DB schema for the given entity_type.
@@ -222,19 +254,44 @@ def discover(query: str, entity_type: str, focus: str = "") -> list[dict]:
 
     tool_errors: list[str] = []
 
+    def submitted(content) -> list[dict] | None:
+        for block in content:
+            if block.type == "tool_use" and block.name == "submit_entities":
+                entities = block.input.get("entities", []) or []
+                for entity in entities:
+                    entity["_entity_type"] = entity_type
+                return entities
+        return None
+
     for _ in range(MAX_HOPS):
-        resp = client.messages.create(
+        resp = paid_message(client, run, f"Discovery: {entity_type}",
             model=MODEL, max_tokens=MAX_TOKENS,
             system=system, tools=tools, messages=messages,
         )
-        tool_errors += server_tool_errors(resp.content)
+        response_errors = server_tool_errors(resp.content)
+        tool_errors += response_errors
 
-        for block in resp.content:
-            if block.type == "tool_use" and block.name == "submit_entities":
-                entities = block.input.get("entities", []) or []
-                for e in entities:
-                    e["_entity_type"] = entity_type
-                return entities
+        entities = submitted(resp.content)
+        if entities is not None:
+            return entities
+
+        # The server tools return max_uses_exceeded as ordinary response blocks.
+        # Continuing with the web tools made the model retry the same blocked
+        # operations for several paid turns. Make one small, forced synthesis
+        # call with no web tools and submit whatever evidence is already present.
+        if "max_uses_exceeded" in response_errors:
+            messages.append({"role": "assistant", "content": resp.content})
+            messages.append({"role": "user", "content":
+                             "The research limit has been reached. Do not search "
+                             "again. Submit the supported entities now."})
+            final = paid_message(client, run, f"Discovery finalization: {entity_type}",
+                model=MODEL, max_tokens=FINALIZE_TOKENS, system=system,
+                tools=[_submit_tool(entity_type)],
+                tool_choice={"type": "tool", "name": "submit_entities"},
+                messages=messages,
+            )
+            entities = submitted(final.content)
+            return entities if entities is not None else []
 
         if resp.stop_reason == "pause_turn":
             messages.append({"role": "assistant", "content": resp.content})

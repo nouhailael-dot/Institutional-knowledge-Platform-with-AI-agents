@@ -21,11 +21,13 @@ import os
 
 import anthropic
 from dotenv import load_dotenv
+from src.map_agent.costs import paid_message
+from src.map_agent.run_store import MapStopped
 
 load_dotenv()
 
 MODEL = "claude-sonnet-5"     # judgment against nuanced intent — worth the tier
-MAX_TOKENS = 4096
+MAX_TOKENS = 1024
 
 _SUBMIT = {
     "name": "submit_selection",
@@ -116,7 +118,7 @@ def _has_request(requirements: dict) -> bool:
 
 
 def apply_request(entities: list[dict], request: str, requirements: dict,
-                  doc_text: str | None = None) -> dict:
+                  doc_text: str | None = None, run=None, operation_key=None) -> dict:
     """Rank/filter `entities` against the request. Annotates in place.
 
     Adds to each entity:  _selected (bool), _rank (int|None), _why (str|None)
@@ -147,7 +149,8 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
     parts.append("\nDecide which satisfy the request, then call submit_selection.")
 
     try:
-        resp = _get_client().messages.create(
+        resp = paid_message(_get_client(), run, "Selection",
+            operation_key=operation_key,
             model=MODEL, max_tokens=MAX_TOKENS, system=_SYSTEM,
             tools=[_SUBMIT], messages=[{"role": "user", "content": "\n".join(parts)}],
         )
@@ -159,6 +162,8 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
                 break
         if picked is None:
             raise RuntimeError("no selection returned")
+    except MapStopped:
+        raise
     except Exception as e:
         # Fail OPEN: a selection failure must not hide results the user paid for.
         for ent in entities:
