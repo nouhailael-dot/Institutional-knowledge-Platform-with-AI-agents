@@ -185,7 +185,7 @@ def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
     assert float(open_web["web_search_usd_per_request"]) == 0.01
     assert open_web["search_model"] == "claude-haiku-4-5"
     assert open_web["triage_model"] == "claude-sonnet-5"
-    assert int(open_web["max_searches"]) == 40
+    assert int(open_web["max_searches"]) == 52
     assert int(open_web["max_candidates_triaged"]) == 200
     assert float(open_web["max_usd_per_run"]) == 5.00
     assert open_web["people_enabled"] is False
