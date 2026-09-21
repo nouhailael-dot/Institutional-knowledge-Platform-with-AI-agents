@@ -49,10 +49,6 @@ def validate_evidence_item(value: object, *, entity_type: str, name: str) -> Non
         raise RuntimeError(
             f"{entity_type} rubric item {name!r} needs evidence when present is true"
         )
-    if not present and evidence is not None:
-        raise RuntimeError(
-            f"{entity_type} rubric item {name!r} must use null evidence when absent"
-        )
 
 
 def configured_weights(

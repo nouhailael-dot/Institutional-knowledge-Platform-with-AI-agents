@@ -11,10 +11,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agents.discovery.sources.base import FetchedDoc
+from src.db.models import Event
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "event_v1"
+PROMPT_VERSION = "event_v2"
 VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 
 EVENT_FIELDS = [
@@ -36,6 +37,47 @@ EVENT_FIELDS = [
     "sector_codes",
 ]
 
+EVENT_CANONICAL_COLUMN_BY_FIELD = {
+    "title": "name",
+    "description": "description",
+    "location": "location",
+    "website": "website",
+    "thematic_focus": "thematic_focus",
+    "event_type": "event_type",
+    "expected_attendance": "expected_attendance",
+    "access_type": "access_type",
+    "recurring_pattern": "recurring_pattern",
+    "sponsoring_orgs": "sponsoring_orgs",
+}
+EVENT_STRING_MAX_LENGTHS = {
+    field_name: int(Event.__table__.columns[column_name].type.length)
+    for field_name, column_name in EVENT_CANONICAL_COLUMN_BY_FIELD.items()
+    if getattr(Event.__table__.columns[column_name].type, "length", None) is not None
+}
+
+
+class EventRecordValidationError(ValueError):
+    """An extracted event record cannot fit the canonical event table."""
+
+
+def validate_event_record_lengths(record: dict[str, object]) -> None:
+    """Reject extracted values that PostgreSQL would reject during promotion."""
+    for field_name, max_length in EVENT_STRING_MAX_LENGTHS.items():
+        value = record.get(field_name)
+        if isinstance(value, str) and len(value) > max_length:
+            raise EventRecordValidationError(
+                f"event record field {field_name!r} exceeds canonical max length "
+                f"{max_length} (got {len(value)})"
+            )
+
+
+def _nullable_string_schema(field_name: str) -> dict[str, object]:
+    schema: dict[str, object] = {"type": ["string", "null"]}
+    max_length = EVENT_STRING_MAX_LENGTHS.get(field_name)
+    if max_length is not None:
+        schema["maxLength"] = max_length
+    return schema
+
 EVENT_TOOL_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
@@ -46,21 +88,23 @@ EVENT_TOOL_SCHEMA: dict[str, Any] = {
                 "type": "object",
                 "additionalProperties": False,
                 "properties": {
-                    "title": {"type": ["string", "null"]},
+                    "title": _nullable_string_schema("title"),
                     "start_date": {"type": ["string", "null"]},
                     "end_date": {"type": ["string", "null"]},
-                    "description": {"type": ["string", "null"]},
-                    "location": {"type": ["string", "null"]},
+                    "description": _nullable_string_schema("description"),
+                    "location": _nullable_string_schema("location"),
                     "city": {"type": ["string", "null"]},
                     "state": {"type": ["string", "null"]},
                     "country": {"type": ["string", "null"]},
-                    "website": {"type": ["string", "null"]},
-                    "thematic_focus": {"type": ["string", "null"]},
-                    "event_type": {"type": ["string", "null"]},
-                    "expected_attendance": {"type": ["string", "null"]},
-                    "access_type": {"type": ["string", "null"]},
-                    "recurring_pattern": {"type": ["string", "null"]},
-                    "sponsoring_orgs": {"type": ["string", "null"]},
+                    "website": _nullable_string_schema("website"),
+                    "thematic_focus": _nullable_string_schema("thematic_focus"),
+                    "event_type": _nullable_string_schema("event_type"),
+                    "expected_attendance": _nullable_string_schema(
+                        "expected_attendance"
+                    ),
+                    "access_type": _nullable_string_schema("access_type"),
+                    "recurring_pattern": _nullable_string_schema("recurring_pattern"),
+                    "sponsoring_orgs": _nullable_string_schema("sponsoring_orgs"),
                     "sector_codes": {
                         "type": ["array", "null"],
                         "items": {
@@ -300,6 +344,9 @@ class EventExtractor:
             "or fill missing fields. If the page has no events, return an empty "
             "events array. Extract named sponsoring, convening, exhibiting, hosting, "
             "and organizing entities into participant_actors."
+            " Respect every maxLength in the tool schema. Constrained fields such as "
+            "title, location, event_type, expected_attendance, access_type, and "
+            "recurring_pattern are compact labels or values, not narrative sentences."
             " sector_codes is the one exception to the no-inference rule: it is a "
             "classification judgment, not a fact to find on the page. Assign every "
             "listed code whose subject matter the event covers, judging from its "

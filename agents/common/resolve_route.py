@@ -141,21 +141,49 @@ def load_person_candidates(session) -> list[dict[str, object]]:
     return [dict(row) for row in rows]
 
 
+def load_person_affiliation_candidates(session) -> list[dict[str, object]]:
+    rows = (
+        session.execute(
+            text(
+                "SELECT actor_id::text AS actor_id, name AS affiliation "
+                "FROM actor WHERE merged_into_actor_id IS NULL "
+                "AND (actor_type IS NULL OR lower(actor_type) <> 'aggregate') "
+                "ORDER BY name"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(row) for row in rows]
+
+
 def route_person(
     record: dict[str, object],
     candidates: Iterable[dict[str, object]],
     *,
     preview_create: bool = False,
+    allow_create: bool = False,
+    affiliation_candidates: Iterable[dict[str, object]] | None = None,
 ) -> RouteDecision:
     """Resolve name plus affiliation deterministically.
 
-    The standing policy still routes new people to review. ``preview_create`` is
-    a dry-run-only caller option that exposes the architecture's proposed create
-    route without authorizing a canonical write.
+    Creation is available only to a caller that has already established an
+    ``auto_high`` relevance band. Promotion independently verifies that
+    authorization metadata before any canonical write.
     """
     name = str(record.get("name") or "").strip()
     if not name:
         raise ValueError("person record has no name")
+    if len(name) > 255:
+        return RouteDecision(
+            zone="review",
+            score=0.0,
+            metadata={
+                "identity_outcome": "invalid_name_length",
+                "clean_identity_key": False,
+                "identity_reason": "name exceeds the canonical 255-character limit",
+            },
+        )
 
     from agents.discovery.normalize import normalize_key_text
 
@@ -170,7 +198,11 @@ def route_person(
         return RouteDecision(
             zone="review",
             score=0.0,
-            metadata={"identity_reason": "affiliation is required for deterministic identity"},
+            metadata={
+                "identity_outcome": "missing_affiliation",
+                "clean_identity_key": False,
+                "identity_reason": "affiliation is required for deterministic identity",
+            },
         )
     key_matches = [
         candidate
@@ -178,9 +210,25 @@ def route_person(
         if normalize_key_text(str(candidate.get("affiliation") or "")) == affiliation_key
     ]
     if key_matches:
+        matched_person_ids = {
+            _person_candidate_id(candidate) for candidate in key_matches
+        }
+        if len(matched_person_ids) != 1:
+            return RouteDecision(
+                zone="review",
+                score=1.0,
+                candidate_ids=sorted(matched_person_ids),
+                metadata={
+                    "identity_outcome": "ambiguous_identity",
+                    "clean_identity_key": False,
+                    "identity_reason": (
+                        "normalized name and affiliation match multiple held people"
+                    ),
+                },
+            )
         candidate = key_matches[0]
         conflicts = _person_detail_conflicts(record, candidate)
-        if preview_create and not conflicts:
+        if not conflicts:
             return RouteDecision(
                 zone="skip",
                 score=1.0,
@@ -188,6 +236,8 @@ def route_person(
                 candidate_ids=[_person_candidate_id(match) for match in key_matches],
                 metadata={
                     "candidate_name": str(candidate.get("full_name") or ""),
+                    "identity_outcome": "already_held",
+                    "clean_identity_key": True,
                     "identity_reason": "already held with matching name and affiliation",
                 },
             )
@@ -198,11 +248,9 @@ def route_person(
             candidate_ids=[_person_candidate_id(match) for match in key_matches],
             metadata={
                 "candidate_name": str(candidate.get("full_name") or ""),
-                "identity_reason": (
-                    "matching name and affiliation has conflicting details"
-                    if conflicts
-                    else "standing policy requires person review"
-                ),
+                "identity_outcome": "conflicting_details",
+                "clean_identity_key": False,
+                "identity_reason": "matching name and affiliation has conflicting details",
                 "conflicting_fields": conflicts,
             },
         )
@@ -216,6 +264,8 @@ def route_person(
             candidate_ids=[_person_candidate_id(match) for match in name_matches],
             metadata={
                 "candidate_name": str(candidate.get("full_name") or ""),
+                "identity_outcome": "different_affiliation",
+                "clean_identity_key": False,
                 "identity_reason": "same normalized name with a different affiliation",
                 "candidate_affiliations": sorted(
                     {
@@ -227,15 +277,82 @@ def route_person(
             },
         )
 
+    create_authorized = allow_create or preview_create
+    if not create_authorized:
+        return RouteDecision(
+            zone="review",
+            score=0.0,
+            metadata={
+                "identity_outcome": "create_not_authorized",
+                "clean_identity_key": False,
+                "identity_reason": "person creation requires an auto_high relevance band",
+            },
+        )
+
+    actor_pool = list(
+        affiliation_candidates if affiliation_candidates is not None else candidates
+    )
+    actor_matches = [
+        candidate
+        for candidate in actor_pool
+        if normalize_key_text(
+            str(candidate.get("affiliation") or candidate.get("name") or "")
+        )
+        == affiliation_key
+        and str(candidate.get("actor_id") or "").strip()
+    ]
+    actor_ids = {
+        str(candidate.get("actor_id") or "").strip() for candidate in actor_matches
+    }
+    if len(actor_ids) != 1:
+        return RouteDecision(
+            zone="review",
+            score=0.0,
+            candidate_ids=sorted(actor_ids),
+            metadata={
+                "identity_outcome": (
+                    "unknown_affiliation" if not actor_ids else "ambiguous_affiliation"
+                ),
+                "clean_identity_key": False,
+                "identity_reason": (
+                    "affiliation does not exactly match a held actor"
+                    if not actor_ids
+                    else "affiliation matches more than one held actor"
+                ),
+            },
+        )
+    role = str(record.get("role") or "").strip()
+    if not role:
+        return RouteDecision(
+            zone="review",
+            score=0.0,
+            metadata={
+                "identity_outcome": "missing_role",
+                "clean_identity_key": False,
+                "identity_reason": "role is required to create the actor-person affiliation",
+            },
+        )
+    if len(role) > 120:
+        return RouteDecision(
+            zone="review",
+            score=0.0,
+            metadata={
+                "identity_outcome": "invalid_role_length",
+                "clean_identity_key": False,
+                "identity_reason": (
+                    "role exceeds the actor_person 120-character limit"
+                ),
+            },
+        )
+    actor_id = next(iter(actor_ids))
     return RouteDecision(
-        zone="create" if preview_create else "review",
+        zone="create",
         score=0.0,
         metadata={
-            "identity_reason": (
-                "normalized name and affiliation are not held"
-                if preview_create
-                else "standing policy requires person review"
-            )
+            "identity_outcome": "create",
+            "clean_identity_key": True,
+            "affiliation_actor_id": actor_id,
+            "identity_reason": "normalized name and affiliation are not held",
         },
     )
 

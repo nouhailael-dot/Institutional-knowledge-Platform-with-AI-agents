@@ -222,7 +222,7 @@ def test_event_extractor_fixture_page_to_expected_records():
         event["title"] for event in payload["events"]
     ]
     assert all(record["source_url"] == "fixture://climate_week_events.html" for record in records)
-    assert all(record["prompt_version"] == "event_v1" for record in records)
+    assert all(record["prompt_version"] == "event_v2" for record in records)
 
 
 def test_event_extractor_no_events_returns_empty_list():
@@ -1059,10 +1059,13 @@ def test_actor_extractor_uses_tool_schema_and_preserves_nulls():
     assert client.calls == 1
     assert client.last_kwargs["tool_name"] == "record_actors"
     assert "temperature" not in client.last_kwargs
+    assert "primary_lifecycle_role" in client.last_kwargs["system"]
+    assert "actor_type_raw" in client.last_kwargs["system"]
+    assert "few words" in client.last_kwargs["system"]
     assert records[0]["name"] == "Example Climate Lab"
     assert records[0]["actor_type"] is None
     assert records[0]["source_url"] == "fixture://actors"
-    assert records[0]["prompt_version"] == "actor_v1"
+    assert records[0]["prompt_version"] == "actor_v2"
 
 
 @pytest.mark.parametrize(
@@ -1100,6 +1103,7 @@ def test_promote_actor_create_writes_needs_review_actor_with_source_and_index_di
             "name": "Example Climate Lab",
             "description": "Climate analytics organization",
             "website": "https://example.org",
+            "location_city": "Boulder",
             "sector_codes": ["SUSTAIN"],
         }
     )
@@ -1112,6 +1116,13 @@ def test_promote_actor_create_writes_needs_review_actor_with_source_and_index_di
     assert result.entity_type == "actor"
     actor_insert = next(sql for sql in session.statements if "INSERT INTO actor" in sql)
     assert "verification_status" in actor_insert
+    assert "location_city" in actor_insert
+    actor_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO actor" in sql
+    )
+    assert actor_params["location_city"] == "Boulder"
     assert any("INSERT INTO source" in sql for sql in session.statements)
     assert any("INSERT INTO index_dirty" in sql for sql in session.statements)
     assert session.transactions[-1].committed
@@ -1345,8 +1356,14 @@ def test_person_routing_review_only_even_on_perfect_name_match():
 def test_promote_person_guard_raises_for_non_review_route():
     staged = _staged_person()
 
-    with pytest.raises(RuntimeError, match="person records must route to review only"):
-        promote(staged, RouteDecision(zone="create", score=0.0), session=FakeSession(), live=True)
+    with pytest.raises(RuntimeError, match="person create guard failed"):
+        promote(
+            staged,
+            RouteDecision(zone="create", score=0.0),
+            session=FakeSession(),
+            live=True,
+            people_enabled=True,
+        )
 
 
 def test_promote_person_review_writes_person_review_queue_only():
@@ -1365,6 +1382,7 @@ def test_promote_person_review_writes_person_review_queue_only():
         ),
         session=session,
         live=True,
+        people_enabled=True,
     )
 
     assert result.action == "queued_for_review"

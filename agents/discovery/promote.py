@@ -12,6 +12,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 from sqlalchemy import text
 
@@ -154,6 +155,7 @@ def promote(
     *,
     live: bool = False,
     person_create_preview: bool = False,
+    people_enabled: bool = False,
 ) -> PromotionResult:
     if staged.sector_match == "out_of_sector":
         raise RuntimeError("out_of_sector staged records must not be promoted")
@@ -161,6 +163,10 @@ def promote(
     if staged.entity_type == "actor":
         return _promote_actor(staged, route, session=session, live=live)
     if staged.entity_type == "person":
+        if not people_enabled:
+            raise RuntimeError(
+                "person promotion is disabled pending TARGETING_POLICY.md section 6 approval"
+            )
         return _promote_person(
             staged,
             route,
@@ -605,7 +611,16 @@ def _promote_person(
     live: bool = False,
     create_preview: bool = False,
 ) -> PromotionResult:
+    metadata = dict(route.metadata or {})
     if route.zone == "skip":
+        if (
+            route.target_entity_id is None
+            or metadata.get("identity_outcome") != "already_held"
+            or metadata.get("clean_identity_key") is not True
+        ):
+            raise RuntimeError(
+                "person skip requires an already-held clean deterministic identity"
+            )
         return PromotionResult(
             action="already_held",
             entity_type="person",
@@ -614,12 +629,10 @@ def _promote_person(
             dry_run=True,
         )
     if route.zone == "create":
-        if not create_preview:
-            raise RuntimeError("person records must route to review only")
-        if live:
+        if live and create_preview:
             raise RuntimeError("person create preview cannot be used with live writes")
-        return _dry_run_preview(staged, route)
-    if route.zone != "review":
+        _guard_person_create(staged, route)
+    if route.zone not in {"create", "review"}:
         raise RuntimeError(f"unknown person route zone {route.zone!r}")
     if session is None:
         if live:
@@ -628,21 +641,58 @@ def _promote_person(
 
     transaction = session.begin()
     try:
-        source_id = insert_source(
-            session,
-            source_url=staged.source_url,
-            fetched_at=staged.extracted_at,
-            description="agent discovery person review",
-        )
-        review_id = _insert_person_review(session, staged, route, source_id)
-        result = PromotionResult(
-            action="queued_for_review",
-            entity_type="person",
-            zone="review",
-            entity_id=route.target_entity_id,
-            dry_run=False,
-            review_id=review_id,
-        )
+        if route.zone == "create":
+            source_id = insert_source(
+                session,
+                source_url=staged.source_url,
+                fetched_at=staged.extracted_at,
+                description="agent discovery person create",
+            )
+            person_id = _insert_person(
+                session,
+                staged.normalized_payload,
+                source_id,
+                confidence=float(route.score),
+            )
+            actor_id = str(metadata["affiliation_actor_id"])
+            role = str(staged.normalized_payload["role"]).strip()
+            _insert_person_affiliation(
+                session,
+                person_id=person_id,
+                actor_id=actor_id,
+                role=role,
+            )
+            _insert_person_discovery_profile(
+                session,
+                staged=staged,
+                person_id=person_id,
+                actor_id=actor_id,
+                source_id=source_id,
+            )
+            _mark_index_dirty(session, entity_type="person", entity_id=person_id)
+            result = PromotionResult(
+                action="created",
+                entity_type="person",
+                zone="create",
+                entity_id=person_id,
+                dry_run=False,
+            )
+        else:
+            source_id = insert_source(
+                session,
+                source_url=staged.source_url,
+                fetched_at=staged.extracted_at,
+                description="agent discovery person review",
+            )
+            review_id = _insert_person_review(session, staged, route, source_id)
+            result = PromotionResult(
+                action="queued_for_review",
+                entity_type="person",
+                zone="review",
+                entity_id=route.target_entity_id,
+                dry_run=False,
+                review_id=review_id,
+            )
     except Exception:
         transaction.rollback()
         raise
@@ -652,6 +702,121 @@ def _promote_person(
         return result
     transaction.rollback()
     return _dry_run_result(result, route)
+
+
+def _guard_person_create(staged: StagedRecord, route: RouteDecision) -> None:
+    metadata = dict(route.metadata or {})
+    payload = staged.normalized_payload
+    failures: list[str] = []
+    if metadata.get("score_band") != "auto_high":
+        failures.append("score_band must be auto_high")
+    if metadata.get("identity_outcome") != "create":
+        failures.append("identity_outcome must be create")
+    if metadata.get("clean_identity_key") is not True:
+        failures.append("clean_identity_key must be true")
+    if not str(metadata.get("affiliation_actor_id") or "").strip():
+        failures.append("affiliation_actor_id is required")
+    name = str(payload.get("name") or "").strip()
+    role = str(payload.get("role") or "").strip()
+    affiliation = str(payload.get("affiliation") or "").strip()
+    if not name:
+        failures.append("name is required")
+    elif len(name) > 255:
+        failures.append("name exceeds the canonical 255-character limit")
+    if not affiliation:
+        failures.append("affiliation is required")
+    if not role:
+        failures.append("role is required")
+    elif len(role) > 120:
+        failures.append("role exceeds the actor_person 120-character limit")
+    if not 0.0 <= float(route.score) <= 1.0:
+        failures.append("score must be between 0 and 1")
+    if failures:
+        raise RuntimeError("person create guard failed: " + "; ".join(failures))
+
+
+def _insert_person(
+    session,
+    payload: dict[str, object],
+    source_id: str,
+    *,
+    confidence: float,
+) -> str:
+    person_id = str(uuid.uuid4())
+    cols: dict[str, object] = {
+        "person_id": person_id,
+        "full_name": str(payload["name"]).strip(),
+        "title": str(payload["role"]).strip(),
+        "source_id": source_id,
+        "verification_status": "needs_review",
+        "confidence": confidence,
+    }
+    profile_url = str(payload.get("public_profile_url") or "").strip()
+    if _is_linkedin_profile(profile_url):
+        cols["linkedin_url"] = profile_url
+    names = ", ".join(cols)
+    binds = ", ".join(
+        f"CAST(:{name} AS uuid)" if name in {"person_id", "source_id"} else f":{name}"
+        for name in cols
+    )
+    session.execute(text(f"INSERT INTO person ({names}) VALUES ({binds})"), cols)
+    return person_id
+
+
+def _insert_person_affiliation(
+    session,
+    *,
+    person_id: str,
+    actor_id: str,
+    role: str,
+) -> None:
+    session.execute(
+        text(
+            "INSERT INTO actor_person (actor_id, person_id, role, is_current) "
+            "VALUES (CAST(:actor_id AS uuid), CAST(:person_id AS uuid), :role, TRUE)"
+        ),
+        {"actor_id": actor_id, "person_id": person_id, "role": role},
+    )
+
+
+def _insert_person_discovery_profile(
+    session,
+    *,
+    staged: StagedRecord,
+    person_id: str,
+    actor_id: str,
+    source_id: str,
+) -> str:
+    profile_id = str(uuid.uuid4())
+    payload = staged.normalized_payload
+    session.execute(
+        text(
+            "INSERT INTO person_discovery_profile (person_discovery_profile_id, "
+            "person_id, actor_id, role, research_area, public_profile_url, source_id, "
+            "source_url, fetched_at) VALUES (CAST(:person_discovery_profile_id AS uuid), "
+            "CAST(:person_id AS uuid), CAST(:actor_id AS uuid), :role, :research_area, "
+            ":public_profile_url, CAST(:source_id AS uuid), :source_url, :fetched_at)"
+        ),
+        {
+            "person_discovery_profile_id": profile_id,
+            "person_id": person_id,
+            "actor_id": actor_id,
+            "role": payload.get("role"),
+            "research_area": payload.get("research_area"),
+            "public_profile_url": payload.get("public_profile_url"),
+            "source_id": source_id,
+            "source_url": staged.source_url,
+            "fetched_at": staged.extracted_at,
+        },
+    )
+    return profile_id
+
+
+def _is_linkedin_profile(value: str) -> bool:
+    if not value:
+        return False
+    hostname = (urlparse(value).hostname or "").casefold()
+    return hostname == "linkedin.com" or hostname.endswith(".linkedin.com")
 
 
 def _insert_person_review(
@@ -677,17 +842,24 @@ def _insert_person_review(
         text(
             "INSERT INTO person_review_queue (person_review_id, staged_record_id, source_id, "
             "candidate_person_id, score, staged_name, affiliation, role, public_profile_url, "
-            "research_area, candidate_name, source_url, status, reviewer) "
+            "research_area, candidate_name, source_url, status, reviewer, review_kind, "
+            "rubric, score_breakdown, rerank_position, rerank_reason, identity_outcome) "
             "VALUES (CAST(:person_review_id AS uuid), CAST(:staged_record_id AS uuid), "
             "CAST(:source_id AS uuid), CAST(:candidate_person_id AS uuid), :score, "
             ":staged_name, :affiliation, :role, :public_profile_url, :research_area, "
-            ":candidate_name, :source_url, 'pending', NULL) "
+            ":candidate_name, :source_url, 'pending', NULL, :review_kind, "
+            "CAST(:rubric AS jsonb), CAST(:score_breakdown AS jsonb), :rerank_position, "
+            ":rerank_reason, :identity_outcome) "
             f"{conflict_clause}"
             "source_id = EXCLUDED.source_id, score = EXCLUDED.score, "
             "staged_name = EXCLUDED.staged_name, affiliation = EXCLUDED.affiliation, "
             "role = EXCLUDED.role, public_profile_url = EXCLUDED.public_profile_url, "
             "research_area = EXCLUDED.research_area, candidate_name = EXCLUDED.candidate_name, "
-            "source_url = EXCLUDED.source_url, updated_at = now()"
+            "source_url = EXCLUDED.source_url, review_kind = EXCLUDED.review_kind, "
+            "rubric = EXCLUDED.rubric, score_breakdown = EXCLUDED.score_breakdown, "
+            "rerank_position = EXCLUDED.rerank_position, "
+            "rerank_reason = EXCLUDED.rerank_reason, "
+            "identity_outcome = EXCLUDED.identity_outcome, updated_at = now()"
         ),
         {
             "person_review_id": person_review_id,
@@ -702,6 +874,18 @@ def _insert_person_review(
             "research_area": payload.get("research_area"),
             "candidate_name": metadata.get("candidate_name"),
             "source_url": staged.source_url,
+            "review_kind": metadata.get("review_kind") or "identity",
+            "rubric": json.dumps(metadata.get("rubric"), sort_keys=True)
+            if metadata.get("rubric") is not None
+            else None,
+            "score_breakdown": json.dumps(
+                metadata.get("score_breakdown"), sort_keys=True
+            )
+            if metadata.get("score_breakdown") is not None
+            else None,
+            "rerank_position": metadata.get("rerank_position"),
+            "rerank_reason": metadata.get("rerank_reason"),
+            "identity_outcome": metadata.get("identity_outcome"),
         },
     )
     return person_review_id

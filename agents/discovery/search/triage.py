@@ -25,12 +25,6 @@ ACTOR_USE_CASES = (
     ("opportunity_development", "opportunity development"),
 )
 ACTOR_USE_CASE_NAMES = tuple(name for name, _label in ACTOR_USE_CASES)
-PERSON_RELEVANCE_SIGNAL_NAMES = (
-    "sector_intersection",
-    "hub_or_held_affiliation",
-    "actionable_role",
-    "topic_evidence",
-)
 ACTOR_TRIAGE_SYSTEM_PROMPT = (
     "Apply a recall-oriented binary fetch gate to actor search results. Decide only whether "
     "the URL is plausibly an organisation's own substantive page worth fetching. A thin "
@@ -44,11 +38,11 @@ EVENT_TRIAGE_SYSTEM_PROMPT = (
     "coverage, and non-event pages. Return only fetch and a one-line reason for every URL."
 )
 PERSON_TRIAGE_SYSTEM_PROMPT = (
-    "Evaluate the professional relevance of person-page search candidates for GHUS. "
-    "Use only the search-result title, snippet, URL, seeded sectors, and supplied hub "
-    "context. Return a short evidence string or null for every relevance signal. "
-    "Judge relevance only. Never decide whether two people are the same person, never "
-    "return an identity key or route, and never collect contact or personal details."
+    "Apply a recall-oriented binary fetch gate to person search results. Decide only whether "
+    "the URL is plausibly a professional page published by the person's institution or by "
+    "the person. A thin snippet is not grounds for rejection. Reject news or feature coverage, "
+    "encyclopedia pages, directories, profile aggregators, social media, conference bios, and "
+    "pages requiring authentication. Return only fetch and a one-line reason for every URL."
 )
 ACTOR_NEWS_AND_DIRECTORY_BLOCKLIST = (
     "geekwire.com",
@@ -87,6 +81,9 @@ PERSON_DIRECTORY_AND_PROFILE_BLOCKLIST = (
     "scholar.google.com",
     "muckrack.com",
     "zoominfo.com",
+    "phys.org",
+    "eurekalert.org",
+    "sciencedaily.com",
 )
 DEFAULT_PERSON_INSTITUTIONAL_SUFFIXES = (
     ".edu",
@@ -184,13 +181,8 @@ class SearchTriageClient:
             tool_name="triage_open_web_candidates",
             tool_description=(
                 "Return one binary fetch decision and one-line reason for every URL."
-                if entity_type in {"actor", "event"}
-                else (
-                    "Return professional-page status, relevance evidence, sector/hub matches, "
-                    "a relevance score, and reasoning. Do not return identity decisions."
-                    if entity_type == "person"
-                    else "Return deterministic-search survivors with fit scores and reasons."
-                )
+                if entity_type in {"actor", "event", "person"}
+                else "Return deterministic-search survivors with fit scores and reasons."
             ),
             input_schema=_triage_input_schema(entity_type),
             max_tokens=int(self.config.get("triage_max_tokens", 2048)),
@@ -207,12 +199,10 @@ class SearchTriageClient:
             url = str(item.get("url") or "").strip()
             if not url:
                 continue
-            if entity_type in {"actor", "event"}:
+            if entity_type in {"actor", "event", "person"}:
                 decisions[url] = _gate_decision_from_item(
                     item, url=url, entity_type=entity_type
                 )
-            elif entity_type == "person":
-                decisions[url] = _person_decision_from_item(item, url=url)
             else:
                 decisions[url] = TriageDecision(
                     url=url,
@@ -278,6 +268,20 @@ def _triage_user_payload(
                 "or pages clearly unrelated to a discrete event. Return no score or other fields."
             ),
         }
+    if entity_type == "person":
+        return {
+            "entity_type": "person",
+            "candidates": candidates,
+            "decision_rule": (
+                "Return exactly one object for every candidate URL. Set fetch=true when the "
+                "result could plausibly be a professional profile published by the person's "
+                "institution or by the person. Bias toward recall when the snippet is thin. "
+                "Set fetch=false for news or feature coverage, encyclopedia pages, directories, "
+                "profile aggregators, social media, conference bios, authenticated pages, and "
+                "pages clearly not about one professional person. Return no score, identity "
+                "decision, or other fields."
+            ),
+        }
     payload: dict[str, object] = {
         "entity_type": entity_type,
         "sectors": sectors,
@@ -288,37 +292,12 @@ def _triage_user_payload(
             "If a candidate is hard to judge, reject it and explain the uncertainty."
         ),
     }
-    if entity_type == "person":
-        payload.update(
-            {
-                "candidate_hub_context": _candidate_hubs(actor_context),
-                "person_relevance_rule": (
-                    "For each signal return a short quote or paraphrase from the result, or "
-                    "null when the result does not establish it. The signals are: "
-                    "sector_intersection (research intersects a seeded sector); "
-                    "hub_or_held_affiliation (affiliation is in a hub or is an organisation "
-                    "already held); actionable_role (lab head, programme director, "
-                    "partnerships lead, principal investigator, or comparable senior role); "
-                    "topic_evidence (evidence of actual work on the topic, not a passing "
-                    "mention). Reject confidently and accept provisionally."
-                ),
-                "identity_boundary": (
-                    "Do not return a natural key, duplicate judgment, identity match, or "
-                    "routing decision. Identity is computed later by deterministic code."
-                ),
-                "relevance_floor": float(
-                    dict(config.get("accept_floor", {}) or {}).get("person", 0.75)
-                ),
-            }
-        )
     return payload
 
 
 def _triage_input_schema(entity_type: str) -> dict[str, object]:
-    if entity_type in {"actor", "event"}:
+    if entity_type in {"actor", "event", "person"}:
         item_schema = _gate_item_schema()
-    elif entity_type == "person":
-        item_schema = _person_triage_item_schema()
     else:
         item_schema = {
             "type": "object",
@@ -378,69 +357,6 @@ def _gate_decision_from_item(
         reason=_clean_decision_reason(item.get("reason")),
         verdict="accepted" if fetch else "rejected",
     )
-
-
-def _person_triage_item_schema() -> dict[str, object]:
-    evidence_value = {"type": ["string", "null"], "minLength": 1, "maxLength": 240}
-    properties: dict[str, object] = {
-        "url": {"type": "string"},
-        "is_professional_person_page": {"type": "boolean"},
-        "sector_codes": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
-        "hub_matches": {"type": "array", "items": {"type": "string"}, "maxItems": 4},
-        "relevance_signals": {
-            "type": "object",
-            "properties": {
-                name: evidence_value for name in PERSON_RELEVANCE_SIGNAL_NAMES
-            },
-            "required": list(PERSON_RELEVANCE_SIGNAL_NAMES),
-            "additionalProperties": False,
-        },
-        "relevance_score": {"type": "number", "minimum": 0, "maximum": 1},
-        "reason": {"type": "string", "minLength": 1, "maxLength": 300},
-    }
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": list(properties),
-        "additionalProperties": False,
-    }
-
-
-def _person_decision_from_item(item: dict[str, object], *, url: str) -> TriageDecision:
-    professional_page = bool(item.get("is_professional_person_page"))
-    sector_codes = tuple(value.upper() for value in _clean_string_tuple(item.get("sector_codes")))
-    signals = _clean_evidence_signals(
-        item.get("relevance_signals"),
-        names=PERSON_RELEVANCE_SIGNAL_NAMES,
-    )
-    return TriageDecision(
-        url=url,
-        is_entity_type=professional_page,
-        plausible_sector=bool(sector_codes),
-        fit_score=_coerce_score(item.get("relevance_score")),
-        reason=_clean_decision_reason(item.get("reason")),
-        is_professional_person_page=professional_page,
-        hub_matches=_clean_string_tuple(item.get("hub_matches")),
-        sector_codes=sector_codes,
-        relevance_signals=signals,
-    )
-
-
-def _clean_evidence_signals(
-    value: object,
-    *,
-    names: Iterable[str],
-) -> dict[str, str | None]:
-    mapping = value if isinstance(value, dict) else {}
-    signals: dict[str, str | None] = {}
-    for name in names:
-        evidence = mapping.get(name)
-        if isinstance(evidence, bool) or evidence is None:
-            signals[name] = None
-            continue
-        cleaned = str(evidence).strip()
-        signals[name] = cleaned or None
-    return signals
 
 
 def _clean_string_tuple(value: object) -> tuple[str, ...]:
@@ -543,11 +459,6 @@ def _candidate_hubs(
 
 def _normal_key(value: object) -> str:
     return " ".join(str(value or "").split()).casefold()
-
-
-def has_person_topic_evidence(decision: TriageDecision) -> bool:
-    signals = decision.relevance_signals or {}
-    return bool(signals.get("sector_intersection") and signals.get("topic_evidence"))
 
 
 def deterministic_rejection(
@@ -680,24 +591,6 @@ def known_source_domains(config: dict[str, object]) -> list[str]:
                 if domain:
                     domains.append(domain)
     return sorted(set(domains))
-
-
-def triage_verdict(
-    decision: TriageDecision,
-    *,
-    floor: float,
-    entity_type: str | None = None,
-) -> str:
-    if is_triage_incomplete(decision):
-        return "triage_incomplete"
-    if not decision.accepted:
-        return "rejected"
-    is_person_decision = entity_type == "person" or decision.relevance_signals is not None
-    if is_person_decision and not has_person_topic_evidence(decision):
-        return "rejected"
-    if float(decision.fit_score or 0.0) < floor:
-        return "rejected"
-    return "accepted"
 
 
 def is_triage_incomplete(decision: TriageDecision) -> bool:

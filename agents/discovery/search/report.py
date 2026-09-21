@@ -9,6 +9,7 @@ from pathlib import Path
 
 from agents.discovery.extractors.actor import ACTOR_RECORD_FIELDS
 from agents.discovery.extractors.event import EVENT_FIELDS
+from agents.discovery.extractors.person import PERSON_FIELDS
 from agents.discovery.search.models import CandidateRecord
 
 EVENT_REPORT_FIELDS = (
@@ -147,7 +148,7 @@ def write_candidate_report(
                         + " |"
                     )
         elif entity_type == "event":
-            event_rows = [row for row in rows if row.page_fetched and row.rubric is not None]
+            event_rows = [row for row in rows if row.page_fetched]
             if event_rows:
                 lines.extend(
                     [
@@ -157,6 +158,9 @@ def write_candidate_report(
                         "| "
                         + " | ".join(
                             [
+                                "Source URL",
+                                "Verdict",
+                                "Reason",
                                 *[field.replace("_", " ").title() for field in EVENT_REPORT_FIELDS],
                                 "Rubric Score",
                                 "Qualification Paths",
@@ -167,7 +171,7 @@ def write_candidate_report(
                         )
                         + " |",
                         "| "
-                        + " | ".join(["---"] * (len(EVENT_REPORT_FIELDS) + 5))
+                        + " | ".join(["---"] * (len(EVENT_REPORT_FIELDS) + 8))
                         + " |",
                     ]
                 )
@@ -176,8 +180,15 @@ def write_candidate_report(
                     lines.append(
                         "| "
                         + " | ".join(
-                            _escape(_display(_event_record_value(record, field)))
-                            for field in EVENT_REPORT_FIELDS
+                            [
+                                _escape(row.url),
+                                _escape(row.triage_verdict),
+                                _escape(row.triage_reason or ""),
+                                *[
+                                    _escape(_display(_event_record_value(record, field)))
+                                    for field in EVENT_REPORT_FIELDS
+                                ],
+                            ]
                         )
                         + " | "
                         + " | ".join(
@@ -192,26 +203,46 @@ def write_candidate_report(
                         + " |"
                     )
         elif entity_type == "person":
-            person_rows = [row for row in rows if row.relevance_signals is not None]
+            person_rows = [row for row in rows if row.page_fetched]
             if person_rows:
                 lines.extend(
                     [
                         "",
-                        "#### Relevance evidence",
+                        "#### Fetched person record previews",
                         "",
-                        "| Domain | Relevance | Hubs | Sectors | Signals |",
-                        "| --- | ---: | --- | --- | --- |",
+                        "| "
+                        + " | ".join(
+                            [
+                                *[field.replace("_", " ").title() for field in PERSON_FIELDS],
+                                "Rubric Score",
+                                "Band",
+                                "Identity Outcome",
+                                "Rerank Position",
+                                "Rubric Evidence",
+                            ]
+                        )
+                        + " |",
+                        "| " + " | ".join(["---"] * (len(PERSON_FIELDS) + 5)) + " |",
                     ]
                 )
                 for row in person_rows:
+                    record = row.record_preview or {}
                     lines.append(
-                        "| {domain} | {score} | {hubs} | {sectors} | {signals} |".format(
-                            domain=_escape(row.domain),
-                            score=_format_score(row.fit_score),
-                            hubs=_escape(", ".join(row.hub_matches)),
-                            sectors=_escape(", ".join(row.sector_codes)),
-                            signals=_escape(_evidence_signal_summary(row.relevance_signals or {})),
+                        "| "
+                        + " | ".join(
+                            _escape(_display(record.get(field))) for field in PERSON_FIELDS
                         )
+                        + " | "
+                        + " | ".join(
+                            [
+                                _format_score(row.fit_score),
+                                _escape(row.score_band or ""),
+                                _escape(row.identity_outcome or ""),
+                                str(row.rerank_position or ""),
+                                _escape(_rubric_summary(row.rubric or {})),
+                            ]
+                        )
+                        + " |"
                     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -222,14 +253,24 @@ def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -
     event_rows = [
         candidate
         for candidate in candidates
-        if candidate.entity_type == "event" and candidate.page_fetched and candidate.rubric
+        if candidate.entity_type == "event" and candidate.page_fetched
     ]
     if event_rows:
         _write_event_spreadsheet(path, event_rows)
         return
+    person_rows = [
+        candidate
+        for candidate in candidates
+        if candidate.entity_type == "person" and candidate.page_fetched
+    ]
+    if person_rows:
+        _write_person_spreadsheet(path, person_rows)
+        return
     fields = [
         "candidate_id",
         "url",
+        "triage_verdict",
+        "triage_reason",
         *ACTOR_RECORD_FIELDS,
         "sector_codes",
         "hub_matches",
@@ -253,6 +294,8 @@ def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -
                 {
                     "candidate_id": candidate.candidate_id,
                     "url": candidate.url,
+                    "triage_verdict": candidate.triage_verdict,
+                    "triage_reason": candidate.triage_reason,
                     **{field: _display(record.get(field)) for field in ACTOR_RECORD_FIELDS},
                     "sector_codes": "; ".join(candidate.sector_codes),
                     "hub_matches": "; ".join(candidate.hub_matches),
@@ -261,7 +304,7 @@ def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -
                     "rerank_rationale": candidate.rerank_reason,
                     "band": candidate.score_band,
                     "rubric_evidence": json.dumps(
-                        candidate.rubric, ensure_ascii=False, sort_keys=True
+                        candidate.rubric or {}, ensure_ascii=False, sort_keys=True
                     ),
                 }
             )
@@ -271,6 +314,8 @@ def _write_event_spreadsheet(path: Path, rows: list[CandidateRecord]) -> None:
     fields = [
         "candidate_id",
         "url",
+        "triage_verdict",
+        "triage_reason",
         *EVENT_REPORT_FIELDS,
         "rubric_score",
         "qualification_paths",
@@ -288,6 +333,8 @@ def _write_event_spreadsheet(path: Path, rows: list[CandidateRecord]) -> None:
                 {
                     "candidate_id": candidate.candidate_id,
                     "url": candidate.url,
+                    "triage_verdict": candidate.triage_verdict,
+                    "triage_reason": candidate.triage_reason,
                     **{
                         field: _display(_event_record_value(record, field))
                         for field in EVENT_REPORT_FIELDS
@@ -298,7 +345,41 @@ def _write_event_spreadsheet(path: Path, rows: list[CandidateRecord]) -> None:
                     "rerank_position": candidate.rerank_position,
                     "rerank_rationale": candidate.rerank_reason,
                     "rubric_evidence": json.dumps(
-                        candidate.rubric, ensure_ascii=False, sort_keys=True
+                        candidate.rubric or {}, ensure_ascii=False, sort_keys=True
+                    ),
+                }
+            )
+
+
+def _write_person_spreadsheet(path: Path, rows: list[CandidateRecord]) -> None:
+    fields = [
+        "candidate_id",
+        "url",
+        *PERSON_FIELDS,
+        "rubric_score",
+        "band",
+        "identity_outcome",
+        "rerank_position",
+        "rerank_rationale",
+        "rubric_evidence",
+    ]
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for candidate in rows:
+            record = candidate.record_preview or {}
+            writer.writerow(
+                {
+                    "candidate_id": candidate.candidate_id,
+                    "url": candidate.url,
+                    **{field: _display(record.get(field)) for field in PERSON_FIELDS},
+                    "rubric_score": candidate.fit_score,
+                    "band": candidate.score_band,
+                    "identity_outcome": candidate.identity_outcome,
+                    "rerank_position": candidate.rerank_position,
+                    "rerank_rationale": candidate.rerank_reason,
+                    "rubric_evidence": json.dumps(
+                        candidate.rubric or {}, ensure_ascii=False, sort_keys=True
                     ),
                 }
             )

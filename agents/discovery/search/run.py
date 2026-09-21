@@ -1,8 +1,4 @@
-"""Open-web search and triage CLI.
-
-Phase 1 deliberately stops at candidate search and triage. It does not fetch
-candidate pages, stage records, route records, or write canonical tables.
-"""
+"""Open-web discovery CLI: search, gate, page analysis, staging, and routing."""
 
 from __future__ import annotations
 
@@ -16,16 +12,20 @@ from urllib.parse import urlsplit, urlunsplit
 
 from agents.common.config import load_sources_config
 from agents.common.cost import CostLimitExceeded, CostMeter
-from agents.common.llm import ClaudeToolClient
+from agents.common.llm import ClaudeToolClient, llm_usage_delta, llm_usage_snapshot
 from agents.common.resolve_route import load_actor_resolver_class
 from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.search.actor_scoring import actor_rubric_weights, actor_score_thresholds
 from agents.discovery.search.event_scoring import event_rubric_weights, event_score_thresholds
 from agents.discovery.search.models import CandidateRecord, SearchResult, TriageDecision
+from agents.discovery.search.person_scoring import (
+    person_rubric_weights,
+    person_score_thresholds,
+)
 from agents.discovery.search.phase2 import (
-    fetch_extract_stage_people,
     fetch_score_stage_actors,
     fetch_score_stage_events,
+    fetch_score_stage_people,
 )
 from agents.discovery.search.providers import SearchProvider, build_search_provider
 from agents.discovery.search.query_generation import (
@@ -46,7 +46,6 @@ from agents.discovery.search.triage import (
     SearchTriageClient,
     blocklist_domains_for_entity,
     deterministic_rejection,
-    has_person_topic_evidence,
     is_triage_incomplete,
     known_source_domains,
     load_actor_hub_sector_counts,
@@ -54,7 +53,6 @@ from agents.discovery.search.triage import (
     normalized_domain,
     person_scope_rejection,
     registrable_domain,
-    triage_verdict,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,9 +193,11 @@ def run_search_triage(
             for name, weight in event_rubric_weights(config).items():
                 stats[f"event_rubric_weight_{name}"] = weight
         elif entity_type == "person":
-            stats["person_relevance_floor"] = float(
-                dict(config.get("accept_floor", {}) or {}).get("person", 0.75)
-            )
+            auto_low, auto_high = person_score_thresholds(config)
+            stats["person_score_auto_low"] = auto_low
+            stats["person_score_auto_high"] = auto_high
+            for name, weight in person_rubric_weights(config).items():
+                stats[f"person_rubric_weight_{name}"] = weight
             stats["person_query_distinct_hubs"] = int(
                 dict(bundle.metadata or {}).get("distinct_hubs_covered") or 0
             )
@@ -253,16 +253,26 @@ def run_search_triage(
             )
             stats["triage_cap_rejected"] = capped_count
 
-        decisions = _llm_triage(
-            entity_type=entity_type,
-            results=triaged_results,
-            triage_client=triage_client,
-            config=config,
-            session=session,
-            root=root,
-            cost_meter=cost_meter,
-            actor_query_metadata=bundle.metadata or {},
-        )
+        triage_usage_client = getattr(triage_client, "llm_client", llm_client)
+        triage_usage_before = llm_usage_snapshot(triage_usage_client)
+        try:
+            decisions = _llm_triage(
+                entity_type=entity_type,
+                results=triaged_results,
+                triage_client=triage_client,
+                config=config,
+                session=session,
+                root=root,
+                cost_meter=cost_meter,
+                actor_query_metadata=bundle.metadata or {},
+            )
+        finally:
+            _attach_llm_cache_stats(
+                stats,
+                prefix="triage",
+                before=triage_usage_before,
+                client=triage_usage_client,
+            )
         _append_llm_triaged_rows(
             run_id=run_id,
             entity_type=entity_type,
@@ -363,44 +373,38 @@ def run_search_triage(
             candidate_rows = event_outcome.candidates
             attention_reasons.extend(event_outcome.attention_reasons)
         elif entity_type == "person" and bool(config.get("fetch_enabled", False)):
-            attention_reasons.extend(
-                fetch_extract_stage_people(
-                    run_id=run_id,
-                    candidates=candidate_rows,
-                    config=config,
-                    root=root,
-                    session=session,
-                    live=live,
-                    run_log=run_log,
-                    cost_meter=cost_meter,
-                    stats=stats,
-                    audit_rows=audit_rows,
-                    source=fetch_source,
-                    extractor=extractor,
-                    raw_store=raw_store,
-                    stage_store=stage_store,
-                    domain_store=domain_store,
-                    person_candidates=person_candidates,
-                    actor_resolver=actor_resolver,
-                    run_date=run_date,
-                    person_create_preview=person_create_preview,
-                )
+            hubs = load_actor_query_hubs(session) if session is not None else []
+            person_outcome = fetch_score_stage_people(
+                run_id=run_id,
+                candidates=candidate_rows,
+                config=config,
+                root=root,
+                session=session,
+                live=live,
+                run_log=run_log,
+                cost_meter=cost_meter,
+                stats=stats,
+                audit_rows=audit_rows,
+                sector_codes=[
+                    str(sector.get("code") or "").upper()
+                    for sector in load_seeded_sectors(root)
+                ],
+                hub_names=[str(hub.get("name") or "").strip() for hub in hubs],
+                source=fetch_source,
+                rubric_extractor=extractor,
+                raw_store=raw_store,
+                stage_store=stage_store,
+                domain_store=domain_store,
+                person_candidates=person_candidates,
             )
+            candidate_rows = person_outcome.candidates
+            attention_reasons.extend(person_outcome.attention_reasons)
 
         stats["accepted"] = sum(1 for row in candidate_rows if row.triage_verdict == "accepted")
         stats["rejected"] = sum(1 for row in candidate_rows if row.triage_verdict == "rejected")
         stats["triage_incomplete"] = sum(
             1 for row in candidate_rows if row.triage_verdict == "triage_incomplete"
         )
-        if entity_type == "person":
-            floor = float(dict(config.get("accept_floor", {}) or {}).get("person", 0.75))
-            stats["person_rejected_below_floor"] = sum(
-                1
-                for row in candidate_rows
-                if row.fit_score is not None
-                and row.fit_score < floor
-                and row.triage_verdict == "rejected"
-            )
         if stats["triage_incomplete"]:
             attention_reasons.append(
                 f"triage_incomplete: {stats['triage_incomplete']} candidate(s) "
@@ -771,7 +775,7 @@ def _llm_triage(
     decisions: dict[str, TriageDecision] = {}
     batch_size_key = (
         f"{entity_type}_triage_batch_size"
-        if entity_type in {"actor", "event"}
+        if entity_type in {"actor", "event", "person"}
         else "triage_batch_size"
     )
     batch_size = int(config.get(batch_size_key, config.get("triage_batch_size", 20)))
@@ -1023,9 +1027,6 @@ def _append_llm_triaged_rows(
     config: dict[str, object],
     candidate_rows: list[CandidateRecord],
 ) -> None:
-    floors = dict(config.get("accept_floor", {}) or {})
-    floor = float(floors.get(entity_type, 0.5))
-    decided_urls = set(decisions)
     capped_urls = {
         row.url
         for row in candidate_rows
@@ -1045,32 +1046,13 @@ def _append_llm_triaged_rows(
             )
         verdict = (
             "triage_incomplete"
-            if entity_type in {"actor", "event"} and is_triage_incomplete(decision)
+            if entity_type in {"actor", "event", "person"}
+            and is_triage_incomplete(decision)
             else ("accepted" if decision.is_entity_type else "rejected")
-            if entity_type in {"actor", "event"}
-            else triage_verdict(
-                decision,
-                floor=floor,
-                entity_type=entity_type,
-            )
+            if entity_type in {"actor", "event", "person"}
+            else "rejected"
         )
         reason = decision.reason
-        if (
-            entity_type == "person"
-            and verdict == "rejected"
-            and decision.accepted
-            and not has_person_topic_evidence(decision)
-        ):
-            reason = "insufficient direct sector and topic evidence"
-        elif (
-            entity_type not in {"actor", "event"}
-            and
-            result.url in decided_urls
-            and verdict == "rejected"
-            and decision.fit_score is not None
-            and not is_triage_incomplete(decision)
-        ):
-            reason = f"{reason}; fit_score below accepted floor {floor:.2f}"
         candidate_rows.append(
             CandidateRecord.from_result(
                 run_id=run_id,
@@ -1135,6 +1117,20 @@ def _empty_stats() -> dict[str, object]:
         "failures": 0,
         "cost_usd": 0.0,
     }
+
+
+def _attach_llm_cache_stats(
+    stats: dict[str, object],
+    *,
+    prefix: str,
+    before: dict[str, int],
+    client,
+) -> None:
+    usage = llm_usage_delta(before, llm_usage_snapshot(client))
+    stats[f"{prefix}_llm_calls"] = usage["calls"]
+    stats[f"{prefix}_cache_write_tokens"] = usage["cache_write_tokens"]
+    stats[f"{prefix}_cache_read_tokens"] = usage["cache_read_tokens"]
+    stats[f"{prefix}_cache_hit_rate"] = usage["cache_hit_rate"]
 
 
 def _report_path(root: Path, explicit: str | None) -> Path:

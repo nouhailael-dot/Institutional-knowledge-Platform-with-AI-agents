@@ -13,7 +13,11 @@ from agents.discovery.normalize import normalize_person_record
 from agents.discovery.promote import promote
 from agents.discovery.run import _extract_stage_route_promote, _storage_path_for_doc
 from agents.discovery.search.models import CandidateRecord, SearchResult
-from agents.discovery.search.phase2 import OpenWebEventSource, fetch_extract_stage_people
+from agents.discovery.search.phase2 import OpenWebEventSource, fetch_score_stage_people
+from agents.discovery.search.query_generation import (
+    load_actor_query_hubs,
+    load_seeded_sectors,
+)
 from agents.discovery.search.triage import normalized_domain
 from agents.discovery.stage import InMemoryStageStore, SQLStageStore, mark_routed, stage_record
 
@@ -64,13 +68,10 @@ def load_actor_page_capture_candidates(session, *, run_id: str) -> list[Candidat
 def capture_people_from_actor_pages(
     *,
     people_enabled: bool,
-    person_create_preview: bool = False,
     **kwargs,
 ) -> list[str]:
     """Feed held actor pages into the same fetch/extract/stage/route pipeline."""
     _require_people_enabled(people_enabled)
-    if kwargs.get("live") and person_create_preview:
-        raise RuntimeError("person create preview cannot be combined with live writes")
     session = kwargs.get("session")
     if session is None and "candidates" not in kwargs:
         raise RuntimeError("actor-page capture requires a session or injected candidates")
@@ -81,12 +82,17 @@ def capture_people_from_actor_pages(
             run_id=str(kwargs.get("run_id") or ""),
         )
     config = {**dict(kwargs.pop("config")), "people_enabled": True}
-    return fetch_extract_stage_people(
+    root = Path(kwargs["root"])
+    sectors = load_seeded_sectors(root)
+    hubs = load_actor_query_hubs(session) if session is not None else []
+    outcome = fetch_score_stage_people(
         candidates=candidates,
         config=config,
-        person_create_preview=person_create_preview,
+        sector_codes=[str(sector.get("code") or "").upper() for sector in sectors],
+        hub_names=[str(hub.get("name") or "").strip() for hub in hubs],
         **kwargs,
     )
+    return outcome.attention_reasons
 
 
 def load_person_profile_targets(session) -> list[dict[str, object]]:
@@ -94,12 +100,21 @@ def load_person_profile_targets(session) -> list[dict[str, object]]:
         session.execute(
             text(
                 "SELECT p.person_id::text AS person_id, p.full_name AS name, p.title AS role, "
-                "p.linkedin_url AS public_profile_url, a.name AS affiliation "
+                "COALESCE(NULLIF(btrim(p.linkedin_url), ''), pdp.public_profile_url) "
+                "AS public_profile_url, a.name AS affiliation "
                 "FROM person p "
                 "LEFT JOIN actor_person ap ON ap.person_id = p.person_id "
                 "AND ap.is_current IS NOT FALSE "
                 "LEFT JOIN actor a ON a.actor_id = ap.actor_id "
-                "WHERE p.linkedin_url IS NOT NULL AND btrim(p.linkedin_url) <> '' "
+                "LEFT JOIN LATERAL ("
+                "SELECT profile.public_profile_url FROM person_discovery_profile profile "
+                "WHERE profile.person_id = p.person_id "
+                "AND profile.public_profile_url IS NOT NULL "
+                "AND btrim(profile.public_profile_url) <> '' "
+                "ORDER BY profile.fetched_at DESC, profile.created_at DESC LIMIT 1"
+                ") pdp ON TRUE "
+                "WHERE COALESCE(NULLIF(btrim(p.linkedin_url), ''), "
+                "pdp.public_profile_url) IS NOT NULL "
                 "ORDER BY p.full_name"
             )
         )
@@ -260,6 +275,8 @@ def _flag_profile_404(
         candidate_ids=[person_id] if person_id else [],
         metadata={
             "candidate_name": str(profile.get("name") or "").strip(),
+            "review_kind": "profile_404",
+            "identity_outcome": "probable_move",
             "identity_reason": "stored professional profile returned 404; probable move",
         },
     )
@@ -270,6 +287,7 @@ def _flag_profile_404(
         session=session,
         live=live,
         person_create_preview=person_create_preview,
+        people_enabled=True,
     )
     audit_rows.append(
         _profile_audit_row(

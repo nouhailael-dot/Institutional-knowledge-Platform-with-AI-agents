@@ -50,6 +50,46 @@ class LLMUsage:
         }
 
 
+USAGE_COUNTER_FIELDS = (
+    "calls",
+    "input_tokens",
+    "output_tokens",
+    "cache_write_tokens",
+    "cache_read_tokens",
+)
+
+
+def llm_usage_snapshot(client) -> dict[str, int]:
+    """Return counters from a tool client without assuming it is the production client."""
+    usage = getattr(client, "usage", None)
+    if usage is None:
+        return {field: 0 for field in USAGE_COUNTER_FIELDS}
+    return {
+        field: int(getattr(usage, field, 0) or 0)
+        for field in USAGE_COUNTER_FIELDS
+    }
+
+
+def llm_usage_delta(
+    before: dict[str, int],
+    after: dict[str, int],
+) -> dict[str, int | float]:
+    """Compute phase-local usage and a token-weighted prompt-cache hit rate."""
+    delta = {
+        field: max(0, int(after.get(field, 0)) - int(before.get(field, 0)))
+        for field in USAGE_COUNTER_FIELDS
+    }
+    cache_total = delta["cache_write_tokens"] + delta["cache_read_tokens"]
+    return {
+        **delta,
+        "cache_hit_rate": (
+            round(delta["cache_read_tokens"] / cache_total, 3)
+            if cache_total
+            else 0.0
+        ),
+    }
+
+
 class ClaudeToolClient:
     """Thin Anthropic client wrapper for structured tool output."""
 

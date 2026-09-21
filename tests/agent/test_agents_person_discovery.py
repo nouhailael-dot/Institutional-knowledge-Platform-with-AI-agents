@@ -16,16 +16,20 @@ from agents.discovery.person_pages import (
     reverify_person_profiles,
 )
 from agents.discovery.promote import apply_approved_person_affiliation_change, promote
-from agents.discovery.search.models import SearchResult, TriageDecision
+from agents.discovery.search.models import SearchResult
+from agents.discovery.search.person_scoring import (
+    RUBRIC_ITEM_NAMES,
+    person_score_band,
+    person_score_thresholds,
+    score_person_rubric,
+)
 from agents.discovery.search.phase2 import fetch_extract_stage_people
 from agents.discovery.search.query_generation import QueryGenerator
 from agents.discovery.search.triage import (
-    PERSON_RELEVANCE_SIGNAL_NAMES,
     SearchTriageClient,
     _triage_input_schema,
     blocklist_domains_for_entity,
     person_scope_rejection,
-    triage_verdict,
 )
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.stage import InMemoryStageStore, StagedRecord
@@ -282,25 +286,15 @@ def test_news_directory_and_noninstitutional_person_pages_reject_before_llm():
     )
 
 
-def test_person_relevance_judge_returns_evidence_but_no_identity_decision():
+def test_person_gate_returns_only_fetch_and_reason():
     url = "https://water.example.edu/amina"
-    signals = {
-        "sector_intersection": "Works on membrane desalination",
-        "hub_or_held_affiliation": "Example Water Institute",
-        "actionable_role": "Principal Investigator",
-        "topic_evidence": "Leads a membrane research project",
-    }
     client = ToolClient(
         {
             "candidates": [
                 {
                     "url": url,
-                    "is_professional_person_page": True,
-                    "sector_codes": ["WATER"],
-                    "hub_matches": ["Colorado Water Hub"],
-                    "relevance_signals": signals,
-                    "relevance_score": 0.94,
-                    "reason": "Strong direct topic and role evidence",
+                    "fetch": True,
+                    "reason": "Plausible institution-published professional profile.",
                 }
             ]
         }
@@ -313,60 +307,33 @@ def test_person_relevance_judge_returns_evidence_but_no_identity_decision():
     )
 
     decision = decisions[url]
-    assert decision.relevance_signals == signals
-    assert set(decision.relevance_signals) == set(PERSON_RELEVANCE_SIGNAL_NAMES)
+    assert decision.is_entity_type is True
+    assert decision.fit_score is None
     schema_text = json.dumps(_triage_input_schema("person")).lower()
-    for forbidden in ("identity_decision", "natural_key", "route", "duplicate"):
+    assert set(
+        _triage_input_schema("person")["properties"]["candidates"]["items"][
+            "properties"
+        ]
+    ) == {"url", "fetch", "reason"}
+    for forbidden in ("identity_decision", "natural_key", "route", "duplicate", "score"):
         assert forbidden not in schema_text
 
 
-def test_default_person_floor_rejects_low_score_and_missing_topic_evidence():
+def test_person_score_thresholds_replace_the_pointwise_floor():
     config = load_sources_config(PROJECT_ROOT)["open_web_discovery"]
-    floor = float(config["accept_floor"]["person"])
-    complete = {
-        "sector_intersection": "Water sector",
-        "hub_or_held_affiliation": None,
-        "actionable_role": None,
-        "topic_evidence": "Published membrane desalination work",
+    empty = {
+        name: {"present": False, "evidence": None} for name in RUBRIC_ITEM_NAMES
     }
-    assert floor == 0.6
-    assert (
-        triage_verdict(
-            TriageDecision(
-                url="https://example.edu/a",
-                is_entity_type=True,
-                plausible_sector=True,
-                fit_score=0.55,
-                reason="relevant",
-                is_professional_person_page=True,
-                relevance_signals=complete,
-            ),
-            floor=floor,
-            entity_type="person",
-        )
-        == "rejected"
-    )
-    assert (
-        triage_verdict(
-            TriageDecision(
-                url="https://example.edu/a",
-                is_entity_type=True,
-                plausible_sector=True,
-                fit_score=0.99,
-                reason="relevant",
-                is_professional_person_page=True,
-                relevance_signals={**complete, "topic_evidence": None},
-            ),
-            floor=floor,
-            entity_type="person",
-        )
-        == "rejected"
-    )
+    score = score_person_rubric(empty, config=config)
+    assert person_score_thresholds(config) == (0.30, 0.70)
+    assert score.total == 0.0
+    assert person_score_band(score.total, config) == "auto_low"
 
 
 def test_preview_identity_routes_create_skip_and_conflicts_deterministically():
     held = {
         "person_id": str(uuid.uuid4()),
+        "actor_id": str(uuid.uuid4()),
         "full_name": "Dr. Amina Example",
         "affiliation": "Example Water Lab",
         "role": "Principal Investigator",
@@ -392,19 +359,35 @@ def test_preview_identity_routes_create_skip_and_conflicts_deterministically():
     assert route_person({**same, "name": "New Person"}, [held]).zone == "review"
 
 
-def test_person_create_is_preview_only_and_never_live():
+def test_person_create_preview_does_not_bypass_authorization_or_enable_live():
     staged = _staged_person()
     route = RouteDecision(zone="create", score=0.0)
 
-    result = promote(staged, route, person_create_preview=True)
-    assert result.action == "would_create"
-    with pytest.raises(RuntimeError, match="cannot be used with live writes"):
+    with pytest.raises(RuntimeError, match="person create guard failed"):
         promote(
             staged,
             route,
+            person_create_preview=True,
+            people_enabled=True,
+        )
+    authorized = RouteDecision(
+        zone="create",
+        score=0.8,
+        metadata={
+            "score_band": "auto_high",
+            "identity_outcome": "create",
+            "clean_identity_key": True,
+            "affiliation_actor_id": str(uuid.uuid4()),
+        },
+    )
+    with pytest.raises(RuntimeError, match="cannot be used with live writes"):
+        promote(
+            staged,
+            authorized,
             session=Session(),
             live=True,
             person_create_preview=True,
+            people_enabled=True,
         )
 
 

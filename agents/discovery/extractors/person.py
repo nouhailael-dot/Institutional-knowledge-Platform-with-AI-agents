@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from datetime import UTC, datetime
 from typing import Any
 
@@ -39,6 +40,11 @@ PERSON_TOOL_SCHEMA: dict[str, Any] = {
     },
     "required": ["people"],
 }
+
+
+def person_record_schema() -> dict[str, Any]:
+    """Return the exact five-field record schema used by ``PERSON_TOOL_SCHEMA``."""
+    return copy.deepcopy(PERSON_TOOL_SCHEMA["properties"]["people"]["items"])
 
 
 class PersonExtractor:

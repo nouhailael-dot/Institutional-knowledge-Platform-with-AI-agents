@@ -21,10 +21,10 @@ The rejection report is written beside the complete report with
 `-rejections.md` appended to its stem. `--rejection-report-out` can set a
 different path. Report generation never deletes candidates.
 
-For events and enabled person expertise runs, Phase 2 fetches accepted candidate
-pages and sends them through the existing extract, normalize, stage, and
-deterministic route path. Actor runs use a binary fetch gate followed by fetched-page
-rubric extraction, deterministic scoring, and bounded listwise reranking. Claude
+Event and actor runs use a binary fetch gate followed by fetched-page rubric and
+record extraction, deterministic scoring, and bounded listwise reranking. Only
+qualified score bands enter the existing normalize, stage, and deterministic route
+path. Enabled person expertise runs still use their existing relevance path. Claude
 native web search is the default provider because its
 server-side search spend is added to the same `CostMeter` as query generation
 and triage, so `max_usd_per_run` aborts runaway searches cleanly. Brave Search
@@ -42,9 +42,10 @@ Caps are hard stops: `max_searches`, `max_candidates_triaged`, and
 silently truncating. Phase 1-only paths reject URLs already seen in
 `raw_document` by URL. Phase 2 event and person runs re-fetch accepted URLs and
 compare the new content hash, so changed pages can be extracted while unchanged
-pages skip the extraction call. Actor page analyses are cached by content hash and
-rubric prompt version, so unchanged evidence is rescored reproducibly without a
-second rubric call.
+pages skip the extraction call. Actor and event page analyses are cached by content
+hash and rubric prompt version, so unchanged evidence is rescored reproducibly
+without a second rubric call. A hash match without a compatible cache remains a
+zero-LLM skip and logs a warning directing the maintainer to stored-page replay.
 
 Phase 2 fetches at most 30 accepted pages and admits at most 10 previously unseen
 domains per run. Both are hard, config-driven caps; hitting either closes the run
@@ -64,9 +65,9 @@ response.
 
 Fetched open-web pages are also untrusted model input. Their raw content is stored
 and content-hashed before extraction, the prompt labels the page body as
-untrusted data, and extractors can return only their forced tool schemas. The actor
-tool returns separate `rubric` and `record` objects; rubric judgment cannot fill
-record facts, and missing record facts are null. No free-form model text is routed
+untrusted data, and extractors can return only their forced tool schemas. Actor and
+event analysis tools return separate `rubric` and `record` objects; rubric judgment
+cannot fill record facts, and missing record facts are null. No free-form model text is routed
 or staged, and no extraction tool has database write access. Records from discovered
 domains may route to create or review, but never absorb. Exact canonical matches are forced to event review, and
 `agents/discovery/promote.py` raises if an absorb route reaches it anyway.
@@ -158,6 +159,16 @@ weights plus database coverage distinctiveness. The top 40 are reranked in group
 10; reranking changes relative order only inside each group and does not change the
 deterministic score.
 
+Actor rubric calls prompt-cache the stable system prompt, forced tool schema,
+three calibration anchors, actor-type enum, seeded sector list, and hub list.
+Only the fetched page block varies. Run stats expose cache write/read tokens and
+the token-weighted hit rate separately for triage and actor rubric extraction.
+Before the rubric call, HTML `nav`, `header`, `footer`, `script`, `style`,
+`noscript`, and `template` content is removed and visible text is normalized.
+The remaining page text is capped by `actor_rubric_content_max_chars` (8,000 by
+default). Truncation is logged per URL and its count plus source, cleaned, and
+sent character totals appear in the run report.
+
 Scores at or above `auto_high` proceed to the existing staging and frozen ER route.
 Scores below `auto_low` are rejected with their rubric; the interval between them is
 review-only. The markdown report and its sibling `-records.csv` contain one row per
@@ -166,9 +177,42 @@ rerank rationale, band, and rubric evidence. Apply
 `agents/sql/140_actor_rubric_candidates.sql` before persisting these fields to
 `search_candidate`.
 
+## Event Discovery
+
+Open-web events use the same shared gate, evidence validation, weighted scoring,
+cache, banding, and listwise reranking core as actors. The gate asks only whether a
+result could be one real event page worth fetching; it returns `fetch` and `reason`,
+never a score. The fetched-page tool returns one nonnumeric evidence rubric and one
+record whose fields come directly from `EVENT_TOOL_SCHEMA`. `city` and `state` are
+part of that shared schema so the reviewer export does not invent geography from a
+free-form venue string.
+
+The calibration anchors are ARPA-E Energy Innovation Summit (strong), a UNGA side
+event with named speakers (middling), and a Climate Week library workshop (weak).
+Configured weights are: single event 0.15, date in the twelve-month window 0.15,
+external registration 0.10, institutional scale 0.10, named speakers 0.12, named
+sponsors/exhibitors/conveners 0.08, specific GHUS topic 0.12, hub geography 0.05,
+prior editions 0.05, and seeded-sector coverage 0.08.
+
+Qualification is derived from the rubric: `attendable` requires an in-window date,
+external registration, and institutional scale; `minable` requires a named speaker
+or at least three named sponsors, exhibitors, or conveners. A past minable event can
+stage participants but is not stored as an event. Person participants remain behind
+`people_enabled` and are not written while that protected switch is off.
+
+`auto_high` qualified events enter the existing event route. `review` candidates are
+staged and written to `event_review_queue` with rubric, score breakdown, qualification
+paths, and rerank rationale. `auto_low` candidates remain rejected with their rubric
+on `search_candidate`. Apply `agents/sql/150_event_rubric_review.sql` after migration
+140 before running this path against a database. The SQL is emitted only; agents do
+not run it.
+
 ## Person Discovery
 
-E2 person discovery extracts only public professional fields: name, affiliation, role, public profile URL, and research area. It intentionally excludes contact details and biographical detail beyond professional role.
+Person discovery extracts only five public professional fields: name,
+affiliation, role or title, public profile URL, and stated research area. The
+forced-tool schema rejects any sixth field, so contact details, biographies,
+and other personal information cannot enter the record.
 
 The two acquisition modes share the same staged ingestion path. Expertise mode
 builds deterministic queries from seeded sectors and hub themes, never from held
@@ -178,25 +222,60 @@ staging and review path. Stored profile re-verification compares content hashes,
 skips unchanged pages, and sends a 404 to review as a probable move without
 deleting the person.
 
-Production handling remains review-only. No discovered person is auto-created
-or auto-absorbed into the canonical `person` table. The
-`--enable-people-for-run --preview-person-create` exposes deterministic
-create/skip/review outcomes for one dry run only; either override raises if
-combined with `--live`. Person review
-rows go to `person_review_queue` with provenance. Reviewer-approved affiliation
-changes retain current state in `actor_person` and write history to
-`person_change_log`; apply `agents/sql/130_person_change_log.sql` before using
-that approval action.
+Search-result triage is a recall-oriented binary gate returning only `fetch` and
+`reason`. It rejects news or feature coverage, encyclopedias, directories,
+profile aggregators, social media, conference biographies, and authenticated
+pages. `phys.org`, `eurekalert.org`, and `sciencedaily.com` are explicitly
+blocked as science-news sources. A thin snippet is not a rejection reason.
+
+One fetched-page tool call returns a separate five-field record and a
+nonnumeric evidence rubric. The calibration anchors are Rosario Sanchez
+(strong), Julia Stoyanovich on a feature page (middling), and a Phys.org
+researcher-coverage row (weak). Configured weights are: institution or
+self-published profile 0.20, stated research area 0.10, seeded-sector
+intersection 0.20, hub or held affiliation 0.15, actionable role 0.15, active
+work evidence 0.15, and public profile URL 0.05. Scores are computed in code,
+then the top 40 are reranked in groups of 10.
+
+`auto_low` candidates are rejected with their rubric. The review band enters
+`person_review_queue` without an identity decision. For `auto_high`, identity is
+resolved only in code from normalized name plus affiliation: an exact repeat is
+skipped, conflicting details or a different affiliation go to review, and an
+unseen key can reach canonical create only when `people_enabled` is true, the
+relevance band is `auto_high`, the deterministic identity key is clean, the
+affiliation exactly matches one held canonical actor, and an explicit role is
+present. Promotion rechecks every condition immediately before writing. Unknown
+or ambiguous affiliations, duplicate held identities, and values too long for
+the canonical schema go to review so an unlinked or malformed person cannot be
+created. The reviewer CSV contains only the five permitted fields plus score,
+band, identity outcome, rerank rationale, and rubric evidence.
+
+A permitted create writes `person`, `actor_person`, `person_discovery_profile`,
+and `index_dirty` in one transaction with a `source` row. The agent-owned
+`person_discovery_profile` row preserves affiliation, research area, public
+profile URL, source URL, and fetch time because the canonical tables cannot
+carry provenance for all five fields. A general university profile is never
+mislabelled as `person.linkedin_url`; that canonical field is populated only
+for an actual LinkedIn hostname. Dry-run executes this transaction and rolls it
+back, while live mode differs only at the commit boundary.
+
+Reviewer-approved affiliation changes retain current state in `actor_person`
+and write history to `person_change_log`. Apply
+`agents/sql/130_person_change_log.sql`, then
+`agents/sql/160_person_rubric_review.sql`, before using these paths. The SQL is
+emitted only; agents do not run it.
 
 ```powershell
-python -m agents.discovery.search.run --entity person --enable-people-for-run --preview-person-create
+python -m agents.discovery.search.run --entity person --enable-people-for-run
 ```
 
 Person records may appear in exports and demos. This widens disclosure beyond
 the internal database: `TARGETING_POLICY.md` section 6 approval must explicitly
 cover expertise discovery, UM6P faculty, and named-person exports and demos.
 The shipped switch remains `people_enabled: false`, and `sci_people` remains
-disabled until that approval and its lawful basis are recorded.
+disabled until that approval and its lawful basis are recorded. The create code
+is therefore dormant: no person discovery, review, or canonical write can pass
+the promotion boundary while the switch is false.
 
 ## Event Sources
 

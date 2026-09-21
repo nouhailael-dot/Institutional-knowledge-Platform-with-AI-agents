@@ -10,10 +10,18 @@ from pathlib import Path
 from sqlalchemy import text
 
 from agents.common.cost import CostLimitExceeded
+from agents.common.llm import llm_usage_delta, llm_usage_snapshot
 from agents.common.raw_storage import RawContentStore
-from agents.common.resolve_route import load_event_candidates, load_person_candidates
+from agents.common.resolve_route import (
+    RouteDecision,
+    load_event_candidates,
+    load_person_affiliation_candidates,
+    load_person_candidates,
+    route_person,
+)
 from agents.discovery.event_qualification import qualify_event
-from agents.discovery.extractors.event import EventExtractor
+from agents.discovery.extractors.actor import ActorRecordValidationError
+from agents.discovery.extractors.event import EventExtractor, EventRecordValidationError
 from agents.discovery.extractors.person import PersonExtractor
 from agents.discovery.run import (
     _extract_stage_route_promote,
@@ -57,6 +65,26 @@ from agents.discovery.search.event_scoring import (
     write_analysis_cache as write_event_analysis_cache,
 )
 from agents.discovery.search.models import CandidateRecord
+from agents.discovery.search.person_scoring import (
+    PROMPT_VERSION as PERSON_ANALYSIS_VERSION,
+)
+from agents.discovery.search.person_scoring import (
+    PersonListwiseReranker,
+    PersonPageAnalysis,
+    PersonRubricExtractor,
+    PreExtractedPersonExtractor,
+    legacy_person_analysis,
+    person_score_band,
+    person_score_thresholds,
+    rerank_top_person_candidates,
+    score_person_rubric,
+)
+from agents.discovery.search.person_scoring import (
+    read_analysis_cache as read_person_analysis_cache,
+)
+from agents.discovery.search.person_scoring import (
+    write_analysis_cache as write_person_analysis_cache,
+)
 from agents.discovery.search.triage import (
     existing_actor_count_for_candidate,
     normalized_domain,
@@ -86,6 +114,7 @@ class ScoredFetchOutcome:
 
 ActorFetchOutcome = ScoredFetchOutcome
 EventFetchOutcome = ScoredFetchOutcome
+PersonFetchOutcome = ScoredFetchOutcome
 
 
 class _DeterministicReranker:
@@ -96,6 +125,11 @@ class _DeterministicReranker:
             (candidate.url, "deterministic rubric order retained for injected extractor")
             for candidate in candidates
         ]
+
+
+class _NoParticipantExtractor:
+    def extract(self, _doc: FetchedDoc) -> list[dict[str, object]]:
+        return []
 
 
 class OpenWebEventSource:
@@ -247,6 +281,7 @@ def plan_person_fetches(
         entity_type="person",
         domain_store=domain_store,
         config=config,
+        require_fit_score=False,
     )
 
 
@@ -361,6 +396,7 @@ def fetch_score_stage_actors(
     rubric_extractor = rubric_extractor or ActorRubricExtractor(
         shared_client,
         max_tokens=int(config.get("actor_rubric_max_tokens", 4096)),
+        content_max_chars=int(config.get("actor_rubric_content_max_chars", 8000)),
     )
     reranker = reranker or ActorListwiseReranker(
         shared_client,
@@ -381,6 +417,15 @@ def fetch_score_stage_actors(
     attention_reasons = _cap_attention_reasons(plan, config)
     by_id = {candidate.candidate_id: candidate for candidate in candidates}
     docs: dict[str, tuple[FetchedDoc, str, str]] = {}
+    rubric_usage_client = getattr(rubric_extractor, "llm_client", None)
+    rubric_usage_before = llm_usage_snapshot(rubric_usage_client)
+    _attach_prompt_cache_stats(
+        stats,
+        prefix="actor_rubric",
+        before=rubric_usage_before,
+        client=rubric_usage_client,
+    )
+    _attach_actor_content_stats(stats, rubric_extractor, config=config)
 
     for candidate in plan.candidates:
         candidate_domain = candidate.domain or normalized_domain(candidate.url)
@@ -461,6 +506,34 @@ def fetch_score_stage_actors(
             cost_meter.enforce()
         except CostLimitExceeded:
             raise
+        except ActorRecordValidationError as exc:
+            logger.warning("open-web actor record validation failed for %s: %s", candidate.url, exc)
+            stats["actor_record_validation_failures"] = int(
+                stats.get("actor_record_validation_failures", 0) or 0
+            ) + 1
+            by_id[candidate.candidate_id] = replace(
+                candidate,
+                page_fetched=page_fetched,
+                triage_verdict="analysis_failed",
+                triage_reason=f"actor record validation failed: {exc}",
+                score_band="analysis_failed",
+            )
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": "open_web_search",
+                    "entity_type": "actor",
+                    "source_url": candidate.url,
+                    "content_hash": "",
+                    "natural_key": "",
+                    "zone": "",
+                    "score": "",
+                    "target_entity_id": "",
+                    "candidate_ids": [],
+                    "status": "record_validation_failed",
+                    "error": str(exc),
+                }
+            )
         except Exception as exc:  # noqa: BLE001 - one untrusted page must not stop the batch.
             logger.warning("open-web actor fetch/rubric failed for %s: %s", candidate.url, exc)
             stats["fetch_failures"] += 1
@@ -487,6 +560,14 @@ def fetch_score_stage_actors(
                     "error": str(exc),
                 }
             )
+        finally:
+            _attach_prompt_cache_stats(
+                stats,
+                prefix="actor_rubric",
+                before=rubric_usage_before,
+                client=rubric_usage_client,
+            )
+            _attach_actor_content_stats(stats, rubric_extractor, config=config)
 
     updated = [by_id[candidate.candidate_id] for candidate in candidates]
     scored = [candidate for candidate in updated if candidate.rubric is not None]
@@ -563,6 +644,11 @@ def fetch_score_stage_actors(
         attention_reasons.append(
             f"open-web actor fetch/rubric failures: {stats['fetch_failures']} page(s)"
         )
+    validation_failures = int(stats.get("actor_record_validation_failures", 0) or 0)
+    if validation_failures:
+        attention_reasons.append(
+            f"open-web actor record validation failures: {validation_failures} page(s)"
+        )
     return ActorFetchOutcome(attention_reasons=attention_reasons, candidates=final)
 
 
@@ -613,7 +699,7 @@ def fetch_score_stage_events(
         )
     if participant_extractor is None:
         participant_extractor = (
-            rubric_extractor
+            _NoParticipantExtractor()
             if injected_extractor
             else EventExtractor(
                 shared_client,
@@ -775,6 +861,34 @@ def fetch_score_stage_events(
             cost_meter.enforce()
         except CostLimitExceeded:
             raise
+        except EventRecordValidationError as exc:
+            logger.warning("open-web event record validation failed for %s: %s", candidate.url, exc)
+            stats["event_record_validation_failures"] = int(
+                stats.get("event_record_validation_failures", 0) or 0
+            ) + 1
+            by_id[candidate.candidate_id] = replace(
+                candidate,
+                page_fetched=page_fetched,
+                triage_verdict="analysis_failed",
+                triage_reason=f"event record validation failed: {exc}",
+                score_band="analysis_failed",
+            )
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": "open_web_search",
+                    "entity_type": "event",
+                    "source_url": candidate.url,
+                    "content_hash": "",
+                    "natural_key": "",
+                    "zone": "",
+                    "score": "",
+                    "target_entity_id": "",
+                    "candidate_ids": [],
+                    "status": "record_validation_failed",
+                    "error": str(exc),
+                }
+            )
         except Exception as exc:  # noqa: BLE001 - one untrusted page must not stop the batch.
             logger.warning("open-web event fetch/rubric failed for %s: %s", candidate.url, exc)
             stats["fetch_failures"] += 1
@@ -927,7 +1041,361 @@ def fetch_score_stage_events(
         attention_reasons.append(
             f"open-web event fetch/rubric failures: {stats['fetch_failures']} page(s)"
         )
+    validation_failures = int(stats.get("event_record_validation_failures", 0) or 0)
+    if validation_failures:
+        attention_reasons.append(
+            f"open-web event record validation failures: {validation_failures} page(s)"
+        )
     return EventFetchOutcome(attention_reasons=attention_reasons, candidates=final)
+
+
+def fetch_score_stage_people(
+    *,
+    run_id: str,
+    candidates: list[CandidateRecord],
+    config: dict[str, object],
+    root: Path,
+    session,
+    live: bool,
+    run_log,
+    cost_meter,
+    stats: dict[str, object],
+    audit_rows: list[dict[str, object]],
+    sector_codes: list[str],
+    hub_names: list[str],
+    source=None,
+    rubric_extractor=None,
+    reranker=None,
+    raw_store=None,
+    stage_store=None,
+    domain_store=None,
+    person_candidates=None,
+    affiliation_candidates=None,
+) -> PersonFetchOutcome:
+    """Fetch person profiles, score page evidence, then resolve identity in code."""
+    if not bool(config.get("people_enabled", False)):
+        raise RuntimeError(
+            "open-web person fetch is disabled pending TARGETING_POLICY.md section 6 approval"
+        )
+    if not sector_codes:
+        raise RuntimeError("person rubric pipeline requires seeded sector codes")
+    source = source or OpenWebEventSource(config)
+    injected_extractor = rubric_extractor is not None
+    shared_client = None if injected_extractor else _extraction_client(config, cost_meter)
+    rubric_extractor = rubric_extractor or PersonRubricExtractor(
+        shared_client,
+        max_tokens=int(config.get("person_rubric_max_tokens", 3072)),
+    )
+    if reranker is None:
+        reranker = (
+            _DeterministicReranker()
+            if injected_extractor
+            else PersonListwiseReranker(
+                shared_client,
+                max_tokens=int(config.get("person_rerank_max_tokens", 2048)),
+            )
+        )
+    raw_store = raw_store or RawContentStore.from_config(root, config)
+    stage_store = stage_store or (
+        InMemoryStageStore() if session is None else SQLStageStore(session)
+    )
+    domain_store = domain_store or (
+        InMemoryDiscoveredDomainStore() if session is None else SQLDiscoveredDomainStore(session)
+    )
+    canonical_candidates = (
+        list(person_candidates)
+        if person_candidates is not None
+        else ([] if session is None else load_person_candidates(session))
+    )
+    canonical_affiliations = (
+        list(affiliation_candidates)
+        if affiliation_candidates is not None
+        else ([] if session is None else load_person_affiliation_candidates(session))
+    )
+    held_actor_names = [
+        str(candidate.get("affiliation") or candidate.get("name") or "").strip()
+        for candidate in canonical_affiliations
+        if str(candidate.get("affiliation") or candidate.get("name") or "").strip()
+    ]
+    plan = plan_person_fetches(candidates, domain_store=domain_store, config=config)
+    stats["fetch_candidates"] = plan.eligible_pages
+    stats["pages_selected"] = len(plan.candidates)
+    stats["new_domains_eligible"] = plan.eligible_new_domains
+    stats["blocked_domains_skipped"] = plan.blocked_domains_skipped
+    attention_reasons = _cap_attention_reasons(plan, config)
+    by_id = {candidate.candidate_id: candidate for candidate in candidates}
+    docs: dict[str, tuple[FetchedDoc, str, str, bool]] = {}
+
+    for candidate in plan.candidates:
+        candidate_domain = candidate.domain or normalized_domain(candidate.url)
+        domain_store.touch(candidate_domain)
+        page_fetched = False
+        try:
+            doc = source.fetch(candidate.url)
+            page_fetched = True
+            final_domain = normalized_domain(doc.url)
+            if not final_domain:
+                raise RuntimeError(f"fetched open-web page has invalid final URL {doc.url!r}")
+            if final_domain != candidate_domain:
+                raise RuntimeError(
+                    "open-web candidate redirected across domains after admission: "
+                    f"{candidate_domain!r} to {final_domain!r}"
+                )
+            domain_store.touch(final_domain)
+            stats["pages_fetched"] += 1
+            domain_store.add_counts(final_domain, pages_fetched=1)
+            prior_raw = run_log.find_raw_document(url=doc.url, content_hash=doc.content_hash)
+            storage_path = _storage_path_for_doc(
+                raw_store, run_id=run_id, doc=doc, prior_raw=prior_raw
+            )
+            raw_document_id = run_log.write_raw_document(
+                run_id=run_id, doc=doc, storage_path=storage_path
+            )
+            cache_path = (
+                raw_store.base_dir
+                / "person_analysis"
+                / f"{doc.content_hash}.{PERSON_ANALYSIS_VERSION}.json"
+            )
+            analysis = read_person_analysis_cache(
+                cache_path,
+                held_actor_names=held_actor_names,
+            )
+            unchanged = prior_raw is not None
+            if unchanged:
+                stats["skipped_unchanged"] += 1
+                audit_rows.append(
+                    _skip_audit_row(run_id, "open_web_search", "person", doc)
+                )
+                if analysis is None:
+                    reason = (
+                        "unchanged person page has no rubric cache; use stored-page replay "
+                        "to initialize the new scorer"
+                    )
+                    logger.warning("%s: %s", candidate.url, reason)
+                    by_id[candidate.candidate_id] = replace(
+                        candidate,
+                        page_fetched=True,
+                        triage_verdict="skipped_unchanged",
+                        triage_reason=reason,
+                    )
+                    continue
+            if analysis is None:
+                extracted = (
+                    rubric_extractor.extract(
+                        doc,
+                        sector_codes=sector_codes,
+                        hub_names=hub_names,
+                        held_actor_names=held_actor_names,
+                    )
+                    if isinstance(rubric_extractor, PersonRubricExtractor)
+                    else rubric_extractor.extract(doc)
+                )
+                if isinstance(extracted, PersonPageAnalysis):
+                    analysis = extracted
+                elif isinstance(extracted, list):
+                    if len(extracted) != 1 or not isinstance(extracted[0], dict):
+                        raise RuntimeError(
+                            "person gate page must extract exactly one person record"
+                        )
+                    analysis = legacy_person_analysis(
+                        extracted[0], held_actor_names=held_actor_names
+                    )
+                else:
+                    raise TypeError("person rubric extractor returned an unsupported result")
+                write_person_analysis_cache(cache_path, analysis)
+                stats["person_pages_analyzed"] = int(
+                    stats.get("person_pages_analyzed", 0) or 0
+                ) + 1
+            score = score_person_rubric(analysis.rubric, config=config)
+            by_id[candidate.candidate_id] = replace(
+                candidate,
+                page_fetched=True,
+                fit_score=score.total,
+                rubric=analysis.rubric,
+                record_preview=analysis.record,
+                score_breakdown=score.contributions,
+                score_band=person_score_band(score.total, config),
+            )
+            docs[candidate.candidate_id] = (
+                doc,
+                final_domain,
+                raw_document_id,
+                unchanged,
+            )
+            cost_meter.enforce()
+        except CostLimitExceeded:
+            raise
+        except Exception as exc:  # noqa: BLE001 - one untrusted page must not stop the batch.
+            logger.warning("open-web person fetch/rubric failed for %s: %s", candidate.url, exc)
+            stats["fetch_failures"] += 1
+            by_id[candidate.candidate_id] = replace(
+                candidate,
+                page_fetched=page_fetched,
+                triage_verdict="analysis_failed",
+                triage_reason=f"person fetch or rubric failed: {exc}",
+                score_band="analysis_failed",
+            )
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": "open_web_search",
+                    "entity_type": "person",
+                    "source_url": candidate.url,
+                    "content_hash": "",
+                    "natural_key": "",
+                    "zone": "",
+                    "score": "",
+                    "target_entity_id": "",
+                    "candidate_ids": [],
+                    "status": "fetch_or_rubric_failed",
+                    "error": str(exc),
+                }
+            )
+
+    updated = [by_id[candidate.candidate_id] for candidate in candidates]
+    scored = [candidate for candidate in updated if candidate.rubric is not None]
+    reranked, rerank_attention = rerank_top_person_candidates(
+        scored,
+        reranker=reranker,
+        config=config,
+    )
+    attention_reasons.extend(rerank_attention)
+    reranked_by_id = {candidate.candidate_id: candidate for candidate in reranked}
+    updated = [reranked_by_id.get(candidate.candidate_id, candidate) for candidate in updated]
+
+    routes: dict[str, RouteDecision] = {}
+    final: list[CandidateRecord] = []
+    for candidate in updated:
+        if candidate.rubric is None:
+            final.append(candidate)
+            continue
+        band = candidate.score_band or person_score_band(
+            float(candidate.fit_score or 0.0), config
+        )
+        verdict = (
+            "accepted"
+            if band == "auto_high"
+            else "rejected"
+            if band == "auto_low"
+            else "review"
+        )
+        reason = f"person rubric score {float(candidate.fit_score or 0.0):.3f} -> {band}"
+        record = candidate.record_preview or {}
+        identity_outcome = None
+        route = None
+        if band != "auto_low" and not record.get("name"):
+            band = "auto_low"
+            verdict = "rejected"
+            reason = "person page did not yield a required name"
+        elif band == "review":
+            identity_outcome = "not_evaluated"
+            route = RouteDecision(
+                zone="review",
+                score=float(candidate.fit_score or 0.0),
+                metadata={
+                    "review_kind": "rubric_band",
+                    "identity_outcome": identity_outcome,
+                    "identity_reason": "relevance score is in the review band",
+                },
+            )
+        elif band == "auto_high":
+            identity_route = route_person(
+                record,
+                canonical_candidates,
+                allow_create=True,
+                affiliation_candidates=canonical_affiliations,
+            )
+            identity_outcome = str(
+                dict(identity_route.metadata or {}).get("identity_outcome") or "review"
+            )
+            route = replace(
+                identity_route,
+                score=float(candidate.fit_score or 0.0),
+            )
+        if route is not None:
+            route = replace(
+                route,
+                metadata={
+                    **dict(route.metadata or {}),
+                    "score_band": band,
+                    "rubric": candidate.rubric,
+                    "score_breakdown": candidate.score_breakdown,
+                    "rerank_position": candidate.rerank_position,
+                    "rerank_reason": candidate.rerank_reason,
+                },
+            )
+            routes[candidate.candidate_id] = route
+        final.append(
+            replace(
+                candidate,
+                triage_verdict=verdict,
+                triage_reason=reason,
+                score_band=band,
+                identity_outcome=identity_outcome,
+            )
+        )
+
+    routable = [
+        candidate
+        for candidate in final
+        if candidate.score_band in {"auto_high", "review"}
+    ]
+    for candidate in routable:
+        doc_entry = docs.get(candidate.candidate_id)
+        route = routes.get(candidate.candidate_id)
+        if doc_entry is None or route is None:
+            raise RuntimeError(
+                f"routable person candidate is missing document or route: {candidate.url}"
+            )
+        doc, domain, raw_document_id, unchanged = doc_entry
+        if unchanged:
+            continue
+        before_extracted = int(stats["records_extracted"])
+        before_promoted = int(stats["records_promoted"])
+        try:
+            _extract_stage_route_promote(
+                doc=doc,
+                raw_document_id=raw_document_id,
+                run_id=run_id,
+                source_name="open_web_search",
+                entity_type="person",
+                extractor=PreExtractedPersonExtractor(candidate.record_preview or {}),
+                stage_store=stage_store,
+                session=session,
+                live=live,
+                candidates=canonical_candidates,
+                root=root,
+                stats=stats,
+                audit_rows=audit_rows,
+                discovered_domain=domain,
+                people_enabled=True,
+                person_affiliation_candidates=canonical_affiliations,
+                person_review_metadata={
+                    "review_kind": "rubric_band"
+                    if candidate.score_band == "review"
+                    else "identity",
+                    "rubric_score": candidate.fit_score,
+                    "rubric": candidate.rubric,
+                    "score_breakdown": candidate.score_breakdown,
+                    "rerank_position": candidate.rerank_position,
+                    "rerank_reason": candidate.rerank_reason,
+                    "score_band": candidate.score_band,
+                    "identity_outcome": candidate.identity_outcome,
+                },
+            )
+        finally:
+            domain_store.add_counts(
+                domain,
+                records_extracted=int(stats["records_extracted"]) - before_extracted,
+                records_promoted=int(stats["records_promoted"]) - before_promoted,
+            )
+
+    _attach_person_band_stats(stats, final, config=config)
+    if stats["fetch_failures"]:
+        attention_reasons.append(
+            f"open-web person fetch/rubric failures: {stats['fetch_failures']} page(s)"
+        )
+    return PersonFetchOutcome(attention_reasons=attention_reasons, candidates=final)
 
 
 def fetch_extract_stage_events(
@@ -1168,6 +1636,30 @@ def _attach_event_band_stats(
         )
 
 
+def _attach_person_band_stats(
+    stats: dict[str, object], candidates: list[CandidateRecord], *, config: dict[str, object]
+) -> None:
+    scored = [candidate for candidate in candidates if candidate.rubric is not None]
+    auto_low, auto_high = person_score_thresholds(config)
+    stats["person_score_auto_low"] = auto_low
+    stats["person_score_auto_high"] = auto_high
+    stats["person_scored"] = len(scored)
+    for band in ("auto_high", "review", "auto_low"):
+        count = sum(candidate.score_band == band for candidate in scored)
+        stats[f"person_band_{band}"] = count
+        stats[f"person_band_{band}_proportion"] = count / len(scored) if scored else 0.0
+    for outcome in sorted(
+        {
+            candidate.identity_outcome
+            for candidate in scored
+            if candidate.identity_outcome
+        }
+    ):
+        stats[f"person_identity_{outcome}"] = sum(
+            candidate.identity_outcome == outcome for candidate in scored
+        )
+
+
 def _extraction_client(config: dict[str, object], cost_meter):
     from agents.common.llm import ClaudeToolClient
 
@@ -1177,6 +1669,50 @@ def _extraction_client(config: dict[str, object], cost_meter):
         cost_meter=cost_meter,
         input_usd_per_million=float(pricing.get("input_usd_per_million", 0.0)),
         output_usd_per_million=float(pricing.get("output_usd_per_million", 0.0)),
+    )
+
+
+def _attach_prompt_cache_stats(
+    stats: dict[str, object],
+    *,
+    prefix: str,
+    before: dict[str, int],
+    client,
+) -> None:
+    usage = llm_usage_delta(before, llm_usage_snapshot(client))
+    stats[f"{prefix}_llm_calls"] = usage["calls"]
+    stats[f"{prefix}_cache_write_tokens"] = usage["cache_write_tokens"]
+    stats[f"{prefix}_cache_read_tokens"] = usage["cache_read_tokens"]
+    stats[f"{prefix}_cache_hit_rate"] = usage["cache_hit_rate"]
+
+
+def _attach_actor_content_stats(
+    stats: dict[str, object],
+    extractor,
+    *,
+    config: dict[str, object],
+) -> None:
+    stats["actor_rubric_content_max_chars"] = int(
+        getattr(
+            extractor,
+            "content_max_chars",
+            config.get("actor_rubric_content_max_chars", 8000),
+        )
+    )
+    stats["actor_rubric_pages_prepared"] = int(
+        getattr(extractor, "pages_prepared", 0) or 0
+    )
+    stats["actor_rubric_pages_truncated"] = int(
+        getattr(extractor, "pages_truncated", 0) or 0
+    )
+    stats["actor_rubric_source_chars"] = int(
+        getattr(extractor, "source_chars_total", 0) or 0
+    )
+    stats["actor_rubric_cleaned_chars"] = int(
+        getattr(extractor, "cleaned_chars_total", 0) or 0
+    )
+    stats["actor_rubric_sent_chars"] = int(
+        getattr(extractor, "sent_chars_total", 0) or 0
     )
 
 

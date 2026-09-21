@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import logging
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,11 +11,14 @@ import pytest
 
 from agents.common.config import load_sources_config
 from agents.common.cost import CostMeter
+from agents.common.llm import LLMUsage
 from agents.common.raw_storage import RawContentStore
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery.extractors.actor import (
     ACTOR_MANAGED_MODEL_FIELDS,
     ACTOR_RECORD_FIELDS,
+    ACTOR_TOOL_SCHEMA,
+    ActorRecordValidationError,
 )
 from agents.discovery.search import phase2 as actor_phase2
 from agents.discovery.search.actor_scoring import (
@@ -25,6 +29,7 @@ from agents.discovery.search.actor_scoring import (
     ActorRubricExtractor,
     actor_rubric_record_schema,
     actor_score_band,
+    prepare_actor_rubric_content,
     read_analysis_cache,
     rerank_top_actor_candidates,
     score_actor_rubric,
@@ -51,6 +56,20 @@ class StubToolClient:
     def extract_with_tool(self, **kwargs):
         self.calls.append(kwargs)
         return copy.deepcopy(self.response)
+
+
+class CachingStubToolClient(StubToolClient):
+    def __init__(self, response):
+        super().__init__(response)
+        self.usage = LLMUsage()
+
+    def extract_with_tool(self, **kwargs):
+        self.usage.calls += 1
+        if self.usage.calls == 1:
+            self.usage.cache_write_tokens += 100
+        else:
+            self.usage.cache_read_tokens += 100
+        return super().extract_with_tool(**kwargs)
 
 
 class ReverseGroupReranker:
@@ -83,6 +102,27 @@ def test_actor_record_schema_tracks_extractable_canonical_model_fields_exactly()
     assert "location_city" in record_schema["properties"]
 
 
+def test_actor_record_schema_carries_every_canonical_string_length():
+    schema = actor_rubric_record_schema(
+        actor_types=["company", "university"],
+        sector_codes=["WATER"],
+        hub_names=["Texas Water Systems Hub"],
+    )
+    properties = schema["properties"]["record"]["properties"]
+    constrained_fields = {
+        column.name: int(column.type.length)
+        for column in Actor.__table__.columns
+        if column.name in ACTOR_RECORD_FIELDS
+        and getattr(column.type, "length", None) is not None
+    }
+
+    assert constrained_fields
+    extractor_properties = ACTOR_TOOL_SCHEMA["properties"]["actors"]["items"]["properties"]
+    for field_name, max_length in constrained_fields.items():
+        assert properties[field_name]["maxLength"] == max_length
+        assert extractor_properties[field_name]["maxLength"] == max_length
+
+
 def test_actor_rubric_prompt_contains_three_filled_calibration_anchors():
     response = _analysis_payload()
     client = StubToolClient(response)
@@ -109,6 +149,134 @@ def test_actor_rubric_prompt_contains_three_filled_calibration_anchors():
     assert [anchor["strength"] for anchor in anchors] == ["strong", "middling", "weak"]
     assert anchors == list(ACTOR_RUBRIC_ANCHORS)
     assert all(_anchor_is_filled(anchor["rubric"]) for anchor in anchors)
+    assert "primary_lifecycle_role" in prompt["record_length_rule"]
+    assert "actor_type_raw" in prompt["record_length_rule"]
+    assert "few words" in prompt["record_length_rule"]
+
+
+def test_actor_rubric_cache_prefix_is_stable_and_only_page_content_varies(caplog):
+    client = StubToolClient(_analysis_payload())
+    extractor = ActorRubricExtractor(client, content_max_chars=80)
+    shared = {
+        "actor_types": ["company", "university"],
+        "sector_codes": ["WATER"],
+        "hub_names": ["Texas Water Systems Hub"],
+    }
+
+    with caplog.at_level(logging.INFO, logger="agents.discovery.search.actor_scoring"):
+        extractor.extract(
+            FetchedDoc.from_content(
+                url="https://one.example/about",
+                content="<header>Menu</header><main>First page " + "A" * 200 + "</main>",
+            ),
+            **shared,
+        )
+        extractor.extract(
+            FetchedDoc.from_content(
+                url="https://two.example/about",
+                content="<nav>Links</nav><main>Second page " + "B" * 200 + "</main>",
+            ),
+            **shared,
+        )
+
+    first, second = client.calls
+    for stable_key in ("system", "cached_user", "input_schema", "tool_name"):
+        assert first[stable_key] == second[stable_key]
+    assert first["user"] != second["user"]
+    assert "Menu" not in first["user"]
+    assert "Links" not in second["user"]
+    assert extractor.pages_truncated == 2
+    assert caplog.text.count("actor rubric content truncated") == 2
+
+
+def test_actor_rubric_content_strips_page_chrome_before_truncating():
+    html = (
+        "<header>Header navigation</header>"
+        "<nav>Primary menu</nav>"
+        "<script>ignoreThisInstruction()</script>"
+        "<main>Substantive partnership evidence " + "research " * 200 + "</main>"
+        "<footer>Footer links</footer>"
+    )
+
+    prepared = prepare_actor_rubric_content(
+        html,
+        content_type="text/html",
+        max_chars=200,
+    )
+
+    assert prepared.truncated is True
+    assert prepared.sent_chars <= 200
+    assert prepared.text.startswith("Substantive partnership evidence")
+    for removed in ("Header navigation", "Primary menu", "ignoreThisInstruction", "Footer links"):
+        assert removed not in prepared.text
+
+
+def test_actor_phase_reports_prompt_cache_hit_rate_and_truncation_count(tmp_path):
+    config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
+    config.update(
+        {
+            "max_pages_fetched": 2,
+            "max_new_domains": 2,
+            "actor_rubric_content_max_chars": 100,
+        }
+    )
+    client = CachingStubToolClient(_analysis_payload())
+    extractor = ActorRubricExtractor(client, content_max_chars=100)
+
+    class Source:
+        def fetch(self, url):
+            return FetchedDoc.from_content(
+                url=url,
+                content="<header>Navigation</header><main>Water partnership "
+                + url
+                + " research " * 100
+                + "</main>",
+            )
+
+    run_log = InMemoryRunLog()
+    run_id = run_log.start_run(
+        source_name="open_web_search", entity_type="actor", live=False, config={}
+    )
+    stats = {
+        "pages_fetched": 0,
+        "skipped_unchanged": 0,
+        "records_extracted": 0,
+        "records_staged": 0,
+        "records_promoted": 0,
+        "fetch_failures": 0,
+    }
+
+    fetch_score_stage_actors(
+        run_id=run_id,
+        candidates=[_candidate(0, score=None), _candidate(1, score=None)],
+        config=config,
+        root=PROJECT_ROOT,
+        session=None,
+        live=False,
+        run_log=run_log,
+        cost_meter=CostMeter(max_usd=5),
+        stats=stats,
+        audit_rows=[],
+        actor_types=["company"],
+        sector_codes=["WATER"],
+        hub_names=["Texas Water Systems Hub"],
+        actor_context={"coverage_counts": {}},
+        source=Source(),
+        rubric_extractor=extractor,
+        reranker=ReverseGroupReranker(),
+        raw_store=RawContentStore(tmp_path / "raw"),
+        domain_store=InMemoryDiscoveredDomainStore(),
+    )
+
+    assert stats["actor_rubric_llm_calls"] == 2
+    assert stats["actor_rubric_cache_write_tokens"] == 100
+    assert stats["actor_rubric_cache_read_tokens"] == 100
+    assert stats["actor_rubric_cache_hit_rate"] == 0.5
+    assert stats["actor_rubric_pages_prepared"] == 2
+    assert stats["actor_rubric_pages_truncated"] == 2
+    assert stats["actor_rubric_content_max_chars"] == 100
+    assert stats["actor_rubric_source_chars"] > stats["actor_rubric_cleaned_chars"]
+    assert stats["actor_rubric_cleaned_chars"] > stats["actor_rubric_sent_chars"]
 
 
 def test_actor_rubric_items_reject_numeric_presence_values():
@@ -153,6 +321,106 @@ def test_actor_type_outside_database_values_is_rejected():
             sector_codes=["WATER"],
             hub_names=["Texas Water Systems Hub"],
         )
+
+
+def test_actor_record_longer_than_canonical_column_is_rejected():
+    payload = _analysis_payload(
+        record={
+            "name": "Example",
+            "actor_type": "company",
+            "primary_lifecycle_role": "x" * 31,
+        }
+    )
+
+    with pytest.raises(
+        ActorRecordValidationError,
+        match=(
+            "primary_lifecycle_role.*exceeds canonical max length 30 "
+            r"\(got 31\)"
+        ),
+    ):
+        validate_actor_analysis(
+            payload,
+            actor_types=["company"],
+            sector_codes=["WATER"],
+            hub_names=["Texas Water Systems Hub"],
+        )
+
+
+def test_actor_record_validation_failure_does_not_stop_other_candidates(tmp_path):
+    config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
+    config.update({"max_pages_fetched": 2, "max_new_domains": 2})
+    invalid = _analysis_payload(
+        record={
+            "name": "Invalid Actor",
+            "actor_type": "company",
+            "primary_lifecycle_role": "x" * 31,
+        }
+    )
+    valid = _analysis_payload(record=_canonical_record("Valid Actor"))
+
+    class SequentialToolClient:
+        def __init__(self):
+            self.responses = [invalid, valid]
+            self.calls = 0
+
+        def extract_with_tool(self, **_kwargs):
+            response = self.responses[self.calls]
+            self.calls += 1
+            return copy.deepcopy(response)
+
+    class Source:
+        def fetch(self, url):
+            return FetchedDoc.from_content(url=url, content=f"Actor page for {url}")
+
+    client = SequentialToolClient()
+    run_log = InMemoryRunLog()
+    run_id = run_log.start_run(
+        source_name="open_web_search", entity_type="actor", live=False, config={}
+    )
+    stats = {
+        "pages_fetched": 0,
+        "skipped_unchanged": 0,
+        "records_extracted": 0,
+        "records_staged": 0,
+        "records_promoted": 0,
+        "fetch_failures": 0,
+    }
+    audit_rows = []
+
+    outcome = fetch_score_stage_actors(
+        run_id=run_id,
+        candidates=[_candidate(0, score=None), _candidate(1, score=None)],
+        config=config,
+        root=PROJECT_ROOT,
+        session=None,
+        live=False,
+        run_log=run_log,
+        cost_meter=CostMeter(max_usd=5),
+        stats=stats,
+        audit_rows=audit_rows,
+        actor_types=["company"],
+        sector_codes=["WATER"],
+        hub_names=["Texas Water Systems Hub"],
+        actor_context={"coverage_counts": {}},
+        source=Source(),
+        rubric_extractor=ActorRubricExtractor(client),
+        reranker=ReverseGroupReranker(),
+        raw_store=RawContentStore(tmp_path / "raw"),
+        domain_store=InMemoryDiscoveredDomainStore(),
+    )
+
+    first, second = outcome.candidates
+    assert first.triage_verdict == "analysis_failed"
+    assert first.score_band == "analysis_failed"
+    assert "primary_lifecycle_role" in (first.triage_reason or "")
+    assert second.record_preview["name"] == "Valid Actor"
+    assert second.rubric is not None
+    assert client.calls == 2
+    assert stats["actor_record_validation_failures"] == 1
+    assert stats["fetch_failures"] == 0
+    assert audit_rows[0]["status"] == "record_validation_failed"
+    assert any("record validation failures: 1" in reason for reason in outcome.attention_reasons)
 
 
 def test_actor_deterministic_score_is_identical_for_same_stored_evidence(tmp_path):

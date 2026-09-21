@@ -10,6 +10,7 @@ import pytest
 
 from agents.common.config import load_sources_config
 from agents.common.cost import CostMeter
+from agents.common.llm import LLMUsage
 from agents.common.run_log import InMemoryRunLog
 from agents.discovery.search import run as search_run
 from agents.discovery.search.models import CandidateRecord, SearchResult, TriageDecision
@@ -119,6 +120,26 @@ class SequencedTriageClient:
         if isinstance(response, Exception):
             raise response
         return response
+
+
+class CachingTriageClient(RecordingTriageClient):
+    def __init__(self):
+        super().__init__()
+        self.llm_client = type("UsageClient", (), {"usage": LLMUsage()})()
+
+    def triage(self, candidates, *, entity_type, sectors, references):
+        usage = self.llm_client.usage
+        usage.calls += 1
+        if usage.calls == 1:
+            usage.cache_write_tokens += 100
+        else:
+            usage.cache_read_tokens += 100
+        return super().triage(
+            candidates,
+            entity_type=entity_type,
+            sectors=sectors,
+            references=references,
+        )
 
 
 class MappingRows:
@@ -620,6 +641,7 @@ def test_open_web_actor_scoring_configuration_is_complete():
     assert max_tokens >= 8000
     assert max_tokens >= batch_size * 1000
     assert config["actor_rubric_max_tokens"] == 4096
+    assert config["actor_rubric_content_max_chars"] == 8000
     assert config["actor_rerank_max_tokens"] == 2048
     assert config["actor_rerank_top_n"] == 40
     assert config["actor_rerank_group_size"] == 10
@@ -714,9 +736,7 @@ def test_search_triage_client_accepts_wrapped_candidate_list():
                     "items": [
                         {
                             "url": candidate.url,
-                            "is_entity_type": True,
-                            "plausible_sector": True,
-                            "fit_score": 0.8,
+                            "fetch": True,
                             "reason": "specific event page",
                         }
                     ]
@@ -732,7 +752,8 @@ def test_search_triage_client_accepts_wrapped_candidate_list():
         references=[],
     )
 
-    assert decisions[candidate.url].fit_score == 0.8
+    assert decisions[candidate.url].is_entity_type is True
+    assert decisions[candidate.url].fit_score is None
     assert client.calls[0]["max_tokens"] == 8000
 
 
@@ -743,9 +764,7 @@ def test_search_triage_client_accepts_url_keyed_candidate_mapping():
             {
                 "candidates": {
                     candidate.url: {
-                        "is_entity_type": True,
-                        "plausible_sector": True,
-                        "fit_score": 0.82,
+                        "fetch": True,
                         "reason": "specific event page",
                     }
                 }
@@ -760,7 +779,8 @@ def test_search_triage_client_accepts_url_keyed_candidate_mapping():
         references=[],
     )
 
-    assert decisions[candidate.url].fit_score == 0.82
+    assert decisions[candidate.url].is_entity_type is True
+    assert decisions[candidate.url].fit_score is None
 
 
 def test_search_triage_client_actor_prompt_requires_organisation_own_page():
@@ -967,6 +987,36 @@ def test_run_loads_seen_urls_once_without_per_candidate_queries(monkeypatch, tmp
 
     assert store.load_calls == 1
     assert store.lookup_calls == 0
+
+
+def test_triage_prompt_cache_hit_rate_is_written_to_stats_and_report(monkeypatch, tmp_path):
+    _install_open_web_config(monkeypatch, triage_batch_size=1)
+    provider = StaticSearchProvider(
+        {
+            "q": [
+                _result("https://first.example/event", "q"),
+                _result("https://second.example/event", "q"),
+            ]
+        }
+    )
+    triage = CachingTriageClient()
+
+    result = search_run.run_search_triage(
+        _args(tmp_path),
+        root=PROJECT_ROOT,
+        run_log=InMemoryRunLog(),
+        store=InMemorySearchCandidateStore(),
+        search_provider=provider,
+        query_generator=StaticQueryGenerator(["q"]),
+        triage_client=triage,
+    )
+
+    assert result["stats"]["triage_llm_calls"] == 2
+    assert result["stats"]["triage_cache_write_tokens"] == 100
+    assert result["stats"]["triage_cache_read_tokens"] == 100
+    assert result["stats"]["triage_cache_hit_rate"] == 0.5
+    report = Path(result["report_path"]).read_text(encoding="utf-8")
+    assert "| triage_cache_hit_rate | 0.5 |" in report
 
 
 def test_sql_store_caches_bulk_seen_url_snapshot():

@@ -508,6 +508,8 @@ def _extract_stage_route_promote(
     run_date: date | None = None,
     event_rubric: dict[str, object] | None = None,
     event_review_metadata: dict[str, object] | None = None,
+    person_review_metadata: dict[str, object] | None = None,
+    person_affiliation_candidates: list[dict[str, object]] | None = None,
 ) -> None:
     if entity_type == "person" and not people_enabled:
         raise RuntimeError(
@@ -709,11 +711,39 @@ def _extract_stage_route_promote(
             decision = route_actor(record, actor_resolver)
             decision = guard_actor_absorb_route(staged, decision)
         elif entity_type == "person":
-            decision = route_person(
-                record,
-                candidates,
-                preview_create=person_create_preview,
-            )
+            score_band = str(
+                (person_review_metadata or {}).get("score_band") or ""
+            ).strip()
+            if score_band == "review":
+                decision = RouteDecision(
+                    zone="review",
+                    score=float(
+                        (person_review_metadata or {}).get("rubric_score") or 0.0
+                    ),
+                    metadata={
+                        "review_kind": "rubric_band",
+                        "identity_outcome": "not_evaluated",
+                        "identity_reason": "relevance score is in the review band",
+                        "clean_identity_key": False,
+                    },
+                )
+            else:
+                decision = route_person(
+                    record,
+                    candidates,
+                    preview_create=person_create_preview,
+                    allow_create=score_band == "auto_high",
+                    affiliation_candidates=person_affiliation_candidates,
+                )
+            if person_review_metadata is not None:
+                decision = replace(
+                    decision,
+                    score=float(person_review_metadata.get("rubric_score") or 0.0),
+                    metadata={
+                        **dict(decision.metadata or {}),
+                        **person_review_metadata,
+                    },
+                )
         else:
             raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
         staged = mark_routed(stage_store, staged, decision)
@@ -724,6 +754,7 @@ def _extract_stage_route_promote(
                 session=session,
                 live=live,
                 person_create_preview=person_create_preview,
+                people_enabled=people_enabled,
             )
         else:
             result = promote(staged, decision, session=session, live=live)
@@ -897,7 +928,12 @@ def _stage_event_participants(
                 },
             )
         staged = mark_routed(stage_store, staged, route)
-        result = promote(staged, route, session=session, live=live)
+        result = promote(
+            staged,
+            route,
+            session=session,
+            live=live,
+        )
         stats["records_promoted"] = int(stats.get("records_promoted", 0) or 0) + (
             0 if result.dry_run else 1
         )
@@ -939,7 +975,13 @@ def _stage_event_participants(
         ) + 1
         route = route_person(normalized, person_candidates)
         staged = mark_routed(stage_store, staged, route)
-        result = promote(staged, route, session=session, live=live)
+        result = promote(
+            staged,
+            route,
+            session=session,
+            live=live,
+            people_enabled=people_enabled,
+        )
         stats["records_promoted"] = int(stats.get("records_promoted", 0) or 0) + (
             0 if result.dry_run else 1
         )
