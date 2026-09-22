@@ -4,6 +4,7 @@ import copy
 import csv
 import json
 import uuid
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -40,7 +41,10 @@ from agents.discovery.search.event_scoring import (
 from agents.discovery.search.models import CandidateRecord, SearchResult
 from agents.discovery.search.phase2 import (
     InMemoryDiscoveredDomainStore,
+    _collapse_extracted_event_duplicates,
+    _qualification_capped_event_band,
     fetch_score_stage_events,
+    plan_event_fetches,
 )
 from agents.discovery.search.report import (
     EVENT_REPORT_FIELDS,
@@ -420,6 +424,75 @@ def test_empty_event_rubric_is_below_low_and_thresholds_come_from_config():
     assert event_score_band(score.total, config) == "auto_low"
     assert event_score_band(0.50, config) == "review"
     assert event_score_band(0.80, config) == "auto_high"
+
+
+def test_past_non_minable_event_caps_a_high_score_at_auto_low():
+    rubric = _rubric()
+    rubric["date_within_window"] = _item(False, None)
+    rubric["named_speakers"] = _item(False, None)
+    record = {**_event_record(), "start_date": "2026-04-23"}
+    qualification = qualify_event(
+        record,
+        run_date=RUN_DATE,
+        config={"forward_window_months": 12},
+        rubric=rubric,
+    )
+
+    assert qualification.minable is False
+    assert _qualification_capped_event_band(
+        "auto_high",
+        qualification=qualification,
+        record=record,
+        run_date=RUN_DATE,
+    ) == "auto_low"
+
+
+def test_event_fetch_plan_analyzes_one_page_per_registrable_domain():
+    candidates = [
+        replace(_candidate(index, score=score), url=f"https://events.arpa-e.energy.gov/{index}", domain="events.arpa-e.energy.gov")
+        for index, score in enumerate((0.8, 0.9, 0.7))
+    ]
+
+    plan = plan_event_fetches(
+        candidates,
+        domain_store=InMemoryDiscoveredDomainStore(),
+        config={"max_pages_fetched": 10, "max_new_domains": 10},
+    )
+
+    assert len(plan.candidates) == 1
+    assert plan.candidates[0].fit_score == 0.9
+    assert plan.duplicates_collapsed == 2
+
+
+def test_extracted_event_duplicate_prefers_the_events_own_domain():
+    event_record = {
+        **_event_record(),
+        "title": "ARPA-E Energy Innovation Summit",
+        "start_date": "2027-03-10",
+        "website": "https://arpa-e.energy.gov/summit",
+    }
+    coverage = replace(
+        _candidate(0, score=0.95),
+        url="https://news.example.org/arpa-e-summit",
+        domain="news.example.org",
+        rubric=_rubric(),
+        record_preview=event_record,
+        score_band="auto_high",
+    )
+    own_site = replace(
+        _candidate(1, score=0.75),
+        url="https://arpa-e.energy.gov/summit",
+        domain="arpa-e.energy.gov",
+        rubric=_rubric(),
+        record_preview=event_record,
+        score_band="auto_high",
+    )
+
+    collapsed, count = _collapse_extracted_event_duplicates([coverage, own_site])
+
+    assert count == 1
+    assert collapsed[0].duplicate_of == own_site.candidate_id
+    assert collapsed[1].duplicate_of is None
 
 
 def test_event_rerank_changes_only_the_configured_top_group():

@@ -734,6 +734,7 @@ def _extract_stage_route_promote(
                     preview_create=person_create_preview,
                     allow_create=score_band == "auto_high",
                     affiliation_candidates=person_affiliation_candidates,
+                    actor_resolver=actor_resolver,
                 )
             if person_review_metadata is not None:
                 decision = replace(

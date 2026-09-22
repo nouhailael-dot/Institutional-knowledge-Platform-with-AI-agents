@@ -1812,7 +1812,11 @@ def _attach_actor_band_stats(
 def _attach_event_band_stats(
     stats: dict[str, object], candidates: list[CandidateRecord], *, config: dict[str, object]
 ) -> None:
-    scored = [candidate for candidate in candidates if candidate.rubric is not None]
+    scored = [
+        candidate
+        for candidate in candidates
+        if candidate.rubric is not None and candidate.score_band != "duplicate"
+    ]
     auto_low, auto_high = event_score_thresholds(config)
     stats["event_score_auto_low"] = auto_low
     stats["event_score_auto_high"] = auto_high

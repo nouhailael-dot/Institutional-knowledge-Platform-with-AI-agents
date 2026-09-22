@@ -6,12 +6,13 @@ import json
 import uuid
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from agents.common.config import load_sources_config
 from agents.common.resolve_route import RouteDecision, route_person
 from agents.discovery.extractors.person import PERSON_FIELDS, PERSON_TOOL_SCHEMA
-from agents.discovery.normalize import normalize_person_record
+from agents.discovery.normalize import normalize_affiliation_institution, normalize_person_record
 from agents.discovery.promote import promote
 from agents.discovery.search.models import CandidateRecord
 from agents.discovery.search.person_scoring import (
@@ -209,6 +210,110 @@ def test_auto_high_identity_is_deterministic_and_never_model_supplied():
     assert conflict.metadata["identity_outcome"] == "different_affiliation"
 
 
+def test_affiliation_normalizes_to_institution_and_frozen_resolver_matches_actor():
+    actor_id = str(uuid.uuid4())
+
+    class Resolver:
+        HIGH = 0.9
+        LOW = 0.4
+        model_name = "frozen-test"
+
+        def _candidates(self, name):
+            assert name == "University of Colorado Boulder"
+            return pd.DataFrame(
+                [{"actor_id": actor_id, "name": name, "description": "", "hubs": ""}]
+            )
+
+        def _score(self, _record, candidates):
+            return candidates.assign(score=0.97)
+
+    record = normalize_person_record(
+        {
+            **_person_record(),
+            "affiliation": (
+                "University of Colorado Boulder, Chemical and Biological Engineering"
+            ),
+        }
+    )
+    route = route_person(
+        record,
+        [],
+        allow_create=True,
+        actor_resolver=Resolver(),
+    )
+
+    assert record["affiliation"] == "University of Colorado Boulder"
+    assert record["affiliation_raw"].endswith("Chemical and Biological Engineering")
+    assert route.zone == "create"
+    assert route.metadata["affiliation_actor_id"] == actor_id
+
+
+def test_unmatched_institution_creates_stub_actor_and_person_atomically():
+    class Resolver:
+        HIGH = 0.9
+        LOW = 0.4
+        model_name = "frozen-test"
+
+        def _candidates(self, _name):
+            return pd.DataFrame(columns=["actor_id", "name", "description", "hubs"])
+
+    normalized = normalize_person_record(
+        {**_person_record(), "affiliation": "Example Institute of Water"}
+    )
+    route = route_person(
+        normalized,
+        [],
+        allow_create=True,
+        actor_resolver=Resolver(),
+    )
+    route = RouteDecision(
+        zone=route.zone,
+        score=0.82,
+        metadata={**route.metadata, "score_band": "auto_high"},
+    )
+    staged = StagedRecord(
+        run_id=str(uuid.uuid4()),
+        entity_type="person",
+        natural_key=str(normalized["natural_key"]),
+        source_url="https://example.edu/amina",
+        payload=normalized,
+        normalized_payload=normalized,
+        prompt_version="person_rubric_record_v1",
+        extracted_at="2026-09-15T00:00:00+00:00",
+    )
+    session = Session()
+
+    result = promote(staged, route, session=session, live=True, people_enabled=True)
+
+    sql = [statement for statement, _params in session.statements]
+    actor_index = next(index for index, statement in enumerate(sql) if "INSERT INTO actor (" in statement)
+    person_index = next(index for index, statement in enumerate(sql) if "INSERT INTO person (" in statement)
+    relation_index = next(index for index, statement in enumerate(sql) if "INSERT INTO actor_person" in statement)
+    assert result.action == "created"
+    assert actor_index < person_index < relation_index
+    actor_params = session.statements[actor_index][1]
+    assert actor_params["name"] == "Example Institute of Water"
+    assert actor_params["verification_status"] == "needs_review"
+    profile_params = next(
+        params
+        for statement, params in session.statements
+        if "INSERT INTO person_discovery_profile" in statement
+    )
+    assert profile_params["needs_actor_enrichment"] is True
+    assert session.transaction.committed is True
+
+
+def test_department_or_role_text_never_becomes_an_actor_stub():
+    assert normalize_affiliation_institution("Department of Chemistry") is None
+    record = normalize_person_record(
+        {**_person_record(), "affiliation": "Department of Chemistry"}
+    )
+    route = route_person(record, [], allow_create=True, affiliation_candidates=[])
+
+    assert route.zone == "review"
+    assert route.metadata["identity_outcome"] == "missing_affiliation"
+
+
 def test_person_review_persists_rubric_rerank_and_identity_evidence():
     session = Session()
     staged = _staged_person()
@@ -370,6 +475,12 @@ def test_person_rubric_migration_is_emitted_but_not_run():
         "fetched_at",
     ):
         assert column in sql
+
+    affiliation_sql = (
+        PROJECT_ROOT / "agents" / "sql" / "170_person_affiliation_resolution.sql"
+    ).read_text(encoding="utf-8")
+    assert "affiliation_raw" in affiliation_sql
+    assert "needs_actor_enrichment" in affiliation_sql
 
 
 def _analysis_payload(record: dict[str, object] | None = None) -> dict[str, object]:

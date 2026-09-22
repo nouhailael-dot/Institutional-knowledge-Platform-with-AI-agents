@@ -279,6 +279,70 @@ def test_actor_phase_reports_prompt_cache_hit_rate_and_truncation_count(tmp_path
     assert stats["actor_rubric_cleaned_chars"] > stats["actor_rubric_sent_chars"]
 
 
+def test_actor_fetch_failure_is_backfilled_until_loaded_page_budget_is_full(tmp_path):
+    config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
+    config.update({"max_pages_fetched": 2, "max_new_domains": 2})
+
+    class Source:
+        def __init__(self):
+            self.calls = []
+
+        def fetch(self, url):
+            self.calls.append(url)
+            if len(self.calls) == 1:
+                raise TimeoutError("timed out")
+            return FetchedDoc.from_content(url=url, content="Research programme page")
+
+    source = Source()
+    run_log = InMemoryRunLog()
+    run_id = run_log.start_run(
+        source_name="open_web_search", entity_type="actor", live=False, config={}
+    )
+    stats = {
+        "pages_fetched": 0,
+        "skipped_unchanged": 0,
+        "records_extracted": 0,
+        "records_staged": 0,
+        "records_promoted": 0,
+        "fetch_failures": 0,
+    }
+
+    fetch_score_stage_actors(
+        run_id=run_id,
+        candidates=[_candidate(index, score=None) for index in range(3)],
+        config=config,
+        root=PROJECT_ROOT,
+        session=None,
+        live=False,
+        run_log=run_log,
+        cost_meter=CostMeter(max_usd=5),
+        stats=stats,
+        audit_rows=[],
+        actor_types=["company"],
+        sector_codes=["WATER"],
+        hub_names=["Texas Water Systems Hub"],
+        actor_context={"coverage_counts": {}},
+        source=source,
+        rubric_extractor=ActorRubricExtractor(StubToolClient(_analysis_payload())),
+        reranker=ReverseGroupReranker(),
+        raw_store=RawContentStore(tmp_path / "raw"),
+        domain_store=InMemoryDiscoveredDomainStore(),
+    )
+
+    assert len(source.calls) == 3
+    assert stats["pages_fetched"] == 2
+    assert stats["fetch_backfill_attempts"] == 1
+    assert stats["fetch_failure_exception_TimeoutError"] == 1
+
+
+def test_actor_rubric_distinguishes_active_rd_programmes_from_sales_only():
+    config = load_sources_config(PROJECT_ROOT)["open_web_discovery"]
+    rubric = _analysis_payload()["rubric"]
+    assert "research_development_or_programmes" in rubric
+    assert config["actor_rubric_weights"]["research_development_or_programmes"] > 0
+    assert sum(config["actor_rubric_weights"].values()) == pytest.approx(1.0)
+
+
 def test_actor_rubric_items_reject_numeric_presence_values():
     payload = _analysis_payload()
     payload["rubric"]["real_operating_entity"]["present"] = 1

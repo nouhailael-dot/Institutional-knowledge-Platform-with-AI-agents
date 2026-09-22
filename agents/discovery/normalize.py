@@ -182,7 +182,10 @@ def is_institution_affiliation(value: object) -> bool:
 
 def _contains_organisation_marker(value: str) -> bool:
     lowered = value.casefold()
-    return any(re.search(rf"\b{re.escape(marker)}\b", lowered) for marker in AFFILIATION_ORGANISATION_MARKERS)
+    return bool(re.match(r"^(?:uc|unc|suny|cuny)\s+[a-z]", lowered)) or any(
+        re.search(rf"\b{re.escape(marker)}\b", lowered)
+        for marker in AFFILIATION_ORGANISATION_MARKERS
+    )
 
 
 def _contains_unit_marker(value: str) -> bool:
