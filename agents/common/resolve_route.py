@@ -164,6 +164,7 @@ def route_person(
     preview_create: bool = False,
     allow_create: bool = False,
     affiliation_candidates: Iterable[dict[str, object]] | None = None,
+    actor_resolver=None,
 ) -> RouteDecision:
     """Resolve name plus affiliation deterministically.
 
@@ -289,36 +290,70 @@ def route_person(
             },
         )
 
-    actor_pool = list(
-        affiliation_candidates if affiliation_candidates is not None else candidates
-    )
-    actor_matches = [
-        candidate
-        for candidate in actor_pool
-        if normalize_key_text(
-            str(candidate.get("affiliation") or candidate.get("name") or "")
+    from agents.discovery.normalize import is_institution_affiliation
+
+    affiliation = str(record.get("affiliation") or "").strip()
+    if not is_institution_affiliation(affiliation):
+        return RouteDecision(
+            zone="review",
+            score=0.0,
+            metadata={
+                "identity_outcome": "invalid_affiliation",
+                "clean_identity_key": False,
+                "identity_reason": (
+                    "affiliation did not normalize to an institution; departments and role text "
+                    "cannot become actors"
+                ),
+            },
         )
-        == affiliation_key
-        and str(candidate.get("actor_id") or "").strip()
-    ]
-    actor_ids = {
-        str(candidate.get("actor_id") or "").strip() for candidate in actor_matches
-    }
-    if len(actor_ids) != 1:
+
+    if actor_resolver is not None:
+        actor_route = route_actor({"name": affiliation}, actor_resolver)
+        if actor_route.zone == "review":
+            return RouteDecision(
+                zone="review",
+                score=actor_route.score,
+                target_entity_id=actor_route.target_entity_id,
+                candidate_ids=actor_route.candidate_ids,
+                metadata={
+                    **dict(actor_route.metadata or {}),
+                    "identity_outcome": "ambiguous_affiliation",
+                    "clean_identity_key": False,
+                    "identity_reason": (
+                        "normalized institution is inside the frozen actor resolver review band"
+                    ),
+                },
+            )
+        if actor_route.zone == "absorb":
+            actor_ids = {str(actor_route.target_entity_id or "").strip()}
+            actor_ids.discard("")
+        else:
+            actor_ids = set()
+    else:
+        actor_pool = list(
+            affiliation_candidates if affiliation_candidates is not None else candidates
+        )
+        actor_matches = [
+            candidate
+            for candidate in actor_pool
+            if normalize_key_text(
+                str(candidate.get("affiliation") or candidate.get("name") or "")
+            )
+            == affiliation_key
+            and str(candidate.get("actor_id") or "").strip()
+        ]
+        actor_ids = {
+            str(candidate.get("actor_id") or "").strip() for candidate in actor_matches
+        }
+    if len(actor_ids) > 1:
         return RouteDecision(
             zone="review",
             score=0.0,
             candidate_ids=sorted(actor_ids),
             metadata={
-                "identity_outcome": (
-                    "unknown_affiliation" if not actor_ids else "ambiguous_affiliation"
-                ),
+                "identity_outcome": "ambiguous_affiliation",
                 "clean_identity_key": False,
-                "identity_reason": (
-                    "affiliation does not exactly match a held actor"
-                    if not actor_ids
-                    else "affiliation matches more than one held actor"
-                ),
+                "identity_reason": "affiliation matches more than one held actor",
             },
         )
     role = str(record.get("role") or "").strip()
@@ -344,6 +379,21 @@ def route_person(
                 ),
             },
         )
+    if not actor_ids:
+        return RouteDecision(
+            zone="create",
+            score=0.0,
+            metadata={
+                "identity_outcome": "create",
+                "clean_identity_key": True,
+                "create_affiliation_stub": True,
+                "affiliation_stub_name": affiliation,
+                "identity_reason": (
+                    "frozen actor resolution found no match; create a needs-review actor stub"
+                ),
+            },
+        )
+
     actor_id = next(iter(actor_ids))
     return RouteDecision(
         zone="create",

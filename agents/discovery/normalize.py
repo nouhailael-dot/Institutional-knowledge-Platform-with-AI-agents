@@ -37,6 +37,40 @@ DATE_FORMATS = [
     "%d %b %Y",
 ]
 
+AFFILIATION_ORGANISATION_MARKERS = (
+    "academy",
+    "bureau",
+    "college",
+    "company",
+    "corporation",
+    "foundation",
+    "institute",
+    "lab",
+    "laboratory",
+    "organisation",
+    "organization",
+    "university",
+)
+AFFILIATION_UNIT_MARKERS = (
+    "battery research group",
+    "center for",
+    "centre for",
+    "chemical and biological engineering",
+    "department of",
+    "faculty of",
+    "laboratory of",
+    "materials science & engineering",
+    "materials science and engineering",
+    "mechanical engineering",
+    "research group",
+    "school of",
+)
+AFFILIATION_ROLE_PREFIX_RE = re.compile(
+    r"^(?:assistant|associate|adjunct|full|visiting)?\s*"
+    r"(?:professor|researcher|scientist|director|dean|chair|fellow|engineer)\b",
+    flags=re.IGNORECASE,
+)
+
 
 def normalize_event_record(record: dict[str, object]) -> dict[str, object]:
     out = {key: normalize_whitespace(value) for key, value in record.items()}
@@ -70,6 +104,9 @@ def normalize_actor_record(record: dict[str, object]) -> dict[str, object]:
 def normalize_person_record(record: dict[str, object]) -> dict[str, object]:
     out = {key: normalize_whitespace(value) for key, value in record.items()}
     out["name"] = out.get("name")
+    raw_affiliation = out.get("affiliation_raw") or out.get("affiliation")
+    out["affiliation_raw"] = raw_affiliation
+    out["affiliation"] = normalize_affiliation_institution(raw_affiliation)
     out["sector_codes"] = []
     out["natural_key"] = person_natural_key(
         str(out.get("name") or ""),
@@ -77,6 +114,90 @@ def normalize_person_record(record: dict[str, object]) -> dict[str, object]:
     )
     out["entity_type"] = "person"
     return out
+
+
+def normalize_affiliation_institution(value: object) -> str | None:
+    """Reduce a public affiliation string to the employing institution."""
+    cleaned = normalize_whitespace(value)
+    if cleaned is None:
+        return None
+    text = str(cleaned)
+    text = re.sub(
+        r"\s*\(([^)]*)\)",
+        lambda match: "" if _contains_unit_marker(match.group(1)) else match.group(0),
+        text,
+    ).strip(" ,;-")
+    text = re.split(r"\s+[\u2013\u2014]\s+", text, maxsplit=1)[0].strip()
+
+    segments = [segment.strip() for segment in text.split(",") if segment.strip()]
+    institution_index = next(
+        (
+            index
+            for index, segment in enumerate(segments)
+            if _contains_organisation_marker(segment)
+            and not _is_organisation_unit(segment)
+        ),
+        None,
+    )
+    if institution_index is None:
+        return None
+
+    institution = segments[institution_index]
+    if AFFILIATION_ROLE_PREFIX_RE.search(institution):
+        marker_positions = [
+            institution.casefold().find(marker)
+            for marker in AFFILIATION_ORGANISATION_MARKERS
+            if institution.casefold().find(marker) >= 0
+        ]
+        if marker_positions:
+            institution = institution[min(marker_positions) :].strip()
+
+    # Preserve geographic suffixes that are part of an institution's public name,
+    # such as "University of Nevada, Reno", but never append an academic unit.
+    if institution_index + 1 < len(segments):
+        suffix = segments[institution_index + 1]
+        if (
+            institution.casefold().startswith("university of ")
+            and len(suffix.split()) <= 3
+            and not _is_organisation_unit(suffix)
+            and not AFFILIATION_ROLE_PREFIX_RE.search(suffix)
+        ):
+            institution = f"{institution}, {suffix}"
+
+    institution = str(normalize_whitespace(institution) or "")
+    if not institution or _is_organisation_unit(institution):
+        return None
+    return institution
+
+
+def is_institution_affiliation(value: object) -> bool:
+    cleaned = normalize_whitespace(value)
+    return bool(
+        cleaned
+        and _contains_organisation_marker(str(cleaned))
+        and not _is_organisation_unit(str(cleaned))
+        and not AFFILIATION_ROLE_PREFIX_RE.search(str(cleaned))
+    )
+
+
+def _contains_organisation_marker(value: str) -> bool:
+    lowered = value.casefold()
+    return bool(re.match(r"^(?:uc|unc|suny|cuny)\s+[a-z]", lowered)) or any(
+        re.search(rf"\b{re.escape(marker)}\b", lowered)
+        for marker in AFFILIATION_ORGANISATION_MARKERS
+    )
+
+
+def _contains_unit_marker(value: str) -> bool:
+    lowered = value.casefold()
+    return any(marker in lowered for marker in AFFILIATION_UNIT_MARKERS)
+
+
+def _is_organisation_unit(value: str) -> bool:
+    lowered = value.casefold().strip()
+    return _contains_unit_marker(lowered) or lowered.startswith(
+        ("department ", "school ", "centre ", "center ", "faculty ", "division ")
+    )
 
 
 def normalize_whitespace(value: object) -> object:

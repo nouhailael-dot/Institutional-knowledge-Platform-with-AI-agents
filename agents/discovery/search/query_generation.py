@@ -281,7 +281,10 @@ class QueryGenerator:
                 rotation_seed=_actor_type_rotation_seed(self.today, self.config),
                 types_per_hub=types_per_hub,
             )
-            deterministic = deterministic + list(metadata.get("use_case_queries") or [])
+            deterministic = _interleave_queries(
+                deterministic,
+                list(metadata.get("use_case_queries") or []),
+            )
             references = []
             llm_queries = []
             queries = _distinct_queries(deterministic)
@@ -775,6 +778,24 @@ def _actor_use_case_queries(
         )
 
     return queries, plan_items
+
+
+def _interleave_queries(primary: list[str], secondary: list[str]) -> list[str]:
+    """Distribute secondary queries so a cap cannot silently remove the whole class."""
+    if not secondary:
+        return list(primary)
+    if not primary:
+        return list(secondary)
+    interval = max(1, (len(primary) + len(secondary) - 1) // len(secondary))
+    combined: list[str] = []
+    secondary_index = 0
+    for index, query in enumerate(primary, start=1):
+        combined.append(query)
+        if index % interval == 0 and secondary_index < len(secondary):
+            combined.append(secondary[secondary_index])
+            secondary_index += 1
+    combined.extend(secondary[secondary_index:])
+    return combined
 
 
 def _actor_grid_queries(

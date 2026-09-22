@@ -1268,6 +1268,47 @@ def test_max_searches_cap_closes_attention(monkeypatch, tmp_path):
     assert provider.calls == [("q1", 10)]
 
 
+def test_actor_use_case_queries_execute_when_grid_fills_the_cap(monkeypatch, tmp_path):
+    _install_open_web_config(
+        monkeypatch,
+        max_searches=2,
+        actor_max_searches=2,
+        fetch_enabled=False,
+    )
+
+    class InterleavedActorQueries:
+        def generate(self, entity_type, *, session=None, project_root=None):
+            assert entity_type == "actor"
+            queries = ["grid one", "use case one", "grid two", "use case two"]
+            return QueryBundle(
+                entity_type="actor",
+                queries=queries,
+                deterministic_queries=queries,
+                llm_queries=[],
+                reference_count=0,
+                metadata={
+                    "use_case_queries": ["use case one", "use case two"],
+                    "query_plan": [],
+                    "use_case_query_plan": [],
+                },
+            )
+
+    provider = StaticSearchProvider({})
+    result = search_run.run_search_triage(
+        _args(tmp_path, entity="actor"),
+        root=PROJECT_ROOT,
+        session=CapturingSession([]),
+        run_log=InMemoryRunLog(),
+        store=InMemorySearchCandidateStore(),
+        search_provider=provider,
+        query_generator=InterleavedActorQueries(),
+        triage_client=RecordingTriageClient(),
+    )
+
+    assert [query for query, _count in provider.calls] == ["grid one", "use case one"]
+    assert result["stats"]["actor_use_case_queries_executed"] == 1
+
+
 def test_max_candidates_triaged_cap_records_overflow_rows(monkeypatch, tmp_path):
     _install_open_web_config(monkeypatch, max_candidates_triaged=2)
     store = InMemorySearchCandidateStore()

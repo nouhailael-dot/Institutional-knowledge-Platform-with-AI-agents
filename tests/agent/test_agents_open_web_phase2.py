@@ -189,6 +189,30 @@ class FakeResponse:
             raise RuntimeError(f"HTTP {self.status_code}")
 
 
+def test_http_retries_403_once_with_browser_user_agent(monkeypatch):
+    http = RobotsAwareHttp(
+        {
+            "contact_email": "agent@example.org",
+            "rate_limit_s": 0,
+            "max_retries": 0,
+        }
+    )
+    calls = []
+
+    def request(method, url, headers):
+        calls.append((method, url, headers["User-Agent"]))
+        return FakeResponse(url, 403 if len(calls) == 1 else 200)
+
+    monkeypatch.setattr(http._client, "request", request)
+
+    response = http._request("GET", "https://example.org/page")
+
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert not calls[0][2].startswith("Mozilla/5.0")
+    assert calls[1][2].startswith("Mozilla/5.0")
+
+
 def test_discovered_exact_event_match_routes_to_review_and_raw_is_replayable(
     monkeypatch, tmp_path
 ):

@@ -127,6 +127,17 @@ class RobotsAwareHttp:
             )
         return f"{product} ({contact_part})"
 
+    def browser_user_agent(self) -> str:
+        product = str(self.config.get("user_agent_product", "GHUS-AgentDiscovery/0.1"))
+        env_name = str(self.config.get("contact_email_env", "GHUS_AGENT_CONTACT_EMAIL"))
+        contact = os.environ.get(env_name) or str(self.config.get("contact_email", "")).strip()
+        contact_part = contact or "offline-fixture-run"
+        return (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            f"Chrome/126.0 Safari/537.36 {product} ({contact_part})"
+        )
+
     def _request(self, method: str, url: str) -> httpx.Response:
         headers = {"User-Agent": self.user_agent()}
         for attempt in range(self.max_retries + 1):
@@ -138,6 +149,13 @@ class RobotsAwareHttp:
                     raise
                 time.sleep(2 ** attempt)
                 continue
+            if response.status_code in {403, 429}:
+                self._respect_rate_limit()
+                response = self._client.request(
+                    method,
+                    url,
+                    headers={"User-Agent": self.browser_user_agent()},
+                )
             if 500 <= response.status_code < 600 and attempt < self.max_retries:
                 time.sleep(2 ** attempt)
                 continue

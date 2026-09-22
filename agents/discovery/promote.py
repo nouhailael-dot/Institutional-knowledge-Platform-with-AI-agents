@@ -648,13 +648,21 @@ def _promote_person(
                 fetched_at=staged.extracted_at,
                 description="agent discovery person create",
             )
+            actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+            created_affiliation_stub = metadata.get("create_affiliation_stub") is True
+            if created_affiliation_stub:
+                actor_id = _insert_actor(
+                    session,
+                    {"name": str(metadata["affiliation_stub_name"]).strip()},
+                    source_id,
+                )
+                _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
             person_id = _insert_person(
                 session,
                 staged.normalized_payload,
                 source_id,
                 confidence=float(route.score),
             )
-            actor_id = str(metadata["affiliation_actor_id"])
             role = str(staged.normalized_payload["role"]).strip()
             _insert_person_affiliation(
                 session,
@@ -668,6 +676,7 @@ def _promote_person(
                 person_id=person_id,
                 actor_id=actor_id,
                 source_id=source_id,
+                needs_actor_enrichment=created_affiliation_stub,
             )
             _mark_index_dirty(session, entity_type="person", entity_id=person_id)
             result = PromotionResult(
@@ -714,8 +723,16 @@ def _guard_person_create(staged: StagedRecord, route: RouteDecision) -> None:
         failures.append("identity_outcome must be create")
     if metadata.get("clean_identity_key") is not True:
         failures.append("clean_identity_key must be true")
-    if not str(metadata.get("affiliation_actor_id") or "").strip():
-        failures.append("affiliation_actor_id is required")
+    actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+    creates_stub = metadata.get("create_affiliation_stub") is True
+    if not actor_id and not creates_stub:
+        failures.append("affiliation_actor_id or create_affiliation_stub is required")
+    if creates_stub:
+        stub_name = str(metadata.get("affiliation_stub_name") or "").strip()
+        from agents.discovery.normalize import is_institution_affiliation
+
+        if not is_institution_affiliation(stub_name):
+            failures.append("affiliation stub must be an institution, never a department or role")
     name = str(payload.get("name") or "").strip()
     role = str(payload.get("role") or "").strip()
     affiliation = str(payload.get("affiliation") or "").strip()
@@ -786,24 +803,29 @@ def _insert_person_discovery_profile(
     person_id: str,
     actor_id: str,
     source_id: str,
+    needs_actor_enrichment: bool = False,
 ) -> str:
     profile_id = str(uuid.uuid4())
     payload = staged.normalized_payload
     session.execute(
         text(
             "INSERT INTO person_discovery_profile (person_discovery_profile_id, "
-            "person_id, actor_id, role, research_area, public_profile_url, source_id, "
+            "person_id, actor_id, role, affiliation_raw, research_area, public_profile_url, "
+            "needs_actor_enrichment, source_id, "
             "source_url, fetched_at) VALUES (CAST(:person_discovery_profile_id AS uuid), "
-            "CAST(:person_id AS uuid), CAST(:actor_id AS uuid), :role, :research_area, "
-            ":public_profile_url, CAST(:source_id AS uuid), :source_url, :fetched_at)"
+            "CAST(:person_id AS uuid), CAST(:actor_id AS uuid), :role, :affiliation_raw, "
+            ":research_area, :public_profile_url, :needs_actor_enrichment, "
+            "CAST(:source_id AS uuid), :source_url, :fetched_at)"
         ),
         {
             "person_discovery_profile_id": profile_id,
             "person_id": person_id,
             "actor_id": actor_id,
             "role": payload.get("role"),
+            "affiliation_raw": payload.get("affiliation_raw") or payload.get("affiliation"),
             "research_area": payload.get("research_area"),
             "public_profile_url": payload.get("public_profile_url"),
+            "needs_actor_enrichment": needs_actor_enrichment,
             "source_id": source_id,
             "source_url": staged.source_url,
             "fetched_at": staged.extracted_at,
@@ -842,11 +864,11 @@ def _insert_person_review(
         text(
             "INSERT INTO person_review_queue (person_review_id, staged_record_id, source_id, "
             "candidate_person_id, score, staged_name, affiliation, role, public_profile_url, "
-            "research_area, candidate_name, source_url, status, reviewer, review_kind, "
+            "affiliation_raw, research_area, candidate_name, source_url, status, reviewer, review_kind, "
             "rubric, score_breakdown, rerank_position, rerank_reason, identity_outcome) "
             "VALUES (CAST(:person_review_id AS uuid), CAST(:staged_record_id AS uuid), "
             "CAST(:source_id AS uuid), CAST(:candidate_person_id AS uuid), :score, "
-            ":staged_name, :affiliation, :role, :public_profile_url, :research_area, "
+            ":staged_name, :affiliation, :role, :public_profile_url, :affiliation_raw, :research_area, "
             ":candidate_name, :source_url, 'pending', NULL, :review_kind, "
             "CAST(:rubric AS jsonb), CAST(:score_breakdown AS jsonb), :rerank_position, "
             ":rerank_reason, :identity_outcome) "
@@ -854,7 +876,8 @@ def _insert_person_review(
             "source_id = EXCLUDED.source_id, score = EXCLUDED.score, "
             "staged_name = EXCLUDED.staged_name, affiliation = EXCLUDED.affiliation, "
             "role = EXCLUDED.role, public_profile_url = EXCLUDED.public_profile_url, "
-            "research_area = EXCLUDED.research_area, candidate_name = EXCLUDED.candidate_name, "
+            "affiliation_raw = EXCLUDED.affiliation_raw, research_area = EXCLUDED.research_area, "
+            "candidate_name = EXCLUDED.candidate_name, "
             "source_url = EXCLUDED.source_url, review_kind = EXCLUDED.review_kind, "
             "rubric = EXCLUDED.rubric, score_breakdown = EXCLUDED.score_breakdown, "
             "rerank_position = EXCLUDED.rerank_position, "
@@ -869,6 +892,7 @@ def _insert_person_review(
             "score": float(route.score),
             "staged_name": staged_name,
             "affiliation": payload.get("affiliation"),
+            "affiliation_raw": payload.get("affiliation_raw") or payload.get("affiliation"),
             "role": payload.get("role"),
             "public_profile_url": payload.get("public_profile_url"),
             "research_area": payload.get("research_area"),

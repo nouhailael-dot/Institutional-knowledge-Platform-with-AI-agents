@@ -34,11 +34,12 @@ from agents.discovery.sources.base import FetchedDoc
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "actor_rubric_record_v2"
+PROMPT_VERSION = "actor_rubric_record_v3"
 DEFAULT_CONTENT_MAX_CHARS = 8_000
 RUBRIC_ITEM_NAMES = (
     "own_organisational_page",
     "real_operating_entity",
+    "research_development_or_programmes",
     "partnerships_or_tech_transfer",
     "open_programmes",
     "partnership_precedent",
@@ -55,13 +56,14 @@ SCORE_COMPONENT_NAMES = (
 )
 DEFAULT_RUBRIC_WEIGHTS = {
     "own_organisational_page": 0.10,
-    "real_operating_entity": 0.15,
+    "real_operating_entity": 0.11,
+    "research_development_or_programmes": 0.08,
     "partnerships_or_tech_transfer": 0.08,
     "open_programmes": 0.07,
     "partnership_precedent": 0.08,
     "named_route_in": 0.08,
     "network_membership": 0.04,
-    "use_cases": 0.20,
+    "use_cases": 0.16,
     "sector_coverage": 0.07,
     "hub_match": 0.03,
     "distinctiveness": 0.10,
@@ -82,6 +84,9 @@ ACTOR_RUBRIC_ANCHORS: tuple[dict[str, object], ...] = (
             "own_organisational_page": _item(True, "Official university domain and about page."),
             "real_operating_entity": _item(
                 True, "Faculty, facilities, programmes, and publications are visible."
+            ),
+            "research_development_or_programmes": _item(
+                True, "Named research facilities and active programmes are described."
             ),
             "partnerships_or_tech_transfer": _item(
                 True, "Dedicated research partnerships and technology-transfer routes."
@@ -109,6 +114,9 @@ ACTOR_RUBRIC_ANCHORS: tuple[dict[str, object], ...] = (
         "rubric": {
             "own_organisational_page": _item(True, "Official foundation page."),
             "real_operating_entity": _item(True, "Active programmes and convening work are described."),
+            "research_development_or_programmes": _item(
+                True, "The foundation describes active water programmes."
+            ),
             "partnerships_or_tech_transfer": _item(True, "Partnership activity is visible, without a technical-transfer function."),
             "open_programmes": _item(False, None),
             "partnership_precedent": _item(True, "Collaborative water initiatives are named."),
@@ -145,6 +153,7 @@ ACTOR_RUBRIC_ANCHORS: tuple[dict[str, object], ...] = (
         "rubric": {
             "own_organisational_page": _item(True, "Official municipal department page."),
             "real_operating_entity": _item(True, "Municipal water operations are described."),
+            "research_development_or_programmes": _item(False, None),
             "partnerships_or_tech_transfer": _item(False, None),
             "open_programmes": _item(False, None),
             "partnership_precedent": _item(False, None),
@@ -263,6 +272,11 @@ class ActorRubricExtractor:
                         "For every checklist item set present=true only when the page contains "
                         "specific supporting evidence, and quote or tightly paraphrase it. "
                         "The record and rubric are separate: rubric judgments must not fill record facts."
+                    ),
+                    "research_development_or_programmes_rule": (
+                        "Set research_development_or_programmes=true only for evidence of active "
+                        "research, development, facilities, projects, or programmes. Product sales, "
+                        "catalogues, reselling, and distribution alone do not satisfy it."
                     ),
                     "record_length_rule": (
                         "Respect every canonical maxLength in the record schema. Constrained "
