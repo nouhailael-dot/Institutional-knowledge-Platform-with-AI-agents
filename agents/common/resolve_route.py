@@ -196,13 +196,24 @@ def route_person(
     ]
     affiliation_key = normalize_key_text(str(record.get("affiliation") or ""))
     if not affiliation_key:
+        candidate_ids = sorted({_person_candidate_id(candidate) for candidate in name_matches})
         return RouteDecision(
             zone="review",
-            score=0.0,
+            score=1.0 if name_matches else 0.0,
+            target_entity_id=candidate_ids[0] if len(candidate_ids) == 1 else None,
+            candidate_ids=candidate_ids,
             metadata={
+                "candidate_name": (
+                    str(name_matches[0].get("full_name") or "")
+                    if len(candidate_ids) == 1 else None
+                ),
                 "identity_outcome": "missing_affiliation",
                 "clean_identity_key": False,
-                "identity_reason": "affiliation is required for deterministic identity",
+                "identity_reason": (
+                    "name matches a held person but affiliation is missing"
+                    if name_matches
+                    else "affiliation is required for deterministic identity"
+                ),
             },
         )
     key_matches = [
