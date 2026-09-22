@@ -36,7 +36,7 @@ EVENT_CREATE_FIELDS = [
 
 EVENT_ABSORB_FIELDS = EVENT_CREATE_FIELDS.copy()
 DISCOVERED_DOMAIN_PAYLOAD_KEY = "_discovered_domain"
-ACTOR_CREATE_FIELDS = list(ACTOR_FIELDS)
+ACTOR_CREATE_FIELDS = [*ACTOR_FIELDS, "funding_summary"]
 ACTOR_ABSORB_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_CONNECTOR_RE = re.compile(
     r"\b(?:in collaboration with|in partnership with|in cooperation with|"
@@ -156,12 +156,19 @@ def promote(
     live: bool = False,
     person_create_preview: bool = False,
     people_enabled: bool = False,
+    manage_transaction: bool = True,
 ) -> PromotionResult:
     if staged.sector_match == "out_of_sector":
         raise RuntimeError("out_of_sector staged records must not be promoted")
     route = guard_discovered_domain_route(staged, route)
     if staged.entity_type == "actor":
-        return _promote_actor(staged, route, session=session, live=live)
+        return _promote_actor(
+            staged,
+            route,
+            session=session,
+            live=live,
+            manage_transaction=manage_transaction,
+        )
     if staged.entity_type == "person":
         if not people_enabled:
             raise RuntimeError(
@@ -173,6 +180,7 @@ def promote(
             session=session,
             live=live,
             create_preview=person_create_preview,
+            manage_transaction=manage_transaction,
         )
     if staged.entity_type != "event":
         raise NotImplementedError(
@@ -185,7 +193,7 @@ def promote(
             raise ValueError("live promotion requires a database session")
         return _dry_run_preview(staged, route)
 
-    transaction = session.begin()
+    transaction = session.begin() if manage_transaction else None
     try:
         if route.zone == "create":
             source_id = insert_source(
@@ -233,13 +241,17 @@ def promote(
         else:
             raise ValueError(f"unknown route zone {route.zone!r}")
     except Exception:
-        transaction.rollback()
+        if transaction is not None:
+            transaction.rollback()
         raise
 
-    if live:
+    if live and transaction is not None:
         transaction.commit()
         return result
-    transaction.rollback()
+    if live:
+        return result
+    if transaction is not None:
+        transaction.rollback()
     return _dry_run_result(result, route)
 
 
@@ -426,7 +438,12 @@ def _insert_event_rubric_review(
 
 
 def _promote_actor(
-    staged: StagedRecord, route: RouteDecision, session=None, *, live: bool = False
+    staged: StagedRecord,
+    route: RouteDecision,
+    session=None,
+    *,
+    live: bool = False,
+    manage_transaction: bool = True,
 ) -> PromotionResult:
     route = guard_actor_absorb_route(staged, route)
     if session is None:
@@ -434,7 +451,7 @@ def _promote_actor(
             raise ValueError("live promotion requires a database session")
         return _dry_run_preview(staged, route)
 
-    transaction = session.begin()
+    transaction = session.begin() if manage_transaction else None
     try:
         if route.zone == "create":
             source_id = insert_source(
@@ -444,6 +461,7 @@ def _promote_actor(
                 description="agent discovery actor create",
             )
             actor_id = _insert_actor(session, staged.normalized_payload, source_id)
+            _assign_actor_hubs(session, actor_id, route.metadata.get("hub_ids") or [])
             _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
             result = PromotionResult(
                 action="created",
@@ -456,6 +474,9 @@ def _promote_actor(
             if not route.target_entity_id:
                 raise ValueError("actor absorb route requires target_entity_id")
             fields = _absorb_actor_fields(session, route.target_entity_id, staged)
+            _assign_actor_hubs(
+                session, route.target_entity_id, route.metadata.get("hub_ids") or []
+            )
             if fields:
                 _mark_index_dirty(session, entity_type="actor", entity_id=route.target_entity_id)
             result = PromotionResult(
@@ -489,13 +510,17 @@ def _promote_actor(
         else:
             raise ValueError(f"unknown route zone {route.zone!r}")
     except Exception:
-        transaction.rollback()
+        if transaction is not None:
+            transaction.rollback()
         raise
 
-    if live:
+    if live and transaction is not None:
         transaction.commit()
         return result
-    transaction.rollback()
+    if live:
+        return result
+    if transaction is not None:
+        transaction.rollback()
     return _dry_run_result(result, route)
 
 
@@ -522,6 +547,30 @@ def _insert_actor(session, payload: dict[str, object], source_id: str) -> str:
     )
     session.execute(text(f"INSERT INTO actor ({names}) VALUES ({binds})"), cols)
     return actor_id
+
+
+def _assign_actor_hubs(session, actor_id: str, hub_ids: object) -> None:
+    """Attach reviewer-selected hubs while keeping canonical writes in this module."""
+    if not isinstance(hub_ids, (list, tuple, set)):
+        raise ValueError("hub_ids must be a list")
+    for hub_id in dict.fromkeys(str(value).strip() for value in hub_ids):
+        if not hub_id:
+            continue
+        exists = session.execute(
+            text("SELECT 1 FROM hub WHERE hub_id = CAST(:hub_id AS uuid)"),
+            {"hub_id": hub_id},
+        ).scalar_one_or_none()
+        if exists is None:
+            raise ValueError(f"unknown hub_id {hub_id}")
+        session.execute(
+            text(
+                "INSERT INTO hub_actor (hub_id, actor_id, relationship_type, is_primary) "
+                "VALUES (CAST(:hub_id AS uuid), CAST(:actor_id AS uuid), "
+                "'reviewed_assignment', FALSE) "
+                "ON CONFLICT (hub_id, actor_id) DO NOTHING"
+            ),
+            {"hub_id": hub_id, "actor_id": actor_id},
+        )
 
 
 def _absorb_actor_fields(session, actor_id: str, staged: StagedRecord) -> list[str]:
@@ -610,6 +659,7 @@ def _promote_person(
     *,
     live: bool = False,
     create_preview: bool = False,
+    manage_transaction: bool = True,
 ) -> PromotionResult:
     metadata = dict(route.metadata or {})
     if route.zone == "skip":
@@ -632,14 +682,14 @@ def _promote_person(
         if live and create_preview:
             raise RuntimeError("person create preview cannot be used with live writes")
         _guard_person_create(staged, route)
-    if route.zone not in {"create", "review"}:
+    if route.zone not in {"create", "review", "link_existing"}:
         raise RuntimeError(f"unknown person route zone {route.zone!r}")
     if session is None:
         if live:
             raise ValueError("live promotion requires a database session")
         return _dry_run_preview(staged, route)
 
-    transaction = session.begin()
+    transaction = session.begin() if manage_transaction else None
     try:
         if route.zone == "create":
             source_id = insert_source(
@@ -648,13 +698,21 @@ def _promote_person(
                 fetched_at=staged.extracted_at,
                 description="agent discovery person create",
             )
+            actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+            created_affiliation_stub = metadata.get("create_affiliation_stub") is True
+            if created_affiliation_stub:
+                actor_id = _insert_actor(
+                    session,
+                    {"name": str(metadata["affiliation_stub_name"]).strip()},
+                    source_id,
+                )
+                _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
             person_id = _insert_person(
                 session,
                 staged.normalized_payload,
                 source_id,
                 confidence=float(route.score),
             )
-            actor_id = str(metadata["affiliation_actor_id"])
             role = str(staged.normalized_payload["role"]).strip()
             _insert_person_affiliation(
                 session,
@@ -668,6 +726,7 @@ def _promote_person(
                 person_id=person_id,
                 actor_id=actor_id,
                 source_id=source_id,
+                needs_actor_enrichment=created_affiliation_stub,
             )
             _mark_index_dirty(session, entity_type="person", entity_id=person_id)
             result = PromotionResult(
@@ -677,7 +736,7 @@ def _promote_person(
                 entity_id=person_id,
                 dry_run=False,
             )
-        else:
+        elif route.zone == "review":
             source_id = insert_source(
                 session,
                 source_url=staged.source_url,
@@ -693,15 +752,127 @@ def _promote_person(
                 dry_run=False,
                 review_id=review_id,
             )
+        else:
+            result = _link_existing_person(session, staged, route)
     except Exception:
-        transaction.rollback()
+        if transaction is not None:
+            transaction.rollback()
         raise
 
-    if live:
+    if live and transaction is not None:
         transaction.commit()
         return result
-    transaction.rollback()
+    if live:
+        return result
+    if transaction is not None:
+        transaction.rollback()
     return _dry_run_result(result, route)
+
+
+def _link_existing_person(
+    session, staged: StagedRecord, route: RouteDecision
+) -> PromotionResult:
+    """Link a reviewed person to a resolved institution and log affiliation changes."""
+    if not route.target_entity_id:
+        raise ValueError("person link_existing route requires target_entity_id")
+    metadata = dict(route.metadata or {})
+    actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+    source_id = insert_source(
+        session,
+        source_url=staged.source_url,
+        fetched_at=staged.extracted_at,
+        description="human-reviewed person affiliation",
+    )
+    if metadata.get("create_affiliation_stub") is True:
+        actor_id = _insert_actor(
+            session,
+            {"name": str(metadata.get("affiliation_stub_name") or "").strip()},
+            source_id,
+        )
+        _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
+    if not actor_id:
+        raise ValueError("person link_existing route requires an affiliation actor")
+    role = str(staged.normalized_payload.get("role") or "").strip()
+    if not role or len(role) > 120:
+        raise ValueError("person role is required and must not exceed 120 characters")
+    current = (
+        session.execute(
+            text(
+                "SELECT ap.actor_id::text AS actor_id, a.name AS affiliation, ap.role "
+                "FROM actor_person ap JOIN actor a ON a.actor_id = ap.actor_id "
+                "WHERE ap.person_id = CAST(:person_id AS uuid) "
+                "AND ap.is_current IS NOT FALSE "
+                "ORDER BY ap.start_date DESC NULLS LAST LIMIT 1"
+            ),
+            {"person_id": route.target_entity_id},
+        ).mappings().first()
+    )
+    if (
+        current
+        and str(current["actor_id"]) == actor_id
+        and str(current.get("role") or "") == role
+    ):
+        return PromotionResult(
+            action="no_op",
+            entity_type="person",
+            zone="link_existing",
+            entity_id=route.target_entity_id,
+            dry_run=False,
+        )
+    if current:
+        session.execute(
+            text(
+                "UPDATE actor_person SET is_current = FALSE, "
+                "end_date = CAST(:changed_at AS date) "
+                "WHERE person_id = CAST(:person_id AS uuid) "
+                "AND actor_id = CAST(:actor_id AS uuid) AND is_current IS NOT FALSE"
+            ),
+            {
+                "person_id": route.target_entity_id,
+                "actor_id": current["actor_id"],
+                "changed_at": staged.extracted_at,
+            },
+        )
+    session.execute(
+        text(
+            "INSERT INTO actor_person (actor_id, person_id, role, is_current, start_date) "
+            "VALUES (CAST(:actor_id AS uuid), CAST(:person_id AS uuid), :role, TRUE, "
+            "CAST(:changed_at AS date)) ON CONFLICT (actor_id, person_id, role) "
+            "DO UPDATE SET is_current = TRUE, end_date = NULL"
+        ),
+        {
+            "actor_id": actor_id,
+            "person_id": route.target_entity_id,
+            "role": role,
+            "changed_at": staged.extracted_at,
+        },
+    )
+    if current and str(current["actor_id"]) != actor_id:
+        session.execute(
+            text(
+                "INSERT INTO person_change_log (person_change_id, person_id, field_name, "
+                "previous_value, new_value, source_url, changed_at) VALUES "
+                "(CAST(:change_id AS uuid), CAST(:person_id AS uuid), 'affiliation', "
+                ":previous_value, :new_value, :source_url, "
+                "CAST(:changed_at AS timestamptz))"
+            ),
+            {
+                "change_id": str(uuid.uuid4()),
+                "person_id": route.target_entity_id,
+                "previous_value": str(current.get("affiliation") or ""),
+                "new_value": str(staged.normalized_payload.get("affiliation") or ""),
+                "source_url": staged.source_url,
+                "changed_at": staged.extracted_at,
+            },
+        )
+    _mark_index_dirty(session, entity_type="person", entity_id=route.target_entity_id)
+    return PromotionResult(
+        action="linked_existing",
+        entity_type="person",
+        zone="link_existing",
+        entity_id=route.target_entity_id,
+        dry_run=False,
+    )
 
 
 def _guard_person_create(staged: StagedRecord, route: RouteDecision) -> None:
@@ -714,8 +885,16 @@ def _guard_person_create(staged: StagedRecord, route: RouteDecision) -> None:
         failures.append("identity_outcome must be create")
     if metadata.get("clean_identity_key") is not True:
         failures.append("clean_identity_key must be true")
-    if not str(metadata.get("affiliation_actor_id") or "").strip():
-        failures.append("affiliation_actor_id is required")
+    actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+    creates_stub = metadata.get("create_affiliation_stub") is True
+    if not actor_id and not creates_stub:
+        failures.append("affiliation_actor_id or create_affiliation_stub is required")
+    if creates_stub:
+        stub_name = str(metadata.get("affiliation_stub_name") or "").strip()
+        from agents.discovery.normalize import is_institution_affiliation
+
+        if not is_institution_affiliation(stub_name):
+            failures.append("affiliation stub must be an institution, never a department or role")
     name = str(payload.get("name") or "").strip()
     role = str(payload.get("role") or "").strip()
     affiliation = str(payload.get("affiliation") or "").strip()
@@ -786,24 +965,29 @@ def _insert_person_discovery_profile(
     person_id: str,
     actor_id: str,
     source_id: str,
+    needs_actor_enrichment: bool = False,
 ) -> str:
     profile_id = str(uuid.uuid4())
     payload = staged.normalized_payload
     session.execute(
         text(
             "INSERT INTO person_discovery_profile (person_discovery_profile_id, "
-            "person_id, actor_id, role, research_area, public_profile_url, source_id, "
+            "person_id, actor_id, role, affiliation_raw, research_area, public_profile_url, "
+            "needs_actor_enrichment, source_id, "
             "source_url, fetched_at) VALUES (CAST(:person_discovery_profile_id AS uuid), "
-            "CAST(:person_id AS uuid), CAST(:actor_id AS uuid), :role, :research_area, "
-            ":public_profile_url, CAST(:source_id AS uuid), :source_url, :fetched_at)"
+            "CAST(:person_id AS uuid), CAST(:actor_id AS uuid), :role, :affiliation_raw, "
+            ":research_area, :public_profile_url, :needs_actor_enrichment, "
+            "CAST(:source_id AS uuid), :source_url, :fetched_at)"
         ),
         {
             "person_discovery_profile_id": profile_id,
             "person_id": person_id,
             "actor_id": actor_id,
             "role": payload.get("role"),
+            "affiliation_raw": payload.get("affiliation_raw") or payload.get("affiliation"),
             "research_area": payload.get("research_area"),
             "public_profile_url": payload.get("public_profile_url"),
+            "needs_actor_enrichment": needs_actor_enrichment,
             "source_id": source_id,
             "source_url": staged.source_url,
             "fetched_at": staged.extracted_at,
@@ -842,11 +1026,11 @@ def _insert_person_review(
         text(
             "INSERT INTO person_review_queue (person_review_id, staged_record_id, source_id, "
             "candidate_person_id, score, staged_name, affiliation, role, public_profile_url, "
-            "research_area, candidate_name, source_url, status, reviewer, review_kind, "
+            "affiliation_raw, research_area, candidate_name, source_url, status, reviewer, review_kind, "
             "rubric, score_breakdown, rerank_position, rerank_reason, identity_outcome) "
             "VALUES (CAST(:person_review_id AS uuid), CAST(:staged_record_id AS uuid), "
             "CAST(:source_id AS uuid), CAST(:candidate_person_id AS uuid), :score, "
-            ":staged_name, :affiliation, :role, :public_profile_url, :research_area, "
+            ":staged_name, :affiliation, :role, :public_profile_url, :affiliation_raw, :research_area, "
             ":candidate_name, :source_url, 'pending', NULL, :review_kind, "
             "CAST(:rubric AS jsonb), CAST(:score_breakdown AS jsonb), :rerank_position, "
             ":rerank_reason, :identity_outcome) "
@@ -854,7 +1038,8 @@ def _insert_person_review(
             "source_id = EXCLUDED.source_id, score = EXCLUDED.score, "
             "staged_name = EXCLUDED.staged_name, affiliation = EXCLUDED.affiliation, "
             "role = EXCLUDED.role, public_profile_url = EXCLUDED.public_profile_url, "
-            "research_area = EXCLUDED.research_area, candidate_name = EXCLUDED.candidate_name, "
+            "affiliation_raw = EXCLUDED.affiliation_raw, research_area = EXCLUDED.research_area, "
+            "candidate_name = EXCLUDED.candidate_name, "
             "source_url = EXCLUDED.source_url, review_kind = EXCLUDED.review_kind, "
             "rubric = EXCLUDED.rubric, score_breakdown = EXCLUDED.score_breakdown, "
             "rerank_position = EXCLUDED.rerank_position, "
@@ -869,6 +1054,7 @@ def _insert_person_review(
             "score": float(route.score),
             "staged_name": staged_name,
             "affiliation": payload.get("affiliation"),
+            "affiliation_raw": payload.get("affiliation_raw") or payload.get("affiliation"),
             "role": payload.get("role"),
             "public_profile_url": payload.get("public_profile_url"),
             "research_area": payload.get("research_area"),

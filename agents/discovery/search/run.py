@@ -208,12 +208,26 @@ def run_search_triage(
 
         attention_reasons: list[str] = []
         queries = bundle.queries
-        max_searches = int(config.get("max_searches", 40))
+        max_searches = int(
+            config.get("actor_max_searches", config.get("max_searches", 40))
+            if entity_type == "actor"
+            else config.get("max_searches", 40)
+        )
         if len(queries) > max_searches:
             attention_reasons.append(
                 f"max_searches cap hit: generated {len(queries)}, executed {max_searches}"
             )
             queries = queries[:max_searches]
+
+        if entity_type == "actor":
+            use_case_queries = {
+                str(query)
+                for query in (bundle.metadata or {}).get("use_case_queries", []) or []
+            }
+            stats["actor_use_case_queries_generated"] = len(use_case_queries)
+            stats["actor_use_case_queries_executed"] = sum(
+                1 for query in queries if query in use_case_queries
+            )
 
         search_results: list[SearchResult] = []
         for query in queries:
@@ -396,6 +410,7 @@ def run_search_triage(
                 stage_store=stage_store,
                 domain_store=domain_store,
                 person_candidates=person_candidates,
+                actor_resolver=actor_resolver,
             )
             candidate_rows = person_outcome.candidates
             attention_reasons.extend(person_outcome.attention_reasons)
@@ -938,7 +953,11 @@ def _candidate_hubs_from_query_plan(
     metadata: dict[str, object],
 ) -> dict[str, tuple[str, ...]]:
     hubs_by_query: dict[str, str] = {}
-    for item in metadata.get("query_plan", []) or []:
+    query_plan = [
+        *(metadata.get("query_plan", []) or []),
+        *(metadata.get("use_case_query_plan", []) or []),
+    ]
+    for item in query_plan:
         if not isinstance(item, dict):
             continue
         query = str(item.get("query") or "").strip()

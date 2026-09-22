@@ -102,3 +102,20 @@ project. Treat them as compile errors, not preferences.
 - State your assumptions explicitly at the top of your response, and list
   anything you could not verify.
 - Do not add dependencies without naming them and why in your summary.
+
+### Human-review admission
+
+- `agents/review/admission.py` is an orchestration entry point, not a third
+  canonical writer. It may validate decisions, write the review audit and
+  proposed-hub tables, and drain the referenced source queue, but all actor,
+  event, person, and relationship writes must delegate to
+  `agents/discovery/promote.py`.
+- The admission entry point owns the outer transaction. Promotion is called
+  with `manage_transaction=False`, so canonical changes, provenance, the
+  decision audit row, and the source-row status commit or roll back together.
+- A new/create review decision must still pass the frozen entity resolver. A
+  resolver match or ambiguity is never bypassed by the UI.
+- Proposed hubs are written only to `proposed_hub`; review admission must never
+  create a canonical `hub` row.
+- `agents/sql/180_review_admission_workflow.sql` is emitted for owner review.
+  It must not be executed by an agent session.

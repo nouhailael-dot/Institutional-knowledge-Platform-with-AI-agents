@@ -23,6 +23,7 @@ from agents.discovery.event_qualification import qualify_event
 from agents.discovery.extractors.actor import ActorRecordValidationError
 from agents.discovery.extractors.event import EventExtractor, EventRecordValidationError
 from agents.discovery.extractors.person import PersonExtractor
+from agents.discovery.normalize import event_natural_key, parse_date_to_iso
 from agents.discovery.run import (
     _extract_stage_route_promote,
     _skip_audit_row,
@@ -88,6 +89,7 @@ from agents.discovery.search.person_scoring import (
 from agents.discovery.search.triage import (
     existing_actor_count_for_candidate,
     normalized_domain,
+    registrable_domain,
 )
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.http_utils import RobotsAwareHttp
@@ -99,11 +101,14 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class FetchPlan:
     candidates: list[CandidateRecord]
+    backfill_candidates: list[CandidateRecord]
     eligible_pages: int
     eligible_new_domains: int
     page_cap_hit: bool
     domain_cap_hit: bool
     blocked_domains_skipped: int
+    duplicates_collapsed: int = 0
+    duplicate_of: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -261,12 +266,18 @@ def plan_event_fetches(
     domain_store,
     config: dict[str, object],
 ) -> FetchPlan:
-    return _plan_fetches(
-        candidates,
+    collapsed, duplicate_of = _collapse_candidates_by_registrable_domain(candidates)
+    plan = _plan_fetches(
+        collapsed,
         entity_type="event",
         domain_store=domain_store,
         config=config,
         require_fit_score=False,
+    )
+    return replace(
+        plan,
+        duplicates_collapsed=len(duplicate_of),
+        duplicate_of=duplicate_of,
     )
 
 
@@ -328,6 +339,7 @@ def _plan_fetches(
     eligible_new_domains = {domain for domain, status in statuses.items() if status is None}
 
     selected: list[CandidateRecord] = []
+    backfill: list[CandidateRecord] = []
     selected_new_domains: set[str] = set()
     blocked_domains_skipped = 0
     domain_cap_hit = False
@@ -338,24 +350,57 @@ def _plan_fetches(
         if status == "blocked":
             blocked_domains_skipped += 1
             continue
+        if len(selected) >= max_pages:
+            page_cap_hit = True
+            backfill.append(candidate)
+            continue
         if status is None and domain not in selected_new_domains:
             if len(selected_new_domains) >= max_new_domains:
                 domain_cap_hit = True
+                backfill.append(candidate)
                 continue
             selected_new_domains.add(domain)
-        if len(selected) >= max_pages:
-            page_cap_hit = True
-            continue
         selected.append(candidate)
 
     return FetchPlan(
         candidates=selected,
+        backfill_candidates=backfill,
         eligible_pages=len(eligible) - blocked_domains_skipped,
         eligible_new_domains=len(eligible_new_domains),
         page_cap_hit=page_cap_hit,
         domain_cap_hit=domain_cap_hit,
         blocked_domains_skipped=blocked_domains_skipped,
     )
+
+
+def _collapse_candidates_by_registrable_domain(
+    candidates: list[CandidateRecord],
+) -> tuple[list[CandidateRecord], dict[str, str]]:
+    survivors: list[CandidateRecord] = []
+    positions: dict[str, int] = {}
+    duplicate_of: dict[str, str] = {}
+    for candidate in candidates:
+        if candidate.entity_type != "event" or candidate.triage_verdict != "accepted":
+            survivors.append(candidate)
+            continue
+        domain = registrable_domain(candidate.domain or candidate.url)
+        if not domain or domain not in positions:
+            positions[domain] = len(survivors)
+            survivors.append(candidate)
+            continue
+        index = positions[domain]
+        current = survivors[index]
+        current_score = -1.0 if current.fit_score is None else current.fit_score
+        candidate_score = -1.0 if candidate.fit_score is None else candidate.fit_score
+        if candidate_score > current_score:
+            survivors[index] = candidate
+            duplicate_of[current.candidate_id] = candidate.candidate_id
+            for duplicate_id, survivor_id in list(duplicate_of.items()):
+                if survivor_id == current.candidate_id:
+                    duplicate_of[duplicate_id] = candidate.candidate_id
+        else:
+            duplicate_of[candidate.candidate_id] = current.candidate_id
+    return survivors, duplicate_of
 
 
 def fetch_score_stage_actors(
@@ -411,7 +456,7 @@ def fetch_score_stage_actors(
     )
     plan = plan_actor_fetches(candidates, domain_store=domain_store, config=config)
     stats["fetch_candidates"] = plan.eligible_pages
-    stats["pages_selected"] = len(plan.candidates)
+    stats["pages_selected"] = 0
     stats["new_domains_eligible"] = plan.eligible_new_domains
     stats["blocked_domains_skipped"] = plan.blocked_domains_skipped
     attention_reasons = _cap_attention_reasons(plan, config)
@@ -427,13 +472,21 @@ def fetch_score_stage_actors(
     )
     _attach_actor_content_stats(stats, rubric_extractor, config=config)
 
-    for candidate in plan.candidates:
+    analysis_page_budget = _positive_cap(config, "max_pages_fetched", 30)
+    loaded_pages = 0
+    attempted_pages = 0
+    primary_ids = {candidate.candidate_id for candidate in plan.candidates}
+    for candidate in [*plan.candidates, *plan.backfill_candidates]:
+        if loaded_pages >= analysis_page_budget:
+            break
+        attempted_pages += 1
         candidate_domain = candidate.domain or normalized_domain(candidate.url)
         domain_store.touch(candidate_domain)
         page_fetched = False
         try:
             doc = source.fetch(candidate.url)
             page_fetched = True
+            loaded_pages += 1
             final_domain = normalized_domain(doc.url)
             if not final_domain:
                 raise RuntimeError(f"fetched open-web page has invalid final URL {doc.url!r}")
@@ -537,6 +590,7 @@ def fetch_score_stage_actors(
         except Exception as exc:  # noqa: BLE001 - one untrusted page must not stop the batch.
             logger.warning("open-web actor fetch/rubric failed for %s: %s", candidate.url, exc)
             stats["fetch_failures"] += 1
+            _record_fetch_failure(stats, exc)
             by_id[candidate.candidate_id] = replace(
                 candidate,
                 page_fetched=page_fetched,
@@ -568,6 +622,13 @@ def fetch_score_stage_actors(
                 client=rubric_usage_client,
             )
             _attach_actor_content_stats(stats, rubric_extractor, config=config)
+
+    stats["pages_selected"] = attempted_pages
+    stats["fetch_backfill_attempts"] = sum(
+        1
+        for candidate in [*plan.candidates, *plan.backfill_candidates][:attempted_pages]
+        if candidate.candidate_id not in primary_ids
+    )
 
     updated = [by_id[candidate.candidate_id] for candidate in candidates]
     scored = [candidate for candidate in updated if candidate.rubric is not None]
@@ -723,10 +784,25 @@ def fetch_score_stage_events(
     plan = plan_event_fetches(candidates, domain_store=domain_store, config=config)
     stats["fetch_candidates"] = plan.eligible_pages
     stats["pages_selected"] = len(plan.candidates)
+    stats["event_domain_duplicates_collapsed"] = plan.duplicates_collapsed
     stats["new_domains_eligible"] = plan.eligible_new_domains
     stats["blocked_domains_skipped"] = plan.blocked_domains_skipped
     attention_reasons = _cap_attention_reasons(plan, config)
-    by_id = {candidate.candidate_id: candidate for candidate in candidates}
+    duplicate_of = plan.duplicate_of or {}
+    by_id = {
+        candidate.candidate_id: (
+            replace(
+                candidate,
+                triage_verdict="duplicate",
+                triage_reason="event candidate collapsed by registrable domain before fetch",
+                duplicate_of=duplicate_of[candidate.candidate_id],
+                score_band="duplicate",
+            )
+            if candidate.candidate_id in duplicate_of
+            else candidate
+        )
+        for candidate in candidates
+    }
     docs: dict[
         str,
         tuple[FetchedDoc, str, str, list[dict[str, object]], list[dict[str, object]], bool],
@@ -839,6 +915,7 @@ def fetch_score_stage_events(
                 config=dict(config.get("event_qualification", {})),
                 rubric=analysis.rubric,
             )
+            raw_band = event_score_band(score.total, config)
             by_id[candidate.candidate_id] = replace(
                 candidate,
                 page_fetched=True,
@@ -846,7 +923,12 @@ def fetch_score_stage_events(
                 rubric=analysis.rubric,
                 record_preview=analysis.record,
                 score_breakdown=score.contributions,
-                score_band=event_score_band(score.total, config),
+                score_band=_qualification_capped_event_band(
+                    raw_band,
+                    qualification=qualification,
+                    record=analysis.record,
+                    run_date=current_date,
+                ),
                 sector_codes=tuple(analysis.record.get("sector_codes") or []),
                 qualification_paths=qualification.paths,
             )
@@ -917,7 +999,13 @@ def fetch_score_stage_events(
             )
 
     updated = [by_id[candidate.candidate_id] for candidate in candidates]
-    scored = [candidate for candidate in updated if candidate.rubric is not None]
+    updated, event_duplicate_count = _collapse_extracted_event_duplicates(updated)
+    stats["event_record_duplicates_collapsed"] = event_duplicate_count
+    scored = [
+        candidate
+        for candidate in updated
+        if candidate.rubric is not None and candidate.score_band != "duplicate"
+    ]
     reranked, rerank_attention = rerank_top_event_candidates(
         scored,
         reranker=reranker,
@@ -929,6 +1017,9 @@ def fetch_score_stage_events(
 
     final: list[CandidateRecord] = []
     for candidate in updated:
+        if candidate.score_band == "duplicate":
+            final.append(candidate)
+            continue
         if candidate.rubric is None:
             final.append(candidate)
             continue
@@ -940,10 +1031,19 @@ def fetch_score_stage_events(
             band = "auto_low"
             verdict = "rejected"
             reason = "event page did not yield a required title"
-        elif band == "auto_high" and not candidate.qualification_paths:
-            band = "review"
-            verdict = "review"
-            reason = "event rubric auto_high but neither qualification path is satisfied"
+        elif (
+            band == "auto_low"
+            and not candidate.qualification_paths
+            and _event_record_is_past(record, current_date)
+        ):
+            reason = (
+                "event qualification capped rubric score at auto_low: past and not minable"
+            )
+        elif band == "review" and not candidate.qualification_paths:
+            reason = (
+                "event qualification capped rubric score at review: upcoming and neither "
+                "attendable nor minable"
+            )
         final.append(
             replace(
                 candidate,
@@ -1049,6 +1149,92 @@ def fetch_score_stage_events(
     return EventFetchOutcome(attention_reasons=attention_reasons, candidates=final)
 
 
+def _qualification_capped_event_band(
+    band: str,
+    *,
+    qualification,
+    record: dict[str, object],
+    run_date: date,
+) -> str:
+    start_date_value = record.get("start_date") or record.get("next_date")
+    try:
+        start_date_text = parse_date_to_iso(start_date_value)
+    except ValueError:
+        start_date_text = None
+    start_date = date.fromisoformat(start_date_text) if start_date_text else None
+    if start_date is not None and start_date < run_date and not qualification.minable:
+        return "auto_low"
+    if (
+        start_date is not None
+        and start_date >= run_date
+        and not qualification.attendable
+        and not qualification.minable
+        and band == "auto_high"
+    ):
+        return "review"
+    return band
+
+
+def _event_record_is_past(record: dict[str, object], run_date: date) -> bool:
+    value = record.get("start_date") or record.get("next_date")
+    try:
+        parsed = parse_date_to_iso(value)
+    except ValueError:
+        return False
+    return bool(parsed and date.fromisoformat(parsed) < run_date)
+
+
+def _collapse_extracted_event_duplicates(
+    candidates: list[CandidateRecord],
+) -> tuple[list[CandidateRecord], int]:
+    groups: dict[str, list[tuple[int, CandidateRecord]]] = {}
+    for index, candidate in enumerate(candidates):
+        record = candidate.record_preview or {}
+        title = str(record.get("title") or record.get("name") or "").strip()
+        start_date = str(record.get("start_date") or record.get("next_date") or "").strip()
+        if not title or not start_date or candidate.rubric is None:
+            continue
+        groups.setdefault(event_natural_key(title, start_date), []).append((index, candidate))
+
+    updated = list(candidates)
+    collapsed = 0
+    for rows in groups.values():
+        if len(rows) < 2:
+            continue
+
+        def survivor_rank(item: tuple[int, CandidateRecord]) -> tuple[int, float, int]:
+            index, candidate = item
+            record = candidate.record_preview or {}
+            own_domain = registrable_domain(str(record.get("website") or ""))
+            candidate_domain = registrable_domain(candidate.domain or candidate.url)
+            score = -1.0 if candidate.fit_score is None else candidate.fit_score
+            return (int(bool(own_domain and own_domain == candidate_domain)), score, -index)
+
+        survivor_index, survivor = max(rows, key=survivor_rank)
+        for index, candidate in rows:
+            if index == survivor_index:
+                continue
+            updated[index] = replace(
+                candidate,
+                triage_verdict="duplicate",
+                triage_reason="duplicate event name and start date after extraction",
+                duplicate_of=survivor.candidate_id,
+                score_band="duplicate",
+            )
+            collapsed += 1
+    return updated, collapsed
+
+
+def _record_fetch_failure(stats: dict[str, object], exc: Exception) -> None:
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None)
+    if status_code is not None:
+        key = f"fetch_failure_status_{int(status_code)}"
+    else:
+        key = f"fetch_failure_exception_{type(exc).__name__}"
+    stats[key] = int(stats.get(key, 0) or 0) + 1
+
+
 def fetch_score_stage_people(
     *,
     run_id: str,
@@ -1071,6 +1257,7 @@ def fetch_score_stage_people(
     domain_store=None,
     person_candidates=None,
     affiliation_candidates=None,
+    actor_resolver=None,
 ) -> PersonFetchOutcome:
     """Fetch person profiles, score page evidence, then resolve identity in code."""
     if not bool(config.get("people_enabled", False)):
@@ -1112,6 +1299,10 @@ def fetch_score_stage_people(
         if affiliation_candidates is not None
         else ([] if session is None else load_person_affiliation_candidates(session))
     )
+    if actor_resolver is None and session is not None:
+        from agents.common.resolve_route import load_actor_resolver_class
+
+        actor_resolver = load_actor_resolver_class()(session, project_root=root)
     held_actor_names = [
         str(candidate.get("affiliation") or candidate.get("name") or "").strip()
         for candidate in canonical_affiliations
@@ -1304,6 +1495,7 @@ def fetch_score_stage_people(
                 canonical_candidates,
                 allow_create=True,
                 affiliation_candidates=canonical_affiliations,
+                actor_resolver=actor_resolver,
             )
             identity_outcome = str(
                 dict(identity_route.metadata or {}).get("identity_outcome") or "review"
@@ -1370,6 +1562,7 @@ def fetch_score_stage_people(
                 discovered_domain=domain,
                 people_enabled=True,
                 person_affiliation_candidates=canonical_affiliations,
+                actor_resolver=actor_resolver,
                 person_review_metadata={
                     "review_kind": "rubric_band"
                     if candidate.score_band == "review"
