@@ -8,6 +8,23 @@ plus an entity resolution (ER) pipeline. A sibling repo, `um6p-rag`, is a
 read-only consumer that owns only three tables: `search_doc`, `query_log`,
 `proposal`.
 
+## Architecture V2 repository boundaries
+
+- Backend: `C:\Users\Ismail\Projects\GHUS-Platform`. Architecture V2 phases
+  2-14, agents, migrations, SQL proposals, and scripts live here.
+- Frontend: `C:\Users\Ismail\Projects\Institutional-knowledge-Platform`.
+  Architecture V2 phases 15-16 and all platform UI, review, browsing, Ask,
+  retrieval/RAG, and source-label behavior live there. References to Streamlit
+  in older specifications mean this frontend unless explicitly stated.
+- Old draft: `C:\Users\Ismail\Documents\GHUS\GHUS-Platform-v2`. It is
+  read-only reference material. Never edit, commit, or run migrations there.
+- Isolated test database: local PostgreSQL `ghus_v2_test` at
+  `127.0.0.1:55432`. Its data directory must remain outside every repository.
+- Shared Supabase database: read-only. Never execute DDL or any write there.
+
+At the start of every session, print and verify the backend and frontend
+working directories before touching files. Stop if either path differs.
+
 Current state: ~872 canonical actors (reduced from 952 via ER merges), 220
 events, 10 seeded sectors. A frozen ER combiner model with HIGH/LOW thresholds
 and a human review queue already exist and are in production use.
@@ -41,7 +58,8 @@ project. Treat them as compile errors, not preferences.
    regression removed such a guard and made a full search-index wipe possible
    with no error raised.
 5. **Every written fact has a provenance row** (source URL + fetch timestamp),
-   written in the same transaction as the fact itself. If provenance insert
+   written in the same transaction as the fact itself. Missing evidence is
+   recorded as `not_found`; data must never be invented. If provenance insert
    fails, the fact insert rolls back.
 6. **Never overwrite a non-null value automatically.** Enrichment fills gaps
    only. A believed-wrong existing value becomes a proposal for a human.
@@ -54,14 +72,25 @@ project. Treat them as compile errors, not preferences.
    requires explicit approval and must be raised as a question, not written.
 9. **No secrets in code or committed files.** Read from environment. Never print
    a connection string or API key, even partially, in logs or error messages.
-10. **Do not run migrations or connect to the production database.** Emit SQL
-    files under `agents/sql/` for the human to run. Assume no DB access.
+10. **The shared Supabase database is read-only.** Never run migrations, DDL,
+    or writes there. Read-only access is allowed only when a task explicitly
+    requires it. Canonical DDL remains a proposal for the schema owner.
+11. **Person discovery remains disabled.** Its feature flag stays off until
+    documented supervisor sign-off.
+12. **Preserve aggregate exclusion.** `actor_type = 'aggregate'` stays out of
+    ER candidates, reference sets, and agent outputs through the
+    `actor_type` -> `actor_category` transition.
+13. **One Architecture V2 phase per change set.** Finish each phase with both
+    repositories' relevant tests, a phase report under `docs/`, and a stop for
+    approval. Do not begin the next phase without explicit approval.
 
 ## Protected decisions — do not change without asking
 
 - ER thresholds live in exactly one module. Agents import them. Never redefine.
 - `hub_overlap` is permanently excluded from the ER feature set. It produced
   false merges across multiple measurement rounds. Do not reintroduce it.
+  `desc_both_present` must not be reintroduced, and no new table, field, or
+  queue may be named `hub_overlap`.
 - The keyword-search `&` → `|` OR rewrite in `um6p-rag` is load-bearing. A
   previous bug fix removed it and silently collapsed hybrid retrieval to
   vector-only. If you touch tsquery construction anywhere, preserve it.
@@ -99,6 +128,8 @@ project. Treat them as compile errors, not preferences.
 - When something in the repo contradicts these instructions, stop and ask.
   Do not reconcile it silently.
 - Small diffs. One concern per commit. Tests alongside code, not after.
+- Commit at the end of every requested step so no work remains uncommitted
+  between steps.
 - State your assumptions explicitly at the top of your response, and list
   anything you could not verify.
 - Do not add dependencies without naming them and why in your summary.
