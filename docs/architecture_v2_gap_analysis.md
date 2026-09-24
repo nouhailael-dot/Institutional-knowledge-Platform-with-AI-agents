@@ -332,11 +332,11 @@ Past overwritten values are not recoverable from the current database alone: pri
 
 ### Phase 2 production baseline provenance
 
-The read-only, repeatable-read production baseline dated 2026-09-24 is stored outside both repositories at `C:\Users\Ismail\Documents\GHUS\exports\architecture_v2_baseline_2026-09-24\manifest.json` (manifest SHA-256 `1f2b66be7c66ba60e12718632b6228497d30ad9728c1d04825907e27f975b0b1`). It contains only the approved baseline scope: 965 actors, 49 hubs, 821 hub memberships, and 356 events. All Phase 12 records assigned `source_origin=Imported` must cite this dated manifest (plus the applicable CSV hash recorded inside it) as their import origin; the migration must not infer or manufacture missing history.
+The read-only, repeatable-read production baseline dated 2026-09-24 is stored outside both repositories at `C:\Users\Ismail\Documents\GHUS\exports\architecture_v2_baseline_2026-09-24\manifest.json` (manifest SHA-256 `bd046babba1ed12047701cc553b535fe5714b2a3c81bf18892b7ea1c57bbbf76`). It contains the requested baseline scope: 965 actors, 49 hubs, 821 hub memberships, 356 events, 7,257 staged records, 280 actor review rows, 9 event review rows, and 0 person review rows. All Phase 12 records assigned `source_origin=Imported` must cite this dated manifest (plus the applicable CSV hash recorded inside it) as their import origin; the migration must not infer or manufacture missing history.
 
 The current production baseline has the historical 48 Phase 1 hub names plus one additional row named `Mining Hubs`. This is informational only: all 49 current rows remain intact, no historical hub is demoted, and GHUS membership remains authoritative even when a later distance calculation exceeds 200 miles.
 
-Production reported PostgreSQL 17.6 with `pg_stat_statements`, `pgcrypto`, `supabase_vault`, `uuid-ossp`, and `vector`; the isolated database uses PostgreSQL 17.5 with only `plpgsql`. The four approved canonical datasets were loaded into `ghus_v2_test`; a broader production dump was not taken because it would exceed the approved baseline export scope.
+Production reported PostgreSQL 17.6 with `pg_stat_statements`, `pgcrypto`, `supabase_vault`, `uuid-ossp`, and `vector`; the isolated database uses PostgreSQL 17.5 with only `plpgsql`. All eight exported datasets were loaded into `ghus_v2_test`; a broader production dump was not taken because it would exceed the requested baseline export scope.
 
 ## Draft schema migration set
 
