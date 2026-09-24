@@ -1,14 +1,15 @@
-# ruff: noqa: E501
 """Contracts for detached Architecture V2 proposals and the isolated test DB."""
 
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import re
 import uuid
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 import yaml
@@ -89,19 +90,20 @@ def test_migration_tracks_are_separate_and_detached():
 
 def test_populated_canonical_constraints_are_not_valid():
     for path in (PROPOSED / "versions").glob("v2a*.py"):
-        source = path.read_text(encoding="utf-8")
-        namespace: dict = {}
-        exec(compile(source, str(path), "exec"), namespace)
+        spec = importlib.util.spec_from_file_location(path.stem, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
 
         class CaptureOperations:
-            statements: list[str] = []
+            statements: ClassVar[list[str]] = []
 
             @classmethod
             def execute(cls, statement) -> None:
                 cls.statements.append(str(statement))
 
-        namespace["op"] = CaptureOperations
-        namespace["upgrade"]()
+        module.op = CaptureOperations
+        module.upgrade()
         clauses = [
             statement for statement in CaptureOperations.statements if "ADD CONSTRAINT" in statement
         ]
@@ -110,7 +112,9 @@ def test_populated_canonical_constraints_are_not_valid():
 
 
 def test_platform_sql_never_alters_canonical_tables():
-    prohibited = re.compile(r"\bALTER\s+TABLE\s+(actor|hub|hub_actor|event|person)\b", re.I)
+    prohibited = re.compile(
+        r"\bALTER\s+TABLE\s+(actor|hub|hub_actor|event|person)\b", re.IGNORECASE
+    )
     for path in (ROOT / "agents" / "sql").glob("*_v2_*.sql"):
         assert not prohibited.search(path.read_text(encoding="utf-8")), path.name
 
@@ -133,9 +137,10 @@ def test_models_v2_is_not_imported_by_application_or_autogenerate():
             for node in ast.walk(tree):
                 if isinstance(node, ast.ImportFrom) and node.module == "src.db.models_v2":
                     offenders.append(path.relative_to(ROOT))
-                if isinstance(node, ast.Import):
-                    if any(alias.name == "src.db.models_v2" for alias in node.names):
-                        offenders.append(path.relative_to(ROOT))
+                if isinstance(node, ast.Import) and any(
+                    alias.name == "src.db.models_v2" for alias in node.names
+                ):
+                    offenders.append(path.relative_to(ROOT))
     assert not offenders
     env_source = (ROOT / "migrations" / "env.py").read_text(encoding="utf-8")
     model_source = (ROOT / "src" / "db" / "models.py").read_text(encoding="utf-8")

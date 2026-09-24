@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from typing import Optional
 
 from sqlalchemy import (
     ARRAY,
@@ -39,40 +38,40 @@ class ActorV2(V2Base):
 
     actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    slug: Mapped[Optional[str]] = mapped_column(Text)
-    actor_category: Mapped[Optional[str]] = mapped_column(Text)
-    actor_type_raw: Mapped[Optional[str]] = mapped_column(Text)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    website: Mapped[Optional[str]] = mapped_column(Text)
-    location_city: Mapped[Optional[str]] = mapped_column(Text)
-    state: Mapped[Optional[str]] = mapped_column(Text)
-    country: Mapped[Optional[str]] = mapped_column(Text)
-    primary_technical_focus: Mapped[Optional[str]] = mapped_column(Text)
-    technical_approach: Mapped[Optional[str]] = mapped_column(Text)
-    current_activities: Mapped[Optional[str]] = mapped_column(Text)
-    technology_ip_notes: Mapped[Optional[str]] = mapped_column(Text)
-    key_constraints: Mapped[Optional[str]] = mapped_column(Text)
-    funding_summary: Mapped[Optional[str]] = mapped_column(Text)
-    estimated_trl: Mapped[Optional[int]] = mapped_column(Integer)
-    merged_into_actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    primary_lifecycle_role: Mapped[Optional[str]] = mapped_column(Text)
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    record_status: Mapped[Optional[str]] = mapped_column(Text)
-    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    slug: Mapped[str | None] = mapped_column(Text)
+    actor_category: Mapped[str | None] = mapped_column(Text)
+    actor_type_raw: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    website: Mapped[str | None] = mapped_column(Text)
+    location_city: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
+    primary_technical_focus: Mapped[str | None] = mapped_column(Text)
+    technical_approach: Mapped[str | None] = mapped_column(Text)
+    current_activities: Mapped[str | None] = mapped_column(Text)
+    technology_ip_notes: Mapped[str | None] = mapped_column(Text)
+    key_constraints: Mapped[str | None] = mapped_column(Text)
+    funding_summary: Mapped[str | None] = mapped_column(Text)
+    estimated_trl: Mapped[int | None] = mapped_column(Integer)
+    merged_into_actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    primary_lifecycle_role: Mapped[str | None] = mapped_column(Text)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    record_status: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     alternate_names: Mapped[list[str]] = mapped_column(ARRAY(Text))
-    category_type: Mapped[Optional[str]] = mapped_column(Text)
-    category_note: Mapped[Optional[str]] = mapped_column(Text)
+    category_type: Mapped[str | None] = mapped_column(Text)
+    category_note: Mapped[str | None] = mapped_column(Text)
     category_needs_review: Mapped[bool] = mapped_column(Boolean)
-    website_domain: Mapped[Optional[str]] = mapped_column(Text)
-    state_code: Mapped[Optional[str]] = mapped_column(Text)
-    region_code: Mapped[Optional[str]] = mapped_column(Text)
-    latitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
-    longitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
+    website_domain: Mapped[str | None] = mapped_column(Text)
+    state_code: Mapped[str | None] = mapped_column(Text)
+    region_code: Mapped[str | None] = mapped_column(Text)
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     is_multi_location: Mapped[bool] = mapped_column(Boolean)
     source_origin: Mapped[str] = mapped_column(Text)
-    ghus_notes: Mapped[Optional[str]] = mapped_column(Text)
+    ghus_notes: Mapped[str | None] = mapped_column(Text)
 
 
 class PersonV2(V2Base):
@@ -80,16 +79,16 @@ class PersonV2(V2Base):
 
     person_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     full_name: Mapped[str] = mapped_column(Text, nullable=False)
-    title: Mapped[Optional[str]] = mapped_column(Text)
-    email: Mapped[Optional[str]] = mapped_column(Text)
-    orcid: Mapped[Optional[str]] = mapped_column(Text)
-    bio: Mapped[Optional[str]] = mapped_column(Text)
-    tel_num: Mapped[Optional[str]] = mapped_column(Text)
-    country_code: Mapped[Optional[str]] = mapped_column(Text)
-    linkedin_url: Mapped[Optional[str]] = mapped_column(Text)
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    record_status: Mapped[Optional[str]] = mapped_column(Text)
-    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    title: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
+    orcid: Mapped[str | None] = mapped_column(Text)
+    bio: Mapped[str | None] = mapped_column(Text)
+    tel_num: Mapped[str | None] = mapped_column(Text)
+    country_code: Mapped[str | None] = mapped_column(Text)
+    linkedin_url: Mapped[str | None] = mapped_column(Text)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    record_status: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
     source_origin: Mapped[str] = mapped_column(Text)
@@ -100,25 +99,25 @@ class EventV2(V2Base):
 
     event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    event_type: Mapped[Optional[str]] = mapped_column(Text)
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    location: Mapped[Optional[str]] = mapped_column(Text)
-    website: Mapped[Optional[str]] = mapped_column(Text)
-    thematic_focus: Mapped[Optional[str]] = mapped_column(Text)
-    expected_attendance: Mapped[Optional[str]] = mapped_column(Text)
-    access_type: Mapped[Optional[str]] = mapped_column(Text)
-    recurring_pattern: Mapped[Optional[str]] = mapped_column(Text)
-    next_date: Mapped[Optional[datetime]] = mapped_column(Date)
-    sponsoring_orgs: Mapped[Optional[str]] = mapped_column(Text)
-    host_actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    event_type: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    location: Mapped[str | None] = mapped_column(Text)
+    website: Mapped[str | None] = mapped_column(Text)
+    thematic_focus: Mapped[str | None] = mapped_column(Text)
+    expected_attendance: Mapped[str | None] = mapped_column(Text)
+    access_type: Mapped[str | None] = mapped_column(Text)
+    recurring_pattern: Mapped[str | None] = mapped_column(Text)
+    next_date: Mapped[datetime | None] = mapped_column(Date)
+    sponsoring_orgs: Mapped[str | None] = mapped_column(Text)
+    host_actor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(DateTime)
     record_status: Mapped[str] = mapped_column(Text)
     source_origin: Mapped[str] = mapped_column(Text)
     date_status: Mapped[str] = mapped_column(Text)
-    start_date: Mapped[Optional[date]] = mapped_column(Date)
-    end_date: Mapped[Optional[date]] = mapped_column(Date)
-    ghus_notes: Mapped[Optional[str]] = mapped_column(Text)
+    start_date: Mapped[date | None] = mapped_column(Date)
+    end_date: Mapped[date | None] = mapped_column(Date)
+    ghus_notes: Mapped[str | None] = mapped_column(Text)
 
 
 class HubV2(V2Base):
@@ -127,46 +126,46 @@ class HubV2(V2Base):
     hub_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     slug: Mapped[str] = mapped_column(Text, nullable=False)
-    primary_city: Mapped[Optional[str]] = mapped_column(Text)
-    state: Mapped[Optional[str]] = mapped_column(Text)
-    country: Mapped[Optional[str]] = mapped_column(Text)
-    region: Mapped[Optional[str]] = mapped_column(Text)
-    latitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
-    longitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    official_websites: Mapped[Optional[str]] = mapped_column(Text)
-    strategic_value_summary: Mapped[Optional[str]] = mapped_column(Text)
-    core_topic_strengths: Mapped[Optional[str]] = mapped_column(Text)
-    composition_narrative: Mapped[Optional[str]] = mapped_column(Text)
-    programs_and_labs_narrative: Mapped[Optional[str]] = mapped_column(Text)
-    talent_narrative: Mapped[Optional[str]] = mapped_column(Text)
-    research_infrastructure_narrative: Mapped[Optional[str]] = mapped_column(Text)
-    industry_integration_narrative: Mapped[Optional[str]] = mapped_column(Text)
-    international_engagement_narrative: Mapped[Optional[str]] = mapped_column(Text)
-    upstream_inputs: Mapped[Optional[str]] = mapped_column(Text)
-    downstream_outputs: Mapped[Optional[str]] = mapped_column(Text)
-    integrated_flow_description: Mapped[Optional[str]] = mapped_column(Text)
-    constraints_summary: Mapped[Optional[str]] = mapped_column(Text)
-    funding_summary: Mapped[Optional[str]] = mapped_column(Text)
-    cross_hub_themes: Mapped[Optional[str]] = mapped_column(Text)
-    primary_sectors: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text))
-    secondary_sectors: Mapped[Optional[list[str]]] = mapped_column(ARRAY(Text))
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    verification_status: Mapped[Optional[str]] = mapped_column(Text)
-    confidence: Mapped[Optional[float]] = mapped_column(Numeric(3, 2))
+    primary_city: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
+    region: Mapped[str | None] = mapped_column(Text)
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    description: Mapped[str | None] = mapped_column(Text)
+    official_websites: Mapped[str | None] = mapped_column(Text)
+    strategic_value_summary: Mapped[str | None] = mapped_column(Text)
+    core_topic_strengths: Mapped[str | None] = mapped_column(Text)
+    composition_narrative: Mapped[str | None] = mapped_column(Text)
+    programs_and_labs_narrative: Mapped[str | None] = mapped_column(Text)
+    talent_narrative: Mapped[str | None] = mapped_column(Text)
+    research_infrastructure_narrative: Mapped[str | None] = mapped_column(Text)
+    industry_integration_narrative: Mapped[str | None] = mapped_column(Text)
+    international_engagement_narrative: Mapped[str | None] = mapped_column(Text)
+    upstream_inputs: Mapped[str | None] = mapped_column(Text)
+    downstream_outputs: Mapped[str | None] = mapped_column(Text)
+    integrated_flow_description: Mapped[str | None] = mapped_column(Text)
+    constraints_summary: Mapped[str | None] = mapped_column(Text)
+    funding_summary: Mapped[str | None] = mapped_column(Text)
+    cross_hub_themes: Mapped[str | None] = mapped_column(Text)
+    primary_sectors: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    secondary_sectors: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    verification_status: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[float | None] = mapped_column(Numeric(3, 2))
     created_at: Mapped[datetime] = mapped_column(DateTime)
     updated_at: Mapped[datetime] = mapped_column(DateTime)
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    center_city: Mapped[Optional[str]] = mapped_column(Text)
-    center_state_code: Mapped[Optional[str]] = mapped_column(Text)
-    center_latitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
-    center_longitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    center_city: Mapped[str | None] = mapped_column(Text)
+    center_state_code: Mapped[str | None] = mapped_column(Text)
+    center_latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    center_longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     radius_miles: Mapped[float] = mapped_column(Numeric(7, 2))
     center_frozen: Mapped[bool] = mapped_column(Boolean)
     center_method: Mapped[str] = mapped_column(Text)
-    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    approved_by: Mapped[Optional[str]] = mapped_column(Text)
-    phase1_definition: Mapped[Optional[str]] = mapped_column(Text)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approved_by: Mapped[str | None] = mapped_column(Text)
+    phase1_definition: Mapped[str | None] = mapped_column(Text)
     source_origin: Mapped[str] = mapped_column(Text)
 
 
@@ -175,15 +174,15 @@ class HubActorV2(V2Base):
 
     hub_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     actor_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
-    relationship_type: Mapped[Optional[str]] = mapped_column(Text)
-    is_primary: Mapped[Optional[bool]] = mapped_column(Boolean)
+    relationship_type: Mapped[str | None] = mapped_column(Text)
+    is_primary: Mapped[bool | None] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime)
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    distance_miles: Mapped[Optional[float]] = mapped_column(Numeric(8, 2))
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    distance_miles: Mapped[float | None] = mapped_column(Numeric(8, 2))
     assignment_outcome: Mapped[str] = mapped_column(Text)
     outside_radius: Mapped[bool] = mapped_column(Boolean)
     overlap_flag: Mapped[bool] = mapped_column(Boolean)
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class ActorCategoryDefinition(V2Base):
@@ -243,7 +242,7 @@ class Topic(V2Base):
     )
     code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -284,15 +283,15 @@ class ActorLocation(V2Base):
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False
     )
-    location_name: Mapped[Optional[str]] = mapped_column(Text)
+    location_name: Mapped[str | None] = mapped_column(Text)
     country: Mapped[str] = mapped_column(Text, nullable=False)
-    state_code: Mapped[Optional[str]] = mapped_column(Text, ForeignKey("region_state.state_code"))
+    state_code: Mapped[str | None] = mapped_column(Text, ForeignKey("region_state.state_code"))
     city: Mapped[str] = mapped_column(Text, nullable=False)
-    region_code: Mapped[Optional[str]] = mapped_column(
+    region_code: Mapped[str | None] = mapped_column(
         Text, ForeignKey("region_definition.region_code")
     )
-    latitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
-    longitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     is_primary: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     source_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source.source_id"), nullable=False
@@ -311,12 +310,12 @@ class RecordVerification(V2Base):
     decision: Mapped[str] = mapped_column(Text, nullable=False)
     decided_by: Mapped[str] = mapped_column(Text, nullable=False)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    notes: Mapped[Optional[str]] = mapped_column(Text)
-    rejection_reason: Mapped[Optional[str]] = mapped_column(Text)
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    notes: Mapped[str | None] = mapped_column(Text)
+    rejection_reason: Mapped[str | None] = mapped_column(Text)
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topic.topic_id")
     )
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source.source_id")
     )
 
@@ -330,12 +329,12 @@ class ActorFact(V2Base):
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False
     )
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topic.topic_id")
     )
     fact_type: Mapped[str] = mapped_column(Text, nullable=False)
     fact_key: Mapped[str] = mapped_column(Text, nullable=False)
-    fact_value: Mapped[Optional[dict]] = mapped_column(JSONB)
+    fact_value: Mapped[dict | None] = mapped_column(JSONB)
     collection_state: Mapped[str] = mapped_column(Text, default="found", nullable=False)
     layer: Mapped[int] = mapped_column(nullable=False)
     source_id: Mapped[uuid.UUID] = mapped_column(
@@ -345,10 +344,10 @@ class ActorFact(V2Base):
         Text, ForeignKey("source_origin_definition.origin_code"), nullable=False
     )
     confidence: Mapped[str] = mapped_column(Text, nullable=False)
-    observed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     generated_by: Mapped[str] = mapped_column(Text, nullable=False)
-    request_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -362,7 +361,7 @@ class FactResolution(V2Base):
         UUID(as_uuid=True), ForeignKey("actor_fact.actor_fact_id"), nullable=False
     )
     resolution: Mapped[str] = mapped_column(Text, nullable=False)
-    related_actor_fact_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    related_actor_fact_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor_fact.actor_fact_id")
     )
     decided_by: Mapped[str] = mapped_column(Text, nullable=False)
@@ -393,7 +392,7 @@ class EntityEdge(V2Base):
     relationship_type: Mapped[str] = mapped_column(Text, nullable=False)
     object_type: Mapped[str] = mapped_column(Text, nullable=False)
     object_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topic.topic_id")
     )
     source_id: Mapped[uuid.UUID] = mapped_column(
@@ -411,13 +410,13 @@ class CollectionRequest(V2Base):
     )
     requested_by: Mapped[str] = mapped_column(Text, nullable=False)
     request_kind: Mapped[str] = mapped_column(Text, nullable=False)
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topic.topic_id")
     )
-    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    actor_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor.actor_id")
     )
-    need_text: Mapped[Optional[str]] = mapped_column(Text)
+    need_text: Mapped[str | None] = mapped_column(Text)
     layer: Mapped[int] = mapped_column(nullable=False)
     approved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -437,11 +436,11 @@ class CollectionRun(V2Base):
     status: Mapped[str] = mapped_column(Text, default="running", nullable=False)
     fetch_budget: Mapped[int] = mapped_column(Integer, nullable=False)
     fetch_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    max_usd: Mapped[Optional[float]] = mapped_column(Numeric(10, 4))
+    max_usd: Mapped[float | None] = mapped_column(Numeric(10, 4))
     spent_usd: Mapped[float] = mapped_column(Numeric(10, 4), default=0, nullable=False)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    status_reason: Mapped[Optional[str]] = mapped_column(Text)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class FetchedDocument(V2Base):
@@ -480,13 +479,13 @@ class ActorRanking(V2Base):
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False
     )
-    context_actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    context_actor_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor.actor_id")
     )
     publisher: Mapped[str] = mapped_column(Text, nullable=False)
     ranking_name: Mapped[str] = mapped_column(Text, nullable=False)
     ranking_year: Mapped[int] = mapped_column(Integer, nullable=False)
-    subject: Mapped[Optional[str]] = mapped_column(Text)
+    subject: Mapped[str | None] = mapped_column(Text)
     ranked_entity_name: Mapped[str] = mapped_column(Text, nullable=False)
     position_text: Mapped[str] = mapped_column(Text, nullable=False)
     source_id: Mapped[uuid.UUID] = mapped_column(
@@ -517,7 +516,7 @@ class ContactCollectionAuthorization(V2Base):
     authorization_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    person_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    person_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("person.person_id")
     )
     requested_by: Mapped[str] = mapped_column(Text, nullable=False)
@@ -569,7 +568,7 @@ class StrategicEntity(V2Base):
     )
     canonical_name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     alternate_names: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list, nullable=False)
-    parent_strategic_entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    parent_strategic_entity_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("strategic_entity.strategic_entity_id")
     )
     entity_group: Mapped[str] = mapped_column(Text, nullable=False)
@@ -589,16 +588,16 @@ class ActorStrategicConnectionCheck(V2Base):
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False
     )
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topic.topic_id")
     )
     layer: Mapped[int] = mapped_column(nullable=False)
     state: Mapped[str] = mapped_column(Text, nullable=False)
-    strategic_entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    strategic_entity_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("strategic_entity.strategic_entity_id")
     )
-    connection_kind: Mapped[Optional[str]] = mapped_column(Text)
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    connection_kind: Mapped[str | None] = mapped_column(Text)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source.source_id")
     )
     fetched_document_ids: Mapped[list[uuid.UUID]] = mapped_column(
@@ -617,7 +616,7 @@ class HubCenterReview(V2Base):
         UUID(as_uuid=True), ForeignKey("hub.hub_id"), nullable=False
     )
     proposed_city: Mapped[str] = mapped_column(Text, nullable=False)
-    proposed_state_code: Mapped[Optional[str]] = mapped_column(
+    proposed_state_code: Mapped[str | None] = mapped_column(
         Text, ForeignKey("region_state.state_code")
     )
     proposed_latitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
@@ -635,29 +634,29 @@ class ProposedHubV2(V2Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    primary_city: Mapped[Optional[str]] = mapped_column(Text)
-    state: Mapped[Optional[str]] = mapped_column(Text)
-    country: Mapped[Optional[str]] = mapped_column(Text)
+    primary_city: Mapped[str | None] = mapped_column(Text)
+    state: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     source_table: Mapped[str] = mapped_column(Text, nullable=False)
     source_row_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     proposed_by: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, default="pending", nullable=False)
-    reviewed_by: Mapped[Optional[str]] = mapped_column(Text)
-    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(Text)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     proposal_kind: Mapped[str] = mapped_column(Text, default="legacy_review", nullable=False)
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topic.topic_id")
     )
-    center_latitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
-    center_longitude: Mapped[Optional[float]] = mapped_column(Numeric(9, 6))
-    radius_miles: Mapped[Optional[float]] = mapped_column(Numeric(7, 2))
-    core_radius_miles: Mapped[Optional[float]] = mapped_column(Numeric(7, 2))
-    independent_family_count: Mapped[Optional[int]] = mapped_column(Integer)
-    category_count: Mapped[Optional[int]] = mapped_column(Integer)
-    membership_fingerprint: Mapped[Optional[str]] = mapped_column(Text)
-    final_hub_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    center_latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    center_longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    radius_miles: Mapped[float | None] = mapped_column(Numeric(7, 2))
+    core_radius_miles: Mapped[float | None] = mapped_column(Numeric(7, 2))
+    independent_family_count: Mapped[int | None] = mapped_column(Integer)
+    category_count: Mapped[int | None] = mapped_column(Integer)
+    membership_fingerprint: Mapped[str | None] = mapped_column(Text)
+    final_hub_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("hub.hub_id")
     )
 
@@ -688,10 +687,10 @@ class ProposedHubDecisionV2(V2Base):
         UUID(as_uuid=True), ForeignKey("proposed_hub.proposed_hub_id"), nullable=False
     )
     decision: Mapped[str] = mapped_column(Text, nullable=False)
-    final_name: Mapped[Optional[str]] = mapped_column(Text)
-    final_radius_miles: Mapped[Optional[float]] = mapped_column(Numeric(7, 2))
+    final_name: Mapped[str | None] = mapped_column(Text)
+    final_radius_miles: Mapped[float | None] = mapped_column(Numeric(7, 2))
     decided_by: Mapped[str] = mapped_column(Text, nullable=False)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -703,9 +702,9 @@ class ReviewItem(V2Base):
     )
     review_kind: Mapped[str] = mapped_column(Text, nullable=False)
     entity_type: Mapped[str] = mapped_column(Text, nullable=False)
-    entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    candidate_entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    topic_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    candidate_entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("topic.topic_id")
     )
     priority: Mapped[str] = mapped_column(Text, default="normal", nullable=False)
@@ -725,7 +724,7 @@ class ReviewItemDecision(V2Base):
     )
     decision: Mapped[str] = mapped_column(Text, nullable=False)
     decided_by: Mapped[str] = mapped_column(Text, nullable=False)
-    reason: Mapped[Optional[str]] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -738,18 +737,18 @@ class CanonicalWriteAudit(V2Base):
     writer_module: Mapped[str] = mapped_column(Text, nullable=False)
     operation: Mapped[str] = mapped_column(Text, nullable=False)
     entity_type: Mapped[str] = mapped_column(Text, nullable=False)
-    entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    collection_run_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    collection_run_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("collection_run.collection_run_id")
     )
     dry_run: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    actor_fact_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    actor_fact_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actor_fact.actor_fact_id")
     )
-    entity_edge_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    entity_edge_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("entity_edge.entity_edge_id")
     )
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("source.source_id")
     )
     payload_hash: Mapped[str] = mapped_column(Text, nullable=False)

@@ -1,4 +1,3 @@
-# ruff: noqa: E501
 """Detached proposal: Architecture V2 canonical event columns."""
 
 from alembic import op

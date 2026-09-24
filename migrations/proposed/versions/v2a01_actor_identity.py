@@ -1,4 +1,3 @@
-# ruff: noqa: E501
 """Detached proposal: Architecture V2 actor identity and location columns.
 
 Schema-owner action required: set ``down_revision`` to the approved live head
