@@ -236,6 +236,23 @@ def test_append_only_and_role_permissions(v2_engine: Engine):
                 ),
                 {"id": verification_id, "entity": uuid.uuid4()},
             )
+            with pytest.raises(DBAPIError, match="permission denied"):
+                connection.execute(
+                    text("DELETE FROM record_verification WHERE verification_id=:id"),
+                    {"id": verification_id},
+                )
+        finally:
+            transaction.rollback()
+
+    with v2_engine.connect() as connection:
+        transaction = connection.begin()
+        try:
+            connection.execute(
+                text(
+                    "INSERT INTO record_verification (verification_id,entity_type,entity_id,decision,decided_by) VALUES (:id,'actor',:entity,'parked','phase2-test')"
+                ),
+                {"id": verification_id, "entity": uuid.uuid4()},
+            )
             with pytest.raises(DBAPIError, match="append-only"):
                 connection.execute(
                     text("DELETE FROM record_verification WHERE verification_id=:id"),
