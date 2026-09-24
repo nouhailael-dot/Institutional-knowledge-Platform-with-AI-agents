@@ -275,3 +275,12 @@ def test_append_only_and_role_permissions(v2_engine: Engine):
                     connection.execute(text(statement))
             finally:
                 transaction.rollback()
+
+    with v2_engine.connect() as connection:
+        for role in ("anon", "authenticated", "service_role"):
+            for table in ("actor", "hub", "event", "person", "hub_actor"):
+                may_delete = connection.execute(
+                    text("SELECT has_table_privilege(:role, :table, 'DELETE')"),
+                    {"role": role, "table": table},
+                ).scalar_one()
+                assert may_delete is False, f"{role} unexpectedly may DELETE {table}"
