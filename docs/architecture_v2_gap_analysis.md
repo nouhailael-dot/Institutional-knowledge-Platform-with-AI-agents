@@ -271,21 +271,23 @@ Canonical proposals live in `migrations/proposed/versions/` as detached Alembic 
 | Person status/privacy projection columns | Alembic proposal A03 | Extends canonical `person`; person review queues remain platform-owned. |
 | Event status/date/topic projection columns | Alembic proposal A04 | Extends canonical `event`; preserves host/event data while graph migration proceeds. |
 | `actor_category_definition`, `actor_category_type_definition`, `region_definition`, `region_state`, `source_origin_definition` | `agents/sql/190_v2_reference_data.sql` | New controlled reference data because the legacy schema uses unconstrained strings. |
-| `actor_location`, `hub_center_review` | `agents/sql/200_v2_location_review.sql` | New because one canonical actor row cannot represent multiple evidenced physical locations and frozen hub centers need a non-canonical review history. |
+| `actor_location` | `agents/sql/200_v2_actor_location.sql` | New because one canonical actor row cannot represent multiple evidenced physical locations. |
 | `topic`, `actor_topic`, `event_topic`, `person_topic` | `agents/sql/210_v2_topics.sql` | New controlled topic layer; extends current sectors without treating sector as topic. |
-| `record_verification` | `agents/sql/220_v2_verification_history.sql` | Extends stored verification columns and existing review queues with append-only identity/reason history. |
-| `actor_fact`, `fact_resolution`, current-fact view | `agents/sql/230_v2_fact_ledger.sql` | Extends `actor_profile` and `actor_capability_fact` from `f6b9a8c7d2e1`; legacy tables become backfill/compatibility inputs, not parallel mutable truth. |
-| `entity_edge`, recursive descendants view | `agents/sql/240_v2_edges.sql` | Extends `organization_hierarchy` from `18f57ec36d6e`, `event.host_actor_id`, and person affiliations into sourced typed edges. `actor_merge_log` from `F3a9c1b2d4e5` remains the merge audit. |
-| `collection_request`, `collection_run`, `fetched_document` | `agents/sql/250_v2_collection_runs.sql` | Extends `scrape_run` and raw-document capture with explicit requester/layer/topic budgets. |
-| `actor_ranking` | `agents/sql/260_v2_rankings.sql` | New because contextual rankings cannot be represented safely as actor ownership or a mutable profile field. |
-| `contact_collection_authorization` | `agents/sql/270_v2_people_privacy.sql` | Extends person review queues with explicit Layer 3 authorization; disabled by default. |
-| `event_claim` | `agents/sql/280_v2_event_claims.sql` | New append-only event evidence because canonical event text cannot retain claim history. |
-| `strategic_entity`, `actor_strategic_connection_check` | `agents/sql/290_v2_strategic_checks.sql` | New because UM6P/OCP checks require three-state, per-layer, sourced results independent of actor facts. |
-| V2 hub proposal/member/decision data | `agents/sql/300_v2_hub_proposals.sql` | Extends `proposed_hub` and `review_admission_decision` from `agents/sql/180`; no parallel permanent proposal truth. |
-| Unified `review_item` and decisions | `agents/sql/310_v2_review_items.sql` | Extends `review_queue` (`a7c2e91f4b03`), event/person queues, and review admission through compatibility views. |
-| `canonical_write_audit`, permission guards, compatibility/current views | `agents/sql/320_v2_guards_and_views.sql` | New audit/guard layer; views bridge existing consumers while each old queue/table is retired. |
+| `hub_center_review` | `agents/sql/220_v2_hub_center_review.sql` | New review history for approved/frozen hub-center drift without mutating historical decisions. |
+| `record_verification` | `agents/sql/230_v2_verification_history.sql` | Extends stored verification columns and existing review queues with append-only identity/reason history. |
+| `actor_fact`, `fact_resolution`, current-fact view | `agents/sql/240_v2_fact_ledger.sql` | Extends `actor_profile` and `actor_capability_fact` from `f6b9a8c7d2e1`; legacy tables become backfill/compatibility inputs, not parallel mutable truth. |
+| `entity_edge`, recursive descendants view | `agents/sql/250_v2_edges.sql` | Extends `organization_hierarchy` from `18f57ec36d6e`, `event.host_actor_id`, and person affiliations into sourced typed edges. `actor_merge_log` from `F3a9c1b2d4e5` remains the merge audit. |
+| `collection_request`, `collection_run`, `fetched_document` | `agents/sql/260_v2_collection_runs.sql` | Extends `scrape_run` and raw-document capture with explicit requester/layer/topic budgets. |
+| `actor_ranking` | `agents/sql/270_v2_rankings.sql` | New because contextual rankings cannot be represented safely as actor ownership or a mutable profile field. |
+| `contact_collection_authorization` | `agents/sql/280_v2_people_privacy.sql` | Extends person review queues with explicit Layer 3 authorization; disabled by default. |
+| `event_claim` | `agents/sql/290_v2_event_evidence.sql` | New append-only event evidence because canonical event text cannot retain claim history. |
+| `strategic_entity`, `actor_strategic_connection_check` | `agents/sql/300_v2_strategic_connections.sql` | New because UM6P/OCP checks require three-state, per-layer, sourced results independent of actor facts. |
+| V2 hub proposal/member/decision data | `agents/sql/310_v2_hub_proposals.sql` | Extends `proposed_hub` and `review_admission_decision` from `agents/sql/180`; no parallel permanent proposal truth. |
+| Unified `review_item` and decisions | `agents/sql/320_v2_review_items.sql` | Extends `review_queue` (`a7c2e91f4b03`), event/person queues, and review admission through compatibility views. |
+| `canonical_write_audit` and permission guards | `agents/sql/330_v2_guards_and_audit.sql` | New audit/guard layer with RLS and explicit agent-role write/delete denials. |
+| Compatibility/current views | `agents/sql/340_v2_compatibility_views.sql` | Views bridge existing consumers while each old queue/table is retired. |
 
-The exact filenames may be split for reversibility, but numbering, ownership, and one-source-of-truth rules are fixed. No platform SQL file may alter a canonical table; no detached Alembic proposal may create an agent-owned table.
+The exact committed order is defined by `migrations/proposed/manifest.json`; every platform SQL file has a same-number rollback file under `agents/sql/rollback/`. No platform SQL file may alter a canonical table; no detached Alembic proposal may create an agent-owned table.
 
 ## Canonical writer audit and repair plan
 
@@ -327,6 +329,14 @@ Proof: `test_proposed_hub_cutover_preserves_references_and_history` loads legacy
 Every default below remains behind config and is **pending GHUS confirmation**: 50-mile hub core, 200-mile maximum/default radius, 10 independent families, 5 categories, 25-mile drift flag, Verified-only proposal trigger (with Verified+Imported comparison report), per actor+topic deep authorization, confidence rubric, three-page Light budget, category-specific Deep caps, low-priority topic-fail review, refresh cadence not scheduled, network-location classification, need/topic-gated event schedule, out-of-scope professional-services policy, and Job 2's `candidate_actors(spec)`-only interface. Person discovery and contact collection remain disabled.
 
 Past overwritten values are not recoverable from the current database alone: prior actor-level `source_id`, verification status, confidence, `updated_at`, and canonical actor/hub/event narrative, classification, and location values changed by admin, ETL, maintenance, ER, merge, or enrichment paths. They may be reconstructed only from schema-owner backups/PITR, source spreadsheets, merge logs, or dated exports. Phase 12 must report possibilities and gaps; it must never invent history or automatically unmerge records absorbed by the old threshold logic.
+
+### Phase 2 production baseline provenance
+
+The read-only, repeatable-read production baseline dated 2026-09-24 is stored outside both repositories at `C:\Users\Ismail\Documents\GHUS\exports\architecture_v2_baseline_2026-09-24\manifest.json` (manifest SHA-256 `1f2b66be7c66ba60e12718632b6228497d30ad9728c1d04825907e27f975b0b1`). It contains only the approved baseline scope: 965 actors, 49 hubs, 821 hub memberships, and 356 events. All Phase 12 records assigned `source_origin=Imported` must cite this dated manifest (plus the applicable CSV hash recorded inside it) as their import origin; the migration must not infer or manufacture missing history.
+
+The current production baseline has the historical 48 Phase 1 hub names plus one additional row named `Mining Hubs`. This is informational only: all 49 current rows remain intact, no historical hub is demoted, and GHUS membership remains authoritative even when a later distance calculation exceeds 200 miles.
+
+Production reported PostgreSQL 17.6 with `pg_stat_statements`, `pgcrypto`, `supabase_vault`, `uuid-ossp`, and `vector`; the isolated database uses PostgreSQL 17.5 with only `plpgsql`. The four approved canonical datasets were loaded into `ghus_v2_test`; a broader production dump was not taken because it would exceed the approved baseline export scope.
 
 ## Draft schema migration set
 
