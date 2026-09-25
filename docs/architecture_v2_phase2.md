@@ -130,7 +130,7 @@ Config defaults remain pending GHUS confirmation: dry-run on, person discovery/c
 
 ## 4. Isolated database proof
 
-Chosen environment: local PostgreSQL at `127.0.0.1:55432`, database `ghus_v2_test`, data directory `C:\Users\Ismail\Documents\GHUS\.ghus-pg-v2` (outside both repositories).
+Chosen environment: local PostgreSQL at `127.0.0.1:55432`, database `ghus_v2_test`, data directory relocated on 2026-09-25 to `C:\Users\Ismail\GHUS-data\postgres\ghus-pg-v2` (outside both repositories).
 
 Build sequence:
 
@@ -163,13 +163,13 @@ No shared DDL or write was attempted. The production inspection explicitly verif
 
 Baseline directory (outside repositories):
 
-`C:\Users\Ismail\Documents\GHUS\exports\architecture_v2_baseline_2026-09-24`
+`C:\Users\Ismail\GHUS-data\exports\architecture_v2_baseline_2026-09-24`
 
 Manifest:
 
-`C:\Users\Ismail\Documents\GHUS\exports\architecture_v2_baseline_2026-09-24\manifest.json`
+`C:\Users\Ismail\GHUS-data\exports\architecture_v2_baseline_2026-09-24\manifest.json`
 
-Manifest SHA-256: `bd046babba1ed12047701cc553b535fe5714b2a3c81bf18892b7ea1c57bbbf76`.
+Relocated manifest SHA-256: `61d1e834a8773b8db101c1e86bda091c617c1380f0cf28f3618c95cd027bbb31`. All eight CSV checksums were re-verified after the move.
 
 The manifest records each CSV hash and is the documented origin for every later `source_origin=Imported` row.
 

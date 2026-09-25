@@ -65,7 +65,7 @@ The planned test names are acceptance targets, not tests that already exist.
 | R028 | §2.1 | Hub radius defaults to 200 miles; GHUS may choose smaller. | No radius field. | Missing | P2/P6 | `test_hub_radius_default_and_upper_rule` |
 | R029 | §2.1 | Hub members are actor-hub rows. | `hub_actor` exists and is many-to-many. It lacks assignment state, decision source, evidence, and distance. | Partial | P2/P6 | `test_actor_hub_records_assignment_evidence` |
 | R030 | §2.1 | Distances use deterministic city coordinates; no hand/LLM estimate. | No gazetteer or distance service. Actor lacks coordinates. | Missing | P4 | `test_haversine_known_city_distances` |
-| R031 | §2.1 | Phase 1 hub names and definitions are preserved exactly. | 48 names are present in the export, including apparent spreadsheet artifacts (`+A29`, `+A18`) that must be preserved pending GHUS review. Definitions are not in the export. | Partial | P12 | `test_phase1_hub_text_round_trip_exact` |
+| R031 | §2.1 | Phase 1 hub names and definitions are preserved exactly. | The current baseline contains 49 hub rows: the 48 historical Phase 1 names plus `Mining Hubs`, a `phase_1` row with no location or memberships. Apparent spreadsheet artifacts (`+A29`, `+A18`) are preserved pending GHUS review. Definitions are not in the export. | Partial | P12 | `test_phase1_hub_text_round_trip_exact` |
 | R032 | §2.1 | Phase 1 center is computed from current members and default radius applied. | No center computation/radius. | Missing | P6/P12 | `test_phase1_center_computed_from_allowed_members` |
 | R033 | §2.1 | A nonqualifying Phase 1 hub is retained and only reported. | No criterion/report. | Missing | P12 | `test_phase1_nonqualifying_hub_not_removed` |
 | R034 | §2.1 | Approved hub center is frozen. | No `center_frozen`. | Missing | P2/P6 | `test_approved_center_cannot_move_automatically` |
@@ -332,7 +332,7 @@ Past overwritten values are not recoverable from the current database alone: pri
 
 ### Phase 2 production baseline provenance
 
-The read-only, repeatable-read production baseline dated 2026-09-24 is stored outside both repositories at `C:\Users\Ismail\Documents\GHUS\exports\architecture_v2_baseline_2026-09-24\manifest.json` (manifest SHA-256 `bd046babba1ed12047701cc553b535fe5714b2a3c81bf18892b7ea1c57bbbf76`). It contains the requested baseline scope: 965 actors, 49 hubs, 821 hub memberships, 356 events, 7,257 staged records, 280 actor review rows, 9 event review rows, and 0 person review rows. All Phase 12 records assigned `source_origin=Imported` must cite this dated manifest (plus the applicable CSV hash recorded inside it) as their import origin; the migration must not infer or manufacture missing history.
+The read-only, repeatable-read production baseline dated 2026-09-24 is stored outside both repositories at `C:\Users\Ismail\GHUS-data\exports\architecture_v2_baseline_2026-09-24\manifest.json` (relocated manifest SHA-256 `61d1e834a8773b8db101c1e86bda091c617c1380f0cf28f3618c95cd027bbb31`). It contains the requested baseline scope: 965 actors, 49 hubs, 821 hub memberships, 356 events, 7,257 staged records, 280 actor review rows, 9 event review rows, and 0 person review rows. All Phase 12 records assigned `source_origin=Imported` must cite this dated manifest (plus the applicable CSV hash recorded inside it) as their import origin; the migration must not infer or manufacture missing history.
 
 The current production baseline has the historical 48 Phase 1 hub names plus one additional row named `Mining Hubs`. This is informational only: all 49 current rows remain intact, no historical hub is demoted, and GHUS membership remains authoritative even when a later distance calculation exceeds 200 miles.
 
@@ -416,7 +416,7 @@ Only the temporary Agent 3 compatibility alias may continue exposing the name `a
 
 ## Current hub audit (informational only)
 
-The 872-row export yields 48 distinct Phase 1 hub names. Raw membership is not the V2 independent-family count, does not exclude aggregates, has no category/type, and has no coordinates. Therefore every criterion result is **indeterminate**. Forty-seven hubs have at least 10 raw rows; `New York City AI Hub` has 9 and cannot meet the 10-family criterion on this snapshot. Names are shown exactly as exported.
+The earlier 872-row Phase 0 export yields 48 distinct Phase 1 hub names. The 2026-09-24 production baseline adds `Mining Hubs`, a `phase_1` hub row with no location and no memberships, for 49 current rows. Raw membership is not the V2 independent-family count, does not exclude aggregates, has no category/type, and has no coordinates. Therefore the full V2 criterion remains **indeterminate**. Forty-seven hubs have at least 10 raw rows; `New York City AI Hub` has 9, and `Mining Hubs` has 0. Names are shown exactly as exported; all 49 remain informational and none is demoted.
 
 | Hub | Raw linked actor rows | V2 criterion |
 |---|---:|---|
@@ -447,6 +447,7 @@ The 872-row export yields 48 distinct Phase 1 hub names. Raw membership is not t
 | Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor) | 16 | Indeterminate |
 | Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois) | 17 | Indeterminate |
 | Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor) | 19 | Indeterminate |
+| Mining Hubs | 0 | Fails raw 10-row floor and has no center/members; full criterion indeterminate |
 | Missouri – St. Louis Plant Science & Ag-Biotech Hub | 14 | Indeterminate |
 | Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt) | 13 | Indeterminate |
 | Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada) | 16 | Indeterminate |
