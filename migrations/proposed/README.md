@@ -3,7 +3,7 @@
 These files are proposals for the schema owner. They must never be executed on
 shared Supabase by an agent.
 
-The 16 logical migrations are ordered in `manifest.json` and use two ownership
+The 17 logical migrations are ordered in `manifest.json` and use two ownership
 tracks:
 
 - `versions/v2a*.py` contains canonical-table Alembic proposals. This directory
@@ -11,12 +11,17 @@ tracks:
   `migrations/env.py` does not import V2 metadata. After approval, the schema
   owner sets the live `down_revision`, moves each revision into
   `migrations/versions/`, and validates the associated backfill.
-- `agents/sql/190_v2_*.sql` through `340_v2_*.sql` contain platform-owned
+- `agents/sql/190_v2_*.sql` through `350_v2_*.sql` contain platform-owned
   tables, guards, and compatibility views. Matching rollback scripts live under
   `agents/sql/rollback/`.
 
 Constraints added to populated canonical tables are `NOT VALID`. They are not
 validated until Phase 12 produces and applies an owner-approved backfill.
+
+Phase 3 adds `350_v2_record_creation.sql`. It extends the unified review-kind
+constraint with `verify_actor` and adds the three actor source-origin codes
+required by the specification. Its check constraint is deliberately `NOT
+VALID`; the matching rollback refuses to discard live `verify_actor` history.
 
 Only the isolated test helper may exercise the detached set:
 

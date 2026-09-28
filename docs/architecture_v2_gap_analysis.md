@@ -310,6 +310,20 @@ The exact committed order is defined by `migrations/proposed/manifest.json`; eve
 
 Agent queue/provenance/run-store modules that write only `staged_record`, raw documents, run logs, review queues, or `index_dirty` are not canonical-writer conflicts. Static tests must maintain an explicit allowlist and fail on new actor/person/event/hub/membership/fact/edge mutations outside the two approved modules and isolated migration tooling.
 
+### Phase 3 writer-audit closure (2026-09-28)
+
+- `promote.py` now owns V2 actor creation, exact-match evidence append, topic/fact append, hub assignment, and review creation. It no longer uses similarity scores to absorb actors.
+- `decisions.py` now appends actor enrichment values to `actor_fact` and exposes the canonical ORM/decision gateways used by legacy importers. Actor enrichment no longer updates actor scalar fields or actor-level provenance/status.
+- `agents/review/admission.py` remains an orchestrator only and delegates canonical promotion.
+- `apply_review_decisions.py`, `create_hierarchy_edges.py`, `actor_merge.py`, the destructive merge smoke script, legacy ER live writes, and legacy Streamlit status writes are retired. Their dry-run/report behavior remains where useful, but their former apply paths raise before any canonical write.
+- Existing ETL and enrichment constructors now hand persistence to `decisions.py`; direct ORM `session.add` calls were removed from the audited files. Future Phase 12 work still converts their canonical-shaped inputs into staged V2 import records.
+- Static tests scan `agents/`, `scripts/`, and `src/`: raw canonical SQL outside `promote.py`/`decisions.py`, canonical `DELETE`, or a newly introduced unallowlisted agent writer fails the suite.
+- The obsolete `_promote_actor_legacy` / `_absorb_actor_fields` overwrite implementation was removed rather than merely left unreachable. Exact discovered-domain actor matches now retain the V2 exact-match append route; only non-exact similarity matches become `possible_duplicate` review items.
+
+This closes the writer boundary but cannot reconstruct history already overwritten by earlier releases. Specifically unrecoverable from current rows alone are previous actor/hub/event narrative, category/type, location, `source_id`, status, confidence, and `updated_at` values. Old threshold absorptions remain report-only and are not automatically unmerged. Per the schema-owner hold, no backup/PITR action was taken.
+
+Mapped-first coverage in Phase 3 applies to every backend path that can submit a newly discovered actor to canonical promotion, including event participants. Ask and Explore in the sibling platform are database-only today and do not trigger web discovery; the universal RAG/Build-the-Map database-first service remains explicitly tracked by R003 for Phase 16. Layer 3 specific asks do not exist yet and remain scheduled for Phase 10. This is a planned phase boundary, not permission for any current actor-creation path to bypass `map_new_actor`.
+
 ## Hub proposal overlap and retirement
 
 The existing workflow is `agents/sql/180_review_admission_workflow.sql` -> `proposed_hub` -> `review_admission_decision.proposed_hub_id`, written by `agents/review/admission.py`. It captures a reviewer-suggested name/location/rationale tied to one reviewed candidate. The mistaken draft's `v2_hub_proposal`, member, and decision tables capture deterministic clusters, fingerprints, family/category counts, distances, rename/radius decisions, and final-hub linkage. They overlap in identity, status, reviewer decision, and source linkage but neither is a complete superset as written.
