@@ -19,7 +19,7 @@ import csv
 import logging
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -28,9 +28,9 @@ import openpyxl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.db.models import Actor, Hub, HubActor, Source
 from src.etl.common.text_cleaning import slugify
-
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +195,7 @@ class HubActorExtractor:
             description=description,
             trust_tier="candidate",
         )
-        self.session.add(source)
+        persist_canonical_record(self.session, source)
         self.session.flush()
         return source
 
@@ -241,7 +241,7 @@ class HubActorExtractor:
             verification_status="needs_review",
             confidence=0.5,
         )
-        self.session.add(actor)
+        persist_canonical_record(self.session, actor)
         self.session.flush()
         self._actor_cache[slug] = actor
         return (actor, True)
@@ -276,7 +276,7 @@ class HubActorExtractor:
             relationship_type="member",
             is_primary=False,
         )
-        self.session.add(link)
+        persist_canonical_record(self.session, link)
         self._pending_links.add(link_key)
         return True
     

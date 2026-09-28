@@ -19,7 +19,9 @@ from sqlalchemy import text
 from agents.common.provenance import insert_source
 from agents.common.resolve_route import RouteDecision
 from agents.discovery.stage import StagedRecord
-from src.ML.entity_resolution.resolve_or_create import INHERITABLE_FIELDS as ACTOR_FIELDS
+from src.ML.entity_resolution.resolve_or_create import (
+    INHERITABLE_FIELDS as ACTOR_FIELDS,
+)
 
 EVENT_CREATE_FIELDS = [
     "event_type",
@@ -108,17 +110,23 @@ class PromotionResult:
     dry_run: bool = True
     fields_absorbed: list[str] = field(default_factory=list)
     review_id: str | None = None
+    step_trace: list[str] = field(default_factory=list)
 
 
 def guard_actor_absorb_route(staged: StagedRecord, route: RouteDecision) -> RouteDecision:
     if staged.entity_type != "actor" or route.zone != "absorb":
+        return route
+    metadata = dict(route.metadata or {})
+    if metadata.get("route_policy") == "v2_exact_only" and metadata.get("match_rule") in {
+        "website_domain",
+        "name_or_alternate_name",
+    }:
         return route
     reason = _unsafe_actor_absorb_reason(staged.normalized_payload.get("name"))
     if not reason:
         return route
     if not route.target_entity_id:
         raise ValueError("actor absorb route requires target_entity_id")
-    metadata = dict(route.metadata or {})
     metadata["actor_absorb_guard_reason"] = reason
     return RouteDecision(
         zone="review",
@@ -136,6 +144,11 @@ def guard_discovered_domain_route(
     if not domain:
         return route
     if route.zone == "absorb":
+        metadata = dict(route.metadata or {})
+        if metadata.get("route_policy") == "v2_exact_only" and metadata.get(
+            "match_rule"
+        ) in {"website_domain", "name_or_alternate_name"}:
+            return route
         raise RuntimeError(
             "records from discovered domains must not use the absorb route; "
             f"domain={domain!r}"
@@ -446,69 +459,148 @@ def _promote_actor(
     manage_transaction: bool = True,
 ) -> PromotionResult:
     route = guard_actor_absorb_route(staged, route)
+    return map_new_actor(
+        staged,
+        route,
+        session=session,
+        live=live,
+        manage_transaction=manage_transaction,
+    )
+
+
+ACTOR_MAPPING_STEPS = (
+    "mapped_first",
+    "category",
+    "category_type",
+    "geocode",
+    "parent_connection",
+    "hub_fit",
+    "light_pull",
+    "parked",
+    "verify_actor",
+)
+
+
+def map_new_actor(
+    staged: StagedRecord,
+    route: RouteDecision,
+    *,
+    session=None,
+    live: bool = False,
+    manage_transaction: bool = True,
+) -> PromotionResult:
+    """Create or append an actor through the Architecture V2 ordered pipeline.
+
+    The route is already mapped-first. Exact matches append immutable evidence;
+    close matches create only a possible-duplicate review item. A genuinely new
+    record passes the remaining steps in order and ends Parked with a
+    ``verify_actor`` review item. Dry-run executes the same SQL path and rolls
+    the transaction back.
+    """
+    if staged.entity_type != "actor":
+        raise ValueError("map_new_actor accepts only actor staged records")
+    trace: list[str] = []
+    _mapping_step(route, trace, "mapped_first")
     if session is None:
         if live:
             raise ValueError("live promotion requires a database session")
-        return _dry_run_preview(staged, route)
+        if route.zone == "create":
+            for step in ACTOR_MAPPING_STEPS[1:]:
+                _mapping_step(route, trace, step)
+        return PromotionResult(
+            action=f"would_{route.zone}",
+            entity_type="actor",
+            zone=route.zone,
+            entity_id=route.target_entity_id,
+            dry_run=True,
+            step_trace=trace,
+        )
 
     transaction = session.begin() if manage_transaction else None
     try:
-        if route.zone == "create":
-            source_id = insert_source(
+        source_id = insert_source(
+            session,
+            source_url=staged.source_url,
+            fetched_at=staged.extracted_at,
+            description=f"architecture v2 actor {route.zone}",
+        )
+        topic_id = _route_topic_id(staged, route)
+        if route.zone == "absorb":
+            if not route.target_entity_id:
+                raise ValueError("exact actor route requires target_entity_id")
+            fields = _append_actor_sighting(
                 session,
-                source_url=staged.source_url,
-                fetched_at=staged.extracted_at,
-                description="agent discovery actor create",
+                actor_id=route.target_entity_id,
+                staged=staged,
+                route=route,
+                source_id=source_id,
+                topic_id=topic_id,
             )
-            actor_id = _insert_actor(session, staged.normalized_payload, source_id)
+            _append_actor_topic(
+                session,
+                actor_id=route.target_entity_id,
+                topic_id=topic_id,
+                source_id=source_id,
+                payload=staged.normalized_payload,
+                run_id=staged.run_id,
+            )
+            result = PromotionResult(
+                action="appended_to_existing",
+                entity_type="actor",
+                zone="absorb",
+                entity_id=route.target_entity_id,
+                dry_run=False,
+                fields_absorbed=fields,
+                step_trace=trace,
+            )
+        elif route.zone == "review":
+            review_id = _insert_v2_actor_review(session, staged, route, topic_id=topic_id)
+            result = PromotionResult(
+                action="queued_for_review",
+                entity_type="actor",
+                zone="review",
+                entity_id=route.target_entity_id,
+                review_id=review_id,
+                dry_run=False,
+                step_trace=trace,
+            )
+        elif route.zone == "create":
+            for step in ACTOR_MAPPING_STEPS[1:7]:
+                _mapping_step(route, trace, step)
+            actor_id = _insert_actor_v2(session, staged.normalized_payload, source_id)
+            _append_actor_light_facts(
+                session,
+                actor_id=actor_id,
+                staged=staged,
+                source_id=source_id,
+                topic_id=topic_id,
+            )
+            _append_actor_topic(
+                session,
+                actor_id=actor_id,
+                topic_id=topic_id,
+                source_id=source_id,
+                payload=staged.normalized_payload,
+                run_id=staged.run_id,
+            )
             _assign_actor_hubs(session, actor_id, route.metadata.get("hub_ids") or [])
+            _mapping_step(route, trace, "parked")
+            review_id = _insert_verify_actor_review(
+                session, staged, actor_id=actor_id, topic_id=topic_id, trace=trace
+            )
+            _mapping_step(route, trace, "verify_actor")
             _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
             result = PromotionResult(
                 action="created",
                 entity_type="actor",
                 zone="create",
                 entity_id=actor_id,
+                review_id=review_id,
                 dry_run=False,
+                step_trace=trace,
             )
-        elif route.zone == "absorb":
-            if not route.target_entity_id:
-                raise ValueError("actor absorb route requires target_entity_id")
-            fields = _absorb_actor_fields(session, route.target_entity_id, staged)
-            _assign_actor_hubs(
-                session, route.target_entity_id, route.metadata.get("hub_ids") or []
-            )
-            if fields:
-                _mark_index_dirty(session, entity_type="actor", entity_id=route.target_entity_id)
-            result = PromotionResult(
-                action="absorbed" if fields else "no_op",
-                entity_type="actor",
-                zone="absorb",
-                entity_id=route.target_entity_id,
-                dry_run=False,
-                fields_absorbed=fields,
-            )
-        elif route.zone == "review":
-            if not route.target_entity_id:
-                raise ValueError("actor review route requires target_entity_id")
-            source_id = insert_source(
-                session,
-                source_url=staged.source_url,
-                fetched_at=staged.extracted_at,
-                description="agent discovery actor review candidate",
-            )
-            actor_id = _insert_actor(session, staged.normalized_payload, source_id)
-            review_id = _insert_actor_review(session, actor_id, route.target_entity_id, route)
-            _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
-            result = PromotionResult(
-                action="queued_for_review",
-                entity_type="actor",
-                zone="review",
-                entity_id=actor_id,
-                dry_run=False,
-            )
-            result.review_id = review_id
         else:
-            raise ValueError(f"unknown route zone {route.zone!r}")
+            raise ValueError(f"unknown actor route zone {route.zone!r}")
     except Exception:
         if transaction is not None:
             transaction.rollback()
@@ -521,7 +613,258 @@ def _promote_actor(
         return result
     if transaction is not None:
         transaction.rollback()
-    return _dry_run_result(result, route)
+    result.action = f"would_{route.zone}"
+    result.dry_run = True
+    return result
+
+
+def _mapping_step(route: RouteDecision, trace: list[str], step: str) -> None:
+    expected = ACTOR_MAPPING_STEPS[len(trace)]
+    if step != expected:
+        raise RuntimeError(f"actor mapping order violation: expected {expected}, got {step}")
+    trace.append(step)
+    observer = dict(route.metadata or {}).get("step_observer")
+    if callable(observer):
+        observer(step)
+
+
+def _route_topic_id(staged: StagedRecord, route: RouteDecision) -> str | None:
+    value = route.metadata.get("topic_id") or staged.normalized_payload.get("topic_id")
+    return str(value).strip() if value else None
+
+
+def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("cannot create actor without name")
+    actor_id = str(uuid.uuid4())
+    cols: dict[str, object] = {
+        "actor_id": actor_id,
+        "name": name,
+        "slug": _actor_slug(name, actor_id),
+        "record_status": "parked",
+        "source_origin": "claude_discovered",
+        "source_id": source_id,
+    }
+    mapping = {
+        "actor_category": ("actor_category", "actor_type"),
+        "category_type": ("category_type",),
+        "category_note": ("category_note",),
+        "website": ("website",),
+        "website_domain": ("website_domain",),
+        "description": ("description",),
+        "country": ("country",),
+        "location_city": ("location_city", "city"),
+        "state_code": ("state_code", "state"),
+        "region_code": ("region_code", "region"),
+        "latitude": ("latitude", "lat"),
+        "longitude": ("longitude", "lon"),
+        "alternate_names": ("alternate_names", "alt_names"),
+    }
+    for column, keys in mapping.items():
+        value = next((payload.get(key) for key in keys if _has_value(payload.get(key))), None)
+        if _has_value(value):
+            cols[column] = value
+    names = ", ".join(cols)
+    binds = ", ".join(
+        f"CAST(:{key} AS uuid)" if key in {"actor_id", "source_id"} else f":{key}"
+        for key in cols
+    )
+    session.execute(text(f"INSERT INTO actor ({names}) VALUES ({binds})"), cols)
+    return actor_id
+
+
+def _append_actor_sighting(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    route: RouteDecision,
+    source_id: str,
+    topic_id: str | None,
+) -> list[str]:
+    value = {
+        "name": staged.normalized_payload.get("name"),
+        "source_url": staged.source_url,
+        "matched_by": route.metadata.get("match_rule"),
+        "staged_record_id": staged.staged_record_id,
+    }
+    _insert_actor_fact(
+        session,
+        actor_id=actor_id,
+        topic_id=topic_id,
+        fact_type="sighting",
+        fact_key="discovery_sighting",
+        value=value,
+        source_id=source_id,
+        retrieved_at=staged.extracted_at,
+        run_id=staged.run_id,
+    )
+    return ["discovery_sighting"]
+
+
+def _append_actor_light_facts(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    source_id: str,
+    topic_id: str | None,
+) -> None:
+    excluded = {
+        "entity_type",
+        "natural_key",
+        "sector_codes",
+        "source_url",
+        "extracted_at",
+        "prompt_version",
+        "sector_match",
+        DISCOVERED_DOMAIN_PAYLOAD_KEY,
+    }
+    for key, value in staged.normalized_payload.items():
+        if key in excluded or not _has_value(value):
+            continue
+        _insert_actor_fact(
+            session,
+            actor_id=actor_id,
+            topic_id=topic_id,
+            fact_type="light_pull",
+            fact_key=key,
+            value=value,
+            source_id=source_id,
+            retrieved_at=staged.extracted_at,
+            run_id=staged.run_id,
+        )
+
+
+def _insert_actor_fact(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    fact_type: str,
+    fact_key: str,
+    value: object,
+    source_id: str,
+    retrieved_at: object,
+    run_id: str,
+) -> str:
+    fact_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO actor_fact (actor_fact_id,actor_id,topic_id,fact_type,fact_key,"
+            "fact_value,collection_state,layer,source_id,source_origin,confidence,"
+            "retrieved_at,generated_by,request_id) VALUES (CAST(:fact_id AS uuid),"
+            "CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:fact_type,:fact_key,"
+            "CAST(:fact_value AS jsonb),'found',1,CAST(:source_id AS uuid),'newly_found',"
+            "'medium',:retrieved_at,'agent',CAST(:request_id AS uuid))"
+        ),
+        {
+            "fact_id": fact_id,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "fact_type": fact_type,
+            "fact_key": fact_key,
+            "fact_value": json.dumps(value, sort_keys=True, default=str),
+            "source_id": source_id,
+            "retrieved_at": retrieved_at,
+            "request_id": run_id,
+        },
+    )
+    return fact_id
+
+
+def _append_actor_topic(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    source_id: str,
+    payload: dict[str, object],
+    run_id: str,
+) -> None:
+    if not topic_id:
+        return
+    session.execute(
+        text(
+            "INSERT INTO actor_topic (actor_id,topic_id,match_strength,match_reason,source_id) "
+            "VALUES (CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:match_strength,"
+            ":match_reason,CAST(:source_id AS uuid)) ON CONFLICT DO NOTHING"
+        ),
+        {
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "match_strength": str(payload.get("match_strength") or "moderate"),
+            "match_reason": str(payload.get("match_reason") or "not_found"),
+            "source_id": source_id,
+            "run_id": run_id,
+        },
+    )
+
+
+def _insert_v2_actor_review(
+    session, staged: StagedRecord, route: RouteDecision, *, topic_id: str | None
+) -> str:
+    review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+            "candidate_entity_id,topic_id,priority,payload,status) VALUES "
+            "(CAST(:review_id AS uuid),'possible_duplicate','actor',NULL,"
+            "CAST(:candidate_id AS uuid),CAST(:topic_id AS uuid),'normal',"
+            "CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": review_id,
+            "candidate_id": route.target_entity_id,
+            "topic_id": topic_id,
+            "payload": json.dumps(
+                {
+                    "staged_record_id": staged.staged_record_id,
+                    "candidate_ids": route.candidate_ids,
+                    "score": route.score,
+                    "source_url": staged.source_url,
+                    "record": staged.normalized_payload,
+                },
+                sort_keys=True,
+                default=str,
+            ),
+        },
+    )
+    return review_id
+
+
+def _insert_verify_actor_review(
+    session,
+    staged: StagedRecord,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    trace: list[str],
+) -> str:
+    review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+            "topic_id,priority,payload,status) VALUES (CAST(:review_id AS uuid),"
+            "'verify_actor','actor',CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),"
+            "'normal',CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": review_id,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "payload": json.dumps(
+                {
+                    "staged_record_id": staged.staged_record_id,
+                    "source_url": staged.source_url,
+                    "pipeline_steps": [*trace, "verify_actor"],
+                },
+                sort_keys=True,
+            ),
+        },
+    )
+    return review_id
 
 
 def _insert_actor(session, payload: dict[str, object], source_id: str) -> str:
@@ -552,7 +895,7 @@ def _insert_actor(session, payload: dict[str, object], source_id: str) -> str:
 def _assign_actor_hubs(session, actor_id: str, hub_ids: object) -> None:
     """Attach reviewer-selected hubs while keeping canonical writes in this module."""
     if not isinstance(hub_ids, (list, tuple, set)):
-        raise ValueError("hub_ids must be a list")
+        raise TypeError("hub_ids must be a list")
     for hub_id in dict.fromkeys(str(value).strip() for value in hub_ids):
         if not hub_id:
             continue
@@ -571,85 +914,6 @@ def _assign_actor_hubs(session, actor_id: str, hub_ids: object) -> None:
             ),
             {"hub_id": hub_id, "actor_id": actor_id},
         )
-
-
-def _absorb_actor_fields(session, actor_id: str, staged: StagedRecord) -> list[str]:
-    selected_fields = [*ACTOR_ABSORB_FIELDS, "source_id", "verification_status"]
-    row = (
-        session.execute(
-            text(
-                "SELECT "
-                + ", ".join(selected_fields)
-                + " FROM actor WHERE actor_id = CAST(:actor_id AS uuid)"
-            ),
-            {"actor_id": actor_id},
-        )
-        .mappings()
-        .first()
-    )
-    if row is None:
-        raise RuntimeError(f"actor {actor_id} no longer exists")
-
-    updates: dict[str, object] = {}
-    gap_conditions: list[str] = []
-    for field_name in ACTOR_ABSORB_FIELDS:
-        incoming = staged.normalized_payload.get(field_name)
-        if _is_empty(row.get(field_name)) and _has_value(incoming):
-            updates[field_name] = incoming
-            gap_conditions.append(_gap_sql(field_name))
-    if not updates:
-        return []
-
-    source_id = insert_source(
-        session,
-        source_url=staged.source_url,
-        fetched_at=staged.extracted_at,
-        description="agent discovery actor absorb",
-    )
-    if _is_empty(row.get("source_id")):
-        updates["source_id"] = source_id
-        gap_conditions.append("source_id IS NULL")
-    updates["verification_status"] = "needs_review"
-    updates["actor_id"] = actor_id
-    set_clause = ", ".join(
-        f"{field_name} = :{field_name}" for field_name in updates if field_name != "actor_id"
-    )
-    where_clause = " AND ".join(gap_conditions)
-    result = session.execute(
-        text(
-            f"UPDATE actor SET {set_clause}, updated_at = now() "
-            f"WHERE actor_id = CAST(:actor_id AS uuid) AND {where_clause}"
-        ),
-        updates,
-    )
-    if result.rowcount != 1:
-        raise RuntimeError("actor absorb gap guard matched zero rows")
-    return [
-        field_name
-        for field_name in updates
-        if field_name not in {"actor_id", "source_id", "verification_status"}
-    ]
-
-
-def _insert_actor_review(session, actor_id_a: str, actor_id_b: str, route: RouteDecision) -> str:
-    left, right = sorted([str(actor_id_a), str(actor_id_b)])
-    review_id = str(uuid.uuid4())
-    session.execute(
-        text(
-            "INSERT INTO review_queue (review_id, actor_id_a, actor_id_b, score, model, status) "
-            "VALUES (CAST(:review_id AS uuid), CAST(:actor_id_a AS uuid), "
-            "CAST(:actor_id_b AS uuid), :score, :model, 'pending') "
-            "ON CONFLICT ON CONSTRAINT uq_review_pair DO NOTHING"
-        ),
-        {
-            "review_id": review_id,
-            "actor_id_a": left,
-            "actor_id_b": right,
-            "score": float(route.score),
-            "model": str(route.metadata.get("model") or "combiner"),
-        },
-    )
-    return review_id
 
 
 def _promote_person(

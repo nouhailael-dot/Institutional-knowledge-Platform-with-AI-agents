@@ -324,8 +324,11 @@ def test_discovered_event_sponsor_uses_er_bridge_but_cannot_auto_absorb(
     assert len(actor_rows) == 3
     assert all(row.route["zone"] == "review" for row in actor_rows)
     assert all(
-        row.route["metadata"]["route_policy"]
-        == "discovered domains never auto-absorb"
+        row.route["metadata"]["route_policy"] == "v2_exact_only"
+        for row in actor_rows
+    )
+    assert all(
+        row.route["metadata"]["review_kind"] == "possible_duplicate"
         for row in actor_rows
     )
 

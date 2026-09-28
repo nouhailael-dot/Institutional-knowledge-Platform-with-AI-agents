@@ -118,15 +118,11 @@ def main():
         print("\nDRY RUN — nothing written. Re-run with --apply to create the edges.")
         return
 
-    for p in plan:
-        conn.execute(text(
-            "INSERT INTO organization_hierarchy "
-            "(parent_actor_id, child_actor_id, relationship_type) "
-            "VALUES (CAST(:p AS uuid), CAST(:c AS uuid), :t) ON CONFLICT DO NOTHING"),
-            {"p": p["parent_actor_id"], "c": p["child_actor_id"], "t": RELATIONSHIP_TYPE})
-    s.commit(); s.close()
-    print(f"\n[done] created {len(plan)} hierarchy edge(s) with "
-          f"relationship_type='{RELATIONSHIP_TYPE}'.")
+    s.close()
+    raise RuntimeError(
+        "legacy hierarchy apply is retired; create a sourced unit_of/operated_by "
+        "review decision through agents.enrichment.decisions"
+    )
 
 
 if __name__ == "__main__":

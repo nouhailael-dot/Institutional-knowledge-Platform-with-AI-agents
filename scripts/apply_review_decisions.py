@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -31,11 +30,6 @@ from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.db.session import SessionLocal
-try:
-    from actor_merge import merge_actors
-except ImportError:
-    sys.path.append(str(Path(__file__).resolve().parent))
-    from actor_merge import merge_actors
 
 VALID = {"same", "different", "hierarchy", "skip"}
 COMPLETENESS_FIELDS = [
@@ -114,58 +108,11 @@ def main():
         print("\nDRY RUN — nothing written. Re-run with --apply.")
         return
 
-    now = datetime.now(timezone.utc)
-    done = failed = 0
-    for rid, winner, loser, wn, ln, sc in merges:
-        try:
-            mid = merge_actors(SessionLocal, winner, loser, score=sc,
-                               method="human_review", decided_by=args.decided_by)
-            conn.execute(text(
-                "UPDATE review_queue SET status='same', decided_by=:by, decided_at=:at, "
-                "merge_id=CAST(:m AS uuid) WHERE review_id = CAST(:r AS uuid)"),
-                {"by": args.decided_by, "at": now, "m": str(mid), "r": rid})
-            done += 1
-        except Exception as e:
-            failed += 1
-            print(f"   FAILED merge {ln[:40]} -> {wn[:40]}: {type(e).__name__}: {e}")
-    for rid, pid, cid, pn, cn in edges:
-        conn.execute(text(
-            "INSERT INTO organization_hierarchy (parent_actor_id, child_actor_id, "
-            "relationship_type) VALUES (CAST(:p AS uuid), CAST(:c AS uuid), 'sub_unit') "
-            "ON CONFLICT DO NOTHING"), {"p": pid, "c": cid})
-        conn.execute(text(
-            "UPDATE review_queue SET status='hierarchy', decided_by=:by, decided_at=:at "
-            "WHERE review_id = CAST(:r AS uuid)"), {"by": args.decided_by, "at": now, "r": rid})
-    for rid, kind, _, _ in others:
-        conn.execute(text(
-            "UPDATE review_queue SET status='different', decided_by=:by, decided_at=:at "
-            "WHERE review_id = CAST(:r AS uuid)"), {"by": args.decided_by, "at": now, "r": rid})
-    s.commit(); s.close()
-    print(f"\n[applied] {done} merged ({failed} failed), {len(edges)} hierarchy edge(s), "
-          f"{len(others)} recorded")
-
-    # append every decision to the gold set as new labels
-    gold_path = Path(args.gold)
-    gold = pd.read_csv(gold_path, dtype=str, keep_default_na=False)
-    next_id = pd.to_numeric(gold["pair_id"], errors="coerce").max()
-    next_id = 1 if pd.isna(next_id) else int(next_id) + 1
-    rows = []
-    for _, r in decided.iterrows():
-        label = "same" if r["decision"] == "same" else "different"
-        note = ("Confirmed duplicate via review queue." if r["decision"] == "same"
-                else "Sub-unit relationship, not a duplicate." if r["decision"] == "hierarchy"
-                else "Distinct organizations.")
-        rows.append({"pair_id": next_id, "name_a": r["name_a"], "name_b": r["name_b"],
-                     "tfidf_cosine": "", "band": "sweep_review", "match_reason": "",
-                     "label": label, "notes": note, "reclassified": "",
-                     "review_flag": ("sub-unit" if r["decision"] == "hierarchy" else ""),
-                     "source_batch": args.batch,
-                     "actor_id_a": r["actor_id_a"], "actor_id_b": r["actor_id_b"]})
-        next_id += 1
-    new = pd.concat([gold, pd.DataFrame(rows)[gold.columns]], ignore_index=True)
-    new.to_csv(gold_path, index=False)
-    print(f"[gold] appended {len(rows)} labeled pair(s) -> {gold_path} "
-          f"(now {len(new)} rows). Re-run k-fold to see if the auto-merge band widens.")
+    s.close()
+    raise RuntimeError(
+        "legacy direct apply is retired: submit V2 review_item decisions through "
+        "agents.enrichment.decisions; no canonical merge or hierarchy write was made"
+    )
 
 
 if __name__ == "__main__":

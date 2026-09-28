@@ -616,7 +616,7 @@ def test_past_event_with_speakers_mines_participants_without_event_row(
     monkeypatch.setattr(
         discovery_run,
         "route_actor",
-        lambda _record, _resolver: RouteDecision(zone="review", score=0.5),
+        lambda _record, _resolver, _mapped=None: RouteDecision(zone="review", score=0.5),
     )
 
     result = run_pipeline(
@@ -833,19 +833,30 @@ def test_status_failed_when_extractor_raises(tmp_path):
     assert run.status_reason == "extractor failed"
 
 
-def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path):
+def test_dry_run_checks_mapped_records_before_discovery_and_exact_event_absorbs(
+    monkeypatch, tmp_path
+):
     doc = fixture_doc()
     run_log = InMemoryRunLog()
     raw_store = RawContentStore(tmp_path / "raw")
     session = object()
-    load_calls = []
+    call_order = []
     decisions = []
 
     def fake_load_event_candidates(active_session):
-        load_calls.append(active_session)
+        call_order.append(("load_event_candidates", active_session))
         return [
             {"event_id": "evt-1", "name": "Climate Innovation Summit", "next_date": "2026-09-22"}
         ]
+
+    def fake_load_actor_candidates(active_session):
+        call_order.append(("load_actor_candidates", active_session))
+        return []
+
+    class OrderedSource(StaticSource):
+        def discover(self):
+            call_order.append(("discover", None))
+            yield self.doc.url
 
     def fake_promote(staged, decision, *, session=None, live=False):
         decisions.append(decision)
@@ -858,6 +869,7 @@ def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path)
         )
 
     monkeypatch.setattr("agents.discovery.run.load_event_candidates", fake_load_event_candidates)
+    monkeypatch.setattr("agents.discovery.run.load_actor_candidates", fake_load_actor_candidates)
     monkeypatch.setattr("agents.discovery.run.promote", fake_promote)
 
     result = run_pipeline(
@@ -868,12 +880,17 @@ def test_dry_run_discovery_routes_against_real_candidates(monkeypatch, tmp_path)
         root=PROJECT_ROOT,
         run_log=run_log,
         stage_store=InMemoryStageStore(),
-        source=StaticSource(doc),
+        source=OrderedSource(doc),
         extractor=EventExtractor(CountingToolClient(fixture_payload())),
         raw_store=raw_store,
+        run_date=date(2026, 9, 1),
     )
 
-    assert load_calls == [session]
+    assert call_order[:3] == [
+        ("load_event_candidates", session),
+        ("load_actor_candidates", session),
+        ("discover", None),
+    ]
     assert decisions[0].zone == "absorb"
     assert result["audit_rows"][0]["zone"] == "absorb"
     assert result["audit_rows"][0]["target_entity_id"] == "evt-1"
@@ -971,6 +988,7 @@ def test_out_of_sector_record_is_staged_and_never_promoted(monkeypatch, tmp_path
             ]
         ),
         raw_store=raw_store,
+        run_date=date(2026, 9, 1),
     )
 
     assert result["stats"]["records_extracted"] == 2

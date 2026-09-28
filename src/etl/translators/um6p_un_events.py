@@ -37,9 +37,10 @@ import openpyxl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.db.models import Actor, Event, EventScoring, EventSector, Sector, Source
-from src.etl.common.text_cleaning import clean_text, slugify
 from src.etl.common.header_resolver import HeaderMap, find_header_row
+from src.etl.common.text_cleaning import clean_text, slugify
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ class Um6pEventsTranslator:
             return existing
         s = Source(source_id=uuid.uuid4(), source_type="spreadsheet", url=None,
                    retrieved_at=datetime.now(), description=desc, trust_tier="verified")
-        self.session.add(s)
+        persist_canonical_record(self.session, s)
         self.session.flush()
         return s
 
@@ -261,7 +262,7 @@ class Um6pEventsTranslator:
                    sponsoring_orgs=sponsoring_orgs, description=description,
                    thematic_focus=thematic_focus, host_actor_id=host_id,
                    source_id=source.source_id)
-        self.session.add(ev)
+        persist_canonical_record(self.session, ev)
         self.session.flush()
         self._event_cache[key] = ev
         self.stats.events_inserted += 1
@@ -298,7 +299,7 @@ class Um6pEventsTranslator:
                 setattr(existing, k, v)
             self.stats.scoring_updated += 1
         else:
-            self.session.add(EventScoring(event_scoring_id=uuid.uuid4(),
+            persist_canonical_record(self.session, EventScoring(event_scoring_id=uuid.uuid4(),
                                           event_id=event.event_id,
                                           source_id=source.source_id, **fields))
             self.stats.scoring_inserted += 1
@@ -315,7 +316,7 @@ class Um6pEventsTranslator:
         if existing:
             self.stats.sector_tags_existing += 1
             return
-        self.session.add(EventSector(event_id=event.event_id, sector_id=sector_id))
+        persist_canonical_record(self.session, EventSector(event_id=event.event_id, sector_id=sector_id))
         self.stats.sector_tags_created += 1
 
     # ---------------- sector sheets ----------------

@@ -30,9 +30,9 @@ import openpyxl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.db.models import Actor, ActorRelevance, Challenge, Source
 from src.etl.common.text_cleaning import clean_text, slugify
-
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,7 @@ class RunStats:
             f"  Rows failed:                     {self.rows_failed}",
         ]
         if self.actor_type_unmapped:
-            lines.append(f"\n  Actor category values not in mapping (needs review):")
+            lines.append("\n  Actor category values not in mapping (needs review):")
             for v in set(self.actor_type_unmapped):
                 lines.append(f"    - {v}")
         return "\n".join(lines)
@@ -321,7 +321,7 @@ class NutriCropsTranslator:
             description=desc,
             trust_tier="verified",
         )
-        self.session.add(s)
+        persist_canonical_record(self.session, s)
         self.session.flush()
         return s
 
@@ -344,7 +344,7 @@ class NutriCropsTranslator:
             ],
             created_date=datetime.now().date(),
         )
-        self.session.add(challenge)
+        persist_canonical_record(self.session, challenge)
         self.session.flush()
         self.stats.challenge_created = True
         return challenge
@@ -464,7 +464,7 @@ class NutriCropsTranslator:
             verification_status="phase_1",
             confidence=1.0,
         )
-        self.session.add(actor)
+        persist_canonical_record(self.session, actor)
         self.session.flush()
         self._actor_cache[slug] = actor
         self.stats.actors_inserted += 1
@@ -520,7 +520,7 @@ class NutriCropsTranslator:
                 source_id=source.source_id,
                 **fields,
             )
-            self.session.add(rel)
+            persist_canonical_record(self.session, rel)
             self.stats.relevance_inserted += 1
 
     def _process_row(self, row_idx: int, row: list, challenge: Challenge, source: Source):

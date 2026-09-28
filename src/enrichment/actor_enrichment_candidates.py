@@ -29,9 +29,9 @@ from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.ai.client import SONNET, UsageTracker, structured_json
 from src.db.models import Actor, ActorRelevance, Challenge, Hub, HubActor, Source
-
 
 logger = logging.getLogger(__name__)
 
@@ -2167,7 +2167,7 @@ class ActorEnrichmentCandidatePipeline:
             description=description,
             trust_tier="candidate",
         )
-        self.session.add(source)
+        persist_canonical_record(self.session, source)
         self.session.flush()
         return source
 

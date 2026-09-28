@@ -15,6 +15,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
+from urllib.parse import urlparse
 
 from sqlalchemy import text
 
@@ -74,16 +75,50 @@ def zone_for_score(score: float, thresholds: Thresholds) -> str:
     return "create"
 
 
-def route_actor(record: dict[str, object], resolver) -> RouteDecision:
-    """Route an actor with the existing frozen actor ER resolver.
+def route_actor(
+    record: dict[str, object],
+    resolver,
+    mapped_candidates: Iterable[dict[str, object]] | None = None,
+) -> RouteDecision:
+    """Apply the V2 mapped-first actor routing rule.
 
-    The resolver owns blocking, feature extraction, and combiner scoring. This
-    function only maps the best score to the shared route shape so promotion
-    stays inside agents/discovery/promote.py.
+    Exact website-domain, canonical-name, or alternate-name matches append to
+    the held record. The frozen resolver remains useful for identifying close
+    candidates, but its score can never authorize an automatic merge.
     """
     name = str(record.get("name") or "").strip()
     if not name:
         raise ValueError("actor record has no name")
+
+    exact = _exact_actor_matches(record, mapped_candidates or [])
+    if len(exact) == 1:
+        candidate = exact[0]
+        actor_id = _actor_candidate_id(candidate)
+        return RouteDecision(
+            zone="absorb",
+            score=1.0,
+            target_entity_id=actor_id,
+            candidate_ids=[actor_id],
+            metadata={
+                "match_rule": str(candidate["_match_rule"]),
+                "matched_name": str(candidate.get("name") or ""),
+                "matched_record_status": candidate.get("record_status"),
+                "route_policy": "v2_exact_only",
+            },
+        )
+    if len(exact) > 1:
+        candidate_ids = sorted({_actor_candidate_id(candidate) for candidate in exact})
+        return RouteDecision(
+            zone="review",
+            score=1.0,
+            target_entity_id=candidate_ids[0],
+            candidate_ids=candidate_ids,
+            metadata={
+                "review_kind": "possible_duplicate",
+                "match_rule": "conflicting_exact_identity",
+                "route_policy": "v2_exact_only",
+            },
+        )
 
     candidates = resolver._candidates(name)
     thresholds = Thresholds(high=float(resolver.HIGH), low=float(resolver.LOW))
@@ -98,7 +133,9 @@ def route_actor(record: dict[str, object], resolver) -> RouteDecision:
     scored = resolver._score(record, candidates)
     best = scored.iloc[0]
     score = float(best["score"])
-    zone = zone_for_score(score, thresholds)
+    # V2 prohibits score-authorized merging. Every non-exact plausible match
+    # is a possible-duplicate review item, including scores above the old HIGH.
+    zone = "review" if score >= thresholds.low else "create"
     candidate_ids = [str(value) for value in scored["actor_id"].tolist()]
     target_entity_id = str(best["actor_id"]) if zone in {"absorb", "review"} else None
     return RouteDecision(
@@ -109,8 +146,88 @@ def route_actor(record: dict[str, object], resolver) -> RouteDecision:
         metadata={
             "matched_name": str(best.get("name") or ""),
             "model": getattr(resolver, "model_name", "combiner"),
+            "review_kind": "possible_duplicate" if zone == "review" else None,
+            "route_policy": "v2_exact_only",
         },
     )
+
+
+def load_actor_candidates(session) -> list[dict[str, object]]:
+    """Load mapped identities without depending on the pending column rename.
+
+    ``to_jsonb`` lets this query run on both the current schema and the isolated
+    V2 schema. Aggregate records remain excluded throughout the transition.
+    """
+    rows = (
+        session.execute(
+            text(
+                "SELECT a.actor_id::text AS actor_id, a.name, a.website, "
+                "COALESCE(to_jsonb(a)->'alternate_names','[]'::jsonb) AS alternate_names, "
+                "COALESCE(to_jsonb(a)->>'website_domain','') AS website_domain, "
+                "COALESCE(to_jsonb(a)->>'record_status', "
+                "to_jsonb(a)->>'verification_status') AS record_status "
+                "FROM actor a WHERE a.merged_into_actor_id IS NULL "
+                "AND COALESCE(to_jsonb(a)->>'actor_category', "
+                "to_jsonb(a)->>'actor_type','') <> 'aggregate' ORDER BY a.name"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    return [dict(row) for row in rows]
+
+
+def _exact_actor_matches(
+    record: dict[str, object], candidates: Iterable[dict[str, object]]
+) -> list[dict[str, object]]:
+    record_names = _actor_identity_names(record)
+    record_domain = _actor_domain(record)
+    matches: list[dict[str, object]] = []
+    for candidate in candidates:
+        rule = ""
+        candidate_domain = _actor_domain(candidate)
+        if record_domain and candidate_domain and record_domain == candidate_domain:
+            rule = "website_domain"
+        elif record_names.intersection(_actor_identity_names(candidate)):
+            rule = "name_or_alternate_name"
+        if rule:
+            matches.append({**candidate, "_match_rule": rule})
+    return matches
+
+
+def _actor_identity_names(record: dict[str, object]) -> set[str]:
+    from agents.discovery.normalize import normalize_key_text
+
+    raw_names: list[object] = [record.get("name")]
+    alternates = record.get("alternate_names") or record.get("alt_names") or []
+    if isinstance(alternates, str):
+        try:
+            parsed = json.loads(alternates)
+            alternates = parsed if isinstance(parsed, list) else [alternates]
+        except json.JSONDecodeError:
+            alternates = [alternates]
+    if isinstance(alternates, Iterable):
+        raw_names.extend(alternates)
+    return {
+        normalize_key_text(str(value))
+        for value in raw_names
+        if value is not None and str(value).strip()
+    }
+
+
+def _actor_domain(record: dict[str, object]) -> str:
+    value = str(record.get("website_domain") or record.get("website") or "").strip()
+    if not value:
+        return ""
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    return (parsed.hostname or "").casefold().strip(".").removeprefix("www.")
+
+
+def _actor_candidate_id(candidate: dict[str, object]) -> str:
+    actor_id = str(candidate.get("actor_id") or "").strip()
+    if not actor_id:
+        raise ValueError("mapped actor candidate has no actor_id")
+    return actor_id
 
 
 def load_event_candidates(session) -> list[dict[str, object]]:

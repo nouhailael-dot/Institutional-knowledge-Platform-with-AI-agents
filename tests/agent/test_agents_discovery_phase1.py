@@ -1071,14 +1071,14 @@ def test_actor_extractor_uses_tool_schema_and_preserves_nulls():
 @pytest.mark.parametrize(
     ("score", "expected"),
     [
-        (0.96, "absorb"),
+        (0.96, "review"),
         (0.9599, "review"),
         (0.1889311318077817, "review"),
         (0.1889, "create"),
         (None, "create"),
     ],
 )
-def test_actor_routing_uses_existing_resolver_thresholds(score, expected):
+def test_actor_routing_uses_resolver_only_for_possible_duplicate_review(score, expected):
     record = normalize_actor_record(
         {
             "name": "Example Climate Lab",
@@ -1097,7 +1097,7 @@ def test_actor_routing_uses_existing_resolver_thresholds(score, expected):
         assert decision.target_entity_id is None
 
 
-def test_promote_actor_create_writes_needs_review_actor_with_source_and_index_dirty():
+def test_promote_actor_create_runs_v2_steps_and_writes_parked_actor():
     staged = _staged_event(
         {
             "name": "Example Climate Lab",
@@ -1110,12 +1110,19 @@ def test_promote_actor_create_writes_needs_review_actor_with_source_and_index_di
     staged.entity_type = "actor"
     session = FakeSession()
 
-    result = promote(staged, RouteDecision(zone="create", score=0.0), session=session, live=True)
+    observed = []
+    result = promote(
+        staged,
+        RouteDecision(zone="create", score=0.0, metadata={"step_observer": observed.append}),
+        session=session,
+        live=True,
+    )
 
     assert result.action == "created"
     assert result.entity_type == "actor"
     actor_insert = next(sql for sql in session.statements if "INSERT INTO actor" in sql)
-    assert "verification_status" in actor_insert
+    assert "record_status" in actor_insert
+    assert "source_origin" in actor_insert
     assert "location_city" in actor_insert
     actor_params = next(
         params
@@ -1123,8 +1130,24 @@ def test_promote_actor_create_writes_needs_review_actor_with_source_and_index_di
         if "INSERT INTO actor" in sql
     )
     assert actor_params["location_city"] == "Boulder"
+    assert actor_params["record_status"] == "parked"
+    assert actor_params["source_origin"] == "claude_discovered"
     assert any("INSERT INTO source" in sql for sql in session.statements)
+    assert any("INSERT INTO actor_fact" in sql for sql in session.statements)
+    assert any("'verify_actor'" in sql for sql in session.statements)
     assert any("INSERT INTO index_dirty" in sql for sql in session.statements)
+    assert observed == [
+        "mapped_first",
+        "category",
+        "category_type",
+        "geocode",
+        "parent_connection",
+        "hub_fit",
+        "light_pull",
+        "parked",
+        "verify_actor",
+    ]
+    assert result.step_trace == observed
     assert session.transactions[-1].committed
 
 
@@ -1153,7 +1176,7 @@ def test_promote_actor_create_truncates_long_slug_to_column_limit():
     assert actor_params["slug"].endswith(actor_params["actor_id"][:8])
 
 
-def test_promote_actor_absorb_fills_only_empty_fields_with_gap_guard():
+def test_promote_actor_exact_match_appends_sighting_without_overwriting_actor():
     actor_id = str(uuid.uuid4())
     staged = _staged_event(
         {
@@ -1164,61 +1187,50 @@ def test_promote_actor_absorb_fills_only_empty_fields_with_gap_guard():
         }
     )
     staged.entity_type = "actor"
-    session = FakeSession(
-        actor_row={
-            "actor_type": None,
-            "actor_type_raw": None,
-            "description": None,
-            "website": "https://existing.example",
-            "location_city": None,
-            "state": None,
-            "country": None,
-            "primary_technical_focus": None,
-            "technical_approach": None,
-            "current_activities": None,
-            "technology_ip_notes": None,
-            "key_constraints": None,
-            "estimated_trl": None,
-            "primary_lifecycle_role": None,
-            "source_id": None,
-            "verification_status": None,
-        }
-    )
+    session = FakeSession()
 
     result = promote(
         staged,
-        RouteDecision(zone="absorb", score=0.99, target_entity_id=actor_id),
+        RouteDecision(
+            zone="absorb",
+            score=1.0,
+            target_entity_id=actor_id,
+            metadata={"route_policy": "v2_exact_only", "match_rule": "website_domain"},
+        ),
         session=session,
         live=True,
     )
 
-    assert result.action == "absorbed"
-    assert result.fields_absorbed == ["description"]
-    update_sql = next(sql for sql in session.statements if "UPDATE actor" in sql)
-    assert "description = :description" in update_sql
-    assert "website = :website" not in update_sql
-    assert "description IS NULL" in update_sql
-    assert "source_id IS NULL" in update_sql
+    assert result.action == "appended_to_existing"
+    assert result.fields_absorbed == ["discovery_sighting"]
+    assert any("INSERT INTO actor_fact" in sql for sql in session.statements)
+    assert not any(sql.strip().startswith("UPDATE actor") for sql in session.statements)
+    assert not any("INSERT INTO actor (" in sql for sql in session.statements)
 
 
-def test_promote_actor_absorb_raises_when_gap_guard_loses_race():
+def test_promote_actor_exact_rejected_match_keeps_rejected_status_and_records_sighting():
     actor_id = str(uuid.uuid4())
     staged = _staged_event({"name": "Example Climate Lab", "description": "New description"})
     staged.entity_type = "actor"
-    session = FakeSession(
-        actor_row={field: None for field in [*ACTOR_FIELDS, "source_id", "verification_status"]},
-        update_rowcount=0,
+    session = FakeSession()
+    result = promote(
+        staged,
+        RouteDecision(
+            zone="absorb",
+            score=1.0,
+            target_entity_id=actor_id,
+            metadata={
+                "route_policy": "v2_exact_only",
+                "match_rule": "name_or_alternate_name",
+                "matched_record_status": "rejected",
+            },
+        ),
+        session=session,
+        live=True,
     )
-
-    with pytest.raises(RuntimeError, match="actor absorb gap guard matched zero rows"):
-        promote(
-            staged,
-            RouteDecision(zone="absorb", score=0.99, target_entity_id=actor_id),
-            session=session,
-            live=True,
-        )
-
-    assert session.transactions[-1].rolled_back
+    assert result.action == "appended_to_existing"
+    assert any("INSERT INTO actor_fact" in sql for sql in session.statements)
+    assert not any(sql.strip().startswith("UPDATE actor") for sql in session.statements)
 
 
 @pytest.mark.parametrize(
@@ -1258,14 +1270,14 @@ def test_promote_actor_absorb_guard_sends_combined_or_role_names_to_review(name)
 
     assert result.action == "queued_for_review"
     assert result.zone == "review"
-    assert result.entity_id != existing_actor_id
+    assert result.entity_id == existing_actor_id
     assert not any(sql.strip().startswith("UPDATE actor") for sql in session.statements)
-    assert any("INSERT INTO actor" in sql for sql in session.statements)
-    assert any("INSERT INTO review_queue" in sql for sql in session.statements)
+    assert not any("INSERT INTO actor (" in sql for sql in session.statements)
+    assert any("INSERT INTO review_item" in sql for sql in session.statements)
     assert session.transactions[-1].committed
 
 
-def test_promote_actor_review_creates_candidate_and_existing_review_queue_row():
+def test_promote_actor_close_match_creates_review_item_but_no_actor():
     existing_actor_id = str(uuid.uuid4())
     staged = _staged_event(
         {"name": "Example Climate Lab", "description": "Climate analytics organization"}
@@ -1287,9 +1299,9 @@ def test_promote_actor_review_creates_candidate_and_existing_review_queue_row():
 
     assert result.action == "queued_for_review"
     assert result.entity_type == "actor"
-    assert any("INSERT INTO actor" in sql for sql in session.statements)
-    assert any("INSERT INTO review_queue" in sql for sql in session.statements)
-    assert any("INSERT INTO index_dirty" in sql for sql in session.statements)
+    assert not any("INSERT INTO actor (" in sql for sql in session.statements)
+    assert any("INSERT INTO review_item" in sql for sql in session.statements)
+    assert not any("INSERT INTO index_dirty" in sql for sql in session.statements)
     assert session.transactions[-1].committed
 
 

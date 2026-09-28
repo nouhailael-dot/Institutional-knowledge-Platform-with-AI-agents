@@ -13,15 +13,14 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import openpyxl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.db.models import Event, Source
 from src.etl.common.text_cleaning import clean_text
-
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +97,7 @@ class EcosystemEventsTranslator:
             description=desc,
             trust_tier="verified",
         )
-        self.session.add(source)
+        persist_canonical_record(self.session, source)
         self.session.flush()
         return source
 
@@ -133,7 +132,7 @@ class EcosystemEventsTranslator:
             website=website,
             source_id=source.source_id,
         )
-        self.session.add(event)
+        persist_canonical_record(self.session, event)
         self.stats.inserted += 1
         self._log(self.audit_fh, row_idx, "inserted", name, "")
 

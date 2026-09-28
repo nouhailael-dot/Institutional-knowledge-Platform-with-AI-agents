@@ -16,7 +16,11 @@ import yaml
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import sessionmaker
 
+from agents.common.resolve_route import RouteDecision
+from agents.discovery.promote import ACTOR_MAPPING_STEPS, map_new_actor
+from agents.discovery.stage import StagedRecord
 from src.db.base import Base
 from src.db.models import Actor, Person
 from src.db.models_v2 import V2Base
@@ -63,9 +67,9 @@ def _manifest() -> list[dict]:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))["logical_migrations"]
 
 
-def test_manifest_has_16_ordered_reversible_migrations():
+def test_manifest_has_17_ordered_reversible_migrations():
     steps = _manifest()
-    assert [step["id"] for step in steps] == [f"{number:03d}" for number in range(1, 17)]
+    assert [step["id"] for step in steps] == [f"{number:03d}" for number in range(1, 18)]
     for step in steps:
         for action in step["actions"]:
             if action["type"] == "sql":
@@ -84,8 +88,8 @@ def test_migration_tracks_are_separate_and_detached():
         "down_revision = None" in path.read_text(encoding="utf-8") for path in proposal_modules
     )
     platform = sorted((ROOT / "agents" / "sql").glob("*_v2_*.sql"))
-    assert [int(path.name[:3]) for path in platform] == list(range(190, 341, 10))
-    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 16
+    assert [int(path.name[:3]) for path in platform] == list(range(190, 351, 10))
+    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 17
 
 
 def test_populated_canonical_constraints_are_not_valid():
@@ -219,7 +223,7 @@ def test_reference_seed_counts(v2_engine: Engine):
         "actor_category_type_definition": 65,
         "region_definition": 7,
         "region_state": 51,
-        "source_origin_definition": 4,
+        "source_origin_definition": 7,
     }
     with v2_engine.connect() as connection:
         actual = {
@@ -227,6 +231,49 @@ def test_reference_seed_counts(v2_engine: Engine):
             for table in expected
         }
     assert actual == expected
+
+
+def test_phase3_record_creation_dry_run_executes_then_rolls_back(v2_engine: Engine):
+    with v2_engine.connect() as connection:
+        before = {
+            table: connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+            for table in ("actor", "actor_fact", "review_item")
+        }
+    session = sessionmaker(bind=v2_engine)()
+    try:
+        staged = StagedRecord(
+            run_id=str(uuid.uuid4()),
+            raw_document_id=None,
+            entity_type="actor",
+            natural_key="phase3-isolated-dry-run",
+            source_url="https://phase3.example.org",
+            payload={},
+            normalized_payload={
+                "name": "Phase 3 Isolated Dry Run",
+                "website": "https://phase3.example.org",
+                "sector_match": "in_sector",
+            },
+            prompt_version="actor_v2",
+            extracted_at="2026-09-25T00:00:00+00:00",
+        )
+        result = map_new_actor(
+            staged,
+            RouteDecision(zone="create", score=0.0),
+            session=session,
+            live=False,
+        )
+    finally:
+        session.close()
+
+    assert result.action == "would_create"
+    assert result.dry_run is True
+    assert result.step_trace == list(ACTOR_MAPPING_STEPS)
+    with v2_engine.connect() as connection:
+        after = {
+            table: connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+            for table in before
+        }
+    assert after == before
 
 
 def test_append_only_and_role_permissions(v2_engine: Engine):

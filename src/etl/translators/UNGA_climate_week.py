@@ -43,9 +43,12 @@ import openpyxl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.db.models import Actor, Event, Source
 from src.etl.common.text_cleaning import clean_text, slugify
+
 try:
     from src.etl.common.header_resolver import HeaderMap, find_header_row
 except ImportError:
@@ -115,7 +118,7 @@ class UngaClimateWeekTranslator:
             return existing
         src = Source(source_id=uuid.uuid4(), source_type="spreadsheet",
                      description=desc, url=SOURCE_FILE)
-        self.session.add(src)
+        persist_canonical_record(self.session, src)
         self.session.flush()
         return src
 
@@ -195,7 +198,7 @@ class UngaClimateWeekTranslator:
                    description=description, thematic_focus=thematic,
                    expected_attendance=attendance, access_type=access,
                    source_id=source.source_id)
-        self.session.add(ev)
+        persist_canonical_record(self.session, ev)
         self.session.flush()
         self._event_cache[key] = ev
         self.stats.events_inserted += 1

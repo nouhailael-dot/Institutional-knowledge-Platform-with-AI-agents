@@ -17,6 +17,7 @@ from agents.common.llm import ClaudeToolClient, FixtureToolClient
 from agents.common.raw_storage import RawContentStore
 from agents.common.resolve_route import (
     RouteDecision,
+    load_actor_candidates,
     load_actor_resolver_class,
     load_event_candidates,
     load_person_candidates,
@@ -53,7 +54,12 @@ from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.climate_week import ClimateWeekAdapter
 from agents.discovery.sources.unga_guide import UngaGuideAdapter
 from agents.discovery.sources.unga_programme import UngaProgrammeAdapter
-from agents.discovery.stage import InMemoryStageStore, SQLStageStore, mark_routed, stage_record
+from agents.discovery.stage import (
+    InMemoryStageStore,
+    SQLStageStore,
+    mark_routed,
+    stage_record,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -296,6 +302,7 @@ def run_pipeline(
     digest_path = _output_path(root, getattr(args, "digest_out", None), run_id, suffix=".md")
 
     try:
+        actor_candidates: list[dict[str, object]] = []
         if offline:
             candidates = []
         elif entity_type == "event":
@@ -304,6 +311,8 @@ def run_pipeline(
             candidates = load_person_candidates(session)
         else:
             candidates = []
+        if not offline and entity_type in {"actor", "event"}:
+            actor_candidates = load_actor_candidates(session)
         if not offline and entity_type == "actor" and actor_resolver is None:
             actor_resolver = load_actor_resolver_class()(session, project_root=root)
         if replay_run_id:
@@ -329,6 +338,7 @@ def run_pipeline(
                     session=session,
                     live=live,
                     candidates=candidates,
+                    actor_candidates=actor_candidates,
                     actor_resolver=actor_resolver,
                     root=root,
                     stats=stats,
@@ -374,6 +384,7 @@ def run_pipeline(
                     session=session,
                     live=live,
                     candidates=candidates,
+                    actor_candidates=actor_candidates,
                     actor_resolver=actor_resolver,
                     root=root,
                     stats=stats,
@@ -497,6 +508,7 @@ def _extract_stage_route_promote(
     session,
     live: bool,
     candidates: list[dict[str, object]],
+    actor_candidates: list[dict[str, object]] | None = None,
     root: Path,
     stats: dict[str, int],
     audit_rows: list[dict[str, object]],
@@ -609,6 +621,7 @@ def _extract_stage_route_promote(
                     session=session,
                     live=live,
                     actor_resolver=participant_actor_resolver,
+                    actor_candidates=actor_candidates or [],
                     people_enabled=people_enabled,
                     root=root,
                     stats=stats,
@@ -708,7 +721,7 @@ def _extract_stage_route_promote(
         elif entity_type == "actor":
             if actor_resolver is None:
                 raise RuntimeError("actor routing requires an EntityResolver")
-            decision = route_actor(record, actor_resolver)
+            decision = route_actor(record, actor_resolver, actor_candidates or [])
             decision = guard_actor_absorb_route(staged, decision)
         elif entity_type == "person":
             score_band = str(
@@ -865,6 +878,7 @@ def _stage_event_participants(
     session,
     live: bool,
     actor_resolver,
+    actor_candidates: list[dict[str, object]],
     people_enabled: bool,
     root: Path,
     stats: dict[str, object],
@@ -917,17 +931,9 @@ def _stage_event_participants(
                 )
             )
             continue
-        route = guard_actor_absorb_route(staged, route_actor(classified, actor_resolver))
-        if discovered_domain and route.zone == "absorb":
-            route = replace(
-                route,
-                zone="review",
-                metadata={
-                    **dict(route.metadata or {}),
-                    "discovered_domain": discovered_domain,
-                    "route_policy": "discovered domains never auto-absorb",
-                },
-            )
+        route = guard_actor_absorb_route(
+            staged, route_actor(classified, actor_resolver, actor_candidates)
+        )
         staged = mark_routed(stage_store, staged, route)
         result = promote(
             staged,

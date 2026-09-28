@@ -8,7 +8,6 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
 
 from sqlalchemy import text
 
@@ -27,8 +26,59 @@ _IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 class FieldOutcome:
     action: str
     reason: str
-    proposal_id: Optional[str] = None
-    source_id: Optional[str] = None
+    proposal_id: str | None = None
+    source_id: str | None = None
+
+
+def persist_canonical_record(session, record):
+    """The sole ORM gateway for legacy importers until they stage V2 records."""
+    session.add(record)
+    return record
+
+
+def execute_canonical_write(session, statement, params=None):
+    """The sole statement gateway for approved manual canonical decisions."""
+    return session.execute(statement, params or {})
+
+
+def record_verification_decision(
+    session,
+    *,
+    entity_type: str,
+    entity_ids: list[str],
+    decision: str,
+    decided_by: str,
+    notes: str | None = None,
+    rejection_reason: str | None = None,
+    topic_id: str | None = None,
+) -> int:
+    """Append GHUS verification history; never overwrite a status column."""
+    if decision == "rejected" and not str(rejection_reason or "").strip():
+        raise ValueError("rejected decisions require rejection_reason")
+    if not str(decided_by or "").strip():
+        raise ValueError("decided_by is required")
+    count = 0
+    for entity_id in dict.fromkeys(str(value) for value in entity_ids):
+        execute_canonical_write(
+            session,
+            text(
+                "INSERT INTO record_verification (entity_type,entity_id,decision,"
+                "decided_by,notes,rejection_reason,topic_id) VALUES (:entity_type,"
+                "CAST(:entity_id AS uuid),:decision,:decided_by,:notes,:rejection_reason,"
+                "CAST(:topic_id AS uuid))"
+            ),
+            {
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "decision": decision,
+                "decided_by": decided_by,
+                "notes": notes,
+                "rejection_reason": rejection_reason,
+                "topic_id": topic_id,
+            },
+        )
+        count += 1
+    return count
 
 
 def classify_field_candidate(
@@ -36,7 +86,7 @@ def classify_field_candidate(
     policy: FieldPolicy,
     current_value: object,
     proposed_value: object,
-    source_url: Optional[str],
+    source_url: str | None,
     confidence: float,
     needs_human_review: bool = False,
 ) -> FieldOutcome:
@@ -67,7 +117,7 @@ def apply_or_propose_field(
     entity_id: str,
     field_name: str,
     proposed_value: object,
-    source_url: Optional[str],
+    source_url: str | None,
     confidence: float,
     reason: str,
     live: bool,
@@ -168,7 +218,7 @@ def record_field_proposal(
     proposed_value: object,
     current_value: object,
     source_url: str,
-    confidence: Optional[float],
+    confidence: float | None,
     reason: str,
 ) -> str:
     if is_gap(source_url):
@@ -220,7 +270,7 @@ def _write_proposal(
     proposed_value: object,
     current_value: object,
     source_url: str,
-    confidence: Optional[float],
+    confidence: float | None,
     reason: str,
     live: bool,
     action: str,
@@ -267,6 +317,15 @@ def _update_canonical_gap(
     proposed_value: object,
     source_id: str,
 ) -> None:
+    if spec.entity_type == "actor":
+        _append_actor_enrichment_fact(
+            session,
+            actor_id=entity_id,
+            field_name=field_name,
+            proposed_value=proposed_value,
+            source_id=source_id,
+        )
+        return
     set_clauses = [f"{field_name} = :value"]
     params: dict[str, object] = {
         "entity_id": entity_id,
@@ -302,6 +361,33 @@ def _update_canonical_gap(
         )
 
 
+def _append_actor_enrichment_fact(
+    session,
+    *,
+    actor_id: str,
+    field_name: str,
+    proposed_value: object,
+    source_id: str,
+) -> None:
+    """Append an Agent 2 value to the immutable V2 ledger."""
+    session.execute(
+        text(
+            "INSERT INTO actor_fact (actor_fact_id,actor_id,topic_id,fact_type,fact_key,"
+            "fact_value,collection_state,layer,source_id,source_origin,confidence,"
+            "retrieved_at,generated_by) VALUES (CAST(:fact_id AS uuid),"
+            "CAST(:actor_id AS uuid),NULL,'enrichment',:fact_key,CAST(:fact_value AS jsonb),"
+            "'found',2,CAST(:source_id AS uuid),'newly_found','medium',now(),'agent')"
+        ),
+        {
+            "fact_id": str(uuid.uuid4()),
+            "actor_id": actor_id,
+            "fact_key": field_name,
+            "fact_value": json.dumps(proposed_value, sort_keys=True, default=str),
+            "source_id": source_id,
+        },
+    )
+
+
 def _insert_enrichment_staged_record(
     session,
     *,
@@ -313,7 +399,7 @@ def _insert_enrichment_staged_record(
     current_value: object,
     source_url: str,
     source_id: str,
-    confidence: Optional[float],
+    confidence: float | None,
     reason: str,
 ) -> str:
     staged_record_id = str(uuid.uuid4())

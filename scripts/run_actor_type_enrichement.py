@@ -1,3 +1,5 @@
+from agents.enrichment.decisions import persist_canonical_record
+
 """
 Run actor-type enrichment over actors the rule extractor left as 'other'.
 
@@ -26,10 +28,10 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))  # repo root on path
 
 from sqlalchemy import func, select  # noqa: E402
+from src.enrichment.claude_client import HAIKU  # noqa: E402
 
 from src.db.models import Actor, Source  # noqa: E402
 from src.db.session import SessionLocal  # noqa: E402
-from src.enrichment.claude_client import HAIKU  # noqa: E402
 from src.enrichment.extractors.actor_type import classify_actor  # noqa: E402
 
 OTHER = "other"
@@ -85,7 +87,7 @@ def main():
                 description=f"Phase 4 actor-type classification ({args.model})",
                 trust_tier="low",
             )
-            session.add(source)
+            persist_canonical_record(session, source)
             session.flush()  # get source_id without committing
 
         applied = would_apply = low_or_other = failed = 0

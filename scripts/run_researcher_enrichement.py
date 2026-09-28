@@ -25,14 +25,22 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.ai.client import SONNET, UsageTracker  # noqa: E402
-from src.db.models import Actor, ActorPerson, Hub, HubActor, Person, Source  # noqa: E402
+from src.db.models import (  # noqa: E402
+    Actor,
+    ActorPerson,
+    Hub,
+    HubActor,
+    Person,
+    Source,
+)
 from src.db.session import SessionLocal  # noqa: E402
 from src.enrichment.extractors.researchers import extract_researchers  # noqa: E402
-
 
 logger = logging.getLogger("run_researcher_enrichement")
 
@@ -150,7 +158,7 @@ class ResearcherEnricher:
             description=desc,
             trust_tier="candidate",
         )
-        self.session.add(source)
+        persist_canonical_record(self.session, source)
         self.session.flush()
         return source
 
@@ -193,7 +201,7 @@ class ResearcherEnricher:
             verification_status="ai_inferred" if source else None,
             confidence=AI_CONFIDENCE if source else None,
         )
-        self.session.add(person)
+        persist_canonical_record(self.session, person)
         self.session.flush()
         self.people_by_name[key] = person
         self.stats.people_created += 1
@@ -216,7 +224,8 @@ class ResearcherEnricher:
             self.stats.links_existing += 1
             return "link_exists"
 
-        self.session.add(
+        persist_canonical_record(
+            self.session,
             ActorPerson(
                 actor_id=actor.actor_id,
                 person_id=person.person_id,

@@ -15,6 +15,7 @@
     {"id": "013", "name": "hub proposals", "actions": [{"type": "sql", "up": "agents/sql/310_v2_hub_proposals.sql", "down": "agents/sql/rollback/310_v2_hub_proposals.sql"}]},
     {"id": "014", "name": "review items", "actions": [{"type": "sql", "up": "agents/sql/320_v2_review_items.sql", "down": "agents/sql/rollback/320_v2_review_items.sql"}]},
     {"id": "015", "name": "guards and write audit", "actions": [{"type": "sql", "up": "agents/sql/330_v2_guards_and_audit.sql", "down": "agents/sql/rollback/330_v2_guards_and_audit.sql"}]},
-    {"id": "016", "name": "compatibility views", "actions": [{"type": "sql", "up": "agents/sql/340_v2_compatibility_views.sql", "down": "agents/sql/rollback/340_v2_compatibility_views.sql"}]}
+    {"id": "016", "name": "compatibility views", "actions": [{"type": "sql", "up": "agents/sql/340_v2_compatibility_views.sql", "down": "agents/sql/rollback/340_v2_compatibility_views.sql"}]},
+    {"id": "017", "name": "record creation", "actions": [{"type": "sql", "up": "agents/sql/350_v2_record_creation.sql", "down": "agents/sql/rollback/350_v2_record_creation.sql"}]}
   ]
 }

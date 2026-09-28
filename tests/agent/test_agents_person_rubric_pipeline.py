@@ -12,7 +12,10 @@ import pytest
 from agents.common.config import load_sources_config
 from agents.common.resolve_route import RouteDecision, route_person
 from agents.discovery.extractors.person import PERSON_FIELDS, PERSON_TOOL_SCHEMA
-from agents.discovery.normalize import normalize_affiliation_institution, normalize_person_record
+from agents.discovery.normalize import (
+    normalize_affiliation_institution,
+    normalize_person_record,
+)
 from agents.discovery.promote import promote
 from agents.discovery.search.models import CandidateRecord
 from agents.discovery.search.person_scoring import (
@@ -210,7 +213,7 @@ def test_auto_high_identity_is_deterministic_and_never_model_supplied():
     assert conflict.metadata["identity_outcome"] == "different_affiliation"
 
 
-def test_affiliation_normalizes_to_institution_and_frozen_resolver_matches_actor():
+def test_affiliation_normalizes_but_score_only_actor_match_requires_review():
     actor_id = str(uuid.uuid4())
 
     class Resolver:
@@ -244,8 +247,9 @@ def test_affiliation_normalizes_to_institution_and_frozen_resolver_matches_actor
 
     assert record["affiliation"] == "University of Colorado Boulder"
     assert record["affiliation_raw"].endswith("Chemical and Biological Engineering")
-    assert route.zone == "create"
-    assert route.metadata["affiliation_actor_id"] == actor_id
+    assert route.zone == "review"
+    assert route.target_entity_id == actor_id
+    assert route.metadata["identity_outcome"] == "ambiguous_affiliation"
 
 
 def test_unmatched_institution_creates_stub_actor_and_person_atomically():

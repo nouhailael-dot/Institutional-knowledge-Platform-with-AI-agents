@@ -29,6 +29,7 @@ import openpyxl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.db.models import Hub, Sector, Source
 from src.etl.common.text_cleaning import (
     clean_text,
@@ -36,7 +37,6 @@ from src.etl.common.text_cleaning import (
     parse_sector_from_category,
     slugify,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -128,11 +128,11 @@ class RunStats:
             f"  Total rows examined:     {self.total}",
         ]
         if self.sector_unrecognized:
-            lines.append(f"\n  Sectors not recognized (review needed):")
+            lines.append("\n  Sectors not recognized (review needed):")
             for s in self.sector_unrecognized:
                 lines.append(f"    - {s}")
         if self.failure_reasons:
-            lines.append(f"\n  First few failure reasons:")
+            lines.append("\n  First few failure reasons:")
             for r in self.failure_reasons[:5]:
                 lines.append(f"    - {r}")
         return "\n".join(lines)
@@ -201,7 +201,7 @@ class EcosystemMappingTranslator:
             description=description,
             trust_tier="verified",
         )
-        self.session.add(source)
+        persist_canonical_record(self.session, source)
         self.session.flush()
         return source
 
@@ -320,7 +320,7 @@ class EcosystemMappingTranslator:
                 verification_status="phase_1",
                 confidence=1.0,
             )
-            self.session.add(hub)
+            persist_canonical_record(self.session, hub)
             self.stats.inserted += 1
             return ("inserted", name, sector_code, notes_prefix + "new hub")
         else:

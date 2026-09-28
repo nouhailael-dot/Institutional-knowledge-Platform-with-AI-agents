@@ -22,7 +22,7 @@ import os
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from sqlalchemy import MetaData, create_engine, func, or_, select, update
+from sqlalchemy import MetaData, create_engine, func, or_, select
 from sqlalchemy.engine import Engine
 
 load_dotenv()  # reads DATABASE_URL from the .env at the repo root
@@ -80,7 +80,7 @@ def display_col(table) -> str:
     for cand in NAME_COL_PRIORITY:
         if cand in cols:
             return cand
-    return pk_col(table) or list(cols)[0]
+    return pk_col(table) or next(iter(cols))
 
 
 def text_columns(table):
@@ -134,20 +134,17 @@ def resolve_ids(table, df: pd.DataFrame) -> pd.DataFrame:
     for col, tgt in outbound_fks(table).items():
         if col in df.columns:
             m = label_map(tgt)
-            df[col] = df[col].map(lambda v: m.get(v, v) if v is not None else None)
+            df[col] = df[col].map(
+                lambda v, labels=m: labels.get(v, v) if v is not None else None
+            )
     return df
 
 
 def set_status(table, pk_name: str, pk_values: list, new_status: str) -> int:
-    """The app's only write: set verification_status on the given rows.
-    Bumps updated_at when the column exists. One auto-committed transaction."""
-    values = {"verification_status": new_status}
-    if "updated_at" in table.columns.keys():
-        values["updated_at"] = func.now()
-    stmt = update(table).where(table.c[pk_name].in_(list(pk_values))).values(**values)
-    with get_engine().begin() as conn:
-        result = conn.execute(stmt)
-    return result.rowcount or 0
+    """Retired: V2 decisions require authenticated identity and append-only history."""
+    raise RuntimeError(
+        "legacy Streamlit status writes are disabled; use the authenticated V2 frontend"
+    )
 
 
 # --------------------------------------------------------------------------- #

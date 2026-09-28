@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import csv
 import logging
-import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -25,9 +24,9 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.ai.client import HAIKU, UsageTracker, call_claude, parse_json_response
 from src.db.models import Actor, Hub, HubActor, Source
-
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +191,7 @@ class OtherReclassifier:
             description=desc,
             trust_tier="candidate",
         )
-        self.session.add(source)
+        persist_canonical_record(self.session, source)
         self.session.flush()
         return source
 

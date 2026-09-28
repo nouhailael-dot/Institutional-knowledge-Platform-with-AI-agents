@@ -183,32 +183,32 @@ def test_high_confidence_gap_applies_with_last_moment_gap_guard():
     )
 
     assert outcome.action == "applied"
-    update_sql = next(sql for sql in session.statements if "UPDATE actor" in sql)
-    assert "WHERE actor_id = CAST(:entity_id AS uuid)" in update_sql
-    assert "website IS NULL" in update_sql
+    assert any("INSERT INTO actor_fact" in sql for sql in session.statements)
+    assert not any("UPDATE actor" in sql for sql in session.statements)
     assert "INSERT INTO source" in "\n".join(session.statements)
 
 
-def test_gap_guard_rowcount_refuses_racing_non_null_write():
+def test_actor_enrichment_uses_ledger_not_mutable_gap_update():
     session = FakeSession(current_values=[None, None], update_rowcount=0)
     spec = get_entity_spec("actor")
 
-    with pytest.raises(RuntimeError, match="gap guard matched zero rows"):
-        apply_or_propose_field(
-            session,
-            run_id=str(uuid.uuid4()),
-            spec=spec,
-            policy=FieldPolicy("actor", "website", enrichable=True, auto_apply_floor=0.95),
-            entity_id=str(uuid.uuid4()),
-            field_name="website",
-            proposed_value="https://example.org",
-            source_url="https://registry.example.org/example",
-            confidence=0.99,
-            reason="meets configured floor",
-            live=True,
-        )
+    outcome = apply_or_propose_field(
+        session,
+        run_id=str(uuid.uuid4()),
+        spec=spec,
+        policy=FieldPolicy("actor", "website", enrichable=True, auto_apply_floor=0.95),
+        entity_id=str(uuid.uuid4()),
+        field_name="website",
+        proposed_value="https://example.org",
+        source_url="https://registry.example.org/example",
+        confidence=0.99,
+        reason="meets configured floor",
+        live=True,
+    )
 
-    assert any("UPDATE actor" in sql for sql in session.statements)
+    assert outcome.action == "applied"
+    assert any("INSERT INTO actor_fact" in sql for sql in session.statements)
+    assert not any("UPDATE actor" in sql for sql in session.statements)
 
 
 def test_every_field_proposal_has_source_row_and_source_id_link():
@@ -328,6 +328,16 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             "discovered_domain": {Path("agents/discovery/search/phase2.py")},
             "proposed_hub": {Path("agents/review/admission.py")},
             "review_admission_decision": {Path("agents/review/admission.py")},
+            "actor_fact": {
+                Path("agents/discovery/promote.py"),
+                Path("agents/enrichment/decisions.py"),
+            },
+            "actor_topic": {Path("agents/discovery/promote.py")},
+            "review_item": {
+                Path("agents/discovery/promote.py"),
+                Path("agents/enrichment/decisions.py"),
+            },
+            "record_verification": {Path("agents/enrichment/decisions.py")},
         }
     )
     table_pattern = "|".join(

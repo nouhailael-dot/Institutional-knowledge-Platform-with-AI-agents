@@ -18,7 +18,7 @@ import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 
@@ -26,13 +26,19 @@ import openpyxl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agents.enrichment.decisions import persist_canonical_record
 from src.db.models import (
-    Actor, Event, OrganizationHierarchy, PartnershipProfile, Source,
+    Actor,
+    Event,
+    OrganizationHierarchy,
+    PartnershipProfile,
+    Source,
 )
 from src.etl.common.text_cleaning import (
-    clean_text, slugify, parse_un_name_acronym,
+    clean_text,
+    parse_un_name_acronym,
+    slugify,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +220,7 @@ class UnMappingTranslator:
             description=desc,
             trust_tier="verified",
         )
-        self.session.add(source)
+        persist_canonical_record(self.session, source)
         self.session.flush()
         return source
 
@@ -256,7 +262,7 @@ class UnMappingTranslator:
             verification_status="phase_1",
             confidence=1.0,
         )
-        self.session.add(actor)
+        persist_canonical_record(self.session, actor)
         self.session.flush()
         self._actor_cache[slug] = actor
         return (actor, True)
@@ -290,7 +296,7 @@ class UnMappingTranslator:
             child_actor_id=child.actor_id,
             relationship_type=rel_type,
         )
-        self.session.add(link)
+        persist_canonical_record(self.session, link)
         self._pending_hierarchy.add(key)
         return True
 
@@ -360,7 +366,7 @@ class UnMappingTranslator:
                 confidence=1.0,
                 **profile_fields,
             )
-            self.session.add(profile)
+            persist_canonical_record(self.session, profile)
             self.stats.profiles_inserted += 1
         else:
             for k, v in profile_fields.items():
@@ -403,7 +409,7 @@ class UnMappingTranslator:
             verification_status="phase_1",
             confidence=1.0,
         )
-        self.session.add(actor)
+        persist_canonical_record(self.session, actor)
         self.session.flush()
         self._actor_cache[existing_slug] = actor
         self.stats.parents_created += 1
@@ -570,7 +576,7 @@ class UnMappingTranslator:
             sponsoring_orgs=org_name,      # preserve the organizer even with no actor link
             source_id=source.source_id,
         )
-        self.session.add(ev)
+        persist_canonical_record(self.session, ev)
         self.stats.events_inserted += 1
         self.audit_writer.writerow(
             ["un_events", row_idx, "event_inserted", name, host_label, ""]

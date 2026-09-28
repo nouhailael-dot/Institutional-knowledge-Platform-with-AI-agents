@@ -40,7 +40,6 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import joblib
 import numpy as np
@@ -68,9 +67,9 @@ class ResolutionResult:
     action: str                      # absorbed | queued_for_review | created
     actor_id: str                    # canonical id to attach relationships to
     score: float = 0.0
-    matched_name: Optional[str] = None
+    matched_name: str | None = None
     fields_absorbed: list = field(default_factory=list)
-    review_id: Optional[str] = None
+    review_id: str | None = None
 
 
 class EntityResolver:
@@ -81,7 +80,7 @@ class EntityResolver:
     inserts many actors and you want them visible to later records in the same run.
     """
 
-    def __init__(self, session: Session, project_root: Optional[Path] = None,
+    def __init__(self, session: Session, project_root: Path | None = None,
                  bundle_path: str = DEFAULT_BUNDLE, config_path: str = DEFAULT_CONFIG):
         self.session = session
         root = project_root or Path(__file__).resolve().parents[3]
@@ -148,7 +147,9 @@ class EntityResolver:
         except ImportError:
             mismatch_features = None
         try:
-            from src.ML.entity_resolution.er_description_features import description_features
+            from src.ML.entity_resolution.er_description_features import (
+                description_features,
+            )
         except ImportError:
             description_features = None
 
@@ -192,25 +193,9 @@ class EntityResolver:
     # ---------- the three actions ----------
 
     def _absorb(self, actor_id: str, record: dict) -> list:
-        row = self.session.execute(
-            text("SELECT * FROM actor WHERE actor_id = CAST(:a AS uuid)"),
-            {"a": actor_id}).mappings().first()
-        updates = {}
-        for f in INHERITABLE_FIELDS:
-            cur, new = row.get(f), record.get(f)
-            empty = cur is None or (isinstance(cur, str) and not cur.strip())
-            has_new = new is not None and str(new).strip() != ""
-            if empty and has_new:
-                updates[f] = new
-        if not updates:
-            return []
-        sets = ", ".join(f"{k} = :{k}" for k in updates)
-        params = dict(updates)
-        params["a"] = actor_id
-        self.session.execute(text(
-            f"UPDATE actor SET {sets}, verification_status='needs_review', "
-            f"updated_at=now() WHERE actor_id = CAST(:a AS uuid)"), params)
-        return list(updates)
+        raise RuntimeError(
+            "legacy ER writes are retired; use agents.discovery.promote.map_new_actor"
+        )
 
     def _queue(self, actor_id_a: str, actor_id_b: str, score: float) -> str:
         a, b = sorted([str(actor_id_a), str(actor_id_b)])
@@ -224,24 +209,9 @@ class EntityResolver:
         return rid
 
     def _create(self, record: dict, source_id) -> str:
-        try:
-            from src.etl.common.text_cleaning import slugify
-        except ImportError:
-            import re
-            slugify = lambda s: re.sub(r"[^a-z0-9]+", "-", str(s).lower()).strip("-")
-        aid = str(uuid.uuid4())
-        cols = {"actor_id": aid, "name": record["name"],
-                "slug": f"{slugify(record['name'])}-{aid[:8]}",
-                "verification_status": "needs_review", "source_id": str(source_id)}
-        for f in INHERITABLE_FIELDS:
-            if record.get(f) is not None and str(record.get(f)).strip():
-                cols[f] = record[f]
-        names = ", ".join(cols)
-        binds = ", ".join(
-            f"CAST(:{c} AS uuid)" if c in ("actor_id", "source_id") else f":{c}"
-            for c in cols)
-        self.session.execute(text(f"INSERT INTO actor ({names}) VALUES ({binds})"), cols)
-        return aid
+        raise RuntimeError(
+            "legacy ER writes are retired; use agents.discovery.promote.map_new_actor"
+        )
 
     # ---------- entry point ----------
 
@@ -263,9 +233,10 @@ class EntityResolver:
 
         if score >= self.HIGH:
             if dry_run:
-                return ResolutionResult("would_absorb", match_id, score, match_name)
-            absorbed = self._absorb(match_id, record)
-            return ResolutionResult("absorbed", match_id, score, match_name, absorbed)
+                return ResolutionResult("would_queue", match_id, score, match_name)
+            raise RuntimeError(
+                "legacy ER writes are retired; use agents.discovery.promote.map_new_actor"
+            )
 
         if score >= self.LOW:
             if dry_run:
