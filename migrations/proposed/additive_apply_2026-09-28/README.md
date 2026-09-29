@@ -1,56 +1,28 @@
-# Architecture V2 additive apply package
+# Architecture V2 additive apply package: 180–350
 
-Prepared 2026-09-28. This package is for the schema owner/user to run; agents must not run it on shared Supabase.
+Prepared 2026-09-29 for the schema owner/user to run. Agents must never run it on shared Supabase.
 
-## Scope
+## Scope and order
 
-- Covers original logical migrations 001–016.
-- Applies the safe additive portions of 001–012 and 014–016.
-- Excludes 013/310 because production does not contain its `proposed_hub` prerequisite.
-- Excludes Phase 3 migration 017/350 because the request was limited to the original 16.
-- Preserves all existing columns and legacy read/write behavior.
+The manifest applies the additive production-drift repair from 170, then every source file 180–350 in numerical order: 170 drift repair; 180 review admission; 190 reference data; 200 actor identity/location; 210–300 in source order; 310 hub proposals; 320–340 review/guards/compatibility; and the additive origin rows from 350.
 
-## Deployment gate
+Rollback uses the matching actions in exact reverse order. `deferred/` is separately inventoried and intentionally has no executable runner.
 
-This schema package is compatible with the legacy production application. Do **not** deploy the current Phase 3 backend against only this original-16 package: its unchanged test contract also requires Phase 3 migration 017/350 (`verify_actor` and three additional source-origin values) and assumes the completed V2 column cutover. Keep the existing application deployed until those later changes receive separate approval, or approve a separately tested additive 017/350 package and compatibility test profile. This package does not silently expand its approved scope.
+## Hard preconditions
 
-Never merge `codex/architecture-v2` into `main` until the deferred/breaking migrations and their matching application code have been approved and deployed together. The repository's `architecture-v2-schema-gate` pull-request check deliberately fails while that gate is unmet; configure that check as required in `main` branch protection.
+Stop without touching the shared database unless all are true:
 
-See `classification.md` for the per-migration decision and deferred phase order.
+- the production password rotation is confirmed complete;
+- only `PGPASSFILE` is used (`PGPASSWORD` removed; no credential-bearing URL);
+- the schema owner has supplied an approval file containing `SCHEMA_OWNER_APPROVED_ADDITIVE_V2`;
+- a fresh full custom-format `pg_dump` is taken immediately before apply and its SHA-256 manifest verifies;
+- the status proof confirms legacy mapping never produces V2 `verified` or `rejected`.
 
-## Ordered apply
+The 2026-09-28 17:02Z dump is fallback evidence only and cannot satisfy apply-day backup.
 
-`manifest.json` is the executable order:
+## Shared apply after approval
 
-1. `190_v2_reference_data.sql`
-2. `v2a01_actor_identity_additive.py`, then `200_v2_actor_location.sql`
-3. `210_v2_topics.sql`
-4. `v2a02_hubs_additive.py`, then `220_v2_hub_center_review.sql`
-5. `230_v2_verification_history.sql`
-6. `240_v2_fact_ledger.sql`
-7. `250_v2_edges.sql`
-8. `260_v2_collection_runs.sql`
-9. `270_v2_rankings.sql`
-10. `v2a03_people_additive.py`, then `280_v2_people_privacy.sql`
-11. `v2a04_events_additive.py`, then `290_v2_event_evidence.sql`
-12. `300_v2_strategic_connections.sql`
-13. `320_v2_review_items.sql`
-14. `330_v2_guards_and_audit_additive.sql`
-15. `340_v2_compatibility_views_additive.sql`
-
-Rollback uses the matching files in exact reverse order. It never restores the production dump.
-
-## Schema-owner approval file
-
-Create a plain-text approval file containing this exact marker:
-
-`SCHEMA_OWNER_APPROVED_ADDITIVE_V2`
-
-The shared-target runner refuses to operate without that file and a verified backup manifest.
-
-## Apply after approval
-
-Set only standard libpq environment variables. Put the password in a restricted `PGPASSFILE`; do not construct, pass, or print a connection URL:
+Set standard libpq variables and a restricted `PGPASSFILE`, then run:
 
 ```powershell
 $env:PGHOST = 'approved-production-host'
@@ -64,36 +36,19 @@ Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
   -SchemaOwnerApprovalFile C:\approved\architecture_v2_additive.txt
 ```
 
-The wrapper performs, in order:
+The wrapper creates and checksums the fresh backup, captures the pre-state, applies in order, automatically rolls back every successfully committed action if the first apply error occurs, checks all existing-table row counts, inventories new objects, and runs both read-only smokes. Errors are redacted and connection strings are never accepted or printed.
 
-1. a fresh custom-format full `pg_dump` under `C:\Users\Ismail\GHUS-data\backups`, taken immediately before the apply;
-2. SHA-256 and a backup manifest;
-3. a read-only snapshot of every existing public-table row count and schema object;
-4. the ordered additive apply;
-5. a read-only row-count comparison and new-object inventory;
-6. backend and frontend read-only smoke checks.
+## Existing-table compatibility
 
-The wrapper stops on any failed step. A smoke success proves read compatibility only; application deployment remains subject to the deployment gate above.
+No additive statement introduces a default or `NOT NULL` requirement on a table that existed in production. Existing-table write helpers are:
 
-The 2026-09-28 17:02Z dump is fallback evidence only. It does not satisfy the apply-day backup requirement and the wrapper does not accept it as a substitute for the fresh dump it creates.
+- `actor`: `ghus_legacy_actor_category(text)`, `ghus_legacy_record_status(text)`, `ghus_sync_actor_v2_compat()`, trigger `actor_v2_compat_sync`;
+- `person`: `ghus_sync_person_v2_compat()`, trigger `person_v2_compat_sync`.
 
-## Existing-table compatibility behavior
+Unmapped actor types produce `actor_category=NULL` and never raise. Legacy status mapping is: `phase_1/imported → imported`, `ai_inferred/needs_review/parked → parked`, and every other value—including `verified`, `rejected`, and unknown values—maps to null. V2 `verified`/`rejected` decisions therefore come only from the verification ledger, never from legacy scalar status mapping.
 
-The additive set adds no default to an existing table. It adds these existing-table functions/triggers:
+File 180 adds nullable columns to existing queues; file 170 adds nullable columns plus an index. Neither adds an existing-table trigger or default.
 
-- `actor`: `ghus_legacy_actor_category(text)`, `ghus_sync_actor_v2_compat()`, and trigger `actor_v2_compat_sync`.
-- `person`: `ghus_sync_person_v2_compat()` and trigger `person_v2_compat_sync`.
+## Deployment gate
 
-Legacy columns win when a legacy and V2 value arrive together. The functions do not raise for a legacy insert/update. Known legacy actor types map through an explicit allowlist; an unmapped actor type leaves `actor_category` null. Run `scripts/prove_legacy_actor_writes.py` against `ghus_v2_test` to exercise inserts and updates for every currently stored actor type plus an unknown value; its transaction always rolls back.
-
-## Rollback
-
-Rollback is a schema operation, not a production restore. It requires the same approval file and verified backup manifest:
-
-```powershell
-& .\scripts\rollback_additive.ps1 `
-  -SchemaOwnerApprovalFile C:\approved\architecture_v2_additive.txt `
-  -BackupManifest C:\Users\Ismail\GHUS-data\backups\ghus_production_full_TIMESTAMP.dump.manifest.json
-```
-
-If new V2 tables have received data after deployment, export that data before rollback. Restoring a Supabase project is outside this package and remains prohibited.
+The additive schema is read-compatible with the legacy application, but the complete Phase 3 new-actor runtime is not deployable against it: `verify_actor` remains excluded by the existing `review_item` CHECK because changing that CHECK is breaking. The repository schema gate must remain unmet. Never merge `codex/architecture-v2` into `main` until the deferred schema and matching code are approved and deployed together.

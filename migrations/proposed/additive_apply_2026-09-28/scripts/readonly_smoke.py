@@ -35,10 +35,18 @@ def main() -> None:
                 status_mismatches = scalar(
                     connection,
                     "SELECT count(*) FROM actor "
-                    "WHERE record_status IS DISTINCT FROM verification_status",
+                    "WHERE record_status IS DISTINCT FROM "
+                    "ghus_legacy_record_status(verification_status)",
                 )
                 if status_mismatches:
                     raise RuntimeError("legacy actor-status compatibility mismatch")
+                forbidden_mappings = scalar(
+                    connection,
+                    "SELECT count(*) FROM actor "
+                    "WHERE record_status IN ('verified','rejected')",
+                )
+                if forbidden_mappings:
+                    raise RuntimeError("legacy status mapping created a verified/rejected state")
                 for table in ("actor_fact", "entity_edge", "review_item", "canonical_write_audit"):
                     assert scalar(connection, f"SELECT count(*) FROM {table}") >= 0
             else:

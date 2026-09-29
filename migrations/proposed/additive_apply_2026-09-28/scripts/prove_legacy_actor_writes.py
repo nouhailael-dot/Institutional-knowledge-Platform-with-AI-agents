@@ -20,12 +20,19 @@ def expected_category(connection, actor_type: str | None) -> str | None:
     ).scalar_one()
 
 
+def expected_status(connection, verification_status: str | None) -> str | None:
+    return connection.execute(
+        text("SELECT ghus_legacy_record_status(:verification_status)"),
+        {"verification_status": verification_status},
+    ).scalar_one()
+
+
 def assert_compatible(
     connection,
     *,
     actor_type: str | None,
     actor_category: str | None,
-    verification_status: str,
+    verification_status: str | None,
     record_status: str | None,
 ) -> None:
     expected = expected_category(connection, actor_type)
@@ -34,10 +41,14 @@ def assert_compatible(
             f"actor_type compatibility mismatch for {actor_type!r}: "
             f"expected {expected!r}, received {actor_category!r}"
         )
-    if record_status != verification_status:
+    expected_record_status = expected_status(connection, verification_status)
+    if record_status != expected_record_status:
         raise AssertionError(
-            f"legacy verification status was not mirrored for {actor_type!r}"
+            f"legacy verification status mapping mismatch for {verification_status!r}: "
+            f"expected {expected_record_status!r}, received {record_status!r}"
         )
+    if record_status in {"verified", "rejected"}:
+        raise AssertionError("legacy status mapping must never yield verified/rejected")
 
 
 def prove() -> dict[str, object]:
@@ -53,9 +64,20 @@ def prove() -> dict[str, object]:
                 )
             ]
             test_types = existing_types + [UNKNOWN_TYPE]
+            existing_statuses = [
+                row[0]
+                for row in connection.execute(
+                    text(
+                        "SELECT DISTINCT verification_status FROM actor "
+                        "ORDER BY verification_status NULLS FIRST"
+                    )
+                )
+            ]
+            test_statuses = existing_statuses + ["verified", "rejected", "__unknown_status__"]
             insert_results: list[dict[str, object]] = []
             for position, actor_type in enumerate(test_types):
                 actor_id = str(uuid.uuid4())
+                status = test_statuses[position % len(test_statuses)]
                 row = connection.execute(
                     text(
                         "INSERT INTO actor "
@@ -67,7 +89,7 @@ def prove() -> dict[str, object]:
                         "actor_id": actor_id,
                         "name": f"V2 additive legacy insert probe {position}",
                         "actor_type": actor_type,
-                        "verification_status": "needs_review",
+                        "verification_status": status,
                     },
                 ).one()
                 assert_compatible(
@@ -78,7 +100,12 @@ def prove() -> dict[str, object]:
                     record_status=row.record_status,
                 )
                 insert_results.append(
-                    {"actor_type": actor_type, "actor_category": row.actor_category}
+                    {
+                        "actor_type": actor_type,
+                        "actor_category": row.actor_category,
+                        "verification_status": row.verification_status,
+                        "record_status": row.record_status,
+                    }
                 )
 
             update_actor_id = str(uuid.uuid4())
@@ -91,7 +118,7 @@ def prove() -> dict[str, object]:
             )
             update_results: list[dict[str, object]] = []
             for position, actor_type in enumerate(test_types):
-                status = "rejected" if position % 2 else "needs_review"
+                status = test_statuses[position % len(test_statuses)]
                 row = connection.execute(
                     text(
                         "UPDATE actor SET actor_type=:actor_type, verification_status=:status "
@@ -108,7 +135,12 @@ def prove() -> dict[str, object]:
                     record_status=row.record_status,
                 )
                 update_results.append(
-                    {"actor_type": actor_type, "actor_category": row.actor_category}
+                    {
+                        "actor_type": actor_type,
+                        "actor_category": row.actor_category,
+                        "verification_status": row.verification_status,
+                        "record_status": row.record_status,
+                    }
                 )
 
             unknown_insert = insert_results[-1]
@@ -124,9 +156,12 @@ def prove() -> dict[str, object]:
         return {
             "existing_actor_type_count": len(existing_types),
             "tested_actor_types": test_types,
+            "existing_verification_statuses": existing_statuses,
+            "tested_verification_statuses": test_statuses,
             "insert_results": insert_results,
             "update_results": update_results,
             "unknown_category_is_null": True,
+            "verified_or_rejected_mapping_count": 0,
             "actor_count_before": before,
             "actor_count_after": after,
             "transaction_rolled_back": True,

@@ -71,11 +71,24 @@ def upgrade() -> None:
         $$
     """)
     op.execute("""
+        CREATE OR REPLACE FUNCTION ghus_legacy_record_status(legacy_status text)
+        RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+          SELECT CASE lower(btrim(legacy_status))
+            WHEN 'phase_1' THEN 'imported'
+            WHEN 'imported' THEN 'imported'
+            WHEN 'ai_inferred' THEN 'parked'
+            WHEN 'needs_review' THEN 'parked'
+            WHEN 'parked' THEN 'parked'
+            ELSE NULL
+          END
+        $$
+    """)
+    op.execute("""
         UPDATE actor
         SET actor_category = ghus_legacy_actor_category(actor_type),
-            record_status = verification_status
+            record_status = ghus_legacy_record_status(verification_status)
         WHERE actor_category IS DISTINCT FROM ghus_legacy_actor_category(actor_type)
-           OR record_status IS DISTINCT FROM verification_status
+           OR record_status IS DISTINCT FROM ghus_legacy_record_status(verification_status)
     """)
     op.execute("""
         CREATE OR REPLACE FUNCTION ghus_sync_actor_v2_compat() RETURNS trigger
@@ -88,7 +101,7 @@ def upgrade() -> None:
               NEW.actor_type := NEW.actor_category;
             END IF;
             IF NEW.verification_status IS NOT NULL THEN
-              NEW.record_status := NEW.verification_status;
+              NEW.record_status := ghus_legacy_record_status(NEW.verification_status);
             ELSIF NEW.record_status IS NOT NULL THEN
               NEW.verification_status := NEW.record_status;
             END IF;
@@ -99,7 +112,7 @@ def upgrade() -> None:
               NEW.actor_type := NEW.actor_category;
             END IF;
             IF NEW.verification_status IS DISTINCT FROM OLD.verification_status THEN
-              NEW.record_status := NEW.verification_status;
+              NEW.record_status := ghus_legacy_record_status(NEW.verification_status);
             ELSIF NEW.record_status IS DISTINCT FROM OLD.record_status THEN
               NEW.verification_status := NEW.record_status;
             END IF;
@@ -125,7 +138,7 @@ def downgrade() -> None:
           IF EXISTS (
             SELECT 1 FROM actor
             WHERE actor_category IS DISTINCT FROM ghus_legacy_actor_category(actor_type)
-               OR record_status IS DISTINCT FROM verification_status
+               OR record_status IS DISTINCT FROM ghus_legacy_record_status(verification_status)
           ) THEN
             RAISE EXCEPTION 'refusing rollback: V2 compatibility columns diverge from legacy columns';
           END IF;
@@ -133,6 +146,7 @@ def downgrade() -> None:
     """)
     op.execute("DROP TRIGGER IF EXISTS actor_v2_compat_sync ON actor")
     op.execute("DROP FUNCTION IF EXISTS ghus_sync_actor_v2_compat()")
+    op.execute("DROP FUNCTION IF EXISTS ghus_legacy_record_status(text)")
     op.execute("DROP FUNCTION IF EXISTS ghus_legacy_actor_category(text)")
     for name in (
         "ix_actor_website_domain",

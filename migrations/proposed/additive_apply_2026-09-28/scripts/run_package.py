@@ -69,6 +69,28 @@ def run_alembic(engine, path: Path, direction: str) -> None:
         getattr(module, "upgrade" if direction == "up" else "downgrade")()
 
 
+def run_action(db_engine, action: dict[str, str], direction: str) -> None:
+    if action["type"] == "sql":
+        run_sql(db_engine, PACKAGE / action[direction])
+    else:
+        run_alembic(db_engine, PACKAGE / action["path"], direction)
+
+
+def rollback_completed(db_engine, completed: list[tuple[str, dict[str, str]]]) -> None:
+    """Undo only successfully committed actions after a failed apply."""
+    failures: list[str] = []
+    for step_id, action in reversed(completed):
+        try:
+            run_action(db_engine, action, "down")
+            print(f"automatic rollback: {step_id}")
+        except Exception as exc:  # error text is redacted by guarded()
+            failures.append(f"{step_id}: {type(exc).__name__}")
+    if failures:
+        raise RuntimeError(
+            "apply failed and automatic rollback was incomplete: " + ", ".join(failures)
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("direction", choices=("up", "down"))
@@ -91,14 +113,19 @@ def main() -> None:
                 raise RuntimeError(f"expected PostgreSQL 17, got {version}")
             if read_only == "on":
                 raise RuntimeError("target connection is read-only; package was not applied")
-        for step in steps:
-            actions = step["actions"] if args.direction == "up" else list(reversed(step["actions"]))
-            for action in actions:
-                if action["type"] == "sql":
-                    run_sql(db_engine, PACKAGE / action[args.direction])
-                else:
-                    run_alembic(db_engine, PACKAGE / action["path"], args.direction)
-            print(f"{args.direction}: {step['id']} {step['name']}")
+        completed: list[tuple[str, dict[str, str]]] = []
+        try:
+            for step in steps:
+                actions = step["actions"] if args.direction == "up" else list(reversed(step["actions"]))
+                for action in actions:
+                    run_action(db_engine, action, args.direction)
+                    if args.direction == "up":
+                        completed.append((step["id"], action))
+                print(f"{args.direction}: {step['id']} {step['name']}")
+        except Exception:
+            if args.direction == "up":
+                rollback_completed(db_engine, completed)
+            raise
     finally:
         db_engine.dispose()
 

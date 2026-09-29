@@ -1,9 +1,7 @@
-# Architecture V2 additive schema preparation
+# Colleague change note — Architecture V2 additive 180–350
 
-This package adds new V2 reference tables, evidence/history tables, nullable compatibility columns, indexes, and compatibility views. It does not remove or rename any existing column, add constraints or `NOT NULL` requirements to populated legacy tables, change permissions on legacy tables, modify existing business rows, or deploy hub-proposal migration 310.
+This package adds new V2 reference/ledger/review/collection tables, nullable compatibility columns, indexes/views, the review-admission `proposed_hub` root, hub-proposal child tables, and three Phase 3 source-origin definitions.
 
-`actor.actor_type` and `actor.verification_status` remain present and work as before. New nullable `actor_category` uses an explicit mapping for known legacy types; unmapped values remain null and never reject a legacy write. `record_status` follows the legacy verification status. Existing applications may continue reading and writing the legacy columns.
+It does **not** rename or drop columns, add required fields/constraints/defaults to legacy production tables, change RLS/grants on legacy canonical tables, or enable `verify_actor` in the existing review-item CHECK. `actor_type` and `verification_status` remain present and legacy reads/writes continue to work. Unmapped actor types remain null in `actor_category`; legacy statuses never map to V2 `verified` or `rejected`.
 
-The package must be run only after schema-owner approval, after its full production dump and checksum complete successfully. The post-apply step verifies every pre-existing table row count, lists all new objects, and runs backend and frontend smoke queries in read-only transactions.
-
-Deployment note: the schema package is safe for the currently deployed legacy application, but it is not sufficient for the current Phase 3 backend test contract. Do not deploy that backend with this package alone. Phase 3 migration 017/350 and the final V2 column cutover remain separately controlled changes.
+The branch must not merge to `main` and Phase 3 new-actor creation must not deploy until the deferred 350 CHECK change and matching code are approved together.

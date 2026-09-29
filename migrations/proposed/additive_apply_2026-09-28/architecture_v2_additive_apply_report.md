@@ -1,148 +1,106 @@
-# Architecture V2 additive apply preparation report
+# Architecture V2 additive 180–350 proof report
 
-**Date:** 2026-09-28
+Date: 2026-09-29 UTC
 
-**Scope:** original logical migrations 001–016 only
+Backend repo: `C:\Users\Ismail\Projects\GHUS-Platform`, branch `codex/architecture-v2`
 
-**Shared database action:** none; production access was read-only except for `pg_dump`
+Frontend repo: `C:\Users\Ismail\Projects\Institutional-knowledge-Platform`, branch `codex/architecture-v2`
 
 ## Outcome
 
-The original 16 migrations were classified and every mixed migration was split. The executable manifest contains only additive operations. It preserves all legacy columns and existing application contracts, including `actor.actor_type` and `actor.verification_status`, and excludes all deferred breaking operations.
+The additive package now covers every `agents/sql` file 180–350, plus the only additive production drift found in 010–170. It passed fresh local restore → apply → both read-only smokes and both repositories' suites → exact rollback → reapply. No shared database DDL or write occurred.
 
-The package was proved on the isolated local PostgreSQL database `ghus_v2_test` in the required order: fresh production-data copy, first apply, unchanged tests and read-only smokes, exact rollback, and second apply. Schema apply/rollback behavior and row preservation passed. The unchanged frontend suites passed. Four unchanged Phase 3 backend tests failed because they intentionally assert schema elements outside this original-16 additive scope; this is a deployment gate described below.
+The package is **not authorized for production yet**. Password rotation and schema-owner approval have not been confirmed in this task. The shared preflight must stop until both are confirmed and an immediate fresh dump verifies.
 
-## Classification
+## Production drift and file 180 prerequisites
 
-| Logical migration | Result | Package decision |
-|---|---|---|
-| 001 / 190 reference data | ADDITIVE | Included. |
-| 002 / v2a01 + 200 actor identity/location | MIXED, SPLIT | Nullable compatibility columns, synchronization trigger, indexes, and new location table included. Renames, drops, requiredness, and legacy-table constraints deferred. |
-| 003 / 210 topics | ADDITIVE | Included. |
-| 004 / v2a02 + 220 hubs | MIXED, SPLIT | Nullable columns, indexes, and new center-review table included. Requiredness and legacy-table constraints deferred. |
-| 005 / 230 verification history | ADDITIVE | Included. |
-| 006 / 240 fact ledger | ADDITIVE | Included. |
-| 007 / 250 sourced edges | ADDITIVE | Included. |
-| 008 / 260 collection runs | ADDITIVE | Included. |
-| 009 / 270 rankings | ADDITIVE | Included. |
-| 010 / v2a03 + 280 people | MIXED, SPLIT | Nullable compatibility columns, synchronization trigger, and new privacy/topic tables included. Rename, requiredness, and legacy-table constraints deferred. |
-| 011 / v2a04 + 290 events | MIXED, SPLIT | Nullable columns and new evidence/topic tables included. Requiredness and legacy-table constraints deferred. |
-| 012 / 300 strategic connections | ADDITIVE | Included. |
-| 013 / 310 hub proposals | MIXED, DEFERRED ENTIRELY | Not executable because production lacks the required `proposed_hub` root introduced by migration 180. |
-| 014 / 320 review items | ADDITIVE | Included. |
-| 015 / 330 guards/audit | MIXED, SPLIT | New audit objects and new-table-only RLS included. All permission changes on legacy tables deferred. |
-| 016 / 340 compatibility views | MIXED, REWRITTEN | Legacy-safe views included. Final renamed-column definitions deferred. |
+The local test database was recreated from the most recent verified production dump, `ghus_production_full_20260928T170256Z.dump` (SHA-256 `08d9ce68efae470f553cb4d8b0324c0c570f7037450d8af38b5a43da07bf424b`). `search_doc` was omitted because local PostgreSQL lacks the production vector extension; it is unrelated to migrations 170–350.
 
-The complete rationale and later breaking order are in `classification.md`. Migration 017/350 is Phase 3 work and is outside the requested original 16.
+All file-180 dependencies exist in production: `search_candidate`, `event_review_queue`, and `person_review_queue`, including the columns used by 180. Objects from 010–160 and their expected indexes are present. File 170 differs:
 
-## Prepared apply and rollback package
+- missing `person_discovery_profile.affiliation_raw`;
+- missing `person_discovery_profile.needs_actor_enrichment`;
+- missing `person_review_queue.affiliation_raw`;
+- consequently missing `ix_person_discovery_profile_actor_enrichment`.
 
-`manifest.json` is the single ordered source for 15 executable logical migrations: 001–012 and 014–016. It combines four additive Alembic revisions with SQL files numbered 190–340. The runner applies each transactionally and rolls back through matching down actions in exact reverse order.
+The executable repair adds the three columns as nullable plus the index. The original `DEFAULT false NOT NULL` is held in `deferred/170_person_affiliation_resolution_breaking.sql`.
 
-Shared-target safeguards require both:
+## Apply contents and deferred contents
 
-1. a schema-owner approval file containing `SCHEMA_OWNER_APPROVED_ADDITIVE_V2`; and
-2. a verified full-backup manifest whose SHA-256 matches the dump.
+The ordered executable manifest is 170, 180, 190, 200, 210, 220, 230, 240, 250, 260, 270, 280, 290, 300, 310, 320, 330, 340, 350. Files 180, 200, 220, 280, 290, 310, 330, 340, and 350 are split. Full per-file classification and phase dependencies are in `classification.md`; concrete held statements/inventory are in `deferred/`.
 
-The PowerShell apply wrapper performs the backup, before snapshot, ordered apply, row-count comparison, new-object inventory, and both read-only smoke checks. The rollback wrapper performs schema rollback only. It never restores the Supabase project.
+Notable decisions:
 
-## Production backup prepared read-only
+- 180 creates `proposed_hub` and `review_admission_decision`, but adds only nullable columns to legacy queues. Existing queue CHECK replacements and review-status requiredness are deferred.
+- 310 adds nullable root columns and the new member/decision tables. Root default/requiredness/FKs/CHECKs are deferred.
+- 350 adds the three source-origin rows. Its existing `review_item` CHECK replacement is deferred because the request classifies a new constraint on an existing table as breaking.
+- 340 remains a legacy-safe compatibility view set. `actor_type` and `verification_status` are not renamed or dropped.
 
-- Full custom-format dump: `C:\Users\Ismail\GHUS-data\backups\ghus_production_full_20260928T170256Z.dump`
-- Manifest: `C:\Users\Ismail\GHUS-data\backups\ghus_production_full_20260928T170256Z.dump.manifest.json`
-- Size: 42,063,995 bytes
-- SHA-256: `08d9ce68efae470f553cb4d8b0324c0c570f7037450d8af38b5a43da07bf424b`
-- `pg_dump` client: PostgreSQL 17.5
-- Supabase production server: PostgreSQL 17.6
+## Real-data proof
 
-This is evidence and a load source only. The apply wrapper deliberately takes another dated full dump immediately before a future approved shared apply so the safety copy cannot be stale.
+Database identity: `ghus_v2_test` at `127.0.0.1:55432`, PostgreSQL 17, local role `ghus_test`. Credentials were supplied through `PGPASSFILE`; no credential-bearing URL was printed or accepted by package helpers.
 
-## Isolated proof on `ghus_v2_test`
+Existing-table row counts were unchanged after both applies. Representative production-copy counts:
 
-### Fresh production-data copy
+| Table | Before | After first apply | After reapply |
+|---|---:|---:|---:|
+| actor | 965 | 965 | 965 |
+| hub | 49 | 49 | 49 |
+| hub_actor | 821 | 821 | 821 |
+| event | 356 | 356 | 356 |
+| person | 0 | 0 | 0 |
+| staged_record | 7,286 | 7,286 | 7,286 |
+| review_queue | 280 | 280 | 280 |
+| event_review_queue | 9 | 9 | 9 |
+| person_review_queue | 0 | 0 | 0 |
 
-The local test database was reset and loaded from the dated full production dump. The local server is PostgreSQL 17.5. Supabase-only extension ownership was not reproduced locally. The only public application object excluded was `public.search_doc` and its dependants because the local server does not have the `vector` extension; the source dump itself remains complete.
+The machine-readable post-check compares every pre-existing public table, not only this representative list, and reports `existing_table_row_counts_unchanged=true`. No new constraint was applied to a production-existing table, so there were no existing-row constraint violations. New-table constraints accepted the package and seed data with zero errors.
 
-Key baseline row counts were:
+The apply created 30 tables, including `proposed_hub`, `proposed_hub_member`, `proposed_hub_decision`, `review_admission_decision`, and the V2 ledger/review/reference tables. The complete new-object inventory is in `evidence/extended_after_second_apply.json`.
 
-| Table | Before | After second apply |
-|---|---:|---:|
-| actor | 965 | 965 |
-| hub | 49 | 49 |
-| hub_actor | 821 | 821 |
-| event | 356 | 356 |
-| person | 0 | 0 |
-| staged_record | 7,286 | 7,286 |
-| review_queue | 280 | 280 |
-| event_review_queue | 9 | 9 |
-| person_review_queue | 0 | 0 |
+Rollback ran all 19 logical steps in exact reverse order. `evidence/extended_rollback_comparison.json` reports `row_counts_equal=true` and `objects_equal=true`. Reapply then completed all 19 steps and both read-only smokes passed again.
 
-The automated comparison covered every pre-existing public base table, not only the key rows above. Result: no changed existing-table row counts after either apply.
+## Legacy-write and status proof
 
-### Apply → test → rollback → apply
+The proof used the same legacy actor INSERT/UPDATE column shape for all 30 stored `actor_type` values (including null) plus one unknown value: 31 inserts and 31 updates in a transaction, zero errors, then rollback. Unmapped actor types remained `actor_category=NULL`; actor count stayed 965.
 
-1. **First apply:** all 15 manifest entries succeeded.
-2. **Legacy-write compatibility probe:** writing legacy `actor_type` and `verification_status` populated the corresponding V2 compatibility columns; the probe transaction was rolled back.
-3. **Read-only smokes:** backend passed (`actors=965`); frontend passed (`actors=965`).
-4. **Frontend Python:** 54 passed, 1 warning.
-5. **Frontend Node:** 15 passed.
-6. **Backend:** 298 passed, 4 failed, 2 warnings. No test was skipped, xfailed, or rewritten.
-7. **Rollback:** all 15 manifest entries succeeded in reverse order. Exact snapshot comparison reported `row_counts_equal=true`, `objects_equal=true`, and no expected-only or actual-only objects.
-8. **Second apply:** all 15 manifest entries succeeded.
-9. **Second post-check:** all pre-existing row counts unchanged; both read-only smokes passed again.
+The status probe covered every production value (`NULL`, `ai_inferred`, `needs_review`, `phase_1`) plus `verified`, `rejected`, and an unknown value. Mapping results were restricted to `imported`, `parked`, or null; `verified_or_rejected_mapping_count=0`.
 
-### Unchanged backend failures and deployment gate
+## Tests
 
-The four failures are scope/contract mismatches, not apply or rollback failures:
+- Backend full suite against the final repository package: **303 passed, 3 failed, 2 warnings**.
+- Frontend Python: **54 passed, 15 subtests passed, 1 warning**.
+- Frontend Node: **15 passed** (6 hub matching + 9 map UI).
+- Backend and frontend package read-only smokes: **passed** after first apply and reapply.
+- Exact rollback comparison: **passed**.
 
-1. `test_isolated_database_contains_v2_schema` expects the migration-310 proposal tables, but 310 cannot run without the absent production `proposed_hub` prerequisite.
-2. `test_orm_columns_match_isolated_v2_database` expects the completed V2 cutover to have removed legacy `actor_type` and `verification_status`; this package is required to preserve them.
-3. `test_reference_seed_counts` expects seven source origins; the original 16 define four, while the other three are in excluded Phase 3 migration 017/350.
-4. `test_phase3_record_creation_dry_run_executes_then_rolls_back` requires the `verify_actor` review kind from excluded migration 017/350.
+The first backend invocation used the repository interpreter with a `psycopg` URL although that environment contains `psycopg2`; its five live tests failed during driver setup. It was rerun with the installed `psycopg2` dialect, password-free URL, and `PGPASSFILE`; after the final package-safety tests were added, the authoritative result was 303/3. The map UI Node harness likewise required its documented `--experimental-vm-modules` flag; with that flag all tests passed. These were test-launch corrections, not product failures.
 
-Therefore the additive schema package is compatible with the legacy production application, but the current Phase 3 backend must **not** be deployed with only this package. Keep the existing application deployed, or separately approve and prove an additive 017/350 package plus a compatibility contract before deploying Phase 3 code. The tests were left unchanged as requested.
+## The four schema-gate tests
 
-## New objects after the second apply
+Of the four previously failing schema-gate tests, one now passes and three fail:
 
-- 26 tables: `actor_category_definition`, `actor_category_type_definition`, `actor_fact`, `actor_location`, `actor_ranking`, `actor_strategic_connection_check`, `actor_topic`, `canonical_write_audit`, `collection_request`, `collection_run`, `contact_collection_authorization`, `entity_edge`, `event_claim`, `event_topic`, `fact_resolution`, `fetched_document`, `hub_center_review`, `person_topic`, `record_verification`, `region_definition`, `region_state`, `review_item`, `review_item_decision`, `source_origin_definition`, `strategic_entity`, `topic`.
-- 5 views: `actor_descendant_edge`, `actor_fact_current`, `actor_profile_current`, `actor_v1_compat`, `staged_record_agent3_compat`.
-- 4 functions, 59 indexes (including implicit constraint indexes on new tables), 2 policies on the new `record_verification` table, and 12 triggers.
-- 315 new inventory entries under columns, including columns belonging to new tables/views and nullable additions to existing tables.
+1. `test_isolated_database_contains_v2_schema` — still fails because the test demands that `actor_type` be absent; the additive contract requires it to remain.
+2. `test_orm_columns_match_isolated_v2_database` — still fails because `V2Base` models the final schema without `actor_type`/`verification_status`, while this package intentionally retains both.
+3. `test_reference_seed_counts` — now passes; file 350's three additive origins bring the count to seven.
+4. `test_phase3_record_creation_dry_run_executes_then_rolls_back` — still fails at the final `verify_actor` insert because the existing `review_item_review_kind_check` excludes that kind. Replacing it is deferred breaking work from 350.
 
-The machine-readable before, after, and rollback comparisons are retained in `evidence/`.
+The two inherited V2 routing tests continue to pass without skip/xfail: `test_dry_run_checks_mapped_records_before_discovery_and_exact_event_absorbs` and `test_out_of_sector_record_is_staged_and_never_promoted`.
 
-## Deferred breaking order
+## Phase 3 runtime compatibility and schema gate
 
-1. P5 classifier deployment and P12 backfill/validation: actor category/type and status constraints.
-2. P6 hub deployment and P12 backfill/validation: hub/member constraints and requiredness.
-3. P7 detector plus P15 review workflow: create/migrate the proposal root before migration 310 constraints and indexes.
-4. P11 immutable resolution and P12 backfills: validate actor/status/source constraints.
-5. P14 people/events deployment and P12 validation: person/event constraints and requiredness.
-6. P15 caller cutover and role audit: RLS/grant/revoke changes on legacy tables.
-7. P16 reader cutover: final compatibility views, then legacy-column rename/drop only after compatibility telemetry is clean.
+Mapped-first resolution, exact website/name/alternate-name append, rejected-sighting preservation, close-match `possible_duplicate`, classification, geocoding, parent/connection, hub fit, light pull, and creation of a Parked actor all execute in unit tests with legacy `actor_type` present. Exact-match and possible-duplicate paths do not require the deferred 350 change.
 
-## Validation of the package itself
+The complete new-actor transaction cannot commit: its required final `verify_actor` review item is rejected by the unchanged existing CHECK. The dry-run reaches that statement and then rolls back. Therefore the Phase 3 runtime is **not deployable** against the additive-only schema, and the schema gate was not relaxed or marked met. The exact unblock is to deploy deferred 350 and Phase 3 code together after approval; the P16 legacy-column tests remain gated on final cutover.
 
-- Python package scripts and additive Alembic files: `py_compile` passed.
-- Ruff E9/F/I checks: passed.
-- PowerShell parser validation: passed.
-- Generated `__pycache__` directories: removed.
-- Shared production DDL/writes: none.
+## Production preconditions
 
-## Security note
+| Precondition | Result |
+|---|---|
+| Password rotation confirmed complete | **UNMET / not confirmed** |
+| PGPASSFILE-only helpers; redacted errors | **MET** |
+| Status mapping never yields `verified`/`rejected` | **MET**, dynamically proved |
+| Schema-owner approval received | **UNMET / not confirmed** |
+| Fresh apply-day dump and checksum | **PENDING**, wrapper-enforced |
 
-During preparation, a failed read-only helper exposed the configured production database credential in local tool output. No database operation occurred in that failed attempt, and the credential is not stored in this package. Treat it as compromised and rotate it before running any approved apply.
-
-## 2026-09-29 pre-apply correction and proof
-
-The exposure came from this command shape: the frontend virtual-environment Python executable ran the staged `inspect_production_schema.py` helper after that helper loaded the backend `.env`. Psycopg rejected the SQLAlchemy-style URL before connecting and included the supplied URL in its exception. The exception was captured in the Codex task tool output and persisted in the local session JSONL, `logs_2.sqlite`, and `thread_history_1.sqlite`. The package now accepts only `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGSSLMODE`, and `PGPASSFILE`; it has no URL parameter/environment interface, and Python errors are redacted without a traceback.
-
-Existing-table additions are limited to:
-
-- `actor`: `ghus_legacy_actor_category(text)`, `ghus_sync_actor_v2_compat()`, and `actor_v2_compat_sync`.
-- `person`: `ghus_sync_person_v2_compat()` and `person_v2_compat_sync`.
-- Defaults added to existing tables: none.
-
-The trigger functions contain no legacy-write exception path. The isolated database was reset from the production dump after discovering and correcting an idempotent-backfill ordering issue. The final package then passed apply → legacy-write proof → rollback/exact comparison → reapply. The proof executed the legacy actor column shape for INSERT and UPDATE across 30 stored values (29 non-null values plus null) and one deliberately unknown type: 31 inserts and 31 updates, zero errors. `Organization`, `aggregate`, `other`, null, and the deliberate unknown remained `actor_category=NULL`; the transaction rolled back and actor count remained 965. Both read-only smokes passed after the final reapply. Machine-readable evidence is in `evidence/legacy_actor_write_compatibility.json`, `evidence/trigger_correction_rollback_comparison.json`, and `evidence/after_trigger_correction.json`.
-
-Final regression results were: backend 300 passed and the same four deployment-gate tests failed; the two inherited V2 routing tests passed; frontend Python 54 passed with 15 subtests and one warning; frontend Node 15 passed. The new package safety tests passed, targeted Ruff E9/F/I passed, Python/PowerShell parsing passed, and the intentionally unmet pre-merge gate exited 1 as designed.
+Because two hard preconditions are unmet, no production backup/apply/post-check was started. Once the user confirms rotation and schema-owner approval, the authorized sequence remains: notify colleague → fresh verified dump → ordered apply with automatic rollback on first error → post-checks → stop and report; the user sends the change note.

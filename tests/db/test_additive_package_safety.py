@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 from pathlib import Path
 
@@ -36,3 +37,30 @@ def test_additive_helper_errors_redact_connection_secrets(monkeypatch):
     assert raw_url not in message
     assert message.count("[REDACTED]") >= 1
     assert os.environ["DATABASE_URL"] == raw_url
+
+
+def test_additive_manifest_covers_170_drift_and_every_file_180_through_350():
+    manifest = json.loads((PACKAGE / "manifest.json").read_text(encoding="utf-8"))
+    assert [item["id"] for item in manifest["logical_migrations"]] == [
+        "170", "180", "190", "200", "210", "220", "230", "240", "250",
+        "260", "270", "280", "290", "300", "310", "320", "330", "340", "350",
+    ]
+    assert (PACKAGE / "sql" / "310_v2_hub_proposals_additive.sql").is_file()
+    assert (PACKAGE / "sql" / "350_v2_record_creation_additive.sql").is_file()
+
+
+def test_status_mapping_and_phase3_breaking_check_are_held_safely():
+    actor = (PACKAGE / "versions" / "v2a01_actor_identity_additive.py").read_text(
+        encoding="utf-8"
+    )
+    phase3 = (PACKAGE / "sql" / "350_v2_record_creation_additive.sql").read_text(
+        encoding="utf-8"
+    )
+    deferred = (PACKAGE / "deferred" / "350_v2_record_creation_breaking.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "ghus_legacy_record_status" in actor
+    assert "WHEN 'verified'" not in actor
+    assert "WHEN 'rejected'" not in actor
+    assert "ALTER TABLE review_item" not in phase3
+    assert "ALTER TABLE review_item" in deferred
