@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from capture_state import snapshot
+from db_connection import guarded
 
 
 def main() -> None:
@@ -40,4 +41,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    guarded(main)

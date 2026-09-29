@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 from pathlib import Path
 
-from sqlalchemy import create_engine, text
+from db_connection import engine, guarded
+from sqlalchemy import text
 
 OBJECT_SQL = {
     "tables": "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY 1",
@@ -21,15 +21,9 @@ OBJECT_SQL = {
 
 
 def snapshot() -> dict[str, object]:
-    raw_url = os.environ.get("V2_ADDITIVE_DATABASE_URL", "").strip()
-    if not raw_url:
-        raise RuntimeError("V2_ADDITIVE_DATABASE_URL is required")
-    engine = create_engine(
-        raw_url,
-        connect_args={"options": "-c default_transaction_read_only=on -c statement_timeout=30000"},
-    )
+    db_engine = engine(read_only=True, statement_timeout_ms=30000)
     try:
-        with engine.connect() as connection:
+        with db_engine.connect() as connection:
             read_only = connection.execute(text("SHOW transaction_read_only")).scalar_one()
             if read_only != "on":
                 raise RuntimeError("state capture connection is not read-only")
@@ -45,7 +39,7 @@ def snapshot() -> dict[str, object]:
             version = connection.execute(text("SHOW server_version")).scalar_one()
             return {"server_version": version, "row_counts": counts, "objects": objects}
     finally:
-        engine.dispose()
+        db_engine.dispose()
 
 
 def main() -> None:
@@ -59,4 +53,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    guarded(main)

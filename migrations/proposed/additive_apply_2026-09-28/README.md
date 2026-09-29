@@ -14,6 +14,8 @@ Prepared 2026-09-28. This package is for the schema owner/user to run; agents mu
 
 This schema package is compatible with the legacy production application. Do **not** deploy the current Phase 3 backend against only this original-16 package: its unchanged test contract also requires Phase 3 migration 017/350 (`verify_actor` and three additional source-origin values) and assumes the completed V2 column cutover. Keep the existing application deployed until those later changes receive separate approval, or approve a separately tested additive 017/350 package and compatibility test profile. This package does not silently expand its approved scope.
 
+Never merge `codex/architecture-v2` into `main` until the deferred/breaking migrations and their matching application code have been approved and deployed together. The repository's `architecture-v2-schema-gate` pull-request check deliberately fails while that gate is unmet; configure that check as required in `main` branch protection.
+
 See `classification.md` for the per-migration decision and deferred phase order.
 
 ## Ordered apply
@@ -48,17 +50,23 @@ The shared-target runner refuses to operate without that file and a verified bac
 
 ## Apply after approval
 
-Load the production URL from the approved secret manager without printing it, then run:
+Set only standard libpq environment variables. Put the password in a restricted `PGPASSFILE`; do not construct, pass, or print a connection URL:
 
 ```powershell
+$env:PGHOST = 'approved-production-host'
+$env:PGPORT = '5432'
+$env:PGUSER = 'approved-schema-owner'
+$env:PGDATABASE = 'postgres'
+$env:PGSSLMODE = 'require'
+$env:PGPASSFILE = 'C:\secure\ghus-production.pgpass'
+Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
 & .\scripts\apply_additive.ps1 `
-  -DatabaseUrl $productionDatabaseUrl `
   -SchemaOwnerApprovalFile C:\approved\architecture_v2_additive.txt
 ```
 
 The wrapper performs, in order:
 
-1. a custom-format full `pg_dump` under `C:\Users\Ismail\GHUS-data\backups`;
+1. a fresh custom-format full `pg_dump` under `C:\Users\Ismail\GHUS-data\backups`, taken immediately before the apply;
 2. SHA-256 and a backup manifest;
 3. a read-only snapshot of every existing public-table row count and schema object;
 4. the ordered additive apply;
@@ -67,13 +75,23 @@ The wrapper performs, in order:
 
 The wrapper stops on any failed step. A smoke success proves read compatibility only; application deployment remains subject to the deployment gate above.
 
+The 2026-09-28 17:02Z dump is fallback evidence only. It does not satisfy the apply-day backup requirement and the wrapper does not accept it as a substitute for the fresh dump it creates.
+
+## Existing-table compatibility behavior
+
+The additive set adds no default to an existing table. It adds these existing-table functions/triggers:
+
+- `actor`: `ghus_legacy_actor_category(text)`, `ghus_sync_actor_v2_compat()`, and trigger `actor_v2_compat_sync`.
+- `person`: `ghus_sync_person_v2_compat()` and trigger `person_v2_compat_sync`.
+
+Legacy columns win when a legacy and V2 value arrive together. The functions do not raise for a legacy insert/update. Known legacy actor types map through an explicit allowlist; an unmapped actor type leaves `actor_category` null. Run `scripts/prove_legacy_actor_writes.py` against `ghus_v2_test` to exercise inserts and updates for every currently stored actor type plus an unknown value; its transaction always rolls back.
+
 ## Rollback
 
 Rollback is a schema operation, not a production restore. It requires the same approval file and verified backup manifest:
 
 ```powershell
 & .\scripts\rollback_additive.ps1 `
-  -DatabaseUrl $productionDatabaseUrl `
   -SchemaOwnerApprovalFile C:\approved\architecture_v2_additive.txt `
   -BackupManifest C:\Users\Ismail\GHUS-data\backups\ghus_production_full_TIMESTAMP.dump.manifest.json
 ```

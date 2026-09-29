@@ -1,5 +1,4 @@
 param(
-    [Parameter(Mandatory=$true)][string]$DatabaseUrl,
     [Parameter(Mandatory=$true)][string]$SchemaOwnerApprovalFile,
     [string]$BackupRoot = 'C:\Users\Ismail\GHUS-data\backups',
     [string]$Python = 'C:\Users\Ismail\Projects\GHUS-Platform\.venv\Scripts\python.exe'
@@ -7,11 +6,10 @@ param(
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $package = Split-Path -Parent $here
-$manifestPath = & "$here\pre_apply_backup.ps1" -DatabaseUrl $DatabaseUrl -BackupRoot $BackupRoot
+$manifestPath = & "$here\pre_apply_backup.ps1" -BackupRoot $BackupRoot
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
 $before = Join-Path $BackupRoot "ghus_v2_pre_apply_state_$stamp.json"
 $after = Join-Path $BackupRoot "ghus_v2_post_apply_state_$stamp.json"
-$env:V2_ADDITIVE_DATABASE_URL = $DatabaseUrl
 & $Python "$here\capture_state.py" --output $before
 if ($LASTEXITCODE -ne 0) { throw 'pre-apply state capture failed' }
 & $Python "$here\run_package.py" up --target shared --approval-file $SchemaOwnerApprovalFile --backup-manifest $manifestPath

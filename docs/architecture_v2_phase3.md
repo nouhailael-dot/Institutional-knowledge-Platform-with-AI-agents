@@ -124,7 +124,7 @@ It adds the three required actor source origins (`imported_phase1`, `claude_disc
 ### Backend
 
 - Full suite against local `ghus_v2_test` at `127.0.0.1:55432`: **302 passed**, 2 SQLite datetime-adapter deprecation warnings.
-- The two inherited routing tests were rewritten to V2 behavior; neither is skipped or xfailed.
+- The two inherited routing tests were rewritten to V2 behavior and pass: `test_dry_run_checks_mapped_records_before_discovery_and_exact_event_absorbs` and `test_out_of_sector_record_is_staged_and_never_promoted`. Neither is skipped or xfailed.
 - New regression coverage includes exact domain/name/alternate-name reuse, Rejected sightings, non-exact high-score review, discovered-domain exact reuse, strict pipeline order, real PostgreSQL dry-run rollback, writer allowlist, and no canonical application DELETE.
 - Targeted Ruff (`E9,F,I`) over every Phase 3 Python file: passed.
 - Repository-wide Ruff: 684 findings, all pre-existing/general debt; the exact parent commit had 721. No unrelated mass rewrite was performed.

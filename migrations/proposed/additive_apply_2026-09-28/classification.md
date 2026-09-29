@@ -7,7 +7,7 @@ This classification covers logical migrations 001–016 only. Logical migration 
 | ID | Original migration | Classification | Additive package content | Deferred breaking content / dependency |
 |---|---|---|---|---|
 | 001 | `190_v2_reference_data.sql` | ADDITIVE | Five new reference tables and seed rows. | None. |
-| 002 | `v2a01_actor_identity.py` + `200_v2_actor_location.sql` | MIXED, SPLIT | New nullable actor columns; `actor_category` and `record_status` mirror legacy columns through compatibility triggers; indexes; new `actor_location`. | Actor/status renames; `NOT NULL`/defaults; FKs/checks on `actor`; later legacy-column drop. P5 classifier + P12 backfill; rename/drop only after P16 readers are deployed. |
+| 002 | `v2a01_actor_identity.py` + `200_v2_actor_location.sql` | MIXED, SPLIT | New nullable actor columns; `record_status` mirrors legacy status, while `actor_category` uses an explicit legacy-type allowlist and remains null for unmapped values; non-raising compatibility triggers; indexes; new `actor_location`. | Actor/status renames; `NOT NULL`/defaults; FKs/checks on `actor`; later legacy-column drop. P5 classifier + P12 backfill; rename/drop only after P16 readers are deployed. |
 | 003 | `210_v2_topics.sql` | ADDITIVE | New `topic` and `actor_topic` tables and index. | None. |
 | 004 | `v2a02_hubs.py` + `220_v2_hub_center_review.sql` | MIXED, SPLIT | New nullable `hub`/`hub_actor` columns, indexes, and new center-review table. | `NOT NULL`/defaults and FKs/checks on populated hub tables. P6 implementation + P12 backfill/validation. |
 | 005 | `230_v2_verification_history.sql` | ADDITIVE | New append-only verification table, function, trigger, and index. | None. |

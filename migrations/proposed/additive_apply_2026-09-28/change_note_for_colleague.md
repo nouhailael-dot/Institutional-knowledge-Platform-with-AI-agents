@@ -2,7 +2,7 @@
 
 This package adds new V2 reference tables, evidence/history tables, nullable compatibility columns, indexes, and compatibility views. It does not remove or rename any existing column, add constraints or `NOT NULL` requirements to populated legacy tables, change permissions on legacy tables, modify existing business rows, or deploy hub-proposal migration 310.
 
-`actor.actor_type` and `actor.verification_status` remain present and work as before. New nullable `actor_category` and `record_status` columns are backfilled from them and kept synchronized in both directions during the compatibility period. Existing applications may continue reading and writing the legacy columns.
+`actor.actor_type` and `actor.verification_status` remain present and work as before. New nullable `actor_category` uses an explicit mapping for known legacy types; unmapped values remain null and never reject a legacy write. `record_status` follows the legacy verification status. Existing applications may continue reading and writing the legacy columns.
 
 The package must be run only after schema-owner approval, after its full production dump and checksum complete successfully. The post-apply step verifies every pre-existing table row count, lists all new objects, and runs backend and frontend smoke queries in read-only transactions.
 

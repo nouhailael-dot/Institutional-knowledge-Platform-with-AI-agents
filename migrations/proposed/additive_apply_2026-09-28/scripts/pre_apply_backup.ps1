@@ -1,29 +1,29 @@
 param(
-    [Parameter(Mandatory=$true)][string]$DatabaseUrl,
     [string]$BackupRoot = 'C:\Users\Ismail\GHUS-data\backups',
     [string]$PgDump = 'C:\Program Files\PostgreSQL\17\bin\pg_dump.exe'
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $PgDump)) { throw "pg_dump not found: $PgDump" }
-$normalized = $DatabaseUrl -replace '^postgresql\+psycopg2://','postgresql://' -replace '^postgresql\+psycopg://','postgresql://'
-$uri = [Uri]$normalized
-if ($uri.Host -in @('localhost','127.0.0.1')) { throw 'Pre-apply production backup refuses a local database URL.' }
-$userInfo = $uri.UserInfo.Split(':',2)
-$user = [Uri]::UnescapeDataString($userInfo[0])
-$password = if ($userInfo.Count -gt 1) { [Uri]::UnescapeDataString($userInfo[1]) } else { '' }
-$database = $uri.AbsolutePath.TrimStart('/')
-$port = if ($uri.Port -gt 0) { $uri.Port } else { 5432 }
+$required = @('PGHOST','PGPORT','PGUSER','PGDATABASE','PGPASSFILE')
+$missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
+if ($missing.Count -gt 0) { throw ('Missing required PostgreSQL environment variables: ' + ($missing -join ', ')) }
+if (-not (Test-Path -LiteralPath $env:PGPASSFILE -PathType Leaf)) { throw 'PGPASSFILE does not name an existing file.' }
+if ($env:PGHOST -in @('localhost','127.0.0.1')) { throw 'Pre-apply production backup refuses a local target.' }
 New-Item -ItemType Directory -Force -Path $BackupRoot | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
 $dump = Join-Path $BackupRoot "ghus_production_full_$stamp.dump"
 $manifest = "$dump.manifest.json"
-$priorPassword = $env:PGPASSWORD
+$priorPassword = [Environment]::GetEnvironmentVariable('PGPASSWORD')
 try {
-    $env:PGPASSWORD = $password
-    & $PgDump --format=custom --compress=9 --no-owner --no-privileges --host=$($uri.Host) --port=$port --username=$user --file=$dump $database
+    Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    & $PgDump --format=custom --compress=9 --no-owner --no-privileges --file=$dump
     if ($LASTEXITCODE -ne 0) { throw "pg_dump failed with exit code $LASTEXITCODE" }
 } finally {
-    $env:PGPASSWORD = $priorPassword
+    if ($null -eq $priorPassword) {
+        Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
+    } else {
+        $env:PGPASSWORD = $priorPassword
+    }
 }
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $dump).Hash.ToLower()
 $data = [ordered]@{

@@ -106,7 +106,7 @@ Therefore the additive schema package is compatible with the legacy production a
 
 - 26 tables: `actor_category_definition`, `actor_category_type_definition`, `actor_fact`, `actor_location`, `actor_ranking`, `actor_strategic_connection_check`, `actor_topic`, `canonical_write_audit`, `collection_request`, `collection_run`, `contact_collection_authorization`, `entity_edge`, `event_claim`, `event_topic`, `fact_resolution`, `fetched_document`, `hub_center_review`, `person_topic`, `record_verification`, `region_definition`, `region_state`, `review_item`, `review_item_decision`, `source_origin_definition`, `strategic_entity`, `topic`.
 - 5 views: `actor_descendant_edge`, `actor_fact_current`, `actor_profile_current`, `actor_v1_compat`, `staged_record_agent3_compat`.
-- 3 functions, 59 indexes (including implicit constraint indexes on new tables), 2 policies on the new `record_verification` table, and 12 triggers.
+- 4 functions, 59 indexes (including implicit constraint indexes on new tables), 2 policies on the new `record_verification` table, and 12 triggers.
 - 315 new inventory entries under columns, including columns belonging to new tables/views and nullable additions to existing tables.
 
 The machine-readable before, after, and rollback comparisons are retained in `evidence/`.
@@ -132,3 +132,17 @@ The machine-readable before, after, and rollback comparisons are retained in `ev
 ## Security note
 
 During preparation, a failed read-only helper exposed the configured production database credential in local tool output. No database operation occurred in that failed attempt, and the credential is not stored in this package. Treat it as compromised and rotate it before running any approved apply.
+
+## 2026-09-29 pre-apply correction and proof
+
+The exposure came from this command shape: the frontend virtual-environment Python executable ran the staged `inspect_production_schema.py` helper after that helper loaded the backend `.env`. Psycopg rejected the SQLAlchemy-style URL before connecting and included the supplied URL in its exception. The exception was captured in the Codex task tool output and persisted in the local session JSONL, `logs_2.sqlite`, and `thread_history_1.sqlite`. The package now accepts only `PGHOST`, `PGPORT`, `PGUSER`, `PGDATABASE`, `PGSSLMODE`, and `PGPASSFILE`; it has no URL parameter/environment interface, and Python errors are redacted without a traceback.
+
+Existing-table additions are limited to:
+
+- `actor`: `ghus_legacy_actor_category(text)`, `ghus_sync_actor_v2_compat()`, and `actor_v2_compat_sync`.
+- `person`: `ghus_sync_person_v2_compat()` and `person_v2_compat_sync`.
+- Defaults added to existing tables: none.
+
+The trigger functions contain no legacy-write exception path. The isolated database was reset from the production dump after discovering and correcting an idempotent-backfill ordering issue. The final package then passed apply → legacy-write proof → rollback/exact comparison → reapply. The proof executed the legacy actor column shape for INSERT and UPDATE across 30 stored values (29 non-null values plus null) and one deliberately unknown type: 31 inserts and 31 updates, zero errors. `Organization`, `aggregate`, `other`, null, and the deliberate unknown remained `actor_category=NULL`; the transaction rolled back and actor count remained 965. Both read-only smokes passed after the final reapply. Machine-readable evidence is in `evidence/legacy_actor_write_compatibility.json`, `evidence/trigger_correction_rollback_comparison.json`, and `evidence/after_trigger_correction.json`.
+
+Final regression results were: backend 300 passed and the same four deployment-gate tests failed; the two inherited V2 routing tests passed; frontend Python 54 passed with 15 subtests and one warning; frontend Node 15 passed. The new package safety tests passed, targeted Ruff E9/F/I passed, Python/PowerShell parsing passed, and the intentionally unmet pre-merge gate exited 1 as designed.

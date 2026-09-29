@@ -1,0 +1,8 @@
+{
+  "schema_owner_approved": false,
+  "additive_schema_deployed": false,
+  "deferred_breaking_schema_deployed": false,
+  "matching_application_code_deployed": false,
+  "deployment_evidence": [],
+  "note": "Keep this gate unmet until the schema owner approves and the deferred/breaking schema and matching code are deployed together."
+}

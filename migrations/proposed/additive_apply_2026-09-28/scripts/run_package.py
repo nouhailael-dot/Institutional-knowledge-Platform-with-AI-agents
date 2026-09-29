@@ -6,31 +6,22 @@ import argparse
 import hashlib
 import importlib.util
 import json
-import os
 from pathlib import Path
 from types import ModuleType
 
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from db_connection import connection_settings, engine, guarded
+from sqlalchemy import text
 
 PACKAGE = Path(__file__).resolve().parents[1]
 MANIFEST = PACKAGE / "manifest.json"
 
 
-def database_url() -> str:
-    raw = os.environ.get("V2_ADDITIVE_DATABASE_URL", "").strip()
-    if not raw:
-        raise RuntimeError("V2_ADDITIVE_DATABASE_URL is required")
-    return raw
-
-
-def validate_target(args: argparse.Namespace, raw_url: str) -> None:
-    url = make_url(raw_url)
-    local = url.host in {"127.0.0.1", "localhost"}
+def validate_target(args: argparse.Namespace, settings: dict[str, str]) -> None:
+    local = settings["host"] in {"127.0.0.1", "localhost"}
     if args.target == "local":
-        if not local or url.port != 55432 or not (url.database or "").endswith("_test"):
+        if not local or settings["port"] != "55432" or not settings["database"].endswith("_test"):
             raise RuntimeError("local mode accepts only localhost:55432/*_test")
         return
     if local:
@@ -86,13 +77,13 @@ def main() -> None:
     parser.add_argument("--backup-manifest")
     parser.add_argument("--confirm-rollback", action="store_true")
     args = parser.parse_args()
-    raw_url = database_url()
-    validate_target(args, raw_url)
+    settings = connection_settings()
+    validate_target(args, settings)
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))["logical_migrations"]
     steps = manifest if args.direction == "up" else list(reversed(manifest))
-    engine = create_engine(raw_url)
+    db_engine = engine()
     try:
-        with engine.connect() as connection:
+        with db_engine.connect() as connection:
             version, read_only = connection.execute(
                 text("SELECT current_setting('server_version'), current_setting('transaction_read_only')")
             ).one()
@@ -104,13 +95,13 @@ def main() -> None:
             actions = step["actions"] if args.direction == "up" else list(reversed(step["actions"]))
             for action in actions:
                 if action["type"] == "sql":
-                    run_sql(engine, PACKAGE / action[args.direction])
+                    run_sql(db_engine, PACKAGE / action[args.direction])
                 else:
-                    run_alembic(engine, PACKAGE / action["path"], args.direction)
+                    run_alembic(db_engine, PACKAGE / action["path"], args.direction)
             print(f"{args.direction}: {step['id']} {step['name']}")
     finally:
-        engine.dispose()
+        db_engine.dispose()
 
 
 if __name__ == "__main__":
-    main()
+    guarded(main)
