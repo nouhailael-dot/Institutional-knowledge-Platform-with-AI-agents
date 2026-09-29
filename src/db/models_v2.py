@@ -226,6 +226,25 @@ class RegionState(V2Base):
     is_district: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
+class UsCityCoord(V2Base):
+    __tablename__ = "us_city_coord"
+
+    geoid: Mapped[str] = mapped_column(Text, primary_key=True)
+    state_code: Mapped[str] = mapped_column(
+        Text, ForeignKey("region_state.state_code"), nullable=False
+    )
+    place_name: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_city: Mapped[str] = mapped_column(Text, nullable=False)
+    latitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+    longitude: Mapped[float] = mapped_column(Numeric(9, 6), nullable=False)
+    lsad: Mapped[str] = mapped_column(Text, nullable=False)
+    function_status: Mapped[str] = mapped_column(Text, nullable=False)
+    gazetteer_year: Mapped[int] = mapped_column(nullable=False)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class SourceOriginDefinition(V2Base):
     __tablename__ = "source_origin_definition"
 

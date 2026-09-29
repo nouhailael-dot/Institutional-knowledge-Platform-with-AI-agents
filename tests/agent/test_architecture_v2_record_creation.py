@@ -147,7 +147,7 @@ def test_no_canonical_delete_path_exists_in_application_python():
     roots = [PROJECT_ROOT / "agents", PROJECT_ROOT / "scripts", PROJECT_ROOT / "src"]
     pattern = re.compile(
         r"delete\s+from\s+(actor|event|person|hub|hub_actor|actor_person|"
-        r"organization_hierarchy|actor_fact|actor_topic|entity_edge)\b",
+        r"organization_hierarchy|actor_fact|actor_topic|actor_location|entity_edge)\b",
         re.IGNORECASE,
     )
     violations = []
@@ -167,7 +167,7 @@ def test_canonical_sql_writers_are_allowlisted():
     }
     pattern = re.compile(
         r"(?:insert\s+into|update)\s+(actor|event|person|hub|hub_actor|actor_person|"
-        r"organization_hierarchy|actor_fact|actor_topic|entity_edge)\b",
+        r"organization_hierarchy|actor_fact|actor_topic|actor_location|entity_edge)\b",
         re.IGNORECASE,
     )
     violations = []

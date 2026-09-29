@@ -333,6 +333,7 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
                 Path("agents/enrichment/decisions.py"),
             },
             "actor_topic": {Path("agents/discovery/promote.py")},
+            "actor_location": {Path("agents/discovery/promote.py")},
             "review_item": {
                 Path("agents/discovery/promote.py"),
                 Path("agents/enrichment/decisions.py"),

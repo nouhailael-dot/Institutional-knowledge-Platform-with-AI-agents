@@ -47,24 +47,24 @@ The planned test names are acceptance targets, not tests that already exist.
 | R010 | §1 | Imported, Parked/Verified, and uploaded-document sources never mix. | `source` records exist, but actors/facts lack required origin enums and RAG source labels. | Partial | P2/P9/P16 | `test_source_origins_remain_distinct` |
 | R011 | §1/§5.2 | Missing evidence is `not_found`, never a guess. | Prompts generally return `null`; durable `not_found` facts do not exist. | Partial | P9/P11 | `test_missing_evidence_writes_not_found_fact` |
 | R012 | Prompt §0 | All tunables live in one config module. | Thresholds are spread across `sources.yaml`, `fields.yaml`, `config.py`, ER JSON, and Python constants such as `AI_CONFIDENCE=0.70`. | Conflict | P2 | `test_no_agent_magic_thresholds` |
-| R013 | §2 | Exactly seven fixed U.S. regions exist. | Actor has no region; only Hub has a free-text region. | Missing | P4 | `test_region_partition_all_states_and_dc` |
-| R014 | §2 | Northeast contains CT, ME, MA, NH, NY, RI, VT. | No derivation function/table. | Missing | P4 | `test_region_northeast_membership` |
-| R015 | §2 | Mid-Atlantic contains DE, MD, NJ, PA, VA, WV, Washington DC. | No derivation function/table. | Missing | P4 | `test_region_mid_atlantic_membership` |
-| R016 | §2 | Southeast contains AL, FL, GA, KY, MS, NC, SC, TN. | No derivation function/table. | Missing | P4 | `test_region_southeast_membership` |
-| R017 | §2 | Midwest/Great Lakes contains IL, IN, IA, KS, MI, MN, MO, NE, ND, OH, SD, WI. | No derivation function/table. | Missing | P4 | `test_region_midwest_membership` |
-| R018 | §2 | South Central/Texas Gulf contains AR, LA, OK, TX. | No derivation function/table. | Missing | P4 | `test_region_south_central_membership` |
-| R019 | §2 | Mountain West/Rocky Mountain contains AZ, CO, ID, MT, NV, NM, UT, WY. | No derivation function/table. | Missing | P4 | `test_region_mountain_west_membership` |
-| R020 | §2 | West Coast/Pacific contains AK, CA, HI, OR, WA. | No derivation function/table. | Missing | P4 | `test_region_west_coast_membership` |
-| R021 | §2 | Washington DC is Mid-Atlantic; Washington State is West Coast. | No normalizer/derivation. | Missing | P4 | `test_dc_is_not_washington_state` |
-| R022 | §2 | Region is derived from state and never entered manually. | Hub.region is mutable input; Actor has no region. | Conflict | P2/P4/P15 | `test_region_rejected_as_input` |
-| R023 | §2 | Every actor gets country/state/city/region/coordinates immediately. | Actor has country/state/city only; fields can be LLM/API-filled; no actor coordinates. | Conflict | P3/P4/P9 | `test_light_pull_derives_complete_location` |
+| R013 | §2 | Exactly seven fixed U.S. regions exist. | Phase 4 has one exhaustive 51-jurisdiction partition in code and reference SQL. | Implemented | P4 | `test_region_partition_all_states_and_dc` |
+| R014 | §2 | Northeast contains CT, ME, MA, NH, NY, RI, VT. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
+| R015 | §2 | Mid-Atlantic contains DE, MD, NJ, PA, VA, WV, Washington DC. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
+| R016 | §2 | Southeast contains AL, FL, GA, KY, MS, NC, SC, TN. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
+| R017 | §2 | Midwest/Great Lakes contains IL, IN, IA, KS, MI, MN, MO, NE, ND, OH, SD, WI. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
+| R018 | §2 | South Central/Texas Gulf contains AR, LA, OK, TX. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
+| R019 | §2 | Mountain West/Rocky Mountain contains AZ, CO, ID, MT, NV, NM, UT, WY. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
+| R020 | §2 | West Coast/Pacific contains AK, CA, HI, OR, WA. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
+| R021 | §2 | Washington DC is Mid-Atlantic; Washington State is West Coast. | DC/D.C./District/Washington DC normalize to DC; Washington and Washington State normalize to WA. | Implemented | P4 | `test_dc_is_not_washington_state` |
+| R022 | §2 | Region is derived from state and never entered manually. | Actor promotion discards candidate region/coordinates and derives them from state plus the Census gazetteer. The legacy mutable Hub.region UI remains P15. | Partial | P4/P15 | `test_region_and_coordinates_are_derived_never_candidate_inputs` |
+| R023 | §2 | Every actor gets country/state/city/region/coordinates immediately. | Phase 4 derives these during the geocode step; missing/unknown places store null coordinates plus an immutable `not_found` fact and `geocode_failed` review. | Implemented | P3/P4 | `test_no_gazetteer_match_records_not_found_without_coordinates` |
 | R024 | §2 | Actors are browsable region → state → city without a hub. | RAG Browse filters country/state and hub/type; no region/city hierarchy. | Missing | P15 | `test_explore_without_hub` |
 | R025 | §2 | Hubs are a separate layer; an institution alone is not a hub. | Hub is first-class, but current imports include descriptive ecosystem rows and no V2 creation guard. | Partial | P6/P12 | `test_hub_requires_topic_center_radius_members` |
 | R026 | §2.1 | Each hub has exactly one controlled topic. | Hub has narrative strengths and sector arrays, not a topic FK. | Missing | P2/P6 | `test_hub_requires_one_topic` |
 | R027 | §2.1 | Each hub has a center coordinate and city. | Hub has nullable latitude/longitude/primary_city, with no method metadata. | Partial | P2/P6 | `test_hub_center_required_and_versioned` |
 | R028 | §2.1 | Hub radius defaults to 200 miles; GHUS may choose smaller. | No radius field. | Missing | P2/P6 | `test_hub_radius_default_and_upper_rule` |
 | R029 | §2.1 | Hub members are actor-hub rows. | `hub_actor` exists and is many-to-many. It lacks assignment state, decision source, evidence, and distance. | Partial | P2/P6 | `test_actor_hub_records_assignment_evidence` |
-| R030 | §2.1 | Distances use deterministic city coordinates; no hand/LLM estimate. | No gazetteer or distance service. Actor lacks coordinates. | Missing | P4 | `test_haversine_known_city_distances` |
+| R030 | §2.1 | Distances use deterministic city coordinates; no hand/LLM estimate. | Vendored checksummed Census Places data supplies coordinates; `distance_miles` is a pure miles-only haversine implementation. | Implemented | P4 | `test_haversine_known_city_distances_in_miles` |
 | R031 | §2.1 | Phase 1 hub names and definitions are preserved exactly. | The current baseline contains 49 hub rows: the 48 historical Phase 1 names plus `Mining Hubs`, a `phase_1` row with no location or memberships. Apparent spreadsheet artifacts (`+A29`, `+A18`) are preserved pending GHUS review. Definitions are not in the export. | Partial | P12 | `test_phase1_hub_text_round_trip_exact` |
 | R032 | §2.1 | Phase 1 center is computed from current members and default radius applied. | No center computation/radius. | Missing | P6/P12 | `test_phase1_center_computed_from_allowed_members` |
 | R033 | §2.1 | A nonqualifying Phase 1 hub is retained and only reported. | No criterion/report. | Missing | P12 | `test_phase1_nonqualifying_hub_not_removed` |
@@ -123,7 +123,7 @@ The planned test names are acceptance targets, not tests that already exist.
 | R086 | §5.1 | Parent or normal no-parent connections at Light. | `organization_hierarchy` exists but has no source and is not in mapping flow. | Partial | P8/P9 | `test_light_parent_or_complete_standalone` |
 | R087 | §5.1 | Official website at Light. | Actor.website exists; current extraction may leave null. No normalized domain/index. | Partial | P2/P9 | `test_official_website_and_domain` |
 | R088 | §5.1 | Description is 1–3 plain factual sentences. | Description exists; prompts say concise but code/schema do not enforce 1–3 sentences. | Partial | P9 | `test_description_sentence_limit` |
-| R089 | §5.1 | Country/state/city, derived region/coordinates, multi-location flag. | Only country/state/city exist; no derivation/flag/location rows. | Missing | P2/P4/P9 | `test_light_location_fields_and_multilocation` |
+| R089 | §5.1 | Country/state/city, derived region/coordinates, multi-location flag. | Promotion derives scalar geography for a single location and writes separately geocoded `actor_location` rows with no parent coordinates for multi-location actors. | Implemented | P2/P4 | `test_multi_location_geocodes_rows_not_parent` |
 | R090 | §5.1 | Hub set and distance to each center. | Membership exists; distance/evidence/state absent. | Partial | P6/P9 | `test_light_hub_distances` |
 | R091 | §5.1 | Sector(s) and specific topic. | `actor_sector` exists; no `topic`/`actor_topic`. | Partial | P2/P9 | `test_actor_topic_and_sector_links` |
 | R092 | §5.1 | Strong/moderate match plus 1–2 sentence reason. | Relevance/rubric is staged JSON, not durable per-topic canonical data. | Missing | P2/P9 | `test_match_strength_reason_constraints` |
@@ -533,7 +533,7 @@ Current behavior is not V2-safe:
 
 1. **P2 — Proposed data model.** Add `migrations/proposed/README.md` and the ordered SQL set above; update ORM/compatibility models without applying DDL; add schema contract tests.
 2. **P3 — Record creation orchestration.** Implement `map_new_actor(candidate, topic, run_ctx)` in the staged→promote boundary with database-first exact matching, possible-duplicate review, strict step trace, Parked end state, and dry/live candidate parity assertion.
-3. **P4 — Geography.** Implement all-state region derivation, vendored gazetteer loader/normalizer, coordinate derivation, geocode review, and miles-only haversine.
+3. **P4 — Geography (complete 2026-09-29).** Implemented all-state region derivation, vendored gazetteer loader/normalizer, coordinate derivation, geocode review, and miles-only haversine. See `docs/architecture_v2_phase4.md`.
 4. **P5 — Category then type.** Seed reference data, implement ordered structured classifier and code-level hard rules, rename all production/RAG references, retain only Agent 3 alias.
 5. **P6 — Existing hubs.** Implement topic-first assignment, distance evidence, overlap routing, center freeze/drift, and Phase 1 outside-radius reporting.
 6. **P7 — Hub proposals.** Implement per-topic deterministic family clustering, bipartite category matching, fingerprints, dry-run scheduler/on-demand entry point, and GHUS decision service.

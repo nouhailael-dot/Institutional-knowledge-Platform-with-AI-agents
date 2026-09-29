@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy import text
 
+from agents.common.geography import PreparedActorGeography, prepare_actor_geography
 from agents.common.provenance import insert_source
 from agents.common.resolve_route import RouteDecision
 from agents.discovery.stage import StagedRecord
@@ -501,11 +502,17 @@ def map_new_actor(
         raise ValueError("map_new_actor accepts only actor staged records")
     trace: list[str] = []
     _mapping_step(route, trace, "mapped_first")
+    geography: PreparedActorGeography | None = None
+    if route.zone == "create":
+        _mapping_step(route, trace, "category")
+        _mapping_step(route, trace, "category_type")
+        _mapping_step(route, trace, "geocode")
+        geography = prepare_actor_geography(staged.normalized_payload)
     if session is None:
         if live:
             raise ValueError("live promotion requires a database session")
         if route.zone == "create":
-            for step in ACTOR_MAPPING_STEPS[1:]:
+            for step in ACTOR_MAPPING_STEPS[4:]:
                 _mapping_step(route, trace, step)
         return PromotionResult(
             action=f"would_{route.zone}",
@@ -565,9 +572,25 @@ def map_new_actor(
                 step_trace=trace,
             )
         elif route.zone == "create":
-            for step in ACTOR_MAPPING_STEPS[1:7]:
+            if geography is None:
+                raise RuntimeError("actor geography was not prepared")
+            for step in ACTOR_MAPPING_STEPS[4:7]:
                 _mapping_step(route, trace, step)
-            actor_id = _insert_actor_v2(session, staged.normalized_payload, source_id)
+            actor_id = _insert_actor_v2(session, geography.actor_values, source_id)
+            _insert_actor_locations(
+                session,
+                actor_id=actor_id,
+                geography=geography,
+                source_id=source_id,
+            )
+            _record_geocode_failures(
+                session,
+                actor_id=actor_id,
+                staged=staged,
+                geography=geography,
+                source_id=source_id,
+                topic_id=topic_id,
+            )
             _append_actor_light_facts(
                 session,
                 actor_id=actor_id,
@@ -654,11 +677,12 @@ def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str
         "website_domain": ("website_domain",),
         "description": ("description",),
         "country": ("country",),
-        "location_city": ("location_city", "city"),
-        "state_code": ("state_code", "state"),
-        "region_code": ("region_code", "region"),
-        "latitude": ("latitude", "lat"),
-        "longitude": ("longitude", "lon"),
+        "location_city": ("location_city",),
+        "state_code": ("state_code",),
+        "region_code": ("region_code",),
+        "latitude": ("latitude",),
+        "longitude": ("longitude",),
+        "is_multi_location": ("is_multi_location",),
         "alternate_names": ("alternate_names", "alt_names"),
     }
     for column, keys in mapping.items():
@@ -672,6 +696,93 @@ def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str
     )
     session.execute(text(f"INSERT INTO actor ({names}) VALUES ({binds})"), cols)
     return actor_id
+
+
+def _insert_actor_locations(
+    session,
+    *,
+    actor_id: str,
+    geography: PreparedActorGeography,
+    source_id: str,
+) -> None:
+    for location in geography.locations:
+        result = location.result
+        if not result.city:
+            continue
+        session.execute(
+            text(
+                "INSERT INTO actor_location (actor_location_id,actor_id,location_name,country,"
+                "state_code,city,region_code,latitude,longitude,is_primary,source_id) VALUES ("
+                "CAST(:location_id AS uuid),CAST(:actor_id AS uuid),:location_name,:country,"
+                ":state_code,:city,:region_code,:latitude,:longitude,:is_primary,"
+                "CAST(:source_id AS uuid)) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "location_id": str(uuid.uuid4()),
+                "actor_id": actor_id,
+                "location_name": location.location_name,
+                "country": result.country,
+                "state_code": result.state_code,
+                "city": result.city,
+                "region_code": result.region_code,
+                "latitude": result.latitude,
+                "longitude": result.longitude,
+                "is_primary": location.is_primary,
+                "source_id": source_id,
+            },
+        )
+
+
+def _record_geocode_failures(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    geography: PreparedActorGeography,
+    source_id: str,
+    topic_id: str | None,
+) -> None:
+    for location in geography.failures:
+        result = location.result
+        failure = {
+            "state": "not_found",
+            "reason": result.reason,
+            "country": result.country,
+            "state_code": result.state_code,
+            "city": result.city,
+            "normalized_city": result.normalized_city,
+            "source_url": staged.source_url,
+        }
+        _insert_actor_fact(
+            session,
+            actor_id=actor_id,
+            topic_id=topic_id,
+            fact_type="geography",
+            fact_key="location_geocode",
+            value=failure,
+            source_id=source_id,
+            retrieved_at=staged.extracted_at,
+            run_id=staged.run_id,
+            collection_state="not_found",
+        )
+        session.execute(
+            text(
+                "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+                "topic_id,priority,payload,status) VALUES (CAST(:review_id AS uuid),'geocode',"
+                "'actor',CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),'normal',"
+                "CAST(:payload AS jsonb),'pending')"
+            ),
+            {
+                "review_id": str(uuid.uuid4()),
+                "actor_id": actor_id,
+                "topic_id": topic_id,
+                "payload": json.dumps(
+                    {"issue": "geocode_failed", "location_name": location.location_name, **failure},
+                    sort_keys=True,
+                    default=str,
+                ),
+            },
+        )
 
 
 def _append_actor_sighting(
@@ -748,6 +859,7 @@ def _insert_actor_fact(
     source_id: str,
     retrieved_at: object,
     run_id: str,
+    collection_state: str = "found",
 ) -> str:
     fact_id = str(uuid.uuid4())
     session.execute(
@@ -756,7 +868,7 @@ def _insert_actor_fact(
             "fact_value,collection_state,layer,source_id,source_origin,confidence,"
             "retrieved_at,generated_by,request_id) VALUES (CAST(:fact_id AS uuid),"
             "CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:fact_type,:fact_key,"
-            "CAST(:fact_value AS jsonb),'found',1,CAST(:source_id AS uuid),'newly_found',"
+            "CAST(:fact_value AS jsonb),:collection_state,1,CAST(:source_id AS uuid),'newly_found',"
             "'medium',:retrieved_at,'agent',CAST(:request_id AS uuid))"
         ),
         {
@@ -765,7 +877,12 @@ def _insert_actor_fact(
             "topic_id": topic_id,
             "fact_type": fact_type,
             "fact_key": fact_key,
-            "fact_value": json.dumps(value, sort_keys=True, default=str),
+            "fact_value": (
+                json.dumps(value, sort_keys=True, default=str)
+                if collection_state == "found"
+                else None
+            ),
+            "collection_state": collection_state,
             "source_id": source_id,
             "retrieved_at": retrieved_at,
             "request_id": run_id,
