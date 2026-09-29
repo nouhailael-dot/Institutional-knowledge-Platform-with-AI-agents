@@ -57,6 +57,12 @@ class RunStore:
                     run_id TEXT NOT NULL REFERENCES runs(id), key TEXT NOT NULL,
                     value TEXT NOT NULL, PRIMARY KEY(run_id,key)
                 );
+                CREATE TABLE IF NOT EXISTS people_tasks (
+                    run_id TEXT PRIMARY KEY REFERENCES runs(id),
+                    parent_id TEXT NOT NULL REFERENCES runs(id),
+                    actor_key TEXT NOT NULL, request_key TEXT NOT NULL,
+                    UNIQUE(parent_id, request_key)
+                );
             """)
             columns = {r[1] for r in db.execute("PRAGMA table_info(calls)")}
             if "operation_key" not in columns:
@@ -225,7 +231,34 @@ class RunStore:
     def recent(self):
         with self.connect() as db:
             return [dict(r) for r in db.execute(
-                "SELECT id,description,status,stage,created,updated FROM runs ORDER BY created DESC LIMIT 30")]
+                "SELECT id,description,status,stage,created,updated FROM runs "
+                "WHERE id NOT IN (SELECT run_id FROM people_tasks) ORDER BY created DESC LIMIT 30")]
+
+    def create_people_task(self, parent_id, actor_key, request_key, description, plan):
+        """Atomically link an explicitly approved $3 task; retry keys never spend twice."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            prior = db.execute("SELECT run_id FROM people_tasks WHERE parent_id=? AND request_key=?",
+                               (parent_id, request_key)).fetchone()
+            if prior:
+                return prior[0], False
+            active = db.execute("SELECT 1 FROM people_tasks p JOIN runs r ON r.id=p.run_id "
+                                "WHERE p.parent_id=? AND p.actor_key=? AND r.status IN ('running','planning','verifying')",
+                                (parent_id, actor_key)).fetchone()
+            if active:
+                raise MapStopped("A people search is already running for this organization.")
+            run_id, now = uuid4().hex, time.time()
+            db.execute("INSERT INTO runs(id,description,status,stage,budget,created,updated,plan) "
+                       "VALUES(?,?,'running','People search',?,?,?,?)",
+                       (run_id, description, 3 * MICRO, now, now, json.dumps(plan)))
+            db.execute("INSERT INTO people_tasks VALUES(?,?,?,?)", (run_id,parent_id,actor_key,request_key))
+            return run_id, True
+
+    def people_tasks(self, parent_id, actor_key):
+        with self.connect() as db:
+            ids = [r[0] for r in db.execute("SELECT run_id FROM people_tasks WHERE parent_id=? AND actor_key=?",
+                                          (parent_id, actor_key))]
+        return [self.get(run_id) for run_id in ids]
 
     def claim(self, run_id, status, stage, expected):
         """Reject duplicate start/chat/verify requests before any paid work."""

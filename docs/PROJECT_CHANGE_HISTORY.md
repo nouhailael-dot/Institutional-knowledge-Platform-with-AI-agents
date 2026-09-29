@@ -1,5 +1,17 @@
 # UM6P Intelligence — Development changes and current status
 
+## Subsequent cleanup — 15 September 2026
+
+Removed the unused legacy pipeline, autonomous discovery/enrichment modules,
+alternate planning functions and uncalled verification wrappers. Shared entity
+schemas moved to `src/map_agent/entity_schemas.py`, and the extraction client's
+factory moved to `src/map_agent/client.py`. The active entry point now accepts
+only description, plan and tracked run. Backend worker calls were updated,
+while legacy HTTP input fields remain compatible. Tests that previously called
+the old pipeline now check the equivalent active workflow behavior. The detailed
+history below describes the earlier layout where those legacy files still existed.
+
+
 Prepared: 13 September 2026 (America/New_York).
 
 ## 1. Purpose and scope

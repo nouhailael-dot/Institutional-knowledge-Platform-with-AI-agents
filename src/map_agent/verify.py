@@ -13,7 +13,7 @@ Entities are annotated in place. The keys added are:
     _below_floor             (Layer 5)
 """
 
-from src.map_agent.floor import DEFAULT_THRESHOLD, apply_relevance_floor, partition
+from src.map_agent.floor import DEFAULT_THRESHOLD, apply_relevance_floor
 from src.map_agent.judge import judge_entities
 from src.map_agent.urlcheck import verify_links
 
@@ -41,27 +41,6 @@ def verify(entities: list[dict], request: str,
     # Floor depends on judge scores; unjudged entities are left unflagged.
     apply_relevance_floor(entities, threshold)
     return entities
-
-
-def verify_one(entity: dict, request: str,
-               threshold: float = DEFAULT_THRESHOLD,
-               check_links: bool = True,
-               run_judge: bool = True) -> dict:
-    """Verify a single entity — the 'verify this card' path."""
-    verify([entity], request, threshold, check_links, run_judge)
-    return entity
-
-
-def verify_and_split(entities: list[dict], request: str,
-                     threshold: float = DEFAULT_THRESHOLD,
-                     check_links: bool = True,
-                     run_judge: bool = True) -> tuple[list[dict], list[dict]]:
-    """Verify, then split into (kept, weak) for a UI that separates them.
-
-    Unjudged entities stay in `kept` — you can't floor what wasn't scored.
-    """
-    verify(entities, request, threshold, check_links, run_judge)
-    return partition(entities, threshold)
 
 
 def summarize(entities: list[dict]) -> dict:

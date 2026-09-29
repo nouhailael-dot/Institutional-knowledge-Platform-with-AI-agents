@@ -1,5 +1,108 @@
 # UM6P Intelligence — Current Handoff
 
+> **Latest consolidated handoff (21 September 2026):**
+> [docs/CHAT_HANDOFF_2026-09-21.md](docs/CHAT_HANDOFF_2026-09-21.md).
+> Read that file first. It reconciles the dated updates below, documents the
+> latest people-search work and remaining tasks, and corrects stale statements
+> about server reload, removed legacy modules, and repository-wide read-only behavior.
+
+## Targeted people follow-up — 2026-09-18
+
+People research now has two candidate-discovery queries followed by bounded
+person-specific research. Queries adapt to university, government and company
+roles. A deterministic relevance heuristic prioritizes profile, staff, project,
+publication and grant pages for up to four page reads per query. Evidence is
+deduplicated by URL and reuses per-task/parent caches; extraction sees at most
+16 pages/excerpts at a time. Up to three candidates with at least one supported
+criterion get up to two follow-ups for outstanding criteria. Stops occur on
+no new evidence, no criterion improvement, sufficient assessed evidence or budget
+exhaustion. Existing supported assessments survive merging. The $1 explicit
+allowance remains unchanged; no live test was run, and improved quality/cost
+is not yet measured. Affiliation validation remains conservative rather than
+a full organization identity resolver. Backend restart required.
+
+
+## People-search corrections — 2026-09-18
+
+Extraction accepts bounded JSON-string/list wrappers using `entity_rows` without
+paid parsing retries. Invalid/missing structured output raises ExtractionError;
+people tasks preserve partial results and finish with error instead of done.
+`people_queries` widens US .edu news subdomains to the university's .edu domain
+and removes the exact quoted slash-combined name. General public suffixes are
+not guessed. Explicit constituent-unit affiliation names are recognized, while
+parent-only names, unrelated departments and guests remain excluded. Discovery
+instructions now ask for separate units instead of combined actors. Supported
+criteria need a quoted passage and supplied source URL; unsupported claims are
+downgraded, including conference-only evidence for Africa project involvement.
+These are conservative checks, not comprehensive fact verification.
+Saved failed-run responses were parsed read-only without API calls. Historical
+results/statuses were not rewritten. Restart the backend to load these fixes.
+
+
+## University rankings — 2026-09-17
+
+Map extraction now supports optional structured `rankings` for whole universities
+only: QS World University Rankings and Times Higher Education World University
+Rankings. Each entry carries position/band, edition year, overall/subject scope,
+subject where relevant and a supplied source URL. `rankings.py` validates fields,
+publisher and source membership, not claim truth. No extra ranking searches.
+University cards show an expandable section, with "Not found in collected sources"
+when absent. Labs/centers do not inherit parent university rankings. Exports format
+available entries. No database schema change or retrospective paid backfill.
+Restart the backend before new research uses these instructions.
+
+
+## Funding summary refinement — 2026-09-17
+
+Keep the existing `funding_summary` string. Extraction instructions now request
+disclosed amounts/currencies and available funder, purpose and year from already
+supplied sources. Preserve qualifiers and distinguish consortium totals from
+the institution's share. No guessed amounts, currency conversion, new fields,
+or extra funding searches. Existing saved results are not rewritten. The backend
+needs a restart to use the updated extraction instructions.
+
+
+## User-directed people discovery — 2026-09-16
+
+Institutional maps no longer automatically search for missing people. People
+already found in institution evidence remain. Each actor card now has a free-text
+Find relevant people panel. Starting explicitly approves a separate $1 estimated
+allowance, additional to the map budget; not a provider billing ceiling.
+`people_research.py` performs two bounded queries using the organization, map
+topic and criteria, with extraction and partial checkpoints. Cached parent pages
+can be reused. Results stay in separate child tasks linked through SQLite
+`people_tasks`, and reload under the organization panel. No main database writes
+or export integration yet. Tasks have Stop and cost display but no automatic
+retry/resume. Development tests use mocked model responses only. Backend restart
+is required to load the new routes and workflow; the server was not restarted.
+
+
+## Regional hub update — 2026-09-16
+
+Build the Map cards now derive a regional ecosystem hub from the actor's US
+state using National Geographic's five-region convention (Northeast, Southeast,
+Midwest, Southwest, West). DC is Southeast by explicit application rule.
+This replaces exact-city matching against the existing hub catalog. Country
+must explicitly identify the US; unknown, multiple-state and territory locations
+need review. Both `location_city` and `city` display correctly; city is optional.
+This is frontend-only, works on saved maps, and costs no API credits. Database
+hub records, Browse, saved payloads and exports remain unchanged. Regional
+membership is not a topic-specific hotspot assessment.
+
+
+## Cleanup update — 2026-09-15
+
+The active entry point is now `build_map(description, plan=None, run=None)`.
+Unused legacy workflows were removed: `build_map_legacy`, autonomous
+`discover.py` and `enrich.py`, alternate planning entry points and unused
+verification wrappers. Extraction schemas now live in `entity_schemas.py`,
+and its lazy API client lives in `client.py`. `research.py` imports those modules
+directly. Two legacy pipeline tests now cover the active controlled workflow.
+The backend keeps legacy HTTP request fields for client compatibility, but no
+longer forwards unused arguments into research. Earlier legacy-file descriptions
+below and in historical documents refer to the pre-cleanup layout.
+
+
 _Written 2026-09-13. Paste into a new chat to pick the project up cold._
 
 > **This supersedes `HANDOFF.md`**, which is now materially wrong (it claims no

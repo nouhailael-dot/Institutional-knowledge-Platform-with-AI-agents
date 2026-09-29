@@ -1,8 +1,7 @@
-"""Stage 1 — Plan the mapping search.
+"""Conversational map planning with a bounded number of clarification turns.
 
-Single-shot LLM call. Reads the user's description (+ optional document text)
-and produces a structured search plan: which entity types to look for and
-what web-search queries to run. No loop, no web tools — just reasoning.
+map_chat returns a prose reply or a structured, bounded search plan. Each turn
+uses one tracked model request without web tools.
 """
 
 import os
@@ -92,6 +91,7 @@ _SUBMIT_PLAN = {
 _SYSTEM = """\
 You are a research planner for a US innovation-ecosystem mapping platform.
 
+
 Given a user's description of a domain, venture, or program they want mapped, \
 produce a set of web-search tasks that will find relevant entities.
 
@@ -165,48 +165,6 @@ Write `summary` as if speaking to them: "I'll look for university water-manageme
 centres, the national labs working on irrigation, and the researchers leading
 them." Then it runs — so phrase it as something happening, not something proposed."""
 
-_ASK_CLARIFICATION = {
-    "name": "ask_clarification",
-    "description": "Ask the user to resolve a genuine ambiguity BEFORE a plan is "
-                   "built. Use sparingly — see the bar in the system prompt.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "questions": {
-                "type": "array",
-                "description": "1-3 short, concrete questions. Each must be one the "
-                               "user can answer in a sentence.",
-                "items": {"type": "string"},
-            },
-            "why": {
-                "type": "string",
-                "description": "One line: what is ambiguous and how the answer would "
-                               "change the search plan.",
-            },
-        },
-        "required": ["questions", "why"],
-    },
-}
-
-# Appended to the system prompt for the conversational entry point.
-_CLARIFY_RULE = """
-
-BEFORE PLANNING — you may ask, but the bar is HIGH.
-You have two tools: ask_clarification and submit_plan. You must call exactly one.
-
-Call ask_clarification ONLY when the request is genuinely ambiguous AND the answer
-would materially change which searches you run. Real examples: the user names a
-country other than the US (are we looking for US organizations working on that
-problem, or ones already partnered there?); the domain has two unrelated readings;
-the request names a document but no topic.
-
-Otherwise call submit_plan. Do NOT ask about things you can reasonably assume, and
-do NOT ask the user to narrow a broad-but-clear topic — breadth is fine, that is
-what a map is for. If you have already asked once and been answered, commit to a
-plan; never ask twice about the same thing.
-
-You cannot reply with prose. Silence is not an option — call one of the two tools."""
-
 # What the ACTOR FOCUS rule says, per the caller's actor_focus setting.
 # "research" is the DEFAULT — this platform maps partners for a university, so
 # the academic side of an ecosystem is the point, not an afterthought.
@@ -259,24 +217,6 @@ def _bounded_tasks(tasks: list[dict]) -> list[dict]:
         if len(bounded) == 4:
             break
     return bounded
-
-
-def plan_search(description: str, doc_text: str | None = None,
-                actor_focus: str = "research", run=None) -> tuple[list[dict], dict]:
-    """Return (tasks, requirements).
-
-    tasks:        [{entity_type, query, focus}, ...] — what to search for.
-    requirements: {hard_filters, preferences, result_limit} — what the user
-                  asked for BEYOND the topic, enforced later by select.py.
-
-    `actor_focus` steers what kind of organizations to look for — "research"
-    (DEFAULT, ~80/20 academic), "both", or "companies". Not exposed in the UI:
-    the academic weighting is the intended behavior, not a per-run choice. Left
-    as a parameter so a caller can still override it programmatically.
-    """
-    out = plan_conversation(description, doc_text, actor_focus=actor_focus,
-                            allow_questions=False, run=run)
-    return out.get("tasks", []), out.get("requirements", dict(_EMPTY_REQS))
 
 
 def map_chat(messages: list[dict], doc_text: str | None = None,
@@ -336,92 +276,3 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
     if text:
         return {"status": "reply", "message": "\n\n".join(text)}
     return {"status": "error", "message": "the planner returned nothing"}
-
-
-def _opening_message(description: str, doc_text: str | None) -> str:
-    parts = [f"DOMAIN TO MAP:\n{description}"]
-    if doc_text:
-        parts.append(f"\nATTACHED DOCUMENT (excerpt):\n{doc_text[:6000]}")
-    parts.append("\nEither ask a clarifying question or produce the search plan.")
-    return "\n".join(parts)
-
-
-def plan_conversation(description: str, doc_text: str | None = None,
-                      history: list[dict] | None = None,
-                      actor_focus: str = "research",
-                      allow_questions: bool = True, run=None) -> dict:
-    """Plan a map, asking the user first if the request is genuinely ambiguous.
-
-    A map costs real money and minutes, so it is worth a few cheap turns to get
-    the spec right before spending. Returns ONE of:
-
-        {"status": "questions", "questions": [...], "why": str, "history": [...]}
-        {"status": "plan", "tasks": [...], "requirements": {...}, "history": [...]}
-        {"status": "error", "message": str, "history": [...]}
-
-    `history` is the running exchange as plain {role, content} text turns — kept
-    text-only (rather than echoing tool_use blocks) so it round-trips through
-    JSON to the browser and back without reconstructing tool-result pairs.
-
-    Pass allow_questions=False to force a plan in one shot (no clarification).
-    """
-    system = _SYSTEM.format(
-        focus_rule=_FOCUS_RULES.get(actor_focus, _FOCUS_RULES["research"]))
-    tools = [_SUBMIT_PLAN]
-    if allow_questions:
-        system += _CLARIFY_RULE
-        tools = [_ASK_CLARIFICATION, _SUBMIT_PLAN]
-
-    messages = list(history or [])
-    if not messages:
-        messages = [{"role": "user", "content": _opening_message(description, doc_text)}]
-
-    try:
-        resp = paid_message(_get_client(), run, "Planning",
-            model=MODEL, max_tokens=MAX_TOKENS, system=system, tools=tools,
-            # Force a tool call: left free, the model answers ambiguous requests
-            # with prose, which upstream code silently read as "no plan".
-            tool_choice={"type": "any"},
-            messages=messages,
-        )
-    except MapStopped:
-        raise
-    except Exception as e:
-        return {"status": "error", "message": str(e), "history": messages}
-
-    for block in resp.content:
-        if block.type != "tool_use":
-            continue
-
-        if block.name == "ask_clarification":
-            qs = block.input.get("questions") or []
-            why = block.input.get("why", "")
-            if qs:
-                asked = "\n".join(f"{i}. {q}" for i, q in enumerate(qs, 1))
-                messages = messages + [
-                    {"role": "assistant", "content": f"CLARIFYING QUESTIONS:\n{asked}"}]
-                return {"status": "questions", "questions": qs, "why": why,
-                        "history": messages}
-
-        if block.name == "submit_plan":
-            reqs = block.input.get("requirements") or {}
-            return {"status": "plan",
-                    "tasks": _bounded_tasks(block.input.get("tasks", [])),
-                    "requirements": {**_EMPTY_REQS, **reqs},
-                    "history": messages}
-
-    return {"status": "error", "message": "planner returned no plan",
-            "history": messages}
-
-
-def answer_clarification(history: list[dict], answers: str,
-                         actor_focus: str = "research", run=None) -> dict:
-    """Continue a planning conversation with the user's reply. Same return shape.
-
-    After one round of answers the planner must commit, so this call runs with
-    questions disabled — no interrogation loops.
-    """
-    messages = list(history or []) + [
-        {"role": "user", "content": f"ANSWERS:\n{answers}\n\nNow produce the plan."}]
-    return plan_conversation("", None, history=messages,
-                             actor_focus=actor_focus, allow_questions=False, run=run)

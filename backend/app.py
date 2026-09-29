@@ -36,6 +36,7 @@ from src.documents.extract import ExtractionError, extract_text
 from src.generate import condense_question, stream_answer
 from src.map_agent.export import to_pptx, to_xlsx
 from src.map_agent.pipeline import build_map
+from src.map_agent.people_research import research_people
 from src.map_agent.planner import map_chat
 from src.map_agent.verify import summarize, verify
 from src.map_agent.run_store import RunStore, RunContext, MapStopped
@@ -272,6 +273,67 @@ def require_research():
         raise HTTPException(status_code=503, detail=reason)
 
 
+def people_actor(job_id, name, website):
+    record = map_record(job_id)
+    actors = (record.get("result") or {}).get("entities", {}).get("actor", [])
+    matches = [a for a in actors if a.get("name") == name and (a.get("website") or "") == website]
+    if len(matches) != 1:
+        raise HTTPException(status_code=400, detail="Choose one organization from the saved map.")
+    return record, matches[0], json.dumps([name, website])
+
+
+class PeopleRequest(BaseModel):
+    actor_name: str
+    website: str = ""
+    criteria: str
+    request_key: str
+    approve: bool = False
+
+
+@app.get("/api/map/{job_id}/people")
+def people_history(job_id: str, actor_name: str, website: str = ""):
+    _, _, key = people_actor(job_id, actor_name, website)
+    return {"tasks": [public_map(r["id"]) for r in map_store().people_tasks(job_id, key)]}
+
+
+def _run_people_job(task_id, actor, topic, criteria):
+    context = RunContext(map_store(), task_id)
+    try:
+        result = research_people(context, actor, topic, criteria)
+        if result.get("extraction_errors"):
+            map_store().finish(task_id, "error", "People search incomplete: " + "; ".join(result["extraction_errors"]), attempt=context.attempt)
+        else:
+            map_store().finish(task_id, attempt=context.attempt)
+    except Exception as exc:
+        map_store().finish(task_id, "error", str(exc), attempt=context.attempt)
+
+
+@app.post("/api/map/{job_id}/people")
+def start_people_search(job_id: str, payload: PeopleRequest):
+    require_research()
+    if payload.approve is not True:
+        raise HTTPException(status_code=400, detail="Approve the separate $3 estimated allowance first.")
+    criteria = payload.criteria.strip()
+    if not criteria or len(criteria) > 2000 or not 1 <= len(payload.request_key) <= 100:
+        raise HTTPException(status_code=400, detail="Provide criteria (up to 2,000 characters) and a request key.")
+    record, actor, key = people_actor(job_id, payload.actor_name, payload.website)
+    if record["status"] in ("running", "planning", "verifying"):
+        raise HTTPException(status_code=409, detail="Wait for the institutional map to finish first.")
+    try:
+        task_id, created = map_store().create_people_task(job_id, key, payload.request_key,
+            f"People at {actor['name']}: {criteria}",
+            {"kind": "people", "parent_id": job_id, "actor": actor, "criteria": criteria})
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if created:
+        try:
+            _MAP_POOL.submit(_run_people_job, task_id, actor, record["description"], criteria)
+        except Exception:
+            map_store().finish(task_id, "error", "Worker could not start; no research dispatched.")
+            raise HTTPException(status_code=503, detail="Could not start people search.")
+    return public_map(task_id)
+
+
 @app.post("/api/map/upload")
 def map_upload(job_id: str = Form(...), file: UploadFile = File(...)):
     record = map_record(job_id)
@@ -338,14 +400,12 @@ def map_chat_turn(payload: ChatRequest):
     return {**result, "job_id": job_id, "cost": record["cost"]}
 
 
-def _run_map_job(job_id: str, description: str, doc_text: str | None,
-                 do_enrich: bool, actor_focus: str, plan: dict | None, attempt=None):
+def _run_map_job(job_id: str, description: str, plan: dict | None, attempt=None):
     """Worker body: run the pipeline, park the result on the job record."""
     context = RunContext(map_store(), job_id, attempt=attempt)
     try:
         context.check()
-        result = build_map(description, doc_text, do_enrich=do_enrich,
-                           actor_focus=actor_focus, plan=plan, run=context)
+        result = build_map(description, plan=plan, run=context)
         context.checkpoint(result)
         map_store().finish(job_id, attempt=context.attempt)
     except Exception as exc:
@@ -353,13 +413,12 @@ def _run_map_job(job_id: str, description: str, doc_text: str | None,
 
 
 class MapRequest(BaseModel):
-    """Run an APPROVED plan. Documents are uploaded separately via /api/upload,
-    so the planning turns and this call can both refer to them by `doc_id`."""
+    """Start a saved plan. Legacy request fields remain for older clients."""
     description: str
-    plan: dict | None = None          # from /api/map/plan; None re-plans silently
+    plan: dict | None = None          # fallback when the session has no saved plan
     doc_id: str | None = None
-    enrich: bool = False
-    actor_focus: str = "research"
+    enrich: bool = False             # compatibility only; True is rejected
+    actor_focus: str = "research"    # compatibility only; focus is resolved in planning
     job_id: str | None = None
 
 
@@ -367,10 +426,8 @@ class MapRequest(BaseModel):
 def map_start(payload: MapRequest):
     """Start a map build. Returns {job_id}; poll GET /api/map/{job_id}.
 
-    Normally called with the plan the user approved at /api/map/plan — discovery
-    is expensive, so it should never run on a plan nobody saw. `actor_focus`
-    defaults to "research" (~80/20 toward universities and national labs) and is
-    deliberately NOT exposed in the UI.
+    The conversational planner supplies the plan. This endpoint never silently
+    replans, and the session's saved plan takes precedence over a supplied plan.
     """
     require_research()
     if payload.enrich:
@@ -392,11 +449,8 @@ def map_start(payload: MapRequest):
         raise HTTPException(status_code=409, detail=str(exc))
     doc_text = record["doc_text"] or doc_text
     approved_plan = record["plan"] or payload.plan
-    focus = payload.actor_focus if payload.actor_focus in (
-        "both", "companies", "research") else "research"
     map_store().update(job_id, description=desc, doc_text=doc_text, plan=approved_plan)
-    _MAP_POOL.submit(_run_map_job, job_id, desc, doc_text, payload.enrich,
-                     focus, approved_plan, map_record(job_id)["attempt"])
+    _MAP_POOL.submit(_run_map_job, job_id, desc, approved_plan, map_record(job_id)["attempt"])
     return {"job_id": job_id, "status": "running"}
 
 
@@ -440,8 +494,8 @@ def map_resume(job_id: str, payload: BudgetExtensionRequest):
     except MapStopped as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     try:
-        _MAP_POOL.submit(_run_map_job, job_id, record["description"], record["doc_text"],
-                         False, "research", record["plan"], map_record(job_id)["attempt"])
+        _MAP_POOL.submit(_run_map_job, job_id, record["description"],
+                         record["plan"], map_record(job_id)["attempt"])
     except Exception:
         map_store().finish(job_id, "error", "Could not start the worker; no new API request was made.")
         raise HTTPException(status_code=503, detail="Could not start the worker.")

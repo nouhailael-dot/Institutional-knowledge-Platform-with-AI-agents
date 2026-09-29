@@ -323,6 +323,7 @@
   .mcard:hover{box-shadow:var(--shadow);border-color:var(--line-strong)}
   .mcard.pick{border-color:#e6b5a2;box-shadow:none;border-left:3px solid var(--accent)}
   .mcard .mn{font-size:16px}.mpeople{background:var(--surface-2);margin:14px -8px -7px;padding:12px;border-radius:7px}
+  .mpeople.university-rankings{margin:14px 0 12px;overflow-wrap:anywhere}
   .mbar{padding:15px 0;border-bottom:1px solid var(--line)}.mprog{padding:20px;background:var(--surface);border:1px solid var(--line);border-radius:10px;margin:20px 0}
   .selnote{border:1px solid var(--line);background:var(--surface);padding:16px;line-height:1.8}
   details summary{cursor:pointer}details[open]>summary{margin-bottom:10px}
@@ -872,8 +873,8 @@ const MGROUPS=[["actor","Organizations","accent"],["person","People","teal"],
 // disconnected top-level section.
 const MDISPLAY_GROUPS=MGROUPS.filter(([k])=>k!=="person");
 const MFIELDS={
-  actor:[["actor_type","Type"],["location_city","City"],["state","State"],
-         ["primary_technical_focus","Focus"],
+  actor:[["actor_type","Category"],["country","Country"],["location_city","City"],["state","State"],
+         ["region","Region"],["primary_technical_focus","Focus"],
          ["funding_summary","Funding"],["current_activities","Activity"]],
   person:[["title","Title"],["email","Email"]],
   event:[["event_type","Type"],["location","Location"],["next_date","Next date"],
@@ -884,8 +885,7 @@ const MFIELDS={
 const ename=(e)=>e.full_name||e.name||"—";
 
 /* one result card: fields, sources (struck through when dead), judge verdict */
-/* Existing-hub suggestions are read-only and never trigger research or DB writes.
-   Primary city is not a regional boundary: ambiguous and regional matches need review. */
+/* Regional hub labels are derived locally, without research or database writes. */
 function hubLocationKey(value){
   return String(value||"").normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 }
@@ -899,37 +899,122 @@ function hubStateKey(value){
   const key=hubLocationKey(value), index=names.findIndex(name=>hubLocationKey(name)===key);
   return index<0?key:codes[index].toLowerCase();
 }
-function suggestExistingHub(actor,hubs){
-  const city=hubLocationKey(actor.city), country=hubCountryKey(actor.country), state=hubStateKey(actor.state);
-  if(!city||!country||(country==="us"&&!state))return {matches:[],reason:"Location is incomplete. Review the actor’s city, state, and country."};
-  const matches=hubs.filter(h=>{
-    if(!h.hub_id||!h.name||hubLocationKey(h.primary_city)!==city||hubCountryKey(h.country)!==country)return false;
-    const hubState=hubStateKey(h.state);
-    return country==="us"?hubState===state:(!state||!hubState||state===hubState);
-  });
-  return {matches,reason:matches.length===1?"City, state, and country match the hub’s recorded location. Membership still needs review.":matches.length>1?"Several existing hubs share this location. Review which ecosystem is relevant.":"No exact location match. The actor may belong to a broader regional hub; review is needed."};
+// GHUS Architecture V2 September: seven fixed regions, separate from hubs.
+const US_REGIONS = {
+  Northeast: "CT ME MA NH NY RI VT".split(" "),
+  "Mid-Atlantic": "DE MD NJ PA VA WV DC".split(" "),
+  Southeast: "AL FL GA KY MS NC SC TN".split(" "),
+  "Midwest / Great Lakes": "IL IN IA KS MI MN MO NE ND OH SD WI".split(" "),
+  "South Central / Texas Gulf": "AR LA OK TX".split(" "),
+  "Mountain West / Rocky Mountain": "AZ CO ID MT NV NM UT WY".split(" "),
+  "West Coast / Pacific": "AK CA HI OR WA".split(" ")
+};
+function regionalHub(actor){
+  const country=hubCountryKey(actor.country);
+  let state=hubStateKey(actor.state);
+  if(["d c","washington dc","washington d c"].includes(state))state="dc";
+  const city=String(actor.location_city||actor.city||"").trim();
+  if(!country)return {region:null,status:"Needs review",reason:"Confirm the country before assigning a US region."};
+  if(country!=="us")return {region:null,status:"Outside US regions",reason:"The GHUS seven-region convention applies only to US locations."};
+  const region=Object.keys(US_REGIONS).find(name=>US_REGIONS[name].includes(state.toUpperCase()));
+  if(!region)return {region:null,status:"Needs review",reason:"A single recognized US state or Washington, DC is required. Territories and multiple-state locations need separate review."};
+  return {region,state:state.toUpperCase(),city,status:"Assigned by state",
+    reason:"Geographic grouping based on the actor’s recorded state, not a hotspot quality assessment."};
 }
-let existingHubCatalog=null;
-function loadExistingHubCatalog(){
-  if(!existingHubCatalog)existingHubCatalog=fetch("/api/browse/hubs").then(r=>{
-    if(!r.ok)throw new Error("Hub directory unavailable");return r.json();
-  }).then(d=>{if(!Array.isArray(d.hubs))throw new Error("Invalid hub directory");return d.hubs;}).catch(error=>{existingHubCatalog=null;throw error;});
-  return existingHubCatalog;
+// Legacy records predate the stored region, so fall back to the local calculation.
+function actorRegion(actor){
+  return actor.region||regionalHub(actor).region||"";
 }
-function HubSuggestion({actor}){
-  const [hubs,setHubs]=useState(null),[error,setError]=useState(false),[attempt,setAttempt]=useState(0);
-  useEffect(()=>{let active=true;setError(false);loadExistingHubCatalog().then(data=>{if(active)setHubs(data);}).catch(()=>{if(active)setError(true);});return()=>{active=false;};},[attempt]);
-  const suggestion=hubs?suggestExistingHub(actor,hubs):null;
-  return html`<div class="hub-suggestion">
-    <div class="hub-suggestion-title">Ecosystem hub <span class="chip slate">${error?"Unavailable":!suggestion?"Checking directory":suggestion.matches.length===1?"Existing hub · suggested":"Needs review"}</span></div>
-    ${error?html`<div class="hint">Could not load existing hubs. <button class="example" onClick=${()=>setAttempt(x=>x+1)}>Retry</button></div>`:suggestion?html`
-      ${suggestion.matches.map(h=>html`<div key=${h.hub_id} class="hub-suggestion-name">${h.name}</div>`)}
-      <div class="hint">${suggestion.reason}</div>
-      ${suggestion.matches.length>0&&html`<details class="msrc"><summary>Match details</summary>
-        ${suggestion.matches.map(h=>html`<div key=${h.hub_id}>${h.name}: ${[h.primary_city,h.state,h.country].filter(Boolean).join(", ")}${h.primary_sectors?" · Topics: "+h.primary_sectors:""}</div>`)}
-        <div class="hint">Suggestion only. No database link has been created.</div>
-      </details>`}`:html`<div class="hint">Matching against existing hub locations. No web research.</div>`}
+function PeopleSearch({actor,jobId,disabled}){
+  const [open,setOpen]=useState(false),[criteria,setCriteria]=useState("");
+  const [tasks,setTasks]=useState([]),[error,setError]=useState(""),[sending,setSending]=useState(false);
+  const key=useRef(null),inflight=useRef(false);
+  const running=tasks.some(t=>["running","planning","verifying"].includes(t.status));
+  useEffect(()=>{
+    if(!open||!jobId)return;
+    let alive=true,timer;
+    async function refresh(){
+      try{
+        const r=await fetch(`/api/map/${jobId}/people?actor_name=${encodeURIComponent(actor.name)}&website=${encodeURIComponent(actor.website||"")}`);
+        const d=await r.json();if(!r.ok)throw Error(d.detail||"Could not load people searches.");
+        if(alive){setTasks(d.tasks);timer=setTimeout(refresh,3000);}
+      }catch(e){if(alive)setError(e.message);}
+    }
+    refresh();return()=>{alive=false;clearTimeout(timer);};
+  },[open,jobId,actor.name,actor.website]);
+  async function start(){
+    if(inflight.current||disabled||running||!criteria.trim())return;
+    inflight.current=true;setSending(true);setError("");
+    key.current=key.current||crypto.randomUUID();
+    try{
+      const r=await fetch(`/api/map/${jobId}/people`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({actor_name:actor.name,website:actor.website||"",criteria,approve:true,request_key:key.current})});
+      const d=await r.json();if(!r.ok)throw Error(d.detail||"Could not start people search.");
+      setTasks(old=>[...old.filter(t=>t.id!==d.id),d]);key.current=null;
+    }catch(e){setError(e.message);}finally{inflight.current=false;setSending(false);}
+  }
+  async function stop(id){
+    try{const r=await fetch(`/api/map/${id}/stop`,{method:"POST"});if(!r.ok)throw Error("Could not stop the search.");const d=await r.json();setTasks(old=>old.map(t=>t.id===id?d:t));}catch(e){setError(e.message);}
+  }
+  return html`<div class="mpeople">
+    <button class="example" type="button" onClick=${()=>setOpen(!open)} aria-expanded=${open}>${open?"Hide people research":"Find relevant people"}</button>
+    ${open&&html`<div>
+      <label style=${{display:"block",marginTop:"12px"}}>What kind of people are you looking for?
+        <textarea value=${criteria} maxLength="2000" rows="3" disabled=${sending||running} onChange=${e=>{setCriteria(e.target.value);key.current=null;}}
+          style=${{display:"block",width:"100%",padding:"12px",marginTop:"8px"}}
+          placeholder="Researchers working on water treatment who have published recently and led projects in Africa."/></label>
+      <p class="hint">${actor.name} and the original map topic are included automatically. This is a separate paid search with a $3 estimated allowance, additional to the map budget. Estimates are not a billing guarantee.</p>
+      <button class="example" type="button" disabled=${disabled||sending||running||!criteria.trim()||!jobId} onClick=${start}>${sending?"Starting…":"Search"}</button>
+      ${error&&html`<p role="alert">${error}</p>`}
+      ${tasks.map(t=>html`<div key=${t.id} style=${{marginTop:"16px"}}>
+        <strong>${t.plan?.criteria||t.result?.criteria||"People search"}</strong>
+        <div class="hint">${t.status} · Estimated $${t.cost.estimated_usd.toFixed(3)} / $${t.cost.budget_usd.toFixed(2)}${!t.cost.usage_complete?" · Some charges are unknown":""}</div>
+        ${["running","planning","verifying"].includes(t.status)&&html`<button class="example" onClick=${()=>stop(t.id)}>Stop people search</button>`}
+        ${t.error&&html`<div role="alert">${t.error}</div>`}
+        ${(t.result?.people||[]).map((p,i)=>html`<div class="mperson" key=${i}><div class="mperson-main"><div class="mperson-name">${p.full_name}</div><div>${p.title} · ${p.organization_name}</div><div class="mperson-meta">${p.bio}</div>${(p.sources||[]).map((s,j)=>html`<div key=${j}><a href=${s.url} target="_blank" rel="noopener noreferrer">Source ${j+1}</a> ${s.supports}</div>`)}</div></div>`)}
+        ${(t.result?.coverage_gaps||[]).map((g,i)=>html`<div class="hint" key=${i}>${g}</div>`)}
+      </div>`)}
+    </div>`}
   </div>`;
+}
+function ActorLightProfile({actor}){
+  if(actor.profile_version!==2)return null;
+  const fields=[["other_names","Other names"],["category_note","Category review"],
+    ["sector","Sector"],["mapped_topic","Mapped topic"],["match_strength","Topic match"],
+    ["match_explanation","Why it matched"],["international_connections","International / Africa / Morocco connections"]];
+  const ranked=rankingRows(actor);
+  return html`<details class="mpeople university-rankings"><summary>Actor profile</summary>
+    ${fields.map(([key,label])=>html`<div class="mperson-meta" key=${key}><b>${label}:</b> ${actor[key]||"Not found"}</div>`)}
+    ${isRankedInstitution(actor)&&html`
+      <div class="mperson-meta"><b>University rankings:</b> ${ranked.length?"":"Not found in collected sources"}</div>
+      ${ranked.map((r,i)=>html`<div class="mperson-meta" key=${i}>${r.system} · ${r.rank} · ${r.year} edition · ${r.scope==="subject"?r.subject+" (subject)":"Overall"} · <a href=${r.source_url} target="_blank" rel="noopener noreferrer">Source</a></div>`)}
+      ${ranked.length>0&&html`<div class="hint">Reported from collected evidence, not independently verified. Editions and scopes may differ; no combined score.</div>`}`}
+    <div class="mperson-meta"><b>Multiple locations:</b> ${actor.multi_location===true?"Yes":actor.multi_location===false?"No":"Not found"}</div>
+    <div class="mperson-meta"><b>Organization relationships:</b> ${(actor.actor_relationships||[]).length?"":"Not found — no parent is assumed"}</div>
+    ${(actor.actor_relationships||[]).map((r,i)=>html`<div class="mperson-meta" key=${i}>${r.relationship}: ${r.organization_name} · <a href=${r.source_url} target="_blank" rel="noopener noreferrer">Source</a></div>`)}
+    <div class="mperson-meta"><b>Category-specific information:</b> ${(actor.category_details||[]).length?"":"Not found"}</div>
+    ${(actor.category_details||[]).map((d,i)=>html`<div class="mperson-meta" key=${i}><b>${d.label}:</b> ${d.value}</div>`)}
+  </details>`;
+}
+// Mirrors rankings.is_ranked_institution: a lab, department or named unit inside
+// a university is not the ranked institution. A short alias like "(MIT)" is not a unit.
+function institutionName(name){
+  return String(name||"").replace(/\s*\(([^)]*)\)/g,(whole,inner)=>{
+    const t=inner.trim();
+    return t.length<=15&&t.split(/\s+/).length<=2?"":whole;}).trim();
+}
+function isRankedInstitution(actor){
+  const kind=String(actor.actor_type||"").toLowerCase().replace(/[^a-z]+/g," ").trim();
+  return ["university","academic institution","university academic institution","university academic"].includes(kind)
+     && !/\b(lab|laboratory|laboratories|department|center|centre|school of)\b/i.test(actor.name||"")
+     && !institutionName(actor.name).includes("(");
+}
+function rankingRows(actor){
+  const seen=new Set();
+  return (Array.isArray(actor.rankings)?actor.rankings:[]).filter(r=>{
+    const key=JSON.stringify(r);
+    if(!r.rank||!r.year||!["overall","subject"].includes(r.scope)
+       ||!/^https?:\/\//i.test(r.source_url||"")||seen.has(key))return false;
+    seen.add(key);return true;});
 }
 function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
   const [busy,setBusy]=useState(false);
@@ -974,10 +1059,11 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
     </div>
     ${e.description&&html`<div class="mdesc">${e.description}</div>`}
     ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
-    ${e._entity_type==="actor"&&html`<${HubSuggestion} actor=${e}/>`}
+    ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
     <div class="mrow">
-      ${(MFIELDS[e._entity_type]||[]).filter(([k])=>e[k]).map(([k,label])=>
-        html`<span key=${k}>${label}: <b>${e[k]}</b></span>`)}
+      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):e[k]])
+        .filter(([,,v])=>v).map(([k,label,v])=>
+        html`<span key=${k}>${label}: <b>${v}</b></span>`)}
     </div>
     ${(e.website||e.linkedin_url)&&html`<div class="msrc">
       ${e.website&&html`<a class=${deadWeb?"bad":""} href=${e.website} target="_blank"
@@ -1013,6 +1099,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
           </div>`}
         </div>`)}
       </details>`}
+    ${e._entity_type==="actor"&&html`<${PeopleSearch} key=${jobId+":"+e.name+":"+(e.website||"")} actor=${e} jobId=${jobId} disabled=${disabled}/>`}
     ${e._why&&html`<div class="why">${e._why}</div>`}
     ${j&&j.reason&&html`<div class="mnote">${j.reason}</div>`}
   </div>`;
