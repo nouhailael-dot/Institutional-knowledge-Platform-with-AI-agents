@@ -107,6 +107,10 @@ def _selected(result: dict) -> dict[str, list]:
         # If nothing was ranked (a plain topic map with no requirements), the
         # whole list IS the result — export all of it rather than an empty file.
         out[key] = picked or (selected if has_selection else items)
+    # A selection that rejected every candidate still has to export something.
+    # The user paid to discover them, and an empty workbook is not a valid file.
+    if not any(out.values()):
+        return {key: (result.get("entities") or {}).get(key) or [] for key, _ in GROUPS}
     return out
 
 
@@ -145,6 +149,9 @@ def to_xlsx(result: dict, request: str = "") -> bytes:
                 ws.cell(row=r, column=c).alignment = Alignment(
                     vertical="top", wrap_text=True)
         ws.freeze_panes = "A2"
+
+    if not wb.sheetnames:                      # openpyxl cannot save a sheetless workbook
+        wb.create_sheet(title="Map")["A1"] = "This map has no entities to export."
 
     buf = io.BytesIO()
     wb.save(buf)

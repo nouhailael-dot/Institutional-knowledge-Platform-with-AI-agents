@@ -22,6 +22,17 @@ class RankingTests(unittest.TestCase):
         self.assertIn("201–250 (2026)", _field_value(actor, "rankings"))
         self.assertIn(URL, _field_value(actor, "rankings"))
 
+    def test_export_survives_a_selection_that_rejected_everything(self):
+        import io
+        from openpyxl import load_workbook
+        from src.map_agent.export import to_xlsx
+        rejected = {"entities": {"actor": [{"name": "Example University", "_selected": False}]}}
+        cells = [str(c.value) for sheet in load_workbook(io.BytesIO(to_xlsx(rejected)))
+                 for row in sheet for c in row]
+        self.assertTrue(any("Example University" in c for c in cells))
+        empty = load_workbook(io.BytesIO(to_xlsx({"entities": {}})))
+        self.assertEqual(len(empty.sheetnames), 1)
+
     def test_alias_is_dropped_but_a_named_unit_is_not_the_institution(self):
         from src.map_agent.rankings import institution_name, is_ranked_institution, same_institution
         self.assertEqual(institution_name("Massachusetts Institute of Technology (MIT)"),

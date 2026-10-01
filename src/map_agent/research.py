@@ -90,8 +90,10 @@ def extract(run, request, task, evidence, client=None, target=None):
     payload = {"request": request, "task": task, "target_organization": target, "sources": evidence}
     response = paid_message(client or get_client(), run, "People extraction" if target else "Organization extraction" if et == "actor" else "Event extraction",
         operation_key=operation_key("extract-people-v2" if target else "extract-actor-fields-v3" if et == "actor" else "extract-v1", payload),
-        model=EXTRACTION_MODEL, max_tokens=8192 if target else 4096,
-        system=SYSTEM + ("\n" + LIGHT_GUIDANCE if et == "actor" else "") + ("\nKeep person records concise: at most two sentences per bio, "
+        model=EXTRACTION_MODEL, max_tokens=8192 if target else 16000,
+        system=SYSTEM + ("\n" + LIGHT_GUIDANCE + "\nKeep organization records concise and prioritize completing the "
+                        "structured response over returning more organizations: a truncated response loses the "
+                        "whole batch." if et == "actor" else "") + ("\nKeep person records concise: at most two sentences per bio, "
                         "one short explanation per criterion, and only the source quotes needed to support it. "
                         "Prioritize completing the structured response over returning more people." if target else ""),
         tools=[submit_entities_tool(et)], tool_choice={"type": "tool", "name": "submit_entities"},
