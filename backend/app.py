@@ -11,12 +11,15 @@ retrieve / generate / router / browse.
 """
 
 import json
+import logging
+import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
+from threading import Lock
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -27,7 +30,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import (FileResponse, JSONResponse, Response,
                                StreamingResponse)
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src import browse
 from src.db import get_readonly_connection
@@ -41,11 +44,56 @@ from src.map_agent.verify import summarize, verify
 from src.map_agent.run_store import RunStore, RunContext, MapStopped
 from src.map_agent.search_backend import availability as research_availability
 from src.retrieve import retrieve
+from src.review import (AdmissionBridge, AdmissionBridgeError, DuplicateRisk, PostgresReviewSource,
+                        PostgresReviewSourceError, ReadOnlyRunStore,
+                        ReviewConflict, ReviewNotConfigured, ReviewStore,
+                        ReviewValidationError)
 from src.router import format_sql_answer, plan, run_sql
+
+logger = logging.getLogger(__name__)
 
 @lru_cache(maxsize=1)
 def map_store():
     return RunStore()
+
+
+def _local_review_demo_enabled() -> bool:
+    """Allow approvals only in the explicitly isolated local demo database."""
+    if os.environ.get("REVIEW_DEMO_MODE", "").strip() != "1":
+        return False
+    if os.environ.get("DATABASE_URL", "").strip():
+        raise RuntimeError("Review demo mode refuses to run while DATABASE_URL is configured.")
+    configured = os.environ.get("REVIEW_STORE_DB", "").strip()
+    if not configured:
+        raise RuntimeError("Review demo mode requires REVIEW_STORE_DB inside the project .demo folder.")
+    store_path = Path(configured).expanduser().resolve()
+    demo_root = (ROOT / ".demo").resolve()
+    if demo_root not in store_path.parents:
+        raise RuntimeError("Review demo mode is restricted to the project .demo folder.")
+    return True
+
+
+@lru_cache(maxsize=1)
+def review_store():
+    return ReviewStore(enable_test_canonical=_local_review_demo_enabled())
+
+
+def review_source_store():
+    """Optional second result source; it is never recovered or opened writable."""
+    configured = os.environ.get("REVIEW_SOURCE_RUN_DB", "").strip()
+    return ReadOnlyRunStore(configured) if configured else None
+
+
+def review_postgres_source():
+    """Optional original-platform discovery source, always opened read-only."""
+    if os.environ.get("REVIEW_DEMO_MODE", "").strip() == "1":
+        return None
+    return PostgresReviewSource.from_environment()
+
+
+@lru_cache(maxsize=1)
+def review_admission_bridge():
+    return AdmissionBridge()
 
 
 @asynccontextmanager
@@ -524,6 +572,220 @@ def map_export(payload: ExportRequest):
     data = render(payload.result, payload.request)
     return Response(content=data, media_type=media, headers={
         "Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# ---------------------------------------------------------------- Human review
+_review_sync_lock = Lock()
+_review_sync_last = 0.0
+_review_sync_warnings = []
+_review_sync_store_key = None
+REVIEW_SYNC_INTERVAL_SECONDS = 120
+
+
+def _sync_review_candidates(*, force: bool = False):
+    global _review_sync_last, _review_sync_warnings, _review_sync_store_key
+    target = review_store()
+    store_key = str(target.path.resolve())
+    now = time.monotonic()
+    if (not force and _review_sync_store_key == store_key
+            and now - _review_sync_last < REVIEW_SYNC_INTERVAL_SECONDS):
+        return list(_review_sync_warnings)
+    with _review_sync_lock:
+        now = time.monotonic()
+        if (not force and _review_sync_store_key == store_key
+                and now - _review_sync_last < REVIEW_SYNC_INTERVAL_SECONDS):
+            return list(_review_sync_warnings)
+        warnings = []
+        try:
+            local = map_store()
+            target.sync_run_store(local)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Review storage is unavailable. Check the local review-store configuration.",
+            ) from exc
+
+        try:
+            external = review_source_store()
+            if (external is not None and external.exists()
+                    and external.path.resolve() != local.path.resolve()):
+                target.sync_run_store(external)
+        except Exception:
+            logger.exception("Optional SQLite review source synchronization failed")
+            warnings.append("The optional SQLite review source could not be synchronized.")
+
+        try:
+            postgres = review_postgres_source()
+            if postgres is not None:
+                candidates, source_warnings = postgres.fetch_candidates()
+                target.sync_external_candidates(candidates)
+                warnings.extend(source_warnings)
+                target.set_sync_state("postgresql", success=not source_warnings,
+                                      error="; ".join(source_warnings) or None)
+        except PostgresReviewSourceError as exc:
+            logger.warning("PostgreSQL review source unavailable: %s", exc)
+            warnings.append(str(exc))
+            target.set_sync_state("postgresql", success=False, error=str(exc))
+        except Exception:
+            logger.exception("PostgreSQL review source synchronization failed")
+            warning = "The PostgreSQL review source could not be synchronized."
+            warnings.append(warning)
+            target.set_sync_state("postgresql", success=False, error=warning)
+        _review_sync_last = time.monotonic()
+        _review_sync_store_key = store_key
+        _review_sync_warnings = list(warnings)
+        return warnings
+
+
+def _raise_review_error(exc: Exception):
+    if isinstance(exc, KeyError):
+        raise HTTPException(status_code=404, detail="Unknown review candidate.") from exc
+    if isinstance(exc, DuplicateRisk):
+        duplicates = [
+            {"entity_id": row.get("entity_id"), "name": row.get("name"),
+             "website": row.get("website")}
+            for row in exc.matches
+        ]
+        raise HTTPException(status_code=409, detail={
+            "message": str(exc), "duplicates": duplicates,
+        }) from exc
+    if isinstance(exc, ReviewConflict):
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if isinstance(exc, ReviewValidationError):
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if isinstance(exc, ReviewNotConfigured):
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if isinstance(exc, AdmissionBridgeError):
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    raise HTTPException(
+        status_code=500,
+        detail="The review operation failed without changing the candidate.",
+    ) from exc
+
+
+class ReviewUpdateRequest(BaseModel):
+    fields: dict
+
+
+class ReviewDecisionRequest(BaseModel):
+    reviewer: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
+    notes: str | None = Field(default=None, max_length=5000)
+    edited_payload: dict | None = None
+
+
+class ReviewRejectionRequest(ReviewDecisionRequest):
+    rejection_reason: str = Field(min_length=1, max_length=5000)
+
+
+class ReviewAdmissionRequest(ReviewDecisionRequest):
+    decision_kind: str
+    target_id: str | None = None
+    hub_ids: list[str] = Field(default_factory=list)
+    proposed_hub: dict | None = None
+    rejection_reason: str | None = None
+    rejection_reason_other: str | None = Field(default=None, max_length=5000)
+
+
+@app.get("/api/review/candidates")
+def review_candidates(status: str = Query("pending_review"),
+                      entity_type: str | None = Query(None),
+                      source_run_id: str | None = Query(None),
+                      search: str | None = Query(None, max_length=200),
+                      refresh: bool = Query(False)):
+    sync_warnings = _sync_review_candidates(force=refresh)
+    try:
+        result = review_store().list(
+            status=status, entity_type=entity_type,
+            source_run_id=source_run_id, search=search,
+        )
+        result["sync_warnings"] = sync_warnings
+        result["admission_configured"] = review_admission_bridge().configured
+        return result
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.get("/api/review/candidates/{candidate_id}")
+def review_candidate(candidate_id: str):
+    try:
+        return review_store().get(candidate_id)
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.patch("/api/review/candidates/{candidate_id}")
+def review_candidate_update(candidate_id: str, payload: ReviewUpdateRequest):
+    try:
+        return review_store().update(candidate_id, payload.fields)
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.post("/api/review/candidates/{candidate_id}/approve")
+def review_candidate_approve(candidate_id: str, payload: ReviewDecisionRequest):
+    try:
+        return review_store().approve(
+            candidate_id, reviewer=payload.reviewer,
+            idempotency_key=payload.idempotency_key, confirmed=payload.confirmed,
+            notes=payload.notes, edited_payload=payload.edited_payload,
+        )
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.post("/api/review/candidates/{candidate_id}/reject")
+def review_candidate_reject(candidate_id: str, payload: ReviewRejectionRequest):
+    try:
+        return review_store().reject(
+            candidate_id, reviewer=payload.reviewer,
+            rejection_reason=payload.rejection_reason,
+            idempotency_key=payload.idempotency_key, confirmed=payload.confirmed,
+            notes=payload.notes,
+        )
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.post("/api/review/candidates/{candidate_id}/decision")
+def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest):
+    store = review_store()
+    try:
+        decision = store.admission_request(
+            candidate_id,
+            decision_kind=payload.decision_kind,
+            reviewer=payload.reviewer,
+            idempotency_key=payload.idempotency_key,
+            target_id=payload.target_id,
+            notes=payload.notes,
+            edited_payload=payload.edited_payload,
+            hub_ids=payload.hub_ids,
+            proposed_hub=payload.proposed_hub,
+            rejection_reason=payload.rejection_reason,
+            rejection_reason_other=payload.rejection_reason_other,
+            confirmed=payload.confirmed,
+        )
+        outcome = review_admission_bridge().apply(decision)
+        return store.record_admission_success(
+            candidate_id,
+            idempotency_key=payload.idempotency_key,
+            decision_kind=payload.decision_kind,
+            reviewer=payload.reviewer,
+            notes=payload.notes,
+            rejection_reason=payload.rejection_reason,
+            outcome=outcome,
+        )
+    except AdmissionBridgeError as exc:
+        store.record_admission_failure(
+            candidate_id,
+            idempotency_key=payload.idempotency_key,
+            decision_kind=payload.decision_kind,
+            error=str(exc),
+        )
+        _raise_review_error(exc)
+    except Exception as exc:
+        _raise_review_error(exc)
 
 
 @app.get("/api/health")

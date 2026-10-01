@@ -19,3 +19,9 @@ env/
 
 # Local map jobs, sources, and usage records
 .map_runs/
+
+# Local human-review queue and audit records
+.review/
+
+# Isolated Review-page demonstration databases
+.demo/

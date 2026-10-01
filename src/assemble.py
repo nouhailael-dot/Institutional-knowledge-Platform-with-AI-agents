@@ -37,9 +37,7 @@ def assemble_actors() -> list[dict]:
         SELECT
             a.actor_id,
             a.name,
-            COALESCE(to_jsonb(a)->>'actor_category',
-                     to_jsonb(a)->>'actor_type') AS actor_category,
-            to_jsonb(a)->>'category_type' AS category_type,
+            a.actor_type,
             a.description,
             a.primary_technical_focus,
             a.technical_approach,
@@ -77,8 +75,7 @@ def assemble_actors() -> list[dict]:
 
             doc_text = (
                 _section("Name", r["name"])
-                + _section("Actor category", r["actor_category"])
-                + _section("Category type", r["category_type"])
+                + _section("Type", r["actor_type"])
                 + _section("Location", location)
                 + _section("Description", r["description"])
                 + _section("Primary technical focus", r["primary_technical_focus"])

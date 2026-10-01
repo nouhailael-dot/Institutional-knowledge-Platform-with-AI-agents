@@ -15,6 +15,35 @@ load_dotenv()  # reads .env in the project root into os.environ
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
+def psycopg_database_url(value: str | None) -> str:
+    """Convert common SQLAlchemy PostgreSQL URLs to Psycopg conninfo.
+
+    SQLAlchemy records its driver after a ``+`` in the scheme. Psycopg/libpq
+    does not understand that suffix, even when it names Psycopg itself. Keep
+    credentials and every other URL component byte-for-byte unchanged.
+    """
+    url = str(value or "").strip()
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL is not set. Copy .env.example to .env and fill it in."
+        )
+    for scheme in (
+        "postgresql+psycopg2://",
+        "postgresql+psycopg://",
+        "postgres+psycopg2://",
+        "postgres+psycopg://",
+    ):
+        if url.lower().startswith(scheme):
+            return "postgresql://" + url[len(scheme):]
+    if url.lower().startswith("postgres://"):
+        return "postgresql://" + url[len("postgres://"):]
+    if url.lower().startswith("postgresql://"):
+        return url
+    if "://" not in url:
+        return url  # libpq keyword conninfo, e.g. "host=... dbname=..."
+    raise RuntimeError("DATABASE_URL must use a PostgreSQL connection scheme.")
+
+
 def get_connection() -> psycopg.Connection:
     """Open a new Postgres connection. Caller is responsible for closing it,
     so prefer the context-manager form:
@@ -23,11 +52,7 @@ def get_connection() -> psycopg.Connection:
             cur.execute("SELECT count(*) FROM actor")
             print(cur.fetchone())
     """
-    if not DATABASE_URL:
-        raise RuntimeError(
-            "DATABASE_URL is not set. Copy .env.example to .env and fill it in."
-        )
-    return psycopg.connect(DATABASE_URL)
+    return psycopg.connect(psycopg_database_url(DATABASE_URL))
 
 
 def get_readonly_connection() -> psycopg.Connection:
@@ -38,9 +63,9 @@ def get_readonly_connection() -> psycopg.Connection:
       - `read_only = True` — the session physically rejects any write/DDL.
       - `statement_timeout=8000` — a runaway query is killed after 8 seconds.
     """
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set.")
-    conn = psycopg.connect(DATABASE_URL, options="-c statement_timeout=8000")
+    conn = psycopg.connect(
+        psycopg_database_url(DATABASE_URL), options="-c statement_timeout=8000"
+    )
     conn.read_only = True   # must be set before the first transaction
     return conn
 
