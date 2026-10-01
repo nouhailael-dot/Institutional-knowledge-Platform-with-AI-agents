@@ -98,7 +98,7 @@ class EntityResolver:
     # ---------- candidate pool ----------
 
     def refresh(self):
-        """Reload the canonical actor pool (excludes merged-away rows)."""
+        """Reload canonical actors, excluding merged and aggregate rows."""
         rows = self.session.execute(text("""
             SELECT a.actor_id::text AS actor_id, a.name,
                    COALESCE(a.description,'') AS description,
@@ -107,6 +107,11 @@ class EntityResolver:
               LEFT JOIN hub_actor ha ON ha.actor_id = a.actor_id
               LEFT JOIN hub h ON h.hub_id = ha.hub_id
              WHERE a.merged_into_actor_id IS NULL
+               AND lower(COALESCE(
+                    to_jsonb(a)->>'actor_category',
+                    to_jsonb(a)->>'actor_type',
+                    ''
+               )) <> 'aggregate'
              GROUP BY a.actor_id, a.name, a.description
         """)).mappings().all()
         self._actors = pd.DataFrame(rows) if rows else pd.DataFrame(

@@ -3,7 +3,7 @@
 These files are proposals for the schema owner. They must never be executed on
 shared Supabase by an agent.
 
-The 18 logical migrations are ordered in `manifest.json` and use two ownership
+The 19 logical migrations are ordered in `manifest.json` and use two ownership
 tracks:
 
 - `versions/v2a*.py` contains canonical-table Alembic proposals. This directory
@@ -11,7 +11,7 @@ tracks:
   `migrations/env.py` does not import V2 metadata. After approval, the schema
   owner sets the live `down_revision`, moves each revision into
   `migrations/versions/`, and validates the associated backfill.
-- `agents/sql/190_v2_*.sql` through `360_v2_*.sql` contain platform-owned
+- `agents/sql/190_v2_*.sql` through `370_v2_*.sql` contain platform-owned
   tables, guards, and compatibility views. Matching rollback scripts live under
   `agents/sql/rollback/`.
 
@@ -36,6 +36,17 @@ python -m scripts.load_us_city_gazetteer --live
 
 The loader refuses non-local or non-test databases. It is never an authorized
 production apply path.
+
+Phase 5 adds `370_v2_actor_classification.sql`, which adds definitions and an
+explicit `is_other` flag to the V2-owned category-type reference table. It does
+not alter a legacy canonical table and is not part of the validated 180–350
+apply package. Breaking actor-table checks remain in
+`deferred/380_v2_actor_classification_cutover.sql`. While the current
+production-compatible review CHECK rejects `category_doubt`, code writes the
+documented `classification` + `issue: category_doubt` bridge. The exact
+owner-run conversion is proposed in
+`deferred/370_v2_category_doubt_review_kind.sql`; neither deferred file is an
+agent execution path.
 
 Only the isolated test helper may exercise the detached set:
 

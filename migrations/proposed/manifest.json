@@ -17,6 +17,7 @@
     {"id": "015", "name": "guards and write audit", "actions": [{"type": "sql", "up": "agents/sql/330_v2_guards_and_audit.sql", "down": "agents/sql/rollback/330_v2_guards_and_audit.sql"}]},
     {"id": "016", "name": "compatibility views", "actions": [{"type": "sql", "up": "agents/sql/340_v2_compatibility_views.sql", "down": "agents/sql/rollback/340_v2_compatibility_views.sql"}]},
     {"id": "017", "name": "record creation", "actions": [{"type": "sql", "up": "agents/sql/350_v2_record_creation.sql", "down": "agents/sql/rollback/350_v2_record_creation.sql"}]},
-    {"id": "018", "name": "city gazetteer", "actions": [{"type": "sql", "up": "agents/sql/360_v2_city_gazetteer.sql", "down": "agents/sql/rollback/360_v2_city_gazetteer.sql"}]}
+    {"id": "018", "name": "city gazetteer", "actions": [{"type": "sql", "up": "agents/sql/360_v2_city_gazetteer.sql", "down": "agents/sql/rollback/360_v2_city_gazetteer.sql"}]},
+    {"id": "019", "name": "actor category classification metadata", "actions": [{"type": "sql", "up": "agents/sql/370_v2_actor_classification.sql", "down": "agents/sql/rollback/370_v2_actor_classification.sql"}]}
   ]
 }

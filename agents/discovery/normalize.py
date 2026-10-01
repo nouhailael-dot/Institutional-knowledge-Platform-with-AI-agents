@@ -201,8 +201,12 @@ def _is_organisation_unit(value: str) -> bool:
 
 
 def normalize_whitespace(value: object) -> object:
-    if value is None or isinstance(value, list):
+    if value is None or isinstance(value, (bool, int, float)):
         return value
+    if isinstance(value, list):
+        return [normalize_whitespace(item) for item in value]
+    if isinstance(value, dict):
+        return {key: normalize_whitespace(item) for key, item in value.items()}
     text = unicodedata.normalize("NFKC", str(value))
     text = re.sub(r"\s+", " ", text).strip()
     if text.lower() in MISSING_TOKENS:

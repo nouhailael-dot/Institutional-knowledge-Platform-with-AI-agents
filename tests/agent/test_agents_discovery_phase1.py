@@ -1064,6 +1064,7 @@ def test_actor_extractor_uses_tool_schema_and_preserves_nulls():
     assert "few words" in client.last_kwargs["system"]
     assert records[0]["name"] == "Example Climate Lab"
     assert records[0]["actor_type"] is None
+    assert "actor_category" not in records[0]
     assert records[0]["source_url"] == "fixture://actors"
     assert records[0]["prompt_version"] == "actor_v2"
 
@@ -1173,6 +1174,51 @@ def test_promote_actor_create_truncates_long_slug_to_column_limit():
         if "INSERT INTO actor" in sql
     )
     assert len(actor_params["slug"]) <= 160
+
+
+def test_promote_actor_persists_validated_category_and_doubt_bridge():
+    staged = _staged_event(
+        {
+            "name": "Example Commercial Organization",
+            "description": "The official page describes a commercial organization.",
+            "actor_category": "company",
+            "category_type": "other",
+            "category_note": "No listed company type fits the self-description.",
+            "category_needs_review": True,
+            "classification_evidence": {
+                "main_job": "The official page describes a commercial organization.",
+                "utility_ownership": "not_applicable",
+            },
+            "sector_codes": ["ENERGY"],
+        }
+    )
+    staged.entity_type = "actor"
+    session = FakeSession()
+
+    promote(staged, RouteDecision(zone="create", score=0.0), session=session, live=True)
+
+    actor_params = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO actor" in sql
+    )
+    assert actor_params["actor_category"] == "company"
+    assert actor_params["category_type"] == "other"
+    assert actor_params["category_note"] == "No listed company type fits the self-description."
+    assert actor_params["category_needs_review"] is True
+    classification_fact = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO actor_fact" in sql and params.get("fact_type") == "classification"
+    )
+    assert classification_fact["fact_key"] == "actor_category_type"
+    bridge = next(
+        params
+        for sql, params in zip(session.statements, session.params)
+        if "INSERT INTO review_item" in sql and params.get("review_kind") == "classification"
+    )
+    assert '"issue": "category_doubt"' in bridge["payload"]
+    assert '"compatibility_bridge": true' in bridge["payload"]
     assert actor_params["slug"].endswith(actor_params["actor_id"][:8])
 
 

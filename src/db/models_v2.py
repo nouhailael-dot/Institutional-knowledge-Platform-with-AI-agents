@@ -203,6 +203,8 @@ class ActorCategoryTypeDefinition(V2Base):
     )
     type_code: Mapped[str] = mapped_column(Text, primary_key=True)
     display_name: Mapped[str] = mapped_column(Text, nullable=False)
+    definition: Mapped[str] = mapped_column(Text, nullable=False)
+    is_other: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     sort_order: Mapped[int] = mapped_column(nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

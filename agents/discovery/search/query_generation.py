@@ -498,20 +498,36 @@ def load_actor_types(session) -> list[str]:
     rows = (
         session.execute(
             text(
-                "SELECT DISTINCT actor_type FROM actor "
-                "WHERE actor_type IS NOT NULL "
-                "AND btrim(actor_type) <> '' "
-                "AND lower(actor_type) NOT IN ('aggregate', 'other') "
-                "ORDER BY actor_type"
+                "SELECT category_code AS actor_category "
+                "FROM actor_category_definition WHERE active ORDER BY sort_order"
             )
         )
         .mappings()
         .all()
     )
+    if not rows:
+        # Transitional fallback for databases that do not yet have V2 reference
+        # data. This is removed with the physical actor_type cutover.
+        rows = (
+            session.execute(
+                text(
+                    "SELECT DISTINCT actor_type FROM actor "
+                    "WHERE actor_type IS NOT NULL "
+                    "AND btrim(actor_type) <> '' "
+                    "AND lower(actor_type) NOT IN ('aggregate', 'other') "
+                    "ORDER BY actor_type"
+                )
+            )
+            .mappings()
+            .all()
+        )
     return [
-        actor_type
-        for actor_type in _distinct_queries(str(row.get("actor_type") or "").strip() for row in rows)
-        if actor_type.lower() not in {"aggregate", "other"}
+        actor_category
+        for actor_category in _distinct_queries(
+            str(row.get("actor_category") or row.get("actor_type") or "").strip()
+            for row in rows
+        )
+        if actor_category.lower() not in {"aggregate", "other"}
     ]
 
 

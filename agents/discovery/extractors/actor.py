@@ -6,6 +6,11 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 
+from agents.common.actor_classification import (
+    NonActorRecord,
+    classify_actor_category_type,
+    load_category_catalog,
+)
 from agents.discovery.sources.base import FetchedDoc
 from src.db.models import Actor
 
@@ -30,7 +35,15 @@ ACTOR_RECORD_FIELDS = tuple(
     for column in Actor.__table__.columns
     if column.name not in ACTOR_MANAGED_MODEL_FIELDS
 )
-ACTOR_FIELDS = [*ACTOR_RECORD_FIELDS, "sector_codes"]
+ACTOR_CLASSIFICATION_FIELDS = (
+    "actor_category",
+    "category_type",
+    "category_note",
+    "category_needs_review",
+    "classification_evidence",
+)
+RAW_ACTOR_FIELDS = [*ACTOR_RECORD_FIELDS, "sector_codes"]
+ACTOR_FIELDS = [*RAW_ACTOR_FIELDS, *ACTOR_CLASSIFICATION_FIELDS]
 ACTOR_STRING_MAX_LENGTHS = {
     column.name: int(column.type.length)
     for column in Actor.__table__.columns
@@ -96,7 +109,7 @@ ACTOR_TOOL_SCHEMA: dict[str, Any] = {
                         "items": {"type": "string"},
                     },
                 },
-                "required": ACTOR_FIELDS,
+                "required": RAW_ACTOR_FIELDS,
             },
         }
     },
@@ -105,7 +118,12 @@ ACTOR_TOOL_SCHEMA: dict[str, Any] = {
 
 
 def actor_record_schema(actor_types: list[str] | tuple[str, ...]) -> dict[str, Any]:
-    """Return the existing actor extractor schema narrowed to canonical record fields."""
+    """Return factual actor fields; Phase 5 classification is a later ordered call.
+
+    ``actor_types`` remains in the signature for the legacy search caller until
+    the physical schema cutover, but it is intentionally not exposed to the
+    extraction model.
+    """
     item = deepcopy(ACTOR_TOOL_SCHEMA["properties"]["actors"]["items"])
     item["properties"] = {
         field: schema
@@ -113,10 +131,8 @@ def actor_record_schema(actor_types: list[str] | tuple[str, ...]) -> dict[str, A
         if field in ACTOR_RECORD_FIELDS
     }
     item["required"] = list(ACTOR_RECORD_FIELDS)
-    allowed_types = sorted({str(value).strip() for value in actor_types if str(value).strip()})
-    if not allowed_types:
-        raise RuntimeError("actor rubric extraction requires the database actor_type enum")
-    item["properties"]["actor_type"]["enum"] = [*allowed_types, None]
+    if not any(str(value).strip() for value in actor_types):
+        raise RuntimeError("actor rubric extraction requires a compatibility category enum")
     return item
 
 
@@ -125,9 +141,17 @@ class ActorExtractor:
     prompt_version = PROMPT_VERSION
     json_schema = ACTOR_TOOL_SCHEMA
 
-    def __init__(self, llm_client, *, max_tokens: int = 2048):
+    def __init__(
+        self,
+        llm_client,
+        *,
+        max_tokens: int = 2048,
+        classification_enabled: bool = False,
+    ):
         self.llm_client = llm_client
         self.max_tokens = max_tokens
+        self.classification_enabled = classification_enabled
+        self.category_catalog = load_category_catalog()
         self.attention_reasons: list[str] = []
 
     def extract(self, doc: FetchedDoc) -> list[dict]:
@@ -145,7 +169,22 @@ class ActorExtractor:
         extracted_at = datetime.now(UTC).replace(microsecond=0).isoformat()
         records: list[dict] = []
         for actor in actors:
-            record = {field: actor.get(field) for field in ACTOR_FIELDS}
+            record = {field: actor.get(field) for field in RAW_ACTOR_FIELDS}
+            if self.classification_enabled:
+                try:
+                    classification = classify_actor_category_type(
+                        self.llm_client,
+                        name=str(record.get("name") or ""),
+                        self_description=str(record.get("description") or ""),
+                        catalog=self.category_catalog,
+                        max_tokens=min(self.max_tokens, 700),
+                    )
+                except NonActorRecord as exc:
+                    self.attention_reasons.append(
+                        f"{exc.record_kind} routed out of actor extraction: {exc.evidence}"
+                    )
+                    continue
+                record.update(classification.as_payload())
             record["source_url"] = doc.url
             record["extracted_at"] = extracted_at
             record["prompt_version"] = self.prompt_version
@@ -155,7 +194,7 @@ class ActorExtractor:
     def _system_prompt(self) -> str:
         return (
             "You extract public organization records for the GHUS ecosystem database. "
-            "Use only facts explicitly present in the source. Do not infer actor type, "
+            "Use only facts explicitly present in the source. Do not infer category or type, "
             "technical focus, geography, lifecycle role, TRL, or sectors. If a field is "
             "not present on the page, return null. Respect every maxLength in the tool "
             "schema. Constrained fields are short labels, not sentences; specifically, "

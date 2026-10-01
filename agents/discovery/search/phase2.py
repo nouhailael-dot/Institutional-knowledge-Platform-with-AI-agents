@@ -442,6 +442,7 @@ def fetch_score_stage_actors(
         shared_client,
         max_tokens=int(config.get("actor_rubric_max_tokens", 4096)),
         content_max_chars=int(config.get("actor_rubric_content_max_chars", 8000)),
+        classification_enabled=True,
     )
     reranker = reranker or ActorListwiseReranker(
         shared_client,

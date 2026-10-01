@@ -264,7 +264,8 @@ def load_person_affiliation_candidates(session) -> list[dict[str, object]]:
             text(
                 "SELECT actor_id::text AS actor_id, name AS affiliation "
                 "FROM actor WHERE merged_into_actor_id IS NULL "
-                "AND (actor_type IS NULL OR lower(actor_type) <> 'aggregate') "
+                "AND lower(COALESCE(to_jsonb(actor)->>'actor_category', "
+                "to_jsonb(actor)->>'actor_type','')) <> 'aggregate' "
                 "ORDER BY name"
             )
         )

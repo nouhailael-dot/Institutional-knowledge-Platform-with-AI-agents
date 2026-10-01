@@ -160,6 +160,7 @@ def build_extractor(
         return ActorExtractor(
             llm_client,
             max_tokens=int(source_config.get("max_tokens", 2048)),
+            classification_enabled=True,
         )
     if entity_type == "person":
         return PersonExtractor(
@@ -934,6 +935,23 @@ def _stage_event_participants(
         route = guard_actor_absorb_route(
             staged, route_actor(classified, actor_resolver, actor_candidates)
         )
+        if route.zone == "create" and not classified.get("actor_category"):
+            route = RouteDecision(
+                zone="review",
+                score=route.score,
+                target_entity_id=None,
+                candidate_ids=route.candidate_ids,
+                metadata={
+                    **dict(route.metadata or {}),
+                    "review_kind": "classification",
+                    "issue": "category_doubt",
+                    "compatibility_bridge": True,
+                    "reason": (
+                        "event participant lacks an official self-description; "
+                        "category inference is not permitted"
+                    ),
+                },
+            )
         staged = mark_routed(stage_store, staged, route)
         result = promote(
             staged,

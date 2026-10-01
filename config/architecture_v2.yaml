@@ -24,9 +24,13 @@ hubs:
   outside_radius_membership_is_informational: true
 
 classification:
+  catalog: config/actor_categories.yaml
   physical_network_locations_use_own_main_job: true
   unknown_type: other
   unknown_type_requires_note_and_review: true
+  category_doubt_bridge_review_kind: classification
+  category_doubt_target_review_kind: category_doubt
+  final_actor_constraints_deferred: true
   skip_out_of_scope_organizations: true
 
 light_pull:

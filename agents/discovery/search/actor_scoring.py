@@ -10,6 +10,11 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
+from agents.common.actor_classification import (
+    NonActorRecord,
+    classify_actor_category_type,
+    load_category_catalog,
+)
 from agents.discovery.extractors.actor import (
     ACTOR_RECORD_FIELDS,
     ACTOR_STRING_MAX_LENGTHS,
@@ -210,12 +215,15 @@ class ActorRubricExtractor:
         *,
         max_tokens: int = 4096,
         content_max_chars: int = DEFAULT_CONTENT_MAX_CHARS,
+        classification_enabled: bool = False,
     ):
         if content_max_chars <= 0:
             raise ValueError("actor rubric content_max_chars must be positive")
         self.llm_client = llm_client
         self.max_tokens = max_tokens
         self.content_max_chars = content_max_chars
+        self.classification_enabled = classification_enabled
+        self.category_catalog = load_category_catalog()
         self.pages_prepared = 0
         self.pages_truncated = 0
         self.source_chars_total = 0
@@ -301,11 +309,29 @@ class ActorRubricExtractor:
             input_schema=schema,
             max_tokens=self.max_tokens,
         )
-        return validate_actor_analysis(
+        analysis = validate_actor_analysis(
             payload,
             actor_types=actor_types,
             sector_codes=sector_codes,
             hub_names=hub_names,
+        )
+        if not self.classification_enabled:
+            return analysis
+        try:
+            classification = classify_actor_category_type(
+                self.llm_client,
+                name=str(analysis.record.get("name") or ""),
+                self_description=str(analysis.record.get("description") or ""),
+                catalog=self.category_catalog,
+                max_tokens=min(self.max_tokens, 700),
+            )
+        except NonActorRecord as exc:
+            raise RuntimeError(
+                f"actor rubric page resolved to {exc.record_kind}, not an actor"
+            ) from exc
+        return ActorPageAnalysis(
+            rubric=analysis.rubric,
+            record={**analysis.record, **classification.as_payload()},
         )
 
 

@@ -595,6 +595,13 @@ def test_past_minable_event_stages_participants_but_not_event():
 
     assert [row.entity_type for row in stage_store.rows.values()].count("event") == 0
     assert [row.entity_type for row in stage_store.rows.values()].count("actor") == 3
+    participant_rows = [row for row in stage_store.rows.values() if row.entity_type == "actor"]
+    assert all(row.route["zone"] == "review" for row in participant_rows)
+    assert all(
+        row.route["metadata"]["review_kind"] == "classification"
+        and row.route["metadata"]["issue"] == "category_doubt"
+        for row in participant_rows
+    )
     assert any(row["status"] == "mined_not_stored" for row in audit_rows)
 
 

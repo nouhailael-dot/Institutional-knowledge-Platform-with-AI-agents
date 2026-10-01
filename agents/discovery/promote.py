@@ -16,6 +16,12 @@ from urllib.parse import urlparse
 
 from sqlalchemy import text
 
+from agents.common.actor_classification import (
+    CATEGORY_DOUBT_BRIDGE_KIND,
+    CATEGORY_DOUBT_ISSUE,
+    ActorClassification,
+    classification_from_payload,
+)
 from agents.common.geography import PreparedActorGeography, prepare_actor_geography
 from agents.common.provenance import insert_source
 from agents.common.resolve_route import RouteDecision
@@ -503,11 +509,16 @@ def map_new_actor(
     trace: list[str] = []
     _mapping_step(route, trace, "mapped_first")
     geography: PreparedActorGeography | None = None
+    classification: ActorClassification | None = None
     if route.zone == "create":
         _mapping_step(route, trace, "category")
+        classification = classification_from_payload(staged.normalized_payload)
         _mapping_step(route, trace, "category_type")
         _mapping_step(route, trace, "geocode")
-        geography = prepare_actor_geography(staged.normalized_payload)
+        prepared_payload = dict(staged.normalized_payload)
+        if classification is not None:
+            prepared_payload.update(classification.as_payload())
+        geography = prepare_actor_geography(prepared_payload)
     if session is None:
         if live:
             raise ValueError("live promotion requires a database session")
@@ -598,6 +609,15 @@ def map_new_actor(
                 source_id=source_id,
                 topic_id=topic_id,
             )
+            if classification is not None:
+                _append_actor_classification(
+                    session,
+                    actor_id=actor_id,
+                    staged=staged,
+                    classification=classification,
+                    source_id=source_id,
+                    topic_id=topic_id,
+                )
             _append_actor_topic(
                 session,
                 actor_id=actor_id,
@@ -670,9 +690,10 @@ def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str
         "source_id": source_id,
     }
     mapping = {
-        "actor_category": ("actor_category", "actor_type"),
+        "actor_category": ("actor_category",),
         "category_type": ("category_type",),
         "category_note": ("category_note",),
+        "category_needs_review": ("category_needs_review",),
         "website": ("website",),
         "website_domain": ("website_domain",),
         "description": ("description",),
@@ -830,6 +851,11 @@ def _append_actor_light_facts(
         "extracted_at",
         "prompt_version",
         "sector_match",
+        "actor_category",
+        "category_type",
+        "category_note",
+        "category_needs_review",
+        "classification_evidence",
         DISCOVERED_DOMAIN_PAYLOAD_KEY,
     }
     for key, value in staged.normalized_payload.items():
@@ -846,6 +872,57 @@ def _append_actor_light_facts(
             retrieved_at=staged.extracted_at,
             run_id=staged.run_id,
         )
+
+
+def _append_actor_classification(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    classification: ActorClassification,
+    source_id: str,
+    topic_id: str | None,
+) -> None:
+    payload = classification.as_payload()
+    _insert_actor_fact(
+        session,
+        actor_id=actor_id,
+        topic_id=topic_id,
+        fact_type="classification",
+        fact_key="actor_category_type",
+        value=payload,
+        source_id=source_id,
+        retrieved_at=staged.extracted_at,
+        run_id=staged.run_id,
+    )
+    if not classification.category_needs_review:
+        return
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+            "topic_id,priority,payload,status) VALUES (CAST(:review_id AS uuid),"
+            ":review_kind,'actor',CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),"
+            "'normal',CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": str(uuid.uuid4()),
+            "review_kind": CATEGORY_DOUBT_BRIDGE_KIND,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "payload": json.dumps(
+                {
+                    "issue": CATEGORY_DOUBT_ISSUE,
+                    "compatibility_bridge": True,
+                    "canonical_review_kind": CATEGORY_DOUBT_ISSUE,
+                    "staged_record_id": staged.staged_record_id,
+                    "source_url": staged.source_url,
+                    **payload,
+                },
+                sort_keys=True,
+                default=str,
+            ),
+        },
+    )
 
 
 def _insert_actor_fact(
@@ -922,17 +999,22 @@ def _append_actor_topic(
 def _insert_v2_actor_review(
     session, staged: StagedRecord, route: RouteDecision, *, topic_id: str | None
 ) -> str:
+    metadata = dict(route.metadata or {})
+    review_kind = str(metadata.get("review_kind") or "possible_duplicate")
+    if review_kind not in {"possible_duplicate", CATEGORY_DOUBT_BRIDGE_KIND}:
+        raise ValueError(f"unsupported actor review kind {review_kind!r}")
     review_id = str(uuid.uuid4())
     session.execute(
         text(
             "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
             "candidate_entity_id,topic_id,priority,payload,status) VALUES "
-            "(CAST(:review_id AS uuid),'possible_duplicate','actor',NULL,"
+            "(CAST(:review_id AS uuid),:review_kind,'actor',NULL,"
             "CAST(:candidate_id AS uuid),CAST(:topic_id AS uuid),'normal',"
             "CAST(:payload AS jsonb),'pending')"
         ),
         {
             "review_id": review_id,
+            "review_kind": review_kind,
             "candidate_id": route.target_entity_id,
             "topic_id": topic_id,
             "payload": json.dumps(
@@ -942,6 +1024,14 @@ def _insert_v2_actor_review(
                     "score": route.score,
                     "source_url": staged.source_url,
                     "record": staged.normalized_payload,
+                    "issue": metadata.get("issue"),
+                    "compatibility_bridge": bool(metadata.get("compatibility_bridge", False)),
+                    "canonical_review_kind": (
+                        CATEGORY_DOUBT_ISSUE
+                        if metadata.get("issue") == CATEGORY_DOUBT_ISSUE
+                        else None
+                    ),
+                    "reason": metadata.get("reason"),
                 },
                 sort_keys=True,
                 default=str,
