@@ -55,6 +55,7 @@ V2_TABLES = {
     "strategic_entity",
     "actor_strategic_connection_check",
     "hub_center_review",
+    "hub_assignment_evidence",
     "proposed_hub",
     "proposed_hub_member",
     "proposed_hub_decision",
@@ -68,9 +69,9 @@ def _manifest() -> list[dict]:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))["logical_migrations"]
 
 
-def test_manifest_has_19_ordered_reversible_migrations():
+def test_manifest_has_20_ordered_reversible_migrations():
     steps = _manifest()
-    assert [step["id"] for step in steps] == [f"{number:03d}" for number in range(1, 20)]
+    assert [step["id"] for step in steps] == [f"{number:03d}" for number in range(1, 21)]
     for step in steps:
         for action in step["actions"]:
             if action["type"] == "sql":
@@ -84,13 +85,13 @@ def test_migration_tracks_are_separate_and_detached():
     live_versions = set((ROOT / "migrations" / "versions").glob("*v2a*.py"))
     assert not live_versions
     proposal_modules = sorted((PROPOSED / "versions").glob("v2a*.py"))
-    assert len(proposal_modules) == 4
+    assert len(proposal_modules) == 5
     assert all(
         "down_revision = None" in path.read_text(encoding="utf-8") for path in proposal_modules
     )
     platform = sorted((ROOT / "agents" / "sql").glob("*_v2_*.sql"))
-    assert [int(path.name[:3]) for path in platform] == list(range(190, 371, 10))
-    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 19
+    assert [int(path.name[:3]) for path in platform] == list(range(190, 381, 10))
+    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 20
 
 
 def test_populated_canonical_constraints_are_not_valid():
@@ -112,6 +113,10 @@ def test_populated_canonical_constraints_are_not_valid():
         clauses = [
             statement for statement in CaptureOperations.statements if "ADD CONSTRAINT" in statement
         ]
+        if path.name == "v2a05_hub_assignment.py":
+            assert not clauses
+            assert any("center_method_version" in statement for statement in CaptureOperations.statements)
+            continue
         assert clauses, path.name
         assert all("NOT VALID" in clause for clause in clauses), path.name
 
@@ -128,6 +133,8 @@ def test_no_forbidden_overlap_queue_name_in_v2_artifacts():
     paths = list((ROOT / "agents" / "sql").glob("*_v2_*.sql")) + [
         ROOT / "src" / "db" / "models_v2.py",
         V2_CONFIG,
+        ROOT / "agents" / "common" / "hub_assignment.py",
+        ROOT / "agents" / "common" / "hub_centers.py",
     ]
     assert all("hub_overlap" not in path.read_text(encoding="utf-8") for path in paths)
 

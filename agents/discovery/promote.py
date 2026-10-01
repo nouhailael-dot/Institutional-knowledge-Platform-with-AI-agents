@@ -23,6 +23,15 @@ from agents.common.actor_classification import (
     classification_from_payload,
 )
 from agents.common.geography import PreparedActorGeography, prepare_actor_geography
+from agents.common.hub_assignment import (
+    HUB_ASSIGNMENT_METHOD_VERSION,
+    NEEDS_REVIEW_LOCATION,
+    NEEDS_REVIEW_TOPIC,
+    ActorHubContext,
+    HubAssignmentPlan,
+    HubCandidate,
+    build_hub_assignment_plan,
+)
 from agents.common.provenance import insert_source
 from agents.common.resolve_route import RouteDecision
 from agents.discovery.stage import StagedRecord
@@ -585,8 +594,15 @@ def map_new_actor(
         elif route.zone == "create":
             if geography is None:
                 raise RuntimeError("actor geography was not prepared")
-            for step in ACTOR_MAPPING_STEPS[4:7]:
-                _mapping_step(route, trace, step)
+            _mapping_step(route, trace, "parent_connection")
+            _mapping_step(route, trace, "hub_fit")
+            hub_plan = _plan_actor_hubs(
+                session,
+                topic_id=topic_id,
+                geography=geography,
+                explicit_hub_ids=route.metadata.get("hub_ids") or [],
+            )
+            _mapping_step(route, trace, "light_pull")
             actor_id = _insert_actor_v2(session, geography.actor_values, source_id)
             _insert_actor_locations(
                 session,
@@ -626,7 +642,13 @@ def map_new_actor(
                 payload=staged.normalized_payload,
                 run_id=staged.run_id,
             )
-            _assign_actor_hubs(session, actor_id, route.metadata.get("hub_ids") or [])
+            _persist_hub_assignment_plan(
+                session,
+                actor_id=actor_id,
+                topic_id=topic_id,
+                source_id=source_id,
+                plan=hub_plan,
+            )
             _mapping_step(route, trace, "parked")
             review_id = _insert_verify_actor_review(
                 session, staged, actor_id=actor_id, topic_id=topic_id, trace=trace
@@ -1099,28 +1121,189 @@ def _insert_actor(session, payload: dict[str, object], source_id: str) -> str:
     return actor_id
 
 
-def _assign_actor_hubs(session, actor_id: str, hub_ids: object) -> None:
-    """Attach reviewer-selected hubs while keeping canonical writes in this module."""
-    if not isinstance(hub_ids, (list, tuple, set)):
+def _primary_actor_coordinates(geography: PreparedActorGeography) -> tuple[float | None, float | None]:
+    latitude = geography.actor_values.get("latitude")
+    longitude = geography.actor_values.get("longitude")
+    if latitude is not None and longitude is not None:
+        return float(latitude), float(longitude)
+    primary = next((item for item in geography.locations if item.is_primary), None)
+    if primary and primary.result.found:
+        return primary.result.latitude, primary.result.longitude
+    return None, None
+
+
+def _plan_actor_hubs(
+    session,
+    *,
+    topic_id: str | None,
+    geography: PreparedActorGeography,
+    explicit_hub_ids: object,
+) -> HubAssignmentPlan:
+    if not isinstance(explicit_hub_ids, (list, tuple, set)):
         raise TypeError("hub_ids must be a list")
-    for hub_id in dict.fromkeys(str(value).strip() for value in hub_ids):
-        if not hub_id:
-            continue
-        exists = session.execute(
-            text("SELECT 1 FROM hub WHERE hub_id = CAST(:hub_id AS uuid)"),
-            {"hub_id": hub_id},
-        ).scalar_one_or_none()
-        if exists is None:
-            raise ValueError(f"unknown hub_id {hub_id}")
+    explicit = tuple(sorted({str(value).strip() for value in explicit_hub_ids if str(value).strip()}))
+    if not topic_id and not explicit:
+        return HubAssignmentPlan((), (), ())
+    rows = session.execute(
+        text(
+            "SELECT hub_id::text AS hub_id,name,topic_id::text AS topic_id,"
+            "center_latitude,center_longitude,COALESCE(radius_miles,200) AS radius_miles "
+            "FROM hub WHERE (:topic_id IS NOT NULL AND topic_id=CAST(:topic_id AS uuid)) "
+            "OR hub_id::text = ANY(CAST(:hub_ids AS text[])) ORDER BY hub_id"
+        ),
+        {"topic_id": topic_id, "hub_ids": list(explicit)},
+    ).mappings().all()
+    found = {str(row["hub_id"]) for row in rows}
+    missing = sorted(set(explicit) - found)
+    if missing:
+        raise ValueError(f"unknown hub_id(s): {', '.join(missing)}")
+    latitude, longitude = _primary_actor_coordinates(geography)
+    actor = ActorHubContext(None, topic_id, latitude, longitude)
+    hubs = [
+        HubCandidate(
+            hub_id=str(row["hub_id"]),
+            name=str(row["name"]),
+            topic_id=str(row["topic_id"]) if row["topic_id"] else None,
+            center_latitude=float(row["center_latitude"]) if row["center_latitude"] is not None else None,
+            center_longitude=float(row["center_longitude"]) if row["center_longitude"] is not None else None,
+            radius_miles=float(row["radius_miles"]),
+        )
+        for row in rows
+    ]
+    return build_hub_assignment_plan(actor, hubs)
+
+
+def _persist_hub_assignment_plan(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    source_id: str,
+    plan: HubAssignmentPlan,
+) -> None:
+    """Persist audit evidence and canonical memberships from one deterministic plan."""
+    for evaluation in plan.evaluations:
+        evidence = {
+            "outcome": evaluation.outcome,
+            "topic_matched": evaluation.topic_matched,
+            "location_evaluated": evaluation.location_evaluated,
+            "distance_miles": evaluation.distance_miles,
+            "radius_miles": evaluation.radius_miles,
+            "outside_radius": evaluation.outside_radius,
+            "selected": evaluation.selected,
+            "method_version": evaluation.method_version,
+        }
         session.execute(
             text(
-                "INSERT INTO hub_actor (hub_id, actor_id, relationship_type, is_primary) "
-                "VALUES (CAST(:hub_id AS uuid), CAST(:actor_id AS uuid), "
-                "'reviewed_assignment', FALSE) "
-                "ON CONFLICT (hub_id, actor_id) DO NOTHING"
+                "INSERT INTO hub_assignment_evidence (actor_id,hub_id,topic_id,outcome,"
+                "topic_matched,location_evaluated,distance_miles,radius_miles,outside_radius,"
+                "selected,method_version,evidence,source_id) VALUES (CAST(:actor_id AS uuid),"
+                "CAST(:hub_id AS uuid),CAST(:topic_id AS uuid),:outcome,:topic_matched,"
+                ":location_evaluated,:distance_miles,:radius_miles,:outside_radius,:selected,"
+                ":method_version,CAST(:evidence AS jsonb),CAST(:source_id AS uuid))"
             ),
-            {"hub_id": hub_id, "actor_id": actor_id},
+            {
+                "actor_id": actor_id,
+                "hub_id": evaluation.hub_id,
+                "topic_id": topic_id,
+                "outcome": evaluation.outcome,
+                "topic_matched": evaluation.topic_matched,
+                "location_evaluated": evaluation.location_evaluated,
+                "distance_miles": evaluation.distance_miles,
+                "radius_miles": evaluation.radius_miles,
+                "outside_radius": evaluation.outside_radius,
+                "selected": evaluation.selected,
+                "method_version": evaluation.method_version,
+                "evidence": json.dumps(evidence, sort_keys=True),
+                "source_id": source_id,
+            },
         )
+        if evaluation.outcome in {NEEDS_REVIEW_TOPIC, NEEDS_REVIEW_LOCATION}:
+            _insert_hub_review_bridge(
+                session,
+                actor_id=actor_id,
+                topic_id=topic_id,
+                hub_ids=[evaluation.hub_id],
+                current_kind="hub_assignment",
+                canonical_kind="hub_needs_review",
+                canonical_outcome=evaluation.outcome,
+                priority=evaluation.priority,
+                evidence=evidence,
+            )
+        if evaluation.selected:
+            session.execute(
+                text(
+                    "INSERT INTO hub_actor (hub_id,actor_id,relationship_type,is_primary,"
+                    "topic_id,distance_miles,assignment_outcome,outside_radius,overlap_flag,source_id) "
+                    "VALUES (CAST(:hub_id AS uuid),CAST(:actor_id AS uuid),'deterministic_assignment',"
+                    "FALSE,CAST(:topic_id AS uuid),:distance_miles,'assigned',FALSE,:overlap_flag,"
+                    "CAST(:source_id AS uuid)) ON CONFLICT (hub_id,actor_id) DO NOTHING"
+                ),
+                {
+                    "hub_id": evaluation.hub_id,
+                    "actor_id": actor_id,
+                    "topic_id": topic_id,
+                    "distance_miles": evaluation.distance_miles,
+                    "overlap_flag": bool(plan.same_topic_overlap_hub_ids),
+                    "source_id": source_id,
+                },
+            )
+    if plan.same_topic_overlap_hub_ids:
+        _insert_hub_review_bridge(
+            session,
+            actor_id=actor_id,
+            topic_id=topic_id,
+            hub_ids=list(plan.same_topic_overlap_hub_ids),
+            current_kind="same_topic_overlap",
+            canonical_kind="hub_radius_overlap",
+            canonical_outcome="assigned_nearest_center",
+            priority="normal",
+            evidence={
+                "eligible_hub_ids": list(plan.same_topic_overlap_hub_ids),
+                "selected_hub_id": plan.assigned_hub_ids[0],
+                "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+            },
+        )
+
+
+def _insert_hub_review_bridge(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    hub_ids: list[str],
+    current_kind: str,
+    canonical_kind: str,
+    canonical_outcome: str,
+    priority: str,
+    evidence: dict[str, object],
+) -> str:
+    review_id = str(uuid.uuid4())
+    payload = {
+        "compatibility_bridge": True,
+        "canonical_review_kind": canonical_kind,
+        "canonical_outcome": canonical_outcome,
+        "issue": canonical_outcome,
+        "hub_ids": hub_ids,
+        "deterministic_evidence": evidence,
+        "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+    }
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,topic_id,"
+            "priority,payload,status) VALUES (CAST(:review_id AS uuid),:review_kind,'actor',"
+            "CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:priority,CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": review_id,
+            "review_kind": current_kind,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "priority": priority,
+            "payload": json.dumps(payload, sort_keys=True, default=str),
+        },
+    )
+    return review_id
 
 
 def _promote_person(

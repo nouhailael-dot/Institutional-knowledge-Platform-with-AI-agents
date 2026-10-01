@@ -339,6 +339,8 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
                 Path("agents/enrichment/decisions.py"),
             },
             "record_verification": {Path("agents/enrichment/decisions.py")},
+            "hub_assignment_evidence": {Path("agents/discovery/promote.py")},
+            "hub_center_review": {Path("agents/enrichment/decisions.py")},
         }
     )
     table_pattern = "|".join(

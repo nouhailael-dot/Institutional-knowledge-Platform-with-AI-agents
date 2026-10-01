@@ -3,7 +3,7 @@
 These files are proposals for the schema owner. They must never be executed on
 shared Supabase by an agent.
 
-The 19 logical migrations are ordered in `manifest.json` and use two ownership
+The 20 logical migrations are ordered in `manifest.json` and use two ownership
 tracks:
 
 - `versions/v2a*.py` contains canonical-table Alembic proposals. This directory
@@ -47,6 +47,15 @@ documented `classification` + `issue: category_doubt` bridge. The exact
 owner-run conversion is proposed in
 `deferred/370_v2_category_doubt_review_kind.sql`; neither deferred file is an
 agent execution path.
+
+Phase 6 adds the detached nullable hub center audit columns in
+`v2a05_hub_assignment.py` and the new immutable
+`380_v2_hub_assignment_evidence.sql` table. Neither changes an existing
+membership. The current review-kind CHECK is bridged with marked
+`hub_assignment` / `same_topic_overlap` rows; deferred proposal 390 converts
+only those marked rows. Deferred proposal 400 is the final hub contract and
+depends on the Phase 12 topic, geography, status, source, and membership
+backfill. Neither deferred proposal is an agent execution path.
 
 Only the isolated test helper may exercise the detached set:
 

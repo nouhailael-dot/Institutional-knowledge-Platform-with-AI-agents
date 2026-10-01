@@ -488,6 +488,13 @@ The earlier 872-row Phase 0 export yields 48 distinct Phase 1 hub names. The 202
 
 The Phase 12 dry run must recompute this table with: V2 category/type, top-level family, status, deterministic coordinates, center, 50/200-mile spread, and both Verified-only and Verified+Imported proposal counts.
 
+Phase 6 implements only the reusable deterministic assignment and center-preview
+machinery. It does not assign controlled topics, invent missing coordinates,
+persist centers, or change any of the 821 authoritative memberships. The
+baseline remains 49 hub rows but only 48 hubs with memberships: `Mining Hubs`
+is the extra empty row. Real hub-topic mapping, status/geography eligibility,
+center population, and membership migration remain P12.
+
 ## Current overwrite/delete audit
 
 Current behavior is not V2-safe:
@@ -535,7 +542,7 @@ Current behavior is not V2-safe:
 2. **P3 — Record creation orchestration.** Implement `map_new_actor(candidate, topic, run_ctx)` in the staged→promote boundary with database-first exact matching, possible-duplicate review, strict step trace, Parked end state, and dry/live candidate parity assertion.
 3. **P4 — Geography (complete 2026-09-29).** Implemented all-state region derivation, vendored gazetteer loader/normalizer, coordinate derivation, geocode review, and miles-only haversine. See `docs/architecture_v2_phase4.md`.
 4. **P5 — Category then type (complete 2026-10-01).** Seeded the 12-category/65-type source catalog, implemented ordered structured classification and deterministic hard rules, moved active discovery/promotion and Browse/RAG assembly to category-first dual-read compatibility, retired direct legacy classification writers, and retained the physical `actor_type`/Agent 3 bridge until P12/P16. See `docs/architecture_v2_phase5.md`.
-5. **P6 — Existing hubs.** Implement topic-first assignment, distance evidence, overlap routing, center freeze/drift, and Phase 1 outside-radius reporting.
+5. **P6 — Existing hubs (complete 2026-10-01).** Implemented topic-first deterministic assignment, immutable distance evidence, nearest-center overlap routing, eligible-member density-center previews, frozen-center drift review, and read-only preservation assessment for all 821 Phase 1 memberships. Real topic/center/member backfill remains P12. See `docs/architecture_v2_phase6.md`.
 6. **P7 — Hub proposals.** Implement per-topic deterministic family clustering, bipartite category matching, fingerprints, dry-run scheduler/on-demand entry point, and GHUS decision service.
 7. **P8 — Link graph.** Implement sourced typed edges, parent cases, recursive descendants, network/location treatment, and retrieval graph adapter.
 8. **P9 — Light pull.** Generate schemas from category data, enforce three-fetch budget, write provenance facts including `not_found`/`not_yet_collected`, rankings, and Light UM6P check.

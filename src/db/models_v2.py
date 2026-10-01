@@ -163,6 +163,8 @@ class HubV2(V2Base):
     radius_miles: Mapped[float] = mapped_column(Numeric(7, 2))
     center_frozen: Mapped[bool] = mapped_column(Boolean)
     center_method: Mapped[str] = mapped_column(Text)
+    center_method_version: Mapped[str | None] = mapped_column(Text)
+    center_computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     approved_by: Mapped[str | None] = mapped_column(Text)
     phase1_definition: Mapped[str | None] = mapped_column(Text)
@@ -183,6 +185,36 @@ class HubActorV2(V2Base):
     outside_radius: Mapped[bool] = mapped_column(Boolean)
     overlap_flag: Mapped[bool] = mapped_column(Boolean)
     source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+
+class HubAssignmentEvidence(V2Base):
+    __tablename__ = "hub_assignment_evidence"
+
+    hub_assignment_evidence_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor.actor_id"), nullable=False
+    )
+    hub_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hub.hub_id"), nullable=False
+    )
+    topic_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("topic.topic_id")
+    )
+    outcome: Mapped[str] = mapped_column(Text, nullable=False)
+    topic_matched: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    location_evaluated: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    distance_miles: Mapped[float | None] = mapped_column(Numeric(8, 2))
+    radius_miles: Mapped[float | None] = mapped_column(Numeric(7, 2))
+    outside_radius: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    selected: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    method_version: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source.source_id")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ActorCategoryDefinition(V2Base):

@@ -18,6 +18,7 @@
     {"id": "016", "name": "compatibility views", "actions": [{"type": "sql", "up": "agents/sql/340_v2_compatibility_views.sql", "down": "agents/sql/rollback/340_v2_compatibility_views.sql"}]},
     {"id": "017", "name": "record creation", "actions": [{"type": "sql", "up": "agents/sql/350_v2_record_creation.sql", "down": "agents/sql/rollback/350_v2_record_creation.sql"}]},
     {"id": "018", "name": "city gazetteer", "actions": [{"type": "sql", "up": "agents/sql/360_v2_city_gazetteer.sql", "down": "agents/sql/rollback/360_v2_city_gazetteer.sql"}]},
-    {"id": "019", "name": "actor category classification metadata", "actions": [{"type": "sql", "up": "agents/sql/370_v2_actor_classification.sql", "down": "agents/sql/rollback/370_v2_actor_classification.sql"}]}
+    {"id": "019", "name": "actor category classification metadata", "actions": [{"type": "sql", "up": "agents/sql/370_v2_actor_classification.sql", "down": "agents/sql/rollback/370_v2_actor_classification.sql"}]},
+    {"id": "020", "name": "hub assignment evidence", "actions": [{"type": "alembic", "path": "migrations/proposed/versions/v2a05_hub_assignment.py"}, {"type": "sql", "up": "agents/sql/380_v2_hub_assignment_evidence.sql", "down": "agents/sql/rollback/380_v2_hub_assignment_evidence.sql"}]}
   ]
 }

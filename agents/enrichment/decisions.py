@@ -81,6 +81,114 @@ def record_verification_decision(
     return count
 
 
+def apply_hub_center_decision(
+    session,
+    *,
+    hub_id: str,
+    hub_center_review_id: str,
+    decided_by: str,
+) -> None:
+    """Apply an explicitly approved frozen-center review through the manual writer."""
+    if not str(decided_by or "").strip():
+        raise ValueError("decided_by is required")
+    proposal = session.execute(
+        text(
+            "SELECT proposed_city,proposed_state_code,proposed_latitude,proposed_longitude "
+            "FROM hub_center_review WHERE hub_center_review_id=CAST(:review_id AS uuid) "
+            "AND hub_id=CAST(:hub_id AS uuid) AND status='approved' FOR UPDATE"
+        ),
+        {"review_id": hub_center_review_id, "hub_id": hub_id},
+    ).mappings().first()
+    if proposal is None:
+        raise ValueError("hub center review must exist and be approved")
+    execute_canonical_write(
+        session,
+        text(
+            "UPDATE hub SET center_city=:city,center_state_code=:state_code,"
+            "center_latitude=:latitude,center_longitude=:longitude,center_frozen=TRUE,"
+            "center_method='density_center',center_method_version='density_center_v1',"
+            "center_computed_at=now(),approved_at=now(),approved_by=:decided_by "
+            "WHERE hub_id=CAST(:hub_id AS uuid)"
+        ),
+        {
+            "city": proposal["proposed_city"],
+            "state_code": proposal["proposed_state_code"],
+            "latitude": proposal["proposed_latitude"],
+            "longitude": proposal["proposed_longitude"],
+            "decided_by": decided_by,
+            "hub_id": hub_id,
+        },
+    )
+
+
+def record_hub_center_drift_review(
+    session,
+    *,
+    hub_id: str,
+    topic_id: str | None,
+    proposed_city: str,
+    proposed_state_code: str,
+    proposed_latitude: float,
+    proposed_longitude: float,
+    shift_miles: float,
+    threshold_miles: float,
+    eligible_member_count: int,
+    method_version: str = "density_center_v1",
+) -> str:
+    """Record a frozen-center drift proposal; never mutate the hub here."""
+    center_review_id = str(uuid.uuid4())
+    review_item_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO hub_center_review (hub_center_review_id,hub_id,proposed_city,"
+            "proposed_state_code,proposed_latitude,proposed_longitude,shift_miles,"
+            "trigger_threshold_miles,status) VALUES (CAST(:center_review_id AS uuid),"
+            "CAST(:hub_id AS uuid),:city,:state_code,:latitude,:longitude,:shift_miles,"
+            ":threshold_miles,'pending')"
+        ),
+        {
+            "center_review_id": center_review_id,
+            "hub_id": hub_id,
+            "city": proposed_city,
+            "state_code": proposed_state_code,
+            "latitude": proposed_latitude,
+            "longitude": proposed_longitude,
+            "shift_miles": shift_miles,
+            "threshold_miles": threshold_miles,
+        },
+    )
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,topic_id,"
+            "priority,payload,status) VALUES (CAST(:review_item_id AS uuid),'hub_center_drift',"
+            "'hub',CAST(:hub_id AS uuid),CAST(:topic_id AS uuid),'normal',"
+            "CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_item_id": review_item_id,
+            "hub_id": hub_id,
+            "topic_id": topic_id,
+            "payload": json.dumps(
+                {
+                    "hub_center_review_id": center_review_id,
+                    "shift_miles": shift_miles,
+                    "threshold_miles": threshold_miles,
+                    "eligible_member_count": eligible_member_count,
+                    "method_version": method_version,
+                    "deterministic_evidence": {
+                        "city": proposed_city,
+                        "state_code": proposed_state_code,
+                        "latitude": proposed_latitude,
+                        "longitude": proposed_longitude,
+                    },
+                },
+                sort_keys=True,
+            ),
+        },
+    )
+    return review_item_id
+
+
 def classify_field_candidate(
     *,
     policy: FieldPolicy,

@@ -22,6 +22,12 @@ hubs:
   preserve_phase1_names: true
   preserve_phase1_memberships: true
   outside_radius_membership_is_informational: true
+  assignment_method_version: hub_assignment_v1
+  center_method_version: density_center_v1
+  assignment_review_bridge_kind: hub_assignment
+  topic_review_outcome: needs_review_topic
+  location_review_outcome: needs_review_location
+  final_hub_constraints_deferred: true
 
 classification:
   catalog: config/actor_categories.yaml
