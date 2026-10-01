@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.map_agent.costs import paid_message, usage_cost
-from src.map_agent.pipeline import build_map_legacy as build_map
+from src.map_agent.pipeline import build_map
 from src.map_agent.run_store import BudgetStopped, MapStopped, RunContext, RunStore
 
 
@@ -245,8 +245,9 @@ class BudgetTests(unittest.TestCase):
                   "sources": [{"url": "https://example.org", "supports": "Research"}]}
         plan = {"tasks": [{"entity_type": "actor", "query": "test"}],
                 "requirements": {"hard_filters": ["California"]}}
-        with patch("src.map_agent.pipeline.discover", return_value=[entity]), \
-             patch("src.map_agent.pipeline.apply_request", side_effect=BudgetStopped("No allowance")):
+        with patch("src.map_agent.research._collect", return_value=[]), \
+             patch("src.map_agent.research.extract", return_value=([entity], "")), \
+             patch("src.map_agent.research.apply_request", side_effect=BudgetStopped("No allowance")):
             with self.assertRaises(BudgetStopped):
                 build_map("test", plan=plan, run=self.run)
         saved = self.store.get(self.id)["result"]
@@ -256,10 +257,11 @@ class BudgetTests(unittest.TestCase):
     def test_stop_after_discovery_preserves_people_and_skips_selection(self):
         def discover(*args, **kwargs):
             self.store.stop(self.id)
-            return [{"_entity_type": "actor", "name": "Saved Lab",
-                     "people": [{"full_name": "Sam Example", "title": "Director"}]}]
-        with patch("src.map_agent.pipeline.discover", side_effect=discover), \
-             patch("src.map_agent.pipeline.apply_request") as selection:
+            return ([{"_entity_type": "actor", "name": "Saved Lab",
+                      "people": [{"full_name": "Sam Example", "title": "Director"}]}], "")
+        with patch("src.map_agent.research._collect", return_value=[]), \
+             patch("src.map_agent.research.extract", side_effect=discover), \
+             patch("src.map_agent.research.apply_request") as selection:
             with self.assertRaises(MapStopped):
                 build_map("test", plan={"tasks": [{"entity_type": "actor", "query": "test"}]}, run=self.run)
         selection.assert_not_called()

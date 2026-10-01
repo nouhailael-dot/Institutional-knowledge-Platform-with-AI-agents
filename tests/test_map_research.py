@@ -54,19 +54,40 @@ class ControlledTests(unittest.TestCase):
     def build(self):
         return build_controlled_map("battery labs", self.plan, self.run, self.sources, self.client)
 
-    def test_organizations_then_targeted_people_and_page_reuse(self):
+    def test_organizations_do_not_automatically_search_for_people(self):
         result = self.build()
         self.assertFalse(result["partial"])
-        self.assertEqual(result["entities"]["actor"][0]["people"][0]["full_name"], "Sam Example")
+        self.assertEqual(result["entities"]["actor"][0]["people"], [])
         queries = [c.args[0] for c in self.provider.search.call_args_list]
         self.assertEqual(queries[0], "US battery labs")
-        self.assertIn('site:example.edu "Example Lab"', queries[1])
+        self.assertEqual(len(queries), 1)
         self.fetcher.assert_called_once_with(URL)
-        self.assertEqual(self.client.messages.create.call_count, 2)
-        self.assertAlmostEqual(self.store.get(self.id)["cost"]["estimated_usd"], .0108)
+        self.assertEqual(self.client.messages.create.call_count, 1)
+        self.assertAlmostEqual(self.store.get(self.id)["cost"]["estimated_usd"], .0054)
         self.build()  # A completed workflow has nothing to repeat.
-        self.assertEqual(self.client.messages.create.call_count, 2)
-        self.assertEqual(self.provider.search.call_count, 2)
+        self.assertEqual(self.client.messages.create.call_count, 1)
+        self.assertEqual(self.provider.search.call_count, 1)
+
+    def test_funding_amount_stays_in_summary_without_extra_searches(self):
+        summary = "Example Foundation: EUR 2 million total consortium award (2025), for water treatment. Institution share not disclosed."
+        original = self.response
+
+        def funded_response(**kwargs):
+            reply = original(**kwargs)
+            reply.content[0].input = {"entities": [{**ACTOR, "funding_summary": summary}]}
+            return reply
+
+        self.client.messages.create.side_effect = funded_response
+        result = self.build()
+        self.assertEqual(result["entities"]["actor"][0]["funding_summary"], summary)
+        self.provider.search.assert_called_once()
+        self.client.messages.create.assert_called_once()
+        payload = self.client.messages.create.call_args.kwargs
+        self.assertIn("Do not infer", payload["system"])
+        self.assertIn("total consortium awards", payload["system"])
+        schema = payload["tools"][0]["input_schema"]["properties"]["entities"]["items"]
+        self.assertEqual(schema["properties"]["funding_summary"]["type"], "string")
+        self.assertIn("amount not disclosed", schema["properties"]["funding_summary"]["description"])
 
     def test_existing_supported_people_skip_targeted_search(self):
         def response(**kwargs):
@@ -96,9 +117,9 @@ class ControlledTests(unittest.TestCase):
         self.sources = ResearchSources(self.run, self.provider, self.fetcher)
         result = self.build()
         self.assertFalse(result["partial"])
-        self.assertEqual(self.provider.search.call_count, 2)  # One actor, one people; no replay.
+        self.assertEqual(self.provider.search.call_count, 1)  # One institutional query; no automatic people search.
         self.fetcher.assert_called_once()
-        self.assertAlmostEqual(self.store.get(self.id)["cost"]["estimated_usd"], 1.9708)
+        self.assertAlmostEqual(self.store.get(self.id)["cost"]["estimated_usd"], 1.9654)
 
     def test_crash_after_paid_response_replays_saved_response_not_api(self):
         original = self.store.checkpoint_workflow
@@ -119,8 +140,8 @@ class ControlledTests(unittest.TestCase):
         self.sources = ResearchSources(self.run, self.provider, self.fetcher)
         result = self.build()
         self.assertFalse(result["partial"])
-        self.assertEqual(self.client.messages.create.call_count, 2)
-        self.assertEqual(self.provider.search.call_count, 2)
+        self.assertEqual(self.client.messages.create.call_count, 1)
+        self.assertEqual(self.provider.search.call_count, 1)
 
     def test_unknown_search_charge_blocks_retry_and_continuation(self):
         self.provider.search.side_effect = TimeoutError("uncertain")

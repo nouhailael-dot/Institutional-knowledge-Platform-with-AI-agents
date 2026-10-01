@@ -9,6 +9,8 @@ the server restarts that otherwise wipe a map.
 """
 
 import io
+import json
+import textwrap
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -37,7 +39,13 @@ FIELDS = {
         ("location_city", "City"), ("state", "State"),
         ("primary_technical_focus", "Focus"), ("technical_approach", "Approach"),
         ("current_activities", "Current activities"),
-        ("funding_summary", "Funding"), ("website", "Website"),
+        ("funding_summary", "Funding"), ("rankings", "University rankings"), ("website", "Website"),
+        ("other_names", "Other names"), ("category_note", "Category review"),
+        ("country", "Country"), ("region", "Region"), ("multi_location", "Multiple locations"),
+        ("sector", "Sector"), ("mapped_topic", "Mapped topic"),
+        ("match_strength", "Topic match"), ("match_explanation", "Why it matched"),
+        ("international_connections", "International / Africa / Morocco connections"),
+        ("actor_relationships", "Organization relationships"), ("category_details", "Category-specific information"),
     ],
     "person": [
         ("full_name", "Name"), ("organizations", "Organizations"),
@@ -70,6 +78,17 @@ def _sources_text(e: dict) -> str:
 def _field_value(entity: dict, field: str):
     """Human-readable value for scalar and relationship fields."""
     value = entity.get(field)
+    if field in ("category_details", "actor_relationships"):
+        return "\n".join(json.dumps(row, ensure_ascii=False) for row in (value or []))
+    if field == "rankings":
+        from src.map_agent.rankings import is_university, PUBLISHERS
+        if not is_university(entity):
+            return ""
+        return "\n".join(dict.fromkeys(
+            f"{r['system']}: {r.get('rank', '')} ({r.get('year', '')}), "
+            f"{r.get('subject') if r.get('scope') == 'subject' else 'Overall'}; "
+            f"{r.get('source_url', '')}"
+            for r in (value or []) if isinstance(r, dict) and r.get("system") in PUBLISHERS))
     if field == "organizations":
         return "\n".join(
             f"{x.get('actor_name')}{' — ' + x['title'] if x.get('title') else ''}"
@@ -88,6 +107,10 @@ def _selected(result: dict) -> dict[str, list]:
         # If nothing was ranked (a plain topic map with no requirements), the
         # whole list IS the result — export all of it rather than an empty file.
         out[key] = picked or (selected if has_selection else items)
+    # A selection that rejected every candidate still has to export something.
+    # The user paid to discover them, and an empty workbook is not a valid file.
+    if not any(out.values()):
+        return {key: (result.get("entities") or {}).get(key) or [] for key, _ in GROUPS}
     return out
 
 
@@ -126,6 +149,9 @@ def to_xlsx(result: dict, request: str = "") -> bytes:
                 ws.cell(row=r, column=c).alignment = Alignment(
                     vertical="top", wrap_text=True)
         ws.freeze_panes = "A2"
+
+    if not wb.sheetnames:                      # openpyxl cannot save a sheetless workbook
+        wb.create_sheet(title="Map")["A1"] = "This map has no entities to export."
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -210,49 +236,62 @@ def to_pptx(result: dict, request: str = "") -> bytes:
     # ---------- One slide per entity ----------
     for key, label in GROUPS:
         for e in selected.get(key) or []:
-            s = prs.slides.add_slide(blank)
-            rank = f"  ·  #{e['_rank']}" if e.get("_rank") else ""
-            _kicker_and_title(s, label[:-1].upper() + rank, _name(e))
-
-            # left column: the schema fields, in a gray card
-            _box(s, 0.65, 1.75, 7.2, 5.15, fill=GRAY)
-            body = _tb(s, 0.95, 1.95, 6.7, 4.8)
-            tf = body.text_frame; tf.word_wrap = True
-            first = True
+            entries = []
             for field, head in FIELDS[key]:
-                v = _field_value(e, field)
-                if not v or field in ("name", "full_name", "website"):
+                value = _field_value(e, field)
+                if value is None or value == "" or field in ("name", "full_name", "website"):
                     continue
-                p = tf.paragraphs[0] if first else tf.add_paragraph()
-                first = False
-                r1 = p.add_run(); r1.text = f"{head}:  "
-                r1.font.size = Pt(12); r1.font.bold = True
-                r1.font.name = SANS; r1.font.color.rgb = INK
-                r2 = p.add_run(); r2.text = str(v)
-                r2.font.size = Pt(12); r2.font.name = SANS; r2.font.color.rgb = INK
-                p.space_after = Pt(7)
+                for part in textwrap.wrap(str(value), width=420, replace_whitespace=False):
+                    entries.append((head, part))
+            pages, page, used = [], [], 0
+            for head, value in entries:
+                # Approximate wrapped lines including label and paragraph spacing.
+                lines = (len(head) + len(value)) // 70 + 2
+                if page and used + lines > 21:
+                    pages.append(page); page, used = [], 0
+                page.append((head, value)); used += lines
+            pages.append(page)
+            for page_number, entries_page in enumerate(pages):
+                s = prs.slides.add_slide(blank)
+                rank = f"  ·  #{e['_rank']}" if e.get("_rank") else ""
+                _kicker_and_title(s, label[:-1].upper() + rank, _name(e) + (f" · continued {page_number + 1}" if page_number else ""))
 
-            # right column: why-relevant (peach) over sources
-            _box(s, 8.05, 1.75, 4.6, 2.6, fill=PEACH)
-            _box(s, 8.05, 1.75, 0.08, 2.6, fill=ACCENT)   # left accent stripe
-            _text(_tb(s, 8.35, 1.95, 4.1, 0.3), "WHY RELEVANT", 11, ACCENT, bold=True)
-            _text(_tb(s, 8.35, 2.35, 4.1, 1.9),
-                  e.get("_why") or "—", 13, INK, bold=True)
+                # left column: the schema fields, in a gray card
+                _box(s, 0.65, 1.75, 7.2, 5.15, fill=GRAY)
+                body = _tb(s, 0.95, 1.95, 6.7, 4.8)
+                tf = body.text_frame; tf.word_wrap = True
+                first = True
+                for head, v in entries_page:
+                    p = tf.paragraphs[0] if first else tf.add_paragraph()
+                    first = False
+                    r1 = p.add_run(); r1.text = f"{head}:  "
+                    r1.font.size = Pt(12); r1.font.bold = True
+                    r1.font.name = SANS; r1.font.color.rgb = INK
+                    r2 = p.add_run(); r2.text = str(v)
+                    r2.font.size = Pt(12); r2.font.name = SANS; r2.font.color.rgb = INK
+                    p.space_after = Pt(7)
 
-            srcs = [x.get("url") for x in (e.get("sources") or []) if x.get("url")]
-            web = e.get("website")
-            _box(s, 8.05, 4.55, 4.6, 2.35, fill=GRAY)
-            _text(_tb(s, 8.35, 4.72, 4.1, 0.3), "SOURCES", 11, ACCENT, bold=True)
-            links = ([web] if web else []) + [u for u in srcs if u != web]
-            sf = _tb(s, 8.35, 5.08, 4.1, 1.7).text_frame
-            sf.word_wrap = True
-            for i, u in enumerate(links[:6]):
-                p = sf.paragraphs[0] if i == 0 else sf.add_paragraph()
-                r = p.add_run(); r.text = u
-                r.font.size = Pt(9.5); r.font.name = SANS; r.font.color.rgb = MUTED
-            if not links:
-                _text(sf.paragraphs[0]._parent if False else _tb(s, 8.35, 5.08, 4.1, 0.4),
-                      "none recorded", 10, MUTED)
+                # right column: why-relevant (peach) over sources
+                _box(s, 8.05, 1.75, 4.6, 2.6, fill=PEACH)
+                _box(s, 8.05, 1.75, 0.08, 2.6, fill=ACCENT)   # left accent stripe
+                _text(_tb(s, 8.35, 1.95, 4.1, 0.3), "WHY RELEVANT", 11, ACCENT, bold=True)
+                _text(_tb(s, 8.35, 2.35, 4.1, 1.9),
+                      e.get("_why") or "—", 13, INK, bold=True)
+
+                srcs = [x.get("url") for x in (e.get("sources") or []) if x.get("url")]
+                web = e.get("website")
+                _box(s, 8.05, 4.55, 4.6, 2.35, fill=GRAY)
+                _text(_tb(s, 8.35, 4.72, 4.1, 0.3), "SOURCES", 11, ACCENT, bold=True)
+                links = ([web] if web else []) + [u for u in srcs if u != web]
+                sf = _tb(s, 8.35, 5.08, 4.1, 1.7).text_frame
+                sf.word_wrap = True
+                for i, u in enumerate(links[:6]):
+                    p = sf.paragraphs[0] if i == 0 else sf.add_paragraph()
+                    r = p.add_run(); r.text = u
+                    r.font.size = Pt(9.5); r.font.name = SANS; r.font.color.rgb = MUTED
+                if not links:
+                    _text(sf.paragraphs[0]._parent if False else _tb(s, 8.35, 5.08, 4.1, 0.4),
+                          "none recorded", 10, MUTED)
 
     buf = io.BytesIO()
     prs.save(buf)
