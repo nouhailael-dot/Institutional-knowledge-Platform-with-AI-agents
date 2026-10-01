@@ -33,7 +33,7 @@ from src import browse
 from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
-from src.generate import condense_question, stream_answer
+from src.generate import condense_question, map_prompt_from_conversation, stream_answer
 from src.map_agent.export import to_pptx, to_xlsx
 from src.map_agent.pipeline import build_map
 from src.map_agent.people_research import research_people
@@ -183,6 +183,27 @@ def ask_stream(question: str = Query(..., min_length=1),
         yield _sse("done", {})
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+class MapPromptRequest(BaseModel):
+    question: str
+    history: list[dict] = []
+
+
+@app.post("/api/ask/map-prompt")
+def ask_map_prompt(payload: MapPromptRequest):
+    """Compose a Build a Map description from an Ask conversation.
+
+    Called when the user clicks, never speculatively on every answer. Spends
+    nothing from a map budget — this is Ask-side, like the answer itself.
+    """
+    if not payload.question.strip():
+        raise HTTPException(status_code=400, detail="Ask a question first.")
+    try:
+        return map_prompt_from_conversation(payload.history, payload.question)
+    except Exception:
+        raise HTTPException(status_code=502,
+                            detail="Could not prepare the map description. Open Build the Map and describe it yourself.")
 
 
 # ---------------------------------------------------------------- Browse (JSON)

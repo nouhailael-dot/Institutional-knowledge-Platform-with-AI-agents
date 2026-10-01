@@ -502,8 +502,18 @@ const AVATAR=html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
   stroke-linecap="round"/></svg>`;
 
 /* ------------------------------------------------------------------ Ask */
-function Ask(){
+// Zero retrieved entities, an empty answer, or an answer that says it cannot
+// answer. Used only to PROMOTE the button — it is offered on every turn either way.
+const HEDGES=/\b(no (matching|relevant|information|results|data)|not (in|found in) the (database|map)|does not (contain|include)|couldn't find|could not find|i don't have)\b/i;
+function answerLooksThin(turn){
+  if(!turn.done) return false;
+  const answer=(turn.answer||"").trim();
+  return !answer||(turn.mode!=="sql"&&turn.sources.length===0)||HEDGES.test(answer);
+}
+function Ask({onBuildMap}){
   const [q,setQ]=useState("");
+  const [bridging,setBridging]=useState(null);   // turn id whose prompt is being written
+  const [bridgeNote,setBridgeNote]=useState(null);
   const [busy,setBusy]=useState(false);
   const [turns,setTurns]=useState([]);   // conversation: [{id,q,mode,sql,answer,sources,rewritten,done}]
   const [docId,setDocId]=useState(null);
@@ -562,6 +572,29 @@ function Ask(){
           answer:l.answer||"Something went wrong reaching the server."}; return c;});};
   }
   function newConversation(){ if(esRef.current)esRef.current.close(); setTurns([]); setBusy(false); setQ(""); }
+
+  // The description is written on click, not for every answer, and the user
+  // always sends it themselves on the map page.
+  async function buildMapFrom(turn){
+    if(bridging) return;
+    setBridging(turn.id); setBridgeNote(null);
+    const index=turns.findIndex(t=>t.id===turn.id);
+    const hist=turns.slice(0,index).filter(t=>t.done&&t.answer).slice(-3)
+      .map(t=>({q:t.q,a:(t.answer||"").slice(0,600)}));
+    try{
+      const r=await fetch("/api/ask/map-prompt",{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({question:turn.q,history:hist})});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Could not prepare the map description.");
+      if(!d.in_scope||!d.prompt){
+        setBridgeNote({id:turn.id,text:d.reason||"Build a Map researches organizations, people and events."});
+      } else {
+        onBuildMap({prompt:d.prompt,docId,docName});
+      }
+    }catch(e){ setBridgeNote({id:turn.id,text:e.message}); }
+    setBridging(null);
+  }
   useEffect(()=>()=>esRef.current&&esRef.current.close(),[]);
   useEffect(()=>{ if(bottomRef.current) bottomRef.current.scrollIntoView({block:"end",behavior:"smooth"}); },[turns.length]);
 
@@ -612,6 +645,14 @@ function Ask(){
                       <div class="nm">${j+1}. ${s.name} <${EChip} type=${s.entity_type}/></div>
                       <div class="pv">${s.preview}</div></div>`)}
                   </details>`}
+                ${t.done&&html`<div class="bridge">
+                  <button type="button" class=${answerLooksThin(t)?"btn bridge-go":"example"}
+                    disabled=${bridging===t.id} onClick=${()=>buildMapFrom(t)}>
+                    ${bridging===t.id?html`<span class="spin"></span>`:"⊕ Build a Map"}</button>
+                  ${answerLooksThin(t)&&html`<span class="hint">The database has little on this — research it on the web.</span>`}
+                  ${bridging===t.id&&html`<span class="hint">Writing the description…</span>`}
+                  ${bridgeNote&&bridgeNote.id===t.id&&html`<span class="hint">${bridgeNote.text}</span>`}
+                </div>`}
               </div>
             </div>`;
           })}
@@ -1105,7 +1146,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
   </div>`;
 }
 
-function BuildMap(){
+function BuildMap({handoff,onHandoffUsed}){
   const [jobId,setJobId]=useState(null);
   const [cost,setCost]=useState(null);
   const [recent,setRecent]=useState([]);
@@ -1544,6 +1585,9 @@ const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stro
   stroke-linecap="round"/></svg>`;
 function App(){
   const [tab,setTab]=useState("ask");
+  // Ask -> Build the Map handoff. Client-side only: both pages stay mounted, so
+  // there is no session to plumb through the backend.
+  const [handoff,setHandoff]=useState(null);
   // Keep every page mounted when switching tabs. BuildMap owns the active job
   // poll and its result state, so unmounting it makes a running map appear to
   // stop even though the backend worker continues.
@@ -1560,9 +1604,11 @@ function App(){
   <div class="workspace-main">
   <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
   <main class="wrap">
-    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}/></div>
+    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}
+      onBuildMap=${(h)=>{setHandoff({...h,at:Date.now()}); setTab("map");}}/></div>
     <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
-    <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}/></div>
+    <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
+      handoff=${handoff} onHandoffUsed=${()=>setHandoff(null)}/></div>
   </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);

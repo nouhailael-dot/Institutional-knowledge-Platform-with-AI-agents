@@ -54,6 +54,64 @@ def condense_question(history: list[dict], question: str) -> str:
         return question
 
 
+_MAP_PROMPT_SYSTEM = """\
+You turn an Ask conversation into an opening description for "Build a Map", a \
+tool that researches US organizations on the open web.
+
+Carry the CONSTRAINTS, not just the topic. If the conversation established a \
+location, an organization type, a technology or a count, every one of those must \
+survive into the description or the map's planner cannot honour them.
+
+Write the description as the user would: one or two plain sentences naming what \
+to find. No preamble, no explanation of what you are doing.
+
+in_scope is false when the question is not about research organizations, people \
+or events — small talk, platform questions, or anything the map could not \
+research. Being unanswerable from the database does not make it out of scope: \
+that is exactly when a map helps."""
+
+_MAP_PROMPT_TOOL = {
+    "name": "submit_map_prompt",
+    "description": "Return the Build a Map description. Call exactly once.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "in_scope": {"type": "boolean",
+                         "description": "Could Build a Map research this at all?"},
+            "prompt": {"type": "string",
+                       "description": "The description, carrying every established "
+                                      "constraint. Empty when in_scope is false."},
+            "reason": {"type": "string",
+                       "description": "One short sentence, only when in_scope is false."},
+        },
+        "required": ["in_scope", "prompt"],
+    },
+}
+
+
+def map_prompt_from_conversation(history: list[dict], question: str) -> dict:
+    """Build a Map opening description from an Ask conversation.
+
+    Returns {"in_scope": bool, "prompt": str, "reason": str}. Runs on the cheap
+    model, on click rather than for every answer. Fails CLOSED: if the call fails
+    there is no description to prefill, and the caller says so rather than
+    sending the user to the map with a silently empty or half-built request.
+    """
+    convo = "\n\n".join(f"User: {h.get('q','')}\nAssistant: {h.get('a','')}"
+                        for h in (history or [])[-3:])
+    user = (f"{convo}\n\n" if convo else "") + f"Latest question: {question}"
+    resp = _get_client().messages.create(
+        model=CONDENSE_MODEL, max_tokens=512, system=_MAP_PROMPT_SYSTEM,
+        tools=[_MAP_PROMPT_TOOL], messages=[{"role": "user", "content": user}])
+    for block in resp.content:
+        if block.type == "tool_use" and block.name == "submit_map_prompt":
+            data = block.input
+            return {"in_scope": bool(data.get("in_scope")),
+                    "prompt": str(data.get("prompt") or "").strip(),
+                    "reason": str(data.get("reason") or "").strip()}
+    raise RuntimeError("no map prompt returned")
+
+
 def _get_client() -> anthropic.Anthropic:
     global _client
     if _client is None:
