@@ -16,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -712,6 +713,16 @@ class ProposedHubV2(V2Base):
     final_hub_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("hub.hub_id")
     )
+    detection_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("hub_detection_run.hub_detection_run_id")
+    )
+    independence_statement: Mapped[str | None] = mapped_column(Text)
+    detection_method_version: Mapped[str | None] = mapped_column(Text)
+    fingerprint_version: Mapped[str | None] = mapped_column(Text)
+    proposal_evidence: Mapped[dict | None] = mapped_column(JSONB)
+    trigger_statuses: Mapped[list[str] | None] = mapped_column(JSONB)
+    minimum_families_required: Mapped[int | None] = mapped_column(Integer)
+    minimum_categories_required: Mapped[int | None] = mapped_column(Integer)
 
 
 class ProposedHubMemberV2(V2Base):
@@ -728,6 +739,27 @@ class ProposedHubMemberV2(V2Base):
     )
     distance_miles: Mapped[float] = mapped_column(Numeric(8, 2), nullable=False)
     actor_category: Mapped[str] = mapped_column(Text, nullable=False)
+    category_type: Mapped[str | None] = mapped_column(Text)
+    distance_miles_raw: Mapped[float | None] = mapped_column(Float)
+    matched_category: Mapped[str | None] = mapped_column(Text)
+
+
+class HubDetectionRunV2(V2Base):
+    __tablename__ = "hub_detection_run"
+
+    hub_detection_run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    trigger_statuses: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    method_version: Mapped[str] = mapped_column(Text, nullable=False)
+    config_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    eligible_actor_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    proposal_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    suppression_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProposedHubDecisionV2(V2Base):

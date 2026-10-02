@@ -326,7 +326,14 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             "person_discovery_profile": {Path("agents/discovery/promote.py")},
             "search_candidate": {Path("agents/discovery/search/store.py")},
             "discovered_domain": {Path("agents/discovery/search/phase2.py")},
-            "proposed_hub": {Path("agents/review/admission.py")},
+            "proposed_hub": {
+                Path("agents/review/admission.py"),
+                Path("agents/hubs/detect.py"),
+                Path("agents/hubs/decisions.py"),
+            },
+            "proposed_hub_member": {Path("agents/hubs/detect.py")},
+            "proposed_hub_decision": {Path("agents/hubs/decisions.py")},
+            "hub_detection_run": {Path("agents/hubs/detect.py")},
             "review_admission_decision": {Path("agents/review/admission.py")},
             "actor_fact": {
                 Path("agents/discovery/promote.py"),

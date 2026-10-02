@@ -3,7 +3,7 @@
 These files are proposals for the schema owner. They must never be executed on
 shared Supabase by an agent.
 
-The 20 logical migrations are ordered in `manifest.json` and use two ownership
+The 21 logical migrations are ordered in `manifest.json` and use two ownership
 tracks:
 
 - `versions/v2a*.py` contains canonical-table Alembic proposals. This directory
@@ -56,6 +56,14 @@ membership. The current review-kind CHECK is bridged with marked
 only those marked rows. Deferred proposal 400 is the final hub contract and
 depends on the Phase 12 topic, geography, status, source, and membership
 backfill. Neither deferred proposal is an agent execution path.
+
+Phase 7 adds `390_v2_hub_detection.sql`: a run ledger plus nullable proposal
+and member evidence columns. It does not change the frozen 180--350 package,
+legacy memberships, or any canonical hub row. The detector fails closed for
+live persistence until the schema owner approves deferred proposal 410, which
+replaces proposal 310's fixed kind/count/core checks with the configuration-
+backed deterministic-detection contract. Proposal 410 must be deployed with
+the matching Phase 7 code; it is not an agent execution path.
 
 Only the isolated test helper may exercise the detached set:
 

@@ -28,6 +28,15 @@ hubs:
   topic_review_outcome: needs_review_topic
   location_review_outcome: needs_review_location
   final_hub_constraints_deferred: true
+  detection:
+    hub_trigger_statuses:
+      - verified
+    hub_min_actors: 10
+    hub_min_categories: 5
+    hub_core_radius_miles: 50
+    hub_radius_miles: 200
+    proposal_method_version: hub_proposal_v1
+    family_fingerprint_version: hub_family_set_v1
 
 classification:
   catalog: config/actor_categories.yaml

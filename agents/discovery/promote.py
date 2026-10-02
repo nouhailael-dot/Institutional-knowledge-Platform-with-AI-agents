@@ -1266,6 +1266,24 @@ def _persist_hub_assignment_plan(
         )
 
 
+def persist_hub_assignment_plan(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    source_id: str,
+    plan: HubAssignmentPlan,
+) -> None:
+    """Public canonical-writer boundary for deterministic hub assignments."""
+    _persist_hub_assignment_plan(
+        session,
+        actor_id=actor_id,
+        topic_id=topic_id,
+        source_id=source_id,
+        plan=plan,
+    )
+
+
 def _insert_hub_review_bridge(
     session,
     *,

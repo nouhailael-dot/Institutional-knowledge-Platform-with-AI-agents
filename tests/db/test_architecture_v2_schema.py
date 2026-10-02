@@ -56,6 +56,7 @@ V2_TABLES = {
     "actor_strategic_connection_check",
     "hub_center_review",
     "hub_assignment_evidence",
+    "hub_detection_run",
     "proposed_hub",
     "proposed_hub_member",
     "proposed_hub_decision",
@@ -69,9 +70,9 @@ def _manifest() -> list[dict]:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))["logical_migrations"]
 
 
-def test_manifest_has_20_ordered_reversible_migrations():
+def test_manifest_has_21_ordered_reversible_migrations():
     steps = _manifest()
-    assert [step["id"] for step in steps] == [f"{number:03d}" for number in range(1, 21)]
+    assert [step["id"] for step in steps] == [f"{number:03d}" for number in range(1, 22)]
     for step in steps:
         for action in step["actions"]:
             if action["type"] == "sql":
@@ -90,8 +91,8 @@ def test_migration_tracks_are_separate_and_detached():
         "down_revision = None" in path.read_text(encoding="utf-8") for path in proposal_modules
     )
     platform = sorted((ROOT / "agents" / "sql").glob("*_v2_*.sql"))
-    assert [int(path.name[:3]) for path in platform] == list(range(190, 381, 10))
-    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 20
+    assert [int(path.name[:3]) for path in platform] == list(range(190, 391, 10))
+    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 21
 
 
 def test_populated_canonical_constraints_are_not_valid():
@@ -175,6 +176,15 @@ def test_pending_defaults_are_configured_safely():
     assert config["hubs"]["center_drift_review_threshold_miles"] == 25
     assert config["hubs"]["preserve_phase1_names"] is True
     assert config["hubs"]["preserve_phase1_memberships"] is True
+    assert config["hubs"]["detection"] == {
+        "hub_trigger_statuses": ["verified"],
+        "hub_min_actors": 10,
+        "hub_min_categories": 5,
+        "hub_core_radius_miles": 50,
+        "hub_radius_miles": 200,
+        "proposal_method_version": "hub_proposal_v1",
+        "family_fingerprint_version": "hub_family_set_v1",
+    }
     assert config["events"]["blanket_sweep_enabled"] is False
 
 
