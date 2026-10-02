@@ -3,14 +3,33 @@ import fs from 'node:fs';
 import {test} from 'node:test';
 
 import {
+  actorReviewSummary,
   canSubmitReview,
   decisionOptions,
   diffFields,
   editableReviewPayload,
   filterReviewCandidates,
   reviewStatusLabel,
+  reviewFieldLabel,
   validateReviewDraft,
 } from '../frontend/review.js';
+
+test('actor review separates classification and exposes location without guessing',()=>{
+  assert.deepEqual(actorReviewSummary({
+    actor_category:'research_center',category_type:'university_center',
+    location_city:'Boston',state:'Massachusetts',region:'Northeast',country:'United States',
+  }),{
+    actor_category:'research_center',category_type:'university_center',city:'Boston',
+    state:'Massachusetts',region:'Northeast',country:'United States',legacy_category_fallback:false,
+  });
+  assert.deepEqual(actorReviewSummary({actor_type:'research institute',state:'MA'}),{
+    actor_category:'research institute',category_type:null,city:null,state:'MA',region:null,
+    country:null,legacy_category_fallback:true,
+  });
+  assert.equal(reviewFieldLabel('actor_category'),'Actor Category');
+  assert.equal(reviewFieldLabel('category_type'),'Category Type');
+  assert.equal(reviewFieldLabel('actor_type'),'Legacy Actor Type (compatibility)');
+});
 
 const candidates=[
   {candidate_id:'a',display_name:'Example Lab',entity_type:'actor',status:'pending_review',source_run_id:'run-1',reviewed_payload:{description:'Battery research'}},
@@ -62,4 +81,7 @@ test('exact rejected label and mounted Review navigation are present',()=>{
   assert.match(component,/Refresh now/);
   assert.match(component,/window\.confirm/);
   assert.match(component,/target="_blank" rel="noreferrer"/);
+  assert.match(component,/Actor classification and location/);
+  assert.match(component,/Category Type is not inferred/);
+  for(const label of ['City','State','Region','Country'])assert.match(component,new RegExp(`<dt>${label}<\\/dt>`));
 });

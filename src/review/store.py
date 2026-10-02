@@ -37,8 +37,9 @@ REVIEWABLE_RUN_STATUSES = (
 
 EDITABLE_FIELDS = {
     "actor": (
-        "name", "actor_type", "actor_type_raw", "description", "website",
-        "location_city", "state", "country", "primary_technical_focus",
+        "name", "actor_category", "category_type", "category_note",
+        "actor_type", "actor_type_raw", "description", "website",
+        "location_city", "state", "region", "country", "primary_technical_focus",
         "technical_approach", "current_activities", "technology_ip_notes",
         "key_constraints", "funding_summary", "estimated_trl",
         "primary_lifecycle_role",
@@ -56,8 +57,10 @@ EDITABLE_FIELDS = {
 
 FIELD_LIMITS = {
     "actor": {
-        "name": 255, "actor_type": 40, "actor_type_raw": 255, "website": 500,
-        "location_city": 120, "state": 80, "country": 80,
+        "name": 255, "actor_category": 80, "category_type": 120,
+        "category_note": 500, "actor_type": 40, "actor_type_raw": 255,
+        "website": 500, "location_city": 120, "state": 80, "region": 120,
+        "country": 80,
         "primary_lifecycle_role": 30,
     },
     "person": {"name": 255, "role": 120, "public_profile_url": 500},
@@ -157,6 +160,13 @@ def _editable_payload(entity_type: str, payload: dict[str, Any]) -> dict[str, An
     for source, target in PAYLOAD_ALIASES[entity_type].items():
         if target not in normalized and source in normalized:
             normalized[target] = normalized[source]
+    if entity_type == "actor" and not str(normalized.get("actor_category") or "").strip():
+        # Transitional dual-read only: legacy Agent 3 results still emit actor_type.
+        # Keep the original field and expose the same recorded value as the category;
+        # category_type remains empty unless the source actually supplied it.
+        legacy_category = normalized.get("actor_type")
+        if str(legacy_category or "").strip():
+            normalized["actor_category"] = deepcopy(legacy_category)
     return {
         field: deepcopy(normalized[field])
         for field in EDITABLE_FIELDS[entity_type]

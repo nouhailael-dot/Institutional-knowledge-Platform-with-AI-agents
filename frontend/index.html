@@ -710,7 +710,7 @@ function Actors(){
   const {actors,options}=data;
   const matches=actors.filter(a=>
     (!hub||a.hubs.includes(hub)) && (!country||a.country===country) &&
-    (!state||a.state===state) && (types.length===0||types.includes(a.actor_type)) &&
+    (!state||a.state===state) && (types.length===0||types.includes(a.actor_category||a.actor_type)) &&
     (!sector||(a.sectors||[]).includes(sector)) &&
     (!minTrl||(a.trl!=null&&a.trl>=minTrl)) && (!prof||a.has_profile) &&
     (!text|| (a.name||"").toLowerCase().includes(text.toLowerCase()) ||
@@ -746,10 +746,11 @@ function Actors(){
     ${matches.length===0? html`<div class="empty">No actors match these filters. Try widening them.</div>` : html`
     <div class="card" style=${{overflow:"hidden"}}>
       <table class="grid"><thead><tr>
-        <th>Name</th><th>Type</th><th>Country</th><th>State</th><th class="num">TRL</th></tr></thead>
+        <th>Name</th><th>Actor Category</th><th>Category Type</th><th>Country</th><th>State</th><th class="num">TRL</th></tr></thead>
         <tbody>${matches.slice(0,400).map(a=>html`<tr key=${a.id} onClick=${()=>setSel(a)}>
           <td class="name-cell">${a.name}</td>
-          <td>${dash((a.actor_type||"").replace(/_/g," "))}</td>
+          <td>${dash((a.actor_category||a.actor_type||"").replace(/_/g," "))}</td>
+          <td>${dash((a.category_type||"").replace(/_/g," "))}</td>
           <td>${dash(a.country)}</td><td>${dash(a.state)}</td>
           <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody>
       </table>
@@ -763,7 +764,7 @@ function ActorDetail({a,onBack}){
   return html`<div class="card pad detail fade">
     <button class="backlink" onClick=${onBack}>← Back to results</button>
     <h2>${a.name}</h2>
-    <div class="loc">${[a.actor_type&&a.actor_type.replace(/_/g," "),loc,a.trl!=null&&("TRL "+a.trl)]
+    <div class="loc">${[(a.actor_category||a.actor_type)&&("Actor Category: "+(a.actor_category||a.actor_type).replace(/_/g," ")),a.category_type&&("Category Type: "+a.category_type.replace(/_/g," ")),loc,a.trl!=null&&("TRL "+a.trl)]
       .filter(Boolean).join("  ·  ")}</div>
     <div class="badges">
       ${a.has_profile&&html`<span class="chip accent">Deeply profiled</span>`}
@@ -838,9 +839,9 @@ function HubDetail({h,actors,onBack}){
     <h3 style=${{fontFamily:"var(--serif)",marginTop:"22px",marginBottom:"8px"}}>Actors in this hub</h3>
     ${related.length===0? html`<div class="empty">No live actors linked yet.</div>` : html`
       <div class="card" style=${{overflow:"hidden"}}>
-      <table class="grid"><thead><tr><th>Name</th><th>Type</th><th>Country</th><th class="num">TRL</th></tr></thead>
+      <table class="grid"><thead><tr><th>Name</th><th>Actor Category</th><th>Category Type</th><th>Country</th><th class="num">TRL</th></tr></thead>
       <tbody>${related.map(a=>html`<tr key=${a.id}><td class="name-cell">${a.name}</td>
-        <td>${dash((a.actor_type||"").replace(/_/g," "))}</td><td>${dash(a.country)}</td>
+        <td>${dash((a.actor_category||a.actor_type||"").replace(/_/g," "))}</td><td>${dash((a.category_type||"").replace(/_/g," "))}</td><td>${dash(a.country)}</td>
         <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody></table></div>`}
   </div>`;
 }

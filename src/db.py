@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()  # reads .env in the project root into os.environ
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+CONNECT_TIMEOUT_SECONDS = 10
 
 
 def psycopg_database_url(value: str | None) -> str:
@@ -44,6 +45,25 @@ def psycopg_database_url(value: str | None) -> str:
     raise RuntimeError("DATABASE_URL must use a PostgreSQL connection scheme.")
 
 
+def _connect(*, read_only: bool = False) -> psycopg.Connection:
+    """Open PostgreSQL with one bounded retry for transient pooler/network starts."""
+    conninfo = psycopg_database_url(DATABASE_URL)
+    options = "-c statement_timeout=8000" if read_only else None
+    for attempt in range(2):
+        try:
+            kwargs = {"connect_timeout": CONNECT_TIMEOUT_SECONDS}
+            if options:
+                kwargs["options"] = options
+            conn = psycopg.connect(conninfo, **kwargs)
+            if read_only:
+                conn.read_only = True
+            return conn
+        except psycopg.OperationalError:
+            if attempt:
+                raise
+    raise RuntimeError("PostgreSQL connection failed.")  # pragma: no cover
+
+
 def get_connection() -> psycopg.Connection:
     """Open a new Postgres connection. Caller is responsible for closing it,
     so prefer the context-manager form:
@@ -52,7 +72,7 @@ def get_connection() -> psycopg.Connection:
             cur.execute("SELECT count(*) FROM actor")
             print(cur.fetchone())
     """
-    return psycopg.connect(psycopg_database_url(DATABASE_URL))
+    return _connect()
 
 
 def get_readonly_connection() -> psycopg.Connection:
@@ -63,11 +83,7 @@ def get_readonly_connection() -> psycopg.Connection:
       - `read_only = True` — the session physically rejects any write/DDL.
       - `statement_timeout=8000` — a runaway query is killed after 8 seconds.
     """
-    conn = psycopg.connect(
-        psycopg_database_url(DATABASE_URL), options="-c statement_timeout=8000"
-    )
-    conn.read_only = True   # must be set before the first transaction
-    return conn
+    return _connect(read_only=True)
 
 
 if __name__ == "__main__":

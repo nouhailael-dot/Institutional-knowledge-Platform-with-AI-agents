@@ -100,7 +100,15 @@ def load_actors() -> list[dict]:
     'why valuable for UM6P' write-up. These are the hand-curated, richest
     records, so Browse lets you filter down to just them."""
     sql = f"""
-        SELECT a.actor_id, a.name, a.actor_type, a.verification_status,
+        SELECT a.actor_id, a.name,
+               NULLIF(to_jsonb(a)->>'actor_type', '') AS actor_type,
+               COALESCE(
+                   NULLIF(to_jsonb(a)->>'actor_category', ''),
+                   NULLIF(to_jsonb(a)->>'actor_type', '')
+               )
+                   AS actor_category,
+               NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
+               a.verification_status,
                a.location_city, a.state, a.country, a.estimated_trl,
                a.website, a.description,
                (pp.why_valuable_for_um6p IS NOT NULL
@@ -124,6 +132,8 @@ def load_actors() -> list[dict]:
                 "id": str(r["actor_id"]),
                 "name": r["name"],
                 "actor_type": r["actor_type"],
+                "actor_category": r["actor_category"],
+                "category_type": r["category_type"],
                 "verification_status": r["verification_status"],
                 "city": r["location_city"],
                 "state": r["state"],
@@ -215,7 +225,10 @@ def filter_actors(actors: list[dict], *, hub: str | None = None,
     if hub:
         result = [a for a in result if hub in a["hubs"]]
     if types:
-        result = [a for a in result if a["actor_type"] in types]
+        result = [
+            a for a in result
+            if (a.get("actor_category") or a.get("actor_type")) in types
+        ]
     if country:
         result = [a for a in result if a["country"] == country]
     if state:
@@ -269,8 +282,9 @@ def actor_filter_options(actors: list[dict]) -> dict:
     countries: set[str] = set()
     states: set[str] = set()
     for a in actors:
-        if a["actor_type"]:
-            type_counts[a["actor_type"]] = type_counts.get(a["actor_type"], 0) + 1
+        category = a.get("actor_category") or a.get("actor_type")
+        if category:
+            type_counts[category] = type_counts.get(category, 0) + 1
         hubs.update(a["hubs"])
         if a["country"]:
             countries.add(a["country"])

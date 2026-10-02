@@ -95,6 +95,10 @@ class ReviewStoreTests(unittest.TestCase):
         self.assertEqual(actor["evidence"][0]["supports"], "Identity and current work")
         self.assertEqual(actor["agent_metadata"]["_judge"]["relevance_score"], 0.95)
         self.assertIn("coverage_gaps", actor["agent_metadata"])
+        self.assertEqual(actor["reviewed_payload"]["actor_category"], "research institute")
+        self.assertEqual(actor["reviewed_payload"]["actor_type"], "research institute")
+        for field in ("actor_category", "category_type", "location_city", "state", "region", "country"):
+            self.assertIn(field, actor["editable_fields"])
 
     def test_untrusted_non_http_evidence_links_are_not_exposed(self):
         unsafe = result_bundle("Unsafe Link Lab")
