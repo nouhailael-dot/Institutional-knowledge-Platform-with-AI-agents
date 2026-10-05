@@ -219,8 +219,44 @@ def _bounded_tasks(tasks: list[dict]) -> list[dict]:
     return bounded
 
 
+_FOUND_RULE = """
+
+THIS MAP HAS ALREADY BEEN BUILT. The organizations below were found and are on
+the user's screen right now.
+
+Most follow-ups are QUESTIONS ABOUT WHAT IS THERE — "which of these are in
+Texas", "why is this one included", "summarise the top three". Answer those from
+the list in prose. Do not plan new searching for a question you can already
+answer; searching again is slow and spends their budget.
+
+Plan only when they genuinely ask for organizations that are NOT in the list —
+"also look for national labs", "what about New Mexico". Then write tasks for the
+NEW ground only; what is already found will be kept and merged, so repeating a
+previous search wastes the budget. Say what you are looking for, do not ask
+permission.
+
+ORGANIZATIONS ALREADY FOUND:
+{found}"""
+
+
+def _found_summary(result: dict | None, limit: int = 40) -> str:
+    """One line per entity the user can already see, for follow-up turns."""
+    groups = (result or {}).get("entities") or {}
+    lines = []
+    for key in ("actor", "person", "event"):
+        for entity in (groups.get(key) or [])[:limit]:
+            name = entity.get("full_name") or entity.get("name")
+            if not name:
+                continue
+            bits = [b for b in (entity.get("actor_type"), entity.get("state"),
+                                entity.get("location_city"), entity.get("title")) if b]
+            lines.append(f"- {name}" + (f" ({', '.join(str(b) for b in bits)})" if bits else ""))
+    return "\n".join(lines)
+
+
 def map_chat(messages: list[dict], doc_text: str | None = None,
-             actor_focus: str = "research", run=None) -> dict:
+             actor_focus: str = "research", run=None,
+             ask_context: str | None = None, result: dict | None = None) -> dict:
     """One turn of the map-planning conversation.
 
     `messages` is the running exchange as plain {role, content} text turns, so it
@@ -237,16 +273,29 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
     """
     system = _SYSTEM.format(
         focus_rule=_FOCUS_RULES.get(actor_focus, _FOCUS_RULES["research"])) + _CHAT_RULE
+    found = _found_summary(result)
+    if found:
+        system += _FOUND_RULE.format(found=found)
     msgs = list(messages or [])
     if doc_text and msgs:
         msgs = [{"role": "user",
                  "content": f"ATTACHED DOCUMENT (excerpt):\n{doc_text[:6000]}"}] + msgs
+    # Background, never the request: the user's own message stays the thing the
+    # map is graded against.
+    if ask_context and msgs:
+        msgs = [{"role": "user",
+                 "content": f"BACKGROUND FROM AN EARLIER CONVERSATION (context "
+                            f"only, not the request):\n{ask_context[:4000]}"}] + msgs
 
     # Convergence guard. Prompting alone does not reliably stop the questions —
     # in testing it asked a second round after being told to commit. Past the cap
     # we force the tool, so the conversation cannot loop forever.
+    #
+    # It applies only BEFORE a map exists. Once there are results the thread stays
+    # open for questions about them, and forcing a plan there would turn "which of
+    # these are in Texas" into a paid search once the turns added up.
     asked = sum(1 for m in msgs if m.get("role") == "assistant")
-    force = asked >= MAX_QUESTION_ROUNDS
+    force = asked >= MAX_QUESTION_ROUNDS and not found
     kwargs = {"tool_choice": {"type": "tool", "name": "submit_plan"}} if force else {}
     if force:
         system += ("\n\nYou have already asked enough. Commit to a plan now using "

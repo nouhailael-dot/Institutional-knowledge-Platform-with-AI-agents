@@ -238,6 +238,8 @@
   .mcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
     padding:16px 18px;margin-bottom:10px}
   .mcard.weak{opacity:.72;border-style:dashed}
+  .mcard.nomatch{opacity:.74}
+  .whynot{font-size:13px;color:#9a4a21;margin:0 0 8px}
   .mcard .mh{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:7px}
   .mcard .mn{font-weight:650;font-size:15.5px}
   .mcard .mdesc{color:var(--muted);font-size:13.5px;line-height:1.55;margin:6px 0 9px}
@@ -266,7 +268,6 @@
   .mperson-links{font-size:12px;white-space:nowrap}
   .selnote{color:var(--muted);font-size:13px;margin:0 0 18px;padding:11px 14px;
     background:var(--surface-2);border-radius:var(--radius-sm);line-height:1.5}
-  .resthead{margin:26px 0 12px;color:var(--muted);font-size:13px;font-weight:600}
   .thread{display:flex;flex-direction:column;gap:16px;margin:22px 0}
   .mprog{color:var(--muted);font-size:14px;display:flex;align-items:center;gap:10px;
     padding:26px 0}
@@ -335,6 +336,9 @@
   .hub-suggestion{margin:14px 0;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;border-left:3px solid var(--teal)}
   .hub-suggestion-title{display:flex;align-items:center;flex-wrap:wrap;gap:9px;font-size:12px;font-weight:600;margin-bottom:5px}
   .hub-suggestion-name{font-weight:600;font-size:14px}.hub-suggestion .hint{font-size:12px;margin:5px 0;justify-content:flex-start}
+  .rowedit{font:inherit;color:inherit;background:#fff;border:1px solid var(--line);border-radius:6px;
+    padding:3px 7px;min-width:220px;max-width:100%}
+  .rowedit:disabled{background:transparent;border-color:transparent;padding-left:0}
   /* Contrast separates navigation, workspace, and research content. */
   :root{--bg:#eeece8;--line:#dddcd8;--surface-2:#f5f4f1;--shadow:0 5px 18px #2428310d}
   .sidebar{background:#27292d;border-right-color:#27292d;color:#fff}
@@ -352,6 +356,7 @@
   .composer{background:var(--surface);padding:20px;border:1px solid #d7d4ce;border-radius:12px;box-shadow:var(--shadow)}
   .card,.mcard{border-color:#d7d4ce;box-shadow:var(--shadow)}
   .selnote{background:#f7e9df;border-color:#ead0bf}
+  .selnote.quiet{background:var(--surface);border-color:var(--line)}
   table.grid th{background:#e3e4e5;color:#454e5b}
   .subnav{border-bottom-color:#c9c5be}
   .mgroup{border-bottom-color:#ccc7bf}
@@ -502,8 +507,10 @@ const AVATAR=html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
   stroke-linecap="round"/></svg>`;
 
 /* ------------------------------------------------------------------ Ask */
-function Ask(){
+function Ask({onCarryOver}){
   const [q,setQ]=useState("");
+  const [carrying,setCarrying]=useState(false);
+  const [carryNote,setCarryNote]=useState(null);
   const [busy,setBusy]=useState(false);
   const [turns,setTurns]=useState([]);   // conversation: [{id,q,mode,sql,answer,sources,rewritten,done}]
   const [docId,setDocId]=useState(null);
@@ -562,6 +569,25 @@ function Ask(){
           answer:l.answer||"Something went wrong reaching the server."}; return c;});};
   }
   function newConversation(){ if(esRef.current)esRef.current.close(); setTurns([]); setBusy(false); setQ(""); }
+
+  // Carries the WHOLE conversation, not a recent window: a constraint set at
+  // turn two and never repeated still counts. Nothing is spent on the map here —
+  // the user sends it themselves on the next page.
+  async function carryOver(){
+    if(carrying||busy) return;
+    setCarrying(true); setCarryNote(null);
+    const history=turns.filter(t=>t.done).map(t=>({q:t.q,a:(t.answer||"").slice(0,1200),
+      sources:(t.sources||[]).map(s=>s.name).filter(Boolean)}));
+    try{
+      const r=await fetch("/api/ask/handoff",{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({history})});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Could not read the conversation.");
+      if(!d.in_scope||!d.topic) setCarryNote(d.reason||"Build a Map researches organizations, people and events.");
+      else onCarryOver({...d,docId,docName});
+    }catch(e){ setCarryNote(e.message); }
+    setCarrying(false);
+  }
   useEffect(()=>()=>esRef.current&&esRef.current.close(),[]);
   useEffect(()=>{ if(bottomRef.current) bottomRef.current.scrollIntoView({block:"end",behavior:"smooth"}); },[turns.length]);
 
@@ -587,7 +613,10 @@ function Ask(){
         </div>`
       : html`
         <div class="conv-head"><span class="chip accent">💬 Conversation</span>
+          <button class="newconv" type="button" disabled=${carrying||busy} onClick=${carryOver}>
+            ${carrying?html`<span class="spin"></span> Reading the conversation…`:"⊕ Research this on the web"}</button>
           <button class="newconv" type="button" onClick=${newConversation}>＋ New conversation</button></div>
+        ${carryNote&&html`<div class="hint" style=${{marginBottom:"10px"}}>${carryNote}</div>`}
         <div class="chat">
           ${turns.map((t,i)=>{
             const streaming=(i===turns.length-1)&&busy;
@@ -1016,6 +1045,20 @@ function rankingRows(actor){
        ||!/^https?:\/\//i.test(r.source_url||"")||seen.has(key))return false;
     seen.add(key);return true;});
 }
+// Maps saved before selection_outcome existed are read from their marks instead.
+function selectionOutcome(res){
+  if(res.selection_outcome) return res.selection_outcome;
+  const actors=(res.entities&&res.entities.actor)||[];
+  if(/selection unavailable/.test(res.selection_note||"")) return "failed";
+  if(actors.some(e=>e._rank)) return "applied";
+  if(actors.length&&actors.every(e=>e._selected===false)) return "none_matched";
+  return "no_requirements";
+}
+function matchCount(res){
+  const actors=(res.entities&&res.entities.actor)||[];
+  return actors.filter(e=>e._rank).length+" of "+actors.length+" match your request.";
+}
+
 function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
   const [busy,setBusy]=useState(false);
   const j=e._judge||null, lc=e._link_check||null;
@@ -1044,8 +1087,10 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
     : null;
   const deadWeb = lc && lc.website && !lc.website.ok;
 
+  // Only actors are judged by selection; legacy maps excluded without a reason.
+  const excluded=e._selected===false&&(e._why_not||e._entity_type==="actor");
   return html`<div class=${"mcard"+(e._below_floor===true?" weak":"")
-                            +(e._rank?" pick":"")}>
+                            +(e._rank?" pick":"")+(excluded?" nomatch":"")}>
     <div class="mh">
       ${e._rank&&html`<span class="rank">${e._rank}</span>`}
       <span class="mn">${ename(e)}</span>
@@ -1057,6 +1102,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
           ${busy?html`<span class="spin"></span>`:(j?"Re-verify":"Verify")}</button>
       </span>
     </div>
+    ${excluded&&html`<div class="whynot">✕ Doesn't match your request — ${e._why_not||"no reason was recorded for this map."}</div>`}
     ${e.description&&html`<div class="mdesc">${e.description}</div>`}
     ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
     ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
@@ -1105,7 +1151,65 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
   </div>`;
 }
 
-function BuildMap(){
+// The rows are the editor; this is the request they produce. Labelled rather than
+// woven into prose: the planner's own prompt separates subject matter from
+// requirements, so handing it that split already made is less to get wrong.
+function requestFromRows(rows){
+  if(!rows) return "";
+  const parts=[String(rows.topic||"").trim().replace(/\.$/,"")+"."];
+  const clause=(label,list)=>{
+    const items=(list||[]).map(s=>String(s).trim()).filter(Boolean);
+    if(items.length) parts.push(label+": "+items.join("; ")+".");
+  };
+  clause("Must be",rows.must_be);
+  clause("Exclude",rows.exclude);
+  clause("Prefer",rows.prefer);
+  if(rows.result_limit>0) parts.push("Return "+rows.result_limit+".");
+  return parts.join(" ");
+}
+function askContextFrom(rows){
+  if(!rows||!rows.useKnown||!(rows.known_actors||[]).length) return null;
+  return "These organizations are already in the database, so they are already known: "
+    +rows.known_actors.join(", ")+". Prefer searches that reach beyond them.";
+}
+const ROW_KINDS=[["must_be","Must be"],["exclude","Exclude"],["prefer","Prefer"]];
+
+function CarriedRows({rows,onChange,onDismiss}){
+  const [raw,setRaw]=useState(false);
+  const edit=(key,i,value)=>onChange({...rows,[key]:rows[key].map((v,j)=>j===i?value:v)});
+  const drop=(key,i)=>onChange({...rows,[key]:rows[key].filter((_,j)=>j!==i)});
+  const add=(key)=>onChange({...rows,[key]:[...(rows[key]||[]),""]});
+  return html`<div class="hub-suggestion" style=${{marginBottom:"12px"}}>
+    <div class="hub-suggestion-title">From your Ask conversation
+      <button class="example" type="button" style=${{marginLeft:"auto"}} onClick=${onDismiss}>Discard</button></div>
+    ${raw?html`<div class="hint">Editing the request as text. These rows are now a record of what carried over.</div>`:null}
+    <div class="mperson-meta"><b>Topic:</b>
+      <input class="rowedit" value=${rows.topic} disabled=${raw}
+        onInput=${e=>onChange({...rows,topic:e.target.value})}/></div>
+    ${ROW_KINDS.map(([key,label])=>html`<div key=${key}>
+      ${(rows[key]||[]).map((value,i)=>html`<div class="mperson-meta" key=${key+i}>
+        <b>${label}:</b>
+        <input class="rowedit" value=${value} disabled=${raw}
+          onInput=${e=>edit(key,i,e.target.value)}/>
+        ${!raw&&html`<button class="example" type="button" title="Remove"
+          onClick=${()=>drop(key,i)}>✕</button>`}</div>`)}
+      ${!raw&&html`<button class="example" type="button" onClick=${()=>add(key)}>+ ${label}</button>`}
+    </div>`)}
+    <div class="mperson-meta"><b>Return:</b>
+      <input class="rowedit" type="number" min="0" max="50" value=${rows.result_limit} disabled=${raw}
+        onInput=${e=>onChange({...rows,result_limit:Number(e.target.value)||0})}/>
+      <span class="hint">0 means no limit was asked for.</span></div>
+    ${(rows.known_actors||[]).length>0&&html`<div class="mperson-meta">
+      <label><input type="checkbox" checked=${rows.useKnown}
+        onChange=${e=>onChange({...rows,useKnown:e.target.checked})}/>
+        Already in the database: ${rows.known_actors.join(", ")} — look beyond these</label>
+      <span class="hint">Background for the planner. Not part of the request.</span></div>`}
+    <button class="example" type="button" onClick=${()=>{setRaw(!raw); onChange({...rows,raw:!raw});}}>
+      ${raw?"◀ Back to rows":"✎ Edit as text"}</button>
+  </div>`;
+}
+
+function BuildMap({carried,onCarriedChange}){
   const [jobId,setJobId]=useState(null);
   const [cost,setCost]=useState(null);
   const [recent,setRecent]=useState([]);
@@ -1143,6 +1247,24 @@ function BuildMap(){
     try{saved=localStorage.getItem("um6p.mapJobId");}catch(e){}
     if(saved) restore(saved);
   },[]);
+
+  // A carried-over conversation starts its own map. Without this it would land on
+  // whatever map was restored from the last session and be silently swallowed.
+  const carriedAt=useRef(null);
+  useEffect(()=>{
+    if(!carried||carried.at===carriedAt.current) return;
+    carriedAt.current=carried.at;
+    if(busy||verifying){
+      setErr("A map is still running. Stop it or wait before carrying a conversation over.");
+      return;
+    }
+    if(msgs.length||res) reset();
+  },[carried]);
+
+  // Rows are authoritative until the user switches to editing the text itself.
+  useEffect(()=>{
+    if(carried&&!carried.raw&&!msgs.length) setDesc(requestFromRows(carried));
+  },[carried,msgs.length]);
 
   function remember(id){
     activeJob.current=id; setJobId(id);
@@ -1229,8 +1351,10 @@ function BuildMap(){
   async function send(){
     const text=desc.trim();
     if(!text||busy||!researchAvailable) return;
-    if(!["draft","awaiting_reply"].includes(runStatus)){
-      setErr("Start a new map for another request. This map remains saved.");return;
+    // A finished map keeps its thread: the planner answers questions about what it
+    // found, and searches again only when asked for ground it has not covered.
+    if(!["draft","awaiting_reply","done","error"].includes(runStatus)){
+      setErr("This map is still working. Wait for it to finish, or stop it first.");return;
     }
     const version=generation.current;
     stopped.current=false;
@@ -1253,7 +1377,8 @@ function BuildMap(){
       }
       if(stopped.current||version!==generation.current) return;
       setRunStatus("planning"); poll(mapId);
-      const r=await post("/api/map/chat",{messages:thread,job_id:mapId});
+      const r=await post("/api/map/chat",{messages:thread,job_id:mapId,
+        ask_context:askContextFrom(carried)});
       if(!r.ok) throw new Error((await r.json()).detail||"Could not reach the planner.");
       const d=await r.json();
       if(stopped.current||version!==generation.current) return;
@@ -1272,7 +1397,9 @@ function BuildMap(){
         setPhase("Searching the web… this takes a few minutes.");
         setRunStatus("running");
         const rr=await post("/api/map",{
-          description:thread.filter(m=>m.role==="user").map(m=>m.content).join("\n"),
+          // On a map that already has results, the new message IS the request for
+          // the extra ground; the whole thread would carry questions with it.
+          description:res?text:thread.filter(m=>m.role==="user").map(m=>m.content).join("\n"),
           job_id:mapId, plan:{tasks:d.tasks,requirements:d.requirements}});
         if(!rr.ok) throw new Error((await rr.json()).detail||"Could not start the map.");
         poll((await rr.json()).job_id);
@@ -1319,7 +1446,6 @@ function BuildMap(){
   }
 
   const all=()=>MGROUPS.flatMap(([k])=>(res&&res.entities&&res.entities[k])||[]);
-  const displayAll=()=>MDISPLAY_GROUPS.flatMap(([k])=>(res&&res.entities&&res.entities[k])||[]);
 
   const [exporting,setExporting]=useState("");
 
@@ -1434,15 +1560,18 @@ function BuildMap(){
       <div ref=${bottomRef}></div>
     </div>`}
 
+    ${carried&&!msgs.length&&html`<${CarriedRows} rows=${carried} onChange=${onCarriedChange}
+      onDismiss=${()=>{onCarriedChange(null); setDesc("");}}/>`}
+
     <form class="ask-form" onSubmit=${e=>{e.preventDefault();send();}}>
       <div class="input-shell">
         ${ICON_SEARCH}
-        <textarea class="field" rows="1"
+        <textarea class="field" rows="1" readOnly=${!!(carried&&!carried.raw&&!msgs.length)}
           placeholder=${msgs.length?"Reply…":"Describe the map you want to build…"}
           value=${desc} onInput=${e=>setDesc(e.target.value)}
           onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}></textarea>
       </div>
-      <button class="btn" disabled=${busy||!researchAvailable||!["draft","awaiting_reply"].includes(runStatus)}>${busy?html`<span class="spin"></span>`:"Send"}</button>
+      <button class="btn" disabled=${busy||verifying||!researchAvailable||!["draft","awaiting_reply","done","error"].includes(runStatus)}>${busy?html`<span class="spin"></span>`:"Send"}</button>
     </form>
 
     ${!msgs.length&&!busy&&!err&&html`<div class="attach-row">
@@ -1488,17 +1617,22 @@ function BuildMap(){
               ${summary.dead_links>0?" · "+summary.dead_links+" dead link(s)":""}
               ${summary.avg_score!=null?" · avg "+summary.avg_score:""}</span>`}
           </div>
-          ${res.selection_note&&html`<div class="selnote">${res.selection_note}</div>`}
+          ${(()=>{
+            const outcome=selectionOutcome(res);
+            if(outcome==="failed") return html`<div class="selnote">Your filters could not be applied to this map — these results are unfiltered.</div>`;
+            if(outcome==="none_matched") return html`<div class="selnote">None of these organizations matched your filters. They are all shown below, marked as left out.</div>`;
+            if(outcome==="applied") return html`<div class="selnote quiet">${res.selection_note||matchCount(res)}</div>`;
+            return null;
+          })()}
 
           ${(()=>{
-            // When the request carried requirements, the pipeline marks matches
-            // with _rank. Show those first, then the rest under a divider.
-            const picked=displayAll().some(e=>e._rank);
-            const section=(want)=>MDISPLAY_GROUPS.map(([k,label,tone])=>{
-              const items=((res.entities&&res.entities[k])||[])
-                .filter(e=>picked?(want?!!e._rank:!e._rank):true);
+            // One list, nothing folded away: matches in rank order, then anything
+            // selection did not judge, then the exclusions with their reasons.
+            const order=e=>e._rank?e._rank:(e._selected===false?1e6:5e5);
+            return MDISPLAY_GROUPS.map(([k,label,tone])=>{
+              const items=[...((res.entities&&res.entities[k])||[])].sort((a,b)=>order(a)-order(b));
               if(!items.length) return null;
-              return html`<div class="mgroup" key=${(want?"s":"r")+k}>
+              return html`<div class="mgroup" key=${k}>
                 <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
                   <span class="n">${items.length}</span></div>
                 ${items.map((e,i)=>html`<${MapCard} key=${k+i} e=${e} request=${request}
@@ -1507,14 +1641,6 @@ function BuildMap(){
                   disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}/>`)}
               </div>`;
             });
-            if(!picked) return section(true);
-            const rest=displayAll().filter(e=>!e._rank).length;
-            return html`${section(true)}
-              ${rest>0&&html`<details>
-                <summary class="resthead">Also found — ${rest} not matching your
-                  request</summary>
-                ${section(false)}
-              </details>`}`;
           })()}
           ${res.tasks&&res.tasks.length>0&&html`<details class="msrc" style=${{marginTop:"6px"}}>
             <summary>What the agent searched for</summary>
@@ -1544,6 +1670,9 @@ const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stro
   stroke-linecap="round"/></svg>`;
 function App(){
   const [tab,setTab]=useState("ask");
+  // Ask -> Build the Map handoff. Client-side only: every page stays mounted, so
+  // there is no session to plumb through the backend.
+  const [carried,setCarried]=useState(null);
   // Keep every page mounted when switching tabs. BuildMap owns the active job
   // poll and its result state, so unmounting it makes a running map appear to
   // stop even though the backend worker continues.
@@ -1560,9 +1689,11 @@ function App(){
   <div class="workspace-main">
   <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
   <main class="wrap">
-    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}/></div>
+    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}
+      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/></div>
     <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
-    <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}/></div>
+    <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
+      carried=${carried} onCarriedChange=${setCarried}/></div>
   </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);

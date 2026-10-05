@@ -23,11 +23,18 @@ import anthropic
 from dotenv import load_dotenv
 from src.map_agent.costs import paid_message
 from src.map_agent.run_store import MapStopped
+from src.map_agent.search_backend import operation_key
 
 load_dotenv()
 
 MODEL = "claude-sonnet-5"     # judgment against nuanced intent — worth the tier
-MAX_TOKENS = 1024
+# Thinking shares this budget. At 1024 the model spent all of it reasoning over
+# ~14+ candidates and never answered, so the filters silently went unapplied.
+MAX_TOKENS = 8000
+EFFORT = "medium"             # a fairly mechanical comparison; less thinking, faster answer
+
+# How the selection stage ended, so the page can say so plainly.
+APPLIED, NO_REQUIREMENTS, NONE_MATCHED, FAILED = "applied", "no_requirements", "none_matched", "failed"
 
 _SUBMIT = {
     "name": "submit_selection",
@@ -50,14 +57,25 @@ _SUBMIT = {
                     "required": ["id", "why"],
                 },
             },
-            "excluded_note": {
-                "type": "string",
-                "description": "One line on why the rest were left out (e.g. 'outside "
-                               "California' or 'thermal rather than membrane'). Empty "
-                               "if nothing was excluded.",
+            "excluded": {
+                "type": "array",
+                "description": "EVERY candidate not selected, each with a short reason "
+                               "naming the requirement it fails.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "integer",
+                               "description": "The candidate's number from the list."},
+                        "reason": {"type": "string",
+                                   "description": "A few words: 'company, not an "
+                                                  "accelerator', 'in Dallas, outside "
+                                                  "the region'."},
+                    },
+                    "required": ["id", "reason"],
+                },
             },
         },
-        "required": ["selected"],
+        "required": ["selected", "excluded"],
     },
 }
 
@@ -79,8 +97,10 @@ something the user asked for — the raw text is authoritative.
 5. Judge only on the evidence shown. Do not assume facts not present in a \
 candidate's fields.
 
-Be decisive: if a candidate does not fit, leave it out and say why in \
-excluded_note. Call submit_selection exactly once."""
+Be decisive. Every candidate goes in exactly one list: `selected` or \
+`excluded`. Give each excluded one a short reason naming the requirement it \
+fails — the user sees it next to the organization. Call submit_selection \
+exactly once."""
 
 _client = None
 
@@ -117,23 +137,29 @@ def _has_request(requirements: dict) -> bool:
                 or (r.get("result_limit") or 0) > 0)
 
 
+def _mark(entity, selected, rank=None, why=None, why_not=None):
+    entity["_selected"], entity["_rank"] = selected, rank
+    entity["_why"], entity["_why_not"] = why, why_not
+
+
 def apply_request(entities: list[dict], request: str, requirements: dict,
-                  doc_text: str | None = None, run=None, operation_key=None) -> dict:
+                  doc_text: str | None = None, run=None) -> dict:
     """Rank/filter `entities` against the request. Annotates in place.
 
-    Adds to each entity:  _selected (bool), _rank (int|None), _why (str|None)
-    Returns {"selected": [...best first...], "rest": [...], "note": str}.
+    Adds to each entity: _selected, _rank, _why (selected) and _why_not (excluded).
+    Returns {"selected": [...best first...], "rest": [...], "note": str,
+             "outcome": APPLIED | NO_REQUIREMENTS | NONE_MATCHED | FAILED}.
 
     No-ops (everything selected, original order) when the user stated no
     requirements — a bare topic means "show me the map", not "pick some".
     """
     if not entities:
-        return {"selected": [], "rest": [], "note": ""}
+        return {"selected": [], "rest": [], "note": "", "outcome": NO_REQUIREMENTS}
 
     if not _has_request(requirements):
         for e in entities:
-            e["_selected"], e["_rank"], e["_why"] = True, None, None
-        return {"selected": entities, "rest": [], "note": ""}
+            _mark(e, True)
+        return {"selected": entities, "rest": [], "note": "", "outcome": NO_REQUIREMENTS}
 
     reqs = requirements or {}
     listing = "\n".join(_render(e, i) for i, e in enumerate(entities, 1))
@@ -148,39 +174,60 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
     parts.append(f"\nCANDIDATES ({len(entities)}):\n{listing}")
     parts.append("\nDecide which satisfy the request, then call submit_selection.")
 
+    # Keyed on the inputs, not a fixed name: a resumed run replays its own answer,
+    # but a follow-up that added candidates or changed the request is judged again
+    # rather than handed the first answer's now-misaligned candidate numbers.
+    key = operation_key("select-v2", {"request": request, "requirements": reqs,
+                                      "candidates": listing})
     try:
         resp = paid_message(_get_client(), run, "Selection",
-            operation_key=operation_key,
+            operation_key=key,
             model=MODEL, max_tokens=MAX_TOKENS, system=_SYSTEM,
+            output_config={"effort": EFFORT},
             tools=[_SUBMIT], messages=[{"role": "user", "content": "\n".join(parts)}],
         )
-        picked, note = None, ""
+        picked = excluded = None
         for block in resp.content:
             if block.type == "tool_use" and block.name == "submit_selection":
                 picked = block.input.get("selected") or []
-                note = block.input.get("excluded_note") or ""
+                excluded = block.input.get("excluded") or []
                 break
         if picked is None:
-            raise RuntimeError("no selection returned")
+            raise RuntimeError("the output limit was reached before it answered"
+                               if resp.stop_reason == "max_tokens" else "no selection returned")
     except MapStopped:
         raise
     except Exception as e:
         # Fail OPEN: a selection failure must not hide results the user paid for.
         for ent in entities:
-            ent["_selected"], ent["_rank"], ent["_why"] = True, None, None
-        return {"selected": entities, "rest": [],
-                "note": f"(selection unavailable: {e})"}
+            _mark(ent, True)
+        return {"selected": entities, "rest": [], "outcome": FAILED,
+                "note": f"Your filters could not be applied ({e}). These results are unfiltered."}
 
     for e in entities:
-        e["_selected"], e["_rank"], e["_why"] = False, None, None
+        _mark(e, False)
+
+    reasons = {}
+    for item in excluded:
+        i = (item.get("id") or 0) - 1
+        if 0 <= i < len(entities) and item.get("reason"):
+            reasons[i] = str(item["reason"]).strip()
 
     selected = []
     for rank, item in enumerate(picked, 1):
         i = (item.get("id") or 0) - 1
-        if 0 <= i < len(entities):
-            e = entities[i]
-            e["_selected"], e["_rank"], e["_why"] = True, rank, item.get("why")
-            selected.append(e)
+        if 0 <= i < len(entities) and not entities[i]["_selected"]:
+            _mark(entities[i], True, rank=len(selected) + 1, why=item.get("why"))
+            selected.append(entities[i])
 
     rest = [e for e in entities if not e["_selected"]]
-    return {"selected": selected, "rest": rest, "note": note}
+    for i, e in enumerate(entities):
+        if not e["_selected"]:
+            e["_why_not"] = reasons.get(i) or "No reason given."
+
+    if not selected:
+        return {"selected": [], "rest": rest, "outcome": NONE_MATCHED,
+                "note": f"None of the {len(entities)} organizations matched your filters. "
+                        "Each is shown with the reason it was left out."}
+    return {"selected": selected, "rest": rest, "outcome": APPLIED,
+            "note": f"{len(selected)} of {len(entities)} match your request."}

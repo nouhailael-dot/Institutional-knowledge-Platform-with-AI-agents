@@ -33,7 +33,7 @@ from src import browse
 from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
-from src.generate import condense_question, stream_answer
+from src.generate import ask_handoff, condense_question, stream_answer
 from src.map_agent.export import to_pptx, to_xlsx
 from src.map_agent.pipeline import build_map
 from src.map_agent.people_research import research_people
@@ -183,6 +183,26 @@ def ask_stream(question: str = Query(..., min_length=1),
         yield _sse("done", {})
 
     return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+class HandoffRequest(BaseModel):
+    history: list[dict] = []
+
+
+@app.post("/api/ask/handoff")
+def ask_to_map_handoff(payload: HandoffRequest):
+    """What an Ask conversation established, so Build a Map need not start cold.
+
+    Called when the user clicks, never speculatively. Ask-side work: it spends
+    nothing from a map budget and starts no research.
+    """
+    if not payload.history:
+        raise HTTPException(status_code=400, detail="There is no conversation to carry over.")
+    try:
+        return ask_handoff(payload.history)
+    except Exception:
+        raise HTTPException(status_code=502,
+                            detail="Could not read the conversation. Describe the map yourself.")
 
 
 # ---------------------------------------------------------------- Browse (JSON)
@@ -357,6 +377,9 @@ class ChatRequest(BaseModel):
     messages: list[dict]
     doc_id: str | None = None
     job_id: str | None = None
+    # Background from an Ask conversation. Reaches the planner like an attached
+    # document and never joins `description`, which later stages grade against.
+    ask_context: str | None = None
 
 
 @app.post("/api/map/chat")
@@ -373,15 +396,24 @@ def map_chat_turn(payload: ChatRequest):
     description = "\n".join(str(m.get("content", "")) for m in payload.messages if m.get("role") == "user")
     job_id = payload.job_id or map_store().create(description)
     record = map_record(job_id)
+    # Once a map exists the thread carries questions too, so the joined turns stop
+    # being the request. Keep the request that produced these results; a follow-up
+    # that asks for new ground extends it with its own message instead.
+    if record["result"]:
+        description = record["description"] or description
     try:
-        map_store().claim(job_id, "planning", "Planning", ("draft", "awaiting_reply"))
+        # "done"/"error" included: the thread stays open after a map is built so
+        # the user can ask about what was found, or ask for more.
+        map_store().claim(job_id, "planning", "Planning",
+                          ("draft", "awaiting_reply", "done", "error"))
     except MapStopped as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     doc = _DOC_STORES.get(payload.doc_id) if payload.doc_id else None
     text = record["doc_text"] or (doc["text"][:6000] if doc else None)
     map_store().update(job_id, description=description, messages=payload.messages, doc_text=text)
     try:
-        result = map_chat(payload.messages, text, run=RunContext(map_store(), job_id))
+        result = map_chat(payload.messages, text, run=RunContext(map_store(), job_id),
+                          ask_context=payload.ask_context, result=record["result"])
         messages = list(payload.messages)
         if result.get("status") in ("reply", "plan"):
             messages.append({"role": "assistant", "content": result.get("message") or result.get("summary", "")})

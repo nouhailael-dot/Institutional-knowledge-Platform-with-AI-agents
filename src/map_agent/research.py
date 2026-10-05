@@ -187,6 +187,7 @@ def _visible(state):
             "entities": grouped, "counts": {k: len(v) for k, v in grouped.items()},
             "partial": state["phase"] != "done", "coverage_gaps": gaps + pending,
             "selection_note": state.get("selection_note", "Selection has not completed."),
+            "selection_outcome": state.get("selection_outcome"),
             "workflow": "controlled-v1", "failures": [],
             "coverage_note": "Focused evidence-based map, not an exhaustive census. "
                              "Up to four distinct topic queries; ten search hits and three page reads per query. "
@@ -216,6 +217,17 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
             state["gaps"].append("Duplicate or excess planned queries were omitted from this focused pass.")
     if state.get("version") != 1:
         raise ValueError("Unsupported saved workflow")
+    # A follow-up on a finished map asked for ground the first pass did not cover.
+    # Everything already found is kept — the organization loop merges into it — so
+    # only the new tasks are searched. Rankings restart because the set of ranked
+    # institutions has changed; completed lookups replay from the operation cache
+    # and are not paid for twice.
+    elif plan and plan.get("tasks") and state.get("phase") == "done":
+        state["tasks"] = state["tasks"] + _bounded_tasks(plan["tasks"])
+        state["requirements"] = {**_EMPTY_REQS, **(plan.get("requirements") or {})}
+        state["description"] = description or state["description"]
+        state["phase"] = "organizations"
+        state["ranking_index"] = 0
 
     def save():
         result = _visible(state)
@@ -240,10 +252,10 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         save()
     if state["phase"] == "selection":
         run.check()
-        selection = apply_request(state["found"], state["description"], state["requirements"], run=run,
-                                  operation_key="controlled-selection-v1")
+        selection = apply_request(state["found"], state["description"], state["requirements"], run=run)
         state["found"] = selection["selected"] + selection["rest"]
         state["selection_note"] = selection["note"]
+        state["selection_outcome"] = selection["outcome"]
         state["phase"] = "rankings"
         save()
     if state["phase"] == "rankings":

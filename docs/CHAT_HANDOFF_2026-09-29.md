@@ -15,8 +15,11 @@ summary. It does **not** repeat the project's history — that lives elsewhere (
 | `docs/CHAT_HANDOFF_2026-09-21.md` | Previous consolidated handoff; people-search detail | Mostly current |
 | `docs/PROJECT_CHANGE_HISTORY.md` | Narrative history, honest about requirement vs prototype vs done | Historical |
 | `docs/MAP_COST_TRACKING.md` | Cost/recovery operational detail | Current |
-| `HANDOFF_CURRENT.md` | Superseded by this file; has useful dated updates prepended | Partly stale |
-| `HANDOFF.md` | Materially wrong. Historical only | **Do not rely on** |
+
+The superseded root handoffs (`HANDOFF.md`, `HANDOFF_CURRENT.md`, `CHAT_HANDOFF.md`,
+`BUILD_THE_MAP_HANDOFF.txt`, `BUILD_THE_MAP_STATUS.md`, `PLATFORM_STATUS.md`,
+`ARCHITECTURE_PROPOSAL.md`, `Tech_Summary.md`) were deleted on 1 Oct along with the
+Streamlit `app.py` the React frontend replaced. They are in git history if ever needed.
 
 When the spec and any meeting note disagree, **Architecture V2 wins** unless the
 team says otherwise (see §6 — there are three live contradictions).
@@ -122,6 +125,35 @@ which silently deleted well-sourced facts whenever the model reworded itself
 between the two. Normalize before comparing, and record drops rather than
 vanishing them.
 
+### Landed 1–5 October
+
+- **Ask → Build the Map bridge.** One "Research this on the web" action per Ask
+  conversation condenses the WHOLE thread into editable rows (topic, must be,
+  exclude, prefer, limit) plus a known-actors toggle. The rows generate the request;
+  "Edit as text" switches authority to the textbox. Known actors travel separately
+  as `ask_context`, injected for the planner like an attached document, so they never
+  become the request that selection grades against. Nothing spends until Send.
+  Carrying over resets to a fresh map rather than landing on the last saved one.
+- **Build the Map is a continuous conversation.** The thread stays open after a map
+  is built. The planner sees the found organizations and answers questions about
+  them in prose; only a request for new ground produces a plan, whose tasks are
+  appended to the saved workflow and merged into existing results. The forced-plan
+  guard applies only before a map exists. Once results exist, the stored request is
+  kept rather than re-joined from every message, so questions cannot contaminate it.
+- **Selection repaired.** Its 1024-token cap was exhausted by thinking on maps of
+  ~9+ candidates, so it never answered and filters were silently unapplied on 5 of
+  11 maps. Now 8000 tokens at medium effort; every exclusion carries a reason; the
+  outcome (applied / no requirements / none matched / failed) is stored and stated
+  plainly; results are one list with exclusions marked rather than folded into
+  "Also found". Its replay key was a fixed name, so selection could run only once
+  per map — follow-up candidates were never judged. It is now keyed on its inputs.
+- **Export** no longer fails when selection rejected everything; **extraction**
+  ceiling raised 4096 → 16000.
+- **Cleanup.** Removed the superseded root docs, the Streamlit `app.py`, the unused
+  `src/enrich/`, `.codex_tmp/`, the July data-quality scan, and the unused `groq`,
+  `streamlit` and `sse-starlette` dependencies. `outputs/` moved to
+  `~/Desktop/um6p-outputs/`. `evals/` kept — the only retrieval quality check.
+
 ---
 
 ## 5. ⚠ The highest-priority open risk
@@ -147,12 +179,13 @@ is now in code**, so the minutes are the outlier. Needs a team decision:
 
 | | Meeting minutes | Architecture V2 (in code) |
 |---|---|---|
-| Rejected records | Deleted after 24h *(marked "to be confirmed")* | **Record stays, not deleted, reason recorded** |
+| ~~Rejected records~~ **SETTLED 5 Oct** | ~~Deleted after 24h~~ | **Spec wins: record stays, reason recorded. See the agreed design at the end of §7** |
 | New-hub detection | ≥10 actors, ≥5 categories, incl. major university | **≥3 Verified actors, ≥2 categories, independent** |
 | Hub location test | 50 mi centre / 200 mi hub | **Compare to actors already in hub — "no distance calculations"** |
 
 The 3-vs-10 gap is the consequential one — it changes how often the platform
-proposes new hubs.
+proposes new hubs. **Both remaining rows are being handled by a colleague working
+on the updating agent, not here.**
 
 ---
 
@@ -181,6 +214,47 @@ proposes new hubs.
   mounted) — no backend session plumbing.
 - Carry `doc_id` if a document was attached in Ask.
 - Do **not** offer it for out-of-scope questions.
+
+### AGREED 5 Oct — Verify, Reject, and the confirm before follow-up research
+
+Decided in discussion, **not yet built**. This supersedes the open questions in the
+parked spec below and settles contradiction #1 in §6.
+
+**Verify pushes to the production database, in batches.**
+- Verify will eventually push the organization and its fields to the production DB;
+  column names get matched to what the map pulls, and most already match.
+- The write happens through a **"Push all verified"** button, not per card, so a
+  single misclick cannot push anything.
+- When user accounts exist, the approver's name is attached to the approval.
+- Route every DB write through one module, so a schema change on Ismail's side is
+  one file to fix rather than a hunt.
+
+**Reject is added next to Verify — and nothing more.**
+- Two explicit states plus "untouched". Do **not** build the full
+  Imported / Parked / Verified / Rejected lifecycle; it is ceremony until something
+  downstream treats the extra states differently.
+- Records a timestamp, an optional one-line reason, and the map it belonged to.
+  Nothing is deleted — the map keeps every organization.
+- **Rejections never surface in a later map.** No flagging, no filtering, no
+  "previously rejected" label. An organization irrelevant to one topic can matter
+  for another, and judging two topics "the same" is too fuzzy: a wrong match would
+  anchor the reviewer against a good organization before they read a word. Record
+  it, do not act on it — the stored reason still answers "why isn't X in here?"
+  months later.
+- Inside one map it tidies the review list and gives a progress signal:
+  *6 verified · 3 rejected · 5 not reviewed*.
+
+**Follow-up research asks once before it runs.**
+- When the planner decides to search on a map that **already has results**, show its
+  sentence with a **"Start searching"** button instead of starting immediately.
+- One extra click, only on follow-ups, never on the first run. **No dollar figures
+  in chat** — the usage panel already shows the budget.
+- Why: with the thread permanently open most messages are free questions, so an
+  ambiguously phrased one ("what about national labs?") could otherwise launch a
+  paid multi-minute run with no moment to say "no, I meant the ones already here".
+
+**Out of scope here:** §6 contradictions #2 and #3 (new-hub thresholds, hub location
+test) are being handled by a colleague on the updating agent.
 
 ### PARKED — Verify as a save action, and checks that run before display
 
@@ -291,22 +365,12 @@ sourcing is entity-level, but it means review effort cannot be prioritised.
 
 ## 10. Git state
 
-Last commit **`8734605`** ("ActorsPeople Connection"). **A very large amount is
-uncommitted**, including the whole V2 implementation:
+Everything through 5 October is committed. History contains a `wip(ask)` commit
+(`1282331`) holding an abandoned first attempt at the Ask bridge; it reached GitHub
+before it was replaced. It was **not** force-removed — it is superseded by a merge
+that keeps the rewritten bridge. Ignore it when reading history.
 
-- Modified: `backend/app.py`, `frontend/index.html`, `research.py`, `planner.py`,
-  `export.py`, `run_store.py`, `dedup.py`, `verify.py`, `pipeline.py`,
-  `.claude/launch.json`, docs, tests
-- Deleted: `discover.py`, `enrich.py` (deliberate — legacy removal)
-- Untracked: `actor_profile.py`, `entity_schemas.py`, `client.py`,
-  `people_research.py`, `people_validation.py`, `rankings.py`, most of `tests/`,
-  `docs/ACTOR_PROFILE_V2.md`
-
-`.claude/launch.json` previously pointed the dev server at the conda interpreter;
-it now runs `.venv/bin/python`, which is the one the project expects (§2).
-
-**Committing is the highest-value low-risk action available.** A lost working
-directory loses the cost system, persistence, controlled research, V2 and all tests.
+`.claude/launch.json` runs `.venv/bin/python`, the interpreter the project expects (§2).
 
 ---
 
@@ -314,7 +378,7 @@ directory loses the cost system, persistence, controlled research, V2 and all te
 
 `.venv/bin/python -m unittest discover -s tests -p 'test_*.py'`
 
-**92 tests, all passing as of 29 Sept** (actor_profile: 4). Suites use mocked
+**101 tests, all passing as of 5 Oct** (selection: 7). Suites use mocked
 responses and local stores — **no paid research runs in the test suite**. Passing
 tests do not demonstrate live extraction quality (see §5). The two `.mjs` suites
 are not covered by that command and run separately under node.
@@ -323,14 +387,18 @@ are not covered by that command and run separately under node.
 
 ## 12. What I would do next, in order
 
-1. **Commit the working tree.**
-2. **Run one real map and read the extracted fields** (§5). This is the only way
-   to know whether V2 is safe in front of reviewers.
-3. **Take the three contradictions to the team** (§6), especially hub thresholds.
-4. **Implement hub assignment** (§2.2) so `hub_status` stops being uniformly
-   "needs review".
-5. **Build the Ask → Build a Map bridge** (§7) — design is agreed, roughly a day.
-6. Reconcile the local cost ledger against provider billing (long-standing).
+1. **Run one real map and read the extracted fields** (§5). Every bug fixed in the
+   first week of October was found from real data, not tests, and the new selection
+   format has not yet run against the live API.
+2. **Decide the fate of the check layers** once Verify becomes a database push:
+   proposal is to delete the relevance judge and the weak-match floor (selection
+   already does that job) and run the dead-link check automatically after every map.
+3. **Build the agreed Verify / Reject / "Start searching" design** (end of §7).
+4. Small: say "can't reach the server" instead of silently disabling Send.
+5. Later: check location and category filters in code; fixed label list for
+   `category_details`; reconcile the cost ledger against provider billing.
+
+Hub assignment and new-hub detection (§6 #2–3) belong to the updating agent.
 
 ---
 

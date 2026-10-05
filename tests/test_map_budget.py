@@ -303,7 +303,7 @@ class ApiTests(unittest.TestCase):
 
     def test_planning_and_research_use_same_job_budget(self):
         job_id = self.client.post("/api/map/session").json()["job_id"]
-        def chat(messages, text, run):
+        def chat(messages, text, run, **kwargs):
             client = Mock()
             client.with_options.return_value = client
             client.messages.count_tokens.return_value = SimpleNamespace(input_tokens=100)
