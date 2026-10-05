@@ -180,6 +180,7 @@ class PostgresReviewSource:
     TABLES = {
         "scrape_run", "search_candidate", "staged_record",
         "event_review_queue", "person_review_queue", "hub",
+        "review_item", "actor", "actor_fact", "source",
     }
 
     def __init__(self, database_url: str):
@@ -200,7 +201,11 @@ class PostgresReviewSource:
             hostaddr = _reachable_hostaddr(self.database_url)
             if hostaddr:
                 connection_options["hostaddr"] = hostaddr
-            connection_options["sslmode"] = "require"
+            parsed = urlsplit(self.database_url)
+            connection_options["sslmode"] = (
+                "disable" if parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+                else "require"
+            )
             db = psycopg.connect(
                 self.database_url,
                 autocommit=False,
@@ -284,6 +289,12 @@ class PostgresReviewSource:
                     self._merge_queue_candidate(candidates, candidate)
             elif "person_review_queue" not in columns:
                 warnings.append("PostgreSQL person_review_queue is unavailable.")
+
+            review_columns = columns.get("review_item", set())
+            if review_columns and "actor" in columns:
+                for row in self._v2_review_rows(db, review_columns):
+                    candidate = self._from_v2_review_item(row)
+                    candidates[candidate["source_key"]] = candidate
 
             return list(candidates.values()), warnings
 
@@ -402,6 +413,48 @@ class PostgresReviewSource:
             "WHERE q.status = 'pending' ORDER BY q.created_at"
         )
         return db.execute(query).fetchall()
+
+    def _v2_review_rows(self, db, queue: set[str]):
+        required = {
+            "review_item_id", "review_kind", "entity_type", "entity_id",
+            "topic_id", "payload", "status", "created_at",
+        }
+        if not required <= queue:
+            return []
+        return db.execute(
+            "SELECT ri.review_item_id::text AS review_item_id, ri.review_kind, "
+            "ri.entity_type, ri.entity_id::text AS entity_id, "
+            "ri.topic_id::text AS topic_id, ri.priority, ri.payload, ri.created_at, "
+            "a.name, NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
+            "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
+            "NULLIF(to_jsonb(a)->>'category_note','') AS category_note, "
+            "NULLIF(to_jsonb(a)->>'actor_type','') AS actor_type, a.description, "
+            "a.website, a.location_city, a.state, a.country, "
+            "NULLIF(to_jsonb(a)->>'state_code','') AS state_code, "
+            "NULLIF(to_jsonb(a)->>'region_code','') AS region_code, "
+            "NULLIF(to_jsonb(a)->>'record_status','') AS record_status, "
+            "s.url AS actor_source_url, "
+            "COALESCE(f.facts,'[]'::jsonb) AS facts "
+            "FROM review_item ri "
+            "JOIN actor a ON ri.entity_type='actor' AND a.actor_id=ri.entity_id "
+            "LEFT JOIN source s ON s.source_id=a.source_id "
+            "LEFT JOIN LATERAL ("
+            " SELECT jsonb_agg(jsonb_build_object("
+            "   'fact_key',af.fact_key,'fact_type',af.fact_type,'layer',af.layer,"
+            "   'collection_state',af.collection_state,'value',af.fact_value,"
+            "   'confidence',af.confidence,'date_read',af.retrieved_at,"
+            "   'source_origin',af.source_origin,'source_url',fs.url"
+            " ) ORDER BY af.created_at,af.actor_fact_id) AS facts "
+            " FROM actor_fact af JOIN source fs ON fs.source_id=af.source_id "
+            " WHERE af.actor_id=a.actor_id "
+            "   AND af.topic_id IS NOT DISTINCT FROM ri.topic_id"
+            ") f ON true "
+            "WHERE ri.status='pending' "
+            "AND ri.review_kind IN ("
+            " 'verify_actor','category_doubt','hub_assignment','same_topic_overlap',"
+            " 'hub_needs_review','hub_radius_overlap','hub_member_outside_radius'"
+            ") ORDER BY ri.created_at"
+        ).fetchall()
 
     @staticmethod
     def _run_description(entity_type: str, run_id: str, mode: Any = None) -> str:
@@ -548,6 +601,62 @@ class PostgresReviewSource:
             ),
             "created_at": _timestamp(row.get("created_at")),
             "match_key": ("person", run_id, str(source_url or "").strip()),
+        }
+
+    def _from_v2_review_item(self, row: dict[str, Any]) -> dict[str, Any]:
+        review_id = str(row["review_item_id"])
+        payload = _json_object(row.get("payload"))
+        actor_payload = {
+            "name": row.get("name"),
+            "actor_category": row.get("actor_category") or row.get("actor_type"),
+            "category_type": row.get("category_type"),
+            "category_note": row.get("category_note"),
+            "actor_type": row.get("actor_type"),
+            "description": row.get("description"),
+            "website": row.get("website"),
+            "location_city": row.get("location_city"),
+            "state": row.get("state") or row.get("state_code"),
+            "region": row.get("region_code"),
+            "country": row.get("country"),
+        }
+        actor_payload = {key: value for key, value in actor_payload.items() if value is not None}
+        source_urls: list[str] = []
+        for value in [payload.get("source_url"), row.get("actor_source_url")]:
+            if isinstance(value, str) and value.strip() and value.strip() not in source_urls:
+                source_urls.append(value.strip())
+        facts = _json_list(row.get("facts"))
+        for fact in facts:
+            if isinstance(fact, dict):
+                value = fact.get("source_url")
+                if isinstance(value, str) and value.strip() and value.strip() not in source_urls:
+                    source_urls.append(value.strip())
+        evidence = []
+        for url in source_urls:
+            evidence.extend(_source_evidence(url, supports="Architecture V2 actor fact or discovery evidence"))
+        return {
+            "source_key": f"postgres:review_item:{review_id}",
+            "source_run_id": f"v2-review:{row.get('topic_id') or 'unscoped'}",
+            "source_index": f"review-item:{review_id}",
+            "source_description": f"Architecture V2 {row.get('review_kind')} review",
+            "entity_type": "actor",
+            "payload": actor_payload,
+            "evidence": evidence,
+            "agent_metadata": {
+                "source_table": "review_item",
+                "review_item_id": review_id,
+                "review_kind": row.get("review_kind"),
+                "entity_id": row.get("entity_id"),
+                "topic_id": row.get("topic_id"),
+                "record_status": row.get("record_status"),
+                "priority": row.get("priority"),
+                "pipeline": payload,
+                "facts": facts,
+            },
+            "duplicate_state": (
+                "possible_duplicate" if row.get("review_kind") == "possible_duplicate"
+                else "new"
+            ),
+            "created_at": _timestamp(row.get("created_at")),
         }
 
     @staticmethod

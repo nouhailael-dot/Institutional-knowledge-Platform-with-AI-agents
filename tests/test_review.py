@@ -590,6 +590,44 @@ class PostgresReviewSourceTests(unittest.TestCase):
         self.assertTrue(source.database_url.startswith("postgresql://"))
         self.assertNotIn("+psycopg2", source.database_url)
 
+    def test_v2_verify_actor_review_maps_classification_location_facts_and_source(self):
+        candidate = self.source._from_v2_review_item({
+            "review_item_id": "review-id", "review_kind": "verify_actor",
+            "entity_id": "actor-id", "topic_id": "topic-id", "priority": "normal",
+            "payload": {"source_url": "https://example.org/discovery"},
+            "created_at": 1_700_000_000, "name": "Example Labs",
+            "actor_category": "company", "category_type": "corporate_rd_lab",
+            "category_note": None, "actor_type": "company",
+            "description": "Topic work", "website": "https://example.org",
+            "location_city": "Boston", "state": "Massachusetts", "state_code": "MA",
+            "region_code": "northeast", "country": "United States",
+            "record_status": "parked", "actor_source_url": "https://example.org/discovery",
+            "facts": [{"fact_key": "description", "layer": 1,
+                       "confidence": "medium", "source_url": "https://example.org/fact"}],
+        })
+        self.assertEqual(candidate["payload"]["actor_category"], "company")
+        self.assertEqual(candidate["payload"]["category_type"], "corporate_rd_lab")
+        self.assertEqual(candidate["payload"]["location_city"], "Boston")
+        self.assertEqual(candidate["payload"]["region"], "northeast")
+        self.assertEqual(candidate["agent_metadata"]["record_status"], "parked")
+        self.assertEqual(candidate["agent_metadata"]["facts"][0]["layer"], 1)
+        self.assertEqual(
+            {item["url"] for item in candidate["evidence"]},
+            {"https://example.org/discovery", "https://example.org/fact"},
+        )
+
+    def test_local_v2_review_source_disables_tls_but_remains_read_only(self):
+        source = PostgresReviewSource(
+            "postgresql://ghus_test@127.0.0.1:55432/ghus_v2_integration_test"
+        )
+        db = MagicMock()
+        db.execute.return_value.fetchone.return_value = {"transaction_read_only": "on"}
+        with patch("psycopg.connect", return_value=db) as connect:
+            with source.connect():
+                pass
+        self.assertEqual(connect.call_args.kwargs["sslmode"], "disable")
+        self.assertIn("default_transaction_read_only=on", connect.call_args.kwargs["options"])
+
     def test_queue_metadata_merges_into_matching_search_candidate(self):
         existing = discovery_candidate("event", "search-event")
         existing["match_key"] = ("event", "run-1", "https://example.org/profile")
@@ -637,6 +675,63 @@ class PostgresReviewSourceTests(unittest.TestCase):
                 pass
         self.assertEqual(connect.call_args.kwargs["hostaddr"], "203.0.113.9")
         self.assertIn("example.invalid", connect.call_args.args[0])
+
+
+@unittest.skipUnless(
+    os.environ.get("V2_TEST_DATABASE_URL"),
+    "V2_TEST_DATABASE_URL is required for the isolated V2 Review API proof",
+)
+class V2PostgresReviewApiIntegrationTests(unittest.TestCase):
+    def test_generated_phase3_actor_appears_through_shared_review_api(self):
+        from urllib.parse import urlsplit
+
+        from fastapi.testclient import TestClient
+        from backend import app as backend
+
+        database_url = os.environ["V2_TEST_DATABASE_URL"]
+        parsed = urlsplit(database_url.replace("postgresql+psycopg2", "postgresql", 1))
+        self.assertIn(parsed.hostname, {"127.0.0.1", "localhost"})
+        self.assertEqual(parsed.port, 55432)
+        self.assertTrue(parsed.path.removeprefix("/").endswith("_test"))
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            runs = RunStore(root / "runs.sqlite3")
+            review = ReviewStore(root / "review.sqlite3", enable_test_canonical=True)
+            source = PostgresReviewSource(database_url)
+            bridge = MagicMock(configured=False)
+            with patch.object(backend, "map_store", return_value=runs), \
+                    patch.object(backend, "review_store", return_value=review), \
+                    patch.object(backend, "review_postgres_source", return_value=source), \
+                    patch.object(backend, "review_admission_bridge", return_value=bridge):
+                backend._review_sync_last = 0.0
+                backend._review_sync_store_key = None
+                with TestClient(backend.app) as client:
+                    response = client.get(
+                        "/api/review/candidates",
+                        params={"status": "all", "entity_type": "actor", "refresh": True},
+                    )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["sync_warnings"], [])
+        generated = [
+            candidate for candidate in response.json()["candidates"]
+            if candidate.get("agent_metadata", {}).get("source_table") == "review_item"
+            and str(candidate.get("reviewed_payload", {}).get("name", "")).startswith(
+                "Functional New Actor "
+            )
+        ]
+        self.assertTrue(generated, "the Phase 3 actor was not exposed by the shared Review API")
+        candidate = generated[-1]
+        payload = candidate["reviewed_payload"]
+        self.assertEqual(candidate["agent_metadata"]["review_kind"], "verify_actor")
+        self.assertEqual(payload["actor_category"], "company")
+        self.assertEqual(payload["category_type"], "corporate_rd_center")
+        self.assertEqual(payload["location_city"], "Boston")
+        self.assertEqual(payload["state"], "MA")
+        self.assertEqual(payload["region"], "northeast")
+        self.assertEqual(payload["country"], "US")
+        self.assertTrue(candidate["evidence"])
 
 
 if __name__ == "__main__":
