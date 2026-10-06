@@ -31,7 +31,7 @@ def test_sql_state_aliases_match_python_geography():
 def test_backfill_steps_run_after_480_and_before_validation():
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
     steps = [step["id"] for step in manifest["checkpoints"]["phase12_policy_backfill"]["steps"]]
-    assert steps == ["480", "482", "484", "488"]
+    assert steps == ["480", "482", "484", "488", "489"]
     assert manifest["checkpoints"]["phase12_policy_validate"]["inherits"] == "phase12_policy_backfill"
 
 

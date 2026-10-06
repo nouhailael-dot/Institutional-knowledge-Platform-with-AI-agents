@@ -8,6 +8,11 @@ DO $$ BEGIN
   ) THEN
     RAISE EXCEPTION 'pre_cutover_data_loss_audit has not passed';
   END IF;
+  -- Re-run the audit on the live data inside this transaction: an attestation
+  -- recorded earlier is not enough if anything changed since.
+  IF EXISTS (SELECT 1 FROM ghus_pre_cutover_data_loss_audit() WHERE NOT passed) THEN
+    RAISE EXCEPTION 'pre_cutover_data_loss_audit fails on the current data';
+  END IF;
 END $$;
 
 ALTER TABLE actor ALTER COLUMN actor_category SET NOT NULL;

@@ -11,10 +11,11 @@ stand-ins for them (category confirmations, aggregate dispositions, the empty
 is recorded in the evidence file and must be replaced by real GHUS decisions
 before the production cutover.
 
-Order: verify dump -> restore public schema -> expand to target_prebackfill_phase11
--> load gazetteer -> 440/470/480/482/484/490 -> 486 -> data-loss audit (must pass)
--> TEST-ONLY decisions -> 405/410/495 -> TEST-ONLY attestation -> 500
--> full manifest re-run (must be a no-op) -> invariants.
+Every migration stage runs through scripts/architecture_v2_release.py, exactly as
+the schema owner will run it: baseline -> expand -> gazetteer -> backfill ->
+validate -> data-loss audit (Python and SQL function, must pass) -> topic (TEST-ONLY
+approval) -> TEST-ONLY decisions -> contract -> TEST-ONLY attestation -> cutover
+-> every SQL stage re-run (must be a no-op) -> invariants.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,6 +42,7 @@ EVIDENCE = ROOT / "docs/evidence/phase12_cutover_rehearsal_2026-10-06.json"
 AUDIT = ROOT / "docs/evidence/pre_cutover_data_loss_audit_rehearsal_2026-10-06.json"
 TEST_ONLY = "TEST-ONLY rehearsal stand-in for a GHUS decision"
 TEST_ONLY_SQL = ROOT / "tests/fixtures/phase12_rehearsal_test_only_decisions.sql"
+TOPIC_CSV = ROOT / "docs/evidence/phase12_topic_proposal.csv"
 URL = f"postgresql://{ROLE}@{HOST}:{PORT}/{DATABASE}"
 
 
@@ -48,6 +51,7 @@ def _env() -> dict[str, str]:
     env.update({
         "V2_TEST_DATABASE_URL": URL,
         "V2_PHASE12_POLICY_DATABASE_URL": URL,
+        "GHUS_REHEARSAL_DATABASE_URL": URL,
         # Never let any imported module fall back to the production .env URL.
         "DATABASE_URL": "postgresql://blocked@127.0.0.1:1/blocked_test",
     })
@@ -83,6 +87,13 @@ def _scalar(sql: str):
 def _invariants() -> dict[str, int]:
     return {table: _scalar(f"SELECT count(*) FROM {table}")
             for table in ("actor", "hub", "hub_actor", "event")}
+
+
+def _sql_audit() -> list[dict[str, object]]:
+    with _connect() as connection, connection.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute("SELECT check_name,source_rows,destination_rows,passed "
+                       "FROM ghus_pre_cutover_data_loss_audit()")
+        return [dict(row) for row in cursor.fetchall()]
 
 
 def _test_only_decisions() -> dict[str, object]:
@@ -147,18 +158,26 @@ def main() -> int:
         raise RuntimeError("unexpected restore errors:\n" + "\n".join(restore_errors))
     baseline = _invariants()
 
-    schema = [sys.executable, "scripts/functional_v2_schema.py"]
-    _run(schema + ["target_prebackfill_phase11"], log)
-    _run([sys.executable, "-m", "scripts.load_us_city_gazetteer", "--live"], log)
-    _run(schema + ["phase12_topic_policy", "--after", "target_prebackfill_phase11"], log)
+    release = [sys.executable, "-m", "scripts.architecture_v2_release", "apply"]
+    target = ["--database-url-env", "GHUS_REHEARSAL_DATABASE_URL"]
+    for stage in ("baseline", "expand", "gazetteer", "backfill", "validate"):
+        _run(release + [stage] + target, log)
     _run([sys.executable, "scripts/phase12_policy_proof.py"], log)
     audit = json.loads(AUDIT.read_text(encoding="utf-8"))
-    if not audit["passed"]:
+    sql_audit = _sql_audit()
+    if not audit["passed"] or not all(row["passed"] for row in sql_audit):
         raise RuntimeError("data-loss audit failed; migration 500 must not run")
     audit_sha256 = hashlib.sha256(AUDIT.read_bytes()).hexdigest()
 
+    with tempfile.TemporaryDirectory() as scratch:
+        approval = Path(scratch) / "topic_approval.json"
+        approval.write_text(json.dumps({
+            "approved_by": TEST_ONLY,
+            "topic_proposal_sha256": hashlib.sha256(TOPIC_CSV.read_bytes()).hexdigest(),
+        }), encoding="utf-8")
+        _run(release + ["topic"] + target + ["--topic-approval", str(approval)], log)
     stand_ins = _test_only_decisions()
-    _run(schema + ["category_resolution_contract", "--after", "phase12_topic_policy"], log)
+    _run(release + ["contract"] + target, log)
     with _connect() as connection, connection.cursor() as cursor:
         cursor.execute("""
             INSERT INTO architecture_v2_cutover_attestation
@@ -168,8 +187,11 @@ def main() -> int:
               json.dumps({"audit_file": AUDIT.name, "database": DATABASE})))
         connection.commit()
     before_500 = _invariants()
-    _run(schema + ["final_cutover", "--after", "category_resolution_contract"], log)
-    rerun = _run(schema + ["final_cutover"], log)
+    _run(release + ["cutover"] + target, log)
+    rerun = "\n".join(
+        _run(release + [stage] + target, log)
+        for stage in ("expand", "backfill", "validate", "contract", "cutover")
+    )
     after_500 = _invariants()
     legacy_columns = _scalar("""
         SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
@@ -191,6 +213,7 @@ def main() -> int:
         "row_counts": {"restored": baseline, "before_500": before_500, "after_500": after_500},
         "invariants_hold": baseline == before_500 == after_500 == expected,
         "data_loss_audit_passed_before_500": audit["passed"],
+        "sql_audit_function_before_500": sql_audit,
         "data_loss_audit_sha256": audit_sha256,
         "test_only_stand_ins": stand_ins,
         "attestation": "TEST-ONLY local rehearsal attestation (not a GHUS approval)",

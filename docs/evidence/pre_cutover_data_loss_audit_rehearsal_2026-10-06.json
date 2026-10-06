@@ -212,7 +212,7 @@
   ],
   "cutover_attestation_written": false,
   "database": "ghus_v2_phase12_rehearsal_test",
-  "generated_at": "2026-10-06T21:29:43.380427+00:00",
+  "generated_at": "2026-10-06T21:42:16.256785+00:00",
   "passed": true,
   "rule": "Migration 500 must fail closed until this audit passes and is independently attested."
 }

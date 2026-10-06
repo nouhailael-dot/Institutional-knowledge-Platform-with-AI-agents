@@ -168,7 +168,8 @@
         {"id":"480","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/480_v2_phase12_existing_actor_backfill.sql","reason":"map legacy category, bootstrap existing canonical verification and review only unmappable categories"},
         {"id":"482","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/482_v2_phase12_legacy_preservation.sql","reason":"preserve every legacy value 500 removes: baseline facts on real legacy sources, deterministic state/city normalization, relationship reviews and an append-only migration record"},
         {"id":"484","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/484_v2_phase12_category_proposals.sql","reason":"apply GHUS-reviewable model proposals for unmappable legacy categories; true aggregates stay unresolved for GHUS disposition"},
-        {"id":"488","kind":"read-surface","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/488_v2_actor_read_view.sql","reason":"stable actor_read view with final V2 names and baseline narrative facts, valid before and after 500"}
+        {"id":"488","kind":"read-surface","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/488_v2_actor_read_view.sql","reason":"stable actor_read view with final V2 names and baseline narrative facts, valid before and after 500"},
+        {"id":"489","kind":"audit","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/489_v2_pre_cutover_audit_function.sql","reason":"pre-cutover data-loss audit as a database function plus the row-count baseline; 500 re-runs it"}
       ]
     },
     "phase12_policy_validate": {

@@ -1,0 +1,450 @@
+{
+  "release": "architecture_v2_cutover",
+  "source_manifest": "migrations/proposed/functional_v2_isolated_manifest.json",
+  "stages": [
+    "baseline",
+    "expand",
+    "gazetteer",
+    "backfill",
+    "validate",
+    "topic",
+    "contract",
+    "cutover"
+  ],
+  "non_sql_stages": {
+    "baseline": "record row counts before anything changes",
+    "gazetteer": "load the vendored Census Places table (checksum-verified)"
+  },
+  "steps": [
+    {
+      "order": 1,
+      "id": "190",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/additive_apply_2026-09-28/sql/190_v2_reference_data.sql",
+      "sha256": "16cab64dc397c29d1e15b53753ca3ad87aaebe8d42936f454a7bf450e6734af9",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 2,
+      "id": "200-canonical",
+      "stage": "expand",
+      "action": "alembic",
+      "path": "migrations/proposed/additive_apply_2026-09-28/versions/v2a01_actor_identity_additive.py",
+      "sha256": "5fa1b3b8ea3d4a683a86ab50ab6e7fb5822d8dcfb0240a465c9583e88307f3c6",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 3,
+      "id": "200-location",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/additive_apply_2026-09-28/sql/200_v2_actor_location.sql",
+      "sha256": "339c04a9141a265c1ab6939d5ccffef2cde952876beee5a0d2aab114a68b032c",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 4,
+      "id": "210",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/additive_apply_2026-09-28/sql/210_v2_topics.sql",
+      "sha256": "89c0caa342f86d5747ceb2217999d758cabc87ebb376711e17ce74eae0648977",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 5,
+      "id": "220-canonical",
+      "stage": "expand",
+      "action": "alembic",
+      "path": "migrations/proposed/additive_apply_2026-09-28/versions/v2a02_hubs_additive.py",
+      "sha256": "a176c39db4a8d110f3723cacf52247ff9bda5a1d83be6ba9b31b5ab74c215334",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 6,
+      "id": "230",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/additive_apply_2026-09-28/sql/230_v2_verification_history.sql",
+      "sha256": "3a4450ef03ddc0d38aee8d32ce1196bf0897b817975d84ae85b69a80aa82dd2c",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 7,
+      "id": "240",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/additive_apply_2026-09-28/sql/240_v2_fact_ledger.sql",
+      "sha256": "14abe1182d1092fc44117bd7ec89cebb6556352e1430c358e0178d0c06e9130b",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 8,
+      "id": "320",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/additive_apply_2026-09-28/sql/320_v2_review_items.sql",
+      "sha256": "cda8ec95ed620312508a35596d8e6fcd7bc967bc81a91b441f00fab7acbefc68",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 9,
+      "id": "350-origin",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/additive_apply_2026-09-28/sql/350_v2_record_creation_additive.sql",
+      "sha256": "174405db485ef42a2331b5b6e2d71d286ba4ba4f8f38f15e608a60a0d1fc25b6",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 10,
+      "id": "phase6-canonical",
+      "stage": "expand",
+      "action": "alembic",
+      "path": "migrations/proposed/versions/v2a05_hub_assignment.py",
+      "sha256": "ae45c92e912e127cae8cd6c211eb885d9c882a46fe4527dc1ab3f11a7a7bbc30",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 11,
+      "id": "380",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/380_v2_hub_assignment_evidence.sql",
+      "sha256": "02084d70c0916aa242023a249c09e431360503707565290dfc6628df3fb4db51",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 12,
+      "id": "review-kinds",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/functional_v2_review_kinds_isolated.sql",
+      "sha256": "889411eaba06b4b45688ce184443b5a06cf8bf6edd5c7105a0665d5a045ea751",
+      "kind": "breaking",
+      "note": "widens the review_item kind CHECK; superseded by 430/440/482"
+    },
+    {
+      "order": 13,
+      "id": "250",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/250_v2_edges.sql",
+      "sha256": "b521777cd8a8fd3be5b000ed7ded506ee85dd420a02abbb895625736faeb5905",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 14,
+      "id": "300",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/300_v2_strategic_connections.sql",
+      "sha256": "8dadc02e8846461aaf73a5431632555911400cac2cbb7c86be291f03b48dfb96",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 15,
+      "id": "420",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/420_v2_edge_contract.sql",
+      "sha256": "598567c00c5d7c369dacd12fcc766dbe4fc98ff8ce716925c3bbceaf35e83b95",
+      "kind": "additive-package-superseding; standalone-breaking",
+      "note": ""
+    },
+    {
+      "order": 16,
+      "id": "180",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/180_review_admission_workflow.sql",
+      "sha256": "d4e7f57dec16e71a0c52737d6c8cad8f0b17f60b31d4cc8082c2f8f76991f1b4",
+      "kind": "mixed",
+      "note": ""
+    },
+    {
+      "order": 17,
+      "id": "220",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/220_v2_hub_center_review.sql",
+      "sha256": "f9607cb4b81dc49b6547ccdbbb6ec41b0a05ca6c101ece989d1434f25230312e",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 18,
+      "id": "260",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/260_v2_collection_runs.sql",
+      "sha256": "ac93c7393bd4bce1c71480a4e2e7caeabee20b3c558a3eca4cd6ff4e43b4ddd0",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 19,
+      "id": "270",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/270_v2_rankings.sql",
+      "sha256": "d60d3c218dc5a8a8082defe6763d86faf7574472c47d4d9cea0800779919e92d",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 20,
+      "id": "280-identity",
+      "stage": "expand",
+      "action": "alembic",
+      "path": "migrations/proposed/additive_apply_2026-09-28/versions/v2a03_people_additive.py",
+      "sha256": "03bd532f97d7efbf3d9b67d3037d6d9d9b5eec6e95ff4fd6fcc01cceee4f9ff9",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 21,
+      "id": "280",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/280_v2_people_privacy.sql",
+      "sha256": "1d5f16e9b495cb41c2d825da4a8c8d951fc5ab62a7fd9da563f00939391b301a",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 22,
+      "id": "290-identity",
+      "stage": "expand",
+      "action": "alembic",
+      "path": "migrations/proposed/additive_apply_2026-09-28/versions/v2a04_events_additive.py",
+      "sha256": "03b7d11ab157b59c9c66f51f26eb161bb978d51f92d151039b70be5eda1a7399",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 23,
+      "id": "290",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/290_v2_event_evidence.sql",
+      "sha256": "6548e0e9b8d984a2eb4e44da2e6bef3d5d7f8548e1f32900b0b26c98700cca17",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 24,
+      "id": "310",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/310_v2_hub_proposals.sql",
+      "sha256": "44986c155bff43c8d46b34426475ba906d2d1248592ee1164125ad9deefdce6e",
+      "kind": "mixed",
+      "note": ""
+    },
+    {
+      "order": 25,
+      "id": "330",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/330_v2_guards_and_audit.sql",
+      "sha256": "a4c26650392bee0bfa3c85cb083d43c954ed2e80ff3243ca7b2eb393a728db56",
+      "kind": "breaking-permissions",
+      "note": ""
+    },
+    {
+      "order": 26,
+      "id": "340",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/340_v2_compatibility_views.sql",
+      "sha256": "9945bbd469e426dad6d6672913d64205b5c09d10aab5f17e62a3bffaaf8c51ff",
+      "kind": "compatibility",
+      "note": ""
+    },
+    {
+      "order": 27,
+      "id": "360",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/360_v2_city_gazetteer.sql",
+      "sha256": "ec55b393ecdecaa80763c226531736f6ff93d2682715b1a1ee4662ea2e101dca",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 28,
+      "id": "370",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/370_v2_actor_classification.sql",
+      "sha256": "abbb9960a77ef79a06f0ee475bbe46cb8beafd5c65ab2981d3f375e3c42e0cb1",
+      "kind": "reference-contract",
+      "note": ""
+    },
+    {
+      "order": 29,
+      "id": "390",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/390_v2_hub_detection.sql",
+      "sha256": "13f3acdbe95699765b7128728be9146e2fbf2dc70f6599eede15fd31c4cb4ecb",
+      "kind": "additive",
+      "note": ""
+    },
+    {
+      "order": 30,
+      "id": "430",
+      "stage": "expand",
+      "action": "sql",
+      "path": "agents/sql/430_v2_fact_lifecycle.sql",
+      "sha256": "2835b52883422f0f8a0a3e2d81fe6cf8aa2135df4861009251667f6dc9eee905",
+      "kind": "mixed",
+      "note": ""
+    },
+    {
+      "order": 31,
+      "id": "440",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/440_v2_final_contract_expand.sql",
+      "sha256": "04309f303179c8e0682ceadd83e0330d9795ef8e6ee0e772a13b67d800fc3bfe",
+      "kind": "expand",
+      "note": ""
+    },
+    {
+      "order": 32,
+      "id": "470",
+      "stage": "expand",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/470_v2_phase12_policy_expand.sql",
+      "sha256": "5b37bc3e986c14123da0f1b5b8eac0226fe410a8bdb4f9732600c1ee7185ea9c",
+      "kind": "policy-expand",
+      "note": ""
+    },
+    {
+      "order": 33,
+      "id": "480",
+      "stage": "backfill",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/480_v2_phase12_existing_actor_backfill.sql",
+      "sha256": "a15614e34bd340407718337f15fd408654f099c6f7154b985ded81a8cc9ea868",
+      "kind": "data-backfill",
+      "note": ""
+    },
+    {
+      "order": 34,
+      "id": "482",
+      "stage": "backfill",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/482_v2_phase12_legacy_preservation.sql",
+      "sha256": "4195433262e4c6134e864d7071fed37d0f4c0fc5784d036b6c4604845bf7e698",
+      "kind": "data-backfill",
+      "note": ""
+    },
+    {
+      "order": 35,
+      "id": "484",
+      "stage": "backfill",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/484_v2_phase12_category_proposals.sql",
+      "sha256": "77e6463cb16618a6fd50f2c2cbcff56f38e4cbf02bcfd7d69f9433e6ab740b36",
+      "kind": "data-backfill",
+      "note": "model category proposals land with category_needs_review=true"
+    },
+    {
+      "order": 36,
+      "id": "488",
+      "stage": "backfill",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/488_v2_actor_read_view.sql",
+      "sha256": "eb067c3b8ba696219c69add6e59ce8e4b0831c6573a5e5b97b93fee8036d09f0",
+      "kind": "read-surface",
+      "note": ""
+    },
+    {
+      "order": 37,
+      "id": "489",
+      "stage": "backfill",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/489_v2_pre_cutover_audit_function.sql",
+      "sha256": "63c486e7f7c3e95a55e20988aa3d5cdf4fbcd5fc497deef43f0c99da166bad4b",
+      "kind": "audit",
+      "note": ""
+    },
+    {
+      "order": 38,
+      "id": "490",
+      "stage": "validate",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/490_v2_phase12_policy_validate.sql",
+      "sha256": "6d5021666742b057a9ce0e87939245003a8715b9f08684e4a62e5393f11c47c8",
+      "kind": "validate-postbackfill",
+      "note": ""
+    },
+    {
+      "order": 39,
+      "id": "486",
+      "stage": "topic",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/486_v2_phase12_topic_policy.sql",
+      "sha256": "e59274c0fe88463e9ee8e7b3138c091e915f17d2f7cac8be8e0ca5ba333fc5db",
+      "kind": "data-backfill",
+      "note": "requires GHUS approval of docs/evidence/phase12_topic_proposal.csv"
+    },
+    {
+      "order": 40,
+      "id": "405",
+      "stage": "contract",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/405_v2_hub_contract_phase12.sql",
+      "sha256": "259fa82eaaa71e8557b12f990c19d6e0aaacb0cc2e4e34556e2d064e56d657c4",
+      "kind": "breaking-postbackfill",
+      "note": "fails until every hub has a topic and center (incl. the empty 'Mining Hubs')"
+    },
+    {
+      "order": 41,
+      "id": "410",
+      "stage": "contract",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/410_v2_hub_detection_contract.sql",
+      "sha256": "69442487fe29020777b07894ea9d226d8b7f5f2f6de5625518ad00b7042b9fbe",
+      "kind": "breaking-postbackfill",
+      "note": ""
+    },
+    {
+      "order": 42,
+      "id": "495",
+      "stage": "contract",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/495_v2_actor_category_complete.sql",
+      "sha256": "27a08c787d44d35ba8ffd1cca130554523d8c5581fed112ae1490fc7c149e379",
+      "kind": "post-review-validation",
+      "note": "fails until every category_doubt review is resolved by GHUS"
+    },
+    {
+      "order": 43,
+      "id": "500",
+      "stage": "cutover",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/500_v2_final_contract_cutover.sql",
+      "sha256": "81ff9c412a3d0d66bce54e8f4f9acf1ec8e5acfc247bc4316a6a0f8d7c55b3d4",
+      "kind": "breaking-contract",
+      "note": "fails without a passed attestation and a passing live audit"
+    }
+  ]
+}
