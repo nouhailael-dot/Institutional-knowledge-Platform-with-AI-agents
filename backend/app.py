@@ -754,6 +754,15 @@ class ReviewRejectionRequest(ReviewDecisionRequest):
     rejection_reason: str = Field(min_length=1, max_length=5000)
 
 
+class ReviewCategoryRequest(BaseModel):
+    candidate_ids: list[str] = Field(min_length=1, max_length=500)
+    reviewer: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
+    notes: str | None = Field(default=None, max_length=5000)
+    categories: dict[str, str] = Field(default_factory=dict)
+
+
 class ReviewAdmissionRequest(ReviewDecisionRequest):
     decision_kind: str
     target_id: str | None = None
@@ -859,6 +868,25 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
             error=str(exc),
         )
         _raise_review_error(exc)
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.post("/api/review/category-decisions")
+def review_category_decisions(payload: ReviewCategoryRequest):
+    """Confirm GHUS actor categories for one or many category_doubt reviews at once."""
+    store = review_store()
+    try:
+        request = store.category_decision_request(
+            payload.candidate_ids,
+            reviewer=payload.reviewer,
+            idempotency_key=payload.idempotency_key,
+            notes=payload.notes,
+            categories=payload.categories,
+            confirmed=payload.confirmed,
+        )
+        outcome = review_admission_bridge().apply(request)
+        return {"outcome": outcome, "candidates": store.record_category_success(request, outcome)}
     except Exception as exc:
         _raise_review_error(exc)
 

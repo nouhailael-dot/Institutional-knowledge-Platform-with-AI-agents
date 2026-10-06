@@ -542,6 +542,64 @@ class ReviewApiTests(unittest.TestCase):
         self.assertEqual(response.json()["status"], "approved")
         self.assertEqual(response.json()["canonical_entity_id"], "canonical-1")
 
+    def test_bulk_category_confirmation_commits_once_and_refuses_aggregates(self):
+        def category_review(review_id, name, category, aggregate=False):
+            return {
+                "source_key": f"postgres:review_item:{review_id}",
+                "source_run_id": "v2-review:unscoped",
+                "source_index": f"review-item:{review_id}",
+                "source_description": "Architecture V2 category_doubt review",
+                "entity_type": "actor",
+                "payload": {"name": name, "actor_category": category},
+                "evidence": [],
+                "agent_metadata": {
+                    "source_table": "review_item", "review_item_id": review_id,
+                    "review_kind": "category_doubt",
+                    "pipeline": {"is_true_aggregate": aggregate},
+                },
+                "duplicate_state": "new",
+                "created_at": 1_700_000_000,
+            }
+
+        self.store.sync_external_candidates([
+            category_review("r1", "BASF (Regional Operations)", "company"),
+            category_review("r2", "Broad Institute", "research_center"),
+            category_review("r3", "Water Treatment Companies", None, aggregate=True),
+        ])
+        rows = {row["display_name"]: row for row in
+                self.store.list(status="all", entity_type="actor")["candidates"]}
+        basf, broad = rows["BASF (Regional Operations)"], rows["Broad Institute"]
+        aggregate = rows["Water Treatment Companies"]
+        self.bridge.apply.return_value = {"decision_kind": "confirm_category", "resolved": 2}
+
+        refused = self.client.post("/api/review/category-decisions", json={
+            "candidate_ids": [aggregate["candidate_id"]], "reviewer": "GHUS",
+            "idempotency_key": "agg", "confirmed": True,
+        })
+        self.assertEqual(refused.status_code, 422, refused.text)
+        self.bridge.apply.assert_not_called()
+
+        response = self.client.post("/api/review/category-decisions", json={
+            "candidate_ids": [basf["candidate_id"], broad["candidate_id"]],
+            "reviewer": "GHUS", "idempotency_key": "bulk-1", "confirmed": True,
+            "categories": {broad["candidate_id"]: "research_center"},
+        })
+        self.assertEqual(response.status_code, 200, response.text)
+        sent = self.bridge.apply.call_args.args[0]
+        self.assertEqual(sent["decision_kind"], "confirm_category")
+        self.assertEqual(
+            [(item["review_item_id"], item["actor_category"]) for item in sent["items"]],
+            [("r1", "company"), ("r2", "research_center")],
+        )
+        self.assertEqual(
+            {row["status"] for row in response.json()["candidates"]}, {"approved"},
+        )
+        repeat = self.client.post("/api/review/category-decisions", json={
+            "candidate_ids": [basf["candidate_id"]], "reviewer": "GHUS",
+            "idempotency_key": "bulk-2", "confirmed": True,
+        })
+        self.assertEqual(repeat.status_code, 409, repeat.text)
+
     def test_sync_is_throttled_until_explicit_refresh(self):
         source = MagicMock()
         source.fetch_candidates.return_value = ([], [])

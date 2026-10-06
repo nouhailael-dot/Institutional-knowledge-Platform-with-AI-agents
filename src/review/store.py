@@ -903,6 +903,87 @@ class ReviewStore:
                 raise ReviewConflict("This candidate has already been decided.")
         return self.get(candidate_id)
 
+    def category_decision_request(
+        self,
+        candidate_ids: list[str],
+        *,
+        reviewer: str,
+        idempotency_key: str,
+        notes: str | None = None,
+        categories: dict[str, str] | None = None,
+        confirmed: bool = False,
+    ) -> dict[str, Any]:
+        """Shape one all-or-nothing GHUS category confirmation for category_doubt reviews.
+
+        Each item confirms the category shown in the reviewed record (or an explicit
+        override). Collections of organizations are refused: they need a separate
+        GHUS disposition, not a category.
+        """
+        reviewer = _clean_text(reviewer, required=True, max_length=120)
+        idempotency_key = _clean_text(idempotency_key, required=True, max_length=200)
+        notes = _clean_text(notes, max_length=5000)
+        if confirmed is not True:
+            raise ReviewValidationError("Explicit confirmation is required.")
+        ids = list(dict.fromkeys(
+            str(value).strip() for value in candidate_ids or [] if str(value).strip()
+        ))
+        if not ids:
+            raise ReviewValidationError("Select at least one category review.")
+        if len(ids) > 500:
+            raise ReviewValidationError("Confirm at most 500 categories at once.")
+        overrides = categories or {}
+        items = []
+        for candidate_id in ids:
+            candidate = self.get(candidate_id)
+            name = candidate["display_name"]
+            if candidate["status"] != "pending_review":
+                raise ReviewConflict(f"{name} has already been decided.")
+            metadata = candidate["agent_metadata"]
+            if (metadata.get("source_table") != "review_item"
+                    or metadata.get("review_kind") != "category_doubt"):
+                raise ReviewValidationError(f"{name} is not a category review.")
+            if (metadata.get("pipeline") or {}).get("is_true_aggregate"):
+                raise ReviewValidationError(
+                    f"{name} is a collection of organizations; it needs a GHUS disposition, "
+                    "not a category."
+                )
+            category = _clean_text(
+                overrides.get(candidate_id) or candidate["reviewed_payload"].get("actor_category"),
+                max_length=80,
+            )
+            if not category:
+                raise ReviewValidationError(f"Choose an actor category for {name}.")
+            items.append({
+                "candidate_id": candidate_id,
+                "review_item_id": str(metadata.get("review_item_id")),
+                "actor_category": category,
+            })
+        return {
+            "decision_kind": "confirm_category",
+            "reviewer": reviewer,
+            "idempotency_key": idempotency_key,
+            "notes": notes,
+            "items": items,
+        }
+
+    def record_category_success(
+        self, request: dict[str, Any], outcome: dict[str, Any]
+    ) -> list[dict[str, Any]]:
+        """Mark confirmed category reviews decided once GHUS has committed them."""
+        now = _now()
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for item in request["items"]:
+                db.execute(
+                    "UPDATE review_candidate SET status='approved',decision_kind='confirm_category',"
+                    "admission_state='applied',admission_error=NULL,admission_outcome=?,"
+                    "reviewed_at=?,reviewer=?,review_notes=? "
+                    "WHERE candidate_id=? AND status='pending_review'",
+                    (_json(outcome), now, request["reviewer"], request["notes"],
+                     item["candidate_id"]),
+                )
+        return [self.get(item["candidate_id"]) for item in request["items"]]
+
     def canonical_rows(self, entity_type: str) -> list[dict[str, Any]]:
         if entity_type not in ENTITY_TYPES:
             raise ReviewValidationError("Unsupported entity type.")

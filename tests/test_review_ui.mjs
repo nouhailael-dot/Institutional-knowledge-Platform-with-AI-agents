@@ -4,6 +4,7 @@ import {test} from 'node:test';
 
 import {
   actorReviewSummary,
+  canConfirmCategories,
   canSubmitReview,
   decisionOptions,
   diffFields,
@@ -12,6 +13,7 @@ import {
   formatFactValue,
   deepPullFacts,
   lightPullFacts,
+  pendingCategoryReviews,
   reviewStatusLabel,
   reviewFieldLabel,
   validateReviewDraft,
@@ -112,4 +114,16 @@ test('exact rejected label and mounted Review navigation are present',()=>{
   assert.match(component,/edge\.relationship_type/);
   assert.match(component,/edge\.source_url/);
   for(const label of ['City','State','Region','Country'])assert.match(component,new RegExp(`<dt>${label}<\\/dt>`));
+});
+
+test('bulk category confirmation lists only pending, categorized, non-aggregate category reviews',()=>{
+  const row=(id,extra={})=>({candidate_id:id,status:"pending_review",reviewed_payload:{actor_category:"company"},agent_metadata:{review_kind:"category_doubt",pipeline:{}},...extra});
+  const rows=[row("a"),row("b",{status:"approved"}),row("c",{agent_metadata:{review_kind:"category_doubt",pipeline:{is_true_aggregate:true}}}),row("d",{reviewed_payload:{actor_category:""}}),row("e",{agent_metadata:{review_kind:"verify_actor",pipeline:{}}})];
+  assert.deepEqual(pendingCategoryReviews(rows).map(item=>item.candidate_id),["a"]);
+  assert.equal(canConfirmCategories({selectedIds:["a"],reviewer:"GHUS",busy:false,admissionConfigured:true}),true);
+  assert.equal(canConfirmCategories({selectedIds:[],reviewer:"GHUS",busy:false,admissionConfigured:true}),false);
+  assert.equal(canConfirmCategories({selectedIds:["a"],reviewer:" ",busy:false,admissionConfigured:true}),false);
+  assert.equal(canConfirmCategories({selectedIds:["a"],reviewer:"GHUS",busy:false,admissionConfigured:false}),false);
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.match(component,/\/api\/review\/category-decisions/);
 });
