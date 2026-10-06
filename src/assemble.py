@@ -81,6 +81,8 @@ def assemble_actors() -> list[dict]:
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
         LEFT JOIN actor_relevance     ar ON ar.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
+          -- GHUS-rejected records (e.g. collections of organizations) are not indexed.
+          AND COALESCE(to_jsonb(a)->>'status', '') <> 'rejected'
         ORDER BY a.name
     """
     docs = []

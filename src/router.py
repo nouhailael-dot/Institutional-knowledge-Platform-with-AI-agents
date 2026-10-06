@@ -30,7 +30,8 @@ Postgres schema (answer with standard PostgreSQL). Key tables and columns:
 actor_read(actor_id uuid PK, name text, actor_category text, category_type text,
       description text, city text, state_code text, region_code text, country text,
       estimated_trl smallint, status text, merged_into_actor_id uuid)
-  - Read actors ONLY through actor_read (never the actor table).
+  - Read actors ONLY through actor_read (never the actor table). It already
+    excludes GHUS-rejected records.
   - IMPORTANT: only rows WHERE merged_into_actor_id IS NULL are live; ALWAYS
     add that filter when counting/listing actors (the rest are merged duplicates).
   - status in ('verified','imported','parked','rejected'). actor_category is one of

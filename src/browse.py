@@ -132,6 +132,8 @@ def load_actors() -> list[dict]:
         FROM actor a
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
+          -- GHUS-rejected records (e.g. collections of organizations) are not on the map.
+          AND COALESCE(to_jsonb(a)->>'status', '') <> 'rejected'
         ORDER BY a.name
     """
     out = []
