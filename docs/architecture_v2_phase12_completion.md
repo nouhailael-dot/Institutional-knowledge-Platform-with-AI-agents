@@ -128,3 +128,28 @@ so checksums are stable across machines.
 | 5 shared platform on clean schema | PASS, except `search_doc` rebuild (not run locally) |
 | 7 idempotency | PASS |
 | 8 no blocking issue | BLOCKED on GHUS decisions only (`ghus_decisions.md`) |
+
+## Production cutover (2026-10-06, approved by Ismail Sabbar)
+
+Applied to Supabase with `scripts/architecture_v2_release.py` (release manifest
+`b5da8097…`), owner approval and topic approval as recorded in the release folder.
+
+- Backup before any write: `ghus_production_20261006T231247Z_pre_v2_cutover_except_raw_document_data.dump`
+  (SHA-256 `d9bae003…`), restored locally with matching row counts. `raw_document`
+  contents are excluded (the transfer kept dropping; the release never touches that table).
+- Dress rehearsal of every stage through 500 on that restore: passed.
+- Stages applied: baseline, expand (32 steps), gazetteer (32,058 places, batched),
+  backfill (480, 482, 484, 485, 488, 489), validate (490), decisions (491), topic
+  (486), contract (405, 410, 495), cutover (500). Connection drops were retried; every
+  step is transactional and checksum-ledgered (44 ledger rows).
+- Live audit before 500: 21/21 passed (`docs/evidence/production_pre_cutover_audit_2026-10-06.txt`,
+  SHA-256 `802ffec6…`), attestation recorded, 500 re-checked it in its own transaction.
+- After 500 (read-only verification): 0 legacy actor columns and tables left; 965 actors
+  (809 verified, 156 rejected), 356 verified events, 48 hubs all with topic and center,
+  641 memberships (+180 archived), 8 topics, 75 organizes edges; `actor_read` 809 rows,
+  732 live; every final constraint validated; backend ORM matches production exactly.
+
+Still to do outside the database: push and deploy both applications (old deployed
+versions break on the new schema), and rebuild the Ask embeddings
+(`python -m src.embed` in the shared repo needs `VOYAGE_API_KEY`; it now also prunes
+documents of rejected/merged actors and retired hubs).

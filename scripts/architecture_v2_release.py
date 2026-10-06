@@ -143,14 +143,26 @@ def apply(stage: str, url: str, *, topic_approval: Path | None) -> list[str]:
                         f"SELECT '{table}', count(*) FROM {table} ON CONFLICT DO NOTHING"))
                 return ["recorded baseline row counts"]
             if stage == "gazetteer":
-                from sqlalchemy.orm import Session
+                from psycopg2.extras import execute_values
 
-                from agents.common.geography import CensusPlacesGazetteer
-                from scripts.load_us_city_gazetteer import load_rows
-                with Session(bind=connection) as session:
-                    rows = load_rows(session, CensusPlacesGazetteer.from_zip())
-                    session.flush()
-                return [f"loaded {rows} gazetteer places"]
+                from agents.common.geography import (
+                    GAZETTEER_SHA256,
+                    GAZETTEER_URL,
+                    GAZETTEER_YEAR,
+                    CensusPlacesGazetteer,
+                )
+                places = CensusPlacesGazetteer.from_zip().places
+                rows = [(p.geoid, p.state_code, p.place_name, p.normalized_city, p.latitude,
+                         p.longitude, p.lsad, p.function_status, GAZETTEER_YEAR,
+                         GAZETTEER_URL, GAZETTEER_SHA256) for p in places]
+                # Multi-row inserts: one round trip per 1,000 places, not per place.
+                with connection.connection.cursor() as cursor:
+                    execute_values(cursor, (
+                        "INSERT INTO us_city_coord (geoid,state_code,place_name,normalized_city,"
+                        "latitude,longitude,lsad,function_status,gazetteer_year,source_url,"
+                        "source_sha256) VALUES %s ON CONFLICT (geoid) DO NOTHING"
+                    ), rows, page_size=1000)
+                return [f"loaded {len(rows)} gazetteer places"]
             if stage == "backfill":
                 places = connection.execute(text("SELECT count(*) FROM us_city_coord")).scalar_one()
                 if places < GAZETTEER_MIN_ROWS:
