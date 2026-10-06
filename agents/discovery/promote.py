@@ -12,9 +12,11 @@ import json
 import re
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
 from urllib.parse import urlparse
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 
 from agents.collection.light_pull import LightPullResult, replace_light_fact, run_light_pull
 from agents.common.actor_classification import (
@@ -314,6 +316,14 @@ def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
         value = payload.get(field_name)
         if _has_value(value):
             cols[field_name] = value
+    # Architecture V2: a newly discovered event is parked until GHUS reviews it.
+    columns = _table_columns(session, "event")
+    if "record_status" in columns:
+        cols["record_status"] = "parked"
+    if "source_origin" in columns:
+        cols["source_origin"] = "claude_discovered"
+    if "date_status" in columns:
+        cols["date_status"] = _event_date_status(cols.get("next_date"))
     names = ", ".join(cols)
     binds = ", ".join(
         f"CAST(:{name} AS uuid)" if name in {"event_id", "source_id"} else f":{name}"
@@ -757,24 +767,40 @@ def _route_topic_id(staged: StagedRecord, route: RouteDecision) -> str | None:
     return str(value).strip() if value else None
 
 
-def _actor_columns(session) -> frozenset[str]:
-    """Physical actor columns, cached per session (pre- and post-cutover schemas).
+def _table_columns(session, table: str) -> frozenset[str]:
+    """Physical columns of a table, cached per session (pre- and post-cutover schemas).
 
     An empty set means the columns are unknown; callers then keep the legacy names.
     """
     info = getattr(session, "info", None)
-    cached = info.get("ghus_actor_columns") if isinstance(info, dict) else None
+    key = f"ghus_{table}_columns"
+    cached = info.get(key) if isinstance(info, dict) else None
     if cached is None:
         try:
             cached = frozenset(session.execute(text(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_schema='public' AND table_name='actor'"
-            )).scalars())
-        except (AttributeError, TypeError):
+                "WHERE table_schema='public' AND table_name=:table"
+            ), {"table": table}).scalars())
+        except (AttributeError, TypeError, DBAPIError):
             cached = frozenset()
         if isinstance(info, dict):
-            info["ghus_actor_columns"] = cached
+            info[key] = cached
     return cached
+
+
+def _actor_columns(session) -> frozenset[str]:
+    return _table_columns(session, "actor")
+
+
+def _event_date_status(next_date: object) -> str:
+    """upcoming / past from the event date; unconfirmed when there is none."""
+    if not _has_value(next_date):
+        return "unconfirmed"
+    try:
+        day = next_date if isinstance(next_date, date) else date.fromisoformat(str(next_date)[:10])
+    except ValueError:
+        return "unconfirmed"
+    return "upcoming" if day >= datetime.now(UTC).date() else "past"
 
 
 def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str:

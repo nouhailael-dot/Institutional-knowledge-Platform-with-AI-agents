@@ -32,7 +32,7 @@ GAZETTEER_MIN_ROWS = 30_000
 STAGES = ("baseline", "expand", "gazetteer", "backfill", "validate", "decisions", "topic",
           "contract", "cutover")
 STAGE_OF = {
-    **{step: "backfill" for step in ("480", "482", "484", "488", "489")},
+    **{step: "backfill" for step in ("480", "482", "484", "485", "488", "489")},
     "490": "validate",
     "491": "decisions",
     "486": "topic",

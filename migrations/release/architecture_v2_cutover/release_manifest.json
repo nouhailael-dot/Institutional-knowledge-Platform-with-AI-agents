@@ -369,6 +369,16 @@
     },
     {
       "order": 36,
+      "id": "485",
+      "stage": "backfill",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/485_v2_phase12_event_backfill.sql",
+      "sha256": "75a9a39a2b9e72c63b97a9f3d7ff1e78450f85d7411d9a195a50d6e9207d2ffd",
+      "kind": "data-backfill",
+      "note": ""
+    },
+    {
+      "order": 37,
       "id": "488",
       "stage": "backfill",
       "action": "sql",
@@ -378,7 +388,7 @@
       "note": ""
     },
     {
-      "order": 37,
+      "order": 38,
       "id": "489",
       "stage": "backfill",
       "action": "sql",
@@ -388,7 +398,7 @@
       "note": ""
     },
     {
-      "order": 38,
+      "order": 39,
       "id": "490",
       "stage": "validate",
       "action": "sql",
@@ -398,7 +408,7 @@
       "note": ""
     },
     {
-      "order": 39,
+      "order": 40,
       "id": "491",
       "stage": "decisions",
       "action": "sql",
@@ -408,7 +418,7 @@
       "note": "GHUS decisions of 2026-10-06 (categories, collections, empty hub)"
     },
     {
-      "order": 40,
+      "order": 41,
       "id": "486",
       "stage": "topic",
       "action": "sql",
@@ -418,7 +428,7 @@
       "note": "requires GHUS approval of docs/evidence/phase12_topic_proposal.csv"
     },
     {
-      "order": 41,
+      "order": 42,
       "id": "405",
       "stage": "contract",
       "action": "sql",
@@ -428,7 +438,7 @@
       "note": "fails until every hub has a topic and center (incl. the empty 'Mining Hubs')"
     },
     {
-      "order": 42,
+      "order": 43,
       "id": "410",
       "stage": "contract",
       "action": "sql",
@@ -438,7 +448,7 @@
       "note": ""
     },
     {
-      "order": 43,
+      "order": 44,
       "id": "495",
       "stage": "contract",
       "action": "sql",
@@ -448,7 +458,7 @@
       "note": "fails until every category_doubt review is resolved by GHUS"
     },
     {
-      "order": 44,
+      "order": 45,
       "id": "500",
       "stage": "cutover",
       "action": "sql",

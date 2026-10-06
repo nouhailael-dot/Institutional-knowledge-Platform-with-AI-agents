@@ -104,6 +104,15 @@ def run_enrichment(args, *, session=None, root: Path | None = None) -> dict[str,
 
 
 def _run_actor_enrichment(args, root: Path, session, run_id: str, fields: tuple[str, ...], policies):
+    legacy_schema = session.execute(text(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+        "AND table_name='actor' AND column_name='location_city')"
+    )).scalar()
+    if not legacy_schema:
+        raise RuntimeError(
+            "Legacy actor field enrichment targets columns removed by the Architecture V2 "
+            "cutover; enrich actors through Light Pull / Deep Pull facts instead."
+        )
     unsupported = [field for field in fields if field not in LEGACY_ACTOR_FIELDS]
     legacy_fields = [field for field in fields if field in LEGACY_ACTOR_FIELDS]
     if unsupported:

@@ -276,13 +276,38 @@ def _candidate_from_row(spec: EntitySpec, row, *, from_index_dirty: bool) -> Sea
     )
 
 
+# Legacy actor names and their Architecture V2 replacements: read whichever exists,
+# so the index builds on the schema before and after migration 500.
+_ACTOR_FALLBACKS = {
+    "actor_type": ("actor_category",),
+    "location_city": ("city",),
+    "state": ("state_code",),
+}
+# Narrative fields become imported baseline facts at the cutover.
+_ACTOR_BASELINE_FACTS = frozenset({
+    "primary_technical_focus", "technical_approach", "current_activities",
+    "technology_ip_notes", "key_constraints", "funding_summary", "estimated_trl",
+    "primary_lifecycle_role",
+})
+
+
 def _select_columns(spec: EntitySpec) -> list[str]:
     select_columns = [f"e.{spec.id_column}::text AS entity_id", f"e.{spec.name_column} AS name"]
     for field in spec.fields:
         _assert_identifier(field)
         if field in {spec.id_column, spec.name_column}:
             continue
-        select_columns.append(f"e.{field} AS {field}")
+        options = [f"to_jsonb(e)->>'{field}'"]
+        if spec.entity_type == "actor":
+            options += [f"to_jsonb(e)->>'{name}'" for name in _ACTOR_FALLBACKS.get(field, ())]
+            if field in _ACTOR_BASELINE_FACTS:
+                options.append(
+                    "(SELECT f.fact_value #>> '{}' FROM actor_fact f "
+                    f"WHERE f.actor_id = e.actor_id AND f.fact_type = 'legacy_baseline' "
+                    f"AND f.fact_key = '{field}' LIMIT 1)"
+                )
+        expression = options[0] if len(options) == 1 else f"COALESCE({', '.join(options)})"
+        select_columns.append(f"{expression} AS {field}")
     return select_columns
 
 

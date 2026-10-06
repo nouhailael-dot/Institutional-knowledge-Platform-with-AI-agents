@@ -751,7 +751,9 @@ def _update_canonical_gap(
     if spec.source_id_column:
         _assert_identifier(spec.source_id_column)
         set_clauses.append(f"{spec.source_id_column} = CAST(:source_id AS uuid)")
-    if spec.verification_status_column:
+    if spec.verification_status_column and _has_column(
+        session, spec.table_name, spec.verification_status_column
+    ):
         _assert_identifier(spec.verification_status_column)
         set_clauses.append(f"{spec.verification_status_column} = 'ai_inferred'")
     if spec.confidence_column:
@@ -856,6 +858,14 @@ def _insert_enrichment_staged_record(
         },
     ).scalar_one()
     return str(row)
+
+
+def _has_column(session, table: str, column: str) -> bool:
+    """True when the column still exists (legacy status columns go at the V2 cutover)."""
+    return bool(session.execute(text(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+        "AND table_name=:table AND column_name=:column)"
+    ), {"table": table, "column": column}).scalar())
 
 
 def _assert_identifier(value: str) -> None:
