@@ -472,12 +472,23 @@ def load_actor_reference_set(session, *, limit: int = 20) -> list[dict[str, obje
     rows = (
         session.execute(
             text(
-                "SELECT actor_id::text AS actor_id, name, actor_type, "
+                "SELECT actor_id::text AS actor_id, name, "
+                "COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type') "
+                "AS actor_type, "
                 "merged_into_actor_id::text AS merged_into_actor_id, description, "
-                "website, country, primary_technical_focus, current_activities "
+                "website, country, "
+                # Narrative fields move to imported baseline facts at the V2 cutover.
+                "COALESCE(to_jsonb(actor)->>'primary_technical_focus',(SELECT f.fact_value#>>'{}' "
+                "FROM actor_fact f WHERE f.actor_id=actor.actor_id "
+                "AND f.fact_type='legacy_baseline' AND f.fact_key='primary_technical_focus' "
+                "LIMIT 1)) AS primary_technical_focus, "
+                "COALESCE(to_jsonb(actor)->>'current_activities',(SELECT f.fact_value#>>'{}' "
+                "FROM actor_fact f WHERE f.actor_id=actor.actor_id "
+                "AND f.fact_type='legacy_baseline' AND f.fact_key='current_activities' "
+                "LIMIT 1)) AS current_activities "
                 "FROM actor "
                 "WHERE merged_into_actor_id IS NULL "
-                "AND (actor_type IS NULL OR lower(actor_type) <> 'aggregate') "
+                "AND lower(COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type','')) <> 'aggregate' "
                 "ORDER BY updated_at DESC NULLS LAST, name LIMIT :limit"
             ),
             {"limit": limit},
@@ -511,7 +522,8 @@ def load_actor_types(session) -> list[str]:
         rows = (
             session.execute(
                 text(
-                    "SELECT DISTINCT actor_type FROM actor "
+                    "SELECT DISTINCT actor_type FROM ("
+                    "SELECT to_jsonb(actor)->>'actor_type' AS actor_type FROM actor) legacy "
                     "WHERE actor_type IS NOT NULL "
                     "AND btrim(actor_type) <> '' "
                     "AND lower(actor_type) NOT IN ('aggregate', 'other') "
@@ -543,7 +555,7 @@ def load_actor_query_hubs(session) -> list[dict[str, object]]:
                 "LEFT JOIN hub_actor ha ON ha.hub_id = h.hub_id "
                 "LEFT JOIN actor a ON a.actor_id = ha.actor_id "
                 "AND a.merged_into_actor_id IS NULL "
-                "AND (a.actor_type IS NULL OR lower(a.actor_type) <> 'aggregate') "
+                "AND lower(COALESCE(to_jsonb(a)->>'actor_category',to_jsonb(a)->>'actor_type','')) <> 'aggregate' "
                 "WHERE h.name <> 'Mining Hubs' "
                 "GROUP BY h.hub_id, h.name, h.primary_city, h.state, h.country, h.region "
                 "ORDER BY count(a.actor_id) ASC, h.name"

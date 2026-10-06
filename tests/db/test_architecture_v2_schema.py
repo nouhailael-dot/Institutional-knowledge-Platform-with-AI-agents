@@ -220,13 +220,19 @@ def v2_engine() -> Engine:
 def test_isolated_database_contains_v2_schema(v2_engine: Engine):
     database = inspect(v2_engine)
     assert V2_TABLES <= set(database.get_table_names())
-    assert {"actor_v1_compat", "staged_record_agent3_compat", "actor_profile_current"} <= set(
+    # Final contract after migration 500: transitional views and columns are gone.
+    assert not {"actor_v1_compat", "staged_record_agent3_compat", "actor_profile_current"} & set(
         database.get_view_names()
     )
     actor_columns = {column["name"] for column in database.get_columns("actor")}
-    assert {"actor_category", "category_type", "record_status", "source_origin"} <= actor_columns
-    assert "actor_type" not in actor_columns
-    assert "verification_status" not in actor_columns
+    assert {"actor_category", "category_type", "status", "source_origin", "city",
+            "alt_names"} <= actor_columns
+    assert not {"actor_type", "actor_type_raw", "verification_status", "record_status",
+                "state", "location_city", "alternate_names", "primary_technical_focus",
+                "funding_summary", "estimated_trl"} & actor_columns
+    assert not {"organization_hierarchy", "actor_profile", "actor_capability_fact"} & set(
+        database.get_table_names()
+    )
 
 
 def test_orm_columns_match_isolated_v2_database(v2_engine: Engine):
@@ -272,6 +278,9 @@ def test_phase3_record_creation_dry_run_executes_then_rolls_back(v2_engine: Engi
                 "name": "Phase 3 Isolated Dry Run",
                 "website": "https://phase3.example.org",
                 "sector_match": "in_sector",
+                "actor_category": "company",
+                "category_type": "small_mid_size",
+                "classification_evidence": {"main_job": "Commercial technology company."},
             },
             prompt_version="actor_v2",
             extracted_at="2026-09-25T00:00:00+00:00",
@@ -304,7 +313,7 @@ def test_append_only_and_role_permissions(v2_engine: Engine):
             connection.execute(text("SET LOCAL ROLE service_role"))
             connection.execute(
                 text(
-                    "INSERT INTO record_verification (verification_id,entity_type,entity_id,decision,decided_by) VALUES (:id,'actor',:entity,'parked','phase2-test')"
+                    "INSERT INTO record_verification (verification_id,entity_type,entity_id,decision,decided_by) VALUES (:id,'event',:entity,'parked','phase2-test')"
                 ),
                 {"id": verification_id, "entity": uuid.uuid4()},
             )
@@ -321,7 +330,7 @@ def test_append_only_and_role_permissions(v2_engine: Engine):
         try:
             connection.execute(
                 text(
-                    "INSERT INTO record_verification (verification_id,entity_type,entity_id,decision,decided_by) VALUES (:id,'actor',:entity,'parked','phase2-test')"
+                    "INSERT INTO record_verification (verification_id,entity_type,entity_id,decision,decided_by) VALUES (:id,'event',:entity,'parked','phase2-test')"
                 ),
                 {"id": verification_id, "entity": uuid.uuid4()},
             )
@@ -334,7 +343,7 @@ def test_append_only_and_role_permissions(v2_engine: Engine):
             transaction.rollback()
 
     denied_statements = (
-        "INSERT INTO record_verification (entity_type,entity_id,decision,decided_by) VALUES ('actor',gen_random_uuid(),'parked','agent')",
+        "INSERT INTO record_verification (entity_type,entity_id,decision,decided_by) VALUES ('event',gen_random_uuid(),'parked','agent')",
         "DELETE FROM actor WHERE false",
         "UPDATE actor SET ghus_notes='forbidden' WHERE false",
     )

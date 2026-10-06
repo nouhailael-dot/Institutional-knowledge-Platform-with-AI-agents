@@ -61,10 +61,11 @@ def load_detection_snapshot(session) -> DetectionSnapshot:
     actor_rows = session.execute(
         text(
             "SELECT DISTINCT ON (a.actor_id,t.topic_id) a.actor_id,a.name,t.topic_id,"
-            "t.name AS topic_name,a.record_status,a.actor_category,a.category_type,"
+            "t.name AS topic_name,COALESCE(to_jsonb(a)->>'status',to_jsonb(a)->>'record_status') "
+            "AS record_status,a.actor_category,a.category_type,"
             "(a.merged_into_actor_id IS NOT NULL) AS merged,"
-            "COALESCE(al.city,a.location_city) AS city,"
-            "COALESCE(al.state_code,a.state_code,a.state) AS state_code,"
+            "COALESCE(al.city,to_jsonb(a)->>'city',to_jsonb(a)->>'location_city') AS city,"
+            "COALESCE(al.state_code,a.state_code,to_jsonb(a)->>'state') AS state_code,"
             "COALESCE(al.latitude,a.latitude) AS latitude,"
             "COALESCE(al.longitude,a.longitude) AS longitude "
             "FROM actor a JOIN actor_topic at ON at.actor_id=a.actor_id "

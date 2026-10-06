@@ -535,7 +535,7 @@ def test_actor_reference_set_excludes_aggregates_and_merged_actors():
     assert [row["name"] for row in rows] == ["Clean Lab"]
     sql = "\n".join(session.statements)
     assert "merged_into_actor_id IS NULL" in sql
-    assert "lower(actor_type) <> 'aggregate'" in sql
+    assert "to_jsonb(actor)->>'actor_type','')) <> 'aggregate'" in sql
 
 
 def test_event_geography_normalization_removes_street_addresses_and_postcodes():
@@ -910,7 +910,7 @@ def test_actor_hub_sector_counts_are_loaded_without_actor_details():
     }
     sql = "\n".join(session.statements)
     assert "count(DISTINCT CASE" in sql
-    assert "lower(actor.actor_type) <> 'aggregate'" in sql
+    assert "to_jsonb(actor)->>'actor_type','')) <> 'aggregate'" in sql
     assert "actor.name" not in sql
     assert "actor.description" not in sql
 

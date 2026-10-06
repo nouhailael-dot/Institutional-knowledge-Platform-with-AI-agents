@@ -167,7 +167,8 @@
       "steps": [
         {"id":"480","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/480_v2_phase12_existing_actor_backfill.sql","reason":"map legacy category, bootstrap existing canonical verification and review only unmappable categories"},
         {"id":"482","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/482_v2_phase12_legacy_preservation.sql","reason":"preserve every legacy value 500 removes: baseline facts on real legacy sources, deterministic state/city normalization, relationship reviews and an append-only migration record"},
-        {"id":"484","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/484_v2_phase12_category_proposals.sql","reason":"apply GHUS-reviewable model proposals for unmappable legacy categories; true aggregates stay unresolved for GHUS disposition"}
+        {"id":"484","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/484_v2_phase12_category_proposals.sql","reason":"apply GHUS-reviewable model proposals for unmappable legacy categories; true aggregates stay unresolved for GHUS disposition"},
+        {"id":"488","kind":"read-surface","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/488_v2_actor_read_view.sql","reason":"stable actor_read view with final V2 names and baseline narrative facts, valid before and after 500"}
       ]
     },
     "phase12_policy_validate": {
@@ -176,10 +177,16 @@
         {"id":"490","kind":"validate-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/490_v2_phase12_policy_validate.sql","reason":"validate corrected actor policy while leaving category type nullable"}
       ]
     },
-    "postbackfill_contract": {
+    "phase12_topic_policy": {
       "inherits": "phase12_policy_validate",
       "steps": [
-        {"id":"400","kind":"breaking-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/400_v2_hub_contract.sql","reason":"final non-null hub topic, center and assignment contract"},
+        {"id":"486","kind":"data-backfill","scope":"ghus-approval-required","action":"sql","path":"migrations/proposed/deferred/486_v2_phase12_topic_policy.sql","reason":"GHUS-approved controlled topics, hub topics and density centers, membership topic/distance/overlap; actor_topic untouched"}
+      ]
+    },
+    "postbackfill_contract": {
+      "inherits": "phase12_topic_policy",
+      "steps": [
+        {"id":"405","kind":"breaking-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/405_v2_hub_contract_phase12.sql","reason":"final non-null hub topic, center and assignment contract with honest exceptions for unsourced or unlocated legacy memberships"},
         {"id":"410","kind":"breaking-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/410_v2_hub_detection_contract.sql","reason":"final deterministic hub-proposal contract"}
       ]
     },
@@ -198,6 +205,7 @@
   },
   "superseded_policy_proposals": [
     {"id":"450","path":"migrations/proposed/deferred/450_v2_final_contract_validate.sql","superseded_by":"490","reason":"incorrectly required category_type for every migrated actor"},
-    {"id":"460","path":"migrations/proposed/deferred/460_v2_final_contract_cutover.sql","superseded_by":"500","reason":"incorrectly made category_type non-null and lacked the required data-loss audit gate"}
+    {"id":"460","path":"migrations/proposed/deferred/460_v2_final_contract_cutover.sql","superseded_by":"500","reason":"incorrectly made category_type non-null and lacked the required data-loss audit gate"},
+    {"id":"400","path":"migrations/proposed/deferred/400_v2_hub_contract.sql","superseded_by":"405","reason":"required a source and a radius outcome for every legacy membership, which the production data does not have and must not be invented"}
   ]
 }

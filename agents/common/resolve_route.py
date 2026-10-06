@@ -158,19 +158,28 @@ def load_actor_candidates(session) -> list[dict[str, object]]:
     ``to_jsonb`` lets this query run on both the current schema and the isolated
     V2 schema. Aggregate records remain excluded throughout the transition.
     """
+    has_legacy_verification = bool(session.execute(text(
+        "SELECT to_regclass('public.record_verification') IS NOT NULL"
+    )).scalar_one())
+    legacy_decision = (
+        "LEFT JOIN LATERAL ("
+        " SELECT decision FROM record_verification "
+        " WHERE entity_type='actor' AND entity_id=a.actor_id "
+        " ORDER BY decided_at DESC, verification_id DESC LIMIT 1"
+        ") rv ON true "
+        if has_legacy_verification else "LEFT JOIN (SELECT NULL::text AS decision) rv ON true "
+    )
     rows = (
         session.execute(
             text(
                 "SELECT a.actor_id::text AS actor_id, a.name, a.website, "
-                "COALESCE(to_jsonb(a)->'alternate_names','[]'::jsonb) AS alternate_names, "
+                "COALESCE(to_jsonb(a)->'alt_names',to_jsonb(a)->'alternate_names',"
+                "'[]'::jsonb) AS alternate_names, "
                 "COALESCE(to_jsonb(a)->>'website_domain','') AS website_domain, "
                 "COALESCE(to_jsonb(a)->>'status', rv.decision, to_jsonb(a)->>'record_status', "
                 "to_jsonb(a)->>'verification_status') AS record_status "
-                "FROM actor a LEFT JOIN LATERAL ("
-                " SELECT decision FROM record_verification "
-                " WHERE entity_type='actor' AND entity_id=a.actor_id "
-                " ORDER BY decided_at DESC, verification_id DESC LIMIT 1"
-                ") rv ON true WHERE a.merged_into_actor_id IS NULL "
+                "FROM actor a " + legacy_decision +
+                "WHERE a.merged_into_actor_id IS NULL "
                 "AND COALESCE(to_jsonb(a)->>'actor_category', "
                 "to_jsonb(a)->>'actor_type','') <> 'aggregate' ORDER BY a.name"
             )

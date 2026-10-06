@@ -34,7 +34,8 @@ def test_phase8_explicit_parent_edge_and_phase7_family_integration(
     with phase8_session_factory() as session:
         parent_id = session.execute(text(
             "SELECT actor_id::text FROM actor "
-            "WHERE COALESCE(actor_type,'') <> 'aggregate' ORDER BY actor_id LIMIT 1"
+            "WHERE COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type','') "
+            "<> 'aggregate' ORDER BY actor_id LIMIT 1"
         )).scalar_one()
         topic_id = _topic(session, f"phase8-{uuid.uuid4().hex[:10]}")
         payload = _new_payload(f"Phase 8 Child {uuid.uuid4().hex[:8]}", topic_id)
@@ -65,7 +66,8 @@ def test_phase8_explicit_parent_edge_and_phase7_family_integration(
         assert families.family_by_actor[created.entity_id] == parent_id
         assert families.unresolved == {}
         assert session.execute(text(
-            "SELECT record_status FROM actor WHERE actor_id=CAST(:id AS uuid)"
+            "SELECT COALESCE(to_jsonb(actor)->>'status',to_jsonb(actor)->>'record_status') "
+            "FROM actor WHERE actor_id=CAST(:id AS uuid)"
         ), {"id": created.entity_id}).scalar_one() == "parked"
         assert session.execute(text(
             "SELECT count(*) FROM review_item WHERE entity_id=CAST(:id AS uuid) "

@@ -103,8 +103,10 @@ def _hub(session, *, topic_id: str, latitude: float, longitude: float, radius: f
     hub_id = str(uuid.uuid4())
     session.execute(
         text(
-            "INSERT INTO hub(hub_id,name,slug,topic_id,center_latitude,center_longitude,radius_miles) "
-            "VALUES(CAST(:id AS uuid),:name,:slug,CAST(:topic AS uuid),:lat,:lon,:radius)"
+            "INSERT INTO hub(hub_id,name,slug,topic_id,center_latitude,center_longitude,radius_miles,"
+            "center_frozen,center_method,center_method_version,center_computed_at) "
+            "VALUES(CAST(:id AS uuid),:name,:slug,CAST(:topic AS uuid),:lat,:lon,:radius,"
+            "false,'density_center','density_center_v1',now())"
         ),
         {"id": hub_id, "name": f"Synthetic Hub {hub_id[:8]}",
          "slug": f"synthetic-hub-{hub_id}", "topic": topic_id,
@@ -180,7 +182,8 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
         assert created.action == "created"
         assert created.step_trace == list(ACTOR_MAPPING_STEPS)
         assert session.execute(
-            text("SELECT record_status FROM actor WHERE actor_id=CAST(:id AS uuid)"),
+            text("SELECT COALESCE(to_jsonb(actor)->>'status',to_jsonb(actor)->>'record_status') "
+                 "FROM actor WHERE actor_id=CAST(:id AS uuid)"),
             {"id": created.entity_id},
         ).scalar_one() == "parked"
         assert session.execute(

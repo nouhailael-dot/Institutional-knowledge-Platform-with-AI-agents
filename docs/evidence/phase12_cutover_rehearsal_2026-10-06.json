@@ -1,0 +1,50 @@
+{
+  "started_at": "2026-10-06T21:29:05.414016+00:00",
+  "finished_at": "2026-10-06T21:29:52.964067+00:00",
+  "database": "ghus_v2_phase12_rehearsal_test",
+  "production_contacted": false,
+  "dump_sha256": "08d9ce68efae470f553cb4d8b0324c0c570f7037450d8af38b5a43da07bf424b",
+  "restore_skipped": "search_doc (pgvector not installed locally; derived index)",
+  "row_counts": {
+    "restored": {
+      "actor": 965,
+      "hub": 49,
+      "hub_actor": 821,
+      "event": 356
+    },
+    "before_500": {
+      "actor": 965,
+      "hub": 49,
+      "hub_actor": 821,
+      "event": 356
+    },
+    "after_500": {
+      "actor": 965,
+      "hub": 49,
+      "hub_actor": 821,
+      "event": 356
+    }
+  },
+  "invariants_hold": true,
+  "data_loss_audit_passed_before_500": true,
+  "data_loss_audit_sha256": "c002d79fb2d1706d50b65da06d3a359eae056ee70aa953f86a3a7062ca462172",
+  "test_only_stand_ins": {
+    "categories_confirmed": 58,
+    "aggregates_stood_in": 156,
+    "empty_hubs_stood_in": 1,
+    "label": "TEST-ONLY rehearsal stand-in for a GHUS decision"
+  },
+  "attestation": "TEST-ONLY local rehearsal attestation (not a GHUS approval)",
+  "migration_500_applied": true,
+  "manifest_rerun_noop": true,
+  "manifest_rerun_lines": 42,
+  "log": [
+    "$ python.exe scripts/functional_v2_schema.py target_prebackfill_phase11\napplied 190: category, region, status and source-origin reference data\napplied 200-canonical: legacy-safe actor_category, record_status and geography columns\napplied 200-location: immutable multi-location evidence\napplied 210: controlled topics and actor-topic evidence\napplied 220-canonical: nullable topic, center and assignment evidence columns\napplied 230: GHUS verification history and immutable-ledger trigger function\napplied 240: Phase 3 light-boundary facts and stable Phase 9-11 fact foundation\napplied 320: unified V2 review queue\napplied 350-origin: record-creation source origins\napplied phase6-canonical: nullable hub center audit metadata\napplied 380: immutable hub-assignment evidence\napplied review-kinds: real verify_actor, category_doubt and Phase 6 hub review items\napplied 250: frozen append-only generalized edge table and actor-family traversal\napplied 300: allowlisted UM6P/OCP/INNOVX endpoints for canonical connection edges\napplied 420: exact edge semantics, endpoint validation, cycle guard, uniqueness, and actor_descendants; supersedes frozen 250 without editing it\napplied 180: review admission and legacy proposed-hub foundation\napplied 220: hub center review evidence\napplied 260: Light, Deep and Specific Ask request/run audit\napplied 270: sourced immutable ranking facts\napplied 280-identity: people compatibility identity columns\napplied 280: topic-scoped people and contact authorization\napplied 290-identity: event compatibility identity columns\napplied 290: topic-scoped events and immutable claims\napplied 310: hub proposal evidence and decisions\napplied 330: canonical write audit, RLS and legacy write restrictions\napplied 340: Agent 3 and transitional legacy compatibility views\napplied 360: deterministic US city coordinate reference\napplied 370: category-type definitions and one-other invariant\napplied 390: new-hub detection run and evidence\napplied 430: immutable fact resolution, current pointer, corroboration and canonical review kinds",
+    "$ python.exe -m scripts.load_us_city_gazetteer --live\n{\"dry_run\": false, \"rows\": 32058}",
+    "$ python.exe scripts/functional_v2_schema.py phase12_topic_policy --after target_prebackfill_phase11\napplied 440: clean V2 status, actor verification events and canonical review kinds\napplied 470: honest existing-canonical verification provenance, deterministic category mapping and fail-closed cutover audit\napplied 480: map legacy category, bootstrap existing canonical verification and review only unmappable categories\napplied 482: preserve every legacy value 500 removes: baseline facts on real legacy sources, deterministic state/city normalization, relationship reviews and an append-only migration record\napplied 484: apply GHUS-reviewable model proposals for unmappable legacy categories; true aggregates stay unresolved for GHUS disposition\napplied 488: stable actor_read view with final V2 names and baseline narrative facts, valid before and after 500\napplied 490: validate corrected actor policy while leaving category type nullable\napplied 486: GHUS-approved controlled topics, hub topics and density centers, membership topic/distance/overlap; actor_topic untouched",
+    "$ python.exe scripts/phase12_policy_proof.py\nwrote docs\\evidence\\phase12_policy_backfill_proof_rehearsal_2026-10-06.json; passed=True\nwrote docs\\evidence\\pre_cutover_data_loss_audit_rehearsal_2026-10-06.json; passed=True",
+    "$ python.exe scripts/functional_v2_schema.py category_resolution_contract --after phase12_topic_policy\napplied 405: final non-null hub topic, center and assignment contract with honest exceptions for unsourced or unlocated legacy memberships\napplied 410: final deterministic hub-proposal contract\napplied 495: require actor category only after all unmappable legacy category reviews are resolved",
+    "$ python.exe scripts/functional_v2_schema.py final_cutover --after category_resolution_contract\napplied 500: fail-closed audited cutover, final renames and removal of proven-migrated legacy structures",
+    "$ python.exe scripts/functional_v2_schema.py final_cutover\nskipped 190: checksum already applied\nskipped 200-canonical: checksum already applied\nskipped 200-location: checksum already applied\nskipped 210: checksum already applied\nskipped 220-canonical: checksum already applied\nskipped 230: checksum already applied\nskipped 240: checksum already applied\nskipped 320: checksum already applied\nskipped 350-origin: checksum already applied\nskipped phase6-canonical: checksum already applied\nskipped 380: checksum already applied\nskipped review-kinds: checksum already applied\nskipped 250: checksum already applied\nskipped 300: checksum already applied\nskipped 420: checksum already applied\nskipped 180: checksum already applied\nskipped 220: checksum already applied\nskipped 260: checksum already applied\nskipped 270: checksum already applied\nskipped 280-identity: checksum already applied\nskipped 280: checksum already applied\nskipped 290-identity: checksum already applied\nskipped 290: checksum already applied\nskipped 310: checksum already applied\nskipped 330: checksum already applied\nskipped 340: checksum already applied\nskipped 360: checksum already applied\nskipped 370: checksum already applied\nskipped 390: checksum already applied\nskipped 430: checksum already applied\nskipped 440: checksum already applied\nskipped 470: checksum already applied\nskipped 480: checksum already applied\nskipped 482: checksum already applied\nskipped 484: checksum already applied\nskipped 488: checksum already applied\nskipped 490: checksum already applied\nskipped 486: checksum already applied\nskipped 405: checksum already applied\nskipped 410: checksum already applied\nskipped 495: checksum already applied\nskipped 500: checksum already applied"
+  ]
+}

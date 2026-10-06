@@ -757,19 +757,43 @@ def _route_topic_id(staged: StagedRecord, route: RouteDecision) -> str | None:
     return str(value).strip() if value else None
 
 
+def _actor_columns(session) -> frozenset[str]:
+    """Physical actor columns, cached per session (pre- and post-cutover schemas).
+
+    An empty set means the columns are unknown; callers then keep the legacy names.
+    """
+    info = getattr(session, "info", None)
+    cached = info.get("ghus_actor_columns") if isinstance(info, dict) else None
+    if cached is None:
+        try:
+            cached = frozenset(session.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='actor'"
+            )).scalars())
+        except (AttributeError, TypeError):
+            cached = frozenset()
+        if isinstance(info, dict):
+            info["ghus_actor_columns"] = cached
+    return cached
+
+
 def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str:
     name = str(payload.get("name") or "").strip()
     if not name:
         raise ValueError("cannot create actor without name")
     actor_id = str(uuid.uuid4())
+    columns = _actor_columns(session)
     cols: dict[str, object] = {
         "actor_id": actor_id,
         "name": name,
         "slug": _actor_slug(name, actor_id),
-        "record_status": "parked",
         "source_origin": "claude_discovered",
         "source_id": source_id,
     }
+    # Final V2 names win; legacy names are written only while they still exist.
+    for status_column in ("status", "record_status"):
+        if status_column in columns or (not columns and status_column == "record_status"):
+            cols[status_column] = "parked"
     mapping = {
         "actor_category": ("actor_category",),
         "category_type": ("category_type",),
@@ -779,13 +803,15 @@ def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str
         "website_domain": ("website_domain",),
         "description": ("description",),
         "country": ("country",),
-        "location_city": ("location_city",),
+        "city" if "city" in columns else "location_city": ("location_city", "city"),
         "state_code": ("state_code",),
         "region_code": ("region_code",),
         "latitude": ("latitude",),
         "longitude": ("longitude",),
         "is_multi_location": ("is_multi_location",),
-        "alternate_names": ("alternate_names", "alt_names"),
+        "alt_names" if "alt_names" in columns else "alternate_names": (
+            "alternate_names", "alt_names",
+        ),
     }
     for column, keys in mapping.items():
         value = next((payload.get(key) for key in keys if _has_value(payload.get(key))), None)

@@ -23,6 +23,10 @@ POLICY_DATABASES = {
         EVIDENCE / "phase12_policy_backfill_proof_full_dump_2026-10-06.json",
         EVIDENCE / "pre_cutover_data_loss_audit_full_dump_2026-10-06.json",
     ),
+    "ghus_v2_phase12_rehearsal_test": (
+        EVIDENCE / "phase12_policy_backfill_proof_rehearsal_2026-10-06.json",
+        EVIDENCE / "pre_cutover_data_loss_audit_rehearsal_2026-10-06.json",
+    ),
 }
 
 
@@ -36,7 +40,8 @@ PROFILE_FIELDS = (
     "funding_summary",
 )
 LEGACY_TABLE_COUNTS = {
-    "record_verification": "SELECT count(*) value FROM record_verification",
+    "record_verification": "SELECT count(*) value FROM record_verification "
+                           "WHERE entity_type='actor'",
     "organization_hierarchy": "SELECT count(*) value FROM organization_hierarchy",
     "actor_profile": "SELECT " + "+".join(
         f"count(*) FILTER(WHERE NULLIF(btrim({field}),'') IS NOT NULL)" for field in PROFILE_FIELDS
@@ -260,7 +265,8 @@ def main() -> int:
         for disposition, n in records.get(("actor_profile", field), {}).items():
             profile_records[disposition] = profile_records.get(disposition, 0) + n
     loss_checks.extend([
-        _record_check("record_verification", "actor_verification_event (genuine GHUS decisions)",
+        _record_check("record_verification (actor decisions)",
+                      "actor_verification_event (genuine GHUS decisions)",
                       legacy_tables["record_verification"], {}),
         _record_check("organization_hierarchy", "entity_edge or relationship_review",
                       legacy_tables["organization_hierarchy"],

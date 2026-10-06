@@ -335,6 +335,7 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             "proposed_hub_decision": {Path("agents/hubs/decisions.py")},
             "hub_detection_run": {Path("agents/hubs/detect.py")},
             "review_admission_decision": {Path("agents/review/admission.py")},
+            "review_item_decision": {Path("agents/enrichment/decisions.py")},
                 "actor_fact": {
                     Path("agents/discovery/promote.py"),
                     Path("agents/enrichment/decisions.py"),
