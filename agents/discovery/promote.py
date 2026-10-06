@@ -16,12 +16,14 @@ from urllib.parse import urlparse
 
 from sqlalchemy import text
 
+from agents.collection.light_pull import LightPullResult, replace_light_fact, run_light_pull
 from agents.common.actor_classification import (
     CATEGORY_DOUBT_BRIDGE_KIND,
     CATEGORY_DOUBT_ISSUE,
     ActorClassification,
     classification_from_payload,
 )
+from agents.common.facts import ActorFactWrite
 from agents.common.geography import PreparedActorGeography, prepare_actor_geography
 from agents.common.hub_assignment import (
     HUB_ASSIGNMENT_METHOD_VERSION,
@@ -33,8 +35,10 @@ from agents.common.hub_assignment import (
     build_hub_assignment_plan,
 )
 from agents.common.provenance import insert_source
+from agents.common.relationships import actor_relationship_requests
 from agents.common.resolve_route import RouteDecision
 from agents.discovery.stage import StagedRecord
+from agents.enrichment.decisions import append_actor_fact, append_entity_edge
 from src.ML.entity_resolution.resolve_or_create import (
     INHERITABLE_FIELDS as ACTOR_FIELDS,
 )
@@ -504,6 +508,8 @@ def map_new_actor(
     session=None,
     live: bool = False,
     manage_transaction: bool = True,
+    light_pull_fetcher=None,
+    light_pull_extractor=None,
 ) -> PromotionResult:
     """Create or append an actor through the Architecture V2 ordered pipeline.
 
@@ -519,6 +525,7 @@ def map_new_actor(
     _mapping_step(route, trace, "mapped_first")
     geography: PreparedActorGeography | None = None
     classification: ActorClassification | None = None
+    light_pull: LightPullResult | None = None
     if route.zone == "create":
         _mapping_step(route, trace, "category")
         classification = classification_from_payload(staged.normalized_payload)
@@ -528,6 +535,40 @@ def map_new_actor(
         if classification is not None:
             prepared_payload.update(classification.as_payload())
         geography = prepare_actor_geography(prepared_payload)
+        # Validate the explicit relationship contract before either dry-run or
+        # live execution.  Placeholder UUIDs represent the not-yet-created
+        # actor and its not-yet-inserted source; no relationship is inferred.
+        planned_relationships = actor_relationship_requests(
+            actor_id="00000000-0000-0000-0000-000000000001",
+            payload=staged.normalized_payload,
+            source_id="00000000-0000-0000-0000-000000000002",
+            topic_id=_route_topic_id(staged, route),
+        )
+        prepared_payload.update(geography.actor_values)
+        prepared_payload["multi_location"] = len(geography.locations) > 1
+        prepared_payload["parent_connection"] = (
+            [{
+                "relationship_type": request.relationship_type,
+                "object_type": request.object_type,
+                "object_id": request.object_id,
+                "confidence": request.confidence,
+                "topic_id": request.topic_id,
+            } for request in planned_relationships]
+            if planned_relationships
+            else {"state": "standalone", "parent": None}
+        )
+        # Layer 1 facts are always topic-scoped. Legacy bridge inputs without a
+        # topic remain creatable but do not receive a misleading Light Pull.
+        if classification is not None and _route_topic_id(staged, route):
+            light_pull = run_light_pull(
+                payload=prepared_payload,
+                actor_category=classification.actor_category,
+                topic_id=_route_topic_id(staged, route),
+                source_url=staged.source_url,
+                date_read=staged.extracted_at,
+                fetcher=light_pull_fetcher,
+                extractor=light_pull_extractor,
+            )
     if session is None:
         if live:
             raise ValueError("live promotion requires a database session")
@@ -602,8 +643,26 @@ def map_new_actor(
                 geography=geography,
                 explicit_hub_ids=route.metadata.get("hub_ids") or [],
             )
+            if light_pull is not None:
+                light_pull = replace_light_fact(
+                    light_pull,
+                    "hub_assignment",
+                    {
+                        "assigned_hub_ids": list(hub_plan.assigned_hub_ids),
+                        "evaluations": [evaluation.__dict__ for evaluation in hub_plan.evaluations],
+                        "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+                    },
+                )
             _mapping_step(route, trace, "light_pull")
             actor_id = _insert_actor_v2(session, geography.actor_values, source_id)
+            relationships = actor_relationship_requests(
+                actor_id=actor_id,
+                payload=staged.normalized_payload,
+                source_id=source_id,
+                topic_id=topic_id,
+            )
+            for relationship in relationships:
+                append_entity_edge(session, relationship, live=True)
             _insert_actor_locations(
                 session,
                 actor_id=actor_id,
@@ -622,8 +681,8 @@ def map_new_actor(
                 session,
                 actor_id=actor_id,
                 staged=staged,
-                source_id=source_id,
                 topic_id=topic_id,
+                light_pull=light_pull,
             )
             if classification is not None:
                 _append_actor_classification(
@@ -862,37 +921,33 @@ def _append_actor_light_facts(
     *,
     actor_id: str,
     staged: StagedRecord,
-    source_id: str,
     topic_id: str | None,
+    light_pull: LightPullResult | None,
 ) -> None:
-    excluded = {
-        "entity_type",
-        "natural_key",
-        "sector_codes",
-        "source_url",
-        "extracted_at",
-        "prompt_version",
-        "sector_match",
-        "actor_category",
-        "category_type",
-        "category_note",
-        "category_needs_review",
-        "classification_evidence",
-        DISCOVERED_DOMAIN_PAYLOAD_KEY,
-    }
-    for key, value in staged.normalized_payload.items():
-        if key in excluded or not _has_value(value):
-            continue
-        _insert_actor_fact(
+    # Legacy unscoped inputs remain creatable but cannot satisfy the V2
+    # topic-scoped fact contract. Do not mislabel their arbitrary payload as a
+    # Light Pull. Every classified, topic-scoped V2 actor gets the full schema.
+    if light_pull is None or not topic_id:
+        return
+    for fact in light_pull.facts:
+        append_actor_fact(
             session,
-            actor_id=actor_id,
-            topic_id=topic_id,
-            fact_type="light_pull",
-            fact_key=key,
-            value=value,
-            source_id=source_id,
-            retrieved_at=staged.extracted_at,
-            run_id=staged.run_id,
+            ActorFactWrite(
+                actor_id=actor_id,
+                topic_id=topic_id,
+                field_key=fact.field_key,
+                fact_type="light_pull",
+                layer=1,
+                value=fact.value,
+                collection_state=fact.collection_state,
+                source_url=fact.source_url,
+                source_origin=fact.source_origin,
+                date_read=fact.date_read,
+                confidence=fact.confidence,
+                created_by="agent.light_pull",
+                request_id=staged.run_id,
+            ),
+            live=True,
         )
 
 

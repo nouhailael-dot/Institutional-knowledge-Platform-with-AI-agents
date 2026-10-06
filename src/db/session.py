@@ -90,7 +90,11 @@ def _connect_args() -> dict:
     try:
         url = make_url(DATABASE_URL)
         if url.get_backend_name().startswith("postgresql"):
-            args["sslmode"] = str(url.query.get("sslmode") or "require")
+            args["sslmode"] = (
+                "disable"
+                if url.host in {"127.0.0.1", "localhost", "::1"}
+                else str(url.query.get("sslmode") or "require")
+            )
         if url.get_backend_name().startswith("postgresql") and url.host:
             port = url.port or 5432
             for ip in _public_ipv4_addresses(url.host, port):

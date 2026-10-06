@@ -38,14 +38,14 @@ The planned test names are acceptance targets, not tests that already exist.
 | R001 | §1 | Job 1 maps and keeps current; it never guesses intended use. | Actor rubric scores eight GHUS use cases and reranks for “practical GHUS engagement” in `agents/discovery/search/actor_scoring.py`. | Conflict | P9/P16 | `test_mapping_has_no_use_case_fields_or_scores` |
 | R002 | §1 | Job 2 reasons from a supplied spec and remains separate. | `actor_relevance`, `actor_evaluation`, and `partnership_profile.why_valuable_for_um6p` mix recommendation concepts into the map/RAG. | Conflict | P16 | `test_candidate_interface_requires_explicit_spec` |
 | R003 | §1 | Check mapped data before every new search. | ER checks held actors during ingest, but Ask/Explore/search entry points have no universal database-first service. | Partial | P3/P16 | `test_every_request_checks_database_before_web` |
-| R004 | §1 | Light pull runs for every discovered actor. | Discovery extracts a generic actor record; there is no V2 light-pull orchestrator or per-category schema. | Partial | P3/P9 | `test_new_actor_runs_light_pull_once` |
-| R005 | §1/§4 | Deep pull runs only after GHUS verification. | `agents/enrichment/run.py` selects sparse actors without a verification filter. | Conflict | P10 | `test_deep_pull_refuses_non_verified_statuses` |
+| R004 | §1 | Light pull runs for every discovered actor. | Phase 9 runs the bounded common plus category schema for every classified, topic-scoped new actor before Parked; legacy unscoped bridge records are deliberately not mislabeled as Light facts. | Implemented | P3/P9 | `test_new_actor_runs_light_pull_once` |
+| R005 | §1/§4 | Deep pull runs only after GHUS verification. | Phase 10 authorizes only from the latest append-only GHUS decision for the actor/topic; legacy live actor enrichment fails closed. | Implemented | P10 | `test_deep_pull_refuses_non_verified_statuses` |
 | R006 | §1 | Real parent if it exists; otherwise connect through sector, geography, hub. | `organization_hierarchy` exists, but discovery does not perform the ordered V2 parent decision and geography/topic connections are absent. | Partial | P3/P8 | `test_parent_case_order_and_standalone_complete` |
 | R007 | §1 | Only GHUS verifies records and approves hubs. | Admin UI can set status directly; no identity/history. `proposed_hub` exists only as repository proposal SQL/model/code; it is absent from production and the fresh `ghus_v2_test` copy. | Conflict | P2/P6/P15 | `test_agent_cannot_verify_or_approve_hub` |
 | R008 | §1 | New actor order is category → type → parent/connection → hub → light pull → Parked. | No single `map_new_actor`; promotion currently routes ER then writes generic fields/hubs. | Missing | P3 | `test_map_new_actor_exact_step_order` |
-| R009 | §1 | Deep pull follows later, after verification. | Weekly enrichment is not event-driven from verification and is not topic-scoped. | Missing | P10 | `test_verification_enables_only_scoped_deep_pull` |
+| R009 | §1 | Deep pull follows later, after verification. | The Phase 10 service requires both a verified decision and topic UUID; no scheduler or mutable status can authorize it. | Implemented | P10 | `test_verification_enables_only_scoped_deep_pull` |
 | R010 | §1 | Imported, Parked/Verified, and uploaded-document sources never mix. | `source` records exist, but actors/facts lack required origin enums and RAG source labels. | Partial | P2/P9/P16 | `test_source_origins_remain_distinct` |
-| R011 | §1/§5.2 | Missing evidence is `not_found`, never a guess. | Prompts generally return `null`; durable `not_found` facts do not exist. | Partial | P9/P11 | `test_missing_evidence_writes_not_found_fact` |
+| R011 | §1/§5.2 | Missing evidence is `not_found`, never a guess. | Phase 9 materializes every Light schema field with `found`, `not_found`, or `not_yet_collected`; Layer 2 follows the same fact contract in P10/P11. | Implemented | P9/P11 | `test_missing_evidence_writes_not_found_fact` |
 | R012 | Prompt §0 | All tunables live in one config module. | Thresholds are spread across `sources.yaml`, `fields.yaml`, `config.py`, ER JSON, and Python constants such as `AI_CONFIDENCE=0.70`. | Conflict | P2 | `test_no_agent_magic_thresholds` |
 | R013 | §2 | Exactly seven fixed U.S. regions exist. | Phase 4 has one exhaustive 51-jurisdiction partition in code and reference SQL. | Implemented | P4 | `test_region_partition_all_states_and_dc` |
 | R014 | §2 | Northeast contains CT, ME, MA, NH, NY, RI, VT. | Deterministic `region_for_state` derives the specified membership. | Implemented | P4 | `test_fixed_region_memberships` |
@@ -114,49 +114,49 @@ The planned test names are acceptance targets, not tests that already exist.
 | R077 | §3 | Type choices are restricted to the selected category. | Application validation and category-scoped schemas are implemented; deferred `380` adds the final composite FK after P12/P16. | Partial | P2/P5/P12/P16 | `test_cross_category_type_rejected` |
 | R078 | §3 | Doubt uses closest value plus one-line note and GHUS review. | Implemented through the documented `classification`/`issue=category_doubt` bridge; deferred `370` converts it to canonical review kind `category_doubt`. | Partial | P2/P5/P16 | `test_category_doubt_note_and_queue` |
 | R079 | §3 | No fitting type uses `other`, required note, and review. | Enforced for new writes and reference data; deferred `380` adds the final actor-table CHECK after P12/P16. | Partial | P2/P5/P12/P16 | `test_other_requires_note_and_review` |
-| R080 | §4 | Layer 1 identifies, places, and explains match for every actor. | Generic discovery captures some fields; no placement derivation, topic reason, or fact layer. | Partial | P9 | `test_light_pull_required_fact_set` |
-| R081 | §4 | Light completion sets status Parked until GHUS review. | New actors are `needs_review`, not V2 `parked`. | Conflict | P3/P9 | `test_light_pull_ends_parked` |
-| R082 | §4 | Layer 2 is selected, topic-relevant, and non-exhaustive. | Enrichment is gap-based and generic, not category/topic/layer-scoped. | Missing | P10 | `test_deep_pull_selected_and_topic_scoped` |
-| R083 | §4 | Layer 3 runs only on explicit GHUS request. | No specific-ask service/UI/audit. | Missing | P10/P15 | `test_specific_ask_requires_user_action` |
-| R084 | §5.1 | Name plus official alternate/former names/abbreviations. | Actor has name only; no `alt_names`. | Missing | P2/P9 | `test_alt_names_are_normalized_and_searchable` |
-| R085 | §5.1 | Category, type, and uncertainty note at Light. | Flat nullable `actor_type`; no type/note. | Conflict | P5/P9 | `test_light_classification_complete` |
-| R086 | §5.1 | Parent or normal no-parent connections at Light. | `organization_hierarchy` exists but has no source and is not in mapping flow. | Partial | P8/P9 | `test_light_parent_or_complete_standalone` |
+| R080 | §4 | Layer 1 identifies, places, and explains match for every actor. | Phase 9 writes one complete topic-scoped Layer 1 schema including derived location, deterministic hub evaluations, relationship/standalone state, and match reason. | Implemented | P9 | `test_light_pull_required_fact_set` |
+| R081 | §4 | Light completion sets status Parked until GHUS review. | The ordered Phase 3/9 path completes Layer 1 facts, writes `record_status=parked`, then creates `verify_actor`. | Implemented | P3/P9 | `test_light_pull_ends_parked` |
+| R082 | §4 | Layer 2 is selected, topic-relevant, and non-exhaustive. | Phase 10 requires a proper subset of the category Deep schema and appends only topic-scoped Layer 2 facts. | Implemented | P10 | `test_deep_pull_selected_and_topic_scoped` |
+| R083 | §4 | Layer 3 runs only on explicit GHUS request. | The Phase 10 writer requires requester, request text, request ID, and explicit values; user-facing action remains P15. | Partial | P10/P15 | `test_specific_ask_requires_user_action` |
+| R084 | §5.1 | Name plus official alternate/former names/abbreviations. | Layer 1 preserves explicit other/alternate names in `official_identity`; canonical normalization/searchable backfill remains P12/P16. | Partial | P2/P9/P12 | `test_alt_names_are_normalized_and_searchable` |
+| R085 | §5.1 | Category, type, and uncertainty note at Light. | Phase 5 classification is persisted in the Phase 9 Layer 1 schema with doubt/note evidence. | Implemented | P5/P9 | `test_light_classification_complete` |
+| R086 | §5.1 | Parent or normal no-parent connections at Light. | Phase 8 typed edge requests are preserved as Light evidence; absence is explicitly recorded as standalone and no parent is inferred. | Implemented | P8/P9 | `test_light_parent_or_complete_standalone` |
 | R087 | §5.1 | Official website at Light. | Actor.website exists; current extraction may leave null. No normalized domain/index. | Partial | P2/P9 | `test_official_website_and_domain` |
-| R088 | §5.1 | Description is 1–3 plain factual sentences. | Description exists; prompts say concise but code/schema do not enforce 1–3 sentences. | Partial | P9 | `test_description_sentence_limit` |
+| R088 | §5.1 | Description is 1–3 plain factual sentences. | The Phase 9 Light contract rejects descriptions outside 1–3 sentences. | Implemented | P9 | `test_description_sentence_limit` |
 | R089 | §5.1 | Country/state/city, derived region/coordinates, multi-location flag. | Promotion derives scalar geography for a single location and writes separately geocoded `actor_location` rows with no parent coordinates for multi-location actors. | Implemented | P2/P4 | `test_multi_location_geocodes_rows_not_parent` |
-| R090 | §5.1 | Hub set and distance to each center. | Membership exists; distance/evidence/state absent. | Partial | P6/P9 | `test_light_hub_distances` |
-| R091 | §5.1 | Sector(s) and specific topic. | `actor_sector` exists; no `topic`/`actor_topic`. | Partial | P2/P9 | `test_actor_topic_and_sector_links` |
-| R092 | §5.1 | Strong/moderate match plus 1–2 sentence reason. | Relevance/rubric is staged JSON, not durable per-topic canonical data. | Missing | P2/P9 | `test_match_strength_reason_constraints` |
-| R093 | §5.1 | One dated recent activity if easy; otherwise defer. | `current_activities` is mutable actor text, not dated/topic/fact-layer scoped. | Conflict | P9/P11 | `test_easy_recent_activity_budget_state` |
-| R094 | §5.1 | One documented topic funding signal if visible. | `funding_summary` is actor-level mutable text. | Conflict | P9/P11 | `test_light_funding_signal_fact` |
-| R095 | §5.1 | Documented international/Africa/Morocco connection if visible. | Some partnership fields exist, but no topic/layer fact and no deterministic budget state. | Partial | P9/P11 | `test_light_international_connection_fact` |
+| R090 | §5.1 | Hub set and distance to each center. | Phase 9 records the Phase 6 deterministic plan, assignment set, outcome, radius, and actual distance for each evaluated hub. | Implemented | P6/P9 | `test_light_hub_distances` |
+| R091 | §5.1 | Sector(s) and specific topic. | Phase 3 actor-topic linkage and Phase 9 `sector_topic` fact are topic-scoped; sector codes are preserved from extraction. | Implemented | P2/P3/P9 | `test_actor_topic_and_sector_links` |
+| R092 | §5.1 | Strong/moderate match plus 1–2 sentence reason. | Phase 9 persists the topic-specific reason and rejects other strengths or reasons outside 1–2 sentences. | Implemented | P2/P9 | `test_match_strength_reason_constraints` |
+| R093 | §5.1 | One dated recent activity if easy; otherwise defer. | Phase 9 accepts only dated/described activity evidence and otherwise records a missing/deferred state; Deep refresh remains P10/P11. | Implemented | P9/P11 | `test_easy_recent_activity_budget_state` |
+| R094 | §5.1 | One documented topic funding signal if visible. | Phase 9 stores the signal as an immutable topic-scoped sourced fact and otherwise records an explicit missing state. | Implemented | P9/P11 | `test_light_funding_signal_fact` |
+| R095 | §5.1 | Documented international/Africa/Morocco connection if visible. | Phase 9 stores explicit connection evidence or an explicit missing state in the topic-scoped fact ledger. | Implemented | P9/P11 | `test_light_international_connection_fact` |
 | R096 | §5.1 | UM6P/OCP check runs at Light and Deep. | No entity list/check table or check function. | Missing | P13 | `test_um6p_check_both_layers` |
-| R097 | §5.1 | Every fact stores source, origin, date read, confidence. | Source rows exist, but actor columns have one row-level `source_id`; absorption can create an unlinked source. | Conflict | P2/P9/P11 | `test_every_fact_has_complete_provenance` |
+| R097 | §5.1 | Every fact stores source, origin, date read, confidence. | The shared Phase 9/10 fact writer requires all four on every append and Review exposes them; legacy mutable columns remain migration work. | Implemented | P2/P9/P11 | `test_every_fact_has_complete_provenance` |
 | R098 | §5.1 status | Imported means Phase 1 and never implicitly verified. | Current `phase_1`/other values are not the V2 enum; migration absent. | Conflict | P2/P12 | `test_imported_never_verified_by_migration` |
 | R099 | §5.1 status | Parked is default for Claude-discovered actors. | Current default is `needs_review`. | Conflict | P3/P12 | `test_discovered_default_parked` |
 | R100 | §5.1 status | Verified requires GHUS review. | Admin can set directly but no identity/event/RLS; agents can write `verification_status='needs_review'`/`ai_inferred`. | Partial | P2/P15 | `test_verified_requires_ghus_event` |
 | R101 | §5.1 status | Rejected is retained with reason. | Admin sets `rejected` with no required reason/history. | Conflict | P2/P15 | `test_reject_requires_reason_and_retains_actor` |
 | R102 | §5.1 | Verification is append-only history with by/date/notes. | No actor verification event. | Missing | P2/P15 | `test_verification_history_append_only` |
 | R103 | §5.1 | GHUS notes are writable only by GHUS. | No actor `ghus_notes` or role guard. | Missing | P2/P15 | `test_ghus_notes_role_guard` |
-| R104 | §5.2 | All category extraction is specific to the mapped topic. | Generic actor enrichment has no topic parameter. | Missing | P9/P10 | `test_all_category_facts_topic_scoped` |
-| R105 | §5.2 | University light/deep/specific fields follow its table row. | No category-derived JSON schema; some generic/profile fields overlap. | Missing | P9/P10 | `test_university_layer_schemas` |
-| R106 | §5.2 | Research Center light/deep/specific fields; no ranking at any layer. | No category schema or ranking guard. | Missing | P9/P10 | `test_research_center_schema_has_no_ranking` |
+| R104 | §5.2 | All category extraction is specific to the mapped topic. | Every Phase 9 fact requires a topic UUID; Phase 10 must extend the same constraint to Deep. | Partial | P9/P10 | `test_all_category_facts_topic_scoped` |
+| R105 | §5.2 | University light/deep/specific fields follow its table row. | University Light fields and ranking guards are implemented; Deep/specific fields remain P10. | Partial | P9/P10 | `test_university_layer_schemas` |
+| R106 | §5.2 | Research Center light/deep/specific fields; no ranking at any layer. | Its Light schema is implemented and cannot emit ranking; Deep remains P10. | Partial | P9/P10 | `test_research_center_schema_has_no_ranking` |
 | R107 | §5.2 | National Lab light/deep/specific fields follow its row. | No category schema/designation fact. | Missing | P9/P10 | `test_national_lab_layer_schemas` |
 | R108 | §5.2 | Applied Facility light/deep/specific fields follow its row. | No category schema. | Missing | P9/P10 | `test_applied_facility_layer_schemas` |
 | R109 | §5.2 | Hospital light/deep/specific fields follow its row. | No category schema. | Missing | P9/P10 | `test_hospital_layer_schemas` |
 | R110 | §5.2 | Company light/deep/specific fields follow its row. | No category schema. | Missing | P9/P10 | `test_company_layer_schemas` |
-| R111 | §5.2 | Startup light/deep/specific fields; pilot evidence only if easy. | Generic TRL field exists and is enrichable; no published-evidence enforcement. | Conflict | P9/P10 | `test_startup_layer_schema_and_no_assumed_trl` |
+| R111 | §5.2 | Startup light/deep/specific fields; pilot evidence only if easy. | Startup Light schema is implemented; stage/TRL is rejected without explicit published evidence and otherwise remains `not_found`; Deep remains P10. | Partial | P9/P10 | `test_startup_layer_schema_and_no_assumed_trl` |
 | R112 | §5.2 | Innovation Platform light/deep/specific fields follow its row. | No category schema; supported startups are not guaranteed own records. | Missing | P9/P10 | `test_innovation_platform_layer_schemas` |
 | R113 | §5.2 | Investor light/deep/specific fields follow its row. | No category schema; investments are not linked actor records. | Missing | P9/P10 | `test_investor_layer_schemas` |
 | R114 | §5.2 | Government light/deep/specific fields follow its row. | No category schema. | Missing | P9/P10 | `test_government_layer_schemas` |
 | R115 | §5.2 | Foundation/Nonprofit light/deep/specific fields follow its row. | No category schema. | Missing | P9/P10 | `test_nonprofit_layer_schemas` |
 | R116 | §5.2 | Association/Network light/deep/specific fields; scope stays on parent. | No category schema/network-location transformation. | Missing | P8/P9/P10 | `test_network_scope_not_copied_to_locations` |
 | R117 | §5.2 | Deep items outside starting list need material topic relevance and inclusion reason. | No fact `inclusion_reason` or topic-scoped cap. | Missing | P10 | `test_extra_deep_fact_requires_inclusion_reason` |
-| R118 | §5.2 ranking | Rankings may be owned only by universities. | No ranking model/constraint. | Missing | P2/P9 | `test_only_university_owns_ranking` |
-| R119 | §5.2 ranking | University-wide publishers are exactly QS, THE, U.S. News Best Colleges, ARWU. | No allowlist/model. | Missing | P9 | `test_university_ranking_publishers` |
-| R120 | §5.2 ranking | Subject publishers are exactly QS Subject, THE Subject, U.S. News Graduate specialty. | No allowlist/model. | Missing | P9 | `test_subject_ranking_publishers` |
-| R121 | §5.2 ranking | Publisher and year are required; position is exact as published. | No ranking model. | Missing | P2/P9 | `test_ranking_required_attribution` |
-| R122 | §5.2 ranking | Department never inherits university overall rank. | No ranking model/guard. | Missing | P9/P16 | `test_department_never_inherits_overall_rank` |
+| R118 | §5.2 ranking | Rankings may be owned only by universities. | Ranking is absent from every non-university Light schema and unknown fields fail closed; final DB ownership constraint remains P15/P16. | Partial | P2/P9/P16 | `test_only_university_owns_ranking` |
+| R119 | §5.2 ranking | University-wide publishers are exactly QS, THE, U.S. News Best Colleges, ARWU. | Phase 9 enforces the exact publisher/ranking-name pairs at collection. | Implemented | P9 | `test_university_ranking_publishers` |
+| R120 | §5.2 ranking | Subject publishers are exactly QS Subject, THE Subject, U.S. News Graduate specialty. | Phase 9 enforces the exact subject ranking names and requires the published subject/specialty. | Implemented | P9 | `test_subject_ranking_publishers` |
+| R121 | §5.2 ranking | Publisher and year are required; position is exact as published. | Structured Phase 9 ranking evidence requires publisher, ranking name, year, ranked entity, and position. | Implemented | P2/P9 | `test_ranking_required_attribution` |
+| R122 | §5.2 ranking | Department never inherits university overall rank. | Phase 9 rejects university-wide rankings on college/school and academic-department Light records; final DB guard remains P16. | Partial | P9/P16 | `test_department_never_inherits_overall_rank` |
 | R123 | §5.2 ranking | University subject rank may display on department only as labeled university context. | No `displayed_as_context_on_actor_id`. | Missing | P2/P15 | `test_subject_rank_context_label` |
 | R124 | §5.2 ranking | Link to unit only when verifiably the ranked program. | No evidence-aware attribution guard. | Missing | P9 | `test_program_rank_requires_verified_identity` |
 | R125 | §5.3 | Person is its own record and links to organization. | `person` and `actor_person` exist. Current person promotion can create an actor affiliation stub. | Partial | P8/P14 | `test_person_links_to_known_org_or_review` |
@@ -545,10 +545,43 @@ Current behavior is not V2-safe:
 5. **P6 — Existing hubs (complete 2026-10-01).** Implemented topic-first deterministic assignment, immutable distance evidence, nearest-center overlap routing, eligible-member density-center previews, frozen-center drift review, and read-only preservation assessment for all 821 Phase 1 memberships. Real topic/center/member backfill remains P12. See `docs/architecture_v2_phase6.md`.
 6. **P7 — Hub proposals (complete 2026-10-01).** Implemented per-topic deterministic family clustering, fail-closed V2 family resolution, maximum bipartite category matching, family-set fingerprints, dry-run/on-demand execution, proposal-only live persistence, and the append-only GHUS decision service. The production-copy baseline cannot yield meaningful proposals yet because P8/P12 have not supplied controlled topics, authoritative structural edges, classification, coordinates, Verified statuses, or trusted hub topic/center/radius data. See `docs/architecture_v2_phase7.md`.
 7. **P8 — Link graph.** Implement sourced typed edges, parent cases, recursive descendants, network/location treatment, and retrieval graph adapter.
-8. **P9 — Light pull.** Generate schemas from category data, enforce three-fetch budget, write provenance facts including `not_found`/`not_yet_collected`, rankings, and Light UM6P check.
-9. **P10 — Deep pull and specific asks.** Add verified actor+topic gate, category caps, linked sub-entity mapping through `map_new_actor`, explicit requester/audit, and no autonomous Layer 3 triggers.
+8. **P9 — Light pull (complete 2026-10-05).** Added fixed common plus 12 category schemas, hard three-fetch budget, immutable topic-scoped provenance facts with explicit missing states, derived geography/relationship/hub evidence, ranking and startup evidence guards, and Review presentation. The controlled UM6P/OCP list matcher remains P13; until then the Light fact truthfully records `not_yet_checked` unless upstream evidence is explicit. See `docs/architecture_v2_phase9.md`.
+9. **P10 — Deep pull and specific asks (complete 2026-10-05).** Added latest-GHUS-decision actor/topic gating, 12 category Deep schemas with selected non-exhaustive subsets, immutable Layer 2 facts, capped linked sub-entity inputs with explicit parent edges, fail-closed legacy live enrichment, and explicit requester/request text audit for Layer 3. UI action wiring remains P15. See `docs/architecture_v2_phase10.md`.
 10. **P11 — Immutable fact resolution.** Add corroboration, supersession, conflict, pending-human-update, current/history views, and remove mutable canonical fact writes.
 11. **P12 — Existing-data migration.** Idempotent dry-run reports first: category/type mapping, aggregate/network CSV, geocode report, Phase 1 hub report, events, source origins/statuses, and UM6P spreadsheet ingest after its path is supplied.
+
+### Phase 11 and target-database finalization checkpoint (2026-10-06)
+
+Phase 11 is complete. `actor_fact_current_pointer`, `fact_corroboration`,
+supersession/lifecycle metadata, and current/history views now provide one
+deterministic current fact while preserving immutable history. Light Pull, Deep
+Pull and Specific Ask use this writer. See `docs/architecture_v2_phase11.md`.
+
+The definitive clean target contract is recorded in
+`docs/architecture_v2_target_database_contract.md`, with the complete
+machine-readable expanded schema in
+`docs/evidence/v2_target_schema_manifest_2026-10-06.json`. Compatibility is now
+explicitly transitional. Historical proposals 450/460 are superseded by the
+corrected GHUS policy migrations 490/500. Migration 500 removes legacy
+actor/status/scalar profile structures only after both applications switch and
+the pre-cutover data-loss audit is independently attested as passed.
+
+The corrected Phase 12 report and isolated backfill proof are complete on
+separate local databases. Explicit GHUS policy migrates all 965 existing
+canonical actors as Verified using migration-origin events without a fabricated
+reviewer or historical timestamp. The deterministic legacy-category mapping
+resolves 751 actors; 214 unmappable category values receive review. All 965
+category types remain nullable pending later type-only AI enrichment and do not
+create review by themselves. Deep Pull still requires exact actor/topic GHUS
+authorization and excludes the topic-null bootstrap event.
+
+The semantic inventory covers 66 base tables and 723 columns. All 49 hubs, 821
+memberships and 356 events remain unchanged. The pre-cutover data-loss audit is
+intentionally failed because legacy scalar facts and other preservable values
+have not yet reconciled to their final destinations; consequently migration
+500 is fail-closed. See `docs/architecture_v2_phase12_dry_run.md` and the
+`legacy_to_v2_mapping_matrix` / `pre_cutover_data_loss_audit` evidence files.
+
 12. **P13 — UM6P/OCP check.** Pure document-list function with three states and false-positive/ranking-invariance tests.
 13. **P14 — People/events.** Keep people off, enforce triggers/privacy/separate verification, require event need/topic, retain past events/claims, and lock GHUS notes.
 14. **P15 — Curate/Explore UI.** Replace direct status writes with services; add queues, history, actor/hub/duplicate/conflict screens, maps, source labels, and region browsing.

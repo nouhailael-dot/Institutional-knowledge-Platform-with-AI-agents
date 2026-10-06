@@ -13,6 +13,7 @@ from agents.common.actor_classification import (
     NonActorRecord,
     classification_from_payload,
     classify_actor_category_type,
+    classify_type_for_existing_category,
     load_category_catalog,
     validate_actor_classification,
 )
@@ -338,6 +339,44 @@ def test_classifier_prompt_forbids_sector_funder_fame_age_and_unsupported_infere
     category_prompt = client.calls[1]["system"]
     assert all(word in category_prompt for word in ("sector", "funder", "fame", "age"))
     assert "official self-description" in category_prompt
+
+
+def test_existing_actor_enrichment_keeps_migrated_category_fixed():
+    client = SequenceToolClient([
+        {
+            "category_type": "corporate_rd_center",
+            "doubt": False,
+            "category_note": None,
+        }
+    ])
+    result = classify_type_for_existing_category(
+        client,
+        name="Existing GHUS Company",
+        self_description="The company operates a corporate research and development center.",
+        actor_category="company",
+    )
+    assert result.actor_category == "company"
+    assert result.category_type == "corporate_rd_center"
+    assert [call["tool_name"] for call in client.calls] == [
+        "classify_existing_actor_category_type"
+    ]
+    allowed = client.calls[0]["input_schema"]["properties"]["category_type"]["enum"]
+    assert "corporate_rd_center" in allowed
+    assert "public_utility" not in allowed
+    assert "reclassify" in client.calls[0]["system"]
+
+
+def test_existing_actor_other_type_requires_honest_note():
+    client = SequenceToolClient([
+        {"category_type": "other", "doubt": False, "category_note": None}
+    ])
+    with pytest.raises(ActorClassificationError, match="requires category_note"):
+        classify_type_for_existing_category(
+            client,
+            name="Existing GHUS Company",
+            self_description="The official description does not fit a defined company type.",
+            actor_category="company",
+        )
 
 
 def test_deferred_schema_enforces_pair_completeness_other_note_and_category_doubt():

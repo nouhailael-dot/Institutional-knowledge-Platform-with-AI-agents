@@ -1,0 +1,40 @@
+{
+  "actor": {
+    "category_type_pending": 965,
+    "category_type_populated": 0,
+    "category_unresolved": 214,
+    "imported_origin": 965,
+    "total": 965,
+    "verified": 965
+  },
+  "assertions": {
+    "all_existing_actors_scoped": true,
+    "all_existing_actors_verified": true,
+    "events_preserved": true,
+    "historical_memberships_preserved": true,
+    "hubs_preserved": true,
+    "mapped_plus_review_reconciles": true,
+    "missing_type_is_pending_not_review": true,
+    "verification_provenance_honest": true
+  },
+  "category_mapping": {
+    "mapped": 751,
+    "requires_review": 214,
+    "total": 965
+  },
+  "database": "ghus_v2_phase12_policy_test",
+  "generated_at": "2026-10-06T17:31:32.215754+00:00",
+  "passed": true,
+  "reviews": {
+    "category_review": 214
+  },
+  "row_count_invariants": {
+    "events": 356,
+    "hubs": 49,
+    "memberships": 821
+  },
+  "verification_events": {
+    "honest_bootstrap": 965,
+    "total": 965
+  }
+}

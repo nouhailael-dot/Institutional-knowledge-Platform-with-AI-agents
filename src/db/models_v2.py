@@ -402,7 +402,52 @@ class ActorFact(V2Base):
     retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     generated_by: Mapped[str] = mapped_column(Text, nullable=False)
     request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    semantic_hash: Mapped[str | None] = mapped_column(Text)
+    creator_class: Mapped[str | None] = mapped_column(Text)
+    lifecycle_state: Mapped[str | None] = mapped_column(Text)
+    supersedes_fact_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor_fact.actor_fact_id")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ActorFactCurrentPointer(V2Base):
+    __tablename__ = "actor_fact_current_pointer"
+
+    actor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor.actor_id"), primary_key=True
+    )
+    topic_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("topic.topic_id"), primary_key=True
+    )
+    fact_key: Mapped[str] = mapped_column(Text, primary_key=True)
+    actor_fact_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor_fact.actor_fact_id"), nullable=False, unique=True
+    )
+    changed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class FactCorroboration(V2Base):
+    __tablename__ = "fact_corroboration"
+
+    fact_corroboration_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    actor_fact_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("actor_fact.actor_fact_id"), nullable=False
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("source.source_id"), nullable=False
+    )
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    confidence: Mapped[str] = mapped_column(Text, nullable=False)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    generated_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class FactResolution(V2Base):

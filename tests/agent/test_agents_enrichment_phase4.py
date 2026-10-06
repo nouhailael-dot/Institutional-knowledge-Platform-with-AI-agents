@@ -299,7 +299,7 @@ def test_digest_reports_in_sector_and_out_of_sector_counts():
 def test_canonical_writes_under_agents_are_only_in_permitted_modules():
     canonical_tables = _canonical_table_names_from_models()
     agent_owned_tables = _agent_owned_table_names_from_sql()
-    protected_tables = canonical_tables | agent_owned_tables
+    protected_tables = canonical_tables | agent_owned_tables | {"actor_verification_event"}
     allowed_by_table = {
         table: {
             Path("agents/discovery/promote.py"),
@@ -335,10 +335,13 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             "proposed_hub_decision": {Path("agents/hubs/decisions.py")},
             "hub_detection_run": {Path("agents/hubs/detect.py")},
             "review_admission_decision": {Path("agents/review/admission.py")},
-            "actor_fact": {
-                Path("agents/discovery/promote.py"),
-                Path("agents/enrichment/decisions.py"),
-            },
+                "actor_fact": {
+                    Path("agents/discovery/promote.py"),
+                    Path("agents/enrichment/decisions.py"),
+                },
+                "actor_fact_current_pointer": {Path("agents/enrichment/decisions.py")},
+                "fact_corroboration": {Path("agents/enrichment/decisions.py")},
+                "fact_resolution": {Path("agents/enrichment/decisions.py")},
             "actor_topic": {Path("agents/discovery/promote.py")},
             "actor_location": {Path("agents/discovery/promote.py")},
             "review_item": {
@@ -346,8 +349,13 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
                 Path("agents/enrichment/decisions.py"),
             },
             "record_verification": {Path("agents/enrichment/decisions.py")},
+            "actor_verification_event": {Path("agents/enrichment/decisions.py")},
             "hub_assignment_evidence": {Path("agents/discovery/promote.py")},
             "hub_center_review": {Path("agents/enrichment/decisions.py")},
+            "entity_edge": {
+                Path("agents/discovery/promote.py"),
+                Path("agents/enrichment/decisions.py"),
+            },
         }
     )
     table_pattern = "|".join(

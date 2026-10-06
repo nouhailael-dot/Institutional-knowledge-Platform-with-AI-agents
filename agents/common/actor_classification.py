@@ -234,6 +234,67 @@ def classify_actor_category_type(
     )
 
 
+def classify_type_for_existing_category(
+    llm_client,
+    *,
+    name: str,
+    self_description: str,
+    actor_category: str,
+    catalog: CategoryCatalog | None = None,
+    max_tokens: int = 500,
+) -> ActorClassification:
+    """Enrich only the type of an already-migrated canonical actor.
+
+    Phase 12 treats the deterministically migrated category as authoritative.
+    This path therefore never asks the model to choose or casually change that
+    category. A genuine category concern must use the separate reclassification
+    review path.
+    """
+
+    catalog = catalog or load_category_catalog()
+    category = _single_line(actor_category, "actor category")
+    allowed_types = catalog.type_codes(category)
+    subject = {
+        "organization_name": _single_line(name, "organization name"),
+        "official_self_description": str(self_description or "").strip(),
+        "actor_category": category,
+        "allowed_types": list(allowed_types),
+    }
+    raw = llm_client.extract_with_tool(
+        system=(
+            "The actor category was migrated from the canonical GHUS database and is fixed. "
+            "Choose exactly one category type from the supplied category-specific list using "
+            "only authoritative or official self-description evidence. Do not reclassify the "
+            "actor category. Do not use sector, funder, fame, organization age, or unsupported "
+            "inference. If no defined type fits, choose other and give a one-line note."
+        ),
+        user=str(subject),
+        tool_name="classify_existing_actor_category_type",
+        tool_description="Enrich one type without changing the migrated actor category.",
+        input_schema=_type_schema(allowed_types),
+        max_tokens=max_tokens,
+    ) or {}
+    category_type = str(raw.get("category_type") or "").strip()
+    note = _optional_line(raw.get("category_note"))
+    doubt = bool(raw.get("doubt", False)) or category_type == "other"
+    return validate_actor_classification(
+        ActorClassification(
+            actor_category=category,
+            category_type=category_type,
+            category_note=note,
+            category_needs_review=doubt,
+            evidence=ClassificationEvidence(
+                main_job=_single_line(
+                    raw.get("main_job_evidence")
+                    or self_description,
+                    "main-job evidence",
+                )
+            ),
+        ),
+        catalog=catalog,
+    )
+
+
 def classification_from_payload(
     payload: Mapping[str, object], *, catalog: CategoryCatalog | None = None
 ) -> ActorClassification | None:

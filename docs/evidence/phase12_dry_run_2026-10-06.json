@@ -1,0 +1,178 @@
+{
+  "actors": {
+    "actor_topic_rows": 0,
+    "actors_with_topic": 0,
+    "category_migration": {
+      "mapped": 751,
+      "unmappable": 214,
+      "unmappable_values": {
+        "<null>": 12,
+        "Organization": 2,
+        "aggregate": 187,
+        "other": 13
+      }
+    },
+    "category_type_counts": {
+      "<null>": 965
+    },
+    "category_type_pending_enrichment": 965,
+    "distinct_source_ids": 846,
+    "existing_doubts": 0,
+    "existing_other": 0,
+    "final_constraint_blockers": {
+      "actor_category": 214,
+      "controlled_topic": 965,
+      "coordinates": 965
+    },
+    "geocoded": 0,
+    "legacy_category_counts": {
+      "<null>": 12,
+      "Government": 1,
+      "Government Agency": 1,
+      "Organization": 2,
+      "accelerator": 11,
+      "aggregate": 187,
+      "company": 16,
+      "consortium": 6,
+      "corporate_rd_lab": 84,
+      "federal_agency": 22,
+      "federal_research_system": 6,
+      "government_agency": 9,
+      "industrial_partner": 23,
+      "industry_association": 18,
+      "intergovernmental_organization": 29,
+      "national_research_center": 7,
+      "national_research_lab": 31,
+      "nonprofit": 7,
+      "other": 13,
+      "project_developer": 12,
+      "research_organization": 13,
+      "startup": 39,
+      "state_agency": 28,
+      "un_agency": 5,
+      "un_committee": 2,
+      "un_programme": 5,
+      "un_secretariat": 1,
+      "university": 122,
+      "university_lab": 246,
+      "venture_capital": 7
+    },
+    "legacy_status_counts": {
+      "<null>": 7,
+      "ai_inferred": 834,
+      "needs_review": 27,
+      "phase_1": 97
+    },
+    "missing_category": 12,
+    "missing_category_type": 965,
+    "missing_city": 59,
+    "missing_coordinates": 965,
+    "missing_country": 32,
+    "missing_region": 965,
+    "missing_state_code": 965,
+    "proposed_source_origin": {
+      "imported_phase1": 965
+    },
+    "proposed_status": {
+      "verified": 965
+    },
+    "source_ids_present": 958,
+    "source_origin_counts": {
+      "imported": 965
+    },
+    "total": 965,
+    "websites": 812
+  },
+  "aggregates": {
+    "likely_mistagged_count": 1,
+    "likely_mistagged_names": [
+      "MIT Lincoln Laboratory"
+    ],
+    "likely_network_or_consortium_count": 8,
+    "likely_network_or_consortium_names": [
+      "AI startups cluster (Seattle & Bellevue) across enterprise SaaS, robotics, and mission tech",
+      "Boston Robotics Cluster",
+      "Illinois Corn Growers Association",
+      "Illinois Soybean Association",
+      "Midwest Alliance for Clean Hydrogen",
+      "Missouri Plant Science Consortium",
+      "Seattle AI startups (Bellevue & Seattle clusters)",
+      "Texas International Educational Consortium"
+    ],
+    "method": "name-token triage only; never an automatic reclassification",
+    "total": 187,
+    "unresolved_count": 178
+  },
+  "database": "ghus_v2_phase12_report_test",
+  "database_mutated": false,
+  "events": {
+    "missing_origin": 0,
+    "missing_status": 0,
+    "null_host": 281,
+    "status_counts": {
+      "imported": 356
+    },
+    "total": 356
+  },
+  "facts": {
+    "actor_fact_rows": 0,
+    "actor_profile_rows": 0,
+    "actor_profiles_missing_source": 0,
+    "actors_with_facts": 0,
+    "capability_fact_rows": 0,
+    "capability_facts_missing_source": 0,
+    "capability_facts_missing_url": 0,
+    "fact_rows_missing_source": 0,
+    "legacy_scalar_field_counts": {
+      "current_activities": 965,
+      "description": 957,
+      "estimated_trl": 67,
+      "funding_summary": 952,
+      "key_constraints": 955,
+      "primary_technical_focus": 961,
+      "technical_approach": 960,
+      "technology_ip_notes": 953
+    },
+    "source_rows": 0,
+    "unrecoverable_provenance": 958
+  },
+  "generated_at": "2026-10-06T14:16:49.260450+00:00",
+  "hubs": {
+    "frozen": 0,
+    "total": 49,
+    "with_center": 0,
+    "with_radius": 49,
+    "with_topic": 0
+  },
+  "invariants": {
+    "all_356_events_preserved": true,
+    "all_49_hubs_preserved": true,
+    "all_821_memberships_preserved": true,
+    "existing_canonical_verified_by_explicit_policy": 965,
+    "history_invented": false,
+    "missing_category_type_creates_review": false,
+    "named_human_verifier_invented": false
+  },
+  "memberships": {
+    "known_outside_radius": 0,
+    "primary_members": 0,
+    "total": 821,
+    "with_distance": 0,
+    "with_topic": 0
+  },
+  "mode": "report_only",
+  "relationships": {
+    "children": 0,
+    "hierarchy_rows": 0,
+    "parents": 0,
+    "self_cycles": 0,
+    "typed_edge_rows": 0
+  },
+  "reviews": {
+    "category_doubt": 214,
+    "geocode_failed_insufficient_location": 59,
+    "hub_needs_review": 49,
+    "total_without_double_counting_payload_issues": 322,
+    "verify_actor": 0
+  }
+}

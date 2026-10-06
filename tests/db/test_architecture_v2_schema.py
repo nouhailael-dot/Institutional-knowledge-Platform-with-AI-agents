@@ -91,8 +91,10 @@ def test_migration_tracks_are_separate_and_detached():
         "down_revision = None" in path.read_text(encoding="utf-8") for path in proposal_modules
     )
     platform = sorted((ROOT / "agents" / "sql").glob("*_v2_*.sql"))
-    assert [int(path.name[:3]) for path in platform] == list(range(190, 391, 10))
-    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 21
+    assert [int(path.name[:3]) for path in platform] == [
+        *range(190, 391, 10), 420, 430,
+    ]
+    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 23
 
 
 def test_populated_canonical_constraints_are_not_valid():

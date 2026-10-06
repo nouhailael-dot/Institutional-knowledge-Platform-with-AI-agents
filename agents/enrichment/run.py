@@ -10,12 +10,14 @@ import argparse
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import text
 
 from agents.common.run_log import InMemoryRunLog, SQLRunLog
-from agents.enrichment.actor_adapter import LEGACY_ACTOR_FIELDS, PolicyActorEnrichmentCandidatePipeline
+from agents.enrichment.actor_adapter import (
+    LEGACY_ACTOR_FIELDS,
+    PolicyActorEnrichmentCandidatePipeline,
+)
 from agents.enrichment.fields import load_field_config, policies_for_entity, resolve_field_set
 from agents.enrichment.gaps import sql_gap_condition
 from agents.enrichment.specs import ENTITY_SPECS, assert_known_fields, get_entity_spec
@@ -29,8 +31,13 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def run_enrichment(args, *, session=None, root: Optional[Path] = None) -> dict[str, object]:
+def run_enrichment(args, *, session=None, root: Path | None = None) -> dict[str, object]:
     root = root or project_root()
+    if args.entity == "actor" and bool(args.live):
+        raise RuntimeError(
+            "legacy live actor enrichment is retired; use the verified, topic-scoped "
+            "Architecture V2 Deep Pull service"
+        )
     config = load_field_config(root)
     spec = get_entity_spec(args.entity)
     fields = resolve_field_set(config, args.entity, args.field_set)
@@ -169,7 +176,7 @@ def _run_actor_enrichment(args, root: Path, session, run_id: str, fields: tuple[
     }
 
 
-def _scan_sparse_without_adapter(session, spec, fields: tuple[str, ...], limit: Optional[int]) -> dict[str, object]:
+def _scan_sparse_without_adapter(session, spec, fields: tuple[str, ...], limit: int | None) -> dict[str, object]:
     conditions = " OR ".join(f"({sql_gap_condition(field)})" for field in fields)
     limit_clause = " LIMIT :limit" if limit else ""
     rows = session.execute(
@@ -188,7 +195,7 @@ def _scan_sparse_without_adapter(session, spec, fields: tuple[str, ...], limit: 
     }
 
 
-def parse_args(argv: Optional[list[str]] = None):
+def parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entity", required=True, choices=sorted(ENTITY_SPECS))
     parser.add_argument("--field-set", default=None)
@@ -215,7 +222,7 @@ def parse_args(argv: Optional[list[str]] = None):
     return parser.parse_args(argv)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s %(message)s")
     args = parse_args(argv)
     result = run_enrichment(args)

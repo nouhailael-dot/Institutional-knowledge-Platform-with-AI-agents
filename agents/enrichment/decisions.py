@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 
+from agents.common.facts import ActorFactWrite, validate_actor_fact
 from agents.common.provenance import insert_field_proposal, insert_source
+from agents.common.relationships import (
+    EntityEdgeRequest,
+    network_location_requests,
+    validate_entity_edge,
+)
 from agents.enrichment.fields import FieldPolicy
 from agents.enrichment.gaps import is_gap, is_present, sql_gap_condition
 from agents.enrichment.specs import EntitySpec
@@ -41,6 +48,215 @@ def execute_canonical_write(session, statement, params=None):
     return session.execute(statement, params or {})
 
 
+def append_entity_edge(
+    session,
+    request: EntityEdgeRequest,
+    *,
+    live: bool = False,
+) -> str:
+    """Append one sourced V2 edge through the approved manual writer boundary."""
+    edge = validate_entity_edge(request)
+    if not live:
+        return "would_append"
+    inserted = execute_canonical_write(
+        session,
+        text(
+            "INSERT INTO entity_edge (subject_type,subject_id,relationship_type,"
+            "object_type,object_id,topic_id,source_id,confidence) VALUES ("
+            ":subject_type,CAST(:subject_id AS uuid),:relationship_type,:object_type,"
+            "CAST(:object_id AS uuid),CAST(:topic_id AS uuid),CAST(:source_id AS uuid),"
+            ":confidence) ON CONFLICT DO NOTHING RETURNING entity_edge_id::text"
+        ),
+        edge.__dict__,
+    ).scalar_one_or_none()
+    if inserted:
+        return str(inserted)
+    existing = session.execute(
+        text(
+            "SELECT entity_edge_id::text FROM entity_edge WHERE "
+            "subject_type=:subject_type AND subject_id=CAST(:subject_id AS uuid) "
+            "AND relationship_type=:relationship_type AND object_type=:object_type "
+            "AND object_id=CAST(:object_id AS uuid) "
+            "AND topic_id IS NOT DISTINCT FROM CAST(:topic_id AS uuid) "
+            "AND source_id=CAST(:source_id AS uuid)"
+        ),
+        edge.__dict__,
+    ).scalar_one()
+    return str(existing)
+
+
+def append_network_locations(
+    session,
+    *,
+    parent_actor_id: str,
+    location_actor_ids: list[str],
+    source_id: str,
+    topic_id: str | None = None,
+    live: bool = False,
+) -> list[str]:
+    """Append location->network ``unit_of`` edges; never copy network reach to sites."""
+    requests = network_location_requests(
+        parent_actor_id=parent_actor_id,
+        location_actor_ids=location_actor_ids,
+        source_id=source_id,
+        topic_id=topic_id,
+    )
+    return [append_entity_edge(session, request, live=live) for request in requests]
+
+
+def append_actor_fact(
+    session,
+    write: ActorFactWrite,
+    *,
+    live: bool = False,
+) -> str:
+    """Resolve one immutable topic fact; dry-run is the default.
+
+    Historical fact values are never updated. A mutable pointer identifies the
+    single current value; corroboration, supersession, conflict and pending
+    human update are recorded as new rows.
+    """
+    fact = validate_actor_fact(write)
+    if not live:
+        return "would_append"
+    source_id = insert_source(
+        session,
+        source_url=fact.source_url,
+        fetched_at=fact.date_read,
+        description=f"Architecture V2 layer {fact.layer} {fact.fact_type}.{fact.field_key}",
+        source_type="agent_collection",
+        trust_tier="candidate",
+    )
+    semantic_hash = _fact_semantic_hash(fact)
+    current = session.execute(
+        text(
+            "SELECT f.actor_fact_id::text AS actor_fact_id,f.semantic_hash,f.confidence,"
+            "f.retrieved_at,f.creator_class,f.collection_state,f.fact_value FROM actor_fact_current_pointer p "
+            "JOIN actor_fact f ON f.actor_fact_id=p.actor_fact_id "
+            "WHERE p.actor_id=CAST(:actor_id AS uuid) AND p.topic_id=CAST(:topic_id AS uuid) "
+            "AND p.fact_key=:fact_key FOR UPDATE OF p"
+        ),
+        {"actor_id": fact.actor_id, "topic_id": fact.topic_id, "fact_key": fact.field_key},
+    ).mappings().first()
+    current_hash = (
+        current["semantic_hash"] if current and current["semantic_hash"]
+        else _stored_fact_semantic_hash(current) if current else None
+    )
+    if current and current_hash == semantic_hash:
+        corroboration_id = str(uuid.uuid4())
+        execute_canonical_write(session, text(
+            "INSERT INTO fact_corroboration (fact_corroboration_id,actor_fact_id,source_id,"
+            "request_id,confidence,retrieved_at,generated_by) VALUES (CAST(:id AS uuid),"
+            "CAST(:fact_id AS uuid),CAST(:source_id AS uuid),CAST(:request_id AS uuid),"
+            ":confidence,:retrieved_at,:generated_by) ON CONFLICT DO NOTHING"
+        ), {"id": corroboration_id, "fact_id": current["actor_fact_id"], "source_id": source_id,
+            "request_id": fact.request_id, "confidence": fact.confidence,
+            "retrieved_at": fact.date_read, "generated_by": fact.created_by})
+        return str(current["actor_fact_id"])
+
+    creator_class = _fact_creator_class(fact)
+    if current is None:
+        state, supersedes = "accepted", None
+    elif current["creator_class"] == "ghus_human":
+        state, supersedes = "pending_update", None
+    elif (_confidence_rank(fact.confidence) >= _confidence_rank(current["confidence"])
+          and fact.date_read > current["retrieved_at"]):
+        state, supersedes = "accepted", str(current["actor_fact_id"])
+    else:
+        state, supersedes = "conflict_flagged", None
+
+    fact_id = _insert_resolved_fact(
+        session, fact=fact, source_id=source_id, semantic_hash=semantic_hash,
+        creator_class=creator_class, lifecycle_state=state, supersedes_fact_id=supersedes,
+    )
+    if current is None or supersedes:
+        if supersedes:
+            _append_fact_resolution(session, supersedes, "superseded", fact_id,
+                                    fact.created_by, "newer equal-or-higher confidence evidence")
+        _append_fact_resolution(session, fact_id, "accepted", supersedes,
+                                fact.created_by, "current immutable fact")
+        execute_canonical_write(session, text(
+            "INSERT INTO actor_fact_current_pointer(actor_id,topic_id,fact_key,actor_fact_id) "
+            "VALUES(CAST(:actor AS uuid),CAST(:topic AS uuid),:key,CAST(:fact AS uuid)) "
+            "ON CONFLICT(actor_id,topic_id,fact_key) DO UPDATE SET "
+            "actor_fact_id=EXCLUDED.actor_fact_id,changed_at=now()"
+        ), {"actor": fact.actor_id, "topic": fact.topic_id, "key": fact.field_key,
+            "fact": fact_id})
+    else:
+        resolution = "pending_human_update" if state == "pending_update" else "conflict"
+        _append_fact_resolution(session, fact_id, resolution, str(current["actor_fact_id"]),
+                                fact.created_by, state)
+        _insert_fact_review(session, fact, fact_id, str(current["actor_fact_id"]), state)
+    return fact_id
+
+
+def _insert_resolved_fact(session, *, fact, source_id, semantic_hash, creator_class,
+                          lifecycle_state, supersedes_fact_id):
+    fact_id = str(uuid.uuid4())
+    execute_canonical_write(session, text(
+        "INSERT INTO actor_fact (actor_fact_id,actor_id,topic_id,fact_type,fact_key,fact_value,"
+        "collection_state,layer,source_id,source_origin,confidence,retrieved_at,generated_by,"
+        "request_id,semantic_hash,creator_class,lifecycle_state,supersedes_fact_id) VALUES ("
+        "CAST(:fact_id AS uuid),CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:fact_type,"
+        ":fact_key,CAST(:fact_value AS jsonb),:collection_state,:layer,CAST(:source_id AS uuid),"
+        ":source_origin,:confidence,:date_read,:created_by,CAST(:request_id AS uuid),:semantic_hash,"
+        ":creator_class,:lifecycle_state,CAST(:supersedes AS uuid))"
+    ), {"fact_id": fact_id, "actor_id": fact.actor_id, "topic_id": fact.topic_id,
+        "fact_type": fact.fact_type, "fact_key": fact.field_key,
+        "fact_value": json.dumps(fact.value, sort_keys=True, default=str)
+        if fact.collection_state == "found" else None,
+        "collection_state": fact.collection_state, "layer": fact.layer,
+        "source_id": source_id, "source_origin": fact.source_origin,
+        "confidence": fact.confidence, "date_read": fact.date_read,
+        "created_by": fact.created_by, "request_id": fact.request_id,
+        "semantic_hash": semantic_hash, "creator_class": creator_class,
+        "lifecycle_state": lifecycle_state, "supersedes": supersedes_fact_id})
+    return fact_id
+
+
+def _append_fact_resolution(session, fact_id, resolution, related_id, decided_by, reason):
+    execute_canonical_write(session, text(
+        "INSERT INTO fact_resolution(actor_fact_id,resolution,related_actor_fact_id,decided_by,reason) "
+        "VALUES(CAST(:fact AS uuid),:resolution,CAST(:related AS uuid),:by,:reason)"
+    ), {"fact": fact_id, "resolution": resolution, "related": related_id,
+        "by": decided_by, "reason": reason})
+
+
+def _insert_fact_review(session, fact, fact_id, current_id, state):
+    review_kind = "pending_update" if state == "pending_update" else "fact_conflict"
+    execute_canonical_write(session, text(
+        "INSERT INTO review_item(review_item_id,review_kind,entity_type,entity_id,topic_id,"
+        "priority,payload,status) VALUES(CAST(:id AS uuid),:kind,'actor',CAST(:actor AS uuid),"
+        "CAST(:topic AS uuid),'high',CAST(:payload AS jsonb),'pending')"
+    ), {"id": str(uuid.uuid4()), "kind": review_kind, "actor": fact.actor_id,
+        "topic": fact.topic_id, "payload": json.dumps({"field_key": fact.field_key,
+        "new_fact_id": fact_id, "current_fact_id": current_id, "state": state}, sort_keys=True)})
+
+
+def _fact_semantic_hash(fact):
+    payload = {"collection_state": fact.collection_state,
+               "value": fact.value if fact.collection_state == "found" else None}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     default=str).encode("utf-8")).hexdigest()
+
+
+def _stored_fact_semantic_hash(fact):
+    payload = {"collection_state": fact["collection_state"],
+               "value": fact["fact_value"] if fact["collection_state"] == "found" else None}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                                     default=str).encode("utf-8")).hexdigest()
+
+
+def _fact_creator_class(fact):
+    creator = fact.created_by.casefold()
+    return "ghus_human" if (fact.source_origin == "ghus_manual" or
+                            creator.startswith(("ghus", "human", "reviewer"))) else "agent"
+
+
+def _confidence_rank(value):
+    return {"low": 1, "medium": 2, "high": 3}[value]
+
+
 def record_verification_decision(
     session,
     *,
@@ -57,8 +273,33 @@ def record_verification_decision(
         raise ValueError("rejected decisions require rejection_reason")
     if not str(decided_by or "").strip():
         raise ValueError("decided_by is required")
+    use_v2_actor_events = entity_type == "actor" and bool(
+        session.execute(
+            text("SELECT to_regclass('public.actor_verification_event') IS NOT NULL")
+        ).scalar_one()
+    )
     count = 0
     for entity_id in dict.fromkeys(str(value) for value in entity_ids):
+        if use_v2_actor_events:
+            execute_canonical_write(
+                session,
+                text(
+                    "INSERT INTO actor_verification_event (actor_id,topic_id,decision,"
+                    "decided_by,decided_at,reason,rejection_reason,decision_origin) VALUES ("
+                    "CAST(:entity_id AS uuid),CAST(:topic_id AS uuid),:decision,:decided_by,"
+                    "now(),:notes,:rejection_reason,'ghus_review')"
+                ),
+                {
+                    "entity_id": entity_id,
+                    "decision": decision,
+                    "decided_by": decided_by,
+                    "notes": notes,
+                    "rejection_reason": rejection_reason,
+                    "topic_id": topic_id,
+                },
+            )
+            count += 1
+            continue
         execute_canonical_write(
             session,
             text(
@@ -273,7 +514,7 @@ def apply_or_propose_field(
         source_id = insert_source(
             session,
             source_url=str(source_url),
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             description=f"Agent enrichment for {spec.entity_type}.{field_name}",
             source_type="agent_enrichment",
             trust_tier="candidate",
@@ -334,7 +575,7 @@ def record_field_proposal(
     source_id = insert_source(
         session,
         source_url=source_url,
-        fetched_at=datetime.now(timezone.utc),
+        fetched_at=datetime.now(UTC),
         description=f"Agent enrichment proposal for {spec.entity_type}.{field_name}",
         source_type="agent_enrichment",
         trust_tier="candidate",
@@ -543,7 +784,7 @@ def _insert_enrichment_staged_record(
             "natural_key": natural_key,
             "source_url": source_url,
             "prompt_version": "enrichment_v1",
-            "extracted_at": datetime.now(timezone.utc),
+            "extracted_at": datetime.now(UTC),
             "payload": json.dumps(payload, sort_keys=True, default=str),
             "entity_id": entity_id,
         },

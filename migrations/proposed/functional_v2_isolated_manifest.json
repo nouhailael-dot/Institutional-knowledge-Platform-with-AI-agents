@@ -1,0 +1,201 @@
+{
+  "name": "functional_v2_isolated",
+  "target_guard": "localhost:55432/*_test only",
+  "historical_migrations_modified": false,
+  "checkpoints": {
+    "integration_phase3_7": [
+      {
+        "id": "190",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "migrations/proposed/additive_apply_2026-09-28/sql/190_v2_reference_data.sql",
+        "reason": "category, region, status and source-origin reference data"
+      },
+      {
+        "id": "200-canonical",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "alembic",
+        "path": "migrations/proposed/additive_apply_2026-09-28/versions/v2a01_actor_identity_additive.py",
+        "reason": "legacy-safe actor_category, record_status and geography columns"
+      },
+      {
+        "id": "200-location",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "migrations/proposed/additive_apply_2026-09-28/sql/200_v2_actor_location.sql",
+        "reason": "immutable multi-location evidence"
+      },
+      {
+        "id": "210",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "migrations/proposed/additive_apply_2026-09-28/sql/210_v2_topics.sql",
+        "reason": "controlled topics and actor-topic evidence"
+      },
+      {
+        "id": "220-canonical",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "alembic",
+        "path": "migrations/proposed/additive_apply_2026-09-28/versions/v2a02_hubs_additive.py",
+        "reason": "nullable topic, center and assignment evidence columns"
+      },
+      {
+        "id": "230",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "migrations/proposed/additive_apply_2026-09-28/sql/230_v2_verification_history.sql",
+        "reason": "GHUS verification history and immutable-ledger trigger function"
+      },
+      {
+        "id": "240",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "migrations/proposed/additive_apply_2026-09-28/sql/240_v2_fact_ledger.sql",
+        "reason": "Phase 3 light-boundary facts and stable Phase 9-11 fact foundation"
+      },
+      {
+        "id": "320",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "migrations/proposed/additive_apply_2026-09-28/sql/320_v2_review_items.sql",
+        "reason": "unified V2 review queue"
+      },
+      {
+        "id": "350-origin",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "migrations/proposed/additive_apply_2026-09-28/sql/350_v2_record_creation_additive.sql",
+        "reason": "record-creation source origins"
+      },
+      {
+        "id": "phase6-canonical",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "alembic",
+        "path": "migrations/proposed/versions/v2a05_hub_assignment.py",
+        "reason": "nullable hub center audit metadata"
+      },
+      {
+        "id": "380",
+        "kind": "additive",
+        "scope": "eventual-production",
+        "action": "sql",
+        "path": "agents/sql/380_v2_hub_assignment_evidence.sql",
+        "reason": "immutable hub-assignment evidence"
+      },
+      {
+        "id": "review-kinds",
+        "kind": "breaking",
+        "scope": "isolated-only-production-deferred",
+        "action": "sql",
+        "path": "migrations/proposed/functional_v2_review_kinds_isolated.sql",
+        "reason": "real verify_actor, category_doubt and Phase 6 hub review items"
+      }
+    ],
+    "phase8": {
+      "inherits": "integration_phase3_7",
+      "steps": [
+        {
+          "id": "250",
+          "kind": "additive",
+          "scope": "eventual-production",
+          "action": "sql",
+          "path": "agents/sql/250_v2_edges.sql",
+          "reason": "frozen append-only generalized edge table and actor-family traversal"
+        },
+        {
+          "id": "300",
+          "kind": "additive",
+          "scope": "eventual-production",
+          "action": "sql",
+          "path": "agents/sql/300_v2_strategic_connections.sql",
+          "reason": "allowlisted UM6P/OCP/INNOVX endpoints for canonical connection edges"
+        },
+        {
+          "id": "420",
+          "kind": "additive-package-superseding; standalone-breaking",
+          "scope": "eventual-production-after-rollout-audit",
+          "action": "sql",
+          "path": "agents/sql/420_v2_edge_contract.sql",
+          "reason": "exact edge semantics, endpoint validation, cycle guard, uniqueness, and actor_descendants; supersedes frozen 250 without editing it"
+        }
+      ]
+    },
+    "target_prebackfill_phase11": {
+      "inherits": "phase8",
+      "steps": [
+        {"id":"180","kind":"mixed","scope":"isolated-target","action":"sql","path":"agents/sql/180_review_admission_workflow.sql","reason":"review admission and legacy proposed-hub foundation"},
+        {"id":"220","kind":"additive","scope":"eventual-production","action":"sql","path":"agents/sql/220_v2_hub_center_review.sql","reason":"hub center review evidence"},
+        {"id":"260","kind":"additive","scope":"eventual-production","action":"sql","path":"agents/sql/260_v2_collection_runs.sql","reason":"Light, Deep and Specific Ask request/run audit"},
+        {"id":"270","kind":"additive","scope":"eventual-production","action":"sql","path":"agents/sql/270_v2_rankings.sql","reason":"sourced immutable ranking facts"},
+        {"id":"280-identity","kind":"additive","scope":"eventual-production","action":"alembic","path":"migrations/proposed/additive_apply_2026-09-28/versions/v2a03_people_additive.py","reason":"people compatibility identity columns"},
+        {"id":"280","kind":"additive","scope":"eventual-production","action":"sql","path":"agents/sql/280_v2_people_privacy.sql","reason":"topic-scoped people and contact authorization"},
+        {"id":"290-identity","kind":"additive","scope":"eventual-production","action":"alembic","path":"migrations/proposed/additive_apply_2026-09-28/versions/v2a04_events_additive.py","reason":"event compatibility identity columns"},
+        {"id":"290","kind":"additive","scope":"eventual-production","action":"sql","path":"agents/sql/290_v2_event_evidence.sql","reason":"topic-scoped events and immutable claims"},
+        {"id":"310","kind":"mixed","scope":"isolated-target","action":"sql","path":"agents/sql/310_v2_hub_proposals.sql","reason":"hub proposal evidence and decisions"},
+        {"id":"330","kind":"breaking-permissions","scope":"isolated-target","action":"sql","path":"agents/sql/330_v2_guards_and_audit.sql","reason":"canonical write audit, RLS and legacy write restrictions"},
+        {"id":"340","kind":"compatibility","scope":"isolated-target","action":"sql","path":"agents/sql/340_v2_compatibility_views.sql","reason":"Agent 3 and transitional legacy compatibility views"},
+        {"id":"360","kind":"additive","scope":"eventual-production","action":"sql","path":"agents/sql/360_v2_city_gazetteer.sql","reason":"deterministic US city coordinate reference"},
+        {"id":"370","kind":"reference-contract","scope":"isolated-target","action":"sql","path":"agents/sql/370_v2_actor_classification.sql","reason":"category-type definitions and one-other invariant"},
+        {"id":"390","kind":"additive","scope":"eventual-production","action":"sql","path":"agents/sql/390_v2_hub_detection.sql","reason":"new-hub detection run and evidence"},
+        {"id":"430","kind":"mixed","scope":"isolated-target","action":"sql","path":"agents/sql/430_v2_fact_lifecycle.sql","reason":"immutable fact resolution, current pointer, corroboration and canonical review kinds"}
+      ]
+    },
+    "target_final_expand": {
+      "inherits": "target_prebackfill_phase11",
+      "steps": [
+        {"id":"440","kind":"expand","scope":"isolated-target","action":"sql","path":"migrations/proposed/deferred/440_v2_final_contract_expand.sql","reason":"clean V2 status, actor verification events and canonical review kinds"}
+      ]
+    },
+    "phase12_policy_expand": {
+      "inherits": "target_final_expand",
+      "steps": [
+        {"id":"470","kind":"policy-expand","scope":"isolated-target","action":"sql","path":"migrations/proposed/deferred/470_v2_phase12_policy_expand.sql","reason":"honest existing-canonical verification provenance, deterministic category mapping and fail-closed cutover audit"}
+      ]
+    },
+    "phase12_policy_backfill": {
+      "inherits": "phase12_policy_expand",
+      "steps": [
+        {"id":"480","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/480_v2_phase12_existing_actor_backfill.sql","reason":"map legacy category, bootstrap existing canonical verification and review only unmappable categories"}
+      ]
+    },
+    "phase12_policy_validate": {
+      "inherits": "phase12_policy_backfill",
+      "steps": [
+        {"id":"490","kind":"validate-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/490_v2_phase12_policy_validate.sql","reason":"validate corrected actor policy while leaving category type nullable"}
+      ]
+    },
+    "postbackfill_contract": {
+      "inherits": "phase12_policy_validate",
+      "steps": [
+        {"id":"400","kind":"breaking-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/400_v2_hub_contract.sql","reason":"final non-null hub topic, center and assignment contract"},
+        {"id":"410","kind":"breaking-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/410_v2_hub_detection_contract.sql","reason":"final deterministic hub-proposal contract"}
+      ]
+    },
+    "category_resolution_contract": {
+      "inherits": "postbackfill_contract",
+      "steps": [
+        {"id":"495","kind":"post-review-validation","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/495_v2_actor_category_complete.sql","reason":"require actor category only after all unmappable legacy category reviews are resolved"}
+      ]
+    },
+    "final_cutover": {
+      "inherits": "category_resolution_contract",
+      "steps": [
+        {"id":"500","kind":"breaking-contract","scope":"both-apps-coordinated","action":"sql","path":"migrations/proposed/deferred/500_v2_final_contract_cutover.sql","reason":"fail-closed audited cutover, final renames and removal of proven-migrated legacy structures"}
+      ]
+    }
+  },
+  "superseded_policy_proposals": [
+    {"id":"450","path":"migrations/proposed/deferred/450_v2_final_contract_validate.sql","superseded_by":"490","reason":"incorrectly required category_type for every migrated actor"},
+    {"id":"460","path":"migrations/proposed/deferred/460_v2_final_contract_cutover.sql","superseded_by":"500","reason":"incorrectly made category_type non-null and lacked the required data-loss audit gate"}
+  ]
+}
