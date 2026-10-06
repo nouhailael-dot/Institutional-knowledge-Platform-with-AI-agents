@@ -16,8 +16,12 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "docs" / "evidence" / "phase12_dry_run_2026-10-06.json"
-EXPECTED_DATABASE = "ghus_v2_phase12_report_test"
+EVIDENCE = ROOT / "docs" / "evidence"
+# Isolated copies this report may read, each with its own evidence file.
+REPORT_DATABASES = {
+    "ghus_v2_phase12_report_test": EVIDENCE / "phase12_dry_run_2026-10-06.json",
+    "ghus_v2_phase12_full_test": EVIDENCE / "phase12_dry_run_full_dump_2026-10-06.json",
+}
 LEGACY_CATEGORY_CASE = """CASE lower(btrim(actor_category))
  WHEN 'university' THEN 'university_academic'
  WHEN 'university_academic' THEN 'university_academic'
@@ -57,13 +61,14 @@ LEGACY_CATEGORY_CASE = """CASE lower(btrim(actor_category))
  ELSE NULL END"""
 
 
-def _url() -> str:
+def _url() -> tuple[str, str]:
     raw = os.environ.get("V2_PHASE12_REPORT_DATABASE_URL", "").strip()
     parsed = urlsplit(raw)
+    database = parsed.path.removeprefix("/")
     if (parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port != 55432
-            or parsed.path.removeprefix("/") != EXPECTED_DATABASE):
-        raise RuntimeError("Phase 12 report accepts only the named local isolated copy")
-    return raw
+            or database not in REPORT_DATABASES):
+        raise RuntimeError("Phase 12 report accepts only the named local isolated copies")
+    return raw, database
 
 
 def _one(cursor, sql: str) -> dict:
@@ -80,7 +85,9 @@ def _counts(cursor, table: str, field: str) -> dict[str, int]:
 
 
 def main() -> int:
-    connection = psycopg2.connect(_url(), application_name="ghus_phase12_report_only")
+    url, database = _url()
+    output = REPORT_DATABASES[database]
+    connection = psycopg2.connect(url, application_name="ghus_phase12_report_only")
     try:
         connection.set_session(readonly=True, autocommit=False)
         with connection.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -101,6 +108,7 @@ def main() -> int:
                   count(*) FILTER(WHERE NULLIF(btrim(country),'') IS NULL) missing_country,
                   count(*) FILTER(WHERE source_id IS NOT NULL) source_ids_present,
                   count(DISTINCT source_id) distinct_source_ids,
+                  count(*) FILTER(WHERE source_id IN (SELECT source_id FROM source)) source_ids_resolvable,
                   count(*) FILTER(WHERE NULLIF(btrim(website),'') IS NOT NULL) websites
                 FROM actor
             """)
@@ -188,7 +196,7 @@ def main() -> int:
             report = {
                 "generated_at": datetime.now(UTC).isoformat(),
                 "mode": "report_only",
-                "database": EXPECTED_DATABASE,
+                "database": database,
                 "database_mutated": False,
                 "actors": {
                     **actors,
@@ -224,7 +232,7 @@ def main() -> int:
                 "memberships": memberships,
                 "events": {**events, "status_counts": _counts(cursor, "event", "record_status")},
                 "facts": {**facts, "legacy_scalar_field_counts": scalar_fields,
-                          "unrecoverable_provenance": actors["source_ids_present"] if facts["source_rows"] == 0 else 0},
+                          "unrecoverable_provenance": actors["source_ids_present"] - actors["source_ids_resolvable"]},
                 "reviews": {
                     "verify_actor": 0,
                     "category_doubt": category_migration["unmappable"],
@@ -247,9 +255,9 @@ def main() -> int:
         connection.rollback()
     finally:
         connection.close()
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
-    print(f"wrote {OUTPUT.relative_to(ROOT)}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    print(f"wrote {output.relative_to(ROOT)}")
     return 0
 
 

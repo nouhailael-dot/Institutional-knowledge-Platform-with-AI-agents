@@ -1,0 +1,161 @@
+{
+  "audit_name": "pre_cutover_data_loss_audit",
+  "checks": [
+    {
+      "destination": "actor.actor_category + actor_category_migration_audit.legacy_category",
+      "destination_rows": 965,
+      "passed": true,
+      "source": "actor.actor_type / legacy actor_category concept",
+      "source_rows": 965
+    },
+    {
+      "destination": "actor_category_migration_audit.legacy_category_raw",
+      "destination_rows": 164,
+      "passed": true,
+      "source": "actor.actor_type_raw",
+      "source_rows": 164
+    },
+    {
+      "destination": "actor.status + actor_verification_event + migration audit prior_status",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.verification_status / actor.record_status",
+      "source_rows": 958
+    },
+    {
+      "destination": "actor.alt_names rename",
+      "destination_rows": 0,
+      "passed": true,
+      "source": "actor.alternate_names",
+      "source_rows": 0
+    },
+    {
+      "destination": "actor.city rename",
+      "destination_rows": 906,
+      "passed": true,
+      "source": "actor.location_city",
+      "source_rows": 906
+    },
+    {
+      "blocker": "Deterministic state normalization has not run.",
+      "destination": "actor.state_code + region_code",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.state",
+      "source_rows": 912
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[primary_technical_focus]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.primary_technical_focus",
+      "source_rows": 961
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[technical_approach]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.technical_approach",
+      "source_rows": 960
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[current_activities]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.current_activities",
+      "source_rows": 965
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[technology_ip_notes]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.technology_ip_notes",
+      "source_rows": 953
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[key_constraints]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.key_constraints",
+      "source_rows": 955
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[funding_summary]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.funding_summary",
+      "source_rows": 952
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[estimated_trl]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.estimated_trl",
+      "source_rows": 67
+    },
+    {
+      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
+      "destination": "actor_fact[primary_lifecycle_role]",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor.primary_lifecycle_role",
+      "source_rows": 965
+    },
+    {
+      "blocker": null,
+      "destination": "actor_verification_event",
+      "destination_rows": 0,
+      "passed": true,
+      "source": "record_verification",
+      "source_rows": 0
+    },
+    {
+      "blocker": "Rows require semantic migration and reconciliation.",
+      "destination": "entity_edge",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "organization_hierarchy",
+      "source_rows": 42
+    },
+    {
+      "blocker": "Rows require semantic migration and reconciliation.",
+      "destination": "actor_fact",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor_profile",
+      "source_rows": 952
+    },
+    {
+      "blocker": "Rows require semantic migration and reconciliation.",
+      "destination": "actor_fact",
+      "destination_rows": 0,
+      "passed": false,
+      "source": "actor_capability_fact",
+      "source_rows": 5712
+    },
+    {
+      "destination": "final V2 tables/views",
+      "destination_rows": 0,
+      "passed": true,
+      "source": "actor_v1_compat, staged_record_agent3_compat, actor_profile_current views",
+      "source_rows": 0
+    },
+    {
+      "destination": "hub and hub_actor",
+      "passed": true,
+      "source": "hub and membership history"
+    }
+  ],
+  "cutover_attestation_written": false,
+  "database": "ghus_v2_phase12_full_test",
+  "generated_at": "2026-10-06T20:26:03.566848+00:00",
+  "passed": false,
+  "rule": "Migration 500 must fail closed until this audit passes and is independently attested."
+}

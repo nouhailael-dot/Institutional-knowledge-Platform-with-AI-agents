@@ -12,21 +12,31 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 ROOT = Path(__file__).resolve().parents[1]
-PROOF = ROOT / "docs/evidence/phase12_policy_backfill_proof_2026-10-06.json"
-LOSS = ROOT / "docs/evidence/pre_cutover_data_loss_audit_2026-10-06.json"
-EXPECTED_DATABASE = "ghus_v2_phase12_policy_test"
+EVIDENCE = ROOT / "docs/evidence"
+# Isolated migration databases this proof may read, each with its own evidence files.
+POLICY_DATABASES = {
+    "ghus_v2_phase12_policy_test": (
+        EVIDENCE / "phase12_policy_backfill_proof_2026-10-06.json",
+        EVIDENCE / "pre_cutover_data_loss_audit_2026-10-06.json",
+    ),
+    "ghus_v2_phase12_full_test": (
+        EVIDENCE / "phase12_policy_backfill_proof_full_dump_2026-10-06.json",
+        EVIDENCE / "pre_cutover_data_loss_audit_full_dump_2026-10-06.json",
+    ),
+}
 
 
-def _url() -> str:
+def _url() -> tuple[str, str]:
     raw = os.environ.get("V2_PHASE12_POLICY_DATABASE_URL", "").strip()
     parsed = urlsplit(raw.replace("postgresql+psycopg2", "postgresql", 1))
+    database = parsed.path.removeprefix("/")
     if (
         parsed.hostname not in {"127.0.0.1", "localhost"}
         or parsed.port != 55432
-        or parsed.path.removeprefix("/") != EXPECTED_DATABASE
+        or database not in POLICY_DATABASES
     ):
-        raise RuntimeError("policy proof accepts only the named isolated migration database")
-    return raw.replace("postgresql+psycopg2", "postgresql", 1)
+        raise RuntimeError("policy proof accepts only the named isolated migration databases")
+    return raw.replace("postgresql+psycopg2", "postgresql", 1), database
 
 
 def _one(cursor, statement: str) -> dict:
@@ -35,7 +45,9 @@ def _one(cursor, statement: str) -> dict:
 
 
 def main() -> int:
-    connection = psycopg2.connect(_url(), application_name="ghus_phase12_policy_proof")
+    url, database = _url()
+    proof_path, loss_path = POLICY_DATABASES[database]
+    connection = psycopg2.connect(url, application_name="ghus_phase12_policy_proof")
     try:
         connection.set_session(readonly=True, autocommit=False)
         with connection.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -126,7 +138,7 @@ def main() -> int:
     }
     proof = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "database": EXPECTED_DATABASE,
+        "database": database,
         "actor": actor,
         "category_mapping": migration,
         "verification_events": events,
@@ -223,18 +235,18 @@ def main() -> int:
     ])
     loss = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "database": EXPECTED_DATABASE,
+        "database": database,
         "audit_name": "pre_cutover_data_loss_audit",
         "passed": all(item["passed"] for item in loss_checks),
         "cutover_attestation_written": False,
         "checks": loss_checks,
         "rule": "Migration 500 must fail closed until this audit passes and is independently attested.",
     }
-    PROOF.parent.mkdir(parents=True, exist_ok=True)
-    PROOF.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    LOSS.write_text(json.dumps(loss, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"wrote {PROOF.relative_to(ROOT)}; passed={proof['passed']}")
-    print(f"wrote {LOSS.relative_to(ROOT)}; passed={loss['passed']}")
+    proof_path.parent.mkdir(parents=True, exist_ok=True)
+    proof_path.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    loss_path.write_text(json.dumps(loss, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"wrote {proof_path.relative_to(ROOT)}; passed={proof['passed']}")
+    print(f"wrote {loss_path.relative_to(ROOT)}; passed={loss['passed']}")
     return 0 if proof["passed"] else 1
 
 
