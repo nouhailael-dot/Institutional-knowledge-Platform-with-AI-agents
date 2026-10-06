@@ -27,19 +27,23 @@ from src.generate import _get_client, MODEL
 SCHEMA = """\
 Postgres schema (answer with standard PostgreSQL). Key tables and columns:
 
-actor(actor_id uuid PK, name text, actor_type text, description text,
-      location_city text, state text, country text, estimated_trl smallint,
-      verification_status text, merged_into_actor_id uuid)
+actor_read(actor_id uuid PK, name text, actor_category text, category_type text,
+      description text, city text, state_code text, region_code text, country text,
+      estimated_trl smallint, status text, merged_into_actor_id uuid)
+  - Read actors ONLY through actor_read (never the actor table).
   - IMPORTANT: only rows WHERE merged_into_actor_id IS NULL are live; ALWAYS
     add that filter when counting/listing actors (the rest are merged duplicates).
-  - estimated_trl is 1..9 or NULL. verification_status in
-    ('ai_inferred','phase_1','needs_review'). country is free text and
-    inconsistent ('USA' vs 'United States') — match with ILIKE/IN when needed.
+  - status in ('verified','imported','parked','rejected'). actor_category is one of
+    university_academic, research_center, national_laboratory, applied_facility,
+    hospital_clinical, company, startup, innovation_platform, investor, government,
+    foundation_nonprofit, association_network. state_code is a 2-letter US code;
+    region_code one of 7 US regions. estimated_trl is 1..9 or NULL. country is free
+    text and inconsistent ('USA' vs 'United States') — match with ILIKE/IN when needed.
 
 hub(hub_id uuid PK, name text, primary_city text, state text, country text, region text)
 
 hub_actor(hub_id uuid, actor_id uuid, relationship_type text, is_primary bool)
-  - many-to-many: which live actors belong to which hub. Join actor to exclude merged.
+  - many-to-many: which live actors belong to which hub. Join actor_read to exclude merged.
 
 event(event_id uuid PK, name text, event_type text, location text,
       next_date date, host_actor_id uuid)
@@ -66,7 +70,7 @@ about Mosaic", "which labs research soil health?".
 
 Respond in EXACTLY one of two ways:
 - If STRUCTURED: output only a single SQL statement inside a ```sql code block. \
-Use a SELECT only. Always filter actor.merged_into_actor_id IS NULL when \
+Use a SELECT only. Always filter actor_read.merged_into_actor_id IS NULL when \
 counting/listing actors. Add a LIMIT (<=100) to list queries.
 
   CRITICAL name-matching rule: when filtering by a name (hub, actor, event), you \

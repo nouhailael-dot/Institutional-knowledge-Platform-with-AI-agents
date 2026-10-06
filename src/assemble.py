@@ -16,6 +16,7 @@ Design notes:
   hook is left in place (commented) so it lights up when they're populated.
 """
 
+from src.browse import verification_label
 from src.db import get_connection
 
 
@@ -45,12 +46,26 @@ def assemble_actors() -> list[dict]:
                 AS actor_category,
             NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
             a.description,
-            a.primary_technical_focus,
-            a.technical_approach,
-            a.current_activities,
-            a.key_constraints,
-            a.estimated_trl,
-            a.location_city, a.state, a.country,
+            -- Narrative fields become imported baseline facts at the V2 cutover.
+            COALESCE(to_jsonb(a)->>'primary_technical_focus', (SELECT f.fact_value #>> '{}' FROM actor_fact f
+                WHERE f.actor_id = a.actor_id AND f.fact_type = 'legacy_baseline'
+                  AND f.fact_key = 'primary_technical_focus' LIMIT 1)) AS primary_technical_focus,
+            COALESCE(to_jsonb(a)->>'technical_approach', (SELECT f.fact_value #>> '{}' FROM actor_fact f
+                WHERE f.actor_id = a.actor_id AND f.fact_type = 'legacy_baseline'
+                  AND f.fact_key = 'technical_approach' LIMIT 1)) AS technical_approach,
+            COALESCE(to_jsonb(a)->>'current_activities', (SELECT f.fact_value #>> '{}' FROM actor_fact f
+                WHERE f.actor_id = a.actor_id AND f.fact_type = 'legacy_baseline'
+                  AND f.fact_key = 'current_activities' LIMIT 1)) AS current_activities,
+            COALESCE(to_jsonb(a)->>'key_constraints', (SELECT f.fact_value #>> '{}' FROM actor_fact f
+                WHERE f.actor_id = a.actor_id AND f.fact_type = 'legacy_baseline'
+                  AND f.fact_key = 'key_constraints' LIMIT 1)) AS key_constraints,
+            COALESCE(to_jsonb(a)->>'estimated_trl', (SELECT f.fact_value #>> '{}' FROM actor_fact f
+                WHERE f.actor_id = a.actor_id AND f.fact_type = 'legacy_baseline'
+                  AND f.fact_key = 'estimated_trl' LIMIT 1)) AS estimated_trl,
+            COALESCE(to_jsonb(a)->>'status', to_jsonb(a)->>'verification_status') AS status,
+            COALESCE(to_jsonb(a)->>'city', to_jsonb(a)->>'location_city') AS location_city,
+            COALESCE(NULLIF(to_jsonb(a)->>'state', ''), to_jsonb(a)->>'state_code') AS state,
+            a.country,
             pp.why_valuable_for_um6p,
             pp.thematic_focus,
             pp.key_entry_points,
@@ -83,6 +98,7 @@ def assemble_actors() -> list[dict]:
                 _section("Name", r["name"])
                 + _section("Actor category", r["actor_category"])
                 + _section("Category type", r["category_type"])
+                + _section("Record status", verification_label(r["status"]))
                 + _section("Location", location)
                 + _section("Description", r["description"])
                 + _section("Primary technical focus", r["primary_technical_focus"])

@@ -32,6 +32,12 @@ _HUB_SEP = "||"
 # the canonical vocabulary for the Browse trust filter. Order = most to least
 # trustworthy, which is also the order we show them in.
 VERIFICATION_LABELS = {
+    # Architecture V2 status (actor.status); every migrated actor is verified.
+    "verified": "✅ Verified",
+    "imported": "📥 Imported",
+    "parked": "🅿️ Parked",
+    "rejected": "⛔ Rejected",
+    # Legacy verification_status values, read until the V2 cutover.
     "phase_1": "✅ Verified",
     "needs_review": "🔶 Needs review",
     "ai_inferred": "⚠️ AI-inferred",
@@ -108,8 +114,15 @@ def load_actors() -> list[dict]:
                )
                    AS actor_category,
                NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
-               a.verification_status,
-               a.location_city, a.state, a.country, a.estimated_trl,
+               COALESCE(to_jsonb(a)->>'status', to_jsonb(a)->>'verification_status')
+                   AS verification_status,
+               COALESCE(to_jsonb(a)->>'city', to_jsonb(a)->>'location_city') AS location_city,
+               COALESCE(NULLIF(to_jsonb(a)->>'state', ''), to_jsonb(a)->>'state_code') AS state,
+               a.country,
+               COALESCE((to_jsonb(a)->>'estimated_trl')::int,
+                        (SELECT (f.fact_value #>> '{{}}')::int FROM actor_fact f
+                          WHERE f.actor_id = a.actor_id AND f.fact_type = 'legacy_baseline'
+                            AND f.fact_key = 'estimated_trl' LIMIT 1)) AS estimated_trl,
                a.website, a.description,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,

@@ -9,7 +9,7 @@ later (gated) DB sink is a trivial swap:
 Usage:
     python -m src.enrich.run --field website --limit 5          # 5-actor probe
     python -m src.enrich.run --field country --limit 25
-    python -m src.enrich.run --field website --tier ai_inferred # full tier
+    python -m src.enrich.run --field website --tier verified    # one status
 
 Start SMALL (--limit 3) to eyeball evidence quality before spending on the set.
 """
@@ -54,11 +54,11 @@ def main(argv=None):
     ap.add_argument("--limit", type=int, default=5,
                     help="max actors this run (default 5 — keep the pilot small)")
     ap.add_argument("--tier", default=None,
-                    help="restrict to one verification tier (e.g. ai_inferred)")
+                    help="restrict to one actor status (e.g. verified)")
     ap.add_argument("--out", default=DEFAULT_OUT, help="JSONL output path")
     args = ap.parse_args(argv)
 
-    tiers = (args.tier,) if args.tier else ("ai_inferred", "phase_1", "needs_review")
+    tiers = (args.tier,) if args.tier else ("verified", "imported", "parked")
     work = find_gaps(args.field, limit=args.limit, tiers=tiers)
     if not work:
         print("No actors match — nothing missing that field in the chosen tier(s).")
