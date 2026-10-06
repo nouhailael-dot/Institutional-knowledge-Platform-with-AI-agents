@@ -191,9 +191,9 @@ def classify_actor_category_type(
     evidence = ClassificationEvidence(
         main_job=_single_line(category_raw.get("main_job_evidence"), "main-job evidence"),
         medical_school=bool(category_raw.get("medical_school", False)),
-        national_designation=_optional_line(category_raw.get("national_designation")),
-        development_stage=_optional_line(category_raw.get("development_stage")),
-        startup_origin=_optional_line(category_raw.get("startup_origin")),
+        national_designation=_evidence_line(category_raw.get("national_designation")),
+        development_stage=_evidence_line(category_raw.get("development_stage")),
+        startup_origin=_evidence_line(category_raw.get("startup_origin")),
         utility_ownership=str(category_raw.get("utility_ownership") or "not_applicable").strip(),
     )
     note = _optional_line(category_raw.get("category_note"))
@@ -442,9 +442,25 @@ def _category_schema(category_codes: tuple[str, ...]) -> dict[str, object]:
             "actor_category": {"type": "string", "enum": list(category_codes)},
             "main_job_evidence": {"type": "string", "minLength": 1, "maxLength": 500},
             "medical_school": {"type": "boolean"},
-            "national_designation": nullable,
-            "development_stage": nullable,
-            "startup_origin": nullable,
+            "national_designation": {
+                **nullable,
+                "description": (
+                    "The formal national-laboratory, FFRDC or federal-facility designation "
+                    "quoted from the evidence. null when none is stated."
+                ),
+            },
+            "development_stage": {
+                **nullable,
+                "description": (
+                    "The published early development stage (for example seed or Series A) "
+                    "of a startup. null for established organizations or when not stated."
+                ),
+            },
+            "startup_origin": {
+                "type": ["string", "null"],
+                "enum": ["university_spinout", "corporate_spinout", "independent_startup", None],
+                "description": "Startup origin when the evidence states it; otherwise null.",
+            },
             "utility_ownership": {
                 "type": "string",
                 "enum": ["not_applicable", "unknown", "public", "investor_owned"],
@@ -479,6 +495,23 @@ def _single_line(value: object, label: str) -> str:
         raise ActorClassificationError(f"{label} is required")
     if "\n" in text or "\r" in text:
         raise ActorClassificationError(f"{label} must be one line")
+    return text
+
+
+# Placeholder answers a model gives for "not applicable" evidence fields. They
+# are not evidence and must never trigger a hard rule.
+_NON_EVIDENCE = frozenset({
+    "unknown", "none", "null", "n/a", "na", "not applicable", "not_applicable",
+    "not stated", "not evidenced", "not specified", "not available", "no", "false",
+    "established", "established company", "established organization",
+    "established commercial company", "mature", "not a startup",
+})
+
+
+def _evidence_line(value: object) -> str | None:
+    text = _optional_line(value)
+    if text is None or text.casefold().strip(" .") in _NON_EVIDENCE:
+        return None
     return text
 
 

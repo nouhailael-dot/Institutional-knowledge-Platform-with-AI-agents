@@ -322,6 +322,72 @@ def record_verification_decision(
     return count
 
 
+def record_category_review_decision(
+    session,
+    *,
+    review_item_id: str,
+    actor_category: str,
+    decided_by: str,
+    reason: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Resolve one pending category_doubt review with a GHUS-chosen category.
+
+    A true aggregate (a bucket of organizations) is not resolved here: its
+    disposition is a separate GHUS decision. Dry-run is the default.
+    """
+    from agents.common.actor_classification import load_category_catalog
+
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    category = str(actor_category or "").strip()
+    if category not in load_category_catalog().by_code:
+        raise ValueError(f"unknown actor category {category!r}")
+    item = session.execute(
+        text(
+            "SELECT r.review_item_id::text AS review_item_id,r.entity_id::text AS actor_id,"
+            "r.status,r.payload,a.actor_category AS current_category "
+            "FROM review_item r JOIN actor a ON a.actor_id=r.entity_id "
+            "WHERE r.review_item_id=CAST(:id AS uuid) AND r.review_kind='category_doubt' "
+            "AND r.entity_type='actor' FOR UPDATE OF r"
+        ),
+        {"id": review_item_id},
+    ).mappings().first()
+    if item is None:
+        raise ValueError("category review item not found")
+    payload = item["payload"] if isinstance(item["payload"], dict) else json.loads(item["payload"] or "{}")
+    if payload.get("is_true_aggregate"):
+        raise ValueError("a true aggregate needs a GHUS disposition, not a category")
+    outcome = {
+        "review_item_id": item["review_item_id"],
+        "actor_id": item["actor_id"],
+        "actor_category": category,
+        "previous_category": item["current_category"],
+    }
+    if item["status"] != "pending":
+        return {**outcome, "action": "already_resolved"}
+    if not live:
+        return {**outcome, "action": "would_resolve"}
+    execute_canonical_write(session, text(
+        "UPDATE actor SET actor_category=:category,category_needs_review=false,"
+        "category_type=CASE WHEN actor_category IS DISTINCT FROM :category THEN NULL "
+        "ELSE category_type END,"
+        "category_note=:note,updated_at=now() WHERE actor_id=CAST(:actor AS uuid)"
+    ), {"category": category, "actor": item["actor_id"],
+        "note": str(reason or "").strip() or f"Category confirmed by GHUS review ({reviewer})."})
+    execute_canonical_write(session, text(
+        "INSERT INTO review_item_decision(review_item_decision_id,review_item_id,decision,"
+        "decided_by,reason,decided_at) VALUES (CAST(:id AS uuid),CAST(:item AS uuid),'resolve',"
+        ":by,:reason,now())"
+    ), {"id": str(uuid.uuid4()), "item": item["review_item_id"], "by": reviewer,
+        "reason": f"actor_category={category}" + (f"; {reason}" if reason else "")})
+    execute_canonical_write(session, text(
+        "UPDATE review_item SET status='resolved' WHERE review_item_id=CAST(:item AS uuid)"
+    ), {"item": item["review_item_id"]})
+    return {**outcome, "action": "resolved"}
+
+
 def apply_hub_center_decision(
     session,
     *,

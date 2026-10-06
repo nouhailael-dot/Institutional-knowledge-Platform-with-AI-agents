@@ -428,6 +428,51 @@ def apply_review_decision(session, decision: Mapping[str, Any]) -> dict[str, Any
         raise
 
 
+def apply_category_decisions(session, decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Confirm GHUS categories for pending category_doubt reviews, all or nothing.
+
+    Canonical writes delegate to ``record_category_review_decision``. Replaying
+    the same request is safe: already-resolved items are reported, not rewritten.
+    """
+    from agents.enrichment.decisions import record_category_review_decision
+
+    reviewer = _clean_required(decision.get("reviewer"), "reviewer", 120)
+    _clean_required(decision.get("idempotency_key"), "idempotency_key", 200)
+    items = decision.get("items")
+    if not isinstance(items, list) or not items:
+        raise AdmissionValidationError("confirm_category requires a non-empty items list")
+    if len(items) > 500:
+        raise AdmissionValidationError("confirm_category accepts at most 500 items")
+    notes = str(decision.get("notes") or "").strip() or None
+    transaction = session.begin()
+    try:
+        results = [
+            record_category_review_decision(
+                session,
+                review_item_id=_clean_required(item.get("review_item_id"), "review_item_id", 80),
+                actor_category=_clean_required(item.get("actor_category"), "actor_category", 80),
+                decided_by=reviewer,
+                reason=notes,
+                live=True,
+            )
+            for item in items
+            if isinstance(item, Mapping)
+        ]
+        if len(results) != len(items):
+            raise AdmissionValidationError("every item must be an object")
+        transaction.commit()
+    except Exception:
+        transaction.rollback()
+        raise
+    return {
+        "decision_kind": "confirm_category",
+        "status": "resolved",
+        "resolved": sum(result["action"] == "resolved" for result in results),
+        "already_resolved": sum(result["action"] == "already_resolved" for result in results),
+        "items": results,
+    }
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply one reviewed GHUS discovery decision")
     parser.add_argument("--decision", required=True, type=Path)
@@ -438,7 +483,10 @@ def _main(argv: list[str] | None = None) -> int:
     from src.db.session import SessionLocal
 
     with SessionLocal() as session:
-        outcome = apply_review_decision(session, raw)
+        if raw.get("decision_kind") == "confirm_category":
+            outcome = apply_category_decisions(session, raw)
+        else:
+            outcome = apply_review_decision(session, raw)
     json.dump(outcome, sys.stdout, sort_keys=True, default=str)
     sys.stdout.write("\n")
     return 0

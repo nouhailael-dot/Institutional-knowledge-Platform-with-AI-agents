@@ -253,6 +253,26 @@ def test_startup_without_stage_evidence_falls_back_to_company_review():
 
 
 @pytest.mark.parametrize(
+    ("designation", "stage"),
+    [("UNKNOWN", "Established commercial company"), ("N/A", "not applicable"), ("none", "None.")],
+)
+def test_placeholder_evidence_never_triggers_hard_rules(designation, stage):
+    client = _client(
+        _category("company", national_designation=designation, development_stage=stage),
+        _type("large_multinational"),
+    )
+    result = classify_actor_category_type(
+        client,
+        name="BASF (Regional Operations)",
+        self_description="Regional operations of a multinational chemical company.",
+    )
+    assert (result.actor_category, result.category_type) == ("company", "large_multinational")
+    assert result.evidence.national_designation is None
+    assert result.evidence.development_stage is None
+    assert result.category_needs_review is False
+
+
+@pytest.mark.parametrize(
     ("ownership", "model_category", "model_type", "expected"),
     [
         ("public", "company", "large_multinational", ("government", "public_utility")),
