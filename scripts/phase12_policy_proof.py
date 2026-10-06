@@ -26,6 +26,25 @@ POLICY_DATABASES = {
 }
 
 
+SCALAR_FIELDS = (
+    "description", "primary_technical_focus", "technical_approach", "current_activities",
+    "technology_ip_notes", "key_constraints", "funding_summary", "estimated_trl",
+    "primary_lifecycle_role",
+)
+PROFILE_FIELDS = (
+    "profile_summary", "identity_summary", "technical_summary", "lifecycle_summary",
+    "funding_summary",
+)
+LEGACY_TABLE_COUNTS = {
+    "record_verification": "SELECT count(*) value FROM record_verification",
+    "organization_hierarchy": "SELECT count(*) value FROM organization_hierarchy",
+    "actor_profile": "SELECT " + "+".join(
+        f"count(*) FILTER(WHERE NULLIF(btrim({field}),'') IS NOT NULL)" for field in PROFILE_FIELDS
+    ) + " value FROM actor_profile",
+    "actor_capability_fact": "SELECT count(*) value FROM actor_capability_fact",
+}
+
+
 def _url() -> tuple[str, str]:
     raw = os.environ.get("V2_PHASE12_POLICY_DATABASE_URL", "").strip()
     parsed = urlsplit(raw.replace("postgresql+psycopg2", "postgresql", 1))
@@ -37,6 +56,23 @@ def _url() -> tuple[str, str]:
     ):
         raise RuntimeError("policy proof accepts only the named isolated migration databases")
     return raw.replace("postgresql+psycopg2", "postgresql", 1), database
+
+
+def _record_check(source: str, destination: str, source_rows: int,
+                  dispositions: dict[str, int], *, extra: bool = True) -> dict:
+    """Every legacy value needs a destination row or an explicit listed record."""
+    destination_rows = sum(dispositions.values())
+    check = {
+        "source": source,
+        "destination": destination,
+        "source_rows": source_rows,
+        "destination_rows": destination_rows,
+        "destination_by_disposition": dispositions,
+        "passed": source_rows == destination_rows and extra,
+    }
+    if not check["passed"]:
+        check["blocker"] = "Legacy values without a destination row or listed migration record."
+    return check
 
 
 def _one(cursor, statement: str) -> dict:
@@ -85,42 +121,62 @@ def main() -> int:
                 "memberships": _one(cursor, "SELECT count(*) value FROM hub_actor")["value"],
                 "events": _one(cursor, "SELECT count(*) value FROM event")["value"],
             }
-            scalar = _one(cursor, """
-                SELECT count(*) FILTER(WHERE NULLIF(btrim(primary_technical_focus),'') IS NOT NULL) primary_technical_focus,
-                  count(*) FILTER(WHERE NULLIF(btrim(technical_approach),'') IS NOT NULL) technical_approach,
-                  count(*) FILTER(WHERE NULLIF(btrim(current_activities),'') IS NOT NULL) current_activities,
-                  count(*) FILTER(WHERE NULLIF(btrim(technology_ip_notes),'') IS NOT NULL) technology_ip_notes,
-                  count(*) FILTER(WHERE NULLIF(btrim(key_constraints),'') IS NOT NULL) key_constraints,
-                  count(*) FILTER(WHERE NULLIF(btrim(funding_summary),'') IS NOT NULL) funding_summary,
-                  count(*) FILTER(WHERE estimated_trl IS NOT NULL) estimated_trl,
-                  count(*) FILTER(WHERE NULLIF(btrim(primary_lifecycle_role),'') IS NOT NULL) primary_lifecycle_role
-                FROM actor
-            """)
+            legacy_fields = {}
+            for field in SCALAR_FIELDS:
+                legacy_fields[field] = _one(cursor, f"""
+                    SELECT count(*) FILTER(WHERE NULLIF(btrim({field}::text),'') IS NOT NULL) value
+                    FROM actor
+                """)["value"]
+            has_status_column = _one(cursor, """
+                SELECT count(*) > 0 value FROM information_schema.columns
+                WHERE table_schema='public' AND table_name='actor'
+                  AND column_name='verification_status'
+            """)["value"]
+            status_column = "verification_status" if has_status_column else "record_status"
+            cursor.execute(f"SELECT COALESCE({status_column},'<null>') value,count(*) n "
+                           "FROM actor GROUP BY 1")
+            legacy_status = {row["value"]: row["n"] for row in cursor.fetchall()}
+            cursor.execute("SELECT COALESCE(prior_status,'<null>') value,count(*) n "
+                           "FROM actor_category_migration_audit GROUP BY 1")
+            prior_status = {row["value"]: row["n"] for row in cursor.fetchall()}
             legacy_identity = _one(cursor, """
                 SELECT count(actor_type_raw) actor_type_raw,
-                  count(record_status) record_status,
-                  count(state) state,
-                  count(state_code) state_code,
+                  count(*) FILTER(WHERE NULLIF(btrim(state),'') IS NOT NULL) state,
+                  count(*) FILTER(WHERE NULLIF(btrim(state),'') IS NOT NULL
+                                    AND state_code IS NOT NULL) state_normalized,
                   count(alternate_names) alternate_names,
                   count(location_city) location_city
                 FROM actor
             """)
             audit_preservation = _one(cursor, """
                 SELECT count(legacy_category) legacy_category,
-                  count(legacy_category_raw) legacy_category_raw,
-                  count(prior_status) prior_status
+                  count(legacy_category_raw) legacy_category_raw
                 FROM actor_category_migration_audit
             """)
-            legacy_tables = {
-                table: _one(cursor, f"SELECT count(*) value FROM {table}")["value"]
-                for table in (
-                    "record_verification",
-                    "organization_hierarchy",
-                    "actor_profile",
-                    "actor_capability_fact",
-                )
-            }
-            facts = _one(cursor, "SELECT count(*) imported_facts FROM actor_fact")
+            legacy_tables = {}
+            for table, count_sql in LEGACY_TABLE_COUNTS.items():
+                exists = _one(cursor, f"SELECT to_regclass('public.{table}') IS NOT NULL value")
+                legacy_tables[table] = _one(cursor, count_sql)["value"] if exists["value"] else 0
+            has_records = _one(cursor, "SELECT to_regclass('public.legacy_migration_record') "
+                                       "IS NOT NULL value")["value"]
+            records: dict[tuple[str, str], dict[str, int]] = {}
+            if has_records:
+                # A fact/review record only counts when its destination row really exists.
+                cursor.execute("""
+                    SELECT r.legacy_table,r.legacy_field,r.disposition,count(*) n
+                    FROM legacy_migration_record r
+                    LEFT JOIN actor_fact f ON r.destination_table='actor_fact'
+                                          AND f.actor_fact_id=r.destination_id
+                    LEFT JOIN review_item i ON r.destination_table='review_item'
+                                           AND i.review_item_id=r.destination_id
+                    WHERE r.disposition IN ('audit_only','normalized')
+                       OR f.actor_fact_id IS NOT NULL OR i.review_item_id IS NOT NULL
+                       OR (r.disposition='review' AND r.legacy_field='state')
+                    GROUP BY 1,2,3
+                """)
+                for row in cursor.fetchall():
+                    key = (row["legacy_table"], row["legacy_field"])
+                    records.setdefault(key, {})[row["disposition"]] = row["n"]
         connection.rollback()
     finally:
         connection.close()
@@ -164,11 +220,13 @@ def main() -> int:
             == audit_preservation["legacy_category_raw"],
         },
         {
-            "source": "actor.verification_status / actor.record_status",
+            "source": "actor.verification_status (legacy status distribution)",
             "destination": "actor.status + actor_verification_event + migration audit prior_status",
-            "source_rows": legacy_identity["record_status"],
-            "destination_rows": audit_preservation["prior_status"],
-            "passed": legacy_identity["record_status"] == audit_preservation["prior_status"]
+            "source_rows": sum(n for v, n in legacy_status.items() if v != "<null>"),
+            "destination_rows": sum(n for v, n in prior_status.items() if v != "<null>"),
+            "source_distribution": legacy_status,
+            "destination_distribution": prior_status,
+            "passed": legacy_status == prior_status
             and assertions["verification_provenance_honest"],
         },
         {
@@ -185,39 +243,35 @@ def main() -> int:
             "destination_rows": legacy_identity["location_city"],
             "passed": True,
         },
-        {
-            "source": "actor.state",
-            "destination": "actor.state_code + region_code",
-            "source_rows": legacy_identity["state"],
-            "destination_rows": legacy_identity["state_code"],
-            "passed": legacy_identity["state"] == legacy_identity["state_code"],
-            "blocker": "Deterministic state normalization has not run.",
-        },
+        _record_check(
+            "actor.state", "actor.state_code + region_code, or geocode review with raw value",
+            legacy_identity["state"], records.get(("actor", "state"), {}),
+            extra=legacy_identity["state_normalized"]
+            == records.get(("actor", "state"), {}).get("normalized", 0),
+        ),
     ]
-    for source_field, source_rows in scalar.items():
-        loss_checks.append({
-            "source": f"actor.{source_field}",
-            "destination": f"actor_fact[{source_field}]",
-            "source_rows": source_rows,
-            "destination_rows": facts["imported_facts"],
-            "passed": source_rows == 0,
-            "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-        })
-    for source_table, source_rows in legacy_tables.items():
-        destination = {
-            "record_verification": "actor_verification_event",
-            "organization_hierarchy": "entity_edge",
-            "actor_profile": "actor_fact",
-            "actor_capability_fact": "actor_fact",
-        }[source_table]
-        loss_checks.append({
-            "source": source_table,
-            "destination": destination,
-            "source_rows": source_rows,
-            "destination_rows": 0,
-            "passed": source_rows == 0,
-            "blocker": None if source_rows == 0 else "Rows require semantic migration and reconciliation.",
-        })
+    for field, source_rows in legacy_fields.items():
+        loss_checks.append(_record_check(
+            f"actor.{field}", f"actor_fact[legacy_baseline.{field}] or listed audit record",
+            source_rows, records.get(("actor", field), {}),
+        ))
+    profile_records: dict[str, int] = {}
+    for field in PROFILE_FIELDS:
+        for disposition, n in records.get(("actor_profile", field), {}).items():
+            profile_records[disposition] = profile_records.get(disposition, 0) + n
+    loss_checks.extend([
+        _record_check("record_verification", "actor_verification_event (genuine GHUS decisions)",
+                      legacy_tables["record_verification"], {}),
+        _record_check("organization_hierarchy", "entity_edge or relationship_review",
+                      legacy_tables["organization_hierarchy"],
+                      records.get(("organization_hierarchy", "relationship"), {})),
+        _record_check("actor_profile (non-empty summary values)",
+                      "actor_fact[legacy_profile] or listed audit record",
+                      legacy_tables["actor_profile"], profile_records),
+        _record_check("actor_capability_fact", "identical actor_fact or listed audit record",
+                      legacy_tables["actor_capability_fact"],
+                      records.get(("actor_capability_fact", "fact_value"), {})),
+    ])
     loss_checks.extend([
         {
             "source": "actor_v1_compat, staged_record_agent3_compat, actor_profile_current views",

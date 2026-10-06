@@ -2,7 +2,7 @@
   "actor": {
     "category_type_pending": 965,
     "category_type_populated": 0,
-    "category_unresolved": 214,
+    "category_unresolved": 156,
     "imported_origin": 965,
     "total": 965,
     "verified": 965
@@ -23,7 +23,7 @@
     "total": 965
   },
   "database": "ghus_v2_phase12_full_test",
-  "generated_at": "2026-10-06T20:26:03.566476+00:00",
+  "generated_at": "2026-10-06T20:54:22.216867+00:00",
   "passed": true,
   "reviews": {
     "category_review": 214

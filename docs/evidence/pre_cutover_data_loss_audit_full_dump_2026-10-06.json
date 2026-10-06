@@ -17,9 +17,21 @@
     },
     {
       "destination": "actor.status + actor_verification_event + migration audit prior_status",
-      "destination_rows": 0,
-      "passed": false,
-      "source": "actor.verification_status / actor.record_status",
+      "destination_distribution": {
+        "<null>": 7,
+        "ai_inferred": 834,
+        "needs_review": 27,
+        "phase_1": 97
+      },
+      "destination_rows": 958,
+      "passed": true,
+      "source": "actor.verification_status (legacy status distribution)",
+      "source_distribution": {
+        "<null>": 7,
+        "ai_inferred": 834,
+        "needs_review": 27,
+        "phase_1": 97
+      },
       "source_rows": 958
     },
     {
@@ -37,106 +49,151 @@
       "source_rows": 906
     },
     {
-      "blocker": "Deterministic state normalization has not run.",
-      "destination": "actor.state_code + region_code",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor.state_code + region_code, or geocode review with raw value",
+      "destination_by_disposition": {
+        "normalized": 858,
+        "review": 54
+      },
+      "destination_rows": 912,
+      "passed": true,
       "source": "actor.state",
       "source_rows": 912
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[primary_technical_focus]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.description] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 6,
+        "fact": 951
+      },
+      "destination_rows": 957,
+      "passed": true,
+      "source": "actor.description",
+      "source_rows": 957
+    },
+    {
+      "destination": "actor_fact[legacy_baseline.primary_technical_focus] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 7,
+        "fact": 954
+      },
+      "destination_rows": 961,
+      "passed": true,
       "source": "actor.primary_technical_focus",
       "source_rows": 961
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[technical_approach]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.technical_approach] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 7,
+        "fact": 953
+      },
+      "destination_rows": 960,
+      "passed": true,
       "source": "actor.technical_approach",
       "source_rows": 960
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[current_activities]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.current_activities] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 7,
+        "fact": 958
+      },
+      "destination_rows": 965,
+      "passed": true,
       "source": "actor.current_activities",
       "source_rows": 965
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[technology_ip_notes]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.technology_ip_notes] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 7,
+        "fact": 946
+      },
+      "destination_rows": 953,
+      "passed": true,
       "source": "actor.technology_ip_notes",
       "source_rows": 953
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[key_constraints]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.key_constraints] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 7,
+        "fact": 948
+      },
+      "destination_rows": 955,
+      "passed": true,
       "source": "actor.key_constraints",
       "source_rows": 955
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[funding_summary]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.funding_summary] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 7,
+        "fact": 945
+      },
+      "destination_rows": 952,
+      "passed": true,
       "source": "actor.funding_summary",
       "source_rows": 952
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[estimated_trl]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.estimated_trl] or listed audit record",
+      "destination_by_disposition": {
+        "fact": 67
+      },
+      "destination_rows": 67,
+      "passed": true,
       "source": "actor.estimated_trl",
       "source_rows": 67
     },
     {
-      "blocker": "Imported historical facts have not yet been appended with baseline provenance.",
-      "destination": "actor_fact[primary_lifecycle_role]",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "actor_fact[legacy_baseline.primary_lifecycle_role] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 7,
+        "fact": 958
+      },
+      "destination_rows": 965,
+      "passed": true,
       "source": "actor.primary_lifecycle_role",
       "source_rows": 965
     },
     {
-      "blocker": null,
-      "destination": "actor_verification_event",
+      "destination": "actor_verification_event (genuine GHUS decisions)",
+      "destination_by_disposition": {},
       "destination_rows": 0,
       "passed": true,
       "source": "record_verification",
       "source_rows": 0
     },
     {
-      "blocker": "Rows require semantic migration and reconciliation.",
-      "destination": "entity_edge",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "entity_edge or relationship_review",
+      "destination_by_disposition": {
+        "review": 42
+      },
+      "destination_rows": 42,
+      "passed": true,
       "source": "organization_hierarchy",
       "source_rows": 42
     },
     {
-      "blocker": "Rows require semantic migration and reconciliation.",
-      "destination": "actor_fact",
-      "destination_rows": 0,
-      "passed": false,
-      "source": "actor_profile",
-      "source_rows": 952
+      "destination": "actor_fact[legacy_profile] or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 10,
+        "fact": 4749
+      },
+      "destination_rows": 4759,
+      "passed": true,
+      "source": "actor_profile (non-empty summary values)",
+      "source_rows": 4759
     },
     {
-      "blocker": "Rows require semantic migration and reconciliation.",
-      "destination": "actor_fact",
-      "destination_rows": 0,
-      "passed": false,
+      "destination": "identical actor_fact or listed audit record",
+      "destination_by_disposition": {
+        "audit_only": 42,
+        "duplicate_of_fact": 5670
+      },
+      "destination_rows": 5712,
+      "passed": true,
       "source": "actor_capability_fact",
       "source_rows": 5712
     },
@@ -155,7 +212,7 @@
   ],
   "cutover_attestation_written": false,
   "database": "ghus_v2_phase12_full_test",
-  "generated_at": "2026-10-06T20:26:03.566848+00:00",
-  "passed": false,
+  "generated_at": "2026-10-06T20:54:22.217300+00:00",
+  "passed": true,
   "rule": "Migration 500 must fail closed until this audit passes and is independently attested."
 }

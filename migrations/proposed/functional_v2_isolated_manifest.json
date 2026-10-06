@@ -165,7 +165,9 @@
     "phase12_policy_backfill": {
       "inherits": "phase12_policy_expand",
       "steps": [
-        {"id":"480","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/480_v2_phase12_existing_actor_backfill.sql","reason":"map legacy category, bootstrap existing canonical verification and review only unmappable categories"}
+        {"id":"480","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/480_v2_phase12_existing_actor_backfill.sql","reason":"map legacy category, bootstrap existing canonical verification and review only unmappable categories"},
+        {"id":"482","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/482_v2_phase12_legacy_preservation.sql","reason":"preserve every legacy value 500 removes: baseline facts on real legacy sources, deterministic state/city normalization, relationship reviews and an append-only migration record"},
+        {"id":"484","kind":"data-backfill","scope":"isolated-proof-production-deferred","action":"sql","path":"migrations/proposed/deferred/484_v2_phase12_category_proposals.sql","reason":"apply GHUS-reviewable model proposals for unmappable legacy categories; true aggregates stay unresolved for GHUS disposition"}
       ]
     },
     "phase12_policy_validate": {

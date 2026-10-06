@@ -5,11 +5,18 @@ BEGIN;
 DO $migration$
 DECLARE
   legacy_column text;
+  legacy_status_column text;
 BEGIN
   SELECT CASE WHEN EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema='public' AND table_name='actor' AND column_name='actor_type'
   ) THEN 'actor_type' ELSE 'actor_category' END INTO legacy_column;
+  -- prior_status preserves the legacy verification value that 500 drops; the V2
+  -- status column is still empty at this point and must not be read instead.
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='actor' AND column_name='verification_status'
+  ) THEN 'verification_status' ELSE 'status' END INTO legacy_status_column;
   EXECUTE format($sql$
     INSERT INTO actor_category_migration_audit(
       actor_id,migration_batch_id,legacy_category,legacy_category_raw,
@@ -20,10 +27,10 @@ BEGIN
       ghus_phase12_legacy_category(%1$I),
       CASE WHEN ghus_phase12_legacy_category(%1$I) IS NULL
            THEN 'requires_review' ELSE 'mapped' END,
-      status,source_origin,category_note,category_needs_review
+      %2$I,source_origin,category_note,category_needs_review
     FROM actor
     ON CONFLICT(actor_id) DO NOTHING
-  $sql$, legacy_column);
+  $sql$, legacy_column, legacy_status_column);
 END
 $migration$;
 
