@@ -72,6 +72,13 @@ def build_index() -> int:
                 d["entity_id"], d["entity_type"], d["name"],
                 d["doc_text"], _to_pgvector(emb),
             ))
+        # Drop documents for actors, hubs and events that are no longer on the map
+        # (merged, GHUS-rejected or retired), so Ask never cites them.
+        cur.execute(
+            "DELETE FROM search_doc WHERE entity_type IN ('actor','hub','event') "
+            "AND NOT (entity_id = ANY(%s::uuid[]))",
+            ([str(d["entity_id"]) for d in docs],),
+        )
         conn.commit()
     return len(docs)
 
