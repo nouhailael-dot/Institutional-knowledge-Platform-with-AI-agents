@@ -20,9 +20,14 @@ def test_corrected_manifest_supersedes_old_required_type_cutover():
     assert manifest["checkpoints"]["category_resolution_contract"]["steps"][0]["id"] == "495"
     assert manifest["checkpoints"]["final_cutover"]["steps"][0]["id"] == "500"
     assert {item["id"] for item in manifest["superseded_policy_proposals"]} == {
+        "400",
         "450",
         "460",
     }
+    assert manifest["checkpoints"]["phase12_topic_policy"]["steps"][0]["id"] == "486"
+    assert [step["id"] for step in manifest["checkpoints"]["postbackfill_contract"]["steps"]] == [
+        "405", "410",
+    ]
 
 
 def test_category_type_is_nullable_but_non_null_pairs_are_enforced():
