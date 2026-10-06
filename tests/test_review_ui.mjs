@@ -12,6 +12,7 @@ import {
   formatFactValue,
   deepPullFacts,
   lightPullFacts,
+  reviewRunLabel,
   reviewStatusLabel,
   reviewFieldLabel,
   validateReviewDraft,
@@ -91,6 +92,30 @@ test('model length validation is inline and match differences are explicit',()=>
   assert.deepEqual(diffFields({name:'New'},{payload:{name:'Held'}}),[
     {field:'name',candidate:'New',existing:'Held'},
   ]);
+});
+
+test('review run labels hide raw discovery UUIDs without changing canonical IDs',()=>{
+  const source={
+    source_run_id:'discovery:577bd0bd-263a-43a7-90f8-373f7cab65ae',
+    source_description:'Open-web actor discovery · dry_run · 577bd0bd-263a-43a7-90f8-373f7cab65ae',
+    entity_type:'actor',
+  };
+  assert.equal(reviewRunLabel(source),'Open-web actor discovery · dry_run');
+  assert.equal(source.source_run_id,'discovery:577bd0bd-263a-43a7-90f8-373f7cab65ae');
+  assert.equal(reviewRunLabel({description:'discovery:577bd0bd-263a-43a7-90f8-373f7cab65ae'}),'Discovery run');
+});
+
+test('normal Review detail hides audit cards while retaining badges, loading, and actions',()=>{
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.doesNotMatch(component,/<dt>Candidate ID<\/dt>/);
+  assert.doesNotMatch(component,/<dt>Source run<\/dt>/);
+  assert.doesNotMatch(component,/<dt>Created<\/dt>/);
+  assert.doesNotMatch(component,/class="review-provenance"/);
+  assert.match(component,/reviewStatusLabel\(selected\.status\)/);
+  assert.match(component,/DUPLICATE_LABELS\[selected\.duplicate_state\]/);
+  assert.match(component,/request\(`\/api\/review\/candidates\/\$\{selectedId\}`\)/);
+  assert.match(component,/request\(`\/api\/review\/candidates\/\$\{selected\.candidate_id\}\/decision`/);
+  assert.match(component,/Commit decision/);
 });
 
 test('exact rejected label and mounted Review navigation are present',()=>{
