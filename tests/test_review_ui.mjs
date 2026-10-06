@@ -9,10 +9,32 @@ import {
   diffFields,
   editableReviewPayload,
   filterReviewCandidates,
+  formatFactValue,
+  deepPullFacts,
+  lightPullFacts,
   reviewStatusLabel,
   reviewFieldLabel,
   validateReviewDraft,
 } from '../frontend/review.js';
+
+test('review exposes only Layer 1 Light Pull facts with readable states and values',()=>{
+  const candidate={agent_metadata:{facts:[
+    {fact_type:'light_pull',layer:1,fact_key:'funding_signal',collection_state:'not_found',value:null},
+    {fact_type:'classification',layer:1,fact_key:'actor_category_type',value:{actor_category:'company'}},
+    {fact_type:'light_pull',layer:2,fact_key:'deep_only',value:'excluded'},
+  ]}};
+  assert.deepEqual(lightPullFacts(candidate).map(fact=>fact.fact_key),['funding_signal']);
+  assert.equal(formatFactValue(null),'No value recorded');
+  assert.match(formatFactValue({actor_category:'company'}),/"actor_category": "company"/);
+});
+
+test('review separates verified Layer 2 evidence from Light Pull facts',()=>{
+  const candidate={agent_metadata:{facts:[
+    {fact_type:'light_pull',layer:1,fact_key:'description'},
+    {fact_type:'deep_pull',layer:2,fact_key:'relevant_products'},
+  ]}};
+  assert.deepEqual(deepPullFacts(candidate).map(fact=>fact.fact_key),['relevant_products']);
+});
 
 test('actor review separates classification and exposes location without guessing',()=>{
   assert.deepEqual(actorReviewSummary({
@@ -83,5 +105,11 @@ test('exact rejected label and mounted Review navigation are present',()=>{
   assert.match(component,/target="_blank" rel="noreferrer"/);
   assert.match(component,/Actor classification and location/);
   assert.match(component,/Category Type is not inferred/);
+  assert.match(component,/Sourced relationships/);
+  assert.match(component,/Light Pull evidence/);
+  assert.match(component,/Verified Deep Pull evidence/);
+  assert.match(component,/Not found.*pages read/i);
+  assert.match(component,/edge\.relationship_type/);
+  assert.match(component,/edge\.source_url/);
   for(const label of ['City','State','Region','Country'])assert.match(component,new RegExp(`<dt>${label}<\\/dt>`));
 });

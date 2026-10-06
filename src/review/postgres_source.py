@@ -180,7 +180,8 @@ class PostgresReviewSource:
     TABLES = {
         "scrape_run", "search_candidate", "staged_record",
         "event_review_queue", "person_review_queue", "hub",
-        "review_item", "actor", "actor_fact", "source",
+        "review_item", "actor", "actor_fact", "actor_fact_current_v2",
+        "actor_fact_history", "entity_edge", "source",
     }
 
     def __init__(self, database_url: str):
@@ -292,7 +293,7 @@ class PostgresReviewSource:
 
             review_columns = columns.get("review_item", set())
             if review_columns and "actor" in columns:
-                for row in self._v2_review_rows(db, review_columns):
+                for row in self._v2_review_rows(db, review_columns, columns):
                     candidate = self._from_v2_review_item(row)
                     candidates[candidate["source_key"]] = candidate
 
@@ -414,13 +415,62 @@ class PostgresReviewSource:
         )
         return db.execute(query).fetchall()
 
-    def _v2_review_rows(self, db, queue: set[str]):
+    def _v2_review_rows(self, db, queue: set[str], all_columns: dict[str, set[str]]):
         required = {
             "review_item_id", "review_kind", "entity_type", "entity_id",
             "topic_id", "payload", "status", "created_at",
         }
         if not required <= queue:
             return []
+        current_fact_relation = (
+            "actor_fact_current_v2"
+            if all_columns.get("actor_fact_current_v2") else "actor_fact"
+        )
+        history_field = "'[]'::jsonb AS fact_history "
+        history_join = ""
+        if all_columns.get("actor_fact_history"):
+            history_field = "COALESCE(h.fact_history,'[]'::jsonb) AS fact_history "
+            history_join = (
+                "LEFT JOIN LATERAL ("
+                " SELECT jsonb_agg(jsonb_build_object("
+                "   'actor_fact_id',ah.actor_fact_id,'fact_key',ah.fact_key,"
+                "   'fact_type',ah.fact_type,'layer',ah.layer,"
+                "   'collection_state',ah.collection_state,'value',ah.fact_value,"
+                "   'confidence',ah.confidence,'date_read',ah.retrieved_at,"
+                "   'lifecycle_state',ah.lifecycle_state,'is_current',ah.is_current,"
+                "   'supersedes_fact_id',ah.supersedes_fact_id"
+                " ) ORDER BY ah.fact_key,ah.created_at,ah.actor_fact_id) AS fact_history "
+                " FROM actor_fact_history ah WHERE ah.actor_id=a.actor_id "
+                " AND ah.topic_id IS NOT DISTINCT FROM ri.topic_id"
+                ") h ON true "
+            )
+        edge_field = "'[]'::jsonb AS relationships "
+        edge_join = ""
+        if {
+            "entity_edge_id", "subject_type", "subject_id", "relationship_type",
+            "object_type", "object_id", "topic_id", "source_id", "confidence",
+            "created_at",
+        } <= all_columns.get("entity_edge", set()):
+            edge_field = "COALESCE(e.relationships,'[]'::jsonb) AS relationships "
+            edge_join = (
+                "LEFT JOIN LATERAL ("
+                " SELECT jsonb_agg(jsonb_build_object("
+                "   'direction',CASE WHEN ee.subject_type='actor' AND ee.subject_id=a.actor_id "
+                "     THEN 'outgoing' ELSE 'incoming' END,"
+                "   'relationship_type',ee.relationship_type,"
+                "   'counterpart_type',CASE WHEN ee.subject_type='actor' AND ee.subject_id=a.actor_id "
+                "     THEN ee.object_type ELSE ee.subject_type END,"
+                "   'counterpart_id',CASE WHEN ee.subject_type='actor' AND ee.subject_id=a.actor_id "
+                "     THEN ee.object_id ELSE ee.subject_id END,"
+                "   'topic_id',ee.topic_id,'confidence',ee.confidence,"
+                "   'source_url',es.url,'created_at',ee.created_at"
+                " ) ORDER BY ee.created_at,ee.entity_edge_id) AS relationships "
+                " FROM entity_edge ee JOIN source es ON es.source_id=ee.source_id "
+                " WHERE ((ee.subject_type='actor' AND ee.subject_id=a.actor_id) "
+                "     OR (ee.object_type='actor' AND ee.object_id=a.actor_id)) "
+                "   AND (ee.topic_id IS NULL OR ee.topic_id IS NOT DISTINCT FROM ri.topic_id)"
+                ") e ON true "
+            )
         return db.execute(
             "SELECT ri.review_item_id::text AS review_item_id, ri.review_kind, "
             "ri.entity_type, ri.entity_id::text AS entity_id, "
@@ -434,7 +484,7 @@ class PostgresReviewSource:
             "NULLIF(to_jsonb(a)->>'region_code','') AS region_code, "
             "NULLIF(to_jsonb(a)->>'record_status','') AS record_status, "
             "s.url AS actor_source_url, "
-            "COALESCE(f.facts,'[]'::jsonb) AS facts "
+            "COALESCE(f.facts,'[]'::jsonb) AS facts, " + history_field + ", " + edge_field +
             "FROM review_item ri "
             "JOIN actor a ON ri.entity_type='actor' AND a.actor_id=ri.entity_id "
             "LEFT JOIN source s ON s.source_id=a.source_id "
@@ -443,12 +493,12 @@ class PostgresReviewSource:
             "   'fact_key',af.fact_key,'fact_type',af.fact_type,'layer',af.layer,"
             "   'collection_state',af.collection_state,'value',af.fact_value,"
             "   'confidence',af.confidence,'date_read',af.retrieved_at,"
-            "   'source_origin',af.source_origin,'source_url',fs.url"
+            "   'source_origin',af.source_origin,'source_url',fs.url,'is_current',true"
             " ) ORDER BY af.created_at,af.actor_fact_id) AS facts "
-            " FROM actor_fact af JOIN source fs ON fs.source_id=af.source_id "
+            f" FROM {current_fact_relation} af JOIN source fs ON fs.source_id=af.source_id "
             " WHERE af.actor_id=a.actor_id "
             "   AND af.topic_id IS NOT DISTINCT FROM ri.topic_id"
-            ") f ON true "
+            ") f ON true " + history_join + edge_join +
             "WHERE ri.status='pending' "
             "AND ri.review_kind IN ("
             " 'verify_actor','category_doubt','hub_assignment','same_topic_overlap',"
@@ -625,6 +675,8 @@ class PostgresReviewSource:
             if isinstance(value, str) and value.strip() and value.strip() not in source_urls:
                 source_urls.append(value.strip())
         facts = _json_list(row.get("facts"))
+        fact_history = _json_list(row.get("fact_history"))
+        relationships = _json_list(row.get("relationships"))
         for fact in facts:
             if isinstance(fact, dict):
                 value = fact.get("source_url")
@@ -651,6 +703,8 @@ class PostgresReviewSource:
                 "priority": row.get("priority"),
                 "pipeline": payload,
                 "facts": facts,
+                "fact_history": fact_history,
+                "relationships": relationships,
             },
             "duplicate_state": (
                 "possible_duplicate" if row.get("review_kind") == "possible_duplicate"

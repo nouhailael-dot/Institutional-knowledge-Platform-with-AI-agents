@@ -604,6 +604,10 @@ class PostgresReviewSourceTests(unittest.TestCase):
             "record_status": "parked", "actor_source_url": "https://example.org/discovery",
             "facts": [{"fact_key": "description", "layer": 1,
                        "confidence": "medium", "source_url": "https://example.org/fact"}],
+            "fact_history": [{"fact_key": "description", "is_current": True}],
+            "relationships": [{"relationship_type": "unit_of", "direction": "outgoing",
+                               "counterpart_type": "actor", "counterpart_id": "parent-id",
+                               "confidence": "high", "source_url": "https://example.org/edge"}],
         })
         self.assertEqual(candidate["payload"]["actor_category"], "company")
         self.assertEqual(candidate["payload"]["category_type"], "corporate_rd_lab")
@@ -611,6 +615,11 @@ class PostgresReviewSourceTests(unittest.TestCase):
         self.assertEqual(candidate["payload"]["region"], "northeast")
         self.assertEqual(candidate["agent_metadata"]["record_status"], "parked")
         self.assertEqual(candidate["agent_metadata"]["facts"][0]["layer"], 1)
+        self.assertTrue(candidate["agent_metadata"]["fact_history"][0]["is_current"])
+        self.assertEqual(
+            candidate["agent_metadata"]["relationships"][0]["relationship_type"],
+            "unit_of",
+        )
         self.assertEqual(
             {item["url"] for item in candidate["evidence"]},
             {"https://example.org/discovery", "https://example.org/fact"},
@@ -732,6 +741,24 @@ class V2PostgresReviewApiIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["region"], "northeast")
         self.assertEqual(payload["country"], "US")
         self.assertTrue(candidate["evidence"])
+        light_facts = [
+            fact for fact in candidate["agent_metadata"]["facts"]
+            if fact.get("fact_type") == "light_pull" and fact.get("layer") == 1
+        ]
+        self.assertEqual(len(light_facts), 16)
+        self.assertEqual(
+            {fact["fact_key"] for fact in light_facts},
+            {
+                "official_identity", "actor_category_type", "parent_connection",
+                "website", "description", "location", "hub_assignment", "sector_topic",
+                "why_matched", "recent_activity", "funding_signal",
+                "international_connection", "um6p_ocp_connection", "ownership_and_size",
+                "topic_business_segment_product", "mapped_geography_operations",
+            },
+        )
+        self.assertTrue(all(fact.get("source_url") for fact in light_facts))
+        self.assertTrue(all(fact.get("is_current") for fact in light_facts))
+        self.assertIn("fact_history", candidate["agent_metadata"])
 
 
 if __name__ == "__main__":
