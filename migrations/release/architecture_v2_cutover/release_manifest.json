@@ -22,7 +22,7 @@
       "stage": "expand",
       "action": "sql",
       "path": "migrations/proposed/additive_apply_2026-09-28/sql/190_v2_reference_data.sql",
-      "sha256": "16cab64dc397c29d1e15b53753ca3ad87aaebe8d42936f454a7bf450e6734af9",
+      "sha256": "3ebd6b758e328144bb2e05a096d82c93d70d2fb30d400487efd2cb34cffa8d1c",
       "kind": "additive",
       "note": ""
     },
@@ -52,7 +52,7 @@
       "stage": "expand",
       "action": "sql",
       "path": "migrations/proposed/additive_apply_2026-09-28/sql/210_v2_topics.sql",
-      "sha256": "89c0caa342f86d5747ceb2217999d758cabc87ebb376711e17ce74eae0648977",
+      "sha256": "cc1d2d9a57e304a6d7896b06da99b6fb8b9383a9331c85848727dd1b60b89868",
       "kind": "additive",
       "note": ""
     },
@@ -72,7 +72,7 @@
       "stage": "expand",
       "action": "sql",
       "path": "migrations/proposed/additive_apply_2026-09-28/sql/230_v2_verification_history.sql",
-      "sha256": "3a4450ef03ddc0d38aee8d32ce1196bf0897b817975d84ae85b69a80aa82dd2c",
+      "sha256": "870fd27caf59b326f565dea28af12f5c25062b8b5d222f85d20fa8ac49508118",
       "kind": "additive",
       "note": ""
     },
@@ -92,7 +92,7 @@
       "stage": "expand",
       "action": "sql",
       "path": "migrations/proposed/additive_apply_2026-09-28/sql/320_v2_review_items.sql",
-      "sha256": "cda8ec95ed620312508a35596d8e6fcd7bc967bc81a91b441f00fab7acbefc68",
+      "sha256": "d7131ec29de17c8a201b5436878ec3eb57494937b1ade7ada41a63549272192e",
       "kind": "additive",
       "note": ""
     },
@@ -442,7 +442,7 @@
       "stage": "cutover",
       "action": "sql",
       "path": "migrations/proposed/deferred/500_v2_final_contract_cutover.sql",
-      "sha256": "81ff9c412a3d0d66bce54e8f4f9acf1ec8e5acfc247bc4316a6a0f8d7c55b3d4",
+      "sha256": "ccbde48868adc2c2401d61c7aa135faa9f7e09d402a4448838e14146f40e68a0",
       "kind": "breaking-contract",
       "note": "fails without a passed attestation and a passing live audit"
     }
