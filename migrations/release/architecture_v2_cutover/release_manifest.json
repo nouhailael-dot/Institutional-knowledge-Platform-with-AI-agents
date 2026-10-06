@@ -7,6 +7,7 @@
     "gazetteer",
     "backfill",
     "validate",
+    "decisions",
     "topic",
     "contract",
     "cutover"
@@ -372,7 +373,7 @@
       "stage": "backfill",
       "action": "sql",
       "path": "migrations/proposed/deferred/488_v2_actor_read_view.sql",
-      "sha256": "eb067c3b8ba696219c69add6e59ce8e4b0831c6573a5e5b97b93fee8036d09f0",
+      "sha256": "368d1d8d55edbc6ec4233c0cc0d55505e3a2697202cbc8df8808de702e40b222",
       "kind": "read-surface",
       "note": ""
     },
@@ -382,7 +383,7 @@
       "stage": "backfill",
       "action": "sql",
       "path": "migrations/proposed/deferred/489_v2_pre_cutover_audit_function.sql",
-      "sha256": "63c486e7f7c3e95a55e20988aa3d5cdf4fbcd5fc497deef43f0c99da166bad4b",
+      "sha256": "184d0d37c18f0faeff64d2fa70dea5e3ac1590163d0bdb31ae2c9defe699fb28",
       "kind": "audit",
       "note": ""
     },
@@ -398,16 +399,26 @@
     },
     {
       "order": 39,
+      "id": "491",
+      "stage": "decisions",
+      "action": "sql",
+      "path": "migrations/proposed/deferred/491_v2_phase12_ghus_decisions.sql",
+      "sha256": "cd9fb5d618341969e8124b6cdc53ed8d1065551d714e0a3141d5c5fc2ad91818",
+      "kind": "ghus-decisions",
+      "note": "GHUS decisions of 2026-10-06 (categories, collections, empty hub)"
+    },
+    {
+      "order": 40,
       "id": "486",
       "stage": "topic",
       "action": "sql",
       "path": "migrations/proposed/deferred/486_v2_phase12_topic_policy.sql",
-      "sha256": "e59274c0fe88463e9ee8e7b3138c091e915f17d2f7cac8be8e0ca5ba333fc5db",
+      "sha256": "eea5bb2de15af7a1a0c3d4926000b0d8296861b91a8ee320ca87c3a97618e383",
       "kind": "data-backfill",
       "note": "requires GHUS approval of docs/evidence/phase12_topic_proposal.csv"
     },
     {
-      "order": 40,
+      "order": 41,
       "id": "405",
       "stage": "contract",
       "action": "sql",
@@ -417,7 +428,7 @@
       "note": "fails until every hub has a topic and center (incl. the empty 'Mining Hubs')"
     },
     {
-      "order": 41,
+      "order": 42,
       "id": "410",
       "stage": "contract",
       "action": "sql",
@@ -427,22 +438,22 @@
       "note": ""
     },
     {
-      "order": 42,
+      "order": 43,
       "id": "495",
       "stage": "contract",
       "action": "sql",
       "path": "migrations/proposed/deferred/495_v2_actor_category_complete.sql",
-      "sha256": "27a08c787d44d35ba8ffd1cca130554523d8c5581fed112ae1490fc7c149e379",
+      "sha256": "b52ee86ccb56bf0c99626ebb63931312cc6d8340fa7050d85b657aa62934d969",
       "kind": "post-review-validation",
       "note": "fails until every category_doubt review is resolved by GHUS"
     },
     {
-      "order": 43,
+      "order": 44,
       "id": "500",
       "stage": "cutover",
       "action": "sql",
       "path": "migrations/proposed/deferred/500_v2_final_contract_cutover.sql",
-      "sha256": "ccbde48868adc2c2401d61c7aa135faa9f7e09d402a4448838e14146f40e68a0",
+      "sha256": "dc81e99789ec4262aeadb840e0353db71b16553aa49a74f6a9bb4e5c834b0ec7",
       "kind": "breaking-contract",
       "note": "fails without a passed attestation and a passing live audit"
     }

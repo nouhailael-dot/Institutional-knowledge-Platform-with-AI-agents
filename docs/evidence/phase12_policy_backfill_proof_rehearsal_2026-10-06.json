@@ -4,8 +4,9 @@
     "category_type_populated": 0,
     "category_unresolved": 156,
     "imported_origin": 965,
+    "rejected_by_ghus": 156,
     "total": 965,
-    "verified": 965
+    "verified": 809
   },
   "assertions": {
     "all_existing_actors_scoped": true,
@@ -23,18 +24,22 @@
     "total": 965
   },
   "database": "ghus_v2_phase12_rehearsal_test",
-  "generated_at": "2026-10-06T21:50:48.990940+00:00",
+  "generated_at": "2026-10-06T22:07:38.056675+00:00",
   "passed": true,
   "reviews": {
     "category_review": 214
   },
   "row_count_invariants": {
+    "archived_by_ghus_decision": {
+      "hubs": 1,
+      "memberships": 180
+    },
     "events": 356,
-    "hubs": 49,
-    "memberships": 821
+    "hubs": 48,
+    "memberships": 641
   },
   "verification_events": {
     "honest_bootstrap": 965,
-    "total": 965
+    "total": 1121
   }
 }

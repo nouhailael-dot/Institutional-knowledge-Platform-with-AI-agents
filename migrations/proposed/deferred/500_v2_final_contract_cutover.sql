@@ -15,7 +15,8 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE actor ALTER COLUMN actor_category SET NOT NULL;
+-- actor_category completeness is the validated ck_actor_category_complete (495):
+-- required for every actor except GHUS-rejected records.
 ALTER TABLE actor ALTER COLUMN status SET NOT NULL;
 ALTER TABLE actor ALTER COLUMN source_origin SET NOT NULL;
 -- category_type remains nullable until GHUS separately approves completeness.

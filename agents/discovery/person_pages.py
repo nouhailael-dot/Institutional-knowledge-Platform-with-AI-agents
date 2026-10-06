@@ -33,6 +33,7 @@ def load_actor_page_capture_candidates(session, *, run_id: str) -> list[Candidat
                 "WHERE merged_into_actor_id IS NULL "
                 "AND website IS NOT NULL AND btrim(website) <> '' "
                 "AND lower(COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type','')) <> 'aggregate' "
+                "AND COALESCE(to_jsonb(actor)->>'status','') <> 'rejected' "
                 "ORDER BY name"
             )
         )

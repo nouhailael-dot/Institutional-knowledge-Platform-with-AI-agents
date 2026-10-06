@@ -29,10 +29,12 @@ RELEASE_MANIFEST = RELEASE_DIR / "release_manifest.json"
 TOPIC_CSV = ROOT / "docs/evidence/phase12_topic_proposal.csv"
 GAZETTEER_MIN_ROWS = 30_000
 
-STAGES = ("baseline", "expand", "gazetteer", "backfill", "validate", "topic", "contract", "cutover")
+STAGES = ("baseline", "expand", "gazetteer", "backfill", "validate", "decisions", "topic",
+          "contract", "cutover")
 STAGE_OF = {
     **{step: "backfill" for step in ("480", "482", "484", "488", "489")},
     "490": "validate",
+    "491": "decisions",
     "486": "topic",
     **{step: "contract" for step in ("405", "410", "495")},
     "500": "cutover",
@@ -41,6 +43,7 @@ NOTES = {
     "review-kinds": "widens the review_item kind CHECK; superseded by 430/440/482",
     "484": "model category proposals land with category_needs_review=true",
     "486": "requires GHUS approval of docs/evidence/phase12_topic_proposal.csv",
+    "491": "GHUS decisions of 2026-10-06 (categories, collections, empty hub)",
     "495": "fails until every category_doubt review is resolved by GHUS",
     "405": "fails until every hub has a topic and center (incl. the empty 'Mining Hubs')",
     "500": "fails without a passed attestation and a passing live audit",

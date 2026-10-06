@@ -178,8 +178,14 @@
         {"id":"490","kind":"validate-postbackfill","scope":"schema-owner-deferred","action":"sql","path":"migrations/proposed/deferred/490_v2_phase12_policy_validate.sql","reason":"validate corrected actor policy while leaving category type nullable"}
       ]
     },
-    "phase12_topic_policy": {
+    "phase12_ghus_decisions": {
       "inherits": "phase12_policy_validate",
+      "steps": [
+        {"id":"491","kind":"ghus-decisions","scope":"ghus-approved-2026-10-06","action":"sql","path":"migrations/proposed/deferred/491_v2_phase12_ghus_decisions.sql","reason":"GHUS decisions: confirm proposed categories, reject collections of organizations and archive their memberships, retire the empty Mining Hubs row"}
+      ]
+    },
+    "phase12_topic_policy": {
+      "inherits": "phase12_ghus_decisions",
       "steps": [
         {"id":"486","kind":"data-backfill","scope":"ghus-approval-required","action":"sql","path":"migrations/proposed/deferred/486_v2_phase12_topic_policy.sql","reason":"GHUS-approved controlled topics, hub topics and density centers, membership topic/distance/overlap; actor_topic untouched"}
       ]

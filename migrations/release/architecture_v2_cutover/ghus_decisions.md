@@ -1,20 +1,16 @@
-# Decisions only GHUS can make
+# GHUS decisions (recorded 2026-10-06, approved by Ismail Sabbar)
 
-Nothing below was decided by an agent. The rehearsal used clearly labelled
-TEST-ONLY stand-ins, only in a local `*_rehearsal_test` database.
+| # | Question | Decision | Applied by |
+|---|---|---|---|
+| 1 | 58 proposed categories for real organizations | **Confirmed** | 491: category reviews resolved, `review_item_decision` recorded |
+| 2 | 156 collections of organizations ("aggregate") | **Dropped**: GHUS rejection event per actor (status `rejected`), their 180 hub memberships archived in `hub_actor_removed` and removed. The actor rows stay because append-only ledgers (bootstrap events, migration audit, facts) reference them; every reader and `actor_read` excludes rejected actors | 491 |
+| 3 | Topics | Hub topics approved as proposed (8 topics from legacy sectors, 48 hubs, density centers recomputed after decision 2). **Actor topics are left to Light Pull enrichment** (`actor_topic` needs a source) | 486 + `docs/evidence/phase12_topic_approval.json` |
+| 4 | Empty "Mining Hubs" (no sector, members, location) | **Retired**: archived in `hub_removed`, row removed | 491 |
+| 5 | 405 instead of 400; keep `record_verification` for person/event; drop the sync trigger in 500; `*.sql` LF rule | **Approved** | release manifest |
 
-| # | Decision | Input | Blocks | How it is recorded |
-|---|---|---|---|---|
-| 1 | Confirm or change the proposed category of **58** real organizations whose legacy value could not be mapped | `docs/evidence/phase12_category_proposals.csv` (model: claude-haiku-4-5, existing evidence only, no web fetch) | 495 → 500 | Review page → "Category reviews" panel (bulk) or per record; writes `review_item_decision` + `actor` through `decisions.record_category_review_decision` |
-| 2 | Disposition of **156** collections of organizations (e.g. "Water Treatment Companies"): convert to a network parent, or keep as a legacy collection excluded from actor views. **146** of them hold **180** of the 821 hub memberships | `docs/evidence/phase12_aggregate_disposition_proposal.csv` (`ghus_decision` column) | 495 → 500 | needs a GHUS-approved rule; either option still has to give each row an `actor_category` for 495 |
-| 3 | Approve the controlled topic list and hub topics: 8 topics 1:1 from legacy sectors (CROSS and DIASPORA held back), 48 hub topics and density centers | `docs/evidence/phase12_topic_proposal.csv` | 486 → 405 | `topic_approval.json` (SHA-256 of the CSV), then `apply topic` |
-| 4 | The empty hub "Mining Hubs": no sector, members, city or coordinates | — | 405 | assign a topic and a center, or retire the row (a retirement path does not exist yet) |
-| 5 | Approve 405 instead of 400: legacy memberships keep NULL `source_id` and NULL `outside_radius` when unknown (inventing either is not allowed) | `migrations/proposed/deferred/405_v2_hub_contract_phase12.sql` | 405 | schema-owner approval |
-| 6 | Approve keeping `record_verification` for person/event decisions until Phase 14 (contract §7 said DROP; dropping it would break event verification) | 500 | 500 | schema-owner approval |
-| 7 | Accept that `actor_topic` stays empty at cutover (membership is not topic evidence; Light Pull fills it with sources) | contract | — | GHUS acknowledgement |
+Consequences: 809 verified actors (732 live after merges), 156 rejected; 48 hubs;
+641 memberships; 214/214 category reviews resolved. `ck_actor_category_complete`
+(495) requires a category for every actor except GHUS-rejected ones.
 
-Also for GHUS information (no decision needed): 42 legacy hierarchy rows had no
-source, so they are `relationship_review` items, not edges; 154 actors have a
-`geocode_failed` review (57 no city, 51 outside the US, 41 city not in the Census
-gazetteer, 5 unrecognized state); 55 scalar values of the 7 actors without a legacy source and 10 values of the
-2 profiles without a legacy source are kept only in `legacy_migration_record`.
+Still pending as normal review work (not cutover blockers): 154 `geocode_failed`,
+42 `relationship_review` (unsourced legacy hierarchy).

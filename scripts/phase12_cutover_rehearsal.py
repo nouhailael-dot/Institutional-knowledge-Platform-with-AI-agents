@@ -4,17 +4,14 @@ LOCAL REHEARSAL ONLY. The target database name is fixed to
 `ghus_v2_phase12_rehearsal_test` on 127.0.0.1:55432 and is dropped and recreated.
 Supabase is never contacted.
 
-Decisions that only GHUS can make do not exist yet. To prove the schema can
-reach migration 500, this rehearsal applies clearly labelled TEST-ONLY
-stand-ins for them (category confirmations, aggregate dispositions, the empty
-"Mining Hubs" hub, topic approval and the cutover attestation). Every stand-in
-is recorded in the evidence file and must be replaced by real GHUS decisions
-before the production cutover.
+It applies the real GHUS decisions of 2026-10-06 (migration 491 and the topic
+approval). Only the cutover attestation is a TEST-ONLY local stand-in: on
+production it is recorded by the schema owner.
 
 Every migration stage runs through scripts/architecture_v2_release.py, exactly as
 the schema owner will run it: baseline -> expand -> gazetteer -> backfill ->
-validate -> data-loss audit (Python and SQL function, must pass) -> topic (TEST-ONLY
-approval) -> TEST-ONLY decisions -> contract -> TEST-ONLY attestation -> cutover
+validate -> GHUS decisions -> data-loss audit (Python and SQL function, must pass)
+-> topic -> contract -> TEST-ONLY attestation -> cutover
 -> every SQL stage re-run (must be a no-op) -> invariants.
 """
 
@@ -25,7 +22,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,9 +36,7 @@ DUMP_SHA256 = "08d9ce68efae470f553cb4d8b0324c0c570f7037450d8af38b5a43da07bf424b"
 PG_BIN = Path(os.environ.get("GHUS_PG_BIN", r"C:\Program Files\PostgreSQL\17\bin"))
 EVIDENCE = ROOT / "docs/evidence/phase12_cutover_rehearsal_2026-10-06.json"
 AUDIT = ROOT / "docs/evidence/pre_cutover_data_loss_audit_rehearsal_2026-10-06.json"
-TEST_ONLY = "TEST-ONLY rehearsal stand-in for a GHUS decision"
-TEST_ONLY_SQL = ROOT / "tests/fixtures/phase12_rehearsal_test_only_decisions.sql"
-TOPIC_CSV = ROOT / "docs/evidence/phase12_topic_proposal.csv"
+TOPIC_APPROVAL = ROOT / "docs/evidence/phase12_topic_approval.json"
 URL = f"postgresql://{ROLE}@{HOST}:{PORT}/{DATABASE}"
 
 
@@ -96,44 +90,6 @@ def _sql_audit() -> list[dict[str, object]]:
         return [dict(row) for row in cursor.fetchall()]
 
 
-def _test_only_decisions() -> dict[str, object]:
-    """Stand-ins for decisions GHUS has not made yet. Rehearsal database only."""
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session
-
-    from agents.review.admission import apply_category_decisions
-
-    with _connect() as connection, connection.cursor(cursor_factory=RealDictCursor) as cursor:
-        cursor.execute("""
-            SELECT review_item_id::text, payload->>'proposed_category' category
-            FROM review_item WHERE review_kind='category_doubt' AND status='pending'
-              AND payload->>'is_true_aggregate'='false'
-        """)
-        proposals = cursor.fetchall()
-    engine = create_engine(URL)
-    try:
-        with Session(engine) as session:
-            confirmed = apply_category_decisions(session, {
-                "decision_kind": "confirm_category", "reviewer": TEST_ONLY,
-                "idempotency_key": "phase12-rehearsal-categories",
-                "notes": TEST_ONLY,
-                "items": [{"review_item_id": row["review_item_id"],
-                           "actor_category": row["category"]} for row in proposals],
-            })
-    finally:
-        engine.dispose()
-    with _connect() as connection, connection.cursor() as cursor:
-        cursor.execute("SELECT count(*) FROM review_item WHERE review_kind='category_doubt' "
-                       "AND status='pending' AND payload->>'is_true_aggregate'='true'")
-        aggregates = cursor.fetchone()[0]
-        cursor.execute("SELECT count(*) FROM hub WHERE topic_id IS NULL")
-        empty_hubs = cursor.fetchone()[0]
-        cursor.execute(TEST_ONLY_SQL.read_text(encoding="utf-8"), {"who": TEST_ONLY})
-        connection.commit()
-    return {"categories_confirmed": confirmed["resolved"], "aggregates_stood_in": aggregates,
-            "empty_hubs_stood_in": empty_hubs, "label": TEST_ONLY}
-
-
 def main() -> int:
     log: list[str] = []
     started = datetime.now(UTC).isoformat()
@@ -160,7 +116,7 @@ def main() -> int:
 
     release = [sys.executable, "-m", "scripts.architecture_v2_release", "apply"]
     target = ["--database-url-env", "GHUS_REHEARSAL_DATABASE_URL"]
-    for stage in ("baseline", "expand", "gazetteer", "backfill", "validate"):
+    for stage in ("baseline", "expand", "gazetteer", "backfill", "validate", "decisions"):
         _run(release + [stage] + target, log)
     _run([sys.executable, "scripts/phase12_policy_proof.py"], log)
     audit = json.loads(AUDIT.read_text(encoding="utf-8"))
@@ -169,14 +125,7 @@ def main() -> int:
         raise RuntimeError("data-loss audit failed; migration 500 must not run")
     audit_sha256 = hashlib.sha256(AUDIT.read_bytes()).hexdigest()
 
-    with tempfile.TemporaryDirectory() as scratch:
-        approval = Path(scratch) / "topic_approval.json"
-        approval.write_text(json.dumps({
-            "approved_by": TEST_ONLY,
-            "topic_proposal_sha256": hashlib.sha256(TOPIC_CSV.read_bytes()).hexdigest(),
-        }), encoding="utf-8")
-        _run(release + ["topic"] + target + ["--topic-approval", str(approval)], log)
-    stand_ins = _test_only_decisions()
+    _run(release + ["topic"] + target + ["--topic-approval", str(TOPIC_APPROVAL)], log)
     _run(release + ["contract"] + target, log)
     with _connect() as connection, connection.cursor() as cursor:
         cursor.execute("""
@@ -189,8 +138,10 @@ def main() -> int:
     before_500 = _invariants()
     _run(release + ["cutover"] + target, log)
     rerun = "\n".join(
-        _run(release + [stage] + target, log)
-        for stage in ("expand", "backfill", "validate", "contract", "cutover")
+        _run(release + [stage] + target
+             + (["--topic-approval", str(TOPIC_APPROVAL)] if stage == "topic" else []), log)
+        for stage in ("expand", "backfill", "validate", "decisions", "topic", "contract",
+                      "cutover")
     )
     after_500 = _invariants()
     legacy_columns = _scalar("""
@@ -202,7 +153,14 @@ def main() -> int:
         SELECT count(*) FROM information_schema.tables WHERE table_schema='public'
           AND table_name IN ('organization_hierarchy','actor_profile','actor_capability_fact')
     """)
-    expected = {"actor": 965, "hub": 49, "hub_actor": 821, "event": 356}
+    expected_restored = {"actor": 965, "hub": 49, "hub_actor": 821, "event": 356}
+    # GHUS decisions: 1 empty hub retired, 180 memberships of rejected collections
+    # archived (hub_removed / hub_actor_removed); actors and events unchanged.
+    expected_after = {"actor": 965, "hub": 48, "hub_actor": 641, "event": 356}
+    archived = {"hub": _scalar("SELECT count(*) FROM hub_removed"),
+                "hub_actor": _scalar("SELECT count(*) FROM hub_actor_removed")}
+    statuses = {row: _scalar(f"SELECT count(*) FROM actor WHERE status='{row}'")
+                for row in ("verified", "rejected")}
     evidence = {
         "started_at": started,
         "finished_at": datetime.now(UTC).isoformat(),
@@ -211,11 +169,16 @@ def main() -> int:
         "dump_sha256": digest,
         "restore_skipped": "search_doc (pgvector not installed locally; derived index)",
         "row_counts": {"restored": baseline, "before_500": before_500, "after_500": after_500},
-        "invariants_hold": baseline == before_500 == after_500 == expected,
+        "invariants_hold": (baseline == expected_restored
+                            and before_500 == after_500 == expected_after
+                            and archived == {"hub": 1, "hub_actor": 180}),
+        "archived_by_ghus_decision": archived,
+        "actor_status": statuses,
         "data_loss_audit_passed_before_500": audit["passed"],
         "sql_audit_function_before_500": sql_audit,
         "data_loss_audit_sha256": audit_sha256,
-        "test_only_stand_ins": stand_ins,
+        "ghus_decisions": "491 (2026-10-06) and topic approval "
+                          "docs/evidence/phase12_topic_approval.json",
         "attestation": "TEST-ONLY local rehearsal attestation (not a GHUS approval)",
         "migration_500_applied": legacy_columns == 0 and legacy_tables == 0,
         "manifest_rerun_noop": all(line.startswith("skipped") for line in rerun.splitlines()

@@ -11,6 +11,30 @@ CREATE TABLE IF NOT EXISTS architecture_v2_cutover_baseline (
     row_count bigint NOT NULL,
     recorded_at timestamptz NOT NULL DEFAULT now()
 );
+-- Rows removed by an explicit GHUS decision are archived here, never silently lost.
+CREATE TABLE IF NOT EXISTS hub_actor_removed (
+    hub_id uuid NOT NULL,
+    actor_id uuid NOT NULL,
+    membership jsonb NOT NULL,
+    reason text NOT NULL,
+    decided_by text NOT NULL,
+    removed_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (hub_id, actor_id)
+);
+CREATE TABLE IF NOT EXISTS hub_removed (
+    hub_id uuid PRIMARY KEY,
+    hub jsonb NOT NULL,
+    reason text NOT NULL,
+    decided_by text NOT NULL,
+    removed_at timestamptz NOT NULL DEFAULT now()
+);
+DROP TRIGGER IF EXISTS hub_actor_removed_append_only ON hub_actor_removed;
+CREATE TRIGGER hub_actor_removed_append_only BEFORE UPDATE OR DELETE ON hub_actor_removed
+FOR EACH ROW EXECUTE FUNCTION ghus_reject_mutation();
+DROP TRIGGER IF EXISTS hub_removed_append_only ON hub_removed;
+CREATE TRIGGER hub_removed_append_only BEFORE UPDATE OR DELETE ON hub_removed
+FOR EACH ROW EXECUTE FUNCTION ghus_reject_mutation();
+
 -- First run records the baseline; later runs never overwrite it.
 INSERT INTO architecture_v2_cutover_baseline(table_name,row_count)
 SELECT 'actor', count(*) FROM actor
@@ -117,9 +141,12 @@ BEGIN
   check_name := 'actor_capability_fact'; source_rows := n_source; destination_rows := n_dest;
   passed := n_source = n_dest; detail := '{}'; RETURN NEXT;
 
-  -- 6. Row counts unchanged since the cutover baseline.
+  -- 6. Row counts unchanged since the cutover baseline, except rows archived by an
+  --    explicit GHUS decision (which are counted as accounted for).
   FOR field, n_source IN SELECT table_name, row_count FROM architecture_v2_cutover_baseline LOOP
     EXECUTE format('SELECT count(*) FROM %I', field) INTO n_dest;
+    IF field = 'hub' THEN n_dest := n_dest + (SELECT count(*) FROM hub_removed); END IF;
+    IF field = 'hub_actor' THEN n_dest := n_dest + (SELECT count(*) FROM hub_actor_removed); END IF;
     check_name := 'row count ' || field; source_rows := n_source; destination_rows := n_dest;
     passed := n_source = n_dest; detail := '{}'; RETURN NEXT;
   END LOOP;

@@ -95,6 +95,10 @@ def main() -> int:
             actor = _one(cursor, """
                 SELECT count(*) total,
                   count(*) FILTER(WHERE status='verified') verified,
+                  count(*) FILTER(WHERE status='rejected' AND EXISTS (
+                    SELECT 1 FROM actor_verification_event e WHERE e.actor_id=actor.actor_id
+                      AND e.decision='rejected' AND e.decision_origin='ghus_review'))
+                    rejected_by_ghus,
                   count(*) FILTER(WHERE category_type IS NOT NULL) category_type_populated,
                   count(*) FILTER(WHERE category_type IS NULL) category_type_pending,
                   count(*) FILTER(WHERE actor_category IS NULL) category_unresolved,
@@ -121,10 +125,18 @@ def main() -> int:
                   category_review
                 FROM review_item
             """)
+            # Rows removed by an explicit GHUS decision are archived, never lost.
+            archived = {"hubs": 0, "memberships": 0}
+            if _one(cursor, "SELECT to_regclass('public.hub_removed') IS NOT NULL value")["value"]:
+                archived = {
+                    "hubs": _one(cursor, "SELECT count(*) value FROM hub_removed")["value"],
+                    "memberships": _one(cursor, "SELECT count(*) value FROM hub_actor_removed")["value"],
+                }
             invariants = {
                 "hubs": _one(cursor, "SELECT count(*) value FROM hub")["value"],
                 "memberships": _one(cursor, "SELECT count(*) value FROM hub_actor")["value"],
                 "events": _one(cursor, "SELECT count(*) value FROM event")["value"],
+                "archived_by_ghus_decision": archived,
             }
             legacy_fields = {}
             for field in SCALAR_FIELDS:
@@ -188,13 +200,16 @@ def main() -> int:
 
     assertions = {
         "all_existing_actors_scoped": migration["total"] == actor["total"] == 965,
-        "all_existing_actors_verified": actor["verified"] == actor["total"],
+        # Every actor is Verified, unless GHUS explicitly rejected it with an event.
+        "all_existing_actors_verified": actor["verified"] + actor["rejected_by_ghus"]
+        == actor["total"],
         "verification_provenance_honest": events["honest_bootstrap"] == actor["total"],
         "missing_type_is_pending_not_review": actor["category_type_pending"] == 965
         and reviews["category_review"] == migration["requires_review"],
         "mapped_plus_review_reconciles": migration["mapped"] + migration["requires_review"] == actor["total"],
-        "historical_memberships_preserved": invariants["memberships"] == 821,
-        "hubs_preserved": invariants["hubs"] == 49,
+        "historical_memberships_preserved": invariants["memberships"] + archived["memberships"]
+        == 821,
+        "hubs_preserved": invariants["hubs"] + archived["hubs"] == 49,
         "events_preserved": invariants["events"] == 356,
     }
     proof = {

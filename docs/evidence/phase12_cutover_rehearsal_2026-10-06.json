@@ -1,6 +1,6 @@
 {
-  "started_at": "2026-10-06T21:50:10.999873+00:00",
-  "finished_at": "2026-10-06T21:51:06.263633+00:00",
+  "started_at": "2026-10-06T22:06:52.466929+00:00",
+  "finished_at": "2026-10-06T22:08:01.707635+00:00",
   "database": "ghus_v2_phase12_rehearsal_test",
   "production_contacted": false,
   "dump_sha256": "08d9ce68efae470f553cb4d8b0324c0c570f7037450d8af38b5a43da07bf424b",
@@ -14,18 +14,26 @@
     },
     "before_500": {
       "actor": 965,
-      "hub": 49,
-      "hub_actor": 821,
+      "hub": 48,
+      "hub_actor": 641,
       "event": 356
     },
     "after_500": {
       "actor": 965,
-      "hub": 49,
-      "hub_actor": 821,
+      "hub": 48,
+      "hub_actor": 641,
       "event": 356
     }
   },
   "invariants_hold": true,
+  "archived_by_ghus_decision": {
+    "hub": 1,
+    "hub_actor": 180
+  },
+  "actor_status": {
+    "verified": 809,
+    "rejected": 156
+  },
   "data_loss_audit_passed_before_500": true,
   "sql_audit_function_before_500": [
     {
@@ -155,30 +163,28 @@
       "passed": true
     }
   ],
-  "data_loss_audit_sha256": "47bae1ee33f30df45435dec4f3b4f909e5a48f77c8839ab7757c6d77306e29c0",
-  "test_only_stand_ins": {
-    "categories_confirmed": 58,
-    "aggregates_stood_in": 156,
-    "empty_hubs_stood_in": 1,
-    "label": "TEST-ONLY rehearsal stand-in for a GHUS decision"
-  },
+  "data_loss_audit_sha256": "e7609759294d35395393ac726de14df724c13804e56ad2a6f8ae72a41a90a680",
+  "ghus_decisions": "491 (2026-10-06) and topic approval docs/evidence/phase12_topic_approval.json",
   "attestation": "TEST-ONLY local rehearsal attestation (not a GHUS approval)",
   "migration_500_applied": true,
   "manifest_rerun_noop": true,
-  "manifest_rerun_lines": 42,
+  "manifest_rerun_lines": 44,
   "log": [
     "$ python.exe -m scripts.architecture_v2_release apply baseline --database-url-env GHUS_REHEARSAL_DATABASE_URL\nrecorded baseline row counts",
     "$ python.exe -m scripts.architecture_v2_release apply expand --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 190\napplied 200-canonical\napplied 200-location\napplied 210\napplied 220-canonical\napplied 230\napplied 240\napplied 320\napplied 350-origin\napplied phase6-canonical\napplied 380\napplied review-kinds\napplied 250\napplied 300\napplied 420\napplied 180\napplied 220\napplied 260\napplied 270\napplied 280-identity\napplied 280\napplied 290-identity\napplied 290\napplied 310\napplied 330\napplied 340\napplied 360\napplied 370\napplied 390\napplied 430\napplied 440\napplied 470",
     "$ python.exe -m scripts.architecture_v2_release apply gazetteer --database-url-env GHUS_REHEARSAL_DATABASE_URL\nloaded 32058 gazetteer places",
     "$ python.exe -m scripts.architecture_v2_release apply backfill --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 480\napplied 482\napplied 484\napplied 488\napplied 489",
     "$ python.exe -m scripts.architecture_v2_release apply validate --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 490",
+    "$ python.exe -m scripts.architecture_v2_release apply decisions --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 491",
     "$ python.exe scripts/phase12_policy_proof.py\nwrote docs\\evidence\\phase12_policy_backfill_proof_rehearsal_2026-10-06.json; passed=True\nwrote docs\\evidence\\pre_cutover_data_loss_audit_rehearsal_2026-10-06.json; passed=True",
-    "$ python.exe -m scripts.architecture_v2_release apply topic --database-url-env GHUS_REHEARSAL_DATABASE_URL --topic-approval C:\\Users\\Ismail\\AppData\\Local\\Temp\\tmp806qq6ud\\topic_approval.json\napplied 486",
+    "$ python.exe -m scripts.architecture_v2_release apply topic --database-url-env GHUS_REHEARSAL_DATABASE_URL --topic-approval C:\\Users\\Ismail\\Projects\\GHUS-Platform\\docs\\evidence\\phase12_topic_approval.json\napplied 486",
     "$ python.exe -m scripts.architecture_v2_release apply contract --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 405\napplied 410\napplied 495",
     "$ python.exe -m scripts.architecture_v2_release apply cutover --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 500",
     "$ python.exe -m scripts.architecture_v2_release apply expand --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 190: checksum already applied\nskipped 200-canonical: checksum already applied\nskipped 200-location: checksum already applied\nskipped 210: checksum already applied\nskipped 220-canonical: checksum already applied\nskipped 230: checksum already applied\nskipped 240: checksum already applied\nskipped 320: checksum already applied\nskipped 350-origin: checksum already applied\nskipped phase6-canonical: checksum already applied\nskipped 380: checksum already applied\nskipped review-kinds: checksum already applied\nskipped 250: checksum already applied\nskipped 300: checksum already applied\nskipped 420: checksum already applied\nskipped 180: checksum already applied\nskipped 220: checksum already applied\nskipped 260: checksum already applied\nskipped 270: checksum already applied\nskipped 280-identity: checksum already applied\nskipped 280: checksum already applied\nskipped 290-identity: checksum already applied\nskipped 290: checksum already applied\nskipped 310: checksum already applied\nskipped 330: checksum already applied\nskipped 340: checksum already applied\nskipped 360: checksum already applied\nskipped 370: checksum already applied\nskipped 390: checksum already applied\nskipped 430: checksum already applied\nskipped 440: checksum already applied\nskipped 470: checksum already applied",
     "$ python.exe -m scripts.architecture_v2_release apply backfill --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 480: checksum already applied\nskipped 482: checksum already applied\nskipped 484: checksum already applied\nskipped 488: checksum already applied\nskipped 489: checksum already applied",
     "$ python.exe -m scripts.architecture_v2_release apply validate --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 490: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply decisions --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 491: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply topic --database-url-env GHUS_REHEARSAL_DATABASE_URL --topic-approval C:\\Users\\Ismail\\Projects\\GHUS-Platform\\docs\\evidence\\phase12_topic_approval.json\nskipped 486: checksum already applied",
     "$ python.exe -m scripts.architecture_v2_release apply contract --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 405: checksum already applied\nskipped 410: checksum already applied\nskipped 495: checksum already applied",
     "$ python.exe -m scripts.architecture_v2_release apply cutover --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 500: checksum already applied"
   ]

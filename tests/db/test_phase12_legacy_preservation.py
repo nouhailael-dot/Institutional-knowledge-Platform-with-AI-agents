@@ -130,12 +130,17 @@ def test_category_review_confirmation_is_audited_idempotent_and_refuses_aggregat
     with engine.connect() as connection:
         outer = connection.begin()
         try:
-            proposal = connection.execute(text("""
-                SELECT review_item_id::text id, entity_id::text actor_id,
-                       payload->>'proposed_category' category
-                FROM review_item WHERE review_kind='category_doubt' AND status='pending'
-                  AND payload->>'is_true_aggregate'='false' LIMIT 1
-            """)).mappings().one()
+            # GHUS resolved every migrated category review on 2026-10-06 (491), so
+            # the test opens its own pending review inside the rolled-back transaction.
+            actor_id = connection.execute(text(
+                "SELECT actor_id::text FROM actor WHERE status='verified' "
+                "AND actor_category='company' LIMIT 1")).scalar_one()
+            proposal = {"actor_id": actor_id, "category": "startup",
+                        "id": connection.execute(text(
+                            "INSERT INTO review_item(review_kind,entity_type,entity_id,payload) "
+                            "VALUES('category_doubt','actor',CAST(:a AS uuid),"
+                            "'{\"is_true_aggregate\": false}') RETURNING review_item_id::text"),
+                            {"a": actor_id}).scalar_one()}
             aggregate = connection.execute(text("""
                 SELECT review_item_id::text id FROM review_item
                 WHERE review_kind='category_doubt' AND payload->>'is_true_aggregate'='true' LIMIT 1

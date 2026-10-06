@@ -489,6 +489,7 @@ def load_actor_reference_set(session, *, limit: int = 20) -> list[dict[str, obje
                 "FROM actor "
                 "WHERE merged_into_actor_id IS NULL "
                 "AND lower(COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type','')) <> 'aggregate' "
+                "AND COALESCE(to_jsonb(actor)->>'status','') <> 'rejected' "
                 "ORDER BY updated_at DESC NULLS LAST, name LIMIT :limit"
             ),
             {"limit": limit},
@@ -556,6 +557,7 @@ def load_actor_query_hubs(session) -> list[dict[str, object]]:
                 "LEFT JOIN actor a ON a.actor_id = ha.actor_id "
                 "AND a.merged_into_actor_id IS NULL "
                 "AND lower(COALESCE(to_jsonb(a)->>'actor_category',to_jsonb(a)->>'actor_type','')) <> 'aggregate' "
+                "AND COALESCE(to_jsonb(a)->>'status','') <> 'rejected' "
                 "WHERE h.name <> 'Mining Hubs' "
                 "GROUP BY h.hub_id, h.name, h.primary_city, h.state, h.country, h.region "
                 "ORDER BY count(a.actor_id) ASC, h.name"

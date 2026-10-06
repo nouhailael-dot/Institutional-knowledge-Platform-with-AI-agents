@@ -385,6 +385,7 @@ def load_actor_hub_sector_counts(session) -> dict[tuple[str, str], int]:
                 "= hub_actor.actor_id "
                 "AND actor.merged_into_actor_id IS NULL "
                 "AND lower(COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type','')) <> 'aggregate' "
+                "AND COALESCE(to_jsonb(actor)->>'status','') <> 'rejected' "
                 "LEFT JOIN actor_sector ON actor_sector.actor_id = actor.actor_id "
                 "AND actor_sector.sector_id = s.sector_id "
                 "WHERE h.name <> 'Mining Hubs' "
@@ -564,7 +565,8 @@ def load_existing_actor_domains(session) -> list[str]:
                 "WHERE merged_into_actor_id IS NULL "
                 "AND website IS NOT NULL "
                 "AND btrim(website) <> '' "
-                "AND lower(COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type','')) <> 'aggregate'"
+                "AND lower(COALESCE(to_jsonb(actor)->>'actor_category',to_jsonb(actor)->>'actor_type','')) <> 'aggregate' "
+                "AND COALESCE(to_jsonb(actor)->>'status','') <> 'rejected'"
             )
         )
         .mappings()

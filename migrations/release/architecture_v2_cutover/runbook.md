@@ -5,7 +5,7 @@ package. The target URL lives in a dedicated variable, never `DATABASE_URL`:
 
 ```bash
 export GHUS_RELEASE_DATABASE_URL='<owner session-pooler URL>'   # never echo it
-python -m scripts.architecture_v2_release plan                   # verifies all 43 checksums
+python -m scripts.architecture_v2_release plan                   # verifies all 44 checksums
 ```
 
 Every `apply` below needs `--database-url-env GHUS_RELEASE_DATABASE_URL --owner-approval owner_approval.json`.
@@ -33,16 +33,15 @@ Run `post_apply_checks.sql` (read-only) after each stage and stop on any surpris
 9. Smoke: Browse, Ask (status labels), SQL Ask via `actor_read`, Review
    (category panel lists 58 rows), Build the Map, discovery dry run.
 
-## GHUS review window (production stays in this state until done)
+## GHUS decisions (already taken 2026-10-06, see `ghus_decisions.md`)
 
-10. GHUS confirms the 58 categories in Review, decides the 156 aggregate
-    dispositions, approves the topic CSV and decides "Mining Hubs"
-    (`ghus_decisions.md`). Then re-run step 6; it must still pass.
+10. `apply decisions` — 491 (confirm categories, reject collections and archive
+    their memberships, retire "Mining Hubs"). Re-run step 6; it must still pass.
+11. `apply topic --topic-approval docs/evidence/phase12_topic_approval.json` — 486.
 
-## Day 2 — contract and cutover
+## Contract and cutover (after both applications are deployed)
 
-11. `apply topic --topic-approval topic_approval.json` — 486.
-12. `apply contract` — 405, 410, 495. 495 fails until every category review is resolved.
+12. `apply contract` — 405, 410, 495.
 13. Re-run the audit (step 6). If all rows pass, the schema owner records the attestation:
     ```sql
     INSERT INTO architecture_v2_cutover_attestation

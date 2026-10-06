@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-06T21:05:57.741443+00:00",
+  "generated_at": "2026-10-06T22:03:22.145072+00:00",
   "database": "ghus_v2_phase12_full_test",
   "mode": "proposal_only_requires_ghus_approval",
   "existing_controlled_topics": 0,
@@ -15,14 +15,12 @@
     "SUSTAIN",
     "WATER"
   ],
-  "hubs": 49,
+  "hubs": 48,
   "hubs_with_deterministic_topic": 48,
-  "hubs_needing_review": [
-    "Mining Hubs"
-  ],
+  "hubs_needing_review": [],
   "hubs_with_center": 48,
-  "memberships": 821,
-  "memberships_outside_radius_informational": 90,
+  "memberships": 641,
+  "memberships_outside_radius_informational": 63,
   "center_method": "density_center_v1",
   "actor_topic_policy": "actor_topic stays empty at cutover: hub membership is not topic evidence and actor_topic requires a source. Memberships carry the hub topic in hub_actor.topic_id."
 }

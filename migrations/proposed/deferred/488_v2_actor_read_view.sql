@@ -26,7 +26,9 @@ LEFT JOIN LATERAL (
            max(fact_value #>> '{}') FILTER (WHERE fact_key='primary_lifecycle_role') primary_lifecycle_role
     FROM actor_fact
     WHERE actor_fact.actor_id = a.actor_id AND fact_type = 'legacy_baseline'
-) f ON true;
+) f ON true
+-- GHUS-rejected records (e.g. collections of organizations) are not part of the map.
+WHERE a.status IS DISTINCT FROM 'rejected';
 COMMENT ON VIEW actor_read IS
     'Architecture V2 application read surface; stable across migration 500.';
 COMMIT;
