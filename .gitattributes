@@ -1,0 +1,3 @@
+# Migration checksums are computed over exact bytes: keep SQL identical on every OS.
+*.sql text eol=lf
+*.sql.tmpl text eol=lf
