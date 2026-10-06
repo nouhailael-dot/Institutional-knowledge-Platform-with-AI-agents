@@ -373,7 +373,7 @@
       "stage": "backfill",
       "action": "sql",
       "path": "migrations/proposed/deferred/488_v2_actor_read_view.sql",
-      "sha256": "368d1d8d55edbc6ec4233c0cc0d55505e3a2697202cbc8df8808de702e40b222",
+      "sha256": "722452dfe85f671032dada1e5416a14b38337c8d88517937a776ee8e0b3dd62b",
       "kind": "read-surface",
       "note": ""
     },
@@ -383,7 +383,7 @@
       "stage": "backfill",
       "action": "sql",
       "path": "migrations/proposed/deferred/489_v2_pre_cutover_audit_function.sql",
-      "sha256": "184d0d37c18f0faeff64d2fa70dea5e3ac1590163d0bdb31ae2c9defe699fb28",
+      "sha256": "263185d1d65f2176f4a2e008e5528bc2a53ba075fe4e5078d829479bbe28540d",
       "kind": "audit",
       "note": ""
     },
@@ -443,7 +443,7 @@
       "stage": "contract",
       "action": "sql",
       "path": "migrations/proposed/deferred/495_v2_actor_category_complete.sql",
-      "sha256": "b52ee86ccb56bf0c99626ebb63931312cc6d8340fa7050d85b657aa62934d969",
+      "sha256": "1226486825937ba4f4cd25f1f314c0304d594d1a7bad13f159f6544c73faa797",
       "kind": "post-review-validation",
       "note": "fails until every category_doubt review is resolved by GHUS"
     },
@@ -453,7 +453,7 @@
       "stage": "cutover",
       "action": "sql",
       "path": "migrations/proposed/deferred/500_v2_final_contract_cutover.sql",
-      "sha256": "dc81e99789ec4262aeadb840e0353db71b16553aa49a74f6a9bb4e5c834b0ec7",
+      "sha256": "c33da5bc4a996f8a8bde8c6a2bf4df0aadcc20db7bdf99f111bf2f1d25848933",
       "kind": "breaking-contract",
       "note": "fails without a passed attestation and a passing live audit"
     }

@@ -1,6 +1,6 @@
 {
-  "started_at": "2026-10-06T22:06:52.466929+00:00",
-  "finished_at": "2026-10-06T22:08:01.707635+00:00",
+  "started_at": "2026-10-06T22:16:09.003428+00:00",
+  "finished_at": "2026-10-06T22:17:16.640879+00:00",
   "database": "ghus_v2_phase12_rehearsal_test",
   "production_contacted": false,
   "dump_sha256": "08d9ce68efae470f553cb4d8b0324c0c570f7037450d8af38b5a43da07bf424b",
@@ -163,7 +163,7 @@
       "passed": true
     }
   ],
-  "data_loss_audit_sha256": "e7609759294d35395393ac726de14df724c13804e56ad2a6f8ae72a41a90a680",
+  "data_loss_audit_sha256": "574498c17755ae2cc17486e3ad06298c469d26305134811e736279b6da447c3d",
   "ghus_decisions": "491 (2026-10-06) and topic approval docs/evidence/phase12_topic_approval.json",
   "attestation": "TEST-ONLY local rehearsal attestation (not a GHUS approval)",
   "migration_500_applied": true,
