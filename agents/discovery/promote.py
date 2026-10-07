@@ -1207,6 +1207,15 @@ def _insert_actor(session, payload: dict[str, object], source_id: str) -> str:
     name = payload.get("name")
     if not name:
         raise ValueError("cannot create actor without name")
+    if "status" in _actor_columns(session):
+        # Architecture V2: an actor needs a validated category, so an unclassified
+        # affiliation stub cannot be created; route it through the V2 actor writer.
+        if not _has_value(payload.get("actor_category")):
+            raise ValueError(
+                "affiliation organization is not a classified actor; link an existing "
+                "actor or discover the organization first (V2 requires an actor category)"
+            )
+        return _insert_actor_v2(session, payload, source_id)
     actor_id = str(uuid.uuid4())
     cols: dict[str, object] = {
         "actor_id": actor_id,
@@ -1289,6 +1298,7 @@ def _persist_hub_assignment_plan(
     plan: HubAssignmentPlan,
 ) -> None:
     """Persist audit evidence and canonical memberships from one deterministic plan."""
+    location_misses: list[dict[str, object]] = []
     for evaluation in plan.evaluations:
         evidence = {
             "outcome": evaluation.outcome,
@@ -1325,7 +1335,10 @@ def _persist_hub_assignment_plan(
                 "source_id": source_id,
             },
         )
-        if evaluation.outcome in {NEEDS_REVIEW_TOPIC, NEEDS_REVIEW_LOCATION}:
+        if evaluation.outcome == NEEDS_REVIEW_LOCATION:
+            location_misses.append({"hub_id": evaluation.hub_id, "priority": evaluation.priority,
+                                    **evidence})
+        elif evaluation.outcome == NEEDS_REVIEW_TOPIC:
             _insert_hub_review_bridge(
                 session,
                 actor_id=actor_id,
@@ -1355,6 +1368,31 @@ def _persist_hub_assignment_plan(
                     "source_id": source_id,
                 },
             )
+    # Architecture V2 2.2: "topic passes, location doesn't" leaves the actor
+    # unassigned. One review per unassigned actor, listing every same-topic hub by
+    # distance; an actor already assigned to a nearer hub needs no location review.
+    if location_misses and not plan.assigned_hub_ids:
+        location_misses.sort(key=lambda item: float(item.get("distance_miles") or 0.0))
+        _insert_hub_review_bridge(
+            session,
+            actor_id=actor_id,
+            topic_id=topic_id,
+            hub_ids=[str(item["hub_id"]) for item in location_misses],
+            current_kind="hub_assignment",
+            canonical_kind="hub_needs_review",
+            canonical_outcome=NEEDS_REVIEW_LOCATION,
+            priority=str(location_misses[0]["priority"]),
+            evidence={
+                "outcome": NEEDS_REVIEW_LOCATION,
+                "nearest_hub_id": location_misses[0]["hub_id"],
+                "nearest_distance_miles": location_misses[0].get("distance_miles"),
+                "candidates": [
+                    {key: item.get(key) for key in ("hub_id", "distance_miles", "radius_miles")}
+                    for item in location_misses
+                ],
+                "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+            },
+        )
     if plan.same_topic_overlap_hub_ids:
         _insert_hub_review_bridge(
             session,
@@ -1709,6 +1747,14 @@ def _insert_person(
         "verification_status": "needs_review",
         "confidence": confidence,
     }
+    # Architecture V2: a discovered person is parked until GHUS reviews them.
+    columns = _table_columns(session, "person")
+    if "record_status" in columns:
+        cols["record_status"] = "parked"
+    if "source_origin" in columns:
+        cols["source_origin"] = "claude_discovered"
+    if columns and "verification_status" not in columns:
+        cols.pop("verification_status")
     profile_url = str(payload.get("public_profile_url") or "").strip()
     if _is_linkedin_profile(profile_url):
         cols["linkedin_url"] = profile_url

@@ -279,6 +279,7 @@ def load_person_affiliation_candidates(session) -> list[dict[str, object]]:
                 "FROM actor WHERE merged_into_actor_id IS NULL "
                 "AND lower(COALESCE(to_jsonb(actor)->>'actor_category', "
                 "to_jsonb(actor)->>'actor_type','')) <> 'aggregate' "
+                "AND COALESCE(to_jsonb(actor)->>'status','') <> 'rejected' "
                 "ORDER BY name"
             )
         )

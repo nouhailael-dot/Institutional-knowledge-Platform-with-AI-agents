@@ -27,6 +27,13 @@ EVENT_REPORT_FIELDS = (
 )
 
 
+
+# Architecture V2 classification and the topic the actor was found for.
+V2_ACTOR_EXPORT_FIELDS = (
+    "actor_category", "category_type", "category_needs_review", "topic_id",
+    "match_strength", "match_reason",
+)
+
 def write_candidate_report(
     path: Path,
     *,
@@ -271,6 +278,7 @@ def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -
         "url",
         "triage_verdict",
         "triage_reason",
+        *V2_ACTOR_EXPORT_FIELDS,
         *ACTOR_RECORD_FIELDS,
         "sector_codes",
         "hub_matches",
@@ -296,6 +304,7 @@ def write_candidate_spreadsheet(path: Path, candidates: list[CandidateRecord]) -
                     "url": candidate.url,
                     "triage_verdict": candidate.triage_verdict,
                     "triage_reason": candidate.triage_reason,
+                    **{field: _display(record.get(field)) for field in V2_ACTOR_EXPORT_FIELDS},
                     **{field: _display(record.get(field)) for field in ACTOR_RECORD_FIELDS},
                     "sector_codes": "; ".join(candidate.sector_codes),
                     "hub_matches": "; ".join(candidate.hub_matches),
