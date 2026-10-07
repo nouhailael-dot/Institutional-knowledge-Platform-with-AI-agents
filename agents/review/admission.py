@@ -473,7 +473,7 @@ def apply_category_decisions(session, decision: Mapping[str, Any]) -> dict[str, 
     }
 
 
-REVIEW_ITEM_DECISION_KINDS = {"resolve_location", "resolve_relationship"}
+REVIEW_ITEM_DECISION_KINDS = {"resolve_location", "resolve_relationship", "verify_actor"}
 
 
 def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str, Any]:
@@ -483,6 +483,7 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
     decided item is reported, not rewritten.
     """
     from agents.enrichment.decisions import (
+        record_actor_verification_review_decision,
         record_geocode_review_decision,
         record_relationship_review_decision,
     )
@@ -496,7 +497,13 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
     notes = str(decision.get("notes") or "").strip() or None
     transaction = session.begin()
     try:
-        if kind == "resolve_location":
+        if kind == "verify_actor":
+            result = record_actor_verification_review_decision(
+                session, review_item_id=item_id, decided_by=reviewer,
+                verified=bool(decision.get("verified")),
+                rejection_reason=decision.get("rejection_reason"), notes=notes, live=True,
+            )
+        elif kind == "resolve_location":
             result = record_geocode_review_decision(
                 session, review_item_id=item_id, decided_by=reviewer,
                 city=decision.get("city"), state=decision.get("state"),

@@ -417,6 +417,62 @@ def _close_review_item(session, review_item_id: str, *, decision: str, status: s
     ), {"status": status, "item": review_item_id})
 
 
+def record_actor_verification_review_decision(
+    session,
+    *,
+    review_item_id: str,
+    decided_by: str,
+    verified: bool,
+    rejection_reason: str | None = None,
+    notes: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Record the GHUS verify/reject decision behind a ``verify_actor`` review.
+
+    The actor's status is projected from the appended verification event, never
+    written directly. A verification is topic-scoped: it authorizes Deep Pull for
+    that actor and topic only.
+    """
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    if not verified and not str(rejection_reason or "").strip():
+        raise ValueError("rejecting an actor requires a rejection reason")
+    item, _payload = _pending_review_item(session, review_item_id, ("verify_actor",))
+    topic_id = session.execute(text(
+        "SELECT topic_id::text FROM review_item WHERE review_item_id=CAST(:id AS uuid)"
+    ), {"id": review_item_id}).scalar()
+    outcome: dict[str, object] = {
+        "review_item_id": review_item_id,
+        "actor_id": item["entity_id"],
+        "topic_id": topic_id,
+        "decision": "verified" if verified else "rejected",
+    }
+    if item["status"] != "pending":
+        return {**outcome, "action": "already_resolved"}
+    if not live:
+        return {**outcome, "action": "would_decide"}
+    record_verification_decision(
+        session,
+        entity_type="actor",
+        entity_ids=[str(item["entity_id"])],
+        decision="verified" if verified else "rejected",
+        decided_by=reviewer,
+        notes=notes,
+        rejection_reason=str(rejection_reason).strip() if not verified else None,
+        topic_id=topic_id,
+    )
+    _close_review_item(
+        session, review_item_id,
+        decision="approve" if verified else "reject",
+        status="approved" if verified else "rejected",
+        decided_by=reviewer,
+        reason=("verified for this topic" if verified else f"rejected: {rejection_reason}")
+        + (f"; {notes}" if notes else ""),
+    )
+    return {**outcome, "action": "decided"}
+
+
 def record_geocode_review_decision(
     session,
     *,
