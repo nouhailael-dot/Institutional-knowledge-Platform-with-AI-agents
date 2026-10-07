@@ -678,6 +678,19 @@ def fetch_score_stage_actors(
             band = "review"
             verdict = "review"
             reason = "actor rubric auto_high but canonical record is missing required name"
+        elif (
+            band == "auto_high"
+            and actor_context.get("candidate_topics")
+            and (candidate.record_preview or {}).get("match_strength") != "strong"
+        ):
+            # Architecture V2: an actor is created automatically only when its own
+            # page evidences the topic it was found for; otherwise a human decides.
+            band = "review"
+            verdict = "review"
+            reason = (
+                f"actor rubric score {float(candidate.fit_score or 0.0):.3f} -> auto_high, "
+                "but the page does not evidence the topic it was found for"
+            )
         final.append(
             replace(
                 candidate,

@@ -238,6 +238,7 @@ def promote(
                 description="agent discovery event create",
             )
             event_id = _insert_event(session, staged.normalized_payload, source_id)
+            _append_event_topics(session, event_id=event_id, staged=staged, source_id=source_id)
             _mark_index_dirty(session, entity_type="event", entity_id=event_id)
             result = PromotionResult(
                 action="created",
@@ -250,6 +251,17 @@ def promote(
             if not route.target_entity_id:
                 raise ValueError("absorb route requires target_entity_id")
             fields = _absorb_event_fields(session, route.target_entity_id, staged)
+            _append_event_topics(
+                session,
+                event_id=route.target_entity_id,
+                staged=staged,
+                source_id=insert_source(
+                    session,
+                    source_url=staged.source_url,
+                    fetched_at=staged.extracted_at,
+                    description="agent discovery event sighting",
+                ),
+            )
             if fields:
                 _mark_index_dirty(session, entity_type="event", entity_id=route.target_entity_id)
             result = PromotionResult(
@@ -331,6 +343,49 @@ def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
     )
     session.execute(text(f"INSERT INTO event ({names}) VALUES ({binds})"), cols)
     return event_id
+
+
+def _discovery_collection_request(session, staged: StagedRecord) -> str:
+    """One Layer 1 'events' collection request per discovery run (reused within the run)."""
+    need = f"Open-web event discovery run {staged.run_id}"
+    existing = session.execute(text(
+        "SELECT collection_request_id::text FROM collection_request "
+        "WHERE request_kind='events' AND need_text=:need LIMIT 1"
+    ), {"need": need}).scalar()
+    if existing:
+        return str(existing)
+    return str(session.execute(text(
+        "INSERT INTO collection_request (requested_by,request_kind,need_text,layer,approved) "
+        "VALUES ('open_web_discovery','events',:need,1,false) RETURNING collection_request_id::text"
+    ), {"need": need}).scalar_one())
+
+
+def _append_event_topics(session, *, event_id: str, staged: StagedRecord, source_id: str) -> int:
+    """Architecture V2: link the event to every active topic its own page evidences."""
+    if not _table_columns(session, "event_topic"):
+        return 0
+    codes = sorted({str(code).strip().upper() for code in staged.sector_codes if str(code).strip()})
+    if not codes:
+        return 0
+    topics = session.execute(text(
+        "SELECT topic_id::text AS topic_id, code FROM topic "
+        "WHERE active AND code = ANY(CAST(:codes AS text[]))"
+    ), {"codes": codes}).mappings().all()
+    if not topics:
+        return 0
+    request_id = _discovery_collection_request(session, staged)
+    for topic in topics:
+        session.execute(text(
+            "INSERT INTO event_topic (event_id,topic_id,why_matched,source_id,collection_request_id) "
+            "VALUES (CAST(:event AS uuid),CAST(:topic AS uuid),:why,CAST(:source AS uuid),"
+            "CAST(:request AS uuid)) ON CONFLICT DO NOTHING"
+        ), {
+            "event": event_id, "topic": topic["topic_id"], "source": source_id,
+            "request": request_id,
+            "why": f"The event page evidences the {topic['code']} sector (open-web discovery "
+                   f"run {staged.run_id}).",
+        })
+    return len(topics)
 
 
 def _absorb_event_fields(session, event_id: str, staged: StagedRecord) -> list[str]:

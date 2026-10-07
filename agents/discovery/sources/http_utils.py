@@ -144,7 +144,10 @@ class RobotsAwareHttp:
             self._respect_rate_limit()
             try:
                 response = self._client.request(method, url, headers=headers)
-            except httpx.TimeoutException:
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.RemoteProtocolError,
+                    httpx.ReadError):
+                # Transient network failures (dropped or refused connections) get the
+                # same bounded backoff as timeouts.
                 if attempt >= self.max_retries:
                     raise
                 time.sleep(2 ** attempt)
