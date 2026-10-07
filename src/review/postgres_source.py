@@ -475,6 +475,8 @@ class PostgresReviewSource:
             "SELECT ri.review_item_id::text AS review_item_id, ri.review_kind, "
             "ri.entity_type, ri.entity_id::text AS entity_id, "
             "ri.topic_id::text AS topic_id, ri.priority, ri.payload, ri.created_at, "
+            "(SELECT rel.name FROM actor rel WHERE rel.actor_id=ri.candidate_entity_id) "
+            "AS related_actor_name, "
             "a.name, NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
             "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
             "NULLIF(to_jsonb(a)->>'category_note','') AS category_note, "
@@ -502,9 +504,12 @@ class PostgresReviewSource:
             "   AND af.topic_id IS NOT DISTINCT FROM ri.topic_id"
             ") f ON true " + history_join + edge_join +
             "WHERE ri.status='pending' "
+            # GHUS-rejected records (collections of organizations) need no further review.
+            "AND COALESCE(to_jsonb(a)->>'status','') <> 'rejected' "
             "AND ri.review_kind IN ("
             " 'verify_actor','category_doubt','hub_assignment','same_topic_overlap',"
-            " 'hub_needs_review','hub_radius_overlap','hub_member_outside_radius'"
+            " 'hub_needs_review','hub_radius_overlap','hub_member_outside_radius',"
+            " 'geocode','geocode_failed','relationship_review'"
             ") ORDER BY ri.created_at"
         ).fetchall()
 
@@ -700,6 +705,7 @@ class PostgresReviewSource:
                 "review_item_id": review_id,
                 "review_kind": row.get("review_kind"),
                 "entity_id": row.get("entity_id"),
+                "related_actor_name": row.get("related_actor_name"),
                 "topic_id": row.get("topic_id"),
                 "record_status": row.get("record_status"),
                 "priority": row.get("priority"),

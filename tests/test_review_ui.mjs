@@ -5,6 +5,7 @@ import {test} from 'node:test';
 import {
   actorReviewSummary,
   canConfirmCategories,
+  canSubmitReviewItem,
   canSubmitReview,
   decisionOptions,
   diffFields,
@@ -14,6 +15,7 @@ import {
   deepPullFacts,
   lightPullFacts,
   pendingCategoryReviews,
+  reviewItemKind,
   reviewStatusLabel,
   reviewFieldLabel,
   validateReviewDraft,
@@ -126,4 +128,20 @@ test('bulk category confirmation lists only pending, categorized, non-aggregate 
   assert.equal(canConfirmCategories({selectedIds:["a"],reviewer:"GHUS",busy:false,admissionConfigured:false}),false);
   const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
   assert.match(component,/\/api\/review\/category-decisions/);
+});
+
+test('location and relationship reviews have their own validated decisions',()=>{
+  const item=(kind)=>({status:"pending_review",agent_metadata:{source_table:"review_item",review_kind:kind}});
+  assert.equal(reviewItemKind(item("geocode_failed")),"location");
+  assert.equal(reviewItemKind(item("geocode")),"location");
+  assert.equal(reviewItemKind(item("relationship_review")),"relationship");
+  assert.equal(reviewItemKind(item("verify_actor")),null);
+  const base={reviewer:"GHUS",busy:false,admissionConfigured:true};
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",city:"Austin",state:"TX"}),true);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",city:"Austin",state:""}),false);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",keepUnlocated:true,notes:""}),false);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",keepUnlocated:true,notes:"Based in Canada"}),true);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("relationship_review"),kind:"relationship",approve:true,sourceUrl:""}),false);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("relationship_review"),kind:"relationship",approve:true,sourceUrl:"https://un.org"}),true);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("relationship_review"),kind:"relationship",approve:false}),true);
 });

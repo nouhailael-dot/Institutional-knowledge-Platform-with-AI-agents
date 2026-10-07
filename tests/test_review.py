@@ -600,6 +600,53 @@ class ReviewApiTests(unittest.TestCase):
         })
         self.assertEqual(repeat.status_code, 409, repeat.text)
 
+    def test_location_and_relationship_review_items_commit_through_ghus(self):
+        def review_item(review_id, name, kind, pipeline):
+            return {
+                "source_key": f"postgres:review_item:{review_id}",
+                "source_run_id": "v2-review:unscoped",
+                "source_index": f"review-item:{review_id}",
+                "source_description": f"Architecture V2 {kind} review",
+                "entity_type": "actor",
+                "payload": {"name": name},
+                "evidence": [],
+                "agent_metadata": {"source_table": "review_item", "review_item_id": review_id,
+                                   "review_kind": kind, "pipeline": pipeline},
+                "duplicate_state": "new",
+                "created_at": 1_700_000_000,
+            }
+
+        self.store.sync_external_candidates([
+            review_item("g1", "Fort Worth Water Lab", "geocode_failed", {"reason": "missing_city"}),
+            review_item("r1", "UNDP", "relationship_review", {"legacy_relationship_type": "programme_within"}),
+        ])
+        rows = {row["display_name"]: row for row in
+                self.store.list(status="all", entity_type="actor")["candidates"]}
+        lab, undp = rows["Fort Worth Water Lab"], rows["UNDP"]
+        self.bridge.apply.return_value = {"status": "applied", "action": "located"}
+        missing = self.client.post(f"/api/review/candidates/{lab['candidate_id']}/review-item-decision",
+                                   json={"decision_kind": "resolve_location", "reviewer": "GHUS",
+                                         "idempotency_key": "k0", "confirmed": True, "city": "Fort Worth"})
+        self.assertEqual(missing.status_code, 422, missing.text)
+        located = self.client.post(f"/api/review/candidates/{lab['candidate_id']}/review-item-decision",
+                                   json={"decision_kind": "resolve_location", "reviewer": "GHUS",
+                                         "idempotency_key": "k1", "confirmed": True,
+                                         "city": "Fort Worth", "state": "Texas"})
+        self.assertEqual(located.status_code, 200, located.text)
+        sent = self.bridge.apply.call_args.args[0]
+        self.assertEqual((sent["decision_kind"], sent["review_item_id"], sent["state"]),
+                         ("resolve_location", "g1", "Texas"))
+        self.assertEqual(located.json()["status"], "approved")
+        no_source = self.client.post(f"/api/review/candidates/{undp['candidate_id']}/review-item-decision",
+                                     json={"decision_kind": "resolve_relationship", "reviewer": "GHUS",
+                                           "idempotency_key": "k2", "confirmed": True, "approve": True})
+        self.assertEqual(no_source.status_code, 422, no_source.text)
+        rejected = self.client.post(f"/api/review/candidates/{undp['candidate_id']}/review-item-decision",
+                                    json={"decision_kind": "resolve_relationship", "reviewer": "GHUS",
+                                          "idempotency_key": "k3", "confirmed": True, "approve": False})
+        self.assertEqual(rejected.status_code, 200, rejected.text)
+        self.assertEqual(rejected.json()["status"], "rejected_by_reviewer")
+
     def test_sync_is_throttled_until_explicit_refresh(self):
         source = MagicMock()
         source.fetch_candidates.return_value = ([], [])
