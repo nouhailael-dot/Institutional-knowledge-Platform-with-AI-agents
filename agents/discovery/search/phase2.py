@@ -403,6 +403,28 @@ def _collapse_candidates_by_registrable_domain(
     return survivors, duplicate_of
 
 
+def _with_found_for_topic(
+    record: dict[str, object] | None,
+    actor_context: dict[str, object],
+    url: str,
+    sector_codes: tuple[str, ...],
+) -> dict[str, object] | None:
+    """Attach the topic the actor was found for (the targeted hub's topic)."""
+    topic = (actor_context.get("candidate_topics") or {}).get(url)
+    if not record or not topic:
+        return record
+    evidenced = topic["code"] in {str(code).upper() for code in sector_codes}
+    return {
+        **record,
+        "topic_id": topic["topic_id"],
+        "match_strength": "strong" if evidenced else "moderate",
+        "match_reason": (
+            f"Found by open-web discovery for hub '{topic['hub_name']}' (topic {topic['code']})"
+            + ("; the page's own sector evidence matches the topic." if evidenced else ".")
+        ),
+    }
+
+
 def fetch_score_stage_actors(
     *,
     run_id: str,
@@ -548,7 +570,9 @@ def fetch_score_stage_actors(
                 page_fetched=True,
                 fit_score=score.total,
                 rubric=analysis.rubric,
-                record_preview=analysis.record,
+                record_preview=_with_found_for_topic(
+                    analysis.record, actor_context, candidate.url, matched_sectors
+                ),
                 score_breakdown=score.contributions,
                 score_band=actor_score_band(score.total, config),
                 hub_matches=matched_hubs,

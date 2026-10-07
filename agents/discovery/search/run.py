@@ -10,6 +10,8 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
+from sqlalchemy import text
+
 from agents.common.config import load_sources_config
 from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.llm import ClaudeToolClient, llm_usage_delta, llm_usage_snapshot
@@ -321,12 +323,14 @@ def run_search_triage(
                     if str(value).strip()
                 ]
             sectors = load_seeded_sectors(root)
+            candidate_hubs = _candidate_hubs_from_query_plan(
+                triaged_results,
+                bundle.metadata or {},
+            )
             actor_context = {
                 "coverage_counts": load_actor_hub_sector_counts(session),
-                "candidate_hubs": _candidate_hubs_from_query_plan(
-                    triaged_results,
-                    bundle.metadata or {},
-                ),
+                "candidate_hubs": candidate_hubs,
+                "candidate_topics": _candidate_topics(session, candidate_hubs),
             }
             if actor_resolver is None and session is not None:
                 actor_resolver = load_actor_resolver_class()(session, project_root=root)
@@ -946,6 +950,32 @@ def _triage_supports_actor_context(triage_client) -> bool:
         or parameter.kind == inspect.Parameter.VAR_KEYWORD
         for parameter in parameters
     )
+
+
+def _candidate_topics(
+    session, candidate_hubs: dict[str, tuple[str, ...]]
+) -> dict[str, dict[str, str]]:
+    """Architecture V2: each actor is found for the topic of the hub its query targeted."""
+    if session is None:
+        return {}
+    has_topics = session.execute(
+        text("SELECT to_regclass('public.topic') IS NOT NULL AS present")
+    ).mappings().first()
+    if not has_topics or not has_topics.get("present"):
+        return {}
+    hub_topics = {
+        str(row["name"]): {"topic_id": str(row["topic_id"]), "code": str(row["code"])}
+        for row in session.execute(text(
+            "SELECT h.name, h.topic_id::text AS topic_id, t.code FROM hub h "
+            "JOIN topic t ON t.topic_id = h.topic_id"
+        )).mappings().all()
+    }
+    topics: dict[str, dict[str, str]] = {}
+    for url, hub_names in candidate_hubs.items():
+        hub_name = next((name for name in hub_names if name in hub_topics), None)
+        if hub_name:
+            topics[url] = {**hub_topics[hub_name], "hub_name": hub_name}
+    return topics
 
 
 def _candidate_hubs_from_query_plan(

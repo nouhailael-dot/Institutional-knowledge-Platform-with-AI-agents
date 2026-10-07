@@ -28,6 +28,8 @@ class FetchedDoc:
         meta: dict[str, object] | None = None,
     ) -> "FetchedDoc":
         fetched = fetched_at or datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        # PostgreSQL text cannot hold NUL bytes (seen in some PDFs and reports).
+        content = content.replace("\x00", "")
         digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
         return cls(
             url=url,
