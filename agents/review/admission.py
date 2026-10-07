@@ -473,6 +473,49 @@ def apply_category_decisions(session, decision: Mapping[str, Any]) -> dict[str, 
     }
 
 
+REVIEW_ITEM_DECISION_KINDS = {"resolve_location", "resolve_relationship"}
+
+
+def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Apply one GHUS decision on a V2 location or relationship review item.
+
+    Canonical writes delegate to ``agents.enrichment.decisions``; replaying a
+    decided item is reported, not rewritten.
+    """
+    from agents.enrichment.decisions import (
+        record_geocode_review_decision,
+        record_relationship_review_decision,
+    )
+
+    kind = str(decision.get("decision_kind") or "")
+    if kind not in REVIEW_ITEM_DECISION_KINDS:
+        raise AdmissionValidationError("unsupported review item decision")
+    reviewer = _clean_required(decision.get("reviewer"), "reviewer", 120)
+    _clean_required(decision.get("idempotency_key"), "idempotency_key", 200)
+    item_id = _clean_required(decision.get("review_item_id"), "review_item_id", 80)
+    notes = str(decision.get("notes") or "").strip() or None
+    transaction = session.begin()
+    try:
+        if kind == "resolve_location":
+            result = record_geocode_review_decision(
+                session, review_item_id=item_id, decided_by=reviewer,
+                city=decision.get("city"), state=decision.get("state"),
+                country=decision.get("country") or "US",
+                keep_unlocated=bool(decision.get("keep_unlocated")), reason=notes, live=True,
+            )
+        else:
+            result = record_relationship_review_decision(
+                session, review_item_id=item_id, decided_by=reviewer,
+                approve=bool(decision.get("approve")), source_url=decision.get("source_url"),
+                relationship_type=decision.get("relationship_type"), reason=notes, live=True,
+            )
+        transaction.commit()
+    except Exception:
+        transaction.rollback()
+        raise
+    return {"decision_kind": kind, "status": "applied", **result}
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply one reviewed GHUS discovery decision")
     parser.add_argument("--decision", required=True, type=Path)
@@ -485,6 +528,8 @@ def _main(argv: list[str] | None = None) -> int:
     with SessionLocal() as session:
         if raw.get("decision_kind") == "confirm_category":
             outcome = apply_category_decisions(session, raw)
+        elif raw.get("decision_kind") in REVIEW_ITEM_DECISION_KINDS:
+            outcome = apply_review_item_decision(session, raw)
         else:
             outcome = apply_review_decision(session, raw)
     json.dump(outcome, sys.stdout, sort_keys=True, default=str)

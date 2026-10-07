@@ -388,6 +388,148 @@ def record_category_review_decision(
     return {**outcome, "action": "resolved"}
 
 
+def _pending_review_item(session, review_item_id: str, kinds: tuple[str, ...]):
+    item = session.execute(
+        text(
+            "SELECT review_item_id::text AS review_item_id,review_kind,entity_type,"
+            "entity_id::text AS entity_id,candidate_entity_id::text AS candidate_entity_id,"
+            "status,payload FROM review_item WHERE review_item_id=CAST(:id AS uuid) "
+            "AND review_kind = ANY(CAST(:kinds AS text[])) FOR UPDATE"
+        ),
+        {"id": review_item_id, "kinds": list(kinds)},
+    ).mappings().first()
+    if item is None:
+        raise ValueError("review item not found for this decision")
+    payload = item["payload"] if isinstance(item["payload"], dict) else json.loads(item["payload"] or "{}")
+    return dict(item), payload
+
+
+def _close_review_item(session, review_item_id: str, *, decision: str, status: str,
+                       decided_by: str, reason: str) -> None:
+    execute_canonical_write(session, text(
+        "INSERT INTO review_item_decision(review_item_decision_id,review_item_id,decision,"
+        "decided_by,reason,decided_at) VALUES (CAST(:id AS uuid),CAST(:item AS uuid),:decision,"
+        ":by,:reason,now())"
+    ), {"id": str(uuid.uuid4()), "item": review_item_id, "decision": decision,
+        "by": decided_by, "reason": reason})
+    execute_canonical_write(session, text(
+        "UPDATE review_item SET status=:status WHERE review_item_id=CAST(:item AS uuid)"
+    ), {"status": status, "item": review_item_id})
+
+
+def record_geocode_review_decision(
+    session,
+    *,
+    review_item_id: str,
+    decided_by: str,
+    city: str | None = None,
+    state: str | None = None,
+    country: str | None = "US",
+    keep_unlocated: bool = False,
+    reason: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Resolve an actor location review with a GHUS-supplied city/state.
+
+    The location is looked up in the vendored Census gazetteer; nothing is
+    guessed. When GHUS confirms the actor has no resolvable US location
+    (e.g. it is abroad), the review closes with that reason and no change.
+    """
+    from agents.common.geography import default_gazetteer
+
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    item, _payload = _pending_review_item(session, review_item_id, ("geocode", "geocode_failed"))
+    outcome: dict[str, object] = {"review_item_id": review_item_id, "actor_id": item["entity_id"]}
+    if item["status"] != "pending":
+        return {**outcome, "action": "already_resolved"}
+    if keep_unlocated:
+        note = str(reason or "").strip()
+        if not note:
+            raise ValueError("keeping an actor unlocated requires a reason")
+        if live:
+            _close_review_item(session, review_item_id, decision="resolve", status="resolved",
+                               decided_by=reviewer, reason=f"kept unlocated: {note}")
+        return {**outcome, "action": "kept_unlocated" if live else "would_keep_unlocated"}
+    result = default_gazetteer().lookup(city, state, country or "US")
+    if not result.found:
+        raise ValueError(f"location not found in the Census gazetteer ({result.reason}); "
+                         "correct the city/state or keep the actor unlocated with a reason")
+    outcome.update({"city": result.city, "state_code": result.state_code,
+                    "region_code": result.region_code, "latitude": result.latitude,
+                    "longitude": result.longitude})
+    if not live:
+        return {**outcome, "action": "would_locate"}
+    city_column = "city" if _has_column(session, "actor", "city") else "location_city"
+    execute_canonical_write(session, text(
+        f"UPDATE actor SET {city_column}=:city,state_code=:state_code,region_code=:region_code,"
+        "country='US',latitude=:latitude,longitude=:longitude,updated_at=now() "
+        "WHERE actor_id=CAST(:actor AS uuid)"
+    ), {**outcome, "actor": item["entity_id"]})
+    _close_review_item(session, review_item_id, decision="resolve", status="resolved",
+                       decided_by=reviewer,
+                       reason=f"located at {result.city}, {result.state_code} (Census gazetteer)"
+                       + (f"; {reason}" if reason else ""))
+    return {**outcome, "action": "located"}
+
+
+def record_relationship_review_decision(
+    session,
+    *,
+    review_item_id: str,
+    decided_by: str,
+    approve: bool,
+    source_url: str | None = None,
+    relationship_type: str | None = None,
+    reason: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Approve (with a source) or reject an unsourced legacy relationship."""
+    from urllib.parse import urlsplit
+
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    item, payload = _pending_review_item(session, review_item_id, ("relationship_review",))
+    outcome: dict[str, object] = {"review_item_id": review_item_id}
+    if item["status"] != "pending":
+        return {**outcome, "action": "already_resolved"}
+    if not approve:
+        if live:
+            _close_review_item(session, review_item_id, decision="reject", status="rejected",
+                               decided_by=reviewer,
+                               reason=str(reason or "").strip() or "relationship not confirmed")
+        return {**outcome, "action": "rejected" if live else "would_reject"}
+    url = str(source_url or "").strip()
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("approving a relationship requires the http(s) URL of its source")
+    request = EntityEdgeRequest(
+        subject_type="actor",
+        subject_id=str(payload.get("subject_actor_id") or item["entity_id"]),
+        relationship_type=str(relationship_type or payload.get("proposed_relationship_type")
+                              or "unit_of"),
+        object_type="actor",
+        object_id=str(payload.get("object_actor_id") or item["candidate_entity_id"]),
+        source_id="00000000-0000-0000-0000-000000000000",
+        confidence="high",
+    )
+    validate_entity_edge(request)
+    if not live:
+        return {**outcome, "action": "would_approve"}
+    source_id = insert_source(session, source_url=url, fetched_at=None,
+                              description=f"GHUS-confirmed relationship ({reviewer})",
+                              source_type="ghus_review", trust_tier="verified")
+    edge_id = append_entity_edge(session, EntityEdgeRequest(**{**request.__dict__,
+                                                               "source_id": source_id}), live=True)
+    _close_review_item(session, review_item_id, decision="approve", status="approved",
+                       decided_by=reviewer,
+                       reason=f"{request.relationship_type} confirmed with source {url}"
+                       + (f"; {reason}" if reason else ""))
+    return {**outcome, "action": "approved", "entity_edge_id": edge_id}
+
+
 def apply_hub_center_decision(
     session,
     *,
