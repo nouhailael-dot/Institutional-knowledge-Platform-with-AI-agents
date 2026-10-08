@@ -326,3 +326,41 @@ def test_the_queue_endpoint_exposes_the_run_groups(tmp_path):
     finally:
         for item in patches:
             item.stop()
+
+
+def test_a_recorded_trigger_beats_the_derived_one(store):
+    """collection_run.trigger_type is authoritative once the backend records it."""
+
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO review_candidate"
+            "(candidate_id,source_run_id,source_description,source_index,entity_type,"
+            " display_name,status,created_at,original_payload,reviewed_payload,evidence,"
+            " agent_metadata,duplicate_state)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("recorded", "run-x", "Open-web actor discovery", "1", "actor",
+             "Actor recorded", "pending_review", CUTOFF_TS + 1, "{}",
+             '{"name": "Actor recorded"}', "[]",
+             '{"trigger_type": "subscription", "cadence": "monthly",'
+             ' "initiated_by": "A GHUS Reviewer"}', "new"),
+        )
+    item = store.list(status="all")["candidates"][0]
+    # The description says nothing about a subscription; the recorded value wins.
+    assert item["run_trigger"] == "subscription"
+    assert item["run_cadence"] == "monthly"
+    assert item["run_initiated_by"] == "A GHUS Reviewer"
+
+
+def test_an_unrecognised_recorded_trigger_falls_back_rather_than_being_trusted(store):
+    _insert(store, "odd", created_at=CUTOFF_TS + 1, source_run_id="run-y",
+            description="Actor update subscription · monthly")
+    with store.connect() as db:
+        db.execute(
+            "UPDATE review_candidate SET agent_metadata=? WHERE candidate_id='odd'",
+            ('{"trigger_type": "something_invented"}',),
+        )
+    item = store.list(status="all")["candidates"][0]
+    # A value outside the controlled set is not passed through to the UI.
+    assert item["run_trigger"] == "subscription"
+    # And an absent initiator still reads as unrecorded, never defaulted.
+    assert item["run_initiated_by"] == NOT_RECORDED

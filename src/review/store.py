@@ -257,15 +257,18 @@ def review_redesign_cutoff() -> float:
     raise ReviewValidationError("REVIEW_REDESIGN_CUTOFF is not an ISO-8601 timestamp.")
 
 
-def _run_trigger(description: Any, source_run_id: Any) -> str:
-    """Derive the trigger from what the source recorded. Never invented.
+def _run_trigger(description: Any, source_run_id: Any, recorded: Any = None) -> str:
+    """The run's trigger. Recorded value first; derived only as a fallback.
 
-    The authoritative trigger_type lives on the collection-run table in the
-    backend (WS4 task 1). Until that column reaches this app, the trigger is
-    read off the run description, and anything unrecognised stays "manual"
-    rather than being guessed at.
+    ``collection_run.trigger_type`` is the authoritative source and arrives with
+    backend migration 530. When it is present it is used as-is. Until then the
+    trigger is read off the run description, and anything unrecognised stays
+    "manual" rather than being guessed at.
     """
 
+    stated = str(recorded or "").strip().casefold()
+    if stated in TRIGGER_TYPES:
+        return stated
     text = f"{description or ''} {source_run_id or ''}".casefold()
     if "migration" in text or "existing_canonical" in text:
         return "migration"
@@ -661,10 +664,14 @@ class ReviewStore:
             BACKLOG_GROUP_KEY if is_backlog else str(item.get("source_run_id") or "")
         )
         item["run_label"] = _run_label(item.get("source_description"), item.get("source_run_id"))
+        metadata = item.get("agent_metadata") or {}
         item["run_trigger"] = _run_trigger(
-            item.get("source_description"), item.get("source_run_id")
+            item.get("source_description"), item.get("source_run_id"),
+            metadata.get("trigger_type"),
         )
-        item["run_initiated_by"] = NOT_RECORDED
+        item["run_cadence"] = str(metadata.get("cadence") or "").strip() or None
+        # Never defaulted and never inferred: an unknown initiator says so.
+        item["run_initiated_by"] = str(metadata.get("initiated_by") or "").strip() or NOT_RECORDED
         return item
 
     def get(self, candidate_id: str) -> dict[str, Any]:
@@ -796,6 +803,9 @@ class ReviewStore:
                         backlog[key] = min(current, value) if key == "earliest" else max(current, value)
                 continue
             trigger = _run_trigger(row["description"], row["source_run_id"])
+            # The recorded trigger lives per candidate, not on this aggregate
+            # row, so the group label uses the derivation until the backend run
+            # model is joined in. Candidates already carry the recorded value.
             groups.append({
                 "key": row["source_run_id"],
                 "label": _run_label(row["description"], row["source_run_id"]),
