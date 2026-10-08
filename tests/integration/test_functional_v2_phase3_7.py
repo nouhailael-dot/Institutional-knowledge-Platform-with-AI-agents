@@ -99,7 +99,34 @@ def _topic(session, code: str) -> str:
     return topic_id
 
 
-def _hub(session, *, topic_id: str, latitude: float, longitude: float, radius: float = 200) -> str:
+# Sector is much broader than topic, so a fixture hub tagged with a real sector
+# would be evaluated alongside every production hub in that sector -- there are
+# five AGRI hubs in the restored copy. The fixture gets its own sector so the
+# test stays isolated from them.
+# Unique per run: this database is not reset between runs, so a fixed code
+# would make each run's hubs candidates for the next one's actors.
+FIXTURE_SECTOR = f"FXSECT{uuid.uuid4().hex[:8].upper()}"
+FIXTURE_OTHER_SECTOR = f"FXOTHER{uuid.uuid4().hex[:8].upper()}"
+
+
+def _fixture_sector(session, code: str = None) -> None:
+    session.execute(
+        text(
+            "INSERT INTO sector(code,name,description,is_thematic,active) "
+            "VALUES(:code,:name,'Synthetic sector, integration test only',"
+            "false,true) ON CONFLICT (code) DO NOTHING"
+        ),
+        {"code": code or FIXTURE_SECTOR, "name": f"FX Integration Sector {code or FIXTURE_SECTOR}"},
+    )
+    session.commit()
+
+
+def _hub(session, *, topic_id: str, latitude: float, longitude: float, radius: float = 200,
+         sector_code: str = FIXTURE_SECTOR) -> str:
+    """A synthetic hub. It needs a SECTOR, because that is Test 1 since 2026-10-08."""
+
+    _fixture_sector(session, sector_code)
+
     hub_id = str(uuid.uuid4())
     session.execute(
         text(
@@ -112,6 +139,14 @@ def _hub(session, *, topic_id: str, latitude: float, longitude: float, radius: f
          "slug": f"synthetic-hub-{hub_id}", "topic": topic_id,
          "lat": latitude, "lon": longitude, "radius": radius},
     )
+    session.execute(
+        text(
+            "INSERT INTO hub_sector(hub_id,sector_id,is_primary,source) "
+            "SELECT CAST(:id AS uuid),sector_id,true,'integration fixture' "
+            "FROM sector WHERE code=:code"
+        ),
+        {"id": hub_id, "code": sector_code},
+    )
     session.commit()
     return hub_id
 
@@ -121,7 +156,7 @@ def _new_payload(name: str, topic_id: str, *, lat: float = 42.3601, lon: float =
         "name": name,
         "website": f"https://{uuid.uuid4().hex}.example.test",
         "actor_category": "company",
-        "category_type": "corporate_rd_center",
+        "category_type": "private_company",
         "classification_evidence": {
             "main_job": "The official source describes a company operating a climate technology R&D center."
         },
@@ -132,6 +167,8 @@ def _new_payload(name: str, topic_id: str, *, lat: float = 42.3601, lon: float =
         "latitude": lat,
         "longitude": lon,
         "topic_id": topic_id,
+        # Hub membership gates on sector; the staged record carries it through.
+        "sector_codes": [FIXTURE_SECTOR],
     }
 
 
@@ -206,9 +243,17 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
         by_key = {row["fact_key"]: row for row in light_facts}
         assert by_key["location"]["fact_value"]["region_code"] == "northeast"
         assert by_key["hub_assignment"]["fact_value"]["assigned_hub_ids"] == [inside_hub]
-        hub_evaluation = by_key["hub_assignment"]["fact_value"]["evaluations"][0]
-        assert hub_evaluation["selected"] is True
+        # Every hub in the actor's sector is evaluated, so the selected one is
+        # found by its flag rather than by position in the list.
+        evaluations = by_key["hub_assignment"]["fact_value"]["evaluations"]
+        selected = [item for item in evaluations if item["selected"]]
+        assert len(selected) == 1, "exactly one hub is selected"
+        hub_evaluation = selected[0]
+        assert hub_evaluation["hub_id"] == inside_hub
         assert hub_evaluation["distance_miles"] is not None
+        # Test 1 was the sector, and both results travel with the evidence.
+        assert hub_evaluation["dimension"] == "sector"
+        assert hub_evaluation["sector_matched"] is True
         assert by_key["parent_connection"]["fact_value"] == {
             "state": "standalone", "parent": None,
         }
@@ -247,9 +292,15 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
             ), {"id": created.entity_id}
         ).scalar_one() == "rejected"
 
+        # A different SECTOR is what blocks assignment now. A different topic
+        # does not: the actor joins, and the topic mismatch is recorded on the
+        # evidence rather than refusing the hub (GHUS decision, 2026-10-08).
         topic_mismatch = _topic(session, f"mismatch-{uuid.uuid4().hex[:10]}")
         other_topic = _topic(session, f"other-{uuid.uuid4().hex[:10]}")
-        mismatch_hub = _hub(session, topic_id=other_topic, latitude=42.36, longitude=-71.06)
+        mismatch_hub = _hub(
+            session, topic_id=other_topic, latitude=42.36, longitude=-71.06,
+            sector_code=FIXTURE_OTHER_SECTOR,
+        )
         mismatch_staged = _stage(
             session, _new_payload(f"Mismatch Actor {uuid.uuid4().hex[:8]}", topic_mismatch),
             suffix="mismatch",
@@ -258,9 +309,21 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
         mismatch_route.metadata["hub_ids"] = [mismatch_hub]
         mismatch = _promote_live(session, mismatch_staged, mismatch_route)
         assert session.execute(
-            text("SELECT count(*) FROM review_item WHERE entity_id=CAST(:id AS uuid) AND payload->>'canonical_outcome'='needs_review_topic'"),
+            text("SELECT count(*) FROM review_item WHERE entity_id=CAST(:id AS uuid) AND payload->>'canonical_outcome'='needs_review_sector'"),
             {"id": mismatch.entity_id},
         ).scalar_one() == 1
+        # And the evidence records that the sector failed while keeping the
+        # topic result alongside it.
+        gate = session.execute(
+            text(
+                "SELECT outcome,sector_matched,topic_matched,dimension "
+                "FROM hub_assignment_evidence WHERE actor_id=CAST(:id AS uuid) "
+                "AND hub_id=CAST(:hub AS uuid)"
+            ),
+            {"id": mismatch.entity_id, "hub": mismatch_hub},
+        ).mappings().one()
+        assert gate["outcome"] == "needs_review_sector"
+        assert gate["sector_matched"] is False and gate["dimension"] == "sector"
 
         topic_outside = _topic(session, f"outside-{uuid.uuid4().hex[:10]}")
         _hub(session, topic_id=topic_outside, latitude=34.0522, longitude=-118.2437, radius=50)

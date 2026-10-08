@@ -23,7 +23,7 @@ def _payload(**overrides):
         "name": "Evidence Systems",
         "website": "https://evidence.example.org",
         "description": "Builds evidence systems for the mapped topic.",
-        "category_type": "corporate_rd_center",
+        "category_type": "private_company",
         "country": "United States",
         "location_city": "Boston",
         "match_strength": "strong",

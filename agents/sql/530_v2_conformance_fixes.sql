@@ -254,6 +254,31 @@ ALTER TABLE hub_assignment_evidence
     ADD CONSTRAINT ck_hub_assignment_dimension
     CHECK (dimension IS NULL OR dimension IN ('sector', 'topic')) NOT VALID;
 
+-- The outcome vocabulary gains the sector verdict. Found by running the Phase
+-- 3-7 integration test against a real database: the existing CHECK allowed only
+-- the topic verdict, so every sector-gated evaluation was rejected on insert.
+ALTER TABLE hub_assignment_evidence DROP CONSTRAINT IF EXISTS hub_assignment_evidence_outcome_check;
+ALTER TABLE hub_assignment_evidence
+    ADD CONSTRAINT hub_assignment_evidence_outcome_check
+    CHECK (outcome IN ('assigned', 'needs_review_sector', 'needs_review_topic',
+                       'needs_review_location', 'legacy_membership_preserved'));
+
+-- ck_hub_assignment_evidence_topic_order encoded the OLD rule: location is only
+-- evaluated when the TOPIC matched. Under the sector rule, location is
+-- evaluated when the SECTOR matched and the topic may well differ -- which is
+-- the whole point of the change. The replacement keeps the ordering guarantee
+-- (Test 2 never runs unless Test 1 passed) against whichever test was Test 1.
+--
+-- A legacy row has dimension NULL and keeps the original meaning exactly.
+ALTER TABLE hub_assignment_evidence DROP CONSTRAINT IF EXISTS ck_hub_assignment_evidence_topic_order;
+ALTER TABLE hub_assignment_evidence
+    ADD CONSTRAINT ck_hub_assignment_evidence_gate_order
+    CHECK (
+        NOT location_evaluated
+        OR (dimension IS DISTINCT FROM 'sector' AND topic_matched)
+        OR (dimension = 'sector' AND sector_matched)
+    );
+
 COMMENT ON COLUMN hub_assignment_evidence.topic_matched IS
     'Whether the actor topic matched the hub topic. Still recorded, but since '
     '2026-10-08 it is secondary: see dimension for what actually decided.';

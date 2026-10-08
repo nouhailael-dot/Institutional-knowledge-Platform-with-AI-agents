@@ -244,9 +244,17 @@ def test_orm_columns_match_isolated_v2_database(v2_engine: Engine):
 
 
 def test_reference_seed_counts(v2_engine: Engine):
-    expected = {
+    """The reference data is complete, whichever catalog the database holds.
+
+    A database that has had agents/sql/510 applied carries the Intern Guide's
+    69 selectable types plus the retired Phase 5 rows; one that has not carries
+    the 65 Phase 5 types and nothing retired. Both are valid states, so the
+    assertion is on what must be true of either: 12 categories, every category
+    with a selectable catch-all, and no type row ever deleted.
+    """
+
+    fixed = {
         "actor_category_definition": 12,
-        "actor_category_type_definition": 65,
         "region_definition": 7,
         "region_state": 51,
         "source_origin_definition": 7,
@@ -254,9 +262,32 @@ def test_reference_seed_counts(v2_engine: Engine):
     with v2_engine.connect() as connection:
         actual = {
             table: connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
-            for table in expected
+            for table in fixed
         }
-    assert actual == expected
+        selectable = connection.execute(
+            text("SELECT count(*) FROM actor_category_type_definition WHERE active")
+        ).scalar_one()
+        total = connection.execute(
+            text("SELECT count(*) FROM actor_category_type_definition")
+        ).scalar_one()
+        catch_alls = connection.execute(
+            text(
+                "SELECT count(*) FROM actor_category_definition c WHERE EXISTS ("
+                " SELECT 1 FROM actor_category_type_definition t"
+                " WHERE t.category_code=c.category_code AND t.active"
+                "   AND t.type_code IN ('not_applicable','other'))"
+            )
+        ).scalar_one()
+    assert actual == fixed
+    assert selectable in (65, 69), (
+        f"expected the Phase 5 catalog (65) or the Intern Guide catalog (69), found {selectable}"
+    )
+    # Retiring never deletes, so the total can only grow.
+    assert total >= selectable
+    if selectable == 69:
+        assert total > 69, "applying 510 must keep the superseded Phase 5 rows"
+    # Every category can always be answered, even when nothing listed fits.
+    assert catch_alls == 12
 
 
 def test_phase3_record_creation_dry_run_executes_then_rolls_back(v2_engine: Engine):

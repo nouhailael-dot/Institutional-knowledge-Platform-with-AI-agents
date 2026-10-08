@@ -30,6 +30,7 @@ from agents.common.geography import PreparedActorGeography, prepare_actor_geogra
 from agents.common.hub_assignment import (
     HUB_ASSIGNMENT_METHOD_VERSION,
     NEEDS_REVIEW_LOCATION,
+    NEEDS_REVIEW_SECTOR,
     NEEDS_REVIEW_TOPIC,
     ActorHubContext,
     HubAssignmentPlan,
@@ -1395,16 +1396,27 @@ def _persist_hub_assignment_plan(
             "selected": evaluation.selected,
             "method_version": evaluation.method_version,
         }
+        # sector_matched and dimension arrive with migration 530. Written as
+        # real columns when they exist, so the gate is queryable and not only
+        # readable inside the JSON payload.
+        gate_columns = _table_columns(session, "hub_assignment_evidence")
+        has_gate = {"sector_matched", "dimension"} <= set(gate_columns)
+        gate_names = ",sector_matched,dimension" if has_gate else ""
+        gate_values = ",:sector_matched,:dimension" if has_gate else ""
         session.execute(
             text(
                 "INSERT INTO hub_assignment_evidence (actor_id,hub_id,topic_id,outcome,"
                 "topic_matched,location_evaluated,distance_miles,radius_miles,outside_radius,"
-                "selected,method_version,evidence,source_id) VALUES (CAST(:actor_id AS uuid),"
+                "selected,method_version,evidence,source_id" + gate_names + ") "
+                "VALUES (CAST(:actor_id AS uuid),"
                 "CAST(:hub_id AS uuid),CAST(:topic_id AS uuid),:outcome,:topic_matched,"
                 ":location_evaluated,:distance_miles,:radius_miles,:outside_radius,:selected,"
-                ":method_version,CAST(:evidence AS jsonb),CAST(:source_id AS uuid))"
+                ":method_version,CAST(:evidence AS jsonb),CAST(:source_id AS uuid)"
+                + gate_values + ")"
             ),
             {
+                **({"sector_matched": evaluation.sector_matched,
+                    "dimension": evaluation.dimension} if has_gate else {}),
                 "actor_id": actor_id,
                 "hub_id": evaluation.hub_id,
                 "topic_id": topic_id,
@@ -1423,7 +1435,7 @@ def _persist_hub_assignment_plan(
         if evaluation.outcome == NEEDS_REVIEW_LOCATION:
             location_misses.append({"hub_id": evaluation.hub_id, "priority": evaluation.priority,
                                     **evidence})
-        elif evaluation.outcome == NEEDS_REVIEW_TOPIC:
+        elif evaluation.outcome in (NEEDS_REVIEW_SECTOR, NEEDS_REVIEW_TOPIC):
             _insert_hub_review_bridge(
                 session,
                 actor_id=actor_id,

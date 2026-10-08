@@ -57,7 +57,7 @@ def test_verified_topic_gate_and_live_layer2_append(session_factory):
             payload={}, normalized_payload={
                 "name": f"Deep Pull Actor {uuid.uuid4().hex[:8]}",
                 "website": "https://deep.example.test", "description": "Topic research.",
-                "actor_category": "company", "category_type": "corporate_rd_center",
+                "actor_category": "company", "category_type": "private_company",
                 "classification_evidence": {"main_job": "A corporate topic R&D center."},
                 "country": "United States", "location_city": "Boston", "state_code": "MA",
                 "topic_id": topic_id, "match_reason": "Official topic work is documented.",
