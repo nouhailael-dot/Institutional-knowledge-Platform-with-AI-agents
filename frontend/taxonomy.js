@@ -225,19 +225,34 @@ export const LINK_TYPES = [
   ["collaborates_with", "Collaborates with", false, "A documented partnership that is not parenthood, membership or funding."],
   ["organizes", "Organizes", false, "An actor to an event it runs."],
   ["participates_in", "Participates in", false, "An actor to an event it takes part in without organizing."],
-  ["connected_to_um6p_ocp_entity", "Connected to UM6P/OCP Entity", false, "A documented connection to the master list. Never affects ranking or priority."],
+  // The stored code is `connected_to_um6p_ocp`: that is what the entity_edge
+  // CHECK constraint allows, so it is what arrives from the database. The Guide
+  // writes the label with "Entity" on the end, which is what we display.
+  ["connected_to_um6p_ocp", "Connected to UM6P/OCP Entity", false, "A documented connection to the master list. Never affects ranking or priority."],
 ];
+
+// The Intern Guide's Appendix B spells this code with a trailing `_entity`.
+// The database does not. Accepting both means a record written under either
+// spelling still displays its real label instead of a raw code.
+const LINK_TYPE_ALIASES = {connected_to_um6p_ocp_entity: "connected_to_um6p_ocp"};
+
+function canonicalLinkType(code) {
+  const value = String(code || "");
+  return LINK_TYPE_ALIASES[value] || value;
+}
 
 export const PARENT_LINK_TYPES = LINK_TYPES.filter(([, , isParent]) => isParent)
   .map(([value, label, , rule]) => ({ value, label, rule }));
 
 export function linkTypeLabel(code) {
-  const found = LINK_TYPES.find(([value]) => value === code);
+  const canonical = canonicalLinkType(code);
+  const found = LINK_TYPES.find(([value]) => value === canonical);
   return found ? found[1] : String(code || "").replaceAll("_", " ");
 }
 
 export function isParentLink(code) {
-  return PARENT_LINK_TYPES.some(option => option.value === code);
+  const canonical = canonicalLinkType(code);
+  return PARENT_LINK_TYPES.some(option => option.value === canonical);
 }
 
 // ------------------------------------------------------- missingness vocabulary

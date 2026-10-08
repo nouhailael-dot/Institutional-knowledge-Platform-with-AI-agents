@@ -236,8 +236,18 @@ LINK_TYPES: tuple[tuple[str, str, bool], ...] = (
     ("collaborates_with", "Collaborates with", False),
     ("organizes", "Organizes", False),
     ("participates_in", "Participates in", False),
-    ("connected_to_um6p_ocp_entity", "Connected to UM6P/OCP Entity", False),
+    # The stored code is `connected_to_um6p_ocp`: that is what the entity_edge
+    # CHECK constraint allows, so it is what arrives from the database. The
+    # Guide writes the label with "Entity" on the end, which is what we display.
+    ("connected_to_um6p_ocp", "Connected to UM6P/OCP Entity", False),
 )
+
+# Appendix B of the Guide spells this code with a trailing `_entity`; the
+# database does not. Accepting both keeps a record written under either spelling
+# displaying its real label instead of a raw code.
+LINK_TYPE_ALIASES: dict[str, str] = {
+    "connected_to_um6p_ocp_entity": "connected_to_um6p_ocp",
+}
 PARENT_LINK_TYPES: tuple[str, ...] = tuple(
     code for code, _label, is_parent in LINK_TYPES if is_parent
 )

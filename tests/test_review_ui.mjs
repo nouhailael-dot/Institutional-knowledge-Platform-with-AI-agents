@@ -20,6 +20,8 @@ import {
   lightPullFacts,
   otherRelationships,
   REVIEW_REASON_LABELS,
+  confidenceLabel,
+  matchStrengthLabel,
   parentDisplay,
   pendingEdits,
   reviewFieldLabel,
@@ -35,7 +37,9 @@ import {
   NOT_APPLICABLE,
   PARENT_LINK_TYPES,
   RETIRED_CATCH_ALL,
+  isParentLink,
   isValidPair,
+  linkTypeLabel,
   regionForState,
   typeOptions,
 } from '../frontend/taxonomy.js';
@@ -510,4 +514,73 @@ test('every review reason has its own label, and none reads as a decision', () =
   assert.equal(reviewReasonLabel('verify_event'), 'Awaiting Event Verification');
   assert.equal(reviewReasonLabel('hub_assignment'), 'Hub Assignment');
   assert.equal(reviewReasonLabel('same_topic_overlap'), 'Same Topic Overlap');
+});
+
+// ------------------------------- agreement with the database's own vocabulary
+// These pin the UI to the CHECK constraints in the Architecture V2 target
+// schema (docs/evidence/v2_target_schema_manifest_2026-10-06.json in the
+// backend repo). A value the database can store must render as a real label,
+// never as a raw code.
+
+test('the ledger state not_yet_collected reads Not Yet Checked', () => {
+  // actor_fact_collection_state_check allows exactly found / not_found /
+  // not_yet_collected, and anything other than found carries a NULL value.
+  const rows = lightFactRows({
+    reviewed_payload: {actor_category: 'company'},
+    agent_metadata: {facts: [
+      {fact_type: 'light_pull', layer: 1, fact_key: 'funding_signal',
+       collection_state: 'not_yet_collected', value: null},
+      {fact_type: 'light_pull', layer: 1, fact_key: 'recent_activity',
+       collection_state: 'not_found', value: null},
+      {fact_type: 'light_pull', layer: 1, fact_key: 'description',
+       collection_state: 'found', value: 'A company.'},
+    ]},
+  });
+  const byKey = Object.fromEntries(rows.map(row => [row.key, row]));
+  assert.equal(byKey.funding_signal.state, MISSING.notYetChecked);
+  assert.equal(byKey.recent_activity.state, MISSING.notFound);
+  assert.equal(byKey.description.state, null);
+  assert.equal(byKey.description.value, 'A company.');
+});
+
+test('the stored UM6P/OCP link code resolves to its Guide label', () => {
+  // entity_edge_relationship_type_check allows connected_to_um6p_ocp, without
+  // the trailing _entity that Appendix B writes. Both must display properly.
+  assert.equal(linkTypeLabel('connected_to_um6p_ocp'), 'Connected to UM6P/OCP Entity');
+  assert.equal(linkTypeLabel('connected_to_um6p_ocp_entity'), 'Connected to UM6P/OCP Entity');
+  assert.equal(isParentLink('connected_to_um6p_ocp'), false);
+});
+
+test('every review_kind the database allows has a label', () => {
+  // The full ck_review_item_kind list.
+  const stored = [
+    'verify_actor', 'category_doubt', 'geocode_failed', 'hub_needs_review',
+    'hub_radius_overlap', 'hub_member_outside_radius', 'hub_center_drift',
+    'hub_proposal', 'possible_duplicate', 'fact_conflict', 'pending_update',
+    'verify_person', 'verify_event', 'identity', 'affiliation_change',
+    'classification', 'geocode', 'hub_assignment', 'same_topic_overlap',
+    'new_hub', 'pending_human_update',
+  ];
+  for (const kind of stored) {
+    const label = reviewReasonLabel(kind);
+    assert.ok(REVIEW_REASON_LABELS[kind], `${kind} has no label`);
+    assert.ok(!label.includes('_'), `${kind} renders as a raw code`);
+    assert.ok(/^[A-Z]/.test(label), `${kind} label is not Title Case`);
+  }
+  assert.equal(new Set(stored.map(reviewReasonLabel)).size, stored.length,
+    'two review kinds share a label');
+});
+
+test('controlled strength and confidence values display as labels', () => {
+  // actor_topic_match_strength_check: strong | moderate.
+  // actor_fact_confidence_check: high | medium | low. All stored lower case.
+  assert.equal(matchStrengthLabel('strong'), 'Strong');
+  assert.equal(matchStrengthLabel('moderate'), 'Moderate');
+  assert.equal(confidenceLabel('high'), 'High');
+  assert.equal(confidenceLabel('medium'), 'Medium');
+  assert.equal(confidenceLabel('low'), 'Low');
+  // An unknown value is shown as stored, never guessed at.
+  assert.equal(confidenceLabel('unverifiable'), 'unverifiable');
+  assert.equal(confidenceLabel(null), null);
+  assert.equal(matchStrengthLabel(null), MISSING.notFound);
 });

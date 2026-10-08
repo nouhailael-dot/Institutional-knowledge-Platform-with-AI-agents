@@ -23,6 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.review.taxonomy import (  # noqa: E402
     CATEGORIES,
+    LINK_TYPE_ALIASES,
+    LINK_TYPE_LABELS,
     LINK_TYPES,
     MISSING,
     NON_US_REGION,
@@ -380,11 +382,18 @@ def test_only_unit_of_and_operated_by_are_parenthood():
 
 def test_all_eleven_guide_link_types_are_present():
     assert len(LINK_TYPES) == 11
+    # These codes are the ones the database stores: they match the
+    # entity_edge_relationship_type_check constraint in the Architecture V2
+    # target schema exactly. Appendix B of the Guide spells the last one with a
+    # trailing `_entity`; the database does not, so the alias below carries the
+    # Guide's spelling without letting the UI emit a code the DB would reject.
     assert {code for code, _label, _p in LINK_TYPES} == {
         "unit_of", "operated_by", "affiliated_with", "member_of", "portfolio_of",
         "spinout_of", "funded_by", "collaborates_with", "organizes", "participates_in",
-        "connected_to_um6p_ocp_entity",
+        "connected_to_um6p_ocp",
     }
+    assert LINK_TYPE_ALIASES == {"connected_to_um6p_ocp_entity": "connected_to_um6p_ocp"}
+    assert LINK_TYPE_LABELS["connected_to_um6p_ocp"] == "Connected to UM6P/OCP Entity"
 
 
 def test_the_six_missingness_words_are_distinct():

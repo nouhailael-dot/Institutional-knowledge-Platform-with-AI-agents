@@ -59,6 +59,14 @@ export const REVIEW_REASON_LABELS = {
   possible_duplicate: BADGES.possibleDuplicate,
   fact_conflict: BADGES.factConflict,
   pending_update: BADGES.pendingUpdate,
+  // The remaining kinds the review_item CHECK constraint allows. Without these
+  // a real queue row would show a raw lower-case code.
+  identity: BADGES.identityReview,
+  affiliation_change: BADGES.affiliationChange,
+  classification: BADGES.classificationReview,
+  geocode: BADGES.geocodeReview,
+  new_hub: BADGES.newHubProposal,
+  pending_human_update: BADGES.pendingHumanUpdate,
 };
 export const RECORD_KIND_LABELS = {actor: BADGES.actor, event: BADGES.event, person: BADGES.person};
 
@@ -79,6 +87,22 @@ export function reviewStatusLabel(value) {
 export function reviewReasonLabel(value) {
   if (!value) return "";
   return REVIEW_REASON_LABELS[value] || String(value).replaceAll("_", " ");
+}
+
+// actor_topic.match_strength and actor_fact.confidence are controlled values
+// stored lower case. They are vocabulary, not source data, so they display as
+// labels; an unrecognised value is shown as stored rather than guessed at.
+export const MATCH_STRENGTH_LABELS = {strong: BADGES.strong, moderate: BADGES.moderate};
+export const CONFIDENCE_LABELS = {high: BADGES.high, medium: BADGES.medium, low: BADGES.low};
+
+export function matchStrengthLabel(value) {
+  const key = String(value || "").toLocaleLowerCase();
+  return MATCH_STRENGTH_LABELS[key] || value || MISSING.notFound;
+}
+
+export function confidenceLabel(value) {
+  const key = String(value || "").toLocaleLowerCase();
+  return CONFIDENCE_LABELS[key] || value || null;
 }
 
 // Candidate IDs and run UUIDs belong in Audit & Details, never in a queue row
@@ -302,9 +326,14 @@ export function lightFactRows(candidate) {
           source: null, dateRead: null, confidence: null, origin: null,
         };
       }
+      // The ledger's own vocabulary, from the actor_fact CHECK constraint:
+      // 'found', 'not_found', 'not_yet_collected'. A state other than 'found'
+      // carries a NULL value by that same constraint, so the row must report
+      // which kind of missing it is rather than printing an empty value.
       const missing = String(fact.collection_state || "").toLocaleLowerCase();
       const state = missing === "not_found" ? MISSING.notFound
-        : missing === "not_checked" || missing === "not_yet_checked" ? MISSING.notYetChecked
+        : ["not_yet_collected", "not_checked", "not_yet_checked"].includes(missing)
+          ? MISSING.notYetChecked
         : null;
       return {
         key, label,
@@ -315,7 +344,7 @@ export function lightFactRows(candidate) {
         metaState: state === MISSING.notYetChecked ? MISSING.notYetChecked : MISSING.notFound,
         source: present(fact.source_url),
         dateRead: present(fact.date_read),
-        confidence: present(fact.confidence),
+        confidence: confidenceLabel(present(fact.confidence)),
         origin: present(fact.source_origin),
       };
     });
@@ -328,7 +357,7 @@ export function factHistoryRows(candidate) {
       key: String(fact.fact_key),
       label: factRowLabel(candidate, String(fact.fact_key)),
       value: fact.value ?? null,
-      confidence: present(fact.confidence),
+      confidence: confidenceLabel(present(fact.confidence)),
       dateRead: present(fact.date_read),
       isCurrent: Boolean(fact.is_current),
       lifecycle: present(fact.lifecycle_state),
@@ -922,7 +951,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   const why = selected.agent_metadata?.why_matched;
                   if (!why) return html`<p class="muted">${MISSING.notYetChecked}</p>`;
                   return html`<dl class="review-facts">
-                    <div><dt>${FIELDS.strength}</dt><dd>${why.strength || MISSING.notFound}</dd></div>
+                    <div><dt>${FIELDS.strength}</dt><dd>${matchStrengthLabel(why.strength)}</dd></div>
                     <div><dt>${FIELDS.dateRead}</dt><dd>${why.date_read || MISSING.notFound}</dd></div>
                   </dl>
                   <p>${why.reason || MISSING.notFound}</p>
