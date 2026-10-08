@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -34,6 +36,18 @@ REJECTION_REASONS = (
 REVIEWABLE_RUN_STATUSES = (
     "done", "interrupted", "cancelled", "cost_unknown", "budget_stopped", "error",
 )
+REVIEW_INBOXES = ("current", "history", "actionable", "incomplete", "development", "all")
+
+_UUID_OR_RUN_ID = re.compile(
+    r"^(?:(?:discovery|run|actor|candidate)\s*[:#_-]\s*)?"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+_PLACEHOLDER_ACTOR_NAMES = {
+    "actor", "company", "organization", "organisation", "discovery", "n/a", "na",
+    "none", "null", "placeholder", "tbd", "unknown", "unknown actor",
+    "unknown company", "unknown organization", "unnamed", "unnamed actor",
+}
 
 EDITABLE_FIELDS = {
     "actor": (
@@ -153,6 +167,111 @@ def _candidate_name(entity_type: str, payload: dict[str, Any]) -> str:
     if entity_type == "person":
         return str(payload.get("full_name") or payload.get("name") or "Unnamed person")
     return str(payload.get("name") or f"Unnamed {entity_type}")
+
+
+def _actor_identity_reason(candidate: dict[str, Any]) -> str | None:
+    if candidate.get("entity_type") != "actor":
+        return None
+    payload = candidate.get("reviewed_payload") or candidate.get("original_payload") or {}
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        return "missing_actor_name"
+    normalized = " ".join(name.casefold().split())
+    if normalized in _PLACEHOLDER_ACTOR_NAMES or normalized.startswith("unnamed actor"):
+        return "placeholder_actor_name"
+    if (_UUID_OR_RUN_ID.fullmatch(name)
+            or name == str(candidate.get("source_run_id") or "")
+            or name == str(candidate.get("source_index") or "")
+            or name == str(candidate.get("candidate_id") or "")):
+        return "identifier_used_as_actor_name"
+    return None
+
+
+def _run_kind(candidate: dict[str, Any]) -> str:
+    metadata = candidate.get("agent_metadata") or {}
+    source_table = str(metadata.get("source_table") or "").casefold()
+    configured = str(metadata.get("review_run_type") or "").casefold()
+    source_run_id = str(candidate.get("source_run_id") or "")
+    if source_table == "review_item" or configured == "architecture_v2_review":
+        return "architecture_v2_review"
+    if source_run_id.startswith("discovery:") or source_table in {
+        "search_candidate", "event_review_queue", "person_review_queue",
+    }:
+        return "discovery"
+    if configured == "build_the_map" or not source_run_id.startswith(("discovery:", "v2-review:")):
+        return "build_the_map"
+    return "other"
+
+
+def _is_development_candidate(candidate: dict[str, Any]) -> bool:
+    metadata = candidate.get("agent_metadata") or {}
+    environment = str(metadata.get("source_environment") or "").casefold()
+    mode = str(metadata.get("review_run_mode") or metadata.get("run_mode") or "").casefold()
+    intent = str(metadata.get("review_run_intent") or "").casefold()
+    return (
+        environment in {"test", "testing", "development", "dev", "staging"}
+        or mode == "dry_run"
+        or intent in {"test", "development", "migration_validation", "synthetic_validation"}
+    )
+
+
+def _run_timestamp(candidate: dict[str, Any]) -> float:
+    metadata = candidate.get("agent_metadata") or {}
+    for key in ("review_run_finished_at", "review_run_started_at", "review_record_created_at"):
+        value = metadata.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return float(candidate.get("created_at") or 0)
+
+
+def _discovery_run_key(candidate: dict[str, Any]) -> tuple[str, str, str] | None:
+    metadata = candidate.get("agent_metadata") or {}
+    if _run_kind(candidate) != "discovery":
+        return None
+    intent = str(metadata.get("review_run_intent") or "")
+    # Explicit manual runs are independent. No schedule is inferred from an ID.
+    if intent == "manual":
+        return None
+    timestamp = metadata.get("review_run_finished_at")
+    status = metadata.get("review_run_status") or metadata.get("run_status")
+    if not isinstance(timestamp, (int, float)) or status not in {
+        "done", "completed", "success", "succeeded", "attention",
+    }:
+        return None
+    return (
+        str(metadata.get("review_run_source") or "open_web_search"),
+        str(metadata.get("review_run_entity_type") or candidate["entity_type"]),
+        intent,
+    )
+
+
+def _date_label(timestamp: float | None) -> str:
+    if not timestamp:
+        return ""
+    moment = datetime.fromtimestamp(timestamp, timezone.utc)
+    return f"{moment.strftime('%b')} {moment.day}, {moment.year}"
+
+
+def _run_label(candidate: dict[str, Any]) -> str:
+    metadata = candidate.get("agent_metadata") or {}
+    existing = str(metadata.get("review_run_label") or "").strip()
+    if existing:
+        return existing
+    kind = _run_kind(candidate)
+    if kind == "build_the_map":
+        prefix = "Build the Map"
+    elif kind == "architecture_v2_review":
+        prefix = "Architecture V2 Review"
+    elif kind == "discovery":
+        entity = str(metadata.get("review_run_entity_type") or candidate.get("entity_type") or "")
+        intent = metadata.get("review_run_intent")
+        prefix = ("Weekly Discovery" if intent == "weekly" else "Manual Discovery"
+                  if intent == "manual" else f"{entity.replace('_', ' ').title()} Discovery"
+                  if entity else "Discovery")
+    else:
+        prefix = "Discovery run"
+    date_label = _date_label(_run_timestamp(candidate))
+    return f"{prefix} — {date_label}" if date_label else prefix
 
 
 def _editable_payload(entity_type: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -397,7 +516,7 @@ class ReviewStore:
         """Import terminal persisted result bundles without mutating the map store."""
         with run_store.connect() as source:
             runs = source.execute(
-                "SELECT id, description, result, created FROM runs "
+                "SELECT id, description, result, status, created, updated FROM runs "
                 "WHERE result IS NOT NULL AND status IN (?,?,?,?,?,?) ORDER BY created",
                 REVIEWABLE_RUN_STATUSES,
             ).fetchall()
@@ -409,6 +528,16 @@ class ReviewStore:
                 for entity_type, source_index, payload in _normalized_entities(result):
                     candidate_id = _candidate_id(run["id"], entity_type, source_index)
                     now = _now()
+                    metadata = _metadata(payload, result)
+                    metadata.update({
+                        "source_environment": "operational",
+                        "review_run_type": "build_the_map",
+                        "review_run_source": "build_the_map",
+                        "review_run_entity_type": entity_type,
+                        "review_run_status": run["status"],
+                        "review_run_started_at": float(run["created"]),
+                        "review_run_finished_at": float(run["updated"]),
+                    })
                     cursor = db.execute(
                         "INSERT OR IGNORE INTO review_candidate "
                         "(candidate_id,source_run_id,source_index,source_description,entity_type,"
@@ -417,7 +546,7 @@ class ReviewStore:
                         (candidate_id, run["id"], source_index, run["description"] or "",
                          entity_type, _candidate_name(entity_type, payload), _json(payload),
                          _json(_editable_payload(entity_type, payload)), _json(_evidence(payload)),
-                         _json(_metadata(payload, result)),
+                          _json(metadata),
                          _duplicate_state(payload), "pending_review", now),
                     )
                     inserted += cursor.rowcount
@@ -425,7 +554,7 @@ class ReviewStore:
                         db.execute(
                             "UPDATE review_candidate SET evidence=?,agent_metadata=?,duplicate_state=? "
                             "WHERE candidate_id=? AND status='pending_review'",
-                            (_json(_evidence(payload)), _json(_metadata(payload, result)),
+                            (_json(_evidence(payload)), _json(metadata),
                              _duplicate_state(payload), candidate_id),
                         )
         return inserted
@@ -500,52 +629,182 @@ class ReviewStore:
             for field, length in FIELD_LIMITS.get(item.get("entity_type"), {}).items()
         }
         item["rejection_reasons"] = list(REJECTION_REASONS)
-        item["top_matches"] = item.get("agent_metadata", {}).get("top_matches") or []
+        metadata = item.get("agent_metadata", {})
+        if item.get("entity_type") == "actor":
+            for field in (
+                "actor_topics", "hub_assignments", "existing_memberships",
+                "hub_proposal_memberships",
+            ):
+                if not isinstance(metadata.get(field), list):
+                    metadata[field] = []
+        item["top_matches"] = metadata.get("top_matches") or []
+        item["run_label"] = _run_label(item)
+        item["identity_issue"] = _actor_identity_reason(item)
         return item
+
+    @staticmethod
+    def _annotate_inboxes(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        latest_runs: dict[tuple[str, str, str], tuple[float, str]] = {}
+        for candidate in candidates:
+            if _run_kind(candidate) != "discovery" or _is_development_candidate(candidate):
+                continue
+            metadata = candidate.get("agent_metadata") or {}
+            key = _discovery_run_key(candidate)
+            if key is None:
+                continue
+            value = (float(metadata["review_run_finished_at"]), str(candidate["source_run_id"]))
+            if value > latest_runs.get(key, (-1.0, "")):
+                latest_runs[key] = value
+
+        for candidate in candidates:
+            candidate["run_label"] = _run_label(candidate)
+            candidate["identity_issue"] = _actor_identity_reason(candidate)
+            if _is_development_candidate(candidate):
+                candidate["inbox"] = "development"
+                candidate["inbox_reason"] = "explicit_test_development_or_dry_run"
+                continue
+            if candidate["identity_issue"]:
+                candidate["inbox"] = "incomplete"
+                candidate["inbox_reason"] = candidate["identity_issue"]
+                continue
+            if _run_kind(candidate) == "discovery":
+                metadata = candidate.get("agent_metadata") or {}
+                run_status = metadata.get("review_run_status") or metadata.get("run_status")
+                if run_status in {"running", "queued", "pending", "starting"}:
+                    candidate["inbox"] = "history"
+                    candidate["inbox_reason"] = "run_not_completed"
+                    continue
+                key = _discovery_run_key(candidate)
+                if key and latest_runs.get(key, (None, None))[1] != candidate["source_run_id"]:
+                    candidate["inbox"] = "history"
+                    candidate["inbox_reason"] = "previous_completed_discovery_run"
+                    continue
+            candidate["inbox"] = "current"
+            candidate["inbox_reason"] = "current_actionable"
+
+        # Safe duplicate suppression affects only Current. It never deletes a row.
+        # Distinct review kinds/topics are independent decisions. Shared domains
+        # alone cannot identify an actor (e.g. departments at one university).
+        groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+        for candidate in candidates:
+            if candidate.get("inbox") != "current":
+                continue
+            metadata = candidate.get("agent_metadata") or {}
+            kind = _run_kind(candidate)
+            key = None
+            if kind == "architecture_v2_review" and metadata.get("entity_id"):
+                key = (
+                    "v2", str(metadata["entity_id"]), str(metadata.get("topic_id") or ""),
+                    str(metadata.get("review_kind") or ""),
+                    candidate.get("status"),
+                )
+            elif kind == "discovery" and candidate.get("entity_type") == "actor":
+                identity = metadata.get("entity_id") or (candidate.get("original_payload") or {}).get("_existing_id")
+                if identity:
+                    key = (
+                        "discovery-entity", candidate.get("source_run_id"),
+                        str(identity), str(metadata.get("topic_id") or ""),
+                        str(metadata.get("review_kind") or ""), candidate.get("status"),
+                    )
+            if key:
+                groups.setdefault(key, []).append(candidate)
+        for group in groups.values():
+            if len(group) < 2:
+                continue
+            keep = max(group, key=lambda item: (float(item.get("created_at") or 0), item["candidate_id"]))
+            for candidate in group:
+                if candidate is keep:
+                    continue
+                candidate["inbox"] = "history"
+                candidate["inbox_reason"] = "repeated_sighting_preserved"
+                candidate["superseded_by_candidate_id"] = keep["candidate_id"]
+        return candidates
 
     def get(self, candidate_id: str) -> dict[str, Any]:
         with self.connect() as db:
-            row = db.execute(
-                "SELECT * FROM review_candidate WHERE candidate_id=?", (candidate_id,)
-            ).fetchone()
-        if row is None:
+            rows = db.execute("SELECT * FROM review_candidate").fetchall()
+        candidates = self._annotate_inboxes([self._decode(row) for row in rows])
+        item = next((candidate for candidate in candidates if candidate["candidate_id"] == candidate_id), None)
+        if item is None:
             raise KeyError(candidate_id)
-        return self._decode(row)
+        return item
 
     def list(self, *, status: str | None = "pending_review", entity_type: str | None = None,
-             source_run_id: str | None = None, search: str | None = None) -> dict[str, Any]:
+             source_run_id: str | None = None, search: str | None = None,
+             inbox: str = "current") -> dict[str, Any]:
         if status not in (*STATUSES, None, "all"):
             raise ReviewValidationError("Unsupported review status.")
         if entity_type not in (*ENTITY_TYPES, None, "all"):
             raise ReviewValidationError("Unsupported entity type.")
-        where, params = [], []
-        if status not in (None, "all"):
-            where.append("status=?"); params.append(status)
-        if entity_type not in (None, "all"):
-            where.append("entity_type=?"); params.append(entity_type)
-        if source_run_id:
-            where.append("source_run_id=?"); params.append(source_run_id)
-        if search and search.strip():
-            where.append("(lower(display_name) LIKE ? OR lower(reviewed_payload) LIKE ?)")
-            needle = f"%{search.strip().casefold()}%"
-            params.extend((needle, needle))
-        clause = " WHERE " + " AND ".join(where) if where else ""
+        if inbox not in REVIEW_INBOXES:
+            raise ReviewValidationError("Unsupported review inbox.")
         with self.connect() as db:
-            rows = db.execute(
-                "SELECT * FROM review_candidate" + clause +
-                " ORDER BY CASE status WHEN 'pending_review' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, created_at",
-                params,
-            ).fetchall()
-            counts = {row["status"]: row["n"] for row in db.execute(
-                "SELECT status,count(*) AS n FROM review_candidate GROUP BY status"
-            )}
-            maps = [dict(row) for row in db.execute(
-                "SELECT source_run_id, max(source_description) AS description, count(*) AS candidate_count "
-                "FROM review_candidate GROUP BY source_run_id ORDER BY source_run_id"
-            )]
+            rows = db.execute("SELECT * FROM review_candidate").fetchall()
+        candidates = self._annotate_inboxes([self._decode(row) for row in rows])
+
+        needle = str(search or "").strip().casefold()
+
+        def common(candidate: dict[str, Any], *, include_source: bool = True) -> bool:
+            if entity_type not in (None, "all") and candidate["entity_type"] != entity_type:
+                return False
+            if include_source and source_run_id and candidate["source_run_id"] != source_run_id:
+                return False
+            return not needle or needle in json.dumps(
+                [candidate.get("display_name"), candidate.get("reviewed_payload")],
+                ensure_ascii=False, default=str,
+            ).casefold()
+
+        def in_inbox(candidate: dict[str, Any], selected: str) -> bool:
+            if selected == "all":
+                return True
+            if selected == "actionable":
+                return candidate["inbox"] in {"current", "history"}
+            return candidate["inbox"] == selected
+
+        count_base = [candidate for candidate in candidates if common(candidate) and in_inbox(candidate, inbox)]
+        counts = {
+            selected_status: sum(candidate["status"] == selected_status for candidate in count_base)
+            for selected_status in STATUSES
+        }
+        selected = [
+            candidate for candidate in count_base
+            if status in (None, "all") or candidate["status"] == status
+        ]
+        selected.sort(key=lambda candidate: (
+            STATUSES.index(candidate["status"]), -float(candidate.get("created_at") or 0)
+        ))
+
+        inbox_counts = {}
+        for selected_inbox in REVIEW_INBOXES:
+            inbox_counts[selected_inbox] = sum(
+                common(candidate)
+                and (status in (None, "all") or candidate["status"] == status)
+                and in_inbox(candidate, selected_inbox)
+                for candidate in candidates
+            )
+
+        map_candidates = [
+            candidate for candidate in candidates
+            if common(candidate, include_source=False)
+            and (status in (None, "all") or candidate["status"] == status)
+            and in_inbox(candidate, inbox)
+        ]
+        grouped_maps: dict[str, dict[str, Any]] = {}
+        for candidate in map_candidates:
+            run_id = candidate["source_run_id"]
+            mapped = grouped_maps.setdefault(run_id, {
+                "source_run_id": run_id,
+                "description": candidate["run_label"],
+                "run_label": candidate["run_label"],
+                "candidate_count": 0,
+            })
+            mapped["candidate_count"] += 1
+        maps = sorted(grouped_maps.values(), key=lambda item: (item["description"], item["source_run_id"]))
         return {
-            "candidates": [self._decode(row) for row in rows],
-            "counts": {key: counts.get(key, 0) for key in STATUSES},
+            "candidates": selected,
+            "counts": counts,
+            "inbox": inbox,
+            "inbox_counts": inbox_counts,
             "source_maps": maps,
             "admission_configured": self.admission_configured,
             "last_sync": self.sync_state(),

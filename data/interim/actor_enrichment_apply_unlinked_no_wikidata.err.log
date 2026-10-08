@@ -1,0 +1,93 @@
+2026-07-21 11:34:44,119  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-21 11:34:51,738  INFO     src.enrichment.actor_enrichment_candidates  Processing 107 sparse actors
+2026-07-21 11:34:52,579  INFO     src.enrichment.actor_enrichment_candidates  [1/107] Arianne Phosphate
+2026-07-21 11:34:53,601  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Arianne+Phosphate "HTTP/1.1 200 OK"
+2026-07-21 11:34:54,862  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Arianne+Phosphate&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:34:59,416  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-21 11:35:06,298  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:35:06,951  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 1 actors
+2026-07-21 11:35:07,748  INFO     src.enrichment.actor_enrichment_candidates  [2/107] Berkeley Energy Institute
+2026-07-21 11:35:08,841  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Energy+Institute "HTTP/1.1 200 OK"
+2026-07-21 11:35:10,300  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Berkeley+Energy+Institute&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:35:18,985  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:35:20,155  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 2 actors
+2026-07-21 11:35:21,247  INFO     src.enrichment.actor_enrichment_candidates  [3/107] Berkeley Water Center
+2026-07-21 11:35:22,394  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Water+Center "HTTP/1.1 200 OK"
+2026-07-21 11:35:23,504  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Berkeley+Water+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:35:31,542  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:35:31,717  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 3 actors
+2026-07-21 11:35:32,671  INFO     src.enrichment.actor_enrichment_candidates  [4/107] Brazil Ecosystem Mapping
+2026-07-21 11:35:33,298  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 4 actors
+2026-07-21 11:35:34,619  INFO     src.enrichment.actor_enrichment_candidates  [5/107] Break Through Tech AI Program (Cornell Tech)
+2026-07-21 11:35:35,794  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program+%28Cornell+Tech%29 "HTTP/1.1 200 OK"
+2026-07-21 11:35:36,868  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Break+Through+Tech+AI+Program+%28Cornell+Tech%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:35:42,629  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Tech "HTTP/1.1 200 OK"
+2026-07-21 11:35:43,457  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Cornell+Tech&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:35:47,962  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program "HTTP/1.1 200 OK"
+2026-07-21 11:35:48,402  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Break+Through+Tech+AI+Program&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:35:56,234  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:35:56,689  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 5 actors
+2026-07-21 11:35:57,595  INFO     src.enrichment.actor_enrichment_candidates  [6/107] Center for Watershed Sciences
+2026-07-21 11:35:59,007  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Center+for+Watershed+Sciences "HTTP/1.1 200 OK"
+2026-07-21 11:36:00,313  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Center+for+Watershed+Sciences&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:36:07,408  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:36:07,596  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 6 actors
+2026-07-21 11:36:08,189  INFO     src.enrichment.actor_enrichment_candidates  [7/107] Clean Fraction /Hot Fraction Separations at Scale
+2026-07-21 11:36:09,039  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-21 11:36:09,040  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 3.0s before retry
+2026-07-21 11:36:12,209  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-21 11:36:12,243  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 6.0s before retry
+2026-07-21 11:36:19,141  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-21 11:36:19,144  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Clean Fraction /Hot Fraction Separations at Scale via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-21 11:36:20,043  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:36:24,164  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 7 actors
+2026-07-21 11:36:24,741  INFO     src.enrichment.actor_enrichment_candidates  [8/107] Climate Venture Capital Firms
+2026-07-21 11:36:25,189  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 8 actors
+2026-07-21 11:36:25,693  INFO     src.enrichment.actor_enrichment_candidates  [9/107] Commission for Social Development
+2026-07-21 11:36:26,588  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Commission+for+Social+Development "HTTP/1.1 200 OK"
+2026-07-21 11:36:27,425  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Commission+for+Social+Development&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:36:35,424  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:36:35,643  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 9 actors
+2026-07-21 11:36:36,229  INFO     src.enrichment.actor_enrichment_candidates  [10/107] Commission on Population and Development
+2026-07-21 11:36:37,037  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Commission+on+Population+and+Development "HTTP/1.1 200 OK"
+2026-07-21 11:36:38,054  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Commission+on+Population+and+Development&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:36:45,118  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:36:45,308  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 10 actors
+2026-07-21 11:36:45,944  INFO     src.enrichment.actor_enrichment_candidates  [11/107] Commission on Science and Technology for Development
+2026-07-21 11:36:46,998  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Commission+on+Science+and+Technology+for+Development "HTTP/1.1 200 OK"
+2026-07-21 11:36:48,336  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Commission+on+Science+and+Technology+for+Development&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:36:55,517  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:36:56,007  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 11 actors
+2026-07-21 11:36:56,512  INFO     src.enrichment.actor_enrichment_candidates  [12/107] Commission on the Status of Women
+2026-07-21 11:36:58,652  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Commission+on+the+Status+of+Women "HTTP/1.1 200 OK"
+2026-07-21 11:36:59,874  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Commission+on+the+Status+of+Women&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:37:06,704  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:37:06,886  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 12 actors
+2026-07-21 11:37:07,401  INFO     src.enrichment.actor_enrichment_candidates  [13/107] Cornell AI Initiative
+2026-07-21 11:37:08,255  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+AI+Initiative "HTTP/1.1 200 OK"
+2026-07-21 11:37:09,258  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Cornell+AI+Initiative&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:37:19,446  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:37:19,921  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 13 actors
+2026-07-21 11:37:21,623  INFO     src.enrichment.actor_enrichment_candidates  [14/107] Corporate Partners
+2026-07-21 11:37:24,251  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 14 actors
+2026-07-21 11:37:24,965  INFO     src.enrichment.actor_enrichment_candidates  [15/107] Dairy Research Center
+2026-07-21 11:37:26,089  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dairy+Research+Center "HTTP/1.1 200 OK"
+2026-07-21 11:37:26,768  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Dairy+Research+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:37:30,898  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dairy "HTTP/1.1 200 OK"
+2026-07-21 11:37:31,612  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Dairy&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:37:39,099  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:37:39,287  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 15 actors
+2026-07-21 11:37:39,939  INFO     src.enrichment.actor_enrichment_candidates  [16/107] Department of Economic and Social Affairs
+2026-07-21 11:37:40,750  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Department+of+Economic+and+Social+Affairs "HTTP/1.1 200 OK"
+2026-07-21 11:37:41,538  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Department+of+Economic+and+Social+Affairs&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:37:48,687  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:37:50,020  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 16 actors
+2026-07-21 11:37:50,674  INFO     src.enrichment.actor_enrichment_candidates  [17/107] Departments and Offices
+2026-07-21 11:37:51,584  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Departments+and+Offices "HTTP/1.1 200 OK"
+2026-07-21 11:37:52,444  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Departments+and+Offices&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:38:00,262  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:38:00,580  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 17 actors
+2026-07-21 11:38:01,368  INFO     src.enrichment.actor_enrichment_candidates  [18/107] Development Coordination Office
+2026-07-21 11:38:02,487  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Development+Coordination+Office "HTTP/1.1 200 OK"
+2026-07-21 11:38:03,532  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Development+Coordination+Office&per-page=5 "HTTP/1.1 200 OK"

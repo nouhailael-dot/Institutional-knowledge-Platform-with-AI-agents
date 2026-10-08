@@ -654,11 +654,12 @@ _review_sync_lock = Lock()
 _review_sync_last = 0.0
 _review_sync_warnings = []
 _review_sync_store_key = None
+_review_latest_runs = []
 REVIEW_SYNC_INTERVAL_SECONDS = 120
 
 
 def _sync_review_candidates(*, force: bool = False):
-    global _review_sync_last, _review_sync_warnings, _review_sync_store_key
+    global _review_sync_last, _review_sync_warnings, _review_sync_store_key, _review_latest_runs
     target = review_store()
     store_key = str(target.path.resolve())
     now = time.monotonic()
@@ -693,10 +694,13 @@ def _sync_review_candidates(*, force: bool = False):
             postgres = review_postgres_source()
             if postgres is not None:
                 candidates, source_warnings = postgres.fetch_candidates()
+                latest_runs = postgres.fetch_latest_runs()
                 target.sync_external_candidates(candidates)
                 warnings.extend(source_warnings)
                 target.set_sync_state("postgresql", success=not source_warnings,
                                       error="; ".join(source_warnings) or None)
+                if not source_warnings:
+                    _review_latest_runs = latest_runs
         except PostgresReviewSourceError as exc:
             logger.warning("PostgreSQL review source unavailable: %s", exc)
             warnings.append(str(exc))
@@ -765,6 +769,7 @@ class ReviewAdmissionRequest(ReviewDecisionRequest):
 
 @app.get("/api/review/candidates")
 def review_candidates(status: str = Query("pending_review"),
+                      inbox: str = Query("current"),
                       entity_type: str | None = Query(None),
                       source_run_id: str | None = Query(None),
                       search: str | None = Query(None, max_length=200),
@@ -772,11 +777,17 @@ def review_candidates(status: str = Query("pending_review"),
     sync_warnings = _sync_review_candidates(force=refresh)
     try:
         result = review_store().list(
-            status=status, entity_type=entity_type,
+            status=status, inbox=inbox, entity_type=entity_type,
             source_run_id=source_run_id, search=search,
         )
         result["sync_warnings"] = sync_warnings
+        result["latest_runs"] = list(_review_latest_runs)
         result["admission_configured"] = review_admission_bridge().configured
+        result["admission_status"] = (
+            "Review decisions are enabled through the dedicated canonical writer."
+            if result["admission_configured"] else
+            "The dedicated admission writer is not configured in this environment."
+        )
         return result
     except Exception as exc:
         _raise_review_error(exc)

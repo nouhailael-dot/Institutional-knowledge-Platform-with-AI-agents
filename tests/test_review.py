@@ -383,6 +383,15 @@ class ReviewApiTests(unittest.TestCase):
             "pending_review": 3, "approved": 0, "rejected_by_reviewer": 0,
         })
         self.assertTrue(listed["admission_configured"])
+        local_actor = next(
+            candidate for candidate in listed["candidates"]
+            if candidate["entity_type"] == "actor"
+        )
+        for field in (
+            "actor_topics", "hub_assignments", "existing_memberships",
+            "hub_proposal_memberships",
+        ):
+            self.assertEqual(local_actor["agent_metadata"][field], [])
         filtered = self.list(entity_type="event", search="summit")
         self.assertEqual(len(filtered["candidates"]), 1)
         candidate_id = filtered["candidates"][0]["candidate_id"]
@@ -450,6 +459,74 @@ class ReviewApiTests(unittest.TestCase):
         ]
         self.assertEqual(len(imported), 3)
         self.assertEqual(response.json()["sync_warnings"], [])
+
+    def test_review_api_preserves_v2_hub_contract_arrays(self):
+        candidate = discovery_candidate("actor", "api-v2-hub-contract")
+        candidate["agent_metadata"].update({
+            "actor_topics": [{"topic_id": "ai", "topic_name": "Artificial Intelligence"}],
+            "hub_assignments": [{
+                "topic_id": "ai", "topic_name": "Artificial Intelligence",
+                "outcome": "assigned", "recommended_hub_id": "bay-ai",
+                "recommended_hub_name": "Bay Area AI Hub", "distance_miles": 86,
+                "radius_miles": 200, "topic_match": True,
+                "location_evaluated": True, "within_radius": True,
+                "competing_hubs": [], "review_kind": None, "issue": None,
+            }],
+            "existing_memberships": [{
+                "hub_id": "historic", "name": "Historic Hub",
+                "topic_id": None, "topic_name": None,
+            }],
+            "hub_proposal_memberships": [{
+                "proposal_id": "proposal-1", "name": "Phoenix AI Hub",
+                "independent_family_count": 12, "independent_category_count": 5,
+                "radius_miles": 200, "center_name": "Phoenix, AZ, US",
+                "review_url": None,
+            }],
+        })
+        source = MagicMock()
+        source.fetch_candidates.return_value = ([candidate], [])
+        with patch.object(self.backend, "review_postgres_source", return_value=source):
+            response = self.client.get(
+                "/api/review/candidates", params={"status": "all", "refresh": True}
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        imported = next(
+            row for row in response.json()["candidates"]
+            if row["source_index"] == "api-v2-hub-contract"
+        )
+        metadata = imported["agent_metadata"]
+        self.assertEqual(metadata["actor_topics"], candidate["agent_metadata"]["actor_topics"])
+        self.assertEqual(
+            metadata["hub_assignments"], candidate["agent_metadata"]["hub_assignments"]
+        )
+        self.assertEqual(
+            metadata["existing_memberships"],
+            candidate["agent_metadata"]["existing_memberships"],
+        )
+        self.assertEqual(
+            metadata["hub_proposal_memberships"],
+            candidate["agent_metadata"]["hub_proposal_memberships"],
+        )
+
+    def test_flat_hub_ids_decision_contract_remains_supported(self):
+        self.store.sync_external_candidates([discovery_candidate("actor", "flat-hubs")])
+        actor = next(
+            row for row in self.store.list(status="all", entity_type="actor")["candidates"]
+            if row["source_index"] == "flat-hubs"
+        )
+        response = self.client.post(
+            f"/api/review/candidates/{actor['candidate_id']}/decision",
+            json={
+                "decision_kind": "new", "reviewer": "Reviewer", "confirmed": True,
+                "idempotency_key": "flat-hub-contract",
+                "edited_payload": actor["reviewed_payload"],
+                "hub_ids": ["hub-one", "hub-two"],
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(
+            self.bridge.apply.call_args.args[0]["hub_ids"], ["hub-one", "hub-two"]
+        )
 
     def test_postgres_source_failure_is_visible_without_hiding_local_candidates(self):
         source = MagicMock()
@@ -624,6 +701,186 @@ class PostgresReviewSourceTests(unittest.TestCase):
             {item["url"] for item in candidate["evidence"]},
             {"https://example.org/discovery", "https://example.org/fact"},
         )
+        for field in (
+            "actor_topics", "hub_assignments", "existing_memberships",
+            "hub_proposal_memberships",
+        ):
+            self.assertEqual(candidate["agent_metadata"][field], [])
+
+    def test_v2_hub_contract_serializes_authoritative_phase6_and_phase7_data(self):
+        contract = self.source._review_hub_contract({
+            "actor_topics": [
+                {"topic_id": "ai", "topic_name": "Artificial Intelligence"},
+                {"topic_id": "water", "topic_name": "Water"},
+                {"topic_id": "quantum", "topic_name": "Quantum"},
+                {"topic_id": "bio", "topic_name": "Biotechnology"},
+            ],
+            "hub_evaluations": [
+                {"hub_id": "bay-ai", "hub_name": "Bay Area AI Hub", "topic_id": "ai",
+                 "topic_name": "Artificial Intelligence", "outcome": "assigned",
+                 "topic_matched": True, "location_evaluated": True,
+                 "distance_miles": 86, "radius_miles": 200,
+                 "outside_radius": False, "selected": True},
+                {"hub_id": "sac-ai", "hub_name": "Sacramento AI Hub", "topic_id": "ai",
+                 "topic_name": "Artificial Intelligence", "outcome": "assigned",
+                 "topic_matched": True, "location_evaluated": True,
+                 "distance_miles": 143, "radius_miles": 200,
+                 "outside_radius": False, "selected": False},
+                {"hub_id": "water-hub", "hub_name": "Water Hub", "topic_id": "water",
+                 "topic_name": "Water", "outcome": "needs_review_location",
+                 "topic_matched": True, "location_evaluated": True,
+                 "distance_miles": 201, "radius_miles": 200,
+                 "outside_radius": True, "selected": False},
+                {"hub_id": "quantum-hub", "hub_name": "Quantum Hub",
+                 "topic_id": "quantum", "topic_name": "Quantum",
+                 "outcome": "needs_review_location", "topic_matched": True,
+                 "location_evaluated": False, "distance_miles": None,
+                 "radius_miles": 200, "outside_radius": False, "selected": False},
+                {"hub_id": "wrong-topic", "hub_name": "Unrelated Hub", "topic_id": "bio",
+                 "topic_name": "Biotechnology", "outcome": "needs_review_topic",
+                 "topic_matched": False, "location_evaluated": False,
+                 "distance_miles": None, "radius_miles": 200,
+                 "outside_radius": False, "selected": False},
+            ],
+            "hub_reviews": [
+                {"topic_id": "ai", "review_kind": "same_topic_overlap", "payload": {
+                    "canonical_review_kind": "hub_radius_overlap",
+                    "canonical_outcome": "same_topic_overlap",
+                    "issue": "hub_radius_overlap",
+                }},
+                {"topic_id": "water", "review_kind": "hub_needs_review", "payload": {
+                    "canonical_outcome": "needs_review_location",
+                    "issue": "needs_review_location",
+                }},
+                {"topic_id": "quantum", "review_kind": "hub_needs_review", "payload": {
+                    "canonical_outcome": "needs_review_location",
+                    "issue": "needs_review_location",
+                }},
+                {"topic_id": "bio", "review_kind": "hub_needs_review", "payload": {
+                    "canonical_outcome": "needs_review_topic",
+                    "issue": "needs_review_topic",
+                }},
+            ],
+            "existing_memberships": [
+                {"hub_id": "historic", "name": "Arizona Water Innovation Hub",
+                 "topic_id": "water", "topic_name": "Water"},
+                {"hub_id": "outside", "name": "Legacy Outside Radius Hub",
+                 "topic_id": None, "topic_name": None},
+            ],
+            "hub_proposal_memberships": [{
+                "proposal_id": "proposal-1", "name": "Phoenix Materials Hub",
+                "independent_family_count": 14, "independent_category_count": 6,
+                "radius_miles": 200, "center_name": "Phoenix, AZ, US",
+                "review_url": None,
+            }],
+        })
+        self.assertEqual(len(contract["actor_topics"]), 4)
+        assignments = {row["topic_id"]: row for row in contract["hub_assignments"]}
+        self.assertEqual(assignments["ai"]["recommended_hub_id"], "bay-ai")
+        self.assertEqual(assignments["ai"]["review_kind"], "hub_radius_overlap")
+        self.assertEqual(
+            [(row["hub_id"], row["distance_miles"])
+             for row in assignments["ai"]["competing_hubs"]],
+            [("sac-ai", 143)],
+        )
+        self.assertEqual(assignments["water"]["outcome"], "needs_review_location")
+        self.assertFalse(assignments["water"]["within_radius"])
+        self.assertIsNone(assignments["water"]["recommended_hub_id"])
+        self.assertFalse(assignments["quantum"]["location_evaluated"])
+        self.assertIsNone(assignments["quantum"]["within_radius"])
+        self.assertEqual(assignments["bio"]["outcome"], "needs_review_topic")
+        self.assertFalse(assignments["bio"]["topic_match"])
+        self.assertEqual(len(contract["existing_memberships"]), 2)
+        self.assertEqual(
+            contract["hub_proposal_memberships"][0]["independent_category_count"], 6
+        )
+
+    def test_v2_staged_review_uses_persisted_record_without_inventing_identity(self):
+        candidate = self.source._from_v2_review_item({
+            "review_item_id": "review-staged", "review_kind": "classification",
+            "entity_id": None, "topic_id": None, "created_at": 1_791_370_000,
+            "name": None, "actor_category": None, "actor_type": None,
+            "category_type": None, "category_note": None, "description": None,
+            "website": None, "location_city": None, "state": None,
+            "state_code": None, "region_code": None, "country": None,
+            "actor_source_url": None, "facts": [], "fact_history": [],
+            "relationships": [], "actor_topics": [], "hub_evaluations": [],
+            "hub_reviews": [], "existing_memberships": [],
+            "hub_proposal_memberships": [], "record_status": None, "priority": None,
+            "payload": {
+                "issue": "category_doubt", "source_url": "https://example.org/source",
+                "record": {"name": "Real Staged Lab", "actor_category": "company",
+                           "category_type": None, "city": "Boston", "state": "MA",
+                           "country": "US"},
+            },
+        })
+        self.assertEqual(candidate["payload"]["name"], "Real Staged Lab")
+        self.assertEqual(candidate["payload"]["location_city"], "Boston")
+        self.assertNotIn("category_type", candidate["payload"])
+        self.assertEqual(candidate["agent_metadata"]["review_kind"], "category_doubt")
+        self.assertEqual(candidate["agent_metadata"]["stored_review_kind"], "classification")
+
+    def test_latest_run_issues_are_concise_and_truthful(self):
+        self.assertEqual(
+            self.source._run_issue("actor", "failed", {
+                "status_reason": "violates ck_actor_category_complete", "error": None,
+            }),
+            "Promotion stopped by the actor-category completeness constraint.",
+        )
+        self.assertEqual(
+            self.source._run_issue("person", "failed", {
+                "status_reason": "column affiliation_raw does not exist", "error": None,
+            }),
+            "Review-queue persistence is pending the affiliation field integration.",
+        )
+        self.assertEqual(
+            self.source._run_issue("event", "attention", {}),
+            "Completed with records requiring review attention.",
+        )
+
+    def test_v2_review_query_uses_optional_hub_tables_or_empty_arrays(self):
+        required_review = {
+            "review_item_id", "review_kind", "entity_type", "entity_id", "topic_id",
+            "payload", "status", "created_at",
+        }
+        base_columns = {
+            "review_item": required_review,
+            "actor": {"actor_id"},
+            "actor_fact": {"actor_id"},
+        }
+        db = MagicMock()
+        db.execute.return_value.fetchall.return_value = []
+        self.source._v2_review_rows(db, required_review, base_columns)
+        fallback_query = db.execute.call_args.args[0]
+        self.assertIn("'[]'::jsonb AS actor_topics", fallback_query)
+        self.assertIn("'[]'::jsonb AS hub_evaluations", fallback_query)
+        self.assertIn("'[]'::jsonb AS existing_memberships", fallback_query)
+        self.assertIn("'[]'::jsonb AS hub_proposal_memberships", fallback_query)
+
+        columns = dict(base_columns)
+        columns.update({
+            "topic": {"topic_id", "name"},
+            "actor_topic": {"actor_id", "topic_id"},
+            "hub": {"hub_id", "name", "topic_id"},
+            "hub_actor": {"actor_id", "hub_id", "topic_id"},
+            "hub_assignment_evidence": {
+                "hub_assignment_evidence_id", "actor_id", "hub_id", "topic_id",
+                "outcome", "topic_matched", "location_evaluated", "distance_miles",
+                "radius_miles", "outside_radius", "selected", "method_version",
+                "evidence", "created_at",
+            },
+            "proposed_hub": {
+                "proposed_hub_id", "name", "independent_family_count",
+                "category_count", "radius_miles", "primary_city", "state", "country",
+            },
+            "proposed_hub_member": {"proposed_hub_id", "actor_id"},
+        })
+        self.source._v2_review_rows(db, required_review, columns)
+        authoritative_query = db.execute.call_args.args[0]
+        for relation in (
+            "actor_topic", "hub_assignment_evidence", "hub_actor", "proposed_hub_member",
+        ):
+            self.assertIn(relation, authoritative_query)
 
     def test_local_v2_review_source_disables_tls_but_remains_read_only(self):
         source = PostgresReviewSource(
@@ -718,7 +975,7 @@ class V2PostgresReviewApiIntegrationTests(unittest.TestCase):
                 with TestClient(backend.app) as client:
                     response = client.get(
                         "/api/review/candidates",
-                        params={"status": "all", "entity_type": "actor", "refresh": True},
+                        params={"status": "all", "inbox": "development", "entity_type": "actor", "refresh": True},
                     )
 
         self.assertEqual(response.status_code, 200, response.text)
@@ -759,6 +1016,11 @@ class V2PostgresReviewApiIntegrationTests(unittest.TestCase):
         self.assertTrue(all(fact.get("source_url") for fact in light_facts))
         self.assertTrue(all(fact.get("is_current") for fact in light_facts))
         self.assertIn("fact_history", candidate["agent_metadata"])
+        for field in (
+            "actor_topics", "hub_assignments", "existing_memberships",
+            "hub_proposal_memberships",
+        ):
+            self.assertIn(field, candidate["agent_metadata"])
 
 
 if __name__ == "__main__":

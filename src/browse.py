@@ -108,8 +108,18 @@ def load_actors() -> list[dict]:
                )
                    AS actor_category,
                NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
-               a.verification_status,
-               a.location_city, a.state, a.country, a.estimated_trl,
+               COALESCE(
+                   NULLIF(to_jsonb(a)->>'verification_status', ''),
+                   NULLIF(to_jsonb(pp)->>'verification_status', ''),
+                   NULLIF(to_jsonb(a)->>'status', '')
+               ) AS verification_status,
+               COALESCE(NULLIF(to_jsonb(a)->>'location_city', ''),
+                        NULLIF(to_jsonb(a)->>'city', '')) AS location_city,
+               COALESCE(NULLIF(to_jsonb(a)->>'state', ''),
+                        NULLIF(to_jsonb(a)->>'state_code', '')) AS state,
+               NULLIF(to_jsonb(a)->>'region_code', '') AS region,
+               NULLIF(to_jsonb(a)->>'country', '') AS country,
+               NULLIF(to_jsonb(a)->>'estimated_trl', '')::numeric AS estimated_trl,
                a.website, a.description,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,
@@ -137,6 +147,7 @@ def load_actors() -> list[dict]:
                 "verification_status": r["verification_status"],
                 "city": r["location_city"],
                 "state": r["state"],
+                "region": r["region"],
                 "country_raw": r["country"],
                 "country": normalize_country(r["country"]),
                 "trl": r["estimated_trl"],

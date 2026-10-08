@@ -1,0 +1,16 @@
+2026-07-28 13:58:52,352  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-28 13:59:11,603  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while loading actors; retrying in 10.0s (1/6): (psycopg2.OperationalError) connection to server at "aws-1-us-east-1.pooler.supabase.com" (198.18.1.18), port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-28 13:59:38,413  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while loading actors; retrying in 20.0s (2/6): (psycopg2.OperationalError) connection to server at "aws-1-us-east-1.pooler.supabase.com" (198.18.1.18), port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-28 14:00:13,546  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while loading actors; retrying in 30.0s (3/6): (psycopg2.OperationalError) connection to server at "aws-1-us-east-1.pooler.supabase.com" (198.18.1.18), port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-28 14:00:58,680  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while loading actors; retrying in 40.0s (4/6): (psycopg2.OperationalError) connection to server at "aws-1-us-east-1.pooler.supabase.com" (198.18.1.18), port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-28 14:01:55,770  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while loading actors; retrying in 50.0s (5/6): (psycopg2.OperationalError) connection to server at "aws-1-us-east-1.pooler.supabase.com" (198.18.1.18), port 5432 failed: timeout expired
+
+(Background on this error at: https://sqlalche.me/e/20/e3q8)

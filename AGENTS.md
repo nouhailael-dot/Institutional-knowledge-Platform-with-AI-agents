@@ -53,3 +53,20 @@ before touching files. Stop if either path differs.
 - Root `app.py` is the legacy Streamlit interface; do not add V2 UI features
   there.
 
+## Codex Execution and Git Safety
+
+You have permission to autonomously read/write project files, run commands,
+install dependencies, run tests, and perform normal development operations.
+
+However, do NOT autonomously:
+
+- push to main
+- force-push
+- reset --hard shared work
+- delete branches
+- merge a Pull Request
+- discard another developer's changes
+- resolve ambiguous merge conflicts by choosing one side
+
+You may make code changes and run tests autonomously.
+Leave final Git integration/push operations to me unless I explicitly request them.

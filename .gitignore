@@ -25,3 +25,5 @@ env/
 
 # Isolated Review-page demonstration databases
 .demo/
+
+agents/raw_documents/

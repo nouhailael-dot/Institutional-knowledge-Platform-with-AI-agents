@@ -1,0 +1,2 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+2c2b865d-282d-499e-b916-7fe6afe1d98a,climate_week,event,fixture://climate_week/event-search,bfd10b9c877b8c850cdafc733edfabae1f5e3417a2cb8e423adcf9a12130d52d,climate-guard-event|2026-09-22,create,0.0,,,would_create,

@@ -1,0 +1,22 @@
+# Environments / tooling
+.venv/
+.claude/
+graphify-out/
+.codex_tmp/
+
+# Test scratch/cache
+.pytest-phase2-*/
+.pytest_cache/
+__pycache__/
+*.pyc
+
+# Generated data
+data/interim/profiles/
+outputs/
+
+
+screenshots/images
+historical handoffs
+generated reports
+large intermediate data
+old migration evidence

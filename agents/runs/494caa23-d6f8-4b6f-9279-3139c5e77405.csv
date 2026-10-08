@@ -1,0 +1,6 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+494caa23-d6f8-4b6f-9279-3139c5e77405,unga_guide,event,https://ungaguide.com/,097e5a79f1d340c550816cd6e45e82ac3cd578869cdf6036bf5be9ad5c6bf025,,skipped,,,,skipped_unchanged,
+494caa23-d6f8-4b6f-9279-3139c5e77405,unga_guide,event,https://ungaguide.com/page/2/,5cddbc23fb2f1fdb8677913accbf7fec8c53ece3bf4305efff63f84f5d9b3018,,skipped,,,,skipped_unchanged,
+494caa23-d6f8-4b6f-9279-3139c5e77405,unga_guide,event,https://ungaguide.com/page/3/,28a10cd8fb8fe49bb5fca4b11a78e115069e321194bb8320b1b1670c728bf086,,skipped,,,,skipped_unchanged,
+494caa23-d6f8-4b6f-9279-3139c5e77405,unga_guide,event,https://ungaguide.com/page/4/,6b748a191e1ba7c975077e3a32ef0d943b6d33a786dc6e86ba2bdb422cae307e,,skipped,,,,skipped_unchanged,
+494caa23-d6f8-4b6f-9279-3139c5e77405,unga_guide,event,https://ungaguide.com/page/5/,ea383f59b9da2991e1d55587a22ed03584e49bfc4ec886e2365d2b478979e76d,,skipped,,,,skipped_unchanged,

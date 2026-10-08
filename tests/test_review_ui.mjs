@@ -8,15 +8,47 @@ import {
   decisionOptions,
   diffFields,
   editableReviewPayload,
+  existingHubMemberships,
   filterReviewCandidates,
   formatFactValue,
+  formatReviewRefresh,
+  formatReviewTime,
   deepPullFacts,
+  hubAssignments,
+  hubAssignmentState,
+  hubProposalStatuses,
   lightPullFacts,
+  latestRunOutcome,
+  manualHubOptions,
   reviewRunLabel,
+  reviewQueryParams,
   reviewStatusLabel,
   reviewFieldLabel,
   validateReviewDraft,
 } from '../frontend/review.js';
+
+test('audit and status All selections reach the backend instead of falling back to Current',()=>{
+  const params=reviewQueryParams({inbox:'all',status:'all',entity_type:'all',source_run_id:'',search:'Lab'},true);
+  assert.equal(params.get('inbox'),'all');
+  assert.equal(params.get('status'),'all');
+  assert.equal(params.get('search'),'Lab');
+  assert.equal(params.get('refresh'),'true');
+});
+
+test('Review uses authoritative human labels and exposes history and diagnostic inboxes',()=>{
+  assert.equal(reviewRunLabel({run_label:'Actor Discovery — Oct 6, 2026',source_run_id:'discovery:577bd0bd-263a-43a7-90f8-373f7cab65ae'}),'Actor Discovery — Oct 6, 2026');
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  for(const label of ['Current / latest review','Previous runs / history','All actionable runs','Incomplete discovery records','Development / dry-run diagnostics','Full audit history'])assert.ok(component.includes(label));
+});
+
+test('latest run cards present truthful status, results, and an unambiguous refresh time',()=>{
+  assert.equal(latestRunOutcome({records_staged:1,queued_for_review:12,records_promoted:13,pending_review:9}),'1 staged · 12 queued for review · 13 promoted · 9 pending now');
+  assert.match(formatReviewTime(1791378000),/Oct 7, 2026.*UTC/);
+  assert.equal(formatReviewRefresh([]),'Not yet refreshed');
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  for(const text of ['Latest discovery','Real run status','Review data refreshed:','Review decisions are read-only.'])assert.ok(component.includes(text));
+  assert.doesNotMatch(component,/Last PostgreSQL sync/);
+});
 
 test('review exposes only Layer 1 Light Pull facts with readable states and values',()=>{
   const candidate={agent_metadata:{facts:[
@@ -116,6 +148,106 @@ test('normal Review detail hides audit cards while retaining badges, loading, an
   assert.match(component,/request\(`\/api\/review\/candidates\/\$\{selectedId\}`\)/);
   assert.match(component,/request\(`\/api\/review\/candidates\/\$\{selected\.candidate_id\}\/decision`/);
   assert.match(component,/Commit decision/);
+});
+
+test('hub assignment safely falls back without exposing legacy controls by default',()=>{
+  assert.deepEqual(hubAssignments(null),[]);
+  assert.deepEqual(existingHubMemberships(null),[]);
+  assert.deepEqual(hubProposalStatuses(null),[]);
+  assert.deepEqual(hubAssignments({agent_metadata:{hubs:[{hub_id:'legacy-1',name:'Legacy Hub'}]}}),[]);
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.match(component,/No deterministic hub recommendation is available/);
+  assert.match(component,/Choose hub manually/);
+  assert.doesNotMatch(component,/>Existing hubs</i);
+  assert.doesNotMatch(component,/Propose a new hub/i);
+  assert.match(component,/proposed_hub:null/);
+});
+
+test('backend outcomes drive 199 and 200 mile assignment plus outside and missing-location states',()=>{
+  for(const distance of [199,200])assert.equal(hubAssignmentState({
+    outcome:'assigned',recommended_hub_id:'hub-ai',distance_miles:distance,radius_miles:200,
+    topic_match:true,location_evaluated:true,
+  }),'recommended');
+  assert.equal(hubAssignmentState({
+    outcome:'needs_review_location',recommended_hub_id:'hub-ai',distance_miles:201,
+    radius_miles:200,topic_match:true,location_evaluated:true,within_radius:false,
+  }),'outside_radius');
+  assert.equal(hubAssignmentState({
+    outcome:'needs_review_location',topic_match:true,location_evaluated:false,
+  }),'missing_location');
+  assert.equal(hubAssignmentState({
+    outcome:'needs_review_topic',topic_match:false,location_evaluated:true,
+  }),'topic_mismatch');
+});
+
+test('same-topic overlap preserves the backend nearest recommendation and competing evidence',()=>{
+  const [assignment]=hubAssignments({agent_metadata:{hub_assignments:[{
+    topic_id:'ai',topic_name:'Artificial Intelligence',outcome:'same_topic_overlap',
+    review_kind:'hub_radius_overlap',topic_match:true,location_evaluated:true,
+    recommended_hub_id:'bay-ai',recommended_hub_name:'Bay Area AI Hub',
+    distance_miles:86,radius_miles:200,
+    competing_hubs:[{hub_id:'sac-ai',name:'Sacramento AI Hub',distance_miles:143}],
+  }]}});
+  assert.equal(assignment.state,'overlap');
+  assert.equal(assignment.recommended_hub_id,'bay-ai');
+  assert.deepEqual(assignment.competing_hubs.map(hub=>[hub.hub_id,hub.distance_miles]),[['sac-ai',143]]);
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.match(component,/Issue: hub_radius_overlap/);
+  assert.match(component,/Multiple qualifying same-topic hubs/);
+  assert.ok(component.indexOf('Topic match')<component.indexOf('Location match'));
+});
+
+test('multiple topics remain independent and historical memberships stay preserved',()=>{
+  const candidate={agent_metadata:{
+    hub_assignments:[
+      {topic_id:'ai',topic_name:'Artificial Intelligence',outcome:'assigned',recommended_hub_id:'hub-ai'},
+      {topic_id:'manufacturing',topic_name:'Advanced Manufacturing',outcome:'assigned',recommended_hub_id:'hub-mfg'},
+    ],
+    existing_memberships:[{hub_id:'historic',name:'Arizona Water Innovation Hub',topic_name:'Water'}],
+  }};
+  assert.deepEqual(hubAssignments(candidate).map(row=>[row.topic_id,row.recommended_hub_id]),[
+    ['ai','hub-ai'],['manufacturing','hub-mfg'],
+  ]);
+  assert.equal(existingHubMemberships(candidate)[0].name,'Arizona Water Innovation Hub');
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.match(component,/Existing GHUS membership/);
+  assert.match(component,/Preserved historical assignment/);
+});
+
+test('manual hub exploration prioritizes topic metadata, preserves IDs, and requires notes',()=>{
+  const options=manualHubOptions([
+    {hub_id:'other',name:'Alpha Other Hub',topic_id:'water'},
+    {hub_id:'match',name:'Zulu AI Hub',topic_id:'ai'},
+  ],{topic_id:'ai'},'');
+  assert.deepEqual(options.map(hub=>hub.hub_id),['match','other']);
+  const candidate={status:'pending_review'};
+  assert.equal(canSubmitReview({candidate,reviewer:'R',decisionKind:'new',admissionConfigured:true,manualHubOverride:true,notes:''}),false);
+  assert.equal(canSubmitReview({candidate,reviewer:'R',decisionKind:'new',admissionConfigured:true,manualHubOverride:true,notes:'Approved exception.'}),true);
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.match(component,/value=\$\{hub\.hub_id\}/);
+  assert.match(component,/Search hubs/);
+  assert.match(component,/requires reviewer notes/);
+});
+
+test('Phase 7 proposal participation is read-only on actor Review',()=>{
+  const candidate={agent_metadata:{hub_proposal_memberships:[{
+    proposal_id:'proposal-1',name:'Phoenix Advanced Materials Hub',
+    independent_family_count:14,independent_category_count:6,radius_miles:200,
+  }]}};
+  assert.equal(hubProposalStatuses(candidate)[0].independent_family_count,14);
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.match(component,/Potential new hub detected/i);
+  assert.match(component,/No active hub proposal for this actor/);
+  assert.match(component,/View hub proposal/);
+  assert.doesNotMatch(component,/Approve hub proposal|Create hub/);
+});
+
+test('actor decision, reviewer notes, badges, and existing evidence sections remain intact',()=>{
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  for(const text of ['Actor decision','Reviewer and notes','Commit decision','Light Pull evidence','Verified Deep Pull evidence','Sourced relationships','Actor classification and location'])assert.match(component,new RegExp(text));
+  assert.match(component,/decisionOptions\(selected\.entity_type\)/);
+  assert.match(component,/reviewStatusLabel\(selected\.status\)/);
+  assert.match(component,/DUPLICATE_LABELS\[selected\.duplicate_state\]/);
 });
 
 test('exact rejected label and mounted Review navigation are present',()=>{

@@ -1,0 +1,3 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+700c0f14-2de4-4100-b380-cb7183301fbb,open_web_search,event,https://events-0.example/event-0,05b2f472167a0cf80d51f5dc1235c11d75482b22ac34a4e39cc1b5ef8af23170,climate-event-event-0|2027-03-10,create,0.0,,,would_create,
+700c0f14-2de4-4100-b380-cb7183301fbb,open_web_search,event,https://events-1.example/event-1,43f5f35b521ecc8f75775996eabaaf540ac987cf34d7ae022567ffabf32dce00,climate-event-event-1|2027-03-10,create,0.0,,,would_create,
