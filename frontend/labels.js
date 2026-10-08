@@ -123,6 +123,8 @@ export const BADGES = {
   notChecked: "Database Match Not Checked",
   testData: "Test Data",
   readOnly: "Read Only",
+  hubDimension: "Decides Hub",
+  secondary: "Secondary",
   high: "High",
   medium: "Medium",
   low: "Low",
@@ -193,6 +195,12 @@ export const SENTENCES = {
     "Member of, Portfolio of, Spinout of, Funded by and Collaborates with are " +
     "relationships, not parenthood, and are shown read-only below.",
   regionDerived: "Derived from the state. Not editable.",
+  sectorDecidesHub:
+    "Hub membership is decided on sector. An actor joins a hub because it works in that " +
+    "hub's sector and sits inside its radius.",
+  topicIsSecondary:
+    "Topic is the specific thing this actor was found for. It is recorded on the record and " +
+    "on any hub proposal, but it no longer decides hub membership.",
   categoryChangeWarning:
     "Changing the Actor Category clears the Category Type, because a type belongs to " +
     "exactly one category. Choose a new type before saving.",

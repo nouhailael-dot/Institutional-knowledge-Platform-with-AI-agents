@@ -929,7 +929,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <h3><span class="review-step">3</span>${SECTIONS.sector}</h3>
             <div class="review-two-up">
               <div class="review-box">
-                <h4>${FIELDS.sector}</h4>
+                <h4>${FIELDS.sector} <span class="review-chip">${BADGES.hubDimension}</span></h4>
+                <p class="review-hint">${SENTENCES.sectorDecidesHub}</p>
                 <ul class="review-checklist">
                   ${THEMATIC_SECTORS.map(([code, label]) => html`<li key=${code}>
                     <label><input type="checkbox" disabled=${!pending || busy}
@@ -961,10 +962,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               </div>
             </div>
             <dl class="review-facts">
-              <div><dt>${FIELDS.topic}</dt><dd>
+              <div><dt>${FIELDS.topic} <span class="review-chip">${BADGES.secondary}</span></dt><dd>
                 ${present(selected.agent_metadata?.topic_label) || MISSING.notYetChecked}
               </dd></div>
             </dl>
+            <p class="review-hint">${SENTENCES.topicIsSecondary}</p>
             <h4>${FIELDS.hub}</h4>
             ${!hubs.length && html`<p class="muted">${MISSING.notYetChecked}</p>`}
             <ul class="review-evidence">

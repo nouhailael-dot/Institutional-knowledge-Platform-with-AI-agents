@@ -45,7 +45,9 @@ import {
 } from '../frontend/taxonomy.js';
 import {
   ACRONYMS,
+  BADGES,
   SECTIONS,
+  SENTENCES,
   TITLE_CASE_GROUPS,
   TITLE_CASE_LOWER_WORDS,
 } from '../frontend/labels.js';
@@ -583,4 +585,17 @@ test('controlled strength and confidence values display as labels', () => {
   assert.equal(confidenceLabel('unverifiable'), 'unverifiable');
   assert.equal(confidenceLabel(null), null);
   assert.equal(matchStrengthLabel(null), MISSING.notFound);
+});
+
+test('the screen says which dimension decides hub membership', () => {
+  // GHUS decision, 2026-10-08. Sector decides; topic is recorded but no longer
+  // gates. A reviewer should be able to read that off the screen.
+  assert.match(component, /BADGES\.hubDimension/);
+  assert.match(component, /SENTENCES\.sectorDecidesHub/);
+  assert.match(component, /BADGES\.secondary/);
+  assert.match(component, /SENTENCES\.topicIsSecondary/);
+  assert.equal(BADGES.hubDimension, 'Decides Hub');
+  assert.equal(BADGES.secondary, 'Secondary');
+  assert.match(SENTENCES.sectorDecidesHub, /sector/i);
+  assert.match(SENTENCES.topicIsSecondary, /no longer decides hub membership/);
 });
