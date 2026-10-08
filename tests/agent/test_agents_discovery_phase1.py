@@ -1182,7 +1182,7 @@ def test_promote_actor_persists_validated_category_and_doubt_bridge():
             "name": "Example Commercial Organization",
             "description": "The official page describes a commercial organization.",
             "actor_category": "company",
-            "category_type": "other",
+            "category_type": "not_applicable",
             "category_note": "No listed company type fits the self-description.",
             "category_needs_review": True,
             "classification_evidence": {
@@ -1203,7 +1203,7 @@ def test_promote_actor_persists_validated_category_and_doubt_bridge():
         if "INSERT INTO actor" in sql
     )
     assert actor_params["actor_category"] == "company"
-    assert actor_params["category_type"] == "other"
+    assert actor_params["category_type"] == "not_applicable"
     assert actor_params["category_note"] == "No listed company type fits the self-description."
     assert actor_params["category_needs_review"] is True
     classification_fact = next(

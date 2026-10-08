@@ -17,6 +17,46 @@ RECORD_KINDS = ("actor", "person", "event")
 CATEGORY_DOUBT_BRIDGE_KIND = "classification"
 CATEGORY_DOUBT_ISSUE = "category_doubt"
 
+# The Intern Guide's catch-all. Every category carries exactly one, it is always
+# a deliberate choice rather than a stand-in for missing data, and choosing it
+# always requires a one-line note and a category_doubt review item.
+NOT_APPLICABLE = "not_applicable"
+# The Phase 5 catch-all. Retired: it still displays on the records that hold it
+# and still validates on read, but it is never selectable and never proposed.
+RETIRED_CATCH_ALL = "other"
+CATCH_ALL_TYPE_CODES = (NOT_APPLICABLE, RETIRED_CATCH_ALL)
+CATEGORY_COUNT = 12
+CATEGORY_TYPE_COUNT = 69
+
+# The Guide's own decision rules, quoted into every category prompt so the model
+# cannot drift from them. "Decide by main job" is the one that matters most.
+GUIDE_DECISION_RULES = (
+    "Decide from the organization's own self-description what its MAIN JOB is. "
+    "Never decide from its funder, its sector, its age, how well known it is, "
+    "or how GHUS might use it. "
+    "A person is a person record and a time-bound event is an event record, "
+    "never an actor. "
+    "An organization with several distinct parts becomes one record per part, "
+    "each with its own category, linked to the parent; never two categories on "
+    "one record. "
+    "Hospital exception: a hospital tied to a university keeps its own Hospital "
+    "category with type University-Affiliated and links back to the university; "
+    "it never becomes a University record. The university's medical school is a "
+    "separate University record with type Medical School. "
+    "A university research lab, accelerator, tech transfer office or testbed is "
+    "a University record, not Research Center, E&I Platform or Applied Facility. "
+    "National Laboratory requires a formal FFRDC or chartered designation under "
+    "a management contract; federal grants, agency housing or "
+    "government-relevant research do not qualify, and those are Research Center "
+    "with type Government-Affiliated. "
+    "E&I Platform versus Association: does the actor OPERATE the programs or "
+    "space itself? E&I Platform. Does it CONVENE a membership of organizations "
+    "that each run their own thing? Association / Consortium / Network. "
+    "If you are unsure, do not guess and do not leave it blank: choose Not "
+    "Applicable, give a one-line note explaining the doubt, and send it to GHUS "
+    "review."
+)
+
 
 class ActorClassificationError(ValueError):
     """A classification is incomplete or violates Architecture V2."""
@@ -33,6 +73,7 @@ class NonActorRecord(ActorClassificationError):
 class CategoryType:
     code: str
     label: str
+    meaning: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,11 +102,24 @@ class CategoryCatalog:
     def validates(self, category_code: str, type_code: str) -> bool:
         return type_code in self.type_codes(category_code)
 
+    def types_for_prompt(self, category_code: str) -> list[dict[str, str]]:
+        """Codes with the Guide's own wording, so the model picks on meaning."""
+
+        try:
+            category = self.by_code[category_code]
+        except KeyError as exc:
+            raise ActorClassificationError(f"unknown actor category {category_code!r}") from exc
+        return [
+            {"code": item.code, "label": item.label, "meaning": item.meaning}
+            for item in category.types
+        ]
+
 
 @dataclass(frozen=True)
 class ClassificationEvidence:
     main_job: str
     medical_school: bool = False
+    university_affiliated_hospital: bool = False
     national_designation: str | None = None
     development_stage: str | None = None
     startup_origin: str | None = None
@@ -89,6 +143,7 @@ class ActorClassification:
             "classification_evidence": {
                 "main_job": self.evidence.main_job,
                 "medical_school": self.evidence.medical_school,
+                "university_affiliated_hospital": self.evidence.university_affiliated_hospital,
                 "national_designation": self.evidence.national_designation,
                 "development_stage": self.evidence.development_stage,
                 "startup_origin": self.evidence.startup_origin,
@@ -108,15 +163,26 @@ def load_category_catalog(path: Path = CATALOG_PATH) -> CategoryCatalog:
         seen_codes.add(code)
         types = tuple(
             CategoryType(
-                code=_single_line(item[0], "type code"),
-                label=_single_line(item[1], "type label"),
+                code=_single_line(item["code"], "type code"),
+                label=_single_line(item["label"], "type label"),
+                meaning=_single_line(item["meaning"], "type meaning"),
             )
             for item in entry.get("types", [])
         )
         if len({item.code for item in types}) != len(types):
             raise ActorClassificationError(f"duplicate type in category {code!r}")
-        if sum(item.code == "other" for item in types) != 1:
-            raise ActorClassificationError(f"category {code!r} must have exactly one other type")
+        if sum(item.code == NOT_APPLICABLE for item in types) != 1:
+            raise ActorClassificationError(
+                f"category {code!r} must have exactly one {NOT_APPLICABLE} type"
+            )
+        if types[-1].code != NOT_APPLICABLE:
+            raise ActorClassificationError(
+                f"category {code!r} must list {NOT_APPLICABLE} last"
+            )
+        if any(item.code == RETIRED_CATCH_ALL for item in types):
+            raise ActorClassificationError(
+                f"category {code!r} still offers the retired {RETIRED_CATCH_ALL!r} type"
+            )
         categories.append(
             Category(
                 code=code,
@@ -125,11 +191,16 @@ def load_category_catalog(path: Path = CATALOG_PATH) -> CategoryCatalog:
                 types=types,
             )
         )
-    if len(categories) != 12:
-        raise ActorClassificationError(f"expected 12 actor categories, got {len(categories)}")
+    if len(categories) != CATEGORY_COUNT:
+        raise ActorClassificationError(
+            f"expected {CATEGORY_COUNT} actor categories, got {len(categories)}"
+        )
     catalog = CategoryCatalog(tuple(categories))
-    if sum(len(category.types) for category in catalog.categories) != 65:
-        raise ActorClassificationError("Architecture V2 requires exactly 65 category types")
+    total = sum(len(category.types) for category in catalog.categories)
+    if total != CATEGORY_TYPE_COUNT:
+        raise ActorClassificationError(
+            f"the Intern Guide catalog has exactly {CATEGORY_TYPE_COUNT} category types, got {total}"
+        )
     return catalog
 
 
@@ -172,13 +243,13 @@ def classify_actor_category_type(
     observe("category")
     category_raw = llm_client.extract_with_tool(
         system=(
-            "Choose what the organization IS from the supplied Architecture V2 categories. "
-            "Use its main job and official self-description only. Never use sector, funder, "
-            "fame, organization age, or how GHUS might use it. Return evidence from the "
-            "self-description. Do not choose a category type yet."
+            "Choose what the organization IS from the supplied categories. Return evidence "
+            "quoted from the self-description. Do not choose a category type yet.\n"
+            + GUIDE_DECISION_RULES
         ),
         user=str({**subject, "categories": [
-            {"code": item.code, "definition": item.definition} for item in catalog.categories
+            {"code": item.code, "label": item.label, "definition": item.definition}
+            for item in catalog.categories
         ]}),
         tool_name="classify_actor_category",
         tool_description="Choose one actor category and evidence before category type.",
@@ -191,6 +262,9 @@ def classify_actor_category_type(
     evidence = ClassificationEvidence(
         main_job=_single_line(category_raw.get("main_job_evidence"), "main-job evidence"),
         medical_school=bool(category_raw.get("medical_school", False)),
+        university_affiliated_hospital=bool(
+            category_raw.get("university_affiliated_hospital", False)
+        ),
         national_designation=_evidence_line(category_raw.get("national_designation")),
         development_stage=_evidence_line(category_raw.get("development_stage")),
         startup_origin=_evidence_line(category_raw.get("startup_origin")),
@@ -210,15 +284,19 @@ def classify_actor_category_type(
     allowed_types = catalog.type_codes(category_code)
     type_raw = llm_client.extract_with_tool(
         system=(
-            "Choose exactly one category type from the supplied list. The actor category is "
-            "already fixed. Do not choose a type from another category. Use only the official "
-            "self-description and supplied evidence. If none fits, choose other and explain why."
+            "Choose exactly one category type from the supplied list, matching it on the "
+            "stated meaning. The actor category is already fixed: do not choose a type from "
+            "another category and do not revisit the category. Use only the official "
+            "self-description and the supplied evidence. If nothing listed genuinely fits, "
+            f"choose {NOT_APPLICABLE} and give a one-line note saying what the doubt is. "
+            f"{NOT_APPLICABLE} is a deliberate choice, never a stand-in for data you did "
+            "not find."
         ),
         user=str({
             **subject,
             "actor_category": category_code,
             "main_job_evidence": evidence.main_job,
-            "allowed_types": list(allowed_types),
+            "allowed_types": catalog.types_for_prompt(category_code),
         }),
         tool_name="classify_actor_category_type",
         tool_description="Choose one type restricted to the already-selected category.",
@@ -228,7 +306,7 @@ def classify_actor_category_type(
     type_code = forced_type or str(type_raw.get("category_type") or "").strip()
     type_note = _optional_line(type_raw.get("category_note"))
     note = _join_notes(note, type_note)
-    doubt = doubt or bool(type_raw.get("doubt", False)) or type_code == "other"
+    doubt = doubt or bool(type_raw.get("doubt", False)) or type_code in CATCH_ALL_TYPE_CODES
     return validate_actor_classification(
         ActorClassification(category_code, type_code, note, doubt, evidence), catalog=catalog
     )
@@ -258,15 +336,16 @@ def classify_type_for_existing_category(
         "organization_name": _single_line(name, "organization name"),
         "official_self_description": str(self_description or "").strip(),
         "actor_category": category,
-        "allowed_types": list(allowed_types),
+        "allowed_types": catalog.types_for_prompt(category),
     }
     raw = llm_client.extract_with_tool(
         system=(
             "The actor category was migrated from the canonical GHUS database and is fixed. "
-            "Choose exactly one category type from the supplied category-specific list using "
-            "only authoritative or official self-description evidence. Do not reclassify the "
-            "actor category. Do not use sector, funder, fame, organization age, or unsupported "
-            "inference. If no defined type fits, choose other and give a one-line note."
+            "Choose exactly one category type from the supplied category-specific list, "
+            "matching it on the stated meaning, using only authoritative or official "
+            "self-description evidence. Do not reclassify the actor category. Do not use "
+            "sector, funder, fame, organization age, or unsupported inference. If no defined "
+            f"type fits, choose {NOT_APPLICABLE} and give a one-line note."
         ),
         user=str(subject),
         tool_name="classify_existing_actor_category_type",
@@ -276,7 +355,7 @@ def classify_type_for_existing_category(
     ) or {}
     category_type = str(raw.get("category_type") or "").strip()
     note = _optional_line(raw.get("category_note"))
-    doubt = bool(raw.get("doubt", False)) or category_type == "other"
+    doubt = bool(raw.get("doubt", False)) or category_type in CATCH_ALL_TYPE_CODES
     return validate_actor_classification(
         ActorClassification(
             actor_category=category,
@@ -309,6 +388,9 @@ def classification_from_payload(
     evidence = ClassificationEvidence(
         main_job=_single_line(evidence_map.get("main_job"), "main-job evidence"),
         medical_school=bool(evidence_map.get("medical_school", False)),
+        university_affiliated_hospital=bool(
+            evidence_map.get("university_affiliated_hospital", False)
+        ),
         national_designation=_optional_line(evidence_map.get("national_designation")),
         development_stage=_optional_line(evidence_map.get("development_stage")),
         startup_origin=_optional_line(evidence_map.get("startup_origin")),
@@ -336,8 +418,10 @@ def validate_actor_classification(
             f"category type {category_type!r} does not belong to {category!r}"
         )
     note = _optional_line(result.category_note)
-    if (category_type == "other" or result.category_needs_review) and not note:
-        raise ActorClassificationError("other or doubtful classification requires category_note")
+    if (category_type in CATCH_ALL_TYPE_CODES or result.category_needs_review) and not note:
+        raise ActorClassificationError(
+            "Not Applicable or doubtful classification requires category_note"
+        )
     if not _single_line(result.evidence.main_job, "main-job evidence"):
         raise ActorClassificationError("main-job evidence is required")
     return replace(result, actor_category=category, category_type=category_type, category_note=note)
@@ -345,10 +429,18 @@ def validate_actor_classification(
 
 def _validate_hard_rule_result(result: ActorClassification) -> ActorClassification:
     evidence = result.evidence
-    if evidence.medical_school and (
-        result.actor_category != "university_academic" or result.category_type != "college_school"
+    if evidence.university_affiliated_hospital and (
+        result.actor_category != "hospital_clinical"
+        or result.category_type != "academic_medical_center"
     ):
-        raise ActorClassificationError("medical schools must be university_academic/college_school")
+        raise ActorClassificationError(
+            "a university-affiliated hospital must be "
+            "hospital_clinical/academic_medical_center, never a University record"
+        )
+    if evidence.medical_school and (
+        result.actor_category != "university_academic" or result.category_type != "medical_school"
+    ):
+        raise ActorClassificationError("medical schools must be university_academic/medical_school")
     if result.actor_category == "national_laboratory" and not evidence.national_designation:
         raise ActorClassificationError("national laboratory requires formal designation evidence")
     if evidence.national_designation and result.actor_category != "national_laboratory":
@@ -363,12 +455,12 @@ def _validate_hard_rule_result(result: ActorClassification) -> ActorClassificati
             "published organization development-stage evidence requires startup"
         )
     if result.actor_category == "startup":
-        allowed_origins = {"university_spinout", "corporate_spinout", "independent_startup"}
-        if evidence.startup_origin not in allowed_origins and result.category_type != "other":
+        if (evidence.startup_origin not in STARTUP_ORIGIN_TYPES
+                and result.category_type != NOT_APPLICABLE):
             raise ActorClassificationError(
                 "startup origin evidence is required for a specific startup type"
             )
-        if evidence.startup_origin in allowed_origins and (
+        if evidence.startup_origin in STARTUP_ORIGIN_TYPES and (
             result.category_type != evidence.startup_origin
         ):
             raise ActorClassificationError("startup origin evidence must determine category type")
@@ -381,18 +473,36 @@ def _validate_hard_rule_result(result: ActorClassification) -> ActorClassificati
     return result
 
 
+STARTUP_ORIGIN_TYPES = (
+    "independent_startup",
+    "university_spinout",
+    "corporate_spinout",
+    "accelerator_portfolio_company",
+)
+
+
 def _apply_hard_rules(
     category_code: str, evidence: ClassificationEvidence
 ) -> tuple[str, str | None, str | None, bool]:
+    # Intern Guide, Category 5: a hospital tied to a university keeps its own
+    # Hospital category. It is checked before the medical-school rule because a
+    # single page often describes both, and the hospital is the stronger claim.
+    if evidence.university_affiliated_hospital:
+        return "hospital_clinical", "academic_medical_center", None, False
+    # Intern Guide, Category 1: the degree-granting medical academic unit is a
+    # University record with its own Medical School type, not College / School.
     if evidence.medical_school:
-        return "university_academic", "college_school", None, False
+        return "university_academic", "medical_school", None, False
     if evidence.national_designation:
         return "national_laboratory", None, None, False
     if category_code == "national_laboratory" and not evidence.national_designation:
+        # Intern Guide, Category 3: without a formal designation this is a
+        # Research Center, and the Guide names the type to use.
         return (
             "research_center",
-            None,
-            "National-laboratory designation was not evidenced; closest category used.",
+            "government_affiliated",
+            "National-laboratory designation was not evidenced; "
+            "Research Center / Government-Affiliated used pending review.",
             True,
         )
     if category_code == "startup" and not evidence.development_stage:
@@ -403,13 +513,12 @@ def _apply_hard_rules(
             True,
         )
     if category_code == "startup" or evidence.development_stage:
-        allowed_origins = {"university_spinout", "corporate_spinout", "independent_startup"}
-        if evidence.startup_origin in allowed_origins:
+        if evidence.startup_origin in STARTUP_ORIGIN_TYPES:
             return "startup", evidence.startup_origin, None, False
         return (
             "startup",
-            "other",
-            "Startup origin was not evidenced; other used pending review.",
+            NOT_APPLICABLE,
+            "Startup origin was not evidenced; Not Applicable used pending review.",
             True,
         )
     if evidence.utility_ownership == "public":
@@ -441,7 +550,21 @@ def _category_schema(category_codes: tuple[str, ...]) -> dict[str, object]:
         "properties": {
             "actor_category": {"type": "string", "enum": list(category_codes)},
             "main_job_evidence": {"type": "string", "minLength": 1, "maxLength": 500},
-            "medical_school": {"type": "boolean"},
+            "medical_school": {
+                "type": "boolean",
+                "description": (
+                    "True only for the degree-granting medical ACADEMIC unit. The clinical "
+                    "hospital is a separate record: use university_affiliated_hospital."
+                ),
+            },
+            "university_affiliated_hospital": {
+                "type": "boolean",
+                "description": (
+                    "True when the subject is a hospital, clinical system or medical center "
+                    "that is operated by, or formally tied to, a university medical school. "
+                    "It stays a Hospital record and is never nested under University."
+                ),
+            },
             "national_designation": {
                 **nullable,
                 "description": (
@@ -458,7 +581,7 @@ def _category_schema(category_codes: tuple[str, ...]) -> dict[str, object]:
             },
             "startup_origin": {
                 "type": ["string", "null"],
-                "enum": ["university_spinout", "corporate_spinout", "independent_startup", None],
+                "enum": [*STARTUP_ORIGIN_TYPES, None],
                 "description": "Startup origin when the evidence states it; otherwise null.",
             },
             "utility_ownership": {
@@ -470,6 +593,7 @@ def _category_schema(category_codes: tuple[str, ...]) -> dict[str, object]:
         },
         "required": [
             "actor_category", "main_job_evidence", "medical_school",
+            "university_affiliated_hospital",
             "national_designation", "development_stage", "startup_origin",
             "utility_ownership", "doubt", "category_note",
         ],
