@@ -9,6 +9,8 @@ reaching a reviewer's screen.
 
 from __future__ import annotations
 
+import csv
+import io
 import re
 from pathlib import Path
 
@@ -25,10 +27,13 @@ from agents.common.actor_classification import (
     validate_actor_classification,
 )
 from scripts.taxonomy_intern_guide_mapping import (
+    COLUMNS,
     EXACT,
     MAPPING,
     OUTPUT,
     REVIEW,
+    UNVERIFIED,
+    _without_counts,
     build_rows,
     phase5_pairs,
     render,
@@ -260,8 +265,23 @@ def test_mapping_covers_every_phase5_pair_and_is_deterministic():
     rows = build_rows(None)
     assert len(rows) == 65
     assert len(MAPPING) == 65
+    # Same catalogs, byte-identical output.
     assert render(rows) == render(build_rows(None))
-    assert OUTPUT.read_text(encoding="utf-8") == render(rows)
+
+    # The committed CSV must agree on every column except record_count, which is
+    # a MEASUREMENT: it reads UNVERIFIED without a database and a real number
+    # with one. Comparing it here would make the test fail depending on whether
+    # the person running it happened to have the test database up.
+    assert _without_counts(OUTPUT.read_text(encoding="utf-8")) == _without_counts(render(rows))
+
+
+def test_the_committed_mapping_counts_are_a_measurement_or_honestly_absent():
+    index = COLUMNS.index("record_count")
+    for row in list(csv.reader(io.StringIO(OUTPUT.read_text(encoding="utf-8"))))[1:]:
+        value = row[index]
+        assert value == UNVERIFIED or value.isdigit(), (
+            f"record_count must be a number or UNVERIFIED, never blank: {value!r}"
+        )
 
 
 def test_every_category_changing_mapping_is_review_only():
