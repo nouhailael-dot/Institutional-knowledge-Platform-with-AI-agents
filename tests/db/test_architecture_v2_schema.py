@@ -92,9 +92,9 @@ def test_migration_tracks_are_separate_and_detached():
     )
     platform = sorted((ROOT / "agents" / "sql").glob("*_v2_*.sql"))
     assert [int(path.name[:3]) for path in platform] == [
-        *range(190, 391, 10), 420, 430, 510, 520,
+        *range(190, 391, 10), 420, 430, 510, 520, 530,
     ]
-    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 25
+    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 26
 
 
 def test_populated_canonical_constraints_are_not_valid():
@@ -365,3 +365,55 @@ def test_append_only_and_role_permissions(v2_engine: Engine):
                     {"role": role, "table": table},
                 ).scalar_one()
                 assert may_delete is False, f"{role} unexpectedly may DELETE {table}"
+
+
+def test_conformance_fixes_close_their_findings_and_respect_the_track_split():
+    """530 and 545 close the audit's gaps without crossing the track boundary."""
+
+    platform = (ROOT / "agents/sql/530_v2_conformance_fixes.sql").read_text(encoding="utf-8")
+    canonical = (
+        ROOT / "migrations/proposed/deferred/545_v2_canonical_conformance.sql"
+    ).read_text(encoding="utf-8")
+
+    # F1: collection_run can describe a run, and the initiator stays nullable
+    # because there is no authenticated identity yet.
+    for column in (
+        "trigger_type", "cadence", "initiated_by", "config_snapshot",
+        "found_count", "deduplicated_count", "staged_count", "review_item_count",
+    ):
+        assert column in platform, f"collection_run.{column} is missing"
+    initiated = platform.split("ADD COLUMN IF NOT EXISTS initiated_by")[1][:40]
+    assert "text" in initiated and "NOT NULL" not in initiated, (
+        "initiated_by must stay nullable: there is no authenticated identity yet, "
+        "and an unknown initiator is never defaulted"
+    )
+
+    # F14: the UM6P/OCP master list and its three states, named as 5.5 names them.
+    assert "CREATE TABLE IF NOT EXISTS strategic_entity" in platform
+    assert "CREATE TABLE IF NOT EXISTS actor_strategic_connection_check" in platform
+    for state in ("'found'", "'not_found_in_sources_read'", "'not_yet_checked'"):
+        assert state in platform, f"the {state} state is missing"
+
+    # F7: records are guarded, not just their evidence.
+    assert "ghus_guard_no_delete" in platform
+    for table in ("actor", "person", "event", "hub", "hub_actor", "actor_topic", "actor_location"):
+        assert f"'{table}'" in platform, f"{table} has no delete guard"
+
+    # F11 and person verification.
+    assert "actor_ranking_university_only" in platform
+    assert "CREATE TABLE IF NOT EXISTS person_verification_event" in platform
+    # Same honesty rule as actor_verification_event: no fake reviewer, no fake date.
+    assert "ck_person_verification_origin" in platform
+
+    # The canonical-table work is in the other track, and only there.
+    assert "fk_actor_category_type" in canonical
+    assert "is_current" in canonical
+    assert "fk_actor_category_type" not in platform
+    assert not re.search(
+        r"\bALTER\s+TABLE\s+(actor|hub|hub_actor|event|person)\b", platform, re.IGNORECASE
+    )
+
+    # Nothing is backfilled and nothing is dropped by either file.
+    for text_body, name in ((platform, "530"), (canonical, "545")):
+        assert "DROP TABLE" not in text_body, f"{name} drops a table"
+        assert "DELETE FROM" not in text_body, f"{name} deletes rows"
