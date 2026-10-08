@@ -1,66 +1,66 @@
 old_category,old_type,record_count,new_category,new_type,rule,reason
-university_academic,university_system,UNVERIFIED,university_academic,university_system,exact,Same meaning; the Guide relabels it Main Institution.
-university_academic,college_school,UNVERIFIED,university_academic,college_school,exact,Same meaning; relabelled College / School.
-university_academic,academic_department,UNVERIFIED,university_academic,academic_department,exact,Same meaning; relabelled Department.
-university_academic,branch_campus,UNVERIFIED,university_academic,,review,The Guide has no branch-campus type. A reviewer decides between Main Institution for a campus that is its own institution and Not Applicable.
-university_academic,community_technical_college,UNVERIFIED,university_academic,,review,The Guide has no community or technical college type. A reviewer decides between Main Institution and Not Applicable.
-university_academic,other,UNVERIFIED,university_academic,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-research_center,independent_institute,UNVERIFIED,research_center,independent_institute,exact,Same meaning; relabelled Independent.
-research_center,university_affiliated_center,UNVERIFIED,university_academic,research_lab_center,review,CATEGORY CHANGE (decision D2). The Guide puts a university research lab in Category 1. Never applied automatically.
-research_center,research_lab_group,UNVERIFIED,research_center,,review,"A reviewer decides whether the group is independent (Category 2) or a university unit (Category 1, Research Lab / Center)."
-research_center,other,UNVERIFIED,research_center,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-national_laboratory,doe_national_lab,UNVERIFIED,national_laboratory,,review,"The Guide types a national lab by its OPERATOR. The operator is not in the stored value, so a reviewer reads the management contract."
-national_laboratory,ffrdc,UNVERIFIED,national_laboratory,,review,"The Guide types a national lab by its operator. A reviewer reads the FFRDC entry to choose University-Operated, Corporate-Operated, Consortium-Operated or Government-Direct."
-national_laboratory,federal_research_facility,UNVERIFIED,national_laboratory,,review,"Designation check first. With a formal FFRDC or charter this is Government-Direct; without one the Guide moves it to Category 2, Government-Affiliated, which is a category change."
-national_laboratory,other,UNVERIFIED,national_laboratory,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-applied_facility,experimental_farm_station,UNVERIFIED,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run station belongs in Category 1 instead."
-applied_facility,pilot_demonstration_plant,UNVERIFIED,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run plant belongs in Category 1 instead."
-applied_facility,testbed,UNVERIFIED,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run testbed belongs in Category 1 instead."
-applied_facility,field_site_living_lab,UNVERIFIED,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run field site belongs in Category 1 instead."
-applied_facility,other,UNVERIFIED,applied_facility,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-hospital_clinical,academic_medical_center,UNVERIFIED,hospital_clinical,academic_medical_center,exact,Same meaning; relabelled University-Affiliated.
-hospital_clinical,health_system,UNVERIFIED,hospital_clinical,,review,The Guide splits a health system into Nonprofit and For-Profit. Ownership is not in the stored value.
-hospital_clinical,hospital,UNVERIFIED,hospital_clinical,,review,"The Guide types a hospital by ownership: standalone, nonprofit system, for-profit system, public or university-affiliated."
-hospital_clinical,specialty_clinic_center,UNVERIFIED,hospital_clinical,,review,"The Guide has no specialty-clinic type. A reviewer picks the ownership type that fits, or Not Applicable."
-hospital_clinical,other,UNVERIFIED,hospital_clinical,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-company,large_multinational,UNVERIFIED,company,,review,The Guide splits large companies into Public Company and Private Company. Listing status is not in the stored value.
-company,small_mid_size,UNVERIFIED,company,small_mid_size,exact,Same meaning; relabelled SME.
-company,business_unit_subsidiary,UNVERIFIED,company,business_unit_subsidiary,exact,Same meaning; relabelled Subsidiary / Business Unit.
-company,corporate_rd_center,UNVERIFIED,company,,review,"The Guide has no corporate R&D centre type. A corporate research centre is usually Category 2, Corporate-Operated, which is a category change."
-company,other,UNVERIFIED,company,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-startup,university_spinout,UNVERIFIED,startup,university_spinout,exact,Identical meaning and code.
-startup,corporate_spinout,UNVERIFIED,startup,corporate_spinout,exact,Identical meaning and code.
-startup,independent_startup,UNVERIFIED,startup,independent_startup,exact,Same meaning; relabelled Independent.
-startup,other,UNVERIFIED,startup,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-innovation_platform,incubator,UNVERIFIED,innovation_platform,incubator,exact,Identical meaning and code.
-innovation_platform,accelerator,UNVERIFIED,innovation_platform,accelerator,exact,Identical meaning and code.
-innovation_platform,venture_studio,UNVERIFIED,innovation_platform,venture_studio,exact,Same meaning; label re-cased to Venture Studio.
-innovation_platform,innovation_center_shared_lab,UNVERIFIED,innovation_platform,,review,"The Guide has no innovation-centre type. A reviewer applies the Category 8 versus Category 12 test: operates space itself, or convenes members."
-innovation_platform,tech_transfer_office,UNVERIFIED,university_academic,tech_transfer_office,review,CATEGORY CHANGE. The Guide puts a tech transfer office in Category 1. Never applied automatically.
-innovation_platform,other,UNVERIFIED,innovation_platform,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-investor,venture_capital,UNVERIFIED,investor,venture_capital,exact,Same meaning; relabelled Venture Capital Firm.
-investor,corporate_venture,UNVERIFIED,investor,corporate_venture,exact,Same meaning; relabelled Corporate Venture Arm.
-investor,angel_group,UNVERIFIED,investor,angel_group,exact,"Same meaning, widened by the Guide to Family Office / Angel Network."
-investor,impact_climate_fund,UNVERIFIED,investor,,review,"The Guide has no impact or climate fund type. A reviewer picks the capital source that fits, or Not Applicable."
-investor,private_equity_growth,UNVERIFIED,investor,,review,"The Guide has no private equity or growth fund type. A reviewer picks the capital source that fits, or Not Applicable."
-investor,public_investment_fund,UNVERIFIED,investor,public_investment_fund,exact,Same meaning; relabelled Government Fund.
-investor,other,UNVERIFIED,investor,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-government,federal_agency,UNVERIFIED,government,federal_agency,exact,Same meaning; relabelled Federal.
-government,state_agency,UNVERIFIED,government,state_agency,exact,Same meaning; relabelled State.
-government,local_municipal,UNVERIFIED,government,local_municipal,exact,Same meaning; relabelled Local / Municipal.
-government,regional_authority,UNVERIFIED,government,,review,"The Guide has no regional or special-purpose authority type. A reviewer picks the jurisdiction level, or Not Applicable."
-government,public_utility,UNVERIFIED,government,public_utility,exact,Identical meaning and code.
-government,other,UNVERIFIED,government,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-foundation_nonprofit,private_foundation,UNVERIFIED,foundation_nonprofit,private_foundation,exact,Identical meaning and code.
-foundation_nonprofit,corporate_foundation,UNVERIFIED,foundation_nonprofit,corporate_foundation,exact,Identical meaning and code.
-foundation_nonprofit,community_foundation,UNVERIFIED,foundation_nonprofit,community_foundation,exact,Identical meaning and code.
-foundation_nonprofit,operating_nonprofit,UNVERIFIED,foundation_nonprofit,operating_nonprofit,exact,Identical meaning and code.
-foundation_nonprofit,think_tank,UNVERIFIED,foundation_nonprofit,,review,"The Guide has no think-tank type. A reviewer decides between Operating Nonprofit and Category 2, Research Center, which is a category change."
-foundation_nonprofit,other,UNVERIFIED,foundation_nonprofit,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
-association_network,trade_association,UNVERIFIED,association_network,trade_association,exact,Same meaning; relabelled Trade Association.
-association_network,research_consortium,UNVERIFIED,association_network,research_consortium,exact,Identical meaning and code.
-association_network,professional_society,UNVERIFIED,association_network,,review,Professional Network is close but not identical: a society may also be a trade association or a standards body. A reviewer decides.
-association_network,standards_body,UNVERIFIED,association_network,,review,"The Guide has no standards-body type. A reviewer decides between Trade Association, Innovation Consortium and Not Applicable."
-association_network,alliance_coalition,UNVERIFIED,association_network,,review,The Guide has no alliance or coalition type. A reviewer decides which membership type the body actually is.
-association_network,multi_location_network,UNVERIFIED,association_network,multi_location_network,exact,Same meaning; relabelled Statewide / Multi-Location Network.
-association_network,other,UNVERIFIED,association_network,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+university_academic,university_system,0,university_academic,university_system,exact,Same meaning; the Guide relabels it Main Institution.
+university_academic,college_school,0,university_academic,college_school,exact,Same meaning; relabelled College / School.
+university_academic,academic_department,0,university_academic,academic_department,exact,Same meaning; relabelled Department.
+university_academic,branch_campus,0,university_academic,,review,The Guide has no branch-campus type. A reviewer decides between Main Institution for a campus that is its own institution and Not Applicable.
+university_academic,community_technical_college,0,university_academic,,review,The Guide has no community or technical college type. A reviewer decides between Main Institution and Not Applicable.
+university_academic,other,0,university_academic,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+research_center,independent_institute,0,research_center,independent_institute,exact,Same meaning; relabelled Independent.
+research_center,university_affiliated_center,0,university_academic,research_lab_center,review,CATEGORY CHANGE (decision D2). The Guide puts a university research lab in Category 1. Never applied automatically.
+research_center,research_lab_group,0,research_center,,review,"A reviewer decides whether the group is independent (Category 2) or a university unit (Category 1, Research Lab / Center)."
+research_center,other,0,research_center,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+national_laboratory,doe_national_lab,0,national_laboratory,,review,"The Guide types a national lab by its OPERATOR. The operator is not in the stored value, so a reviewer reads the management contract."
+national_laboratory,ffrdc,0,national_laboratory,,review,"The Guide types a national lab by its operator. A reviewer reads the FFRDC entry to choose University-Operated, Corporate-Operated, Consortium-Operated or Government-Direct."
+national_laboratory,federal_research_facility,0,national_laboratory,,review,"Designation check first. With a formal FFRDC or charter this is Government-Direct; without one the Guide moves it to Category 2, Government-Affiliated, which is a category change."
+national_laboratory,other,0,national_laboratory,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+applied_facility,experimental_farm_station,0,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run station belongs in Category 1 instead."
+applied_facility,pilot_demonstration_plant,0,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run plant belongs in Category 1 instead."
+applied_facility,testbed,0,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run testbed belongs in Category 1 instead."
+applied_facility,field_site_living_lab,0,applied_facility,,review,"The Guide types an applied facility by its operator, and a university-run field site belongs in Category 1 instead."
+applied_facility,other,0,applied_facility,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+hospital_clinical,academic_medical_center,0,hospital_clinical,academic_medical_center,exact,Same meaning; relabelled University-Affiliated.
+hospital_clinical,health_system,0,hospital_clinical,,review,The Guide splits a health system into Nonprofit and For-Profit. Ownership is not in the stored value.
+hospital_clinical,hospital,0,hospital_clinical,,review,"The Guide types a hospital by ownership: standalone, nonprofit system, for-profit system, public or university-affiliated."
+hospital_clinical,specialty_clinic_center,0,hospital_clinical,,review,"The Guide has no specialty-clinic type. A reviewer picks the ownership type that fits, or Not Applicable."
+hospital_clinical,other,0,hospital_clinical,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+company,large_multinational,0,company,,review,The Guide splits large companies into Public Company and Private Company. Listing status is not in the stored value.
+company,small_mid_size,0,company,small_mid_size,exact,Same meaning; relabelled SME.
+company,business_unit_subsidiary,0,company,business_unit_subsidiary,exact,Same meaning; relabelled Subsidiary / Business Unit.
+company,corporate_rd_center,0,company,,review,"The Guide has no corporate R&D centre type. A corporate research centre is usually Category 2, Corporate-Operated, which is a category change."
+company,other,0,company,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+startup,university_spinout,0,startup,university_spinout,exact,Identical meaning and code.
+startup,corporate_spinout,0,startup,corporate_spinout,exact,Identical meaning and code.
+startup,independent_startup,0,startup,independent_startup,exact,Same meaning; relabelled Independent.
+startup,other,0,startup,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+innovation_platform,incubator,0,innovation_platform,incubator,exact,Identical meaning and code.
+innovation_platform,accelerator,0,innovation_platform,accelerator,exact,Identical meaning and code.
+innovation_platform,venture_studio,0,innovation_platform,venture_studio,exact,Same meaning; label re-cased to Venture Studio.
+innovation_platform,innovation_center_shared_lab,0,innovation_platform,,review,"The Guide has no innovation-centre type. A reviewer applies the Category 8 versus Category 12 test: operates space itself, or convenes members."
+innovation_platform,tech_transfer_office,0,university_academic,tech_transfer_office,review,CATEGORY CHANGE. The Guide puts a tech transfer office in Category 1. Never applied automatically.
+innovation_platform,other,0,innovation_platform,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+investor,venture_capital,0,investor,venture_capital,exact,Same meaning; relabelled Venture Capital Firm.
+investor,corporate_venture,0,investor,corporate_venture,exact,Same meaning; relabelled Corporate Venture Arm.
+investor,angel_group,0,investor,angel_group,exact,"Same meaning, widened by the Guide to Family Office / Angel Network."
+investor,impact_climate_fund,0,investor,,review,"The Guide has no impact or climate fund type. A reviewer picks the capital source that fits, or Not Applicable."
+investor,private_equity_growth,0,investor,,review,"The Guide has no private equity or growth fund type. A reviewer picks the capital source that fits, or Not Applicable."
+investor,public_investment_fund,0,investor,public_investment_fund,exact,Same meaning; relabelled Government Fund.
+investor,other,0,investor,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+government,federal_agency,0,government,federal_agency,exact,Same meaning; relabelled Federal.
+government,state_agency,0,government,state_agency,exact,Same meaning; relabelled State.
+government,local_municipal,0,government,local_municipal,exact,Same meaning; relabelled Local / Municipal.
+government,regional_authority,0,government,,review,"The Guide has no regional or special-purpose authority type. A reviewer picks the jurisdiction level, or Not Applicable."
+government,public_utility,0,government,public_utility,exact,Identical meaning and code.
+government,other,0,government,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+foundation_nonprofit,private_foundation,0,foundation_nonprofit,private_foundation,exact,Identical meaning and code.
+foundation_nonprofit,corporate_foundation,0,foundation_nonprofit,corporate_foundation,exact,Identical meaning and code.
+foundation_nonprofit,community_foundation,0,foundation_nonprofit,community_foundation,exact,Identical meaning and code.
+foundation_nonprofit,operating_nonprofit,0,foundation_nonprofit,operating_nonprofit,exact,Identical meaning and code.
+foundation_nonprofit,think_tank,0,foundation_nonprofit,,review,"The Guide has no think-tank type. A reviewer decides between Operating Nonprofit and Category 2, Research Center, which is a category change."
+foundation_nonprofit,other,0,foundation_nonprofit,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.
+association_network,trade_association,0,association_network,trade_association,exact,Same meaning; relabelled Trade Association.
+association_network,research_consortium,0,association_network,research_consortium,exact,Identical meaning and code.
+association_network,professional_society,0,association_network,,review,Professional Network is close but not identical: a society may also be a trade association or a standards body. A reviewer decides.
+association_network,standards_body,0,association_network,,review,"The Guide has no standards-body type. A reviewer decides between Trade Association, Innovation Consortium and Not Applicable."
+association_network,alliance_coalition,0,association_network,,review,The Guide has no alliance or coalition type. A reviewer decides which membership type the body actually is.
+association_network,multi_location_network,0,association_network,multi_location_network,exact,Same meaning; relabelled Statewide / Multi-Location Network.
+association_network,other,0,association_network,not_applicable,exact,Phase 5 Other maps to Not Applicable and raises a category_doubt item.

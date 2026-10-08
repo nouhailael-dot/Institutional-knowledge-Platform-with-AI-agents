@@ -66,11 +66,33 @@ No actor carries a sourced controlled topic, by policy: `actor_topic` stays empt
 at cutover because hub membership is not topic evidence and a topic claim needs a
 source. A topic-gated Test 1 therefore fails for every actor in the database.
 
-Sector tags, by contrast, already exist in the legacy data with sources attached,
-and the hubs themselves were given their topics by reading those same legacy
-sector tags (`basis: "single legacy primary sector tag"` for 48 of 48 hubs).
-Keying on sector uses the evidence that exists instead of waiting for evidence
-that does not.
+### Correction, 2026-10-08, after applying the migrations
+
+An earlier draft of this document said sector tags "already exist in the legacy
+data with sources attached". **That was wrong**, and it was checked against the
+restored production copy only afterwards. The real position:
+
+| | |
+|---|---|
+| `sector` | **10 rows** — the controlled vocabulary survived |
+| `actor_sector` | **0 rows** — no canonical actor carries a sector |
+| `actor_topic` | **0 rows** — and none carries a topic either |
+| `hub.primary_sectors` | **48 of 48** hubs have one |
+| `staged_record.sector_codes` | **6,407 of 7,286** staged records carry codes |
+
+So sector is **not** ready on day one either. What it genuinely has over topic:
+
+1. **The hub side is answerable now.** All 48 hubs have a primary sector, so
+   Test 1 has something real to compare against. No hub has a usable topic.
+2. **New actors get one for free.** 6,407 staged records already carry sector
+   codes, so the promote path can write `actor_sector` immediately.
+3. **A derivation exists for most of the backlog.** 574 of the 965 actors sit in
+   at least one hub, and 540 of those resolve to exactly one sector through it.
+   That is a derivation, not evidence, so it is deliberately not applied — see
+   the backfill note at the end of migration 520.
+
+The decision still stands on (1) and (2). But "sector works today and topic does
+not" overstated it, and the difference matters for what Monday can show.
 
 ## What changed in the code
 

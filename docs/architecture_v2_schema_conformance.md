@@ -150,7 +150,16 @@ append-only.
 **It also unblocks hub assignment.** The Phase 12 dry run records
 `actor_topic_rows = 0` and 965 actors blocked on `controlled_topic`: no actor
 carries a sourced topic, so a topic-gated assignment can never fire today. The
-legacy `actor_sector` rows already exist and already carry sources.
+the sector vocabulary survived with its 10 rows and all 48 hubs carry a primary
+sector, so the hub side of the test is answerable.
+
+> **Corrected after applying the migrations.** An earlier draft of this
+> paragraph said the legacy `actor_sector` rows "already exist and already carry
+> sources". They do not: `actor_sector` has **0 rows**, exactly like
+> `actor_topic`. 6,407 staged records do carry sector codes, so new actors get a
+> sector through the normal promote path, and 574 of 965 existing actors could
+> have one derived from their hub membership — but a derivation is not evidence
+> and migration 520 deliberately applies none.
 
 ---
 
