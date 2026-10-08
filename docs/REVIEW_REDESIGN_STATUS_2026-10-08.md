@@ -17,16 +17,18 @@
 | **WS3** Verify / Park / Reject | **PARTIAL** | Mapped onto existing states with the required confirmations; the audit-row and identity work is listed below |
 | **WS4** Source runs and backlog grouping | **PASS** | View-level grouping, provenance proven unchanged |
 | **WS5.2** Hub detection fixtures | **PASS** | All nine scenarios against the unmodified Phase 7 algorithm |
-| **WS5.3** Real-world hub example | **BLOCKED** | Needs read access to a local `ghus_v2_*_test` database |
+| **WS5.3** Real-world hub example | **PASS** | Built from committed GHUS-approved evidence; candidate verification blocked by the VPN |
+| **WS7** Schema conformance audit | **PASS** | 18 requirements, 14 findings, all fixes written |
+| **Sector change** Hub membership keys on sector | **PASS** | Detection, assignment, loaders, writer, UI |
 | WS5.1, WS6, WS7, WS8 | not started | P2/P3 in the brief's own priority order |
 
 **Tests**
 
 | Suite | Before | After |
 |---|---|---|
-| Shared app · pytest | 136 passed, 1 skipped | **247 passed, 1 skipped** |
-| Shared app · node | 15 passed, 1 failed | **49 passed, 0 failed** |
-| Backend · pytest | 495 passed, 24 skipped, 1 error | **622 passed, 24 skipped, 1 error** |
+| Shared app · pytest | 136 passed, 1 skipped | **249 passed, 1 skipped** |
+| Shared app · node | 15 passed, 1 failed | **54 passed, 0 failed** |
+| Backend · pytest | 495 passed, 24 skipped, 1 error | **635 passed, 24 skipped, 1 error** |
 
 Zero regressions. The one backend error is pre-existing and unrelated:
 `tests/integration/test_functional_v2_phase8.py` needs `V2_TEST_DATABASE_URL`,
@@ -267,6 +269,41 @@ CA at 199.74 miles** from Davis and **Eureka, CA at 201.22**.
 
 Detection runs **entirely in memory**, so this needed no database. Reruns are
 byte-identical; the report carries no timestamp for that reason.
+
+---
+
+## The sector change and the conformance fixes
+
+Added after the first pass of this report. Both are covered in their own
+documents; the short version:
+
+**Hub membership keys on sector** (your decision, 8 Oct). Detection, assignment,
+the database loaders, the discovery writer and the Review screen all moved
+together. It **overrides Architecture V2 Sept §2.1–2.3**, which make topic
+Test 1, so §2 needs amending or the document and the code disagree. The earlier
+rule is retained as a config value and its two regression suites still prove it.
+See `GHUS-Platform/docs/decisions/2026-10-08-hub-membership-keys-on-sector.md`.
+
+**Every conformance fix is written.** Nothing is applied; all of it needs the
+schema owner.
+
+| Fix | Where |
+|---|---|
+| Sector dimension restored (`sector`, `actor_sector`, `event_sector`, `hub_sector`) | `agents/sql/520` |
+| `collection_run` provenance: trigger, cadence, initiator, config, four counts | `agents/sql/530` |
+| UM6P/OCP master list + 3-state check (§5.5) | `agents/sql/530` |
+| No-delete guards on the seven canonical record tables | `agents/sql/530` |
+| University-only rankings | `agents/sql/530` |
+| `person_verification_event` | `agents/sql/530` |
+| `ghus_notes` write protection | `agents/sql/530` |
+| Hub dimension evidence columns | `agents/sql/530` |
+| Composite category/type foreign key | `migrations/proposed/deferred/545` |
+| `hub_actor` membership history | `migrations/proposed/deferred/545` |
+
+Two deliberately **not** done: `VALIDATE` on the `NOT VALID` constraints (each
+scans a whole table and may fail on legacy rows, so each is its own reviewed
+step), and retiring `actor.verification_status` (transitional by design, and it
+belongs after cutover).
 
 ---
 
