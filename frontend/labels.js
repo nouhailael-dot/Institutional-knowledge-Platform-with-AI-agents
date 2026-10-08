@@ -57,6 +57,8 @@ export const FIELDS = {
   strength: "Strength",
   topic: "Topic",
   hub: "Hub",
+  currentHubs: "Current Hub Assignments",
+  suggestedHubs: "Suggested Hubs",
   distance: "Distance",
   suggestion: "Suggestion",
   field: "Field",
@@ -195,6 +197,12 @@ export const SENTENCES = {
     "Member of, Portfolio of, Spinout of, Funded by and Collaborates with are " +
     "relationships, not parenthood, and are shown read-only below.",
   regionDerived: "Derived from the state. Not editable.",
+  membershipsKept:
+    "Existing memberships are never replaced or removed here. A member that now sits " +
+    "outside the radius is flagged, not dropped.",
+  suggestionIsNotADecision:
+    "A suggestion is the deterministic rule's proposal, not an assignment. Choose one, " +
+    "choose a different hub, or leave the actor unassigned.",
   sectorDecidesHub:
     "Hub membership is decided on sector. An actor joins a hub because it works in that " +
     "hub's sector and sits inside its radius.",

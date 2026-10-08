@@ -10,6 +10,7 @@ Two properties matter more than anything else here:
 
 from __future__ import annotations
 
+import pathlib
 import sys
 from pathlib import Path
 
@@ -364,3 +365,65 @@ def test_an_unrecognised_recorded_trigger_falls_back_rather_than_being_trusted(s
     assert item["run_trigger"] == "subscription"
     # And an absent initiator still reads as unrecorded, never defaulted.
     assert item["run_initiated_by"] == NOT_RECORDED
+
+
+# ------------------------------------------------------ WS5.1 hub assignment
+
+def test_the_review_haversine_matches_the_backend_to_a_tenth_of_a_mile():
+    """This app computes its own distances, so they must agree with the backend.
+
+    The backend is the authority (agents.common.geography.distance_miles). These
+    reference values were produced by it from Census gazetteer coordinates. A
+    distance shown to a reviewer that disagrees with the one the algorithm used
+    would be worse than showing none.
+    """
+
+    from src.review.postgres_source import _haversine_miles
+
+    davis = (38.556147, -121.737793)
+    cases = [
+        ((38.567694, -121.468161), 14.59),    # Sacramento, CA
+        ((38.447512, -121.824223), 8.84),     # Dixon, CA
+        ((37.976553, -121.308598), 46.32),    # Stockton, CA
+        ((37.366381, -118.395808), 199.74),   # Bishop, CA, just inside 200
+        ((40.797594, -124.154191), 201.22),   # Eureka, CA, just outside
+    ]
+    for (latitude, longitude), expected in cases:
+        actual = _haversine_miles(davis[0], davis[1], latitude, longitude)
+        assert abs(actual - expected) < 0.1, f"{actual:.2f} != {expected}"
+    # Identical points are zero, not a rounding artefact.
+    assert _haversine_miles(*davis, *davis) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_a_membership_and_a_suggestion_are_never_the_same_thing(tmp_path):
+    """WS5.1: the screen must not present a proposal as an existing fact."""
+
+    source = pathlib.Path("frontend/review.js").read_text(encoding="utf-8")
+    assert "hub_memberships" in source and "hub_suggestions" in source
+    # Distinct headings, so a reviewer cannot mistake one list for the other.
+    assert "FIELDS.currentHubs" in source and "FIELDS.suggestedHubs" in source
+    # Existing memberships are never silently replaced, and an out-of-radius
+    # member is flagged rather than dropped.
+    assert "SENTENCES.membershipsKept" in source
+    assert "BADGES.hubMemberOutsideRadius" in source
+    # A suggestion says outright that it is not an assignment.
+    assert "SENTENCES.suggestionIsNotADecision" in source
+
+
+def test_the_hub_context_reader_asks_for_nothing_it_cannot_find(tmp_path):
+    """Every optional table is probed before it is queried.
+
+    hub_sector and actor_sector arrive with backend migration 520. Until then
+    the reader returns memberships without suggestions, rather than failing.
+    """
+
+    source = pathlib.Path("src/review/postgres_source.py").read_text(encoding="utf-8")
+    assert "def _hub_context" in source
+    for table in ("hub_actor", "hub_sector", "sector", "actor_sector", "actor_location"):
+        assert f'"{table}"' in source, f"{table} is not in the allowlist"
+    assert 'columns.get("hub_actor", set())' in source
+    assert '{"actor_sector", "sector"} <= set(columns)' in source
+    # Suggestions are only offered for a hub inside whose radius the actor sits.
+    assert 'if miles > hub["radius_miles"]:' in source
+    # An actor already in a hub is not suggested that same hub again.
+    assert "placed" in source

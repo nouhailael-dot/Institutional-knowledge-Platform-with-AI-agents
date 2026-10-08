@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import ipaddress
+import math
 import re
 import socket
 import subprocess
@@ -142,6 +143,29 @@ def _json_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
+def _coordinate(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _haversine_miles(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> float:
+    """Great-circle miles. The same formula the backend hub module uses.
+
+    Duplicated rather than imported: this app must not depend on the backend
+    repository being present, and a wrong distance here would be visible to a
+    reviewer. Covered by a test that checks it against known city pairs.
+    """
+
+    radius_miles = 3958.7613
+    lat1, lon1, lat2, lon2 = map(math.radians, (lat_a, lon_a, lat_b, lon_b))
+    sin_lat = math.sin((lat2 - lat1) / 2) ** 2
+    sin_lon = math.sin((lon2 - lon1) / 2) ** 2
+    haversine = sin_lat + math.cos(lat1) * math.cos(lat2) * sin_lon
+    return 2 * radius_miles * math.asin(min(1.0, math.sqrt(haversine)))
+
+
 def _timestamp(value: Any) -> float | None:
     if isinstance(value, datetime):
         return value.timestamp()
@@ -182,6 +206,7 @@ class PostgresReviewSource:
         "event_review_queue", "person_review_queue", "hub",
         "review_item", "actor", "actor_fact", "actor_fact_current_v2",
         "actor_fact_history", "entity_edge", "source",
+        "hub_actor", "hub_sector", "sector", "actor_sector", "actor_location",
     }
 
     def __init__(self, database_url: str):
@@ -263,6 +288,8 @@ class PostgresReviewSource:
                 "candidate_id", "run_id", "entity_type", "url", "created_at",
                 "score_band", "record_preview",
             }
+            hub_context = self._hub_context(db, columns)
+
             if required_search <= search_columns:
                 for row in self._search_rows(db, search_columns, columns):
                     candidate = self._from_search_candidate(row)
@@ -295,6 +322,12 @@ class PostgresReviewSource:
             if review_columns and "actor" in columns:
                 for row in self._v2_review_rows(db, review_columns, columns):
                     candidate = self._from_v2_review_item(row)
+                    entry = hub_context.get(str(row.get("entity_id") or ""))
+                    if entry is not None:
+                        metadata = candidate["agent_metadata"]
+                        metadata["hub_memberships"] = entry["current"]
+                        metadata["hub_suggestions"] = entry["suggestions"]
+                        metadata["hubs"] = entry["available"]
                     candidates[candidate["source_key"]] = candidate
 
             return list(candidates.values()), warnings
@@ -505,6 +538,144 @@ class PostgresReviewSource:
             " 'hub_needs_review','hub_radius_overlap','hub_member_outside_radius'"
             ") ORDER BY ri.created_at"
         ).fetchall()
+
+    def _hub_context(self, db, columns: dict[str, set[str]]) -> dict[str, dict[str, Any]]:
+        """Per-actor hub context for the Review screen (WS5.1).
+
+        Three different things, kept apart because they mean different things:
+
+          current      memberships that already exist, with the distance that
+                       was recorded when they were made
+          suggestions  hubs the deterministic rule would propose now, each with
+                       its reason and a freshly measured distance
+          available    every live hub, for a reviewer who wants to choose one by
+                       hand
+
+        A membership is never inferred from a suggestion, and a suggestion never
+        becomes a membership here: this is a read.
+        """
+
+        hub_columns = columns.get("hub", set())
+        if not {"hub_id", "name"} <= hub_columns:
+            return {}
+
+        has_center = {"center_latitude", "center_longitude"} <= hub_columns
+        center_select = (
+            "h.center_city, h.center_state_code, h.center_latitude, h.center_longitude, "
+            if has_center else
+            "NULL AS center_city, NULL AS center_state_code, "
+            "NULL AS center_latitude, NULL AS center_longitude, "
+        )
+        radius_select = (
+            "COALESCE(h.radius_miles, 200) AS radius_miles "
+            if "radius_miles" in hub_columns else "200 AS radius_miles "
+        )
+        sector_select = (
+            ", (SELECT s.code FROM hub_sector hs JOIN sector s ON s.sector_id = hs.sector_id "
+            "WHERE hs.hub_id = h.hub_id AND hs.is_primary LIMIT 1) AS sector_code "
+            if {"hub_sector", "sector"} <= set(columns) else ", NULL AS sector_code "
+        )
+
+        live = [
+            {
+                "hub_id": str(row["hub_id"]),
+                "name": str(row["name"]),
+                "center_city": row["center_city"],
+                "center_state_code": row["center_state_code"],
+                "center_latitude": _coordinate(row["center_latitude"]),
+                "center_longitude": _coordinate(row["center_longitude"]),
+                "radius_miles": float(row["radius_miles"]) if row["radius_miles"] is not None else 200.0,
+                "sector_code": row["sector_code"],
+            }
+            for row in db.execute(
+                "SELECT h.hub_id::text AS hub_id, h.name, " + center_select + radius_select
+                + sector_select + "FROM hub h ORDER BY h.name"
+            ).fetchall()
+        ]
+        by_id = {item["hub_id"]: item for item in live}
+
+        context: dict[str, dict[str, Any]] = {}
+
+        membership_columns = columns.get("hub_actor", set())
+        if {"hub_id", "actor_id"} <= membership_columns:
+            distance = "ha.distance_miles" if "distance_miles" in membership_columns else "NULL"
+            outcome = (
+                "ha.assignment_outcome" if "assignment_outcome" in membership_columns else "NULL"
+            )
+            outside = "ha.outside_radius" if "outside_radius" in membership_columns else "NULL"
+            for row in db.execute(
+                "SELECT ha.actor_id::text AS actor_id, ha.hub_id::text AS hub_id, "
+                f"{distance} AS distance_miles, {outcome} AS assignment_outcome, "
+                f"{outside} AS outside_radius "
+                "FROM hub_actor ha ORDER BY ha.actor_id, ha.hub_id"
+            ).fetchall():
+                hub = by_id.get(str(row["hub_id"]))
+                entry = context.setdefault(
+                    str(row["actor_id"]), {"current": [], "suggestions": [], "available": live}
+                )
+                entry["current"].append({
+                    "hub_id": str(row["hub_id"]),
+                    "name": hub["name"] if hub else str(row["hub_id"]),
+                    "sector_code": hub["sector_code"] if hub else None,
+                    "distance_miles": _coordinate(row["distance_miles"]),
+                    "assignment_outcome": row["assignment_outcome"],
+                    "outside_radius": row["outside_radius"],
+                    "suggested": False,
+                })
+
+        # Suggestions need the actor's sectors and coordinates. Both may be
+        # absent, in which case there is nothing to suggest and the screen says
+        # "Not Yet Checked" rather than offering a guess.
+        if {"actor_sector", "sector"} <= set(columns) and has_center:
+            placed = {
+                (actor_id, item["hub_id"])
+                for actor_id, entry in context.items()
+                for item in entry["current"]
+            }
+            for row in db.execute(
+                "SELECT a.actor_id::text AS actor_id, s.code AS sector_code, "
+                "COALESCE(al.latitude, a.latitude) AS latitude, "
+                "COALESCE(al.longitude, a.longitude) AS longitude "
+                "FROM actor a JOIN actor_sector asec ON asec.actor_id = a.actor_id "
+                "JOIN sector s ON s.sector_id = asec.sector_id AND s.active "
+                "LEFT JOIN LATERAL (SELECT latitude, longitude FROM actor_location "
+                "WHERE actor_id = a.actor_id ORDER BY is_primary DESC, created_at LIMIT 1) al "
+                "ON TRUE ORDER BY a.actor_id, s.code"
+            ).fetchall():
+                actor_id = str(row["actor_id"])
+                latitude, longitude = _coordinate(row["latitude"]), _coordinate(row["longitude"])
+                if latitude is None or longitude is None:
+                    continue
+                entry = context.setdefault(
+                    actor_id, {"current": [], "suggestions": [], "available": live}
+                )
+                for hub in live:
+                    if hub["sector_code"] != row["sector_code"]:
+                        continue
+                    if hub["center_latitude"] is None or hub["center_longitude"] is None:
+                        continue
+                    if (actor_id, hub["hub_id"]) in placed:
+                        continue
+                    miles = _haversine_miles(
+                        latitude, longitude, hub["center_latitude"], hub["center_longitude"]
+                    )
+                    if miles > hub["radius_miles"]:
+                        continue
+                    entry["suggestions"].append({
+                        "hub_id": hub["hub_id"],
+                        "name": hub["name"],
+                        "sector_code": hub["sector_code"],
+                        "distance_miles": round(miles, 2),
+                        "suggested": True,
+                        "reason": (
+                            f"Sector {hub['sector_code']} matches and the actor is "
+                            f"{miles:.1f} miles from the hub centre, inside its "
+                            f"{hub['radius_miles']:g}-mile radius."
+                        ),
+                    })
+        for entry in context.values():
+            entry["suggestions"].sort(key=lambda item: (item["distance_miles"], item["hub_id"]))
+        return context
 
     @staticmethod
     def _run_description(entity_type: str, run_id: str, mode: Any = None) -> str:

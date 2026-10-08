@@ -702,6 +702,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const draftErrors = selected ? validateReviewDraft(selected, draft) : {};
     const matches = selected?.top_matches || [];
     const hubs = selected?.agent_metadata?.hubs || [];
+    // Three different things, kept apart: what the actor already belongs to,
+    // what the deterministic rule would propose, and every hub a reviewer could
+    // choose by hand. A suggestion is never shown as a membership.
+    const memberships = selected?.agent_metadata?.hub_memberships || [];
+    const suggestions = selected?.agent_metadata?.hub_suggestions || [];
     const groups = groupQueue(data.candidates, data.run_groups);
     const isActor = selected?.entity_type === "actor";
     const summary = isActor
@@ -967,16 +972,29 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               </dd></div>
             </dl>
             <p class="review-hint">${SENTENCES.topicIsSecondary}</p>
-            <h4>${FIELDS.hub}</h4>
-            ${!hubs.length && html`<p class="muted">${MISSING.notYetChecked}</p>`}
+            <h4>${FIELDS.currentHubs}</h4>
+            ${!memberships.length && html`<p class="muted">${MISSING.notFound}</p>`}
             <ul class="review-evidence">
-              ${hubs.map((hub, index) => html`<li key=${index}>
+              ${memberships.map((hub, index) => html`<li key=${"m" + index}>
                 <strong>${hub.name || hub.hub_id}</strong>
                 <span>${FIELDS.distance}: ${hub.distance_miles != null
                   ? `${hub.distance_miles} mi` : MISSING.notFound}</span>
-                ${hub.suggested && html`<span>${FIELDS.suggestion}: ${hub.reason || MISSING.notFound}</span>`}
+                ${hub.outside_radius && html`<span class="review-status reason">
+                  ${BADGES.hubMemberOutsideRadius}</span>`}
               </li>`)}
             </ul>
+            ${memberships.length > 0 && html`<p class="review-hint">${SENTENCES.membershipsKept}</p>`}
+            <h4>${FIELDS.suggestedHubs}</h4>
+            ${!suggestions.length && html`<p class="muted">${MISSING.notYetChecked}</p>`}
+            <ul class="review-evidence">
+              ${suggestions.map((hub, index) => html`<li key=${"s" + index}>
+                <strong>${hub.name || hub.hub_id}</strong>
+                <span>${FIELDS.distance}: ${hub.distance_miles != null
+                  ? `${hub.distance_miles} mi` : MISSING.notFound}</span>
+                <span>${FIELDS.suggestion}: ${hub.reason || MISSING.notFound}</span>
+              </li>`)}
+            </ul>
+            ${suggestions.length > 0 && html`<p class="review-hint">${SENTENCES.suggestionIsNotADecision}</p>`}
             <div class="review-field-grid">
               <label class="review-field"><span>${BUTTONS.chooseHub}</span>
                 <select multiple value=${hubIds} disabled=${!pending || busy}
