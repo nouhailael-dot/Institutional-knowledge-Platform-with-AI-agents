@@ -43,6 +43,12 @@ def result_bundle(actor_name="Example Lab"):
 def discovery_candidate(entity_type="actor", source_id="candidate-1"):
     names = {"actor": "Review Lab", "person": "Ada Reviewer", "event": "Review Summit"}
     payload = {"name": names[entity_type], "website": "https://example.org/profile"}
+    if entity_type == "actor":
+        # A newly discovered actor always arrives classified (decision D4): the
+        # authoritative admission path refuses a new actor with no type.
+        payload.update({
+            "actor_category": "research_center", "category_type": "independent_institute",
+        })
     if entity_type == "event":
         payload.update({"start_date": "2026-10-10", "city": "Boston"})
     if entity_type == "person":

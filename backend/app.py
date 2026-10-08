@@ -48,7 +48,7 @@ from src.retrieve import retrieve
 from src.review import (AdmissionBridge, AdmissionBridgeError, DuplicateRisk, PostgresReviewSource,
                         PostgresReviewSourceError, ReadOnlyRunStore,
                         ReviewConflict, ReviewNotConfigured, ReviewStore,
-                        ReviewValidationError)
+                        ReviewValidationError, TaxonomyError, catalog_payload)
 from src.router import format_sql_answer, plan, run_sql
 
 logger = logging.getLogger(__name__)
@@ -726,7 +726,7 @@ def _raise_review_error(exc: Exception):
         }) from exc
     if isinstance(exc, ReviewConflict):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if isinstance(exc, ReviewValidationError):
+    if isinstance(exc, (ReviewValidationError, TaxonomyError)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if isinstance(exc, ReviewNotConfigured):
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -763,10 +763,25 @@ class ReviewAdmissionRequest(ReviewDecisionRequest):
     rejection_reason_other: str | None = Field(default=None, max_length=5000)
 
 
+@app.get("/api/review/catalog")
+def review_catalog():
+    """The controlled vocabularies the Review screen may offer.
+
+    Served from one place so no dropdown can drift from the Intern Guide
+    catalog, and so an invalid category/type pair cannot be constructed in the
+    browser at all.
+    """
+    return catalog_payload()
+
+
 @app.get("/api/review/candidates")
 def review_candidates(status: str = Query("pending_review"),
                       entity_type: str | None = Query(None),
                       source_run_id: str | None = Query(None),
+                      run_group: str | None = Query(None),
+                      actor_category: str | None = Query(None),
+                      review_reason: str | None = Query(None),
+                      region: str | None = Query(None),
                       search: str | None = Query(None, max_length=200),
                       refresh: bool = Query(False)):
     sync_warnings = _sync_review_candidates(force=refresh)
@@ -774,6 +789,8 @@ def review_candidates(status: str = Query("pending_review"),
         result = review_store().list(
             status=status, entity_type=entity_type,
             source_run_id=source_run_id, search=search,
+            run_group=run_group, actor_category=actor_category,
+            review_reason=review_reason, region=region,
         )
         result["sync_warnings"] = sync_warnings
         result["admission_configured"] = review_admission_bridge().configured

@@ -10,14 +10,24 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import time
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, uuid4, uuid5
+
+from .taxonomy import (
+    CATEGORY_LABELS,
+    NOT_APPLICABLE,
+    TaxonomyError,
+    region_for_state,
+    validate_pair,
+)
 
 STATUSES = ("pending_review", "approved", "rejected_by_reviewer")
 ENTITY_TYPES = ("actor", "person", "event")
@@ -78,6 +88,12 @@ PAYLOAD_ALIASES = {
     },
     "event": {"title": "name", "start_date": "next_date", "city": "location"},
 }
+
+_UUID_PATTERN = re.compile(
+    r"(?:discovery:|v2-review:)?[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}"
+    r"-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
 
 INTERNAL_METADATA_FIELDS = (
     "_judge", "_url_status", "_selected", "_rank", "_why", "_floor",
@@ -200,6 +216,138 @@ def _evidence(payload: dict[str, Any]) -> list[dict[str, Any]]:
             "evidence_type": str(source.get("evidence_type") or "").strip(),
         })
     return out
+
+
+# --------------------------------------------------------------- WS4: run groups
+# The redesign cutoff. Everything created before it is shown together as the
+# Pre-Redesign Backlog; everything after it is shown under its own run.
+#
+# This is a VIEW-LEVEL grouping and nothing else. Stored source_run_id values
+# and provenance are never rewritten, and the original run stays visible under
+# Audit & Details.
+BACKLOG_GROUP_KEY = "pre_redesign_backlog"
+BACKLOG_GROUP_LABEL = "Pre-Redesign Backlog"
+DEFAULT_REVIEW_REDESIGN_CUTOFF = "2026-10-08T00:00:00Z"
+
+TRIGGER_TYPES = ("manual", "subscription", "scheduled_event", "migration")
+TRIGGER_LABELS = {
+    "manual": "Manual",
+    "subscription": "Subscription",
+    "scheduled_event": "Scheduled Event",
+    "migration": "Migration",
+}
+NOT_RECORDED = "Not Recorded"
+
+
+def review_redesign_cutoff() -> float:
+    """The cutoff as a POSIX timestamp. Configurable, never hard-coded in a view."""
+
+    raw = (os.environ.get("REVIEW_REDESIGN_CUTOFF") or "").strip()
+    for candidate in (raw, DEFAULT_REVIEW_REDESIGN_CUTOFF):
+        if not candidate:
+            continue
+        try:
+            text = candidate.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(text)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.timestamp()
+        except ValueError:
+            continue
+    raise ReviewValidationError("REVIEW_REDESIGN_CUTOFF is not an ISO-8601 timestamp.")
+
+
+def _run_trigger(description: Any, source_run_id: Any) -> str:
+    """Derive the trigger from what the source recorded. Never invented.
+
+    The authoritative trigger_type lives on the collection-run table in the
+    backend (WS4 task 1). Until that column reaches this app, the trigger is
+    read off the run description, and anything unrecognised stays "manual"
+    rather than being guessed at.
+    """
+
+    text = f"{description or ''} {source_run_id or ''}".casefold()
+    if "migration" in text or "existing_canonical" in text:
+        return "migration"
+    if "subscription" in text:
+        return "subscription"
+    if "schedule" in text or "weekly" in text or "monthly" in text:
+        return "scheduled_event"
+    return "manual"
+
+
+def _run_label(description: Any, source_run_id: Any) -> str:
+    """A human-readable run label. No UUIDs: those belong in Audit & Details."""
+
+    raw = str(description or "").strip()
+    cleaned = _UUID_PATTERN.sub("", raw)
+    cleaned = cleaned.replace("·  ·", "·").strip(" ·:—-\t\n")
+    cleaned = " ".join(cleaned.split())
+    if cleaned and cleaned.casefold() != "discovery":
+        return cleaned
+    return "Discovery Run"
+
+
+def _validate_actor_classification(payload: dict[str, Any]) -> None:
+    """No invalid category/type pair can be stored (WS1, decisions D3 and D4).
+
+    Lenient in exactly one direction: a legacy record whose ``actor_category``
+    predates Architecture V2 and carries no type passes through untouched, and
+    the Review screen shows its type as "Pending Classification" rather than
+    pretending it is Not Applicable. The moment a reviewer supplies a type, the
+    pair is held to the Intern Guide catalog.
+    """
+
+    category = str(payload.get("actor_category") or "").strip()
+    category_type = str(payload.get("category_type") or "").strip()
+    if not category_type:
+        # Decision D4: a legacy NULL type stays NULL and displays as pending.
+        payload["category_type"] = None
+        return
+    try:
+        validate_pair(category, category_type, allow_null_type=False)
+    except TaxonomyError as exc:
+        raise ReviewValidationError(str(exc)) from exc
+    if category_type == NOT_APPLICABLE and not str(payload.get("category_note") or "").strip():
+        raise ReviewValidationError(
+            "Not Applicable is a deliberate choice, not a stand-in for missing data. "
+            "Give a one-line classification note saying what the doubt is."
+        )
+
+
+def _require_classification_for_new_record(entity_type: str, payload: dict[str, Any]) -> None:
+    """Decision D4: a record created after the redesign always carries a type.
+
+    This guards the authoritative admission path only — the one that reaches the
+    canonical writer through ``promote()`` — and only for a NEW actor. Two cases
+    are deliberately left alone:
+
+      * confirming a candidate as the SAME as an existing record, which changes
+        no classification of its own;
+      * the local test-canonical mirror, which exists to exercise the flow with
+        legacy fixtures that predate Architecture V2 classification.
+
+    A legacy NULL type stays NULL and keeps displaying as "Pending
+    Classification". If nothing in the catalog fits a new record, the reviewer
+    chooses Not Applicable and writes the one-line note, which is a decision
+    rather than a gap.
+    """
+
+    if entity_type != "actor":
+        return
+    try:
+        validate_pair(
+            payload.get("actor_category"), payload.get("category_type"), allow_null_type=False
+        )
+    except TaxonomyError as exc:
+        raise ReviewValidationError(str(exc)) from exc
+
+
+def _derive_actor_region(payload: dict[str, Any]) -> None:
+    """Region is computed from the state, never accepted from the client (D8)."""
+
+    if "state" in payload or "country" in payload or "region" in payload:
+        payload["region"] = region_for_state(payload.get("state"), payload.get("country"))
 
 
 def _metadata(payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
@@ -501,6 +649,22 @@ class ReviewStore:
         }
         item["rejection_reasons"] = list(REJECTION_REASONS)
         item["top_matches"] = item.get("agent_metadata", {}).get("top_matches") or []
+        metadata = item.get("agent_metadata") or {}
+        # The review reason drives the badge and the queue filter. It comes from
+        # the source's own review_kind; it is never inferred from the payload.
+        item["review_reason"] = str(metadata.get("review_kind") or "").strip() or None
+        item["record_status"] = str(metadata.get("record_status") or "").strip() or None
+        # WS4: view-level run grouping. Nothing stored is rewritten.
+        created_at = item.get("created_at") or 0
+        is_backlog = float(created_at) < review_redesign_cutoff()
+        item["run_group_key"] = (
+            BACKLOG_GROUP_KEY if is_backlog else str(item.get("source_run_id") or "")
+        )
+        item["run_label"] = _run_label(item.get("source_description"), item.get("source_run_id"))
+        item["run_trigger"] = _run_trigger(
+            item.get("source_description"), item.get("source_run_id")
+        )
+        item["run_initiated_by"] = NOT_RECORDED
         return item
 
     def get(self, candidate_id: str) -> dict[str, Any]:
@@ -513,11 +677,15 @@ class ReviewStore:
         return self._decode(row)
 
     def list(self, *, status: str | None = "pending_review", entity_type: str | None = None,
-             source_run_id: str | None = None, search: str | None = None) -> dict[str, Any]:
+             source_run_id: str | None = None, search: str | None = None,
+             run_group: str | None = None, actor_category: str | None = None,
+             review_reason: str | None = None, region: str | None = None) -> dict[str, Any]:
         if status not in (*STATUSES, None, "all"):
             raise ReviewValidationError("Unsupported review status.")
         if entity_type not in (*ENTITY_TYPES, None, "all"):
             raise ReviewValidationError("Unsupported entity type.")
+        if actor_category and actor_category != "all" and actor_category not in CATEGORY_LABELS:
+            raise ReviewValidationError("Unsupported actor category.")
         where, params = [], []
         if status not in (None, "all"):
             where.append("status=?"); params.append(status)
@@ -529,6 +697,16 @@ class ReviewStore:
             where.append("(lower(display_name) LIKE ? OR lower(reviewed_payload) LIKE ?)")
             needle = f"%{search.strip().casefold()}%"
             params.extend((needle, needle))
+        if run_group and run_group != "all":
+            # The backlog spans every run created before the cutoff, so it is a
+            # time filter rather than a run-id filter. Either way nothing stored
+            # is touched.
+            if run_group == BACKLOG_GROUP_KEY:
+                where.append("created_at < ?")
+                params.append(review_redesign_cutoff())
+            else:
+                where.append("source_run_id=? AND created_at >= ?")
+                params.extend((run_group, review_redesign_cutoff()))
         clause = " WHERE " + " AND ".join(where) if where else ""
         with self.connect() as db:
             rows = db.execute(
@@ -543,13 +721,97 @@ class ReviewStore:
                 "SELECT source_run_id, max(source_description) AS description, count(*) AS candidate_count "
                 "FROM review_candidate GROUP BY source_run_id ORDER BY source_run_id"
             )]
+        candidates = [self._decode(row) for row in rows]
+        # Category, review reason and region live inside JSON payloads, so they
+        # are filtered after decoding rather than in SQL. Deterministic either
+        # way: the SQL order is preserved.
+        if actor_category and actor_category != "all":
+            candidates = [
+                item for item in candidates
+                if str(item["reviewed_payload"].get("actor_category") or "") == actor_category
+            ]
+        if review_reason and review_reason != "all":
+            candidates = [item for item in candidates if item.get("review_reason") == review_reason]
+        if region and region != "all":
+            candidates = [
+                item for item in candidates
+                if region_for_state(
+                    item["reviewed_payload"].get("state"),
+                    item["reviewed_payload"].get("country"),
+                ) == region
+            ]
         return {
-            "candidates": [self._decode(row) for row in rows],
+            "candidates": candidates,
             "counts": {key: counts.get(key, 0) for key in STATUSES},
             "source_maps": maps,
+            "run_groups": self.run_groups(),
+            "review_redesign_cutoff": review_redesign_cutoff(),
             "admission_configured": self.admission_configured,
             "last_sync": self.sync_state(),
         }
+
+    def run_groups(self) -> list[dict[str, Any]]:
+        """Queue groups: the Pre-Redesign Backlog, then one group per later run.
+
+        A pure projection over what is already stored (WS4 task 2). The order is
+        deterministic: the backlog first, then newest run first, then by run id,
+        so the same data always renders the same queue.
+        """
+
+        cutoff = review_redesign_cutoff()
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT source_run_id, max(source_description) AS description, "
+                "count(*) AS candidate_count, min(created_at) AS earliest, "
+                "max(created_at) AS latest, "
+                "sum(CASE WHEN status='pending_review' THEN 1 ELSE 0 END) AS pending_count "
+                "FROM review_candidate GROUP BY source_run_id"
+            ).fetchall()
+
+        backlog: dict[str, Any] = {
+            "key": BACKLOG_GROUP_KEY,
+            "label": BACKLOG_GROUP_LABEL,
+            "trigger": None,
+            "trigger_label": None,
+            "initiated_by": NOT_RECORDED,
+            "candidate_count": 0,
+            "pending_count": 0,
+            "earliest": None,
+            "latest": None,
+            "is_backlog": True,
+            "source_run_ids": [],
+        }
+        groups: list[dict[str, Any]] = []
+        for row in rows:
+            earliest = float(row["earliest"] or 0)
+            if earliest < cutoff:
+                backlog["candidate_count"] += int(row["candidate_count"] or 0)
+                backlog["pending_count"] += int(row["pending_count"] or 0)
+                backlog["source_run_ids"].append(row["source_run_id"])
+                for key, value in (("earliest", earliest), ("latest", float(row["latest"] or 0))):
+                    current = backlog[key]
+                    if current is None:
+                        backlog[key] = value
+                    else:
+                        backlog[key] = min(current, value) if key == "earliest" else max(current, value)
+                continue
+            trigger = _run_trigger(row["description"], row["source_run_id"])
+            groups.append({
+                "key": row["source_run_id"],
+                "label": _run_label(row["description"], row["source_run_id"]),
+                "trigger": trigger,
+                "trigger_label": TRIGGER_LABELS[trigger],
+                "initiated_by": NOT_RECORDED,
+                "candidate_count": int(row["candidate_count"] or 0),
+                "pending_count": int(row["pending_count"] or 0),
+                "earliest": earliest,
+                "latest": float(row["latest"] or 0),
+                "is_backlog": False,
+                "source_run_ids": [row["source_run_id"]],
+            })
+        groups.sort(key=lambda group: (-group["latest"], str(group["key"])))
+        backlog["source_run_ids"].sort(key=str)
+        return ([backlog] if backlog["candidate_count"] else []) + groups
 
     @staticmethod
     def validate_payload(entity_type: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -587,6 +849,9 @@ class ReviewStore:
             cleaned.get("name"), required=True,
             max_length=FIELD_LIMITS[entity_type]["name"],
         )
+        if entity_type == "actor":
+            _validate_actor_classification(cleaned)
+            _derive_actor_region(cleaned)
         if entity_type == "person":
             cleaned["affiliation"] = _clean_text(
                 cleaned.get("affiliation"), required=True, max_length=5000
@@ -814,6 +1079,8 @@ class ReviewStore:
                 raise ReviewValidationError("Explain the Other rejection reason.")
         payload = edited_payload if edited_payload is not None else candidate["reviewed_payload"]
         payload = self.validate_payload(candidate["entity_type"], payload)
+        if decision_kind == "new":
+            _require_classification_for_new_record(candidate["entity_type"], payload)
         metadata = candidate["agent_metadata"]
         source_table = str(metadata.get("source_table") or "").strip()
         if source_table == "search_candidate":
