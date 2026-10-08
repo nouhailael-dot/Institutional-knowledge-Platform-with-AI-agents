@@ -235,6 +235,42 @@ CREATE TRIGGER event_ghus_notes_guard
     FOR EACH ROW EXECUTE FUNCTION ghus_guard_notes_column();
 
 -- ===========================================================================
+-- Hub membership keys on SECTOR (GHUS decision, 2026-10-08).
+--
+-- The evidence tables have to be able to say which dimension decided, or a
+-- reviewer reading a stored assignment cannot tell whether the sector or the
+-- topic was the gate. Both are recorded on every evaluation; these columns say
+-- which one was decisive.
+--
+-- hub_assignment_evidence and proposed_hub are not canonical record tables, so
+-- they belong in this track.
+-- ===========================================================================
+ALTER TABLE hub_assignment_evidence
+    ADD COLUMN IF NOT EXISTS sector_matched boolean,
+    ADD COLUMN IF NOT EXISTS dimension      text;
+
+ALTER TABLE hub_assignment_evidence DROP CONSTRAINT IF EXISTS ck_hub_assignment_dimension;
+ALTER TABLE hub_assignment_evidence
+    ADD CONSTRAINT ck_hub_assignment_dimension
+    CHECK (dimension IS NULL OR dimension IN ('sector', 'topic')) NOT VALID;
+
+COMMENT ON COLUMN hub_assignment_evidence.topic_matched IS
+    'Whether the actor topic matched the hub topic. Still recorded, but since '
+    '2026-10-08 it is secondary: see dimension for what actually decided.';
+
+ALTER TABLE proposed_hub
+    ADD COLUMN IF NOT EXISTS dimension     text,
+    ADD COLUMN IF NOT EXISTS dimension_key text,
+    -- Every topic the proposed members carry, with counts. Secondary evidence:
+    -- it says what the cluster works on without having decided who is in it.
+    ADD COLUMN IF NOT EXISTS topic_mix     jsonb;
+
+ALTER TABLE proposed_hub DROP CONSTRAINT IF EXISTS ck_proposed_hub_dimension;
+ALTER TABLE proposed_hub
+    ADD CONSTRAINT ck_proposed_hub_dimension
+    CHECK (dimension IS NULL OR dimension IN ('sector', 'topic')) NOT VALID;
+
+-- ===========================================================================
 -- Post-apply assertions.
 -- ===========================================================================
 DO $$

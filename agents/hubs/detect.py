@@ -57,7 +57,30 @@ def compute_detection_snapshot(
     return result, comparison
 
 
+def _relation_exists(session, name: str) -> bool:
+    return bool(
+        session.execute(text(f"SELECT to_regclass('public.{name}') IS NOT NULL")).scalar()
+    )
+
+
 def load_detection_snapshot(session) -> DetectionSnapshot:
+    """Load everything detection needs, in one read.
+
+    Actors are still loaded per topic row, because the topic is recorded on
+    every proposal as secondary evidence. What each actor's SECTORS are is
+    attached alongside, and sector is what the clustering partitions on (GHUS
+    decision, 2026-10-08).
+
+    The sector tables arrive with migration 520. Until it is applied this loader
+    returns actors with no sectors, and detection in sector mode then proposes
+    nothing at all. That is the honest outcome: no sector data means no
+    sector-based answer. It does not quietly fall back to the topic rule, which
+    would re-apply the behaviour the decision replaced without anyone asking.
+    """
+
+    has_actor_sector = _relation_exists(session, "actor_sector")
+    has_hub_sector = _relation_exists(session, "hub_sector")
+
     actor_rows = session.execute(
         text(
             "SELECT DISTINCT ON (a.actor_id,t.topic_id) a.actor_id,a.name,t.topic_id,"
@@ -75,6 +98,18 @@ def load_detection_snapshot(session) -> DetectionSnapshot:
             "LIMIT 1) al ON TRUE ORDER BY a.actor_id,t.topic_id"
         )
     ).mappings().all()
+
+    sectors_by_actor: dict[str, set[str]] = {}
+    if has_actor_sector:
+        for row in session.execute(
+            text(
+                "SELECT asec.actor_id,s.code FROM actor_sector asec "
+                "JOIN sector s ON s.sector_id=asec.sector_id "
+                "WHERE s.active ORDER BY asec.actor_id,s.code"
+            )
+        ).mappings().all():
+            sectors_by_actor.setdefault(str(row["actor_id"]), set()).add(str(row["code"]))
+
     assigned_rows = session.execute(
         text(
             "SELECT actor_id,topic_id FROM hub_actor WHERE topic_id IS NOT NULL "
@@ -84,6 +119,21 @@ def load_detection_snapshot(session) -> DetectionSnapshot:
     assigned: dict[str, set[str]] = {}
     for row in assigned_rows:
         assigned.setdefault(str(row["actor_id"]), set()).add(str(row["topic_id"]))
+
+    # Which sectors an actor already sits in, so detection does not propose a
+    # hub it already belongs to. Read through each hub's own primary sector.
+    assigned_sectors: dict[str, set[str]] = {}
+    if has_hub_sector:
+        for row in session.execute(
+            text(
+                "SELECT ha.actor_id,s.code FROM hub_actor ha "
+                "JOIN hub_sector hs ON hs.hub_id=ha.hub_id AND hs.is_primary "
+                "JOIN sector s ON s.sector_id=hs.sector_id "
+                "WHERE ha.assignment_outcome='assigned' ORDER BY ha.actor_id,s.code"
+            )
+        ).mappings().all():
+            assigned_sectors.setdefault(str(row["actor_id"]), set()).add(str(row["code"]))
+
     actors = tuple(
         DetectionActor(
             actor_id=str(row["actor_id"]),
@@ -99,6 +149,8 @@ def load_detection_snapshot(session) -> DetectionSnapshot:
             category_type=row["category_type"],
             assigned_topic_ids=frozenset(assigned.get(str(row["actor_id"]), ())),
             merged=bool(row["merged"]),
+            sector_codes=frozenset(sectors_by_actor.get(str(row["actor_id"]), ())),
+            assigned_sector_codes=frozenset(assigned_sectors.get(str(row["actor_id"]), ())),
         )
         for row in actor_rows
     )
@@ -114,10 +166,16 @@ def load_detection_snapshot(session) -> DetectionSnapshot:
         FamilyEdge(str(row["child_actor_id"]), str(row["parent_actor_id"]), row["relationship_type"])
         for row in edge_rows
     )
+
+    hub_sector_select = (
+        ",(SELECT s.code FROM hub_sector hs JOIN sector s ON s.sector_id=hs.sector_id "
+        "WHERE hs.hub_id=h.hub_id AND hs.is_primary LIMIT 1) AS sector_code "
+        if has_hub_sector else ",NULL AS sector_code "
+    )
     hub_rows = session.execute(
         text(
-            "SELECT hub_id,name,topic_id,center_latitude,center_longitude,radius_miles "
-            "FROM hub ORDER BY hub_id"
+            "SELECT h.hub_id,h.name,h.topic_id,h.center_latitude,h.center_longitude,"
+            "h.radius_miles" + hub_sector_select + "FROM hub h ORDER BY h.hub_id"
         )
     ).mappings().all()
     hubs = tuple(
@@ -128,16 +186,33 @@ def load_detection_snapshot(session) -> DetectionSnapshot:
             float(row["center_latitude"]) if row["center_latitude"] is not None else None,
             float(row["center_longitude"]) if row["center_longitude"] is not None else None,
             float(row["radius_miles"]) if row["radius_miles"] is not None else None,
+            str(row["sector_code"]) if row["sector_code"] else None,
         )
         for row in hub_rows
     )
+
+    # A rejected cluster is remembered against the dimension it was found on.
+    # proposed_hub.dimension_key arrives with migration 530; without it, fall
+    # back to the topic the proposal recorded, which is all there is to use.
+    has_dimension_key = bool(
+        session.execute(
+            text(
+                "SELECT count(*) FROM information_schema.columns "
+                "WHERE table_name='proposed_hub' AND column_name='dimension_key'"
+            )
+        ).scalar()
+    )
+    key_column = (
+        "COALESCE(dimension_key, topic_id::text)" if has_dimension_key else "topic_id::text"
+    )
     fingerprints = tuple(
-        (str(row["topic_id"]), str(row["membership_fingerprint"]))
+        (str(row["dimension_key"]), str(row["membership_fingerprint"]))
         for row in session.execute(
             text(
-                "SELECT topic_id,membership_fingerprint FROM proposed_hub "
+                f"SELECT {key_column} AS dimension_key,membership_fingerprint "
+                "FROM proposed_hub "
                 "WHERE proposal_kind='deterministic_cluster' AND topic_id IS NOT NULL "
-                "AND membership_fingerprint IS NOT NULL ORDER BY topic_id,membership_fingerprint"
+                "AND membership_fingerprint IS NOT NULL ORDER BY 1,2"
             )
         ).mappings().all()
     )

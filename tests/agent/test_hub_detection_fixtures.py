@@ -147,8 +147,14 @@ def test_s5_a_trusted_same_sector_hub_suppresses_instead_of_duplicating():
     assert [s.reason for s in result.suppressions] == ["existing_same_sector_hub"]
     suppression = result.suppressions[0]
     assert suppression.existing_hub_id == "FX-existing-hub"
-    # It is an assignment plan, not a silent drop: every actor gets one.
+    # It is an assignment plan, not a silent drop: every actor gets one, and
+    # every plan actually assigns to the covering hub. A plan that assigns
+    # nothing would be a silent drop wearing a plan's clothes.
     assert len(suppression.assignment_plans) == len(BASE)
+    assert all(
+        plan.assigned_hub_ids == ("FX-existing-hub",)
+        for _actor_id, plan in suppression.assignment_plans
+    )
 
 
 def test_s6_parked_actors_are_excluded_but_a_different_topic_no_longer_excludes():

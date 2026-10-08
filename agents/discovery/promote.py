@@ -707,6 +707,7 @@ def map_new_actor(
                 topic_id=topic_id,
                 geography=geography,
                 explicit_hub_ids=route.metadata.get("hub_ids") or [],
+                sector_codes=tuple(staged.sector_codes or ()),
             )
             if light_pull is not None:
                 light_pull = replace_light_fact(
@@ -1309,27 +1310,53 @@ def _plan_actor_hubs(
     topic_id: str | None,
     geography: PreparedActorGeography,
     explicit_hub_ids: object,
+    sector_codes: tuple[str, ...] = (),
 ) -> HubAssignmentPlan:
+    """Plan hub membership. Test 1 is the SECTOR (GHUS decision, 2026-10-08).
+
+    Candidate hubs are gathered by sector, and still by topic and by explicit
+    id, so a hub a reviewer named by hand is always evaluated. The decision
+    itself is made by build_hub_assignment_plan, which gates on sector.
+    """
+
     if not isinstance(explicit_hub_ids, (list, tuple, set)):
         raise TypeError("hub_ids must be a list")
     explicit = tuple(sorted({str(value).strip() for value in explicit_hub_ids if str(value).strip()}))
-    if not topic_id and not explicit:
+    sectors = tuple(sorted({str(code).strip().upper() for code in sector_codes if str(code).strip()}))
+    if not topic_id and not explicit and not sectors:
         return HubAssignmentPlan((), (), ())
+    # hub_sector arrives with migration 520. Without it a hub has no sector,
+    # matches nothing by sector, and the plan says so rather than guessing.
+    has_hub_sector = bool(
+        session.execute(text("SELECT to_regclass('public.hub_sector') IS NOT NULL")).scalar()
+    )
+    sector_select = (
+        ",(SELECT s.code FROM hub_sector hs JOIN sector s ON s.sector_id=hs.sector_id "
+        "WHERE hs.hub_id=h.hub_id AND hs.is_primary LIMIT 1) AS sector_code "
+        if has_hub_sector else ",NULL AS sector_code "
+    )
+    sector_clause = (
+        " OR EXISTS (SELECT 1 FROM hub_sector hs2 JOIN sector s2 ON s2.sector_id=hs2.sector_id "
+        "WHERE hs2.hub_id=h.hub_id AND s2.code = ANY(CAST(:sector_codes AS text[])))"
+        if has_hub_sector else ""
+    )
     rows = session.execute(
         text(
-            "SELECT hub_id::text AS hub_id,name,topic_id::text AS topic_id,"
-            "center_latitude,center_longitude,COALESCE(radius_miles,200) AS radius_miles "
-            "FROM hub WHERE (:topic_id IS NOT NULL AND topic_id=CAST(:topic_id AS uuid)) "
-            "OR hub_id::text = ANY(CAST(:hub_ids AS text[])) ORDER BY hub_id"
+            "SELECT h.hub_id::text AS hub_id,h.name,h.topic_id::text AS topic_id,"
+            "h.center_latitude,h.center_longitude,COALESCE(h.radius_miles,200) AS radius_miles"
+            + sector_select +
+            "FROM hub h WHERE (:topic_id IS NOT NULL AND h.topic_id=CAST(:topic_id AS uuid)) "
+            "OR h.hub_id::text = ANY(CAST(:hub_ids AS text[]))" + sector_clause +
+            " ORDER BY h.hub_id"
         ),
-        {"topic_id": topic_id, "hub_ids": list(explicit)},
+        {"topic_id": topic_id, "hub_ids": list(explicit), "sector_codes": list(sectors)},
     ).mappings().all()
     found = {str(row["hub_id"]) for row in rows}
     missing = sorted(set(explicit) - found)
     if missing:
         raise ValueError(f"unknown hub_id(s): {', '.join(missing)}")
     latitude, longitude = _primary_actor_coordinates(geography)
-    actor = ActorHubContext(None, topic_id, latitude, longitude)
+    actor = ActorHubContext(None, topic_id, latitude, longitude, frozenset(sectors))
     hubs = [
         HubCandidate(
             hub_id=str(row["hub_id"]),
@@ -1338,6 +1365,7 @@ def _plan_actor_hubs(
             center_latitude=float(row["center_latitude"]) if row["center_latitude"] is not None else None,
             center_longitude=float(row["center_longitude"]) if row["center_longitude"] is not None else None,
             radius_miles=float(row["radius_miles"]),
+            sector_code=str(row["sector_code"]) if row.get("sector_code") else None,
         )
         for row in rows
     ]
@@ -1358,6 +1386,8 @@ def _persist_hub_assignment_plan(
         evidence = {
             "outcome": evaluation.outcome,
             "topic_matched": evaluation.topic_matched,
+            "sector_matched": evaluation.sector_matched,
+            "dimension": evaluation.dimension,
             "location_evaluated": evaluation.location_evaluated,
             "distance_miles": evaluation.distance_miles,
             "radius_miles": evaluation.radius_miles,

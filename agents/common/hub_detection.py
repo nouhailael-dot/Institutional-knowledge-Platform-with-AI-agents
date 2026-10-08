@@ -343,6 +343,7 @@ def _detect_partition(
                                 actor.topic_id,
                                 actor.latitude,
                                 actor.longitude,
+                                actor.sector_codes,
                             ),
                             [
                                 HubCandidate(
@@ -352,8 +353,13 @@ def _detect_partition(
                                     covering.center_latitude,
                                     covering.center_longitude,
                                     float(covering.radius_miles),
+                                    covering.sector_code,
                                 )
                             ],
+                            # The plan has to be built on the same dimension the
+                            # cluster was found on, or a suppression would hand
+                            # back plans that assign nothing.
+                            dimension=dimension,
                         ),
                     )
                     for actor in cluster
