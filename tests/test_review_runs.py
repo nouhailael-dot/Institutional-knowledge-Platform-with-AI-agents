@@ -427,3 +427,38 @@ def test_the_hub_context_reader_asks_for_nothing_it_cannot_find(tmp_path):
     assert 'if miles > hub["radius_miles"]:' in source
     # An actor already in a hub is not suggested that same hub again.
     assert "placed" in source
+
+
+def test_every_actor_review_kind_the_database_allows_reaches_the_screen():
+    """A pending review item that never appears is the same as no review at all.
+
+    The earlier filter named seven kinds. The database's own ck_review_item_kind
+    allows far more, and the restored production copy held 154 pending
+    geocode_failed items and 42 relationship_review items that the Review screen
+    could not see.
+    """
+
+    source = pathlib.Path("src/review/postgres_source.py").read_text(encoding="utf-8")
+    body = source.split("WHERE ri.status='pending'", 1)[1].split("ORDER BY", 1)[0]
+    for kind in (
+        "verify_actor", "category_doubt", "geocode_failed", "hub_assignment",
+        "hub_needs_review", "hub_radius_overlap", "hub_member_outside_radius",
+        "hub_center_drift", "hub_proposal", "same_topic_overlap",
+        "possible_duplicate", "fact_conflict", "pending_update", "relationship_review",
+    ):
+        assert f"'{kind}'" in body, f"{kind} items would never reach Review"
+
+    # And each one has a label, so none of them renders as a raw code.
+    import json
+    import subprocess
+    labels = subprocess.run(
+        ["node", "--input-type=module", "-e",
+         "import('file:///' + process.argv[1].replace(/\\/g,'/'))"
+         ".then(m => process.stdout.write(JSON.stringify(Object.keys(m.REVIEW_REASON_LABELS))))",
+         str(pathlib.Path("frontend/review.js").resolve())],
+        capture_output=True, text=True, timeout=60,
+    )
+    if labels.returncode == 0:
+        labelled = set(json.loads(labels.stdout))
+        for kind in ("geocode_failed", "possible_duplicate", "fact_conflict", "pending_update"):
+            assert kind in labelled, f"{kind} has no label"

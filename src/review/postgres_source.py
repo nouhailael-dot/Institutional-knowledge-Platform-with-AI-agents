@@ -533,9 +533,17 @@ class PostgresReviewSource:
             "   AND af.topic_id IS NOT DISTINCT FROM ri.topic_id"
             ") f ON true " + history_join + edge_join +
             "WHERE ri.status='pending' "
+            # Every actor review kind the database allows. The earlier list
+            # named seven and left out geocode_failed, possible_duplicate,
+            # fact_conflict and pending_update, so those items were pending in
+            # the database and invisible on the screen: 154 geocode_failed rows
+            # in the restored production copy alone.
             "AND ri.review_kind IN ("
-            " 'verify_actor','category_doubt','hub_assignment','same_topic_overlap',"
-            " 'hub_needs_review','hub_radius_overlap','hub_member_outside_radius'"
+            " 'verify_actor','category_doubt','geocode_failed','geocode',"
+            " 'hub_assignment','hub_needs_review','hub_radius_overlap',"
+            " 'hub_member_outside_radius','hub_center_drift','hub_proposal','new_hub',"
+            " 'same_topic_overlap','possible_duplicate','fact_conflict','pending_update',"
+            " 'pending_human_update','identity','classification','relationship_review'"
             ") ORDER BY ri.created_at"
         ).fetchall()
 
