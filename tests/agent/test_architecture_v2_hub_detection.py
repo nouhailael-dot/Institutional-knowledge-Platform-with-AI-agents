@@ -84,6 +84,13 @@ def cluster(
     ]
 
 
+# This suite is the regression suite for the ORIGINAL topic-partitioned rule.
+# Hub membership now keys on sector by default (GHUS decision, 2026-10-08), and
+# topic mode is retained as a configuration option; these tests pin that option
+# so the earlier behaviour stays proven rather than quietly deleted.
+TOPIC_MODE = HubDetectionConfig(cluster_dimension="topic")
+
+
 def run(
     actors,
     *,
@@ -92,7 +99,7 @@ def run(
     prior=(),
     config: HubDetectionConfig | None = None,
 ):
-    return detect_new_hubs(actors, edges, hubs, prior, config or HubDetectionConfig())
+    return detect_new_hubs(actors, edges, hubs, prior, config or TOPIC_MODE)
 
 
 def latitude_for_miles(miles: float) -> float:
@@ -198,7 +205,7 @@ def test_16_imported_actor_is_excluded_by_default():
 
 def test_17_verified_plus_imported_comparison_uses_same_snapshot():
     snapshot = DetectionSnapshot(tuple(cluster("a", status="imported")), (), (), ())
-    default, comparison = compute_detection_snapshot(snapshot, HubDetectionConfig())
+    default, comparison = compute_detection_snapshot(snapshot, TOPIC_MODE)
     assert not default.proposals
     assert len(comparison.proposals) == 1
 
@@ -216,7 +223,7 @@ def test_18_prerequisite_exclusions_fail_closed():
     ]
     for changes, reason in cases:
         item = replace(actor("a"), **changes)
-        result = run([item], config=HubDetectionConfig(minimum_families=1, minimum_categories=1))
+        result = run([item], config=HubDetectionConfig(minimum_families=1, minimum_categories=1, cluster_dimension="topic"))
         assert result.prerequisite_exclusions["topic-1:a"] == reason
 
 
@@ -227,7 +234,7 @@ def test_19_same_topic_assignment_is_excluded_from_pool():
 
 def test_20_other_topic_assignment_does_not_exclude_actor():
     item = actor("a", assigned=frozenset({"topic-2"}))
-    result = run([item], config=HubDetectionConfig(minimum_families=1, minimum_categories=1))
+    result = run([item], config=HubDetectionConfig(minimum_families=1, minimum_categories=1, cluster_dimension="topic"))
     assert result.eligible_actor_ids == ("a",)
 
 
@@ -251,7 +258,7 @@ def test_23_four_category_matching_fails_threshold():
 def test_24_radius_boundary_is_inclusive_only_through_200():
     for miles, expected in ((200.0, 1), (201.0, 0)):
         actors = [actor("a"), actor("b", latitude=latitude_for_miles(miles), city="Beta")]
-        config = HubDetectionConfig(minimum_families=2, minimum_categories=1)
+        config = HubDetectionConfig(minimum_families=2, minimum_categories=1, cluster_dimension="topic")
         assert len(run(actors, config=config).proposals) == expected
 
 
@@ -331,7 +338,7 @@ def test_34_member_distance_keeps_unrounded_decision_value():
 
 
 def test_35_runtime_defaults_match_architecture_values():
-    config = HubDetectionConfig()
+    config = TOPIC_MODE
     assert (config.minimum_families, config.minimum_categories) == (10, 5)
     assert (config.core_radius_miles, config.radius_miles) == (50.0, 200.0)
     assert config.trigger_statuses == ("verified",)
@@ -339,7 +346,7 @@ def test_35_runtime_defaults_match_architecture_values():
 
 def test_36_dry_and_live_computation_inputs_produce_identical_payloads():
     snapshot = DetectionSnapshot(tuple(cluster("a")), (), (), ())
-    dry, live_candidate = compute_detection_snapshot(snapshot, HubDetectionConfig())
+    dry, live_candidate = compute_detection_snapshot(snapshot, TOPIC_MODE)
     assert canonical_result_json(dry) == canonical_result_json(live_candidate)
 
 

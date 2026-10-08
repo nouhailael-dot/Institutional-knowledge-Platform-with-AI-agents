@@ -1,6 +1,9 @@
 # Hub detection fixture report (WS5.2)
 
-Synthetic fixtures, run against the **implemented Phase 7 detection, unmodified**.
+Synthetic fixtures, run against the implemented Phase 7 detection with only the
+change GHUS decided on 2026-10-08: clustering keys on **sector**, and topic is
+recorded as secondary evidence. The thresholds, the family rule, the centre
+method and the determinism guarantee are untouched.
 The algorithm was not changed to make any scenario pass. Where a fixture
 expectation and the implemented behaviour differ, the implemented behaviour is
 what is recorded below.
@@ -9,6 +12,7 @@ what is recorded below.
 |---|---|
 | Thresholds | 10 independent families · 5 matched categories (maximum bipartite matching) · 50-mile core · 200-mile cluster |
 | Trigger pool | record status in ('verified',) |
+| Clustering dimension | **sector** (GHUS decision 2026-10-08; topic is secondary evidence on each proposal) |
 | Method version | `hub_proposal_v1` |
 | Fingerprint version | `hub_family_set_v1` |
 | Data | synthetic, `FX-` prefixed, in memory only. No database was written, read or contacted. |
@@ -59,10 +63,10 @@ measured rather than asserted:
 **Actual.**
 
 - Proposal centre: **Sacramento, CA** (38.567694, -121.468161)
-  - Suggested name: Sacramento FX Precision Agriculture Hub
+  - Suggested name: Sacramento AGRI Hub
   - Independent families: **12** (threshold 10) · matched categories: **10** (threshold 5)
   - Members: 13
-  - Independence statement: 12 independent families from 10 matched categories are on FX Precision Agriculture, concentrated around Sacramento, with every proposed member within 200 miles.
+  - Independence statement: 12 independent families from 10 matched categories work in AGRI, concentrated around Sacramento, with every proposed member within 200 miles. Its most common topic is FX Precision Agriculture (13 of 13 members).
   - Membership fingerprint: `fe8719e3735dad01…`
 
   | Member | Category | Type | Family | Distance to centre |
@@ -123,10 +127,10 @@ measured rather than asserted:
 **Actual.**
 
 - Proposal centre: **Sacramento, CA** (38.567694, -121.468161)
-  - Suggested name: Sacramento FX Precision Agriculture Hub
+  - Suggested name: Sacramento AGRI Hub
   - Independent families: **12** (threshold 10) · matched categories: **10** (threshold 5)
   - Members: 13
-  - Independence statement: 12 independent families from 10 matched categories are on FX Precision Agriculture, concentrated around Sacramento, with every proposed member within 200 miles.
+  - Independence statement: 12 independent families from 10 matched categories work in AGRI, concentrated around Sacramento, with every proposed member within 200 miles. Its most common topic is FX Precision Agriculture (13 of 13 members).
   - Membership fingerprint: `fe8719e3735dad01…`
 
   | Member | Category | Type | Family | Distance to centre |
@@ -158,10 +162,10 @@ measured rather than asserted:
   - `FX-valley-crop-institute` → `research_center`
 
 - Proposal centre: **Worcester, MA** (42.269478, -71.807783)
-  - Suggested name: Worcester FX Precision Agriculture Hub
+  - Suggested name: Worcester AGRI Hub
   - Independent families: **12** (threshold 10) · matched categories: **10** (threshold 5)
   - Members: 12
-  - Independence statement: 12 independent families from 10 matched categories are on FX Precision Agriculture, concentrated around Worcester, with every proposed member within 200 miles.
+  - Independence statement: 12 independent families from 10 matched categories work in AGRI, concentrated around Worcester, with every proposed member within 200 miles. Its most common topic is FX Precision Agriculture (12 of 12 members).
   - Membership fingerprint: `224682f1e66bf439…`
 
   | Member | Category | Type | Family | Distance to centre |
@@ -192,34 +196,34 @@ measured rather than asserted:
   - `FX-northeast-growers` → `association_network`
 
 
-### S5 — A trusted same-topic hub suppresses instead of duplicating
+### S5 — A trusted same-sector hub suppresses instead of duplicating
 
-**Input.** The base fixture, with an existing 200-mile hub on the same topic centred on Sacramento.
+**Input.** The base fixture, with an existing 200-mile hub in the same sector centred on Sacramento.
 
 **Expected.** An assignment plan and a suppression, not a duplicate proposal.
 
 **Actual.**
 
 - Proposals: **none**
-- Suppression: **existing_same_topic_hub** at Sacramento (13 actors)
+- Suppression: **existing_same_sector_hub** at Sacramento (13 actors)
   - Covering hub: `FX-existing-hub`
   - Assignment plans prepared: 13
   - Family fingerprint: `fe8719e3735dad01…`
 
-### S6 — Parked and topic-unverified actors are excluded from the trigger pool
+### S6 — Parked actors are excluded; a different topic no longer excludes
 
 **Input.** The base fixture with FX SoilSense set to Parked and FX Harvest Ventures moved to a different controlled topic.
 
-**Expected.** The Parked actor never triggers detection; the other-topic actor never joins this topic's cluster.
+**Expected.** The Parked actor never triggers detection. The other-topic actor now JOINS, because it is in the hub's sector, and its topic is recorded in the proposal's topic mix instead of excluding it.
 
 **Actual.**
 
 - Proposal centre: **Davis, CA** (38.556147, -121.737793)
-  - Suggested name: Davis FX Precision Agriculture Hub
-  - Independent families: **10** (threshold 10) · matched categories: **9** (threshold 5)
-  - Members: 11
-  - Independence statement: 10 independent families from 9 matched categories are on FX Precision Agriculture, concentrated around Davis, with every proposed member within 200 miles.
-  - Membership fingerprint: `37ec439bbdab0c0f…`
+  - Suggested name: Davis AGRI Hub
+  - Independent families: **11** (threshold 10) · matched categories: **10** (threshold 5)
+  - Members: 12
+  - Independence statement: 11 independent families from 10 matched categories work in AGRI, concentrated around Davis, with every proposed member within 200 miles. Its most common topic is FX Precision Agriculture (11 of 12 members).
+  - Membership fingerprint: `2140395a074615f6…`
 
   | Member | Category | Type | Family | Distance to centre |
   |---|---|---|---|---|
@@ -230,6 +234,7 @@ measured rather than asserted:
   | FX-delta-field-station | applied_facility | nonprofit_operated | FX-delta-field-station | 8.84 mi |
   | FX-farm-futures-foundation | foundation_nonprofit | private_foundation | FX-farm-futures-foundation | 14.59 mi |
   | FX-growers-association | association_network | trade_association | FX-growers-association | 46.32 mi |
+  | FX-harvest-ventures | investor | venture_capital | FX-harvest-ventures | 26.98 mi |
   | FX-irrigation-systems | company | small_mid_size | FX-irrigation-systems | 21.44 mi |
   | FX-seedgen | startup | university_spinout | FX-seedgen | 0.00 mi |
   | FX-university-alpha | university_academic | university_system | FX-university-alpha | 0.00 mi |
@@ -242,12 +247,13 @@ measured rather than asserted:
   - `FX-delta-field-station` → `applied_facility`
   - `FX-farm-futures-foundation` → `foundation_nonprofit`
   - `FX-growers-association` → `association_network`
+  - `FX-harvest-ventures` → `investor`
   - `FX-seedgen` → `startup`
   - `FX-university-alpha` → `university_academic`
   - `FX-valley-crop-institute` → `research_center`
 
 - Prerequisite exclusions:
-  - `fx-topic-precision-agriculture:FX-soilsense`: status_not_enabled
+  - `AGRI:FX-soilsense`: status_not_enabled
 
 ### S7a — One family with several departments counts once
 
@@ -258,10 +264,10 @@ measured rather than asserted:
 **Actual.**
 
 - Proposal centre: **Davis, CA** (38.556147, -121.737793)
-  - Suggested name: Davis FX Precision Agriculture Hub
+  - Suggested name: Davis AGRI Hub
   - Independent families: **12** (threshold 10) · matched categories: **10** (threshold 5)
   - Members: 16
-  - Independence statement: 12 independent families from 10 matched categories are on FX Precision Agriculture, concentrated around Davis, with every proposed member within 200 miles.
+  - Independence statement: 12 independent families from 10 matched categories work in AGRI, concentrated around Davis, with every proposed member within 200 miles. Its most common topic is FX Precision Agriculture (16 of 16 members).
   - Membership fingerprint: `fe8719e3735dad01…`
 
   | Member | Category | Type | Family | Distance to centre |
@@ -305,10 +311,10 @@ measured rather than asserted:
 **Actual.**
 
 - Proposal centre: **Sacramento, CA** (38.567694, -121.468161)
-  - Suggested name: Sacramento FX Precision Agriculture Hub
+  - Suggested name: Sacramento AGRI Hub
   - Independent families: **11** (threshold 10) · matched categories: **9** (threshold 5)
   - Members: 11
-  - Independence statement: 11 independent families from 9 matched categories are on FX Precision Agriculture, concentrated around Sacramento, with every proposed member within 200 miles.
+  - Independence statement: 11 independent families from 9 matched categories work in AGRI, concentrated around Sacramento, with every proposed member within 200 miles. Its most common topic is FX Precision Agriculture (11 of 11 members).
   - Membership fingerprint: `c287aa2eccda2d22…`
 
   | Member | Category | Type | Family | Distance to centre |
@@ -361,10 +367,10 @@ measured rather than asserted:
 **Actual.**
 
 - Proposal centre: **Sacramento, CA** (38.567694, -121.468161)
-  - Suggested name: Sacramento FX Precision Agriculture Hub
+  - Suggested name: Sacramento AGRI Hub
   - Independent families: **12** (threshold 10) · matched categories: **10** (threshold 5)
   - Members: 13
-  - Independence statement: 12 independent families from 10 matched categories are on FX Precision Agriculture, concentrated around Sacramento, with every proposed member within 200 miles.
+  - Independence statement: 12 independent families from 10 matched categories work in AGRI, concentrated around Sacramento, with every proposed member within 200 miles. Its most common topic is FX Precision Agriculture (13 of 13 members).
   - Membership fingerprint: `fe8719e3735dad01…`
 
   | Member | Category | Type | Family | Distance to centre |

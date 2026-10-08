@@ -29,6 +29,7 @@ from tests.agent.hub_fixture_data import (
     EAST,
     OTHER_TOPIC_ID,
     OTHER_TOPIC_NAME,
+    SECTOR,
     TOPIC_ID,
     coordinates,
     detect,
@@ -173,19 +174,20 @@ def scenarios() -> list[dict]:
         },
         {
             "id": "S5",
-            "title": "A trusted same-topic hub suppresses instead of duplicating",
-            "input": "The base fixture, with an existing 200-mile hub on the same topic "
+            "title": "A trusted same-sector hub suppresses instead of duplicating",
+            "input": "The base fixture, with an existing 200-mile hub in the same sector "
                      "centred on Sacramento.",
             "expected": "An assignment plan and a suppression, not a duplicate proposal.",
             "result": detect(BASE, existing_hubs=(trusted_hub_at("Sacramento", "CA"),)),
         },
         {
             "id": "S6",
-            "title": "Parked and topic-unverified actors are excluded from the trigger pool",
+            "title": "Parked actors are excluded; a different topic no longer excludes",
             "input": "The base fixture with FX SoilSense set to Parked and FX Harvest "
                      "Ventures moved to a different controlled topic.",
-            "expected": "The Parked actor never triggers detection; the other-topic actor "
-                        "never joins this topic's cluster.",
+            "expected": "The Parked actor never triggers detection. The other-topic actor "
+                        "now JOINS, because it is in the hub's sector, and its topic is "
+                        "recorded in the proposal's topic mix instead of excluding it.",
             "result": detect(s6_actors),
         },
         {
@@ -210,7 +212,7 @@ def scenarios() -> list[dict]:
             "input": "The base fixture, rerun with its own membership fingerprint supplied "
                      "as a prior rejection.",
             "expected": "No proposal; the rejection fingerprint suppresses the unchanged set.",
-            "result": detect(BASE, prior_fingerprints=((TOPIC_ID, fingerprint),)),
+            "result": detect(BASE, prior_fingerprints=((SECTOR, fingerprint),)),
         },
         {
             "id": "S9",
@@ -229,7 +231,10 @@ def render() -> str:
     lines: list[str] = [
         "# Hub detection fixture report (WS5.2)",
         "",
-        "Synthetic fixtures, run against the **implemented Phase 7 detection, unmodified**.",
+        "Synthetic fixtures, run against the implemented Phase 7 detection with only the",
+        "change GHUS decided on 2026-10-08: clustering keys on **sector**, and topic is",
+        "recorded as secondary evidence. The thresholds, the family rule, the centre",
+        "method and the determinism guarantee are untouched.",
         "The algorithm was not changed to make any scenario pass. Where a fixture",
         "expectation and the implemented behaviour differ, the implemented behaviour is",
         "what is recorded below.",
@@ -240,6 +245,8 @@ def render() -> str:
         f"{CONFIG.minimum_categories} matched categories (maximum bipartite matching) · "
         f"{CONFIG.core_radius_miles:.0f}-mile core · {CONFIG.radius_miles:.0f}-mile cluster |",
         f"| Trigger pool | record status in {CONFIG.trigger_statuses} |",
+        f"| Clustering dimension | **{CONFIG.cluster_dimension}** (GHUS decision 2026-10-08; "
+        f"topic is secondary evidence on each proposal) |",
         f"| Method version | `{CONFIG.method_version}` |",
         f"| Fingerprint version | `{CONFIG.fingerprint_version}` |",
         "| Data | synthetic, `FX-` prefixed, in memory only. No database was written, "

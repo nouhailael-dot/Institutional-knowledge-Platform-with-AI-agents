@@ -49,6 +49,8 @@ The fifth is a genuine schema gap that blocks WS4 and WS6.
 | F10 | `actor` carries three overlapping status columns | **DEVIATION** | no (transitional by design) |
 | F11 | `actor_fact.lifecycle_state` uses `accepted`, the spec says `active` | **DEVIATION** | no |
 | F12 | Several constraints are `NOT VALID` | **DEVIATION** | no |
+| F13 | The sector dimension specified by §1, §5.1 and §6 was dropped from V2 | **GAP** | **Yes** for sector-based hub matching |
+| F14 | The UM6P/OCP master-list tables from migration 300 were never deployed | **GAP** | no |
 
 ---
 
@@ -66,17 +68,89 @@ The fifth is a genuine schema gap that blocks WS4 and WS6.
 | 7 | No-delete guards on canonical tables; rejected records retained | append-only triggers on 15 tables: `actor_fact`, `entity_edge`, `actor_verification_event`, `actor_ranking`, `canonical_write_audit`, `event_claim`, `fact_corroboration`, `fact_resolution`, `review_item_decision`, `proposed_hub_decision`, `contact_collection_authorization`, `actor_category_migration_audit`, `hub_assignment_evidence`, … | **PARTIAL** | `tables.*.triggers` | **`actor`, `person`, `event`, `hub`, `hub_actor`, `actor_topic`, `actor_location` have no delete guard.** The evidence tables are protected; the records themselves are not. Add no-delete triggers, or revoke DELETE from the application role. | No |
 | 8 | 11 Guide link types; source required; `affiliated_with` person→org only; `organizes`/`participates_in` actor→event only; `portfolio_of`/`member_of` never parenthood; recursive descendants view | `entity_edge_relationship_type_check` lists exactly the 11; `source_id NOT NULL`; `entity_edge_type_definition(subject_types, object_types, establishes_actor_family)`; triggers `entity_edge_validate` and `entity_edge_prevent_family_cycle`; view `actor_descendants` | **PASS** | `tables.entity_edge`, `views.actor_descendants` | — | No |
 | 8b | The stored code for the UM6P/OCP link | `connected_to_um6p_ocp` — **without** the `_entity` suffix Appendix B uses | **DEVIATION** | `entity_edge_relationship_type_check` | Fixed in the Review app: the DB code is canonical, the Guide spelling is accepted as an alias, and the Guide's label is displayed. No schema change needed. | No |
-| 9 | Topic table + `actor_topic` (strength, reason); sector many-to-many | `topic(code unique, name unique, active)`, `actor_topic(match_strength CHECK strong/moderate, match_reason CHECK 1–1000 chars, source_id NOT NULL)`, plus `event_topic`, `person_topic` | **PASS** | `tables.actor_topic` | A topic claim requires a source and a reason. Exactly right. | No |
+| 9 | Topic table + `actor_topic` (strength, reason); **sector many-to-many** | `topic`, `actor_topic(match_strength, match_reason, source_id NOT NULL)`, `event_topic`, `person_topic` are all present and well formed. **There is no `sector` table and no `actor_sector` link anywhere in V2.** | **GAP** (corrected, was PASS — see F13) | no table in the manifest contains "sector"; only `hub.primary_sectors` / `secondary_sectors` text arrays survive | Migration 520 restores `sector`, `actor_sector`, `event_sector` and `hub_sector` on the same evidence pattern as `actor_topic` | **Yes** for sector-based hub matching |
 | 10 | Hub: topic, center, radius (default 200), frozen flag; `actor_hub` keeps history/state; proposals with family/category evidence and rejection fingerprint | `hub(topic_id, center_city, center_state_code, center_latitude, center_longitude, radius_miles, center_frozen, center_method, center_method_version, center_computed_at)`; `proposed_hub(independent_family_count, category_count, membership_fingerprint, independence_statement, detection_method_version, fingerprint_version, trigger_statuses, minimum_families_required, minimum_categories_required)`; `hub_detection_run`; `hub_assignment_evidence` (immutable) | **PASS** for hub and proposals | `tables.hub`, `tables.proposed_hub` | — | No |
 | 10b | `hub_actor` keeps history and state | `hub_actor(hub_id, actor_id, topic_id, distance_miles, assignment_outcome, outside_radius, overlap_flag, source_id, created_at)` — **no `is_current`, no `ended_at`, no delete guard** | **GAP** | `tables.hub_actor` | "Historical memberships are never silently replaced" currently depends on nobody issuing a DELETE or UPDATE. Add an `is_current`/`superseded_at` pair, or a no-delete trigger plus append semantics, before WS5.1 writes manual assignments. | No, but **fix before WS5.1** |
 | 11 | Rankings: publisher, name, year, subject, ranked unit, position; **University only**; department never inherits | `actor_ranking(publisher CHECK QS/THE/U.S. News/ARWU, ranking_name, ranking_year CHECK, subject, ranked_entity_name, position_text, context_actor_id)`, append-only | **GAP** | `tables.actor_ranking` | Nothing in the schema stops a ranking row on a non-university actor. `light_pull.py` raises `rankings are collected only for university actors`, and the Review UI hides the row — but a direct writer could still insert one. Add `CHECK` via a trigger that the actor's category is `university_academic`. | No |
-| 12 | UM6P/OCP entity list + 3-state check per actor and layer | `entity_edge` object type `strategic_entity` + the `connected_to_um6p_ocp` relationship; the 3-state answer lives in `actor_fact` as `um6p_ocp_connection` with `collection_state` | **PASS** | `tables.entity_edge`, `light_pull.COMMON_LIGHT_FIELDS` | The three states map onto `found` / `not_found` / `not_yet_collected` cleanly. | No |
+| 12 | UM6P/OCP entity list + 3-state check per actor and layer | The 3-state answer lives in `actor_fact` as `um6p_ocp_connection` with `collection_state`, which works. But `agents/sql/300_v2_strategic_connections.sql` creates `strategic_entity` (the master list) and `actor_strategic_connection_check`, and **neither is in the target schema**. `entity_edge.object_type` still allows `'strategic_entity'`, so an edge may point at a table that does not exist. | **GAP** (corrected, was PASS — see F14) | migration-to-manifest diff, below | Apply migration 300's two tables, or remove `strategic_entity` from the `entity_edge` object-type CHECK so the schema stops promising something it does not have | No |
 | 13 | Events: type, dates, temporal state, recurrence, organizer link, claims with source, GHUS-only notes not writable by agents | `event(event_type, start_date, end_date, next_date, date_status, recurring_pattern, host_actor_id→actor, ghus_notes)`; `event_claim` append-only | **PARTIAL** | `tables.event`, `tables.event_claim` | `event.ghus_notes` has **no RLS and no trigger** stopping an agent writing it, unlike `actor_verification_event`. The agent code never writes it, but the schema does not enforce that. Same for `actor.ghus_notes`. Add a trigger or column-level privileges. | No |
 | 14 | People: separate records, discovery flag off, **separate verification** | `person` table exists and is separate; `person_topic`; discovery flag is config, not schema — **there is no `person_verification_event`** | **GAP** | `tables` list has `actor_verification_event` only | Person verification currently has nowhere to go. Not urgent while person discovery is disabled, but it must exist before people can be verified. | No |
 | 15 | Source-origin labels keep Imported / Discovered / GHUS document distinct | `source_origin_definition` with `imported`, `newly_found`, `uploaded_document`, `ghus_manual`; `actor_fact.source_origin` NOT NULL FK; `actor.source_origin`, `person.source_origin`, `event.source_origin` | **PASS** | `agents/sql/190`, `tables.actor_fact` | — | No |
 | 16 | Review item kinds cover the 13 listed | `ck_review_item_kind` allows **21**: the 13 required, plus `identity`, `affiliation_change`, `classification`, `geocode`, `hub_assignment`, `same_topic_overlap`, `new_hub`, `pending_human_update` | **PASS** (superset) | `tables.review_item.constraints` | The constraint is `NOT VALID`. Validate it. The Review app now labels all 21 — six of them did not have a label this morning (F5). | No |
 | 17 | Collection runs carry the WS4 fields | `collection_run(collection_request_id, job_name, dry_run, status, fetch_budget, fetch_count, max_usd, spent_usd, started_at, finished_at, status_reason)` | **GAP** | `tables.collection_run` | **See F1 below.** | **Yes** |
 | 18 | Duplicate check by name, alternate names and **website domain**, indexed and normalized | `ix_actor_website_domain` on `lower(website_domain)`, `ix_actor_name_normalized` on `lower(name)`, `ix_actor_alternate_names_gin` on `alternate_names` | **PASS** | `tables.actor.indexes` | — | No |
+
+---
+
+## Corrections to this audit
+
+Two verdicts in the first pass of this document were wrong. Both were found by
+going back to *Architecture V2 Sept* itself rather than reading the schema alone,
+and both are corrected in the table above.
+
+| Was | Now | What I got wrong |
+|---|---|---|
+| Req 9 **PASS** | **GAP** (F13) | I read "sector link many-to-many" as satisfied by `actor_topic`. It is not: `actor_topic` is the *topic* link. V2 has no sector link at all. |
+| Req 12 **PASS** | **GAP** (F14) | I cited `entity_edge` and `actor_fact` for the UM6P/OCP check and did not notice that the master-list table itself was never deployed. |
+
+### How the missing tables were found
+
+Comparing every table that an `agents/sql/*_v2_*.sql` migration creates against
+the tables actually present in the target schema:
+
+```
+tables created by agents/sql migrations: 38
+present in the target schema:            31
+```
+
+| Table | Created by | Status |
+|---|---|---|
+| `strategic_entity` | `300_v2_strategic_connections.sql` | **absent from the target** — F14 |
+| `actor_strategic_connection_check` | `300_v2_strategic_connections.sql` | **absent from the target** — F14 |
+| `record_verification` | `230_v2_verification_history.sql` | absent, but **by design** — see below |
+| `sector`, `actor_sector`, `event_sector`, `hub_sector` | `520` (new) | not yet applied; this migration is the F13 fix |
+
+**`record_verification` is not a defect.** It is the V1-era verification table,
+superseded by `actor_verification_event`. `agents/enrichment/decisions.py` checks
+`to_regclass('public.actor_verification_event')` and writes to the V2 table when
+it exists, falling back to `record_verification` only when it does not. That is a
+correct dual path.
+
+> **UNVERIFIED.** `agents/collection/deep_pull.py:100` reads
+> `record_verification` directly. `agents/common/resolve_route.py` guards the
+> same read with a `to_regclass` check; I did not confirm that `deep_pull.py`
+> has an equivalent guard. Worth one look before cutover.
+
+---
+
+## F13 — the sector dimension was dropped, and the architecture document needs it
+
+This is the finding behind migration 520, and it is a **recovery**, not a new
+feature. *Architecture V2 Sept* specifies sector as a first-class, many-to-many
+actor dimension in three separate places:
+
+| Where | What it says |
+|---|---|
+| §1 | "Everything connects the right way — a real parent when one exists, **or through sector, geography, and hub** when it doesn't" |
+| §5.1 | "Sector and topic \| **The sector(s) this actor fits**, and the specific topic it was found for" |
+| §6, Case 2 | "The actor still connects into the map fully — **through its sector**, its geography, and its hub" |
+| §3 | "A research center can work on water, AI, or **five other sectors** and it's still a research center" |
+
+V1 implemented exactly that: `sector`, `actor_sector` (with `source_id`),
+`event_sector`, `hub_sector_strength`. **V2 carried none of it forward.** The
+`topic` table was seeded 1:1 from the ten legacy *sector* codes, which makes two
+different things one thing: a sector is a broad area an actor works in; a topic
+is the specific thing a search was run for. §5.1 names them as two columns of the
+same row precisely because they are not the same.
+
+Migration 520 restores them, with the same evidence discipline as `actor_topic`:
+a sector claim needs a source, a strength and a reason, and the link is
+append-only.
+
+**It also unblocks hub assignment.** The Phase 12 dry run records
+`actor_topic_rows = 0` and 965 actors blocked on `controlled_topic`: no actor
+carries a sourced topic, so a topic-gated assignment can never fire today. The
+legacy `actor_sector` rows already exist and already carry sources.
 
 ---
 
@@ -171,6 +245,7 @@ category/type design was right.
 
 | Priority | Change | Why | Owner |
 |---|---|---|---|
+| 1 | Apply migration **520**, restoring `sector` / `actor_sector` / `event_sector` / `hub_sector` | Architecture V2 Sept §1, §5.1 and §6 require it, and sector-based hub matching cannot run without it | schema owner |
 | 1 | Apply the deferred composite FK `fk_actor_category_type` and `VALIDATE` it | Until then "no invalid pair is possible" is true in the API and UI but not in the database | schema owner |
 | 2 | Additive migration: `collection_run` gains `trigger_type`, `cadence`, `initiated_by`, `config_snapshot`, and the four counts | Unblocks WS4 task 1 and WS6 | schema owner + Nouhaila |
 | 3 | `hub_actor`: membership history and state, or a no-delete guard | Before WS5.1 writes manual hub assignments | schema owner |
@@ -179,6 +254,7 @@ category/type design was right.
 | 6 | `VALIDATE` the `NOT VALID` constraints | `ck_review_item_kind`, `ck_actor_fact_creator_class`, `ck_actor_fact_lifecycle_state`, `ck_proposed_hub_*`, the `proposed_hub` FKs | schema owner |
 | 7 | Add `person_verification_event` | Before person discovery is ever enabled | schema owner |
 | 8 | Trigger restricting `actor_ranking` to university-category actors | Code-enforced today | schema owner |
+| 8 | Apply migration 300's `strategic_entity` and `actor_strategic_connection_check`, or drop `strategic_entity` from the `entity_edge` object-type CHECK | §5.5's master list has nowhere to live, and the CHECK promises a table that does not exist | schema owner |
 | 9 | Retire `actor.verification_status` once the cutover settles | Three status columns and a sync trigger is transitional by design, but it should not be permanent | schema owner |
 
 **None of these is applied here.** Items 1–9 are proposals requiring schema-owner

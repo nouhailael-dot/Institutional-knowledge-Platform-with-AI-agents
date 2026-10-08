@@ -28,8 +28,13 @@ from agents.common.hub_families import FamilyEdge
 FIXTURE_PREFIX = "FX-"
 TOPIC_ID = "fx-topic-precision-agriculture"
 TOPIC_NAME = "FX Precision Agriculture"
-OTHER_TOPIC_ID = "fx-topic-marine-biotech"
-OTHER_TOPIC_NAME = "FX Marine Biotechnology"
+OTHER_TOPIC_ID = "fx-topic-irrigation-efficiency"
+OTHER_TOPIC_NAME = "FX Irrigation Efficiency"
+
+# Hub membership keys on SECTOR (GHUS decision, 2026-10-08). Topic is recorded
+# on the resulting proposal as secondary evidence and never gates membership.
+SECTOR = "AGRI"
+OTHER_SECTOR = "MINING"
 
 
 @lru_cache(maxsize=1)
@@ -69,6 +74,7 @@ class FixtureActor:
     status: str = "verified"
     topic_id: str = TOPIC_ID
     topic_name: str = TOPIC_NAME
+    sector_codes: tuple[str, ...] = (SECTOR,)
 
     @property
     def actor_id(self) -> str:
@@ -177,6 +183,7 @@ def build_snapshot(actors):
             record_status=item.status,
             actor_category=item.category,
             category_type=item.category_type,
+            sector_codes=frozenset(item.sector_codes),
         ))
         if item.parent_key:
             edges.append(FamilyEdge(
@@ -208,9 +215,10 @@ def detect(actors, *, existing_hubs=(), prior_fingerprints=(), config=None):
 
 
 def trusted_hub_at(city: str, state: str, *, hub_id="FX-existing-hub", topic_id=TOPIC_ID,
-                   radius_miles=200.0) -> TrustedHub:
+                   sector_code=SECTOR, radius_miles=200.0) -> TrustedHub:
     latitude, longitude = coordinates(city, state)
     return TrustedHub(
         hub_id=hub_id, name=f"FX Existing Hub ({city})", topic_id=topic_id,
         center_latitude=latitude, center_longitude=longitude, radius_miles=radius_miles,
+        sector_code=sector_code,
     )

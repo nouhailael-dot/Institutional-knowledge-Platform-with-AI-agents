@@ -18,6 +18,8 @@ import pytest
 from agents.common.hub_detection import HubDetectionConfig
 from tests.agent.hub_fixture_data import (
     BASE,
+    OTHER_SECTOR,
+    SECTOR,
     BOUNDARY_INSIDE,
     BOUNDARY_OUTSIDE,
     CENTER,
@@ -26,6 +28,7 @@ from tests.agent.hub_fixture_data import (
     OTHER_TOPIC_ID,
     OTHER_TOPIC_NAME,
     TOPIC_ID,
+    TOPIC_NAME,
     coordinates,
     detect,
     miles_between,
@@ -138,17 +141,25 @@ def test_s4_two_separate_clusters_give_two_deterministic_proposals():
     assert first.isdisjoint(second)
 
 
-def test_s5_a_trusted_same_topic_hub_suppresses_instead_of_duplicating():
+def test_s5_a_trusted_same_sector_hub_suppresses_instead_of_duplicating():
     result = detect(BASE, existing_hubs=(trusted_hub_at("Sacramento", "CA"),))
     assert result.proposals == ()
-    assert [s.reason for s in result.suppressions] == ["existing_same_topic_hub"]
+    assert [s.reason for s in result.suppressions] == ["existing_same_sector_hub"]
     suppression = result.suppressions[0]
     assert suppression.existing_hub_id == "FX-existing-hub"
     # It is an assignment plan, not a silent drop: every actor gets one.
     assert len(suppression.assignment_plans) == len(BASE)
 
 
-def test_s6_parked_and_topic_unverified_actors_are_excluded_from_the_trigger_pool():
+def test_s6_parked_actors_are_excluded_but_a_different_topic_no_longer_excludes():
+    """The GHUS decision of 2026-10-08, visible in one test.
+
+    Status still gates: a Parked actor never triggers detection. Topic no longer
+    gates: an actor in the hub's SECTOR joins even when it was found for a
+    different topic, and the topic it carries is recorded as secondary evidence
+    on the proposal instead of excluding it.
+    """
+
     parked = replace(_by_key(BASE, "soilsense"), status="parked")
     other_topic = replace(
         _by_key(BASE, "harvest-ventures"), topic_id=OTHER_TOPIC_ID, topic_name=OTHER_TOPIC_NAME,
@@ -157,11 +168,42 @@ def test_s6_parked_and_topic_unverified_actors_are_excluded_from_the_trigger_poo
     result = detect(actors)
     eligible = set(result.eligible_actor_ids)
     assert parked.actor_id not in eligible, "a Parked actor must never trigger detection"
-    # The other-topic actor is still Verified, so it is eligible, but it can
-    # never join the precision-agriculture cluster.
-    for proposal in result.proposals:
-        assert proposal.topic_id == TOPIC_ID
-        assert other_topic.actor_id not in {m.actor_id for m in proposal.members}
+
+    assert len(result.proposals) == 1
+    proposal = result.proposals[0]
+    assert proposal.dimension == "sector"
+    assert proposal.dimension_key == SECTOR
+    # Under the old topic rule this actor was excluded. It now joins.
+    assert other_topic.actor_id in {m.actor_id for m in proposal.members}
+    # And its topic is recorded, not discarded: secondary evidence.
+    mix = dict(proposal.topic_mix)
+    assert mix[OTHER_TOPIC_NAME] == 1
+    assert mix[TOPIC_NAME] == len(proposal.members) - 1
+    # The dominant topic is what the proposal reports as its topic.
+    assert proposal.topic_id == TOPIC_ID
+
+
+def test_an_actor_in_a_different_sector_never_joins():
+    """Sector still gates, and it gates hard. This is the new Test 1."""
+
+    other_sector = replace(_by_key(BASE, "harvest-ventures"), sector_codes=(OTHER_SECTOR,))
+    actors = (*_without(BASE, "harvest-ventures"), other_sector)
+    result = detect(actors)
+    agri = [p for p in result.proposals if p.dimension_key == SECTOR]
+    assert len(agri) == 1
+    assert other_sector.actor_id not in {m.actor_id for m in agri[0].members}
+
+
+def test_an_actor_working_in_two_sectors_is_considered_for_both():
+    """Sector is many-to-many, as Architecture V2 Sept 5.1 specifies."""
+
+    both = replace(_by_key(BASE, "valley-crop-institute"), sector_codes=(SECTOR, OTHER_SECTOR))
+    actors = (*_without(BASE, "valley-crop-institute"), both)
+    result = detect(actors)
+    assert both.actor_id in set(result.eligible_actor_ids)
+    agri = [p for p in result.proposals if p.dimension_key == SECTOR]
+    assert len(agri) == 1
+    assert both.actor_id in {m.actor_id for m in agri[0].members}
 
 
 def test_s7_one_family_with_several_departments_counts_once_and_cycles_fail_closed():
@@ -200,7 +242,9 @@ def test_s7_one_family_with_several_departments_counts_once_and_cycles_fail_clos
 def test_s8_a_previously_rejected_family_set_is_suppressed_by_its_fingerprint():
     first = detect(BASE)
     fingerprint = first.proposals[0].membership_fingerprint
-    again = detect(BASE, prior_fingerprints=((TOPIC_ID, fingerprint),))
+    # The fingerprint is keyed by the dimension the cluster was found on, which
+    # is now the sector.
+    again = detect(BASE, prior_fingerprints=((SECTOR, fingerprint),))
     assert again.proposals == ()
     assert [s.reason for s in again.suppressions] == ["existing_family_fingerprint"]
     assert again.suppressions[0].family_fingerprint == fingerprint

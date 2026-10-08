@@ -31,6 +31,18 @@ class HubDetectionConfig:
     radius_miles: float = 200.0
     method_version: str = HUB_PROPOSAL_METHOD_VERSION
     fingerprint_version: str = FAMILY_FINGERPRINT_VERSION
+    # Which dimension a hub is about. "sector" is the GHUS decision of
+    # 2026-10-08: an actor joins a hub because it works in the hub's SECTOR,
+    # with topic recorded as secondary evidence on the proposal. "topic" is the
+    # earlier behaviour, kept so the change is reversible without a code edit
+    # and so both can be proved side by side in tests.
+    cluster_dimension: str = "sector"
+
+    def __post_init__(self) -> None:
+        if self.cluster_dimension not in ("sector", "topic"):
+            raise ValueError(
+                f"cluster_dimension must be 'sector' or 'topic', got {self.cluster_dimension!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -48,6 +60,19 @@ class DetectionActor:
     category_type: str | None
     assigned_topic_ids: frozenset[str] = field(default_factory=frozenset)
     merged: bool = False
+    # Sector is the dimension hub membership is decided on (GHUS decision,
+    # 2026-10-08). An actor may work in several sectors, so this is a set; the
+    # actor takes part in the clustering of each one. Topic above stays, as the
+    # secondary signal recorded on the resulting proposal.
+    sector_codes: frozenset[str] = field(default_factory=frozenset)
+    assigned_sector_codes: frozenset[str] = field(default_factory=frozenset)
+
+    def dimension_keys(self, dimension: str) -> tuple[str, ...]:
+        """The partitions this actor belongs to, in deterministic order."""
+
+        if dimension == "sector":
+            return tuple(sorted(self.sector_codes))
+        return (self.topic_id,)
 
 
 @dataclass(frozen=True)
@@ -58,6 +83,12 @@ class TrustedHub:
     center_latitude: float | None
     center_longitude: float | None
     radius_miles: float | None
+    # A trusted hub answers for one primary sector. Left None on a hub that has
+    # not been given one yet, which simply means it covers nothing by sector.
+    sector_code: str | None = None
+
+    def dimension_key(self, dimension: str) -> str | None:
+        return self.sector_code if dimension == "sector" else self.topic_id
 
 
 @dataclass(frozen=True)
@@ -73,6 +104,15 @@ class ProposalMember:
 class HubProposalCandidate:
     topic_id: str
     topic_name: str
+    # The dimension this proposal was clustered on, and its value. With the
+    # 2026-10-08 decision these carry the sector; topic_id/topic_name above then
+    # describe the cluster's dominant topic, which is secondary evidence.
+    dimension: str
+    dimension_key: str
+    # Every topic the members carry, with how many carry it, most common first.
+    # Secondary signal: it explains what the cluster is actually working on
+    # without ever having gated who is in it.
+    topic_mix: tuple[tuple[str, int], ...]
     center_city: str
     center_state_code: str
     center_latitude: float
@@ -100,6 +140,8 @@ class HubProposalCandidate:
 class HubSuppression:
     reason: str
     topic_id: str
+    dimension: str
+    dimension_key: str
     center_city: str
     actor_ids: tuple[str, ...]
     family_fingerprint: str | None = None
@@ -155,54 +197,55 @@ def detect_new_hubs(
     config: HubDetectionConfig | None = None,
 ) -> HubDetectionResult:
     config = config or HubDetectionConfig()
+    dimension = config.cluster_dimension
     actors = tuple(sorted(actors, key=lambda item: (item.topic_id, item.actor_id)))
     edge_rows = tuple(edges)
     hubs = tuple(existing_hubs)
-    prior = {(str(topic), str(fingerprint)) for topic, fingerprint in prior_fingerprints}
+    prior = {(str(key), str(fingerprint)) for key, fingerprint in prior_fingerprints}
     proposals: list[HubProposalCandidate] = []
     suppressions: list[HubSuppression] = []
     prerequisites: dict[str, str] = {}
     unresolved: dict[str, str] = {}
     eligible_ids: list[str] = []
 
-    topics = sorted({actor.topic_id for actor in actors})
-    for topic_id in topics:
-        topic_actors = [item for item in actors if item.topic_id == topic_id]
+    # One partition per value of the configured dimension. Under the sector
+    # rule an actor working in several sectors takes part in each one's
+    # clustering, which is what a many-to-many sector tag has to mean.
+    keys = sorted({key for actor in actors for key in actor.dimension_keys(dimension)})
+    for key in keys:
+        partition = [item for item in actors if key in item.dimension_keys(dimension)]
         eligible: list[DetectionActor] = []
-        for actor in topic_actors:
-            reason = _eligibility_exclusion(actor, config)
+        for actor in partition:
+            reason = _eligibility_exclusion(actor, config, key)
             if reason:
-                prerequisites[f"{topic_id}:{actor.actor_id}"] = reason
+                prerequisites[f"{key}:{actor.actor_id}"] = reason
             else:
                 eligible.append(actor)
         resolution = resolve_actor_families((actor.actor_id for actor in eligible), edge_rows)
         for actor_id, reason in resolution.unresolved.items():
-            unresolved[f"{topic_id}:{actor_id}"] = reason
+            unresolved[f"{key}:{actor_id}"] = reason
         eligible = [actor for actor in eligible if actor.actor_id in resolution.family_by_actor]
         eligible_ids.extend(actor.actor_id for actor in eligible)
-        topic_name = eligible[0].topic_name if eligible else next(
-            (actor.topic_name for actor in topic_actors), topic_id
-        )
-        topic_hubs = tuple(
+        covering_hubs = tuple(
             candidate
             for candidate in hubs
-            if candidate.topic_id == topic_id
+            if candidate.dimension_key(dimension) == key
             and candidate.center_latitude is not None
             and candidate.center_longitude is not None
             and candidate.radius_miles is not None
             and candidate.radius_miles > 0
         )
-        topic_proposals, topic_suppressions = _detect_topic(
+        partition_proposals, partition_suppressions = _detect_partition(
             eligible,
             resolution.family_by_actor,
-            topic_id,
-            topic_name,
-            topic_hubs,
+            dimension,
+            key,
+            covering_hubs,
             prior,
             config,
         )
-        proposals.extend(topic_proposals)
-        suppressions.extend(topic_suppressions)
+        proposals.extend(partition_proposals)
+        suppressions.extend(partition_suppressions)
 
     return HubDetectionResult(
         proposals=tuple(proposals),
@@ -213,10 +256,15 @@ def detect_new_hubs(
     )
 
 
-def _eligibility_exclusion(actor: DetectionActor, config: HubDetectionConfig) -> str | None:
+def _eligibility_exclusion(
+    actor: DetectionActor, config: HubDetectionConfig, key: str | None = None
+) -> str | None:
     if actor.record_status.casefold() not in {value.casefold() for value in config.trigger_statuses}:
         return "status_not_enabled"
-    if actor.topic_id in actor.assigned_topic_ids:
+    if config.cluster_dimension == "sector":
+        if (key or "") in actor.assigned_sector_codes:
+            return "already_assigned_same_sector"
+    elif actor.topic_id in actor.assigned_topic_ids:
         return "already_assigned_same_topic"
     if actor.merged:
         return "merged"
@@ -229,11 +277,41 @@ def _eligibility_exclusion(actor: DetectionActor, config: HubDetectionConfig) ->
     return None
 
 
-def _detect_topic(
+def _dominant_topic(cluster: tuple[DetectionActor, ...]) -> tuple[str, str]:
+    """The cluster's most common (topic_id, topic_name). Secondary evidence.
+
+    Ties break alphabetically so the result is deterministic.
+    """
+
+    counts: dict[tuple[str, str], int] = {}
+    for actor in cluster:
+        pair = (str(actor.topic_id or ""), str(actor.topic_name or ""))
+        counts[pair] = counts.get(pair, 0) + 1
+    if not counts:
+        return ("", "")
+    return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+
+def _topic_mix(cluster: tuple[DetectionActor, ...]) -> tuple[tuple[str, int], ...]:
+    """Which topics the members carry, most common first, then alphabetical.
+
+    Secondary evidence only. It describes what a cluster is working on; it never
+    decided who is in the cluster.
+    """
+
+    counts: dict[str, int] = {}
+    for actor in cluster:
+        name = str(actor.topic_name or actor.topic_id or "")
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+    return tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
+
+
+def _detect_partition(
     actors: list[DetectionActor],
     family_by_actor: Mapping[str, str],
-    topic_id: str,
-    topic_name: str,
+    dimension: str,
+    key: str,
     hubs: tuple[TrustedHub, ...],
     prior: set[tuple[str, str]],
     config: HubDetectionConfig,
@@ -282,13 +360,16 @@ def _detect_topic(
                 )
                 suppressions.append(
                     HubSuppression(
-                        "existing_same_topic_hub",
-                        topic_id,
-                        center.city,
-                        tuple(actor.actor_id for actor in cluster),
-                        fingerprint,
-                        covering.hub_id,
-                        plans,
+                        reason=("existing_same_sector_hub" if dimension == "sector"
+                                else "existing_same_topic_hub"),
+                        topic_id=_dominant_topic(cluster)[0],
+                        dimension=dimension,
+                        dimension_key=key,
+                        center_city=center.city,
+                        actor_ids=tuple(actor.actor_id for actor in cluster),
+                        family_fingerprint=fingerprint,
+                        existing_hub_id=covering.hub_id,
+                        assignment_plans=plans,
                     )
                 )
                 _remove_cluster(working, cluster)
@@ -303,14 +384,16 @@ def _detect_topic(
             matching = maximum_category_matching(family_categories)
             if len(family_ids) < config.minimum_families or len(matching) < config.minimum_categories:
                 continue
-            if (topic_id, fingerprint) in prior:
+            if (key, fingerprint) in prior:
                 suppressions.append(
                     HubSuppression(
-                        "existing_family_fingerprint",
-                        topic_id,
-                        center.city,
-                        tuple(actor.actor_id for actor in cluster),
-                        fingerprint,
+                        reason="existing_family_fingerprint",
+                        topic_id=_dominant_topic(cluster)[0],
+                        dimension=dimension,
+                        dimension_key=key,
+                        center_city=center.city,
+                        actor_ids=tuple(actor.actor_id for actor in cluster),
+                        family_fingerprint=fingerprint,
                     )
                 )
                 _remove_cluster(working, cluster)
@@ -326,22 +409,33 @@ def _detect_topic(
                 )
                 for actor in cluster
             )
+            topic_id, topic_name = _dominant_topic(cluster)
+            mix = _topic_mix(cluster)
+            label = key if dimension == "sector" else topic_name
+            secondary = (
+                f" Its most common topic is {mix[0][0]} ({mix[0][1]} of {len(cluster)} members)."
+                if dimension == "sector" and mix else ""
+            )
             statement = (
                 f"{len(family_ids)} independent families from {len(matching)} matched "
-                f"categories are on {topic_name}, concentrated around {center.city}, "
+                f"categories work in {label}, concentrated around {center.city}, "
                 f"with every proposed member within {config.radius_miles:g} miles."
+                f"{secondary}"
             )
             proposals.append(
                 HubProposalCandidate(
                     topic_id=topic_id,
                     topic_name=topic_name,
+                    dimension=dimension,
+                    dimension_key=key,
+                    topic_mix=mix,
                     center_city=center.city,
                     center_state_code=center.state_code,
                     center_latitude=center.latitude,
                     center_longitude=center.longitude,
                     radius_miles=config.radius_miles,
                     core_radius_miles=config.core_radius_miles,
-                    suggested_name=f"{center.city} {topic_name} Hub",
+                    suggested_name=f"{center.city} {label} Hub",
                     members=members,
                     independent_family_count=len(family_ids),
                     matched_category_count=len(matching),
@@ -352,7 +446,7 @@ def _detect_topic(
                     method_version=config.method_version,
                 )
             )
-            prior.add((topic_id, fingerprint))
+            prior.add((key, fingerprint))
             _remove_cluster(working, cluster)
             terminal = True
             break

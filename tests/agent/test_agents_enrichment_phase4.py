@@ -368,6 +368,7 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
         rf"\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+({table_pattern})\b", re.IGNORECASE
     )
     orm_pattern = re.compile(rf"\b({table_pattern})\.[a-z_][a-z0-9_]*\s*=", re.IGNORECASE)
+    _PREDICATE_CONTEXT = re.compile(r"\b(?:JOIN|ON|AND|OR|WHERE|HAVING)\s+$", re.IGNORECASE)
     offenders = []
     for path in (PROJECT_ROOT / "agents").rglob("*.py"):
         relative = path.relative_to(PROJECT_ROOT)
@@ -375,6 +376,12 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
         for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             sql_match = sql_pattern.search(line)
             orm_match = orm_pattern.search(line)
+            # `table.column = …` is an assignment in Python but a COMPARISON in
+            # a SQL predicate, where it reads rather than writes. Only the
+            # assignment is a write, so a match sitting directly after JOIN, ON,
+            # AND, OR or WHERE is not an offence.
+            if orm_match and _PREDICATE_CONTEXT.search(line[: orm_match.start()]):
+                orm_match = None
             table = (sql_match or orm_match).group(1).lower() if sql_match or orm_match else None
             if table and relative not in allowed_by_table.get(table, set()):
                 offenders.append(

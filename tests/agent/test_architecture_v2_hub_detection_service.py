@@ -111,7 +111,7 @@ def test_detector_dry_run_does_not_open_write_transaction(monkeypatch):
             raise AssertionError("dry run must not open a write transaction")
 
     monkeypatch.setattr("agents.hubs.detect.load_detection_snapshot", lambda session: snapshot)
-    execution = execute_hub_detection(DrySession(), HubDetectionConfig())
+    execution = execute_hub_detection(DrySession(), HubDetectionConfig(cluster_dimension="topic"))
     assert execution.dry_run is True
     assert len(execution.result.proposals) == 1
 
@@ -136,7 +136,7 @@ def test_comparison_only_changes_trigger_statuses(monkeypatch):
         pass
 
     monkeypatch.setattr("agents.hubs.detect.load_detection_snapshot", lambda session: snapshot)
-    config = HubDetectionConfig(minimum_categories=1)
+    config = HubDetectionConfig(minimum_categories=1, cluster_dimension="topic")
     execution = execute_hub_detection(DrySession(), config)
     assert not execution.result.proposals
     assert len(execution.verified_plus_imported_comparison.proposals) == 1
@@ -183,7 +183,7 @@ def test_dry_and_live_modes_compute_identical_complete_result(monkeypatch):
         def execute(self, statement, params=None):
             return Result()
 
-    config = HubDetectionConfig()
+    config = HubDetectionConfig(cluster_dimension="topic")
     dry = execute_hub_detection(Session(), config)
     live = execute_hub_detection(Session(), config, live=True)
     assert canonical_result_json(dry.result) == canonical_result_json(live.result)
