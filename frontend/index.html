@@ -476,6 +476,7 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
+<link rel="stylesheet" href="/review.css"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -492,8 +493,10 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
+import {createReviewPage} from "./review.js?v=20261007-meeting-demo";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
+const Review=createReviewPage({html,useState,useEffect,useRef});
 
 /* colour-coded entity chip */
 const ETONE={actor:"accent",hub:"teal",event:"violet",uploaded_document:"slate"};
@@ -695,7 +698,7 @@ function Actors(){
   const {actors,options}=data;
   const matches=actors.filter(a=>
     (!hub||a.hubs.includes(hub)) && (!country||a.country===country) &&
-    (!state||a.state===state) && (types.length===0||types.includes(a.actor_type)) &&
+    (!state||a.state===state) && (types.length===0||types.includes(a.actor_category||a.actor_type)) &&
     (!sector||(a.sectors||[]).includes(sector)) &&
     (!minTrl||(a.trl!=null&&a.trl>=minTrl)) && (!prof||a.has_profile) &&
     (!text|| (a.name||"").toLowerCase().includes(text.toLowerCase()) ||
@@ -731,10 +734,11 @@ function Actors(){
     ${matches.length===0? html`<div class="empty">No actors match these filters. Try widening them.</div>` : html`
     <div class="card" style=${{overflow:"hidden"}}>
       <table class="grid"><thead><tr>
-        <th>Name</th><th>Type</th><th>Country</th><th>State</th><th class="num">TRL</th></tr></thead>
+        <th>Name</th><th>Actor Category</th><th>Category Type</th><th>Country</th><th>State</th><th class="num">TRL</th></tr></thead>
         <tbody>${matches.slice(0,400).map(a=>html`<tr key=${a.id} onClick=${()=>setSel(a)}>
           <td class="name-cell">${a.name}</td>
-          <td>${dash((a.actor_type||"").replace(/_/g," "))}</td>
+          <td>${dash((a.actor_category||a.actor_type||"").replace(/_/g," "))}</td>
+          <td>${dash((a.category_type||"").replace(/_/g," "))}</td>
           <td>${dash(a.country)}</td><td>${dash(a.state)}</td>
           <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody>
       </table>
@@ -744,11 +748,16 @@ function Actors(){
   </div>`;
 }
 function ActorDetail({a,onBack}){
-  const loc=[a.city,a.state,a.country_raw].filter(Boolean).join(", ");
+  const location=[
+    `City: ${a.city||"Not provided"}`,
+    `State: ${a.state||"Not provided"}`,
+    `Region: ${actorRegion(a)||"Not provided"}`,
+    `Country: ${a.country||a.country_raw||"Not provided"}`,
+  ];
   return html`<div class="card pad detail fade">
     <button class="backlink" onClick=${onBack}>← Back to results</button>
     <h2>${a.name}</h2>
-    <div class="loc">${[a.actor_type&&a.actor_type.replace(/_/g," "),loc,a.trl!=null&&("TRL "+a.trl)]
+    <div class="loc">${["Actor Category: "+((a.actor_category||a.actor_type||"Not provided").replace(/_/g," ")),"Category Type: "+(a.category_type?a.category_type.replace(/_/g," "):"Not yet enriched"),...location,a.trl!=null&&("TRL "+a.trl)]
       .filter(Boolean).join("  ·  ")}</div>
     <div class="badges">
       ${a.has_profile&&html`<span class="chip accent">Deeply profiled</span>`}
@@ -823,9 +832,9 @@ function HubDetail({h,actors,onBack}){
     <h3 style=${{fontFamily:"var(--serif)",marginTop:"22px",marginBottom:"8px"}}>Actors in this hub</h3>
     ${related.length===0? html`<div class="empty">No live actors linked yet.</div>` : html`
       <div class="card" style=${{overflow:"hidden"}}>
-      <table class="grid"><thead><tr><th>Name</th><th>Type</th><th>Country</th><th class="num">TRL</th></tr></thead>
+      <table class="grid"><thead><tr><th>Name</th><th>Actor Category</th><th>Category Type</th><th>Country</th><th class="num">TRL</th></tr></thead>
       <tbody>${related.map(a=>html`<tr key=${a.id}><td class="name-cell">${a.name}</td>
-        <td>${dash((a.actor_type||"").replace(/_/g," "))}</td><td>${dash(a.country)}</td>
+        <td>${dash((a.actor_category||a.actor_type||"").replace(/_/g," "))}</td><td>${dash((a.category_type||"").replace(/_/g," "))}</td><td>${dash(a.country)}</td>
         <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody></table></div>`}
   </div>`;
 }
@@ -1681,17 +1690,18 @@ function App(){
     <div class="workspace-brand"><div class="brand-name">UM6P</div><div class="brand-caption">GLOBAL HUBS · UNITED STATES</div></div>
     <div class="nav-label">Intelligence platform</div>
     <nav class="workspace-nav" aria-label="Main navigation">
-      ${[["ask","Ask","⌕"],["browse","Browse","▦"],["map","Build the Map","⊕"]].map(([id,label,symbol])=>html`
+      ${[["ask","Ask","⌕"],["browse","Browse","▦"],["map","Build the Map","⊕"],["review","Review","✓"]].map(([id,label,symbol])=>html`
         <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${symbol}</span>${label}</button>`)}
     </nav>
     <div class="sidebar-foot"><strong>Connected intelligence</strong>Organizations, people,<br/>and innovation ecosystems.</div>
   </aside>
   <div class="workspace-main">
-  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
+  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map",review:"Review"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
   <main class="wrap">
     <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}
       onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/></div>
     <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
+    <div style=${{display:tab==="review"?"block":"none"}}><${Review}/></div>
     <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
       carried=${carried} onCarriedChange=${setCarried}/></div>
   </main></div>`;

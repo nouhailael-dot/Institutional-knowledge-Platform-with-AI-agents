@@ -1,0 +1,40 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://ciwr.ucanr.edu/About_the_Institute/Core_Team/index.cfm,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://ciwr.ucanr.edu/About_the_Institute/People/index.cfm,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://nii.ucdavis.edu/people,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://nii.ucdavis.edu/people'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://wrrc.arizona.edu/person-categories/staff,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://wrrc.arizona.edu/robots.txt'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://pme.uchicago.edu/directory/laura-gagliardi,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://pme.uchicago.edu/robots.txt'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://chemistry.uchicago.edu/research/catalysis,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://chemistry.uchicago.edu/robots.txt'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://engineering.nyu.edu/research/centers/responsible-ai/team,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://engineering.nyu.edu/research/centers/responsible-ai/team'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://sps.columbia.edu/node/14257,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://sps.columbia.edu/robots.txt'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://mining.arizona.edu/faculty-staff/faculty/victor-tenorio,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://mining.arizona.edu/robots.txt'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://www.ars.usda.gov/research/project,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://docs.house.gov/meetings/AG/AG00/20170215/105564/HHRG-115-AG00-Bio-WesthoffP-20170215.pdf,,,,,,,fetch_or_rubric_failed,A string literal cannot contain NUL (0x00) characters.
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://med.stanford.edu/sarasinger/team.html,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://twri.tamu.edu/people,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://environment.yale.edu/experts-guide/business-and-environment/circular-economy,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://environment.yale.edu/robots.txt'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://mining.mines.edu/faculty-and-staff,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://mining.mines.edu/faculty-and-staff'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://research.mines.edu/researchers,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://research.mines.edu/researchers'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://lienhard.mit.edu,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://www.iit.edu/icsse/members-expertise,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://batteries.engr.utexas.edu/about,,,,,,,fetch_or_rubric_failed,timed out
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://www.biotech.cornell.edu,,,,,,,fetch_or_rubric_failed,"Client error '403 Forbidden' for url 'https://www.biotech.cornell.edu/robots.txt'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403"
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://mse.utah.edu/faculty-research/research-mineral-processing-and-metal-production/,3dc75937f42110d19058885ee8f5c94309f4c1de0a7b01dc8d7e97c56ef35f36,michael-free|university-of-utah-materials-science-engineering,review,0.7,,,would_review,
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://watermanagement.ucdavis.edu/people,3a3c54ecf078c380492f1c1299d24ffa79b6c51f45f8b5a7b81d09dff175530d,samuel-sandoval-solis|uc-davis-uc-anr,review,1.0,,,would_review,
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://www.colorado.edu/chbe/cody-ritt,e56ae4225100104d23dc28f45bb5477aab9b6910c60037a80c09fa1a4a5bce17,cody-ritt|university-of-colorado-boulder-chemical-and-biological-engineering,review,0.75,,,would_review,
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://www.colorado.edu/mechanical/john-pellegrino,cdf6be3420d776091e45d1dc184c11e2e9bc9955e6f5c18a8d5d3fd509622d44,john-pellegrino|university-of-colorado-boulder-paul-m-rady-mechanical-engineering,review,1.0,,,would_review,
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://nbmg.unr.edu/Staff/Henry.html,797f883f2b917464c3a3902114685c31c7e55c7bafc4ac2931fba62d8a454b9d,christopher-d-henry|nevada-bureau-of-mines-and-geology-mackay-school-of-earth-sciences-and-engineering-university-of-nevada-reno,review,0.85,,,would_review,
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://www.jcvi.org/research/center-innovative-recycling-and-circular-economy,950917f92bf737519351c8b074c53daef88ca62e126e7ee5f47202158d4c1a47,tae-seok-moon-phd|j-craig-venter-institute-center-for-innovative-recycling-and-circular-economy,review,0.85,,,would_review,
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://tmi.utexas.edu/research/energy-materials,2ac146fcf68442eca180176bf43a2f15aef560c501f9779d0d0a339647be1c41,guihua-yu|university-of-texas-at-austin,create,0.85,,,would_create,
+ab529b81-648f-43b2-8024-dd886127dbed,open_web_search,person,https://batteries.engr.utexas.edu/people,c240013bc84bd50d432156d1a6d6c4f7030034ba320c48a4975a09072d63d168,michael-aubrey|assistant-professor-chemistry-university-of-texas-at-austin-battery-research-group,review,0.85,,,would_review,

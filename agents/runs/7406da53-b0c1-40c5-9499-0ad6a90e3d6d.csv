@@ -1,0 +1,2 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+7406da53-b0c1-40c5-9499-0ad6a90e3d6d,climate_week,event,https://www.climateweeknyc.org/event-search,14653bc92562e5ee1398091e19ed4ae07dfaaffc725242c9343853bb1cb770c8,,skipped,,,,skipped_unchanged,

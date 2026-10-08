@@ -1,0 +1,67 @@
+warning: in the working copy of 'src/db.py', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/db.py b/src/db.py[m
+[1mindex ba01155..4c04248 100644[m
+[1m--- a/src/db.py[m
+[1m+++ b/src/db.py[m
+[36m@@ -15,6 +15,35 @@[m [mload_dotenv()  # reads .env in the project root into os.environ[m
+ DATABASE_URL = os.environ.get("DATABASE_URL")[m
+ [m
+ [m
+[32m+[m[32mdef psycopg_database_url(value: str | None) -> str:[m
+[32m+[m[32m    """Convert common SQLAlchemy PostgreSQL URLs to Psycopg conninfo.[m
+[32m+[m
+[32m+[m[32m    SQLAlchemy records its driver after a ``+`` in the scheme. Psycopg/libpq[m
+[32m+[m[32m    does not understand that suffix, even when it names Psycopg itself. Keep[m
+[32m+[m[32m    credentials and every other URL component byte-for-byte unchanged.[m
+[32m+[m[32m    """[m
+[32m+[m[32m    url = str(value or "").strip()[m
+[32m+[m[32m    if not url:[m
+[32m+[m[32m        raise RuntimeError([m
+[32m+[m[32m            "DATABASE_URL is not set. Copy .env.example to .env and fill it in."[m
+[32m+[m[32m        )[m
+[32m+[m[32m    for scheme in ([m
+[32m+[m[32m        "postgresql+psycopg2://",[m
+[32m+[m[32m        "postgresql+psycopg://",[m
+[32m+[m[32m        "postgres+psycopg2://",[m
+[32m+[m[32m        "postgres+psycopg://",[m
+[32m+[m[32m    ):[m
+[32m+[m[32m        if url.lower().startswith(scheme):[m
+[32m+[m[32m            return "postgresql://" + url[len(scheme):][m
+[32m+[m[32m    if url.lower().startswith("postgres://"):[m
+[32m+[m[32m        return "postgresql://" + url[len("postgres://"):][m
+[32m+[m[32m    if url.lower().startswith("postgresql://"):[m
+[32m+[m[32m        return url[m
+[32m+[m[32m    if "://" not in url:[m
+[32m+[m[32m        return url  # libpq keyword conninfo, e.g. "host=... dbname=..."[m
+[32m+[m[32m    raise RuntimeError("DATABASE_URL must use a PostgreSQL connection scheme.")[m
+[32m+[m
+[32m+[m
+ def get_connection() -> psycopg.Connection:[m
+     """Open a new Postgres connection. Caller is responsible for closing it,[m
+     so prefer the context-manager form:[m
+[36m@@ -23,11 +52,7 @@[m [mdef get_connection() -> psycopg.Connection:[m
+             cur.execute("SELECT count(*) FROM actor")[m
+             print(cur.fetchone())[m
+     """[m
+[31m-    if not DATABASE_URL:[m
+[31m-        raise RuntimeError([m
+[31m-            "DATABASE_URL is not set. Copy .env.example to .env and fill it in."[m
+[31m-        )[m
+[31m-    return psycopg.connect(DATABASE_URL)[m
+[32m+[m[32m    return psycopg.connect(psycopg_database_url(DATABASE_URL))[m
+ [m
+ [m
+ def get_readonly_connection() -> psycopg.Connection:[m
+[36m@@ -38,9 +63,9 @@[m [mdef get_readonly_connection() -> psycopg.Connection:[m
+       - `read_only = True` — the session physically rejects any write/DDL.[m
+       - `statement_timeout=8000` — a runaway query is killed after 8 seconds.[m
+     """[m
+[31m-    if not DATABASE_URL:[m
+[31m-        raise RuntimeError("DATABASE_URL is not set.")[m
+[31m-    conn = psycopg.connect(DATABASE_URL, options="-c statement_timeout=8000")[m
+[32m+[m[32m    conn = psycopg.connect([m
+[32m+[m[32m        psycopg_database_url(DATABASE_URL), options="-c statement_timeout=8000"[m
+[32m+[m[32m    )[m
+     conn.read_only = True   # must be set before the first transaction[m
+     return conn[m
+ [m

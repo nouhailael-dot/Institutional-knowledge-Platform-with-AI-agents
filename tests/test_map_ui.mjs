@@ -8,7 +8,7 @@ const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url),
 const script = page.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
 // Parse the entire delivered module, including all templates/imports.
 new vm.SourceTextModule(script);
-const component = script.slice(script.indexOf('function BuildMap(){'), script.indexOf('/* ------------------------------------------------------------------ App */'))
+const component = script.slice(script.indexOf('function BuildMap('), script.indexOf('/* ------------------------------------------------------------------ App */'))
   .replace('const total=all().length;', `const total=all().length;
     globalThis.view={send,stop,restore,reset,poll,refreshRecent,setDesc,extendBudget,continueResearch,
       state:{jobId,cost,res,busy,runStatus,err,msgs}};`);
@@ -35,7 +35,7 @@ function harness(fetcher){
     AVATAR:'', ICON_SEARCH:'', MapCard(){}, md:()=>({}), ename:e=>e.name||e.full_name,
   });
   vm.runInContext(component,context);
-  const render=()=>{cursor=0;context.BuildMap();return context.view;};
+  const render=()=>{cursor=0;context.BuildMap({handoff:null,onHandoffUsed(){}});return context.view;};
   render();
   return {render,context,storage,timers};
 }

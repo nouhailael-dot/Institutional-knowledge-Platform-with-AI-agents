@@ -1,0 +1,2 @@
+run_id,source,entity_type,source_url,content_hash,natural_key,zone,score,target_entity_id,candidate_ids,status,error
+d2ff7ee6-6540-4151-a641-7504d519662f,unga_programme,event,https://www.un.org/en/ga/81/meetings/,cc9ed55f8a3e4d8fa2847e30650908e2f5c3afa61aa3877d87593cb598271ce1,,skipped,,,,skipped_unchanged,

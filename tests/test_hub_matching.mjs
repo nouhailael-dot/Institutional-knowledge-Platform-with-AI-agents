@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 const page=fs.readFileSync(new URL('../frontend/index.html',import.meta.url),'utf8');
 const context=vm.createContext({});
-vm.runInContext(page.slice(page.indexOf('function hubLocationKey('),page.indexOf('function HubSuggestion(')),context);
+vm.runInContext(page.slice(page.indexOf('function hubLocationKey('),page.indexOf('function PeopleSearch(')),context);
 const match=context.regionalHub;
 const actor={location_city:'Boston',state:'Massachusetts',country:'United States'};
 test('all 50 states and DC have exactly one agreed region',()=>{

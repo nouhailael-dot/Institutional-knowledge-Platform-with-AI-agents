@@ -1,0 +1,999 @@
+hub_name,source_column,candidate,verdict,actor_id_or_reason
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,"University of California, Davis (UC Davis)",linked_new,965af128-4ecd-4716-a253-61e345f57cf1
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,College of Agricultural & Environmental Sciences (CAES),linked_new,a36e2798-d3c5-42c2-b4a8-5dacc00a1fad
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,UC Agriculture & Natural Resources (UC ANR),linked_new,7e634887-5df5-4ead-a3fd-a7c2b59323c5
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,UC ANR Research & Extension Centers,linked_new,aff013e6-a055-4a10-b8e4-7063748894fe
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Russell Ranch Sustainable Agriculture Facility,linked_new,300d6c74-49af-4079-87a8-d641c23f4986
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Center for Watershed Sciences,linked_new,6b317a41-4a02-4a6e-acd9-c8d03702a53a
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,UC Davis Plant Sciences Department,linked_new,6ba81874-b3bc-400d-9c3e-6f4c52c570c3
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Venture Catalyst (UC Davis),linked_new,8f6bb027-f1a8-4215-9f98-5e76bf4f35ee
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Innovation Institute for Food & Health,linked_new,906905a8-15b5-43d2-9e7a-a1c5fc191f8e
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,California Department of Food & Agriculture (CDFA),linked_new,2b019c6e-e591-422e-8d37-4faee1676106
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,California State Water Resources Control Board,linked_new,3b1ab64a-09a1-46ee-90cb-aac66834f763
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Blue Diamond Growers,linked_new,2cd0e842-364f-469e-8907-7fedf7c8bfe8
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Driscoll’s,linked_new,118ecc95-847a-4734-9222-59610fcead8b
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,California Specialty Crop Commodity Boards,linked_new,e0421ca3-3a08-466b-9ce1-152a8157ad0e
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Sacramento & Central Valley Specialty Crop Producers,linked_new,5839a192-cc43-4f4a-b683-98c37fb56391
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Regional Ag-Tech Startups,linked_new,9b853e30-2d0a-4e86-b3e6-1f99540787ec
+UC Davis / Sacramento Valley Agriculture Ecosystem,composition,Silicon Valley Ag-Tech & Climate-Tech Venture Capital Ecosystem,linked_new,ff540e23-3a3f-498a-8fd3-91507867e42d
+UC Davis / Sacramento Valley Agriculture Ecosystem,programs_and_labs,Agricultural Sustainability Institute,linked_new,d6ee8ecf-0636-4525-9dcb-34066b804707
+UC Davis / Sacramento Valley Agriculture Ecosystem,programs_and_labs,Russell Ranch Long-Term Farming Systems Trial,linked_new,f35f9537-dc08-4bee-be30-8529a373c704
+UC Davis / Sacramento Valley Agriculture Ecosystem,programs_and_labs,Plant Sciences Department,linked_new,470222cf-8dcc-43b3-ab1d-afb236f494c1
+UC Davis / Sacramento Valley Agriculture Ecosystem,programs_and_labs,Center for Watershed Sciences,already_linked,6b317a41-4a02-4a6e-acd9-c8d03702a53a
+UC Davis / Sacramento Valley Agriculture Ecosystem,programs_and_labs,UC ANR Research & Extension Centers,already_linked,aff013e6-a055-4a10-b8e4-7063748894fe
+UC Davis / Sacramento Valley Agriculture Ecosystem,programs_and_labs,Venture Catalyst (commercialization platform),linked_new,27b68f77-d3c3-490f-b5c0-68788f432a0a
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,University of Illinois Urbana-Champaign (UIUC),linked_new,93142c2c-5310-49cd-8d8d-48e76620e175
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,"College of Agricultural, Consumer & Environmental Sciences (ACES)",linked_new,5eb46257-622e-4730-9126-b4144c87cd4a
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Department of Crop Sciences (UIUC),linked_new,6a3ca546-d9d7-4af2-b4ba-5fc525b193c1
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Department of Agricultural & Biological Engineering (UIUC),linked_new,53453c44-fc1f-4b57-8e5f-e7f85025dd64
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,National Center for Supercomputing Applications (NCSA),linked_new,f1075ee6-d4bd-49ab-9207-edd2e6d27d9b
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Illinois Extension,linked_new,fb86b2f0-9d51-4f5c-9f03-c8680f0d6aca
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Illinois Digital Agriculture Initiative,linked_new,ac42d61e-6b2c-4c63-ae8a-a8dae32b957d
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Illinois Research Park (UIUC),linked_new,3fb69bac-a5a4-4616-bd09-fee6e4dc0b3b
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,ADM (Archer Daniels Midland),linked_new,79facc43-cb45-4cd7-91c2-7f13f2334375
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,John Deere (Midwest Operations),linked_new,f5b67d30-c0b3-4cf3-82ab-00e5b4d77695
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Corteva Agriscience,linked_new,9dc13aad-6ffc-408e-9a4e-5c1cf9178351
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Bayer Crop Science (Midwest Presence),linked_new,1cbe143d-7afa-4bc0-9976-b0cd55ced4b2
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,CME Group (Chicago Mercantile Exchange),linked_new,8786f32e-8d20-4a10-9502-8e0f8ce66450
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Chicago Board of Trade (CBOT),linked_new,6832646a-9929-4941-b5e2-69302c9ff047
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Illinois Corn Growers Association,linked_new,5732a463-a1c6-477a-8512-62733fd5a7bc
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Illinois Soybean Association,linked_new,250a677c-010d-43e3-807c-228f1e024af2
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Midwest Row-Crop Producers (Corn & Soy Systems),linked_new,6e9fbf7b-efef-4590-8b04-089accd6c9d3
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),composition,Regional Precision Agriculture & Ag-Tech Startups,linked_new,82eedb11-bae0-460b-9906-21a499b1791f
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),programs_and_labs,College of ACES research programs,linked_new,b237f92f-f42b-47f5-a443-5a169e9d49fc
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),programs_and_labs,Illinois Digital Agriculture Initiative,already_linked,ac42d61e-6b2c-4c63-ae8a-a8dae32b957d
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),programs_and_labs,NCSA (AI & modeling),linked_new,8402b82f-9fcb-4453-b5d2-bf5c9a65e8ae
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),programs_and_labs,Illinois Extension,already_linked,fb86b2f0-9d51-4f5c-9f03-c8680f0d6aca
+Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),programs_and_labs,Research Park at UIUC,linked_new,f2ee547b-96e3-43e0-9f0e-e6aad2f5acda
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas A&M University,linked_new,aabe7fc8-03f6-4067-b26e-ae2dabb5b668
+Texas A&M / College Station – Texas Ag Corridor,composition,College of Agriculture & Life Sciences (Texas A&M),linked_new,4c0a347a-0500-4669-a569-77e5f3f0f174
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas A&M AgriLife Research,linked_new,c2fa20c8-065f-4a61-bd34-4640cd013f15
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas A&M AgriLife Extension Service,linked_new,6474391c-6c5e-4245-bd3a-e9d4bf4ef608
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas A&M Department of Soil & Crop Sciences,linked_new,41dd8b94-6e58-4e1a-9ed9-26d9a72609f3
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas A&M Department of Biological & Agricultural Engineering,linked_new,2c55d35d-79d4-46f4-858c-3886489c959f
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas Water Resources Institute,linked_new,d83b755e-f164-4812-b88c-ce32eabeb875
+Texas A&M / College Station – Texas Ag Corridor,composition,Institute for Advancing Health Through Agriculture (IHA),linked_new,7c68512c-286e-437b-b6bf-89859c816505
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas A&M AgriLife Research & Extension Centers,linked_new,57a1dd98-2cd4-43b9-af1e-e667063ba0d9
+Texas A&M / College Station – Texas Ag Corridor,composition,RELLIS Campus,linked_new,abe34d4a-967f-4b76-9eee-3a6f62ae9d1a
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas Farm Bureau,linked_new,808e6bc5-5cfd-4048-87b8-523ad86669ea
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas Corn Producers Board,linked_new,249cbcb0-a405-4a15-a83f-b984d240fe24
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas Cotton Association,linked_new,fe48d9f5-0e3b-47bd-bc3a-80174f988ee4
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas Cattle Feeders Association,linked_new,26aea616-0248-4ec8-97ef-0ba1aac48b42
+Texas A&M / College Station – Texas Ag Corridor,composition,Major Texas Livestock & Row-Crop Producers,linked_new,2a18c9a6-8ad1-42a4-ab20-5ce096411ae8
+Texas A&M / College Station – Texas Ag Corridor,composition,Regional Irrigation & Precision Agriculture Firms,linked_new,823b80f8-4a34-4be4-a8c5-346a2d8e1b97
+Texas A&M / College Station – Texas Ag Corridor,composition,Texas-Based AgTech Startups,linked_new,5629402c-6e76-48d8-95bc-12300ffdef48
+Texas A&M / College Station – Texas Ag Corridor,composition,Houston Climate & Energy Investment Ecosystem,linked_new,e41feacb-6df6-48ae-9d35-73cabeab612f
+Texas A&M / College Station – Texas Ag Corridor,programs_and_labs,Texas A&M AgriLife Research,already_linked,c2fa20c8-065f-4a61-bd34-4640cd013f15
+Texas A&M / College Station – Texas Ag Corridor,programs_and_labs,Texas A&M AgriLife Extension Service,already_linked,6474391c-6c5e-4245-bd3a-e9d4bf4ef608
+Texas A&M / College Station – Texas Ag Corridor,programs_and_labs,Institute for Advancing Health Through Agriculture (IHA),already_linked,7c68512c-286e-437b-b6bf-89859c816505
+Texas A&M / College Station – Texas Ag Corridor,programs_and_labs,Texas Water Resources Institute,already_linked,d83b755e-f164-4812-b88c-ce32eabeb875
+Texas A&M / College Station – Texas Ag Corridor,programs_and_labs,Department of Soil & Crop Sciences,linked_new,3a0a94e4-c122-4117-9302-0fea27fbe97e
+Texas A&M / College Station – Texas Ag Corridor,programs_and_labs,Department of Biological & Agricultural Engineering,linked_new,1dec4295-ffaa-47e1-8d68-7ec8a1901d4c
+Texas A&M / College Station – Texas Ag Corridor,programs_and_labs,RELLIS Applied Research Campus,linked_new,9eaf09a9-671b-47c4-817e-4d2127a3bb5f
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell University,linked_new,1bce2874-23da-4ecf-ae29-b95c27c8d773
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,College of Agriculture & Life Sciences (CALS),linked_new,4ce6ad1e-64c0-4310-b927-64baecf5dd97
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell AgriTech,linked_new,55c397bd-1a7a-4cb6-85c0-dc38c99f05e1
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell Cooperative Extension,linked_new,a3edee14-a96d-4402-aeb5-eca830ab5480
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell Soil Health Laboratory,linked_new,b122c8be-71b0-44ab-80f8-976d6f519211
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell Dairy Research Center,linked_new,d2a0d6cd-3fa9-4429-963e-626d1f9208bc
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell Horticulture Section,linked_new,683433a2-6977-42f3-9cb0-aa47a7f15bba
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell Food Science Pilot Plant,linked_new,9329e6dd-498a-4592-ac15-cac1f21c5d45
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Atkinson Center for Sustainability,linked_new,37cdc148-c0d4-4d08-af8f-3e2b4af22d34
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,New York State Department of Agriculture & Markets,linked_new,917b79b4-3cf7-4629-bb8c-2941fd939026
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,New York Climate-Smart Agriculture Program,linked_new,e5054f89-575a-4dce-99f0-8ce0840c76ba
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,New York Dairy Cooperatives,linked_new,29af37a8-7291-4f5b-9230-83a0ab99e358
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,New York Apple Growers Association,linked_new,b22c26d1-8acd-489a-838d-a5f9f5a3b615
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,New York Wine & Grape Foundation,linked_new,b12ebc9a-badf-4c43-b860-83c3801c7eb0
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Upstate NY Specialty Crop Producers,linked_new,b8ec806b-ddc0-4103-8215-d3ad8e84e5e9
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Regional AgriTech Startups,linked_new,f898bb2e-a15d-47ba-826b-f33786d75dab
+Cornell / Upstate New York – Agriculture & AgriTech Hub,composition,Cornell Center for Technology Licensing,linked_new,b6af3f17-1aa5-42ef-a0ec-af8a2564e476
+Cornell / Upstate New York – Agriculture & AgriTech Hub,programs_and_labs,Cornell AgriTech,already_linked,55c397bd-1a7a-4cb6-85c0-dc38c99f05e1
+Cornell / Upstate New York – Agriculture & AgriTech Hub,programs_and_labs,Cornell Cooperative Extension,already_linked,a3edee14-a96d-4402-aeb5-eca830ab5480
+Cornell / Upstate New York – Agriculture & AgriTech Hub,programs_and_labs,Soil Health Laboratory,linked_new,b19e1f38-7134-4022-83db-1229f15dc111
+Cornell / Upstate New York – Agriculture & AgriTech Hub,programs_and_labs,Dairy Research Center,linked_new,d0e5673c-b614-430d-9dcc-dc3341f09402
+Cornell / Upstate New York – Agriculture & AgriTech Hub,programs_and_labs,Horticulture Section,linked_new,6f70e469-713e-4d76-98e8-0ed05797e4a2
+Cornell / Upstate New York – Agriculture & AgriTech Hub,programs_and_labs,Food Science Pilot Plant,linked_new,1db818f0-b8c5-4631-b046-8eebe3f95d74
+Cornell / Upstate New York – Agriculture & AgriTech Hub,programs_and_labs,Atkinson Center for Sustainability,already_linked,37cdc148-c0d4-4d08-af8f-3e2b4af22d34
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,Bayer Crop Science,linked_new,5b993f21-95d4-460b-b530-bc66ecb298f9
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,Donald Danforth Plant Science Center,linked_new,9de478e6-aa63-47cf-86cb-2588a3e626f4
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,BioSTL,linked_new,ba4fce8e-f49b-415c-9397-e8d3b5548500
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,Cortex Innovation Community,linked_new,c3e1c3a1-9ec5-48ac-9a3b-2a63ed61557c
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,University of Missouri,linked_new,5646eb07-f3ba-4b15-8969-703628a30f0e
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,University of Missouri Plant Science Programs,linked_new,a5cadd77-283b-438f-aaa8-c8bbbcab3c76
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,Missouri Plant Science Consortium,linked_new,9e378f6a-386f-4480-92cc-d41e54c73ebe
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,Ag-Biotech Startups (St. Louis Region),linked_new,4645f8c7-65b1-47aa-a43b-c5b7aeac3ab4
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,St. Louis Bioscience Venture Capital Network,linked_new,8df493b4-d9e3-4ed5-954d-86bd496cd7b8
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,Missouri Department of Agriculture,linked_new,78598d72-c0b2-495d-a37b-62490e159e09
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,composition,USDA Research Presence (Regional),linked_new,3afc8bd5-a590-4953-bfd8-21c1b3865ba3
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,programs_and_labs,Donald Danforth Plant Science Center,already_linked,9de478e6-aa63-47cf-86cb-2588a3e626f4
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,programs_and_labs,Bayer Crop Science R&D Facilities,linked_new,3849deb9-cecc-4ed2-a2c8-a23bcaf4d70d
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,programs_and_labs,University of Missouri Plant Sciences,linked_new,8ead653e-603a-4c45-abff-8479e57c3a1b
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,programs_and_labs,BioSTL Innovation Programs,linked_new,09cd79b2-2638-4ec9-89b6-26a4e4b190f9
+Missouri – St. Louis Plant Science & Ag-Biotech Hub,programs_and_labs,Cortex Startup Incubation Programs,linked_new,776cdcc6-1aaf-45ff-a373-f0c64ecdb494
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Stanford University,linked_new,9666cc89-91dd-49c1-9431-398897490421
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Stanford HAI,linked_new,8dc384ba-4944-4a2c-a5f9-003c83c9d2a0
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Stanford AI Lab (SAIL),linked_new,fd605987-b56b-4d6c-b2e1-f2a4e022fa04
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,UC Berkeley,linked_new,2a5007c0-0f02-4ef1-b49b-bbe26e7c3f23
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Berkeley AI Research (BAIR),linked_new,6a1d890e-64b3-4ac1-9a74-691a9fb76504
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Sky Computing Lab,linked_new,514476f0-b224-4a6c-bbc5-2a32c82c4c88
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,OpenAI,linked_new,54275561-3072-42b0-a858-c03503c49249
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Google DeepMind,linked_new,833cbb3e-de7a-49c4-8308-326bd6673c3a
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Meta AI,linked_new,4e8af629-2370-4411-8bb3-fe6eab090beb
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,NVIDIA,linked_new,3b4ad039-7af7-4e3d-833e-4d318b6b5183
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Anthropic,linked_new,19170918-9cc6-4b43-965f-1608a3ee1af8
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Apple AI,linked_new,47d8e4f5-7121-41ef-bdb7-e14365c2acba
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Microsoft AI,linked_new,0f2535e8-9cb3-400a-b0dd-a89b624d7e94
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Berkeley SkyDeck,linked_new,8f35e3b8-c458-4a62-b5c4-75326e267433
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Sequoia Capital,linked_new,de2f31e8-c2c8-4594-8bec-e53d1e733300
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Andreessen Horowitz (a16z),linked_new,0d852be7-bbfa-44a6-b1c2-f44a4a20255a
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,Kleiner Perkins,linked_new,25e62fdc-55a7-4467-9cec-93569f861dbe
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),composition,National Energy Research Scientific Computing Center (NERSC),linked_new,f7894a87-17a2-4387-86f5-b69ab884c072
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,Stanford HAI,already_linked,8dc384ba-4944-4a2c-a5f9-003c83c9d2a0
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,Stanford AI Lab (SAIL),already_linked,fd605987-b56b-4d6c-b2e1-f2a4e022fa04
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,Berkeley AI Research (BAIR),already_linked,6a1d890e-64b3-4ac1-9a74-691a9fb76504
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,Sky Computing Lab,already_linked,514476f0-b224-4a6c-bbc5-2a32c82c4c88
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,OpenAI Research,linked_new,74012496-0306-4325-b73e-e3146b8a8744
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,Meta AI,already_linked,4e8af629-2370-4411-8bb3-fe6eab090beb
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,NVIDIA AI Research,linked_new,12e9fbac-c66c-44cb-9d67-299167297432
+Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),programs_and_labs,"AI-focused accelerators (e.g., Berkeley SkyDeck)",linked_new,f88d054a-a6bb-4902-9bbc-aa60995117a3
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,University of Southern California (USC),linked_new,f4914052-66fb-4514-b9c8-bbc590d67d74
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,USC Information Sciences Institute (ISI),linked_new,ed201919-249e-435e-a4c2-90186b7bded3
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,USC Viterbi School of Engineering,linked_new,2db8942d-68b8-4dec-9695-c5336afdbb15
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,"University of California, Los Angeles (UCLA)",linked_new,41f93e5d-dc3d-4dac-b998-da21cc6941e0
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,UCLA Samueli School of Engineering,linked_new,69682d45-7aad-40c2-a341-bbd6c1253e28
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,California Institute of Technology (Caltech),linked_new,b3e3bb33-0891-4680-abde-f06169a3d2a1
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,NASA Jet Propulsion Laboratory (JPL),linked_new,e82fe889-6aab-4784-92f9-b84d0013fb91
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,SpaceX,linked_new,bed39bbf-11f5-46cf-933a-6e8ab5aa9db8
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,Northrop Grumman,linked_new,0771b5e1-a839-4035-b7d7-0f425eedf758
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,LA AI Startups,linked_new,d545e59c-b338-4d6b-ab85-c64c9b3b02f3
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,Robotics Startups (LA Region),linked_new,5569f279-1d80-4f33-9ea5-b7f3f22527d9
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,Entertainment & Media AI Studios,linked_new,7bac446e-f24d-4cfa-a233-7ee524d34d30
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),composition,LA Tech Venture Capital Firms,linked_new,0963959b-6f77-48d8-bbcd-75b413df4ca9
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),programs_and_labs,USC Information Sciences Institute (ISI),already_linked,ed201919-249e-435e-a4c2-90186b7bded3
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),programs_and_labs,USC Viterbi AI Labs,linked_new,d76238f0-789d-448f-a1ec-1cf41b0c66d6
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),programs_and_labs,UCLA AI & Data Science programs,linked_new,d3885752-a626-46e3-8d3c-9d9ccab88a16
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),programs_and_labs,UCLA Robotics & Intelligent Systems,linked_new,55af96de-1f54-46d5-a63e-c4ff38e140b3
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),programs_and_labs,Caltech AI & Computational Science,linked_new,ef328bd5-77be-4b29-b447-00e955032b9b
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),programs_and_labs,NASA Jet Propulsion Laboratory (AI systems),linked_new,bdb48273-a310-4d65-9e3c-5d4b31cfcd8c
+Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),programs_and_labs,LA AI startup incubators,linked_new,0620f019-d1ba-4ce2-b37a-46d3b2eb9fc0
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Massachusetts Institute of Technology (MIT),linked_new,dfc40676-ed68-4b99-a85d-f6811d19ccc5
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,MIT CSAIL,linked_new,a85d8dfe-0db3-4cff-9654-38168c8c19c7
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,MIT Schwarzman College of Computing,linked_new,3e0522c2-22ec-4176-bcba-cd1afaf5c9ed
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,MIT Lincoln Laboratory,linked_new,6f9bb3cf-38be-4913-8561-2a8ddd5ad37e
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,MIT Media Lab,linked_new,343bff45-7e71-4b9b-9be1-621a14dfa2fd
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Harvard University,linked_new,337604ec-f890-4614-a2ba-c0286b00c38c
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Harvard SEAS,linked_new,8bd52c28-3c70-4722-8268-c974b75460d0
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Harvard Data Science Initiative,linked_new,8261eaac-f5bf-4ce3-9976-3a62d807b7ad
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Broad Institute,linked_new,46c9a1e0-187f-4932-ae24-cc9789502e1d
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Mass General Brigham,linked_new,c7d38571-dbf7-46e2-bf18-32c8034bbc14
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Boston Dynamics,linked_new,cee3105d-1be6-4a92-a542-d94eec298b65
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,General Catalyst,linked_new,5ae56444-e2bc-45ba-8f8c-544979a958b5
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Flagship Pioneering,linked_new,011bb16e-cdca-46bc-ab56-46fe3b12305a
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,AI-Health Startups (Boston Region),linked_new,57d505e6-550d-4653-a92c-b729b5c48113
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,Robotics Startups (Boston Region),linked_new,a8d7d432-d6a3-4a05-b575-939dd6dd343f
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),composition,NSF AI Institutes (Boston-based),linked_new,48c0dd10-7cd3-4646-9a05-fe7b86750de9
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,MIT CSAIL,already_linked,a85d8dfe-0db3-4cff-9654-38168c8c19c7
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,MIT Schwarzman College of Computing,already_linked,3e0522c2-22ec-4176-bcba-cd1afaf5c9ed
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,MIT Lincoln Laboratory,already_linked,6f9bb3cf-38be-4913-8561-2a8ddd5ad37e
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,Harvard Data Science Initiative,already_linked,8261eaac-f5bf-4ce3-9976-3a62d807b7ad
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,Harvard SEAS AI Labs,linked_new,110d9634-f624-4e30-a3b8-459607157d1e
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,Broad Institute AI programs,linked_new,1cf0f804-f383-4aaf-bca8-0c1e9229f6ec
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,Mass General Brigham AI initiatives,linked_new,0f30027c-ad02-401c-9a32-9b5ac6ff4825
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,Boston Robotics Cluster,linked_new,2be75894-3330-4050-8e58-5dc2713a44fc
+Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),programs_and_labs,MIT Media Lab (AI integration across domains),linked_new,92472244-b69c-4b6b-bb06-9d7b61d8d960
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,Carnegie Mellon University (CMU),linked_new,24ed7d2a-2392-4a3f-a177-5c74f5d57c40
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,CMU School of Computer Science,linked_new,102ac9fa-4a89-43a4-9f3e-ef775184e209
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,CMU Robotics Institute,linked_new,09bdae02-d495-412b-b16e-fca237305b97
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,CMU Machine Learning Department,linked_new,bd276510-4c3f-4367-99c5-3c9e690cb75e
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,National Robotics Engineering Center (NREC),linked_new,5e854aa4-250e-45fd-8e85-21a6adf8987c
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,Software Engineering Institute (SEI),linked_new,e9e3cd06-0fa0-4352-a7d0-344e32bfe48f
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,CMU AI Engineering Institute,linked_new,4d365fee-22f5-469e-9a1f-21c3b872a87a
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,Auton Lab,linked_new,960ad752-50fb-4623-a905-a8a845a62cfa
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,CMU CyLab,linked_new,cdd7e43f-e72d-4d3e-bc7e-30a0f3f75836
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,Aurora Innovation,linked_new,a0b0259c-0d6c-44e0-9b74-574dbdbc112c
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,Google AI (Pittsburgh Presence),linked_new,71ba3a3c-fd04-4618-88d3-2e19f5e109b2
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,Robotics Startups (Pittsburgh Region),linked_new,f8ea240f-369a-4d53-82f7-32b343ec403e
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,Advanced Manufacturing AI Firms (Pittsburgh Region),linked_new,6d883b72-e349-4a7b-92b4-2b1436b803af
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),composition,DARPA-Funded AI Programs (CMU),linked_new,55bbdbd6-d93d-4afc-abfa-faaffc9c4633
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),programs_and_labs,CMU Robotics Institute,already_linked,09bdae02-d495-412b-b16e-fca237305b97
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),programs_and_labs,CMU Machine Learning Department,already_linked,bd276510-4c3f-4367-99c5-3c9e690cb75e
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),programs_and_labs,National Robotics Engineering Center (NREC),already_linked,5e854aa4-250e-45fd-8e85-21a6adf8987c
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),programs_and_labs,Software Engineering Institute (SEI),already_linked,e9e3cd06-0fa0-4352-a7d0-344e32bfe48f
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),programs_and_labs,CMU AI Engineering Institute,already_linked,4d365fee-22f5-469e-9a1f-21c3b872a87a
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),programs_and_labs,Auton Lab,already_linked,960ad752-50fb-4623-a905-a8a845a62cfa
+Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),programs_and_labs,CMU CyLab (AI + cybersecurity),linked_new,841d0acf-7891-4ff0-a3d7-3bb10bae2955
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,Columbia University,linked_new,6706ec34-c248-435b-a4af-ebd0e9319fa3
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,Columbia Data Science Institute (DSI),linked_new,9da5c119-58ce-4f5a-bb4a-5fb3dbba499b
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,NYU Center for Data Science (CDS),linked_new,181c5080-c251-4764-bbda-21c10752debe
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,Cornell Tech,linked_new,0a90acaf-2458-4af2-bc52-1327f66835c9
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,Cornell Tech AI Research Group,linked_new,b82db737-ff45-49ac-91a2-c68e8b933273
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,Cornell AI Initiative,linked_new,89ee8c55-0fad-47f8-a500-49528bc62c6a
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,Break Through Tech AI Program (Cornell Tech),linked_new,a143b729-5742-4df9-950b-e34f0c917e4d
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,NYC Economic Development Corporation (NYCEDC) – AI in NYC,linked_new,7fd4787f-405c-4f19-af6c-2b3751899a0a
+New York City AI Hub (Columbia - NYC - Cornell Tech),composition,NYC Mayor’s Office AI strategy/report effort,linked_new,b15eaf20-41c5-480a-bd4c-5dc813784d0f
+New York City AI Hub (Columbia - NYC - Cornell Tech),programs_and_labs,Columbia Data Science Institute (DSI),already_linked,9da5c119-58ce-4f5a-bb4a-5fb3dbba499b
+New York City AI Hub (Columbia - NYC - Cornell Tech),programs_and_labs,NYU Center for Data Science (CDS),already_linked,181c5080-c251-4764-bbda-21c10752debe
+New York City AI Hub (Columbia - NYC - Cornell Tech),programs_and_labs,Cornell Tech AI research group,already_linked,b82db737-ff45-49ac-91a2-c68e8b933273
+New York City AI Hub (Columbia - NYC - Cornell Tech),programs_and_labs,Cornell AI Initiative (university-wide AI effort; useful linkage between Cornell Tech + Ithaca + Weill Cornell),linked_new,29acca5c-2cd8-4d99-a845-6b5ed5b89fcd
+New York City AI Hub (Columbia - NYC - Cornell Tech),programs_and_labs,Break Through Tech AI Program (Cornell Tech talent pipeline / inclusion program),linked_new,03917781-15a0-4958-91c4-1245a5328869
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,University of Washington (UW),linked_new,e6f559f7-ef16-4a59-b567-8358bc199e68
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,UW Paul G. Allen School AI Centers & Initiatives,linked_new,8c26ca92-0f30-4577-92cd-7daa82c5a77e
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,UW+Amazon Science Hub,linked_new,09ca05d5-35a4-4f20-b3e9-7ec99be25a31
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,Allen Institute for AI (Ai2),linked_new,3e97492f-20fc-47bb-bc2e-f1fc7ad86493
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,Amazon (AI & AWS),linked_new,f447637d-d515-481a-acd9-30b5399cda30
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,Microsoft (AI engineering & Azure),linked_new,d12a1b10-8dfb-4443-8ebd-01467fb8113d
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,AI House (Seattle AI Hub space),linked_new,49aaadb1-2b03-4162-9897-fff046402d13
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,Seattle AI startups (Bellevue & Seattle clusters),linked_new,fd8ca679-a359-4831-b72b-aae2b6342b7f
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,Regional venture capital firms investing in AI,linked_new,831b6801-6363-42f8-8a9d-151a331629b7
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),composition,City of Seattle Office of Economic Development AI initiatives,linked_new,e30f0ccf-85d7-49b4-8371-39f766bdbddb
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),programs_and_labs,"UW AI Centers & Initiatives (AI, robotics, ethical AI, accessibility)",linked_new,521fe7e0-ef01-4731-bee9-b5c525fed12e
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),programs_and_labs,UW+Amazon Science Hub (robotics & AI research collaboration),linked_new,231ac3c8-d543-4e0b-aeeb-08ab3e6805ac
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),programs_and_labs,Allen Institute for AI (Ai2),already_linked,3e97492f-20fc-47bb-bc2e-f1fc7ad86493
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),programs_and_labs,"AI House (Seattle AI hub space for community, startups, events)",linked_new,4904b67a-e18e-4888-b108-5f3b0ea50ded
+Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),programs_and_labs,"AI startups cluster (Seattle & Bellevue) across enterprise SaaS, robotics, and mission tech",linked_new,762aa191-6e97-40b6-a768-a62aa4efc9d8
+California Water Hub (UC Davis - Berkeley- Stanford),composition,UC Davis Center for Watershed Sciences,linked_new,a57da596-9644-497f-bfc9-316b57f38efc
+California Water Hub (UC Davis - Berkeley- Stanford),composition,UC Berkeley Water Center,linked_new,27052c49-0e74-4be4-9da0-5a7eedf309bc
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Stanford Water in the West,linked_new,1e415a33-7bb3-4b17-a93f-1130fe16c6dc
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Stanford Woods Institute for the Environment,linked_new,3f7243ab-898c-4cf8-b149-5cff29290a2c
+California Water Hub (UC Davis - Berkeley- Stanford),composition,California Department of Water Resources,linked_new,e43f5e9b-2173-4e37-bc86-fde1f2a55819
+California Water Hub (UC Davis - Berkeley- Stanford),composition,State Water Resources Control Board,linked_new,ea32909f-9afb-452f-a9f6-70fce3dd9957
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Groundwater Sustainability Agencies,linked_new,c35998ba-10a1-4130-993b-168b7605e25f
+California Water Hub (UC Davis - Berkeley- Stanford),composition,California State Water Project,linked_new,f5d8dec7-e47f-479f-bcbf-d5ff06b5738e
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Urban Water Reuse Facilities,linked_new,5b6fddb6-8eb7-46bf-823a-75cab686e68d
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Desalination Plants (California),linked_new,67aed687-9517-4ed8-84ad-91adab7e4028
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Irrigation Technology Firms,linked_new,5157a4d3-8f41-4f57-a44e-cb4f3e83c17f
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Water-Tech Startups (California),linked_new,1661df61-43f1-4292-a973-fba5d4f6906c
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Environmental Consulting Firms,linked_new,5254fe98-dc7a-42ce-a99f-21d76add52f4
+California Water Hub (UC Davis - Berkeley- Stanford),composition,Agricultural Water Management Programs,linked_new,dd92b0ab-4385-48e4-a776-d540b48f94c1
+California Water Hub (UC Davis - Berkeley- Stanford),programs_and_labs,UC Davis Center for Watershed Sciences,already_linked,a57da596-9644-497f-bfc9-316b57f38efc
+California Water Hub (UC Davis - Berkeley- Stanford),programs_and_labs,Berkeley Water Center,linked_new,9b4d8d93-635d-455e-86ee-4c34ff1d0bec
+California Water Hub (UC Davis - Berkeley- Stanford),programs_and_labs,Stanford Water in the West,already_linked,1e415a33-7bb3-4b17-a93f-1130fe16c6dc
+California Water Hub (UC Davis - Berkeley- Stanford),programs_and_labs,Stanford Woods Institute for the Environment,already_linked,3f7243ab-898c-4cf8-b149-5cff29290a2c
+California Water Hub (UC Davis - Berkeley- Stanford),programs_and_labs,California Department of Water Resources,already_linked,e43f5e9b-2173-4e37-bc86-fde1f2a55819
+California Water Hub (UC Davis - Berkeley- Stanford),programs_and_labs,Groundwater Sustainability Agencies,already_linked,c35998ba-10a1-4130-993b-168b7605e25f
+California Water Hub (UC Davis - Berkeley- Stanford),programs_and_labs,Urban water reuse facilities,already_linked,5b6fddb6-8eb7-46bf-823a-75cab686e68d
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,University of Colorado Boulder,linked_new,a351b388-f122-4e3e-8dfa-a1706c39d70a
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,INSTAAR (Institute of Arctic and Alpine Research),linked_new,366e2d54-7011-4eb7-a1aa-3903d9484383
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,NOAA Physical Sciences Laboratory,linked_new,87b7ec28-8612-4c6f-a5ed-6e3a8fe857ef
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,National Center for Atmospheric Research (NCAR),linked_new,6adebab5-0671-4fb0-b1a7-0d6a0082dab5
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,USGS Colorado Water Science Center,linked_new,04456ba4-f6b4-47d1-9f69-5776b334c432
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,Colorado Water Conservation Board,linked_new,2e365753-e9a4-4282-910c-f1da584ac295
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,Colorado River Basin Agencies,linked_new,b0cc3481-725a-45ce-bdee-a6dec9ee9d10
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,Interstate Compact Commission,linked_new,643422b1-d231-4787-98b2-4ed0eab63867
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,Water Analytics Firms (Colorado),linked_new,5f4907b5-9f82-4085-82bc-50559358cc7b
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,Climate Modeling Startups,linked_new,34504e21-500d-438b-9895-fcb8387afecf
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,composition,Environmental Consulting Firms,linked_existing_actor,5254fe98-dc7a-42ce-a99f-21d76add52f4
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,programs_and_labs,CU Boulder INSTAAR,linked_new,dd476bf1-f508-42a6-8822-bd74a9c8995e
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,programs_and_labs,CU Boulder Environmental Studies Program,linked_new,571cf509-b812-4d0a-98eb-71856b514388
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,programs_and_labs,NOAA Physical Sciences Laboratory,already_linked,87b7ec28-8612-4c6f-a5ed-6e3a8fe857ef
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,programs_and_labs,National Center for Atmospheric Research (NCAR),already_linked,6adebab5-0671-4fb0-b1a7-0d6a0082dab5
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,programs_and_labs,USGS Colorado Water Science Center,already_linked,04456ba4-f6b4-47d1-9f69-5776b334c432
+Colorado Water Hub (Boulder- Denver- Front Range)+A18,programs_and_labs,Colorado Water Conservation Board,already_linked,2e365753-e9a4-4282-910c-f1da584ac295
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Arizona State University (ASU),linked_new,532af46b-95f8-428d-b936-3c8df6766fa8
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,ASU Kyl Center for Water Policy,linked_new,043c4936-25e6-42a1-96dc-f76408a3c914
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,ASU Global Institute of Sustainability,linked_new,97549759-769e-4eb5-a3a8-f8dd41cc3700
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,University of Arizona,linked_new,2de1e48a-b850-4c0d-95ee-d966aa7d5967
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,University of Arizona Water Resources Research Center,linked_new,cf6b950d-07bf-45f7-a9f8-366f10d346c1
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Arizona Department of Water Resources,linked_new,dea224b4-c7d0-4034-a0bc-3b837cf9585c
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Central Arizona Project,linked_new,00aa13dc-14c2-4ff1-a336-38dfb2ec171b
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Managed Aquifer Recharge Facilities,linked_new,6cdd98d1-8566-44ae-997d-5faa107cc1a0
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Groundwater Active Management Areas,linked_new,2e4b99e8-32f4-49ac-a8f6-f056074c2362
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Water-Tech Startups (Arizona),linked_new,3676ca09-8105-413c-831f-011eea07bb72
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Irrigation Technology Firms,linked_existing_actor,5157a4d3-8f41-4f57-a44e-cb4f3e83c17f
+Arizona Water Innovation Hub (Phoenix- Tueson),composition,Desert Agriculture Research Programs,linked_new,de99b796-0fe6-4221-b3af-b4790084069e
+Arizona Water Innovation Hub (Phoenix- Tueson),programs_and_labs,ASU Kyl Center for Water Policy,already_linked,043c4936-25e6-42a1-96dc-f76408a3c914
+Arizona Water Innovation Hub (Phoenix- Tueson),programs_and_labs,ASU Global Institute of Sustainability,already_linked,97549759-769e-4eb5-a3a8-f8dd41cc3700
+Arizona Water Innovation Hub (Phoenix- Tueson),programs_and_labs,University of Arizona Water Resources Research Center,already_linked,cf6b950d-07bf-45f7-a9f8-366f10d346c1
+Arizona Water Innovation Hub (Phoenix- Tueson),programs_and_labs,Desert hydrology research labs,linked_new,e7e9d44f-55eb-4b99-811a-c60411fdad59
+Arizona Water Innovation Hub (Phoenix- Tueson),programs_and_labs,Managed Aquifer Recharge facilities,already_linked,6cdd98d1-8566-44ae-997d-5faa107cc1a0
+Arizona Water Innovation Hub (Phoenix- Tueson),programs_and_labs,Central Arizona Project governance bodies,linked_new,093fb732-b991-4b63-9046-288eb3eaef0e
+Texas Water Systems Hub,composition,Texas A&M University,linked_existing_actor,aabe7fc8-03f6-4067-b26e-ae2dabb5b668
+Texas Water Systems Hub,composition,Texas Water Resources Institute,linked_existing_actor,d83b755e-f164-4812-b88c-ce32eabeb875
+Texas Water Systems Hub,composition,University of Texas at Austin,linked_new,77bb5864-a8e9-444c-9fb7-88a5ab63c4ae
+Texas Water Systems Hub,composition,Texas Water Development Board,linked_new,ba2639c3-88bb-4c1d-ab91-dc69cc196344
+Texas Water Systems Hub,composition,Houston Public Works,linked_new,eaf6e3ae-7854-499f-9e6e-1f6a641d68a2
+Texas Water Systems Hub,composition,San Antonio Water System,linked_new,1599ed9e-9b56-4122-b3eb-af4aa51eb0ca
+Texas Water Systems Hub,composition,Houston Flood Control District,linked_new,ca9be16b-ff31-4599-bc37-21b359d77372
+Texas Water Systems Hub,composition,Brackish Groundwater Desalination Plants,linked_new,235dead4-2a62-46da-9464-155215f10341
+Texas Water Systems Hub,composition,Coastal Desalination Initiatives,linked_new,a81ee990-f5c8-4e11-bca0-84e2a84f6b93
+Texas Water Systems Hub,composition,Water Infrastructure Engineering Firms,linked_new,b8e1b166-d20f-413a-8056-8bf8eee82e87
+Texas Water Systems Hub,composition,Energy Companies (Water-Energy Nexus),linked_new,23b418c7-e99a-4441-9b96-7f6020acb2d2
+Texas Water Systems Hub,composition,Smart Water Technology Firms,linked_new,b228d0e6-9d91-49c7-87ff-3dc0b3e92b71
+Texas Water Systems Hub,programs_and_labs,Texas Water Resources Institute (TWRI),linked_new,07e8851d-ee75-4559-b1b6-d8c548a53c11
+Texas Water Systems Hub,programs_and_labs,Texas A&M Water Programs,linked_new,d18297f9-9026-45ca-8358-3225a903ec53
+Texas Water Systems Hub,programs_and_labs,UT Austin Water Resources Engineering,linked_new,70567821-bd2a-47f8-9e30-0be4bc388600
+Texas Water Systems Hub,programs_and_labs,Texas Water Development Board,already_linked,ba2639c3-88bb-4c1d-ab91-dc69cc196344
+Texas Water Systems Hub,programs_and_labs,Houston Flood Control District,already_linked,ca9be16b-ff31-4599-bc37-21b359d77372
+Texas Water Systems Hub,programs_and_labs,San Antonio Water System,already_linked,1599ed9e-9b56-4122-b3eb-af4aa51eb0ca
+Texas Water Systems Hub,programs_and_labs,Coastal desalination planning bodies,linked_new,b822ffd7-c386-4b07-ba7a-841676fe016d
+Great Lakes Water Hub,composition,University of Michigan Water Center,linked_new,39b7dfb8-854b-446e-9a81-a488187b78d8
+Great Lakes Water Hub,composition,University of Wisconsin–Milwaukee School of Freshwater Sciences,linked_new,32179f74-92cd-4614-a7b9-9e80766313a8
+Great Lakes Water Hub,composition,Northwestern University Environmental Engineering,linked_new,09188ef4-8641-4b0d-ace8-6378a4ee4729
+Great Lakes Water Hub,composition,NOAA Great Lakes Environmental Research Laboratory,linked_new,f16311a2-57d7-4670-b841-6b5f0e4e437b
+Great Lakes Water Hub,composition,U.S. Environmental Protection Agency (Great Lakes Program),linked_new,006405d2-f965-4873-b552-e5ae3ff136a3
+Great Lakes Water Hub,composition,Great Lakes Commission,linked_new,117f6fb5-14ec-45ba-81c3-15436d4a7943
+Great Lakes Water Hub,composition,International Joint Commission,linked_new,d8477e91-5768-4321-86f9-a1b256074099
+Great Lakes Water Hub,composition,Great Lakes Restoration Initiative,linked_new,ae138986-30c4-49f1-b4b3-2e4813e4984e
+Great Lakes Water Hub,composition,"State Environmental Agencies (Michigan, Wisconsin, Illinois)",linked_new,bf21f855-ef5f-4cfd-b55f-be198e63da34
+Great Lakes Water Hub,composition,Industrial Water Management Firms,linked_new,b79d4a43-cb6c-41ec-9597-06b3ac907671
+Great Lakes Water Hub,composition,Freshwater Monitoring Technology Firms,linked_new,b0e7f3a9-5c54-4b9e-99db-f488967ef557
+Great Lakes Water Hub,composition,Water Treatment Companies,linked_new,35a85188-b3ad-4853-b643-bfae2b48d04f
+Great Lakes Water Hub,programs_and_labs,University of Michigan Water Center,already_linked,39b7dfb8-854b-446e-9a81-a488187b78d8
+Great Lakes Water Hub,programs_and_labs,UWM School of Freshwater Sciences,linked_new,54e4907c-eced-4673-b57a-b62c48f2e05d
+Great Lakes Water Hub,programs_and_labs,Northwestern Environmental Engineering Programs,linked_new,b71d6bfe-b914-443a-9cda-2ff69fae635a
+Great Lakes Water Hub,programs_and_labs,NOAA Great Lakes Environmental Research Laboratory,already_linked,f16311a2-57d7-4670-b841-6b5f0e4e437b
+Great Lakes Water Hub,programs_and_labs,EPA Great Lakes Program,linked_new,e84097f6-8c0c-4d80-96e9-bb50a2803067
+Great Lakes Water Hub,programs_and_labs,International Joint Commission,already_linked,d8477e91-5768-4321-86f9-a1b256074099
+Great Lakes Water Hub,programs_and_labs,Great Lakes Restoration Initiative,already_linked,ae138986-30c4-49f1-b4b3-2e4813e4984e
+Texas Energy Transition Hub,composition,University of Texas at Austin Energy Institute,linked_new,9d2ff529-b760-4b2c-93de-d05e319fcbe2
+Texas Energy Transition Hub,composition,Texas A&M Energy Institute,linked_new,7d92503d-290c-44a5-9c25-574db96af0d6
+Texas Energy Transition Hub,composition,Rice University Baker Institute (Energy Program),linked_new,d92e7aed-1630-4d7d-90b5-7f82057acf76
+Texas Energy Transition Hub,composition,Bureau of Economic Geology,linked_new,76523e11-ee12-47a3-aad9-5f9476cf26a9
+Texas Energy Transition Hub,composition,ERCOT,linked_new,46334559-58aa-4a9a-b2a4-10daa2e4e966
+Texas Energy Transition Hub,composition,Texas Railroad Commission,linked_new,a8f0fd9a-9fe5-4241-b584-751ad247c100
+Texas Energy Transition Hub,composition,ExxonMobil,linked_new,3cb28f86-409a-4cd7-9d49-414b20b1088e
+Texas Energy Transition Hub,composition,Chevron,linked_new,ef07d1b5-2192-46cf-b1b6-cc1482e20820
+Texas Energy Transition Hub,composition,Shell,linked_new,0123da7c-a098-44d2-b358-daba421d7b78
+Texas Energy Transition Hub,composition,BP,rejected,did not pass organization filter
+Texas Energy Transition Hub,composition,ConocoPhillips,linked_new,f29800c7-aa0e-4945-829b-a84f2947a274
+Texas Energy Transition Hub,composition,Wind Farm Operators (Texas),linked_new,259683e9-9790-4101-9bc5-732e6788894d
+Texas Energy Transition Hub,composition,Solar Utility Developers,linked_new,bf13ae14-18c4-47e4-a523-fd0266d49f60
+Texas Energy Transition Hub,composition,Carbon Capture Companies,linked_new,55be340c-dc37-4ac9-a130-cc032cc3095d
+Texas Energy Transition Hub,composition,Hydrogen Developers,linked_new,ba84200c-fcea-489f-beeb-be886e89d867
+Texas Energy Transition Hub,composition,LNG Export Terminals (Gulf Coast),linked_new,80457f5b-e013-4de5-8c0d-0fe46290d3d3
+Texas Energy Transition Hub,composition,Energy Analytics Firms,linked_new,1808f408-0e36-4276-9f2e-e7866e6878b3
+Texas Energy Transition Hub,programs_and_labs,UT Energy Institute,linked_new,4394b769-a2f8-4835-ae3f-70a857d119fe
+Texas Energy Transition Hub,programs_and_labs,Texas A&M Energy Institute,already_linked,7d92503d-290c-44a5-9c25-574db96af0d6
+Texas Energy Transition Hub,programs_and_labs,Rice Baker Institute Energy Program,linked_new,69b3aba5-c2fa-4cf1-a26f-e31072c7ff93
+Texas Energy Transition Hub,programs_and_labs,Bureau of Economic Geology,already_linked,76523e11-ee12-47a3-aad9-5f9476cf26a9
+Texas Energy Transition Hub,programs_and_labs,Carbon capture pilot projects,linked_new,dd24e3c5-e9df-4273-a934-9f3a5466d742
+Texas Energy Transition Hub,programs_and_labs,Hydrogen development initiatives,linked_new,375f01e5-ee1d-408a-95c0-bdd66f8652a3
+Texas Energy Transition Hub,programs_and_labs,ERCOT grid research programs,linked_new,5011221e-6cef-4700-901c-e5f489dbe75c
+California Clean Energy Hub,composition,UC Berkeley Energy & Resources Group,linked_new,f9e3bae2-0f25-43f0-b749-cf7fe52b5b58
+California Clean Energy Hub,composition,Berkeley Energy Institute,linked_new,ae160cb2-dd3a-46a8-b3d3-a39b599e68ee
+California Clean Energy Hub,composition,Stanford Precourt Institute for Energy,linked_new,fe30ec78-e6c1-4e7a-9fdb-e85e620f95a6
+California Clean Energy Hub,composition,Caltech Resnick Sustainability Institute,linked_new,afef0ef5-1e3d-4a22-9ac9-7a3427c3fde9
+California Clean Energy Hub,composition,Lawrence Berkeley National Laboratory,linked_new,57eaba90-c52f-42ed-bc44-5cab8512b817
+California Clean Energy Hub,composition,California Energy Commission,linked_new,a4567705-6060-47e8-9acb-b79c54229776
+California Clean Energy Hub,composition,California Air Resources Board,linked_new,85488087-e3bf-4693-b50d-37cb8404b719
+California Clean Energy Hub,composition,California Independent System Operator (CAISO),linked_new,e43cbbcd-9a27-4d63-96e5-bfae8b125cfe
+California Clean Energy Hub,composition,Tesla,linked_new,222cd170-e13f-4b86-a27a-4168e633c9c8
+California Clean Energy Hub,composition,Sunrun,linked_new,346d9ffa-b4a3-4116-9ba1-3fbae3e4bbbd
+California Clean Energy Hub,composition,Pacific Gas & Electric (PG&E),linked_new,bca0f0f0-d319-4688-9ee6-e7795421026f
+California Clean Energy Hub,composition,Southern California Edison,linked_new,d9a1af68-d7bc-45d2-b89d-819e045d1828
+California Clean Energy Hub,composition,Climate Tech Startups (California),linked_new,37299505-5a93-4dfa-829a-aa5b46cc3e30
+California Clean Energy Hub,composition,Breakthrough Energy Ventures,linked_new,aa550587-df8d-4d23-8fe7-a5fbdcb79056
+California Clean Energy Hub,composition,Grid-Scale Battery Storage Projects,linked_new,00c1efd5-327e-4224-b889-b7444068675d
+California Clean Energy Hub,composition,Offshore Wind Planning Bodies,linked_new,4b38c015-d680-4259-a8a2-538ce317f9a6
+California Clean Energy Hub,programs_and_labs,Berkeley Energy Institute,already_linked,ae160cb2-dd3a-46a8-b3d3-a39b599e68ee
+California Clean Energy Hub,programs_and_labs,Energy & Resources Group (ERG),linked_new,2e2557c6-c88e-4f9d-bbdd-c74695e960d8
+California Clean Energy Hub,programs_and_labs,Stanford Precourt Institute,linked_new,6ec4e01e-5342-4daa-ac6b-34944d2d9a12
+California Clean Energy Hub,programs_and_labs,Caltech Resnick Sustainability Institute,already_linked,afef0ef5-1e3d-4a22-9ac9-7a3427c3fde9
+California Clean Energy Hub,programs_and_labs,Lawrence Berkeley National Laboratory,already_linked,57eaba90-c52f-42ed-bc44-5cab8512b817
+California Clean Energy Hub,programs_and_labs,California Energy Commission,already_linked,a4567705-6060-47e8-9acb-b79c54229776
+California Clean Energy Hub,programs_and_labs,California Air Resources Board,already_linked,85488087-e3bf-4693-b50d-37cb8404b719
+California Clean Energy Hub,programs_and_labs,CAISO (grid operator),linked_new,5d0e0553-2823-4275-a281-5a12d93209bf
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,National Renewable Energy Laboratory (NREL),linked_new,4e78643b-4219-4580-bfba-12e106b78081
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Energy Systems Integration Facility (ESIF),linked_new,607c5dd8-2d8e-42d8-925e-8dea758629bb
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,University of Colorado Boulder,linked_existing_actor,a351b388-f122-4e3e-8dfa-a1706c39d70a
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,National Center for Atmospheric Research (NCAR),linked_existing_actor,6adebab5-0671-4fb0-b1a7-0d6a0082dab5
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Colorado Energy Office,linked_new,d138dfd2-00ac-482f-b122-1aac44a706b6
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,U.S. Department of Energy (Regional Presence),linked_new,3992215c-3ee2-43eb-af4e-19fe86f3d242
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Hydrogen Research Programs,linked_new,2e9b5d60-a0c4-481d-a531-b4cd40e8e9f1
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Wind Technology Center,linked_new,36ffd8a4-8526-477a-9db4-b289aa79b1e3
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Solar Research Facilities,linked_new,cf43f018-7bd9-4ddf-9e8e-0c2c2773afef
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Renewable Energy Startups (Colorado),linked_new,ef291fd6-4cc1-4973-9507-42754e0c9dc6
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Grid Analytics Firms,linked_new,e8b29ef6-f748-4452-87cf-feb2710103be
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),composition,Energy Storage Companies,linked_new,de754060-ccee-488e-9c84-fabcb54ccd2f
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),programs_and_labs,National Renewable Energy Laboratory,linked_new,83cbf8bc-2e2f-4a17-bbec-45b7c897d9af
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),programs_and_labs,Energy Systems Integration Facility (ESIF),already_linked,607c5dd8-2d8e-42d8-925e-8dea758629bb
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),programs_and_labs,Hydrogen and Fuel Cell Research Programs,linked_new,f5dd8711-9b82-4186-ac28-f8946a431c35
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),programs_and_labs,Solar Energy Research Programs,linked_new,714fd656-55bf-493c-8b10-b127b682a2de
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),programs_and_labs,Wind Technology Center,already_linked,36ffd8a4-8526-477a-9db4-b289aa79b1e3
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),programs_and_labs,NCAR Climate Modeling Programs,linked_new,502d0547-a79c-473f-8d7f-301daf3c2ce1
+Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),programs_and_labs,CU Boulder Renewable Energy Research,linked_new,e5545435-8220-432e-abda-725789d1d4d2
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,MIT Energy Initiative,linked_new,abc927da-6ee9-4038-b95e-d2acbaf2fa41
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,MIT Climate & Sustainability Consortium,linked_new,f56f2de4-8944-4e1d-8df9-5691eb7ff1b6
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Harvard Salata Institute,linked_new,4ee8cac1-c481-4638-bbe6-bebe27e301c7
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,The Engine (MIT),linked_new,39336e1e-87da-40a0-bf01-8b3f1b3e72c6
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Massachusetts Clean Energy Center,linked_new,d1b6b9a3-01a1-4d73-9544-3080473de91f
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Massachusetts Office of Energy & Environmental Affairs,linked_new,884415a0-5250-4656-a3ab-6abcb1be662c
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Vineyard Wind,linked_new,ede97f31-16d6-4899-917e-f571cbe3d5ee
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Ørsted (Massachusetts Projects),linked_new,1c0ba64f-ffbc-4b84-aa42-0c10985425c9
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Climate Tech Startups (Boston Region),linked_new,a4abce11-f227-4c82-9b4a-57e7a95cf6a4
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Battery Storage Companies,linked_new,84956730-4add-4020-b025-242b94e4d4f7
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Carbon Removal Startups,linked_new,ddf4761e-81df-45f9-904c-024ca56d86fb
+Massachusetts Energy Innovation Hub (Boston – Cambridge),composition,Climate Venture Capital Firms,linked_new,10831b04-2906-4aa6-acc3-b786399ff40f
+Massachusetts Energy Innovation Hub (Boston – Cambridge),programs_and_labs,MIT Energy Initiative,already_linked,abc927da-6ee9-4038-b95e-d2acbaf2fa41
+Massachusetts Energy Innovation Hub (Boston – Cambridge),programs_and_labs,MIT Climate & Sustainability Consortium,already_linked,f56f2de4-8944-4e1d-8df9-5691eb7ff1b6
+Massachusetts Energy Innovation Hub (Boston – Cambridge),programs_and_labs,Harvard Salata Institute,already_linked,4ee8cac1-c481-4638-bbe6-bebe27e301c7
+Massachusetts Energy Innovation Hub (Boston – Cambridge),programs_and_labs,The Engine (MIT),already_linked,39336e1e-87da-40a0-bf01-8b3f1b3e72c6
+Massachusetts Energy Innovation Hub (Boston – Cambridge),programs_and_labs,Massachusetts Clean Energy Center,already_linked,d1b6b9a3-01a1-4d73-9544-3080473de91f
+Massachusetts Energy Innovation Hub (Boston – Cambridge),programs_and_labs,Offshore wind planning authorities,linked_new,c2c45636-149f-49bc-a3dc-93fdb6906233
+Massachusetts Energy Innovation Hub (Boston – Cambridge),programs_and_labs,Energy storage research labs,linked_new,6cd4755a-5ecb-41fb-ac46-0b51c602d5cd
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,University of Illinois Urbana-Champaign,linked_new,abc71126-8512-4859-91d8-b0d310a5cf0f
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,University of Michigan Energy Institute,linked_new,53c1e16e-7066-4a63-b32a-ced3eb66ca1f
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Northwestern ISEN,linked_new,74a0ea6e-0067-4df6-a722-4fd802d3e754
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Purdue Energy Center,linked_new,35793744-4a41-4573-bd88-36f288a8daa1
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Midwest Alliance for Clean Hydrogen (MACHH2),linked_new,77b4480a-1afd-4237-9106-02b332868ada
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,U.S. Steel,linked_new,1cb1e9e3-c169-4ca8-bf56-19b89c75a80e
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Cleveland-Cliffs,linked_new,f9a12ae5-d8ce-4d95-bcd9-ff5f95882f8a
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,ArcelorMittal USA,linked_new,cd6b96bb-346b-43ad-84ed-7ab7a581175f
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Ford,linked_new,a4196d55-27cb-4607-8474-6f0b6e4f998a
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,General Motors,linked_new,1046c5b1-c064-494b-9896-25858f373187
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Dow Chemical,linked_new,f476a8c4-a156-4018-a2e6-5e5eab85f1bf
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Nuclear Power Operators (Midwest),linked_new,60f6eb48-6572-436c-99e9-04660380f209
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Carbon Capture Companies,linked_existing_actor,55be340c-dc37-4ac9-a130-cc032cc3095d
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Hydrogen Technology Firms,linked_new,354da8e9-8ecb-4d2f-bb56-aff1d463e847
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),composition,Advanced Manufacturing Research Centers,linked_new,c6283c72-2fe0-49c4-99e8-afa0776c461f
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),programs_and_labs,University of Illinois Energy Programs,linked_new,d329a72d-09f1-4316-ab81-5286219039c9
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),programs_and_labs,University of Michigan Energy Institute,already_linked,53c1e16e-7066-4a63-b32a-ced3eb66ca1f
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),programs_and_labs,Northwestern ISEN,already_linked,74a0ea6e-0067-4df6-a722-4fd802d3e754
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),programs_and_labs,Purdue Energy Center,already_linked,35793744-4a41-4573-bd88-36f288a8daa1
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),programs_and_labs,Midwest Alliance for Clean Hydrogen,linked_new,079fc2e8-b0c1-4889-ab7b-c959ed690827
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),programs_and_labs,Industrial Carbon Capture Pilot Facilities,linked_new,32de8355-4abf-4e93-ac69-cab0e819d443
+Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),programs_and_labs,Advanced Manufacturing Research Centers,already_linked,c6283c72-2fe0-49c4-99e8-afa0776c461f
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Colorado School of Mines,linked_new,fd4d3f06-e979-4168-8ae3-517189749de8
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Mines Mining Engineering Department,linked_new,567ffffa-92c1-4a78-892a-fad1b2c1a9c3
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Mines Earth & Environmental Systems,linked_new,944c0cdd-74b5-4a12-ae6f-aa1e713a1154
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,U.S. Geological Survey (USGS),linked_new,1dbf1323-06d1-48e7-b9fb-51519f0a5f03
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,National Renewable Energy Laboratory (energy-mineral link),linked_new,a74b1cf9-472f-4ccb-86cc-60108abd4bbe
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Critical Minerals Research Programs,linked_new,28db0387-d08e-4796-a57b-065d8058f5dd
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Mineral Processing Labs,linked_new,2ea2fc43-8c89-4e28-a4b8-751b9dafd2a8
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Subsurface Imaging Labs,linked_new,4817068f-3537-428d-9594-84258ba1c9ff
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Freeport-McMoRan,linked_new,0c8a66e1-8447-4a0b-a4e0-fbfbc9872752
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Newmont Corporation,linked_new,d252a32e-1c5e-44fc-bc23-a5d928de0827
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Rio Tinto (U.S. operations),linked_new,70d44699-de94-4d85-9a68-adeb8137b10e
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Lithium Extraction Firms,linked_new,6e044bb2-1b3d-4226-824f-21d17b4415f4
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Rare Earth Startups,linked_new,78e1ce99-45ce-4eaf-b346-93fed3cc49fc
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Carbon Mineralization Companies,linked_new,3fd48f58-faff-4685-966b-b886e18e53d9
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,composition,Mining Technology Startups,linked_new,d8d07258-27e1-429c-881b-a74f10fa59c0
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,programs_and_labs,Colorado School of Mines Mining Engineering Department,linked_new,2123801c-750c-4785-891c-4451c94fbc4d
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,programs_and_labs,Mines Earth & Environmental Systems,already_linked,944c0cdd-74b5-4a12-ae6f-aa1e713a1154
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,programs_and_labs,Critical Minerals Research Programs,already_linked,28db0387-d08e-4796-a57b-065d8058f5dd
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,programs_and_labs,Carbon Mineralization Research Initiatives,linked_new,c72e2390-496e-456b-a0bd-f7f1842872a7
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,programs_and_labs,Subsurface Imaging Labs,already_linked,4817068f-3537-428d-9594-84258ba1c9ff
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,programs_and_labs,USGS Geological Research,linked_new,32271cd7-8076-4681-8422-046cb7a91a1c
+Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,programs_and_labs,Mineral Processing Labs,already_linked,2ea2fc43-8c89-4e28-a4b8-751b9dafd2a8
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,University of Arizona,linked_existing_actor,2de1e48a-b850-4c0d-95ee-d966aa7d5967
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,University of Arizona Mining & Geological Engineering,linked_new,b3fedc90-c71d-4daf-a5ee-3249e111fd58
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Arizona Geological Survey,linked_new,cd65d8f4-d6d1-4d96-896c-488d675d5b8a
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Freeport-McMoRan,linked_existing_actor,0c8a66e1-8447-4a0b-a4e0-fbfbc9872752
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Rio Tinto (U.S. operations),linked_existing_actor,70d44699-de94-4d85-9a68-adeb8137b10e
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,ASARCO,linked_new,8210ea62-25a9-4ceb-97f8-10933b31ca8f
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Morenci Mine,linked_new,fb1eb911-da9d-4841-a992-af3b4ccbb7c5
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Copper Processing Facilities,linked_new,468d57a0-6caf-44a2-88cc-f9bd317f856f
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Tailings Storage Facilities,linked_new,6dde2521-eee3-4de4-a67b-a5c5ddce018e
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Mining Automation Technology Firms,linked_new,dc2107fb-0fd9-482f-9839-6b9dc9b00f74
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Ore-Sorting Technology Providers,linked_new,74580edc-e962-42a7-b738-c7c638163767
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),composition,Environmental Monitoring Firms,linked_new,46bf323e-db51-4aa2-91a2-90ae1895ab56
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),programs_and_labs,University of Arizona Mining & Geological Engineering,already_linked,b3fedc90-c71d-4daf-a5ee-3249e111fd58
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),programs_and_labs,Mineral Processing Research Labs,linked_new,aae01bba-5be9-46d2-bf69-682406a13bf5
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),programs_and_labs,Rock Mechanics Labs,linked_new,be23e769-bb5f-48ac-961b-e20c8c37011a
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),programs_and_labs,Arizona Geological Survey,already_linked,cd65d8f4-d6d1-4d96-896c-488d675d5b8a
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),programs_and_labs,Mining Automation Research Initiatives,linked_new,d44e8784-c2c8-4e13-a8e8-29fe81515d92
+Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),programs_and_labs,Corporate R&D partnerships,linked_new,caeb0ddd-ae8d-420e-aa4c-681faf857595
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,"University of Nevada, Reno",linked_new,ed232e05-a0c5-4abb-90a4-5164ba779910
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Mackay School of Earth Sciences & Engineering,linked_new,9693c60f-f746-43e4-b399-491913e1c8eb
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Nevada Bureau of Mines & Geology,linked_new,e69f67cf-6342-4d4f-a4ee-ed93f5c0a8a9
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Lithium Americas,linked_new,090110b2-5725-461e-b920-9ba589a46f2a
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Albemarle,linked_new,765d706e-f025-4e8b-a827-576b899ca972
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Barrick Gold,linked_new,3c387f41-0825-4461-91d0-a47b72d656ee
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Newmont Corporation,linked_existing_actor,d252a32e-1c5e-44fc-bc23-a5d928de0827
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Thacker Pass Project,linked_new,57f2acd5-4ac9-4381-98b6-c6e9f04b9d47
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Clayton Valley Lithium Operations,linked_new,af321007-49f6-44d1-af97-dab95e7ebf92
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Nevada Mining Association,linked_new,15db3a38-203b-40c8-97e2-1feaf59ec952
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Direct Lithium Extraction Companies,linked_new,f25ac7ea-b7ca-49ad-ba3c-130edac4ff93
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Mining Automation Firms,linked_new,ebe71262-bbd1-4a0d-9ddf-258e34a6e645
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),composition,Environmental Reclamation Firms,linked_new,3538e8f2-4e9a-4dd6-9903-288f4e877bd3
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),programs_and_labs,UNR Mackay School of Earth Sciences & Engineering,linked_new,14ff4640-1ade-4e5f-b6e0-d4a19eef1213
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),programs_and_labs,Nevada Bureau of Mines & Geology,already_linked,e69f67cf-6342-4d4f-a4ee-ed93f5c0a8a9
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),programs_and_labs,Mineral Processing Research Labs,linked_existing_actor,aae01bba-5be9-46d2-bf69-682406a13bf5
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),programs_and_labs,Lithium Extraction Research Initiatives,linked_new,09a33c4f-464f-4785-b78b-c8afb16aa9be
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),programs_and_labs,Mining Automation Programs,linked_new,6b30cd8a-4105-4073-99d2-92f1842be87a
+Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),programs_and_labs,Environmental Reclamation Research,linked_new,fa956df5-6424-45da-9b35-f4f89aa9247e
+Utah Mining & Mettallurgy Hub,composition,University of Utah,linked_new,cae025e7-9172-4d5e-adbb-4dbe0a58276c
+Utah Mining & Mettallurgy Hub,composition,University of Utah Mining Engineering,linked_new,994d8719-6460-457a-9b20-0922591acaf8
+Utah Mining & Mettallurgy Hub,composition,Metallurgical Engineering Programs,linked_new,e51690ab-4b1f-4aed-91e8-997acacc38b2
+Utah Mining & Mettallurgy Hub,composition,Utah Geological Survey,linked_new,dbb155b0-af8b-4ad9-b5bf-57e62a8f5d8d
+Utah Mining & Mettallurgy Hub,composition,Rio Tinto Kennecott,linked_new,68787ab7-1da5-412d-aac3-88f60f9f7d2c
+Utah Mining & Mettallurgy Hub,composition,Bingham Canyon Mine,linked_new,ffd373dc-576f-4d5e-8a4d-26b2b62467b9
+Utah Mining & Mettallurgy Hub,composition,Copper Smelter & Refinery,linked_new,c0549c77-2ae7-4dc0-b516-83d9c0eedd20
+Utah Mining & Mettallurgy Hub,composition,Molybdenum Production Facilities,linked_new,fa3382b5-f6b7-4bfe-9b50-4cea7123693b
+Utah Mining & Mettallurgy Hub,composition,Mineral Processing Labs,linked_existing_actor,2ea2fc43-8c89-4e28-a4b8-751b9dafd2a8
+Utah Mining & Mettallurgy Hub,composition,Tailings Storage Facilities,linked_existing_actor,6dde2521-eee3-4de4-a67b-a5c5ddce018e
+Utah Mining & Mettallurgy Hub,composition,Mining Automation Firms,linked_existing_actor,ebe71262-bbd1-4a0d-9ddf-258e34a6e645
+Utah Mining & Mettallurgy Hub,composition,Environmental Remediation Firms,linked_new,6718c5e5-f682-4829-888a-bee38b523321
+Utah Mining & Mettallurgy Hub,programs_and_labs,University of Utah Mining Engineering,already_linked,994d8719-6460-457a-9b20-0922591acaf8
+Utah Mining & Mettallurgy Hub,programs_and_labs,Metallurgical Engineering Programs,already_linked,e51690ab-4b1f-4aed-91e8-997acacc38b2
+Utah Mining & Mettallurgy Hub,programs_and_labs,Mineral Processing Research Labs,linked_existing_actor,aae01bba-5be9-46d2-bf69-682406a13bf5
+Utah Mining & Mettallurgy Hub,programs_and_labs,Utah Geological Survey,already_linked,dbb155b0-af8b-4ad9-b5bf-57e62a8f5d8d
+Utah Mining & Mettallurgy Hub,programs_and_labs,Kennecott Smelter Operations,linked_new,b9b5bd97-0042-40f1-b146-6df8ebb63f64
+Utah Mining & Mettallurgy Hub,programs_and_labs,Environmental Remediation Research Programs,linked_new,4d3212ee-700f-4a2d-8e3b-f7d551838712
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Penn State University,linked_new,d0b45005-84f0-40fa-b0f4-08d8f5fe649b
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Penn State College of Earth & Mineral Sciences,linked_new,31fead28-e95e-4661-ae01-7257e009cc2b
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Penn State Energy Institute,linked_new,f4e977c8-5132-45d6-9e9f-e0a8b6d9bde2
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Carnegie Mellon University Energy Programs,linked_new,ac788b72-4ee5-4775-91bd-a61ca754edbe
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Marcellus Shale Operators,linked_new,b925adc0-d286-47da-b06e-9017808827e7
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Carbon Capture Research Programs,linked_new,23ecfefc-1785-419b-9b42-44226b08f72c
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Hydrogen Development Projects,linked_new,ed6d026e-fabc-45a5-91c0-7853a9410974
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Methane Monitoring Firms,linked_new,7f08c7bd-d65d-4d48-b04e-2fdf5eefa549
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Mine Reclamation Programs,linked_new,c575d3a9-f0c6-42ca-8d77-9eaab5e4a8de
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Pennsylvania Department of Environmental Protection,linked_new,c2258e0d-60e7-45bc-ac0e-6e25637bd206
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Industrial Steel & Manufacturing Plants,linked_new,c2de29cf-2ce3-4e16-adea-62e47d911bd7
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),composition,Subsurface Modeling Labs,linked_new,cbbed02c-c1da-472b-9b59-919e9bf8eae1
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),programs_and_labs,Penn State Energy Institute,already_linked,f4e977c8-5132-45d6-9e9f-e0a8b6d9bde2
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),programs_and_labs,Penn State Mining Engineering,linked_new,03ead3ce-3345-4416-a238-df512320b360
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),programs_and_labs,Carbon Capture Research Labs,linked_new,dbb01649-435b-41de-8793-5fc308ba236e
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),programs_and_labs,CMU Energy Systems Programs,linked_new,0a20b24c-33c7-4b2a-af20-8ab7377fd785
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),programs_and_labs,Subsurface Geology Research,linked_new,33f413f1-6ff2-4a2e-b230-55c07f2cae2d
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),programs_and_labs,Mine Reclamation Research Programs,linked_new,8b3e50bd-bc47-453a-9ae8-587bc670a990
+Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),programs_and_labs,Hydrogen Research Initiatives,linked_new,71b159e9-5a4e-4198-b031-695daabaee4d
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Missouri University of Science & Technology,linked_new,c3e99524-981d-4472-b766-ce9629f39750
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Missouri S&T Mining Engineering,linked_new,fb9060e9-adba-4ef0-bda0-c1d634ee2e29
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Missouri S&T Metallurgical Engineering,linked_new,6022d40e-cb01-473d-82ca-6785f7306123
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Washington University in St. Louis,linked_new,f19b6926-9820-494a-ad1e-9b73a24f1439
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Missouri Department of Natural Resources,linked_new,874abeab-56bc-47a4-a45e-49392279b132
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Doe Run Company,linked_new,0535507c-752b-4960-b997-b789b31a5bdd
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Regional Zinc Producers,linked_new,4c22f9e1-12f5-42ab-8796-0ae3010936b5
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Mineral Processing Facilities,linked_new,23420c9f-b457-447c-a842-1381cad07478
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Smelting Operations,linked_new,205d7e1f-233b-4ffe-b19e-cb9649c8a0c3
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Environmental Remediation Firms,linked_existing_actor,6718c5e5-f682-4829-888a-bee38b523321
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Geological Survey Programs,linked_new,2928daf0-2a0b-4bb4-b548-804844657ccc
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),composition,Materials Science Research Labs,linked_new,0608d9cf-fab6-4bb9-bd2a-2ac13fd2e871
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),programs_and_labs,Missouri S&T Mining Engineering,already_linked,fb9060e9-adba-4ef0-bda0-c1d634ee2e29
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),programs_and_labs,Missouri S&T Metallurgical Engineering,already_linked,6022d40e-cb01-473d-82ca-6785f7306123
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),programs_and_labs,Materials Science Labs,linked_new,a8527a36-bb2a-4fbf-be06-ae6469ff6853
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),programs_and_labs,Geological Survey Programs,already_linked,2928daf0-2a0b-4bb4-b548-804844657ccc
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),programs_and_labs,Mineral Processing Pilot Facilities,linked_new,d337bce9-424d-4097-a89c-aff430eb1876
+Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),programs_and_labs,Environmental Remediation Programs,linked_new,3689bc22-823a-42b8-8ebb-2ee0c758e8eb
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,ExxonMobil Baytown Complex,linked_new,648f15fe-080a-4ede-9639-fa387dc6d60e
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,ExxonMobil Baytown Technology & Engineering Complex,linked_new,2d4580d4-d14a-4631-9bea-e1a309bcebb7
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Dow Texas Operations (Freeport),linked_new,78d3dc4b-42cf-40a9-99a3-e935fba9198f
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Chevron Phillips Chemical – Cedar Bayou Plant,linked_new,efccca07-4811-4544-a4fd-66cb8a4974a8
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,LyondellBasell – Channelview Complex,linked_new,aed5dee4-752a-43b9-b6a0-fe7801305d82
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,INEOS Olefins & Polymers USA,linked_new,85a1aa09-49a5-4dd7-b880-9e6ad335b752
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Shell Chemical Deer Park,linked_new,d8c11a3e-1133-409e-b1bf-a96fd398d1e7
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,BASF Freeport,linked_new,dd28c903-0249-442c-abb8-f6d9eeec6890
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Formosa Plastics Point Comfort,linked_new,d7a5e21e-71af-401a-9c87-3993853a4f7a
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Rice University – Department of Chemical & Biomolecular Engineering,linked_new,8637c318-8d83-4fb0-9252-23ff6b90af8e
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Rice University – Smalley-Curl Institute,linked_new,617e540e-5acd-4b83-9c86-41d055e3b2a5
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Rice University – Carbon Hub,linked_new,5c7867c5-d156-4e2a-9983-a29023d36f63
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,University of Houston – William A. Brookshire Department of Chemical & Biomolecular Engineering,linked_new,7bbe145a-8e71-49f1-8a3f-73163fc7c50d
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Texas A&M Engineering Extension Service (TEEX) – Gulf Coast,linked_new,3c37ac83-ba65-4e1c-9b14-21db0c71ce9f
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Port Houston,linked_new,c0ee0020-d355-49e3-9136-2f93dab29c26
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Houston Ship Channel Authority,linked_new,e1ecc5c9-bef5-4d84-9238-6a21c3e1c38c
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),composition,Greentown Labs Houston,linked_new,89859142-4446-40a5-9795-aee190256ae8
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),programs_and_labs,Rice University Chemical and Biomolecular Engineering Research Groups,linked_new,a67225f1-e808-4374-82d5-5ae91fc9915c
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),programs_and_labs,Rice University Carbon Hub,already_linked,5c7867c5-d156-4e2a-9983-a29023d36f63
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),programs_and_labs,Rice University Smalley-Curl Institute,already_linked,617e540e-5acd-4b83-9c86-41d055e3b2a5
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),programs_and_labs,University of Houston Chemical and Biomolecular Engineering Research Laboratories,linked_new,7cf64e7c-cb3f-40ef-ac6c-dc4dae7909f9
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),programs_and_labs,Greentown Labs Houston Energy and Materials Innovation Programs,linked_new,89bfc0f3-4e0e-4bc1-a021-f250500ac26d
+Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),programs_and_labs,Texas A&M Engineering Extension Service Industrial Chemical Safety and Process Programs,linked_new,866f4367-27fb-450e-ab4f-409253a046ac
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,University of Illinois Urbana-Champaign Department of Chemistry,linked_new,4cae1632-d40b-4410-ad4d-073004dd98e1
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,University of Illinois Urbana-Champaign Department of Chemical and Biomolecular Engineering,linked_new,a6e85807-3ae9-4884-af66-2f8b6e0d3545
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,Northwestern University Department of Chemistry,linked_new,18156051-007e-42a6-8390-ca2ab918c158
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,Northwestern University Department of Chemical and Biological Engineering,linked_new,9d0e85ca-4273-4216-9fa3-d3e78babbf76
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,University of Wisconsin–Madison Department of Chemistry,linked_new,7374656c-97a5-49d5-9ce6-669a622502d8
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,University of Wisconsin–Madison Department of Chemical and Biological Engineering,linked_new,7517b84e-0cef-4958-9201-bafe0fa4f95d
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,University of Minnesota Department of Chemistry,linked_new,27f822ab-1781-4537-9920-7144ffb5805a
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,University of Minnesota Department of Chemical Engineering and Materials Science,linked_new,7513f7c7-8ddb-4ecf-8dbb-792db0adbc69
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,Argonne National Laboratory,linked_new,001179a8-e960-48ac-9183-ea222fc1cf49
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,Argonne Advanced Photon Source,linked_new,0178083e-d8a9-4266-8c6a-33d54a7babf8
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,Materials Research Science and Engineering Centers (MRSEC – regional sites),linked_new,8bf6c70e-555f-467c-a69d-9b05b046ab59
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,Dow Midwest R&D Operations,linked_new,ae6dc0f1-80d3-4a77-a1e2-1f79e92b24f3
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,BASF Midwest Research Operations,linked_new,aa9f18d1-d6c3-4681-9983-4467a671db64
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,3M Research Laboratories,linked_new,6ec592ab-aa75-4c64-860b-0c1db0ef4f1c
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),composition,ExxonMobil Midwest Technology Collaborations,linked_new,85f229a6-72b5-4a3b-891f-e8b5283d83c1
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),programs_and_labs,Argonne National Laboratory Catalysis Programs,linked_new,38b904e4-806d-455b-a862-2283faf85fc7
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),programs_and_labs,Argonne Advanced Photon Source,already_linked,0178083e-d8a9-4266-8c6a-33d54a7babf8
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),programs_and_labs,UIUC Catalysis Research Groups,linked_new,1e6f28cf-21ed-4ad2-8acd-831664b2165f
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),programs_and_labs,Northwestern Catalysis and Surface Science Groups,linked_new,2bf6a175-c720-47fb-b3b4-18f895e86ae3
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),programs_and_labs,Wisconsin Catalysis and Organometallic Chemistry Groups,linked_new,55aa9f4e-2013-47be-ad87-b83a52c3e630
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),programs_and_labs,Minnesota Materials Chemistry Programs,linked_new,aa31ec89-6fd6-465d-8ebc-99937eea2df8
+Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),programs_and_labs,Materials Research Science and Engineering Centers,linked_new,7126fce5-9060-4e66-adf1-0cd92a38b948
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,University of California Berkeley Department of Chemistry,linked_new,e9eda74b-9bd5-4b1e-a022-accce9b519df
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,University of California Berkeley Department of Chemical and Biomolecular Engineering,linked_new,7682e2c5-8230-4a4d-91dc-0b543cc2008d
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Berkeley Center for Green Chemistry,linked_new,a77299f8-56ee-4d3d-8700-6b03015af4af
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Lawrence Berkeley National Laboratory,linked_existing_actor,57eaba90-c52f-42ed-bc44-5cab8512b817
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Joint BioEnergy Institute,linked_new,a550d75c-4f24-409b-b2a4-2e7a5f1bced4
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Stanford University Department of Chemistry,linked_new,ba354a1e-a26e-4bec-a461-6b3a530346e4
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Stanford University Department of Chemical Engineering,linked_new,25ee9ed0-0672-441d-9530-6b085dd14efb
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Stanford Woods Institute for the Environment,linked_existing_actor,3f7243ab-898c-4cf8-b149-5cff29290a2c
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,University of California Davis Department of Chemistry,linked_new,d53bbcad-6ec3-4d5e-9c13-b8442d84c9b8
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,University of California Davis Department of Chemical Engineering,linked_new,0505b9e5-6c7d-4824-bc0c-bd46a4aaa736
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,California Department of Toxic Substances Control Green Chemistry Initiative,linked_new,d67324ab-5ade-4147-9e4b-cc6b52cbc99f
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Amyris,linked_new,a9b6d103-befa-4c2b-8bb0-9d4e0bcc836f
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Genomatica,linked_new,eb4576cd-1be0-42e4-8f03-ecf76a33ec16
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,LanzaTech,linked_new,121a5d68-305d-48cd-9b89-eaca30c00fb2
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Pivot Bio,linked_new,1c625083-7f0b-4098-83e4-24b77642e423
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Novozymes North America,linked_new,9e644c46-ae06-4d47-b4a9-bf0115714f0d
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Ginkgo Bioworks West Coast Operations,linked_new,2bcf1117-97db-4606-b4a9-0a4424c10e9f
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Greentown Labs Bay Area,linked_new,bfd94b44-1c06-44cc-9a37-2bd88132d4af
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),composition,Lawrence Livermore National Laboratory,linked_new,3ca18917-49fd-48a0-abb0-37a83f1f46e2
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),programs_and_labs,Berkeley Center for Green Chemistry,already_linked,a77299f8-56ee-4d3d-8700-6b03015af4af
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),programs_and_labs,Lawrence Berkeley National Laboratory Energy Biosciences Programs,linked_new,388a674c-93e6-4414-96de-a8b7f71a7c82
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),programs_and_labs,Joint BioEnergy Institute,already_linked,a550d75c-4f24-409b-b2a4-2e7a5f1bced4
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),programs_and_labs,Stanford Sustainable Chemical Engineering Labs,linked_new,416b7599-199a-406f-8d95-f4b48d1e86ab
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),programs_and_labs,UC Davis Biomass Conversion Labs,linked_new,8a1ef5c3-47c6-4884-a10c-7d7178a59279
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),programs_and_labs,UC Davis Water Chemistry and Membrane Labs,linked_new,0f069525-b329-4d01-a657-5dace7860de2
+California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),programs_and_labs,California Green Chemistry Initiative Programs,linked_new,f275e494-da63-4632-ae4b-d80ff1b3e9e8
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Academic Anchors,linked_new,5ecf8973-d37f-4ae6-b406-9421e0ea8273
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,University of Delaware – Department of Chemical & Biomolecular Engineering,linked_new,497ce45d-5a3b-4889-bc7b-9a830053a69e
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Catalysis Center for Energy Innovation (CCEI),linked_new,d876514a-aa12-446f-8dad-543b7bb2cc3e
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Center for Catalytic Science & Technology (CCST),linked_new,fd2ade11-56ac-4fdd-800d-7963c24d84f7
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Institute for Energy Conversion,linked_new,e49bfe49-498f-4c17-9373-e6ce69b537cb
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Polymer Reaction Engineering Program,linked_new,dc820428-77c4-40a4-9fa5-0b27e7b51630
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Complementary Academic Institutions,linked_new,2d0f18b9-d544-4867-b9b6-8915217f6204
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Drexel University – Chemical & Biomolecular Engineering,linked_new,c3f2489a-2962-4962-a315-c641eff356f6
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,University of Pennsylvania – Materials Science & Electrochemical Systems,linked_new,8937fa71-ae8f-4818-8bc2-f3a32feb2d2f
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Industrial Actors,linked_new,68cbcaa7-def8-400d-a556-0b4004a93514
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,DuPont,linked_new,0225e2e3-597a-4548-89b6-d1c05642fcd3
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Chemours,linked_new,f1cca5a8-d32e-44bf-bbdb-172739fc1528
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,W.L. Gore,linked_new,7c5f6d4e-0b00-4e03-ab2c-80baf6e83678
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,FMC (agrochemicals),linked_new,bca13bf2-6250-451e-890a-ca686c06bc47
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Arkema,linked_new,58b44643-f025-423b-9947-301343615472
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Air Products (hydrogen systems),linked_new,98ae60cb-b440-48ee-84aa-86aa144ede65
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,composition,Regional specialty polymer and advanced material manufacturers,linked_new,39a70b92-fab6-45b7-94a5-c3d41b0f1440
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,programs_and_labs,Catalysis Center for Energy Innovation (CCEI),already_linked,d876514a-aa12-446f-8dad-543b7bb2cc3e
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,programs_and_labs,Center for Catalytic Science & Technology (CCST),already_linked,fd2ade11-56ac-4fdd-800d-7963c24d84f7
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,programs_and_labs,Institute for Energy Conversion,already_linked,e49bfe49-498f-4c17-9373-e6ce69b537cb
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,programs_and_labs,Polymer Reaction Engineering Program,already_linked,dc820428-77c4-40a4-9fa5-0b27e7b51630
+Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,programs_and_labs,Industry-sponsored catalytic research programs,linked_new,36e71dbe-46fb-4c3e-b7b7-b80cac1f540f
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,MIT Department of Chemistry,linked_new,8df2c7f0-9277-466a-912c-a4313825e3aa
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,MIT Chemical Engineering,linked_new,c1e3880d-8db5-437d-88f6-10eeab4b6cb5
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Harvard Department of Chemistry & Chemical Biology,linked_new,74f79bed-c0aa-4289-804c-2731ad8c743e
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Broad Institute,linked_existing_actor,46c9a1e0-187f-4932-ae24-cc9789502e1d
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Novartis Institutes for BioMedical Research,linked_new,726d98c0-f16c-4591-bfc1-1e9669dd9e0e
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Pfizer (Cambridge),linked_new,49100a07-16a3-41af-aba7-60200861e45f
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Moderna,linked_new,8b16ecee-bf58-4980-a8c5-a9c148fb9122
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Biogen,linked_new,bd90d59b-c31e-4e95-98b9-e5b516721b9e
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,LabCentral,linked_new,6a8365fd-7185-4cae-81a1-6eccccc2721a
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Synthetic Biology Startups,linked_new,2dc986fb-3d79-4f65-971b-f23d15e70511
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Catalysis Research Labs,linked_new,815b3ba4-b0ec-4840-a189-c6248a4e47cd
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Advanced Materials Startups,linked_new,6924112b-dfaa-4ad1-b2b3-fd5527ab343d
+Boston–Cambridge Chemistry & Chemical Biology Hub,composition,Green Chemistry Research Programs,linked_new,a4af1e92-2f10-4540-884d-d8b5955c2c05
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,MIT Department of Chemistry,already_linked,8df2c7f0-9277-466a-912c-a4313825e3aa
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,MIT Chemical Engineering,already_linked,c1e3880d-8db5-437d-88f6-10eeab4b6cb5
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,Harvard Chemistry & Chemical Biology,linked_new,a32ba9c9-415f-4e7e-9e04-0a704142b9dc
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,Broad Institute,already_linked,46c9a1e0-187f-4932-ae24-cc9789502e1d
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,MIT Energy Initiative (materials interface),linked_new,d91974aa-a839-42f6-b19c-0b6515b48e40
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,Green Chemistry Initiatives,linked_new,94f6a452-26aa-4f59-84ed-4903fd17d382
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,Catalysis Research Labs,already_linked,815b3ba4-b0ec-4840-a189-c6248a4e47cd
+Boston–Cambridge Chemistry & Chemical Biology Hub,programs_and_labs,Synthetic Biology Labs,linked_new,178ecfb8-ab91-4b81-a652-2f90688093d6
+Bay Area Chemistry & Materials Innovation Hub,composition,UC Berkeley Department of Chemistry,linked_new,321f944a-5566-41e6-9706-272afd9a1e96
+Bay Area Chemistry & Materials Innovation Hub,composition,UC Berkeley Materials Science & Engineering,linked_new,2e3cbdca-533e-4fe7-8f6f-4025b8418ebb
+Bay Area Chemistry & Materials Innovation Hub,composition,Lawrence Berkeley National Laboratory,linked_existing_actor,57eaba90-c52f-42ed-bc44-5cab8512b817
+Bay Area Chemistry & Materials Innovation Hub,composition,Molecular Foundry,linked_new,b7c483a7-5541-4ad1-bda7-593d3ca94bab
+Bay Area Chemistry & Materials Innovation Hub,composition,Advanced Light Source,linked_new,16038444-5058-4612-a197-bb1b18bde3e1
+Bay Area Chemistry & Materials Innovation Hub,composition,Stanford Department of Chemistry,linked_new,6804ea7c-cf93-4063-9637-861a6c55a2e6
+Bay Area Chemistry & Materials Innovation Hub,composition,Stanford Materials Science & Engineering,linked_new,614514b1-c26b-4ced-a8e8-ccf8049d07b6
+Bay Area Chemistry & Materials Innovation Hub,composition,Berkeley Energy & Climate Institute,linked_new,96d98f4e-bad0-4680-910a-1384a83c0f99
+Bay Area Chemistry & Materials Innovation Hub,composition,Battery Material Startups,linked_new,0eb74c22-3c80-4b92-a955-86d88fd25dc4
+Bay Area Chemistry & Materials Innovation Hub,composition,Carbon Capture Startups,linked_new,dc2fef46-4c5f-45c2-93a4-63c5bf16252f
+Bay Area Chemistry & Materials Innovation Hub,composition,Green Hydrogen Startups,linked_new,c15b9fa8-bd56-46fa-8c42-7e7e612ed882
+Bay Area Chemistry & Materials Innovation Hub,composition,Climate Tech Venture Capital Firms,linked_new,331d6b1f-cfdc-43f7-ae7d-d28da80ca27a
+Bay Area Chemistry & Materials Innovation Hub,composition,Advanced Polymer Companies,linked_new,b771a4b8-5055-476f-83b8-92af9b0b192e
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,UC Berkeley Chemistry,linked_new,9bf2dc3c-e417-40ab-a9c2-35c2401cfc8a
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,UC Berkeley Materials Science,linked_new,eeca0dba-12fe-40ec-9577-88228ca72dba
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,Lawrence Berkeley National Laboratory,already_linked,57eaba90-c52f-42ed-bc44-5cab8512b817
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,Molecular Foundry,already_linked,b7c483a7-5541-4ad1-bda7-593d3ca94bab
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,Advanced Light Source,already_linked,16038444-5058-4612-a197-bb1b18bde3e1
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,Stanford Materials Science,linked_new,d1349c98-13ef-40dd-81ea-3ac8ad4a2c0c
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,Stanford Chemistry,linked_new,cf7544bf-73fb-419e-ae70-197acbaecf8d
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,Energy storage research programs,linked_new,0dbf8c30-e1ff-4c6d-828e-98dde929b4e1
+Bay Area Chemistry & Materials Innovation Hub,programs_and_labs,Carbon capture material research labs,linked_new,a7b37cd1-4153-49ea-8c13-e1abc2e0a51b
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Rice University Department of Chemistry,linked_new,7151a5f0-d363-4a8b-a270-8f4d98aef2e2
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,University of Houston Chemistry,linked_new,eaa90016-1cf7-4c5d-9ed6-db422fbe0356
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Texas A&M Chemical Engineering,linked_new,ed33e383-24d2-453a-9be6-d3331f98c718
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,ExxonMobil Baytown Complex,linked_existing_actor,648f15fe-080a-4ede-9639-fa387dc6d60e
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Chevron Phillips Chemical,linked_new,75034186-c4c7-4193-8461-db1300c59cd2
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Dow Chemical,linked_existing_actor,f476a8c4-a156-4018-a2e6-5e5eab85f1bf
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,LyondellBasell,linked_new,235ad870-4c23-45fa-8615-b29df5d42214
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,BASF (Gulf Coast),linked_new,d90e7bb9-8173-4c9d-ac11-1d8d10f6b160
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,CF Industries,linked_new,2795f685-1324-456e-a836-3027b1d86726
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Nutrien (Regional Operations),linked_new,78044f83-490f-4073-91bf-69d05c5969a8
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Hydrogen Production Facilities,linked_new,2c463c1a-c4e7-4d47-b18c-c68e00a31bad
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Ammonia Production Plants,linked_new,add3c515-c8d3-493d-a6b0-b47d62972d6e
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Carbon Capture Projects,linked_new,25d48518-d8d7-4602-a06c-96d0f748d132
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),composition,Petrochemical Complexes,linked_new,f6debd3b-4481-49d1-a108-baeb577ff504
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,Rice University Chemistry,linked_new,8018d81c-51f8-4f40-bdec-baa1a4993285
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,Rice Materials Science,linked_new,a48a5c50-4aef-4c37-b750-122f83be0e1a
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,University of Houston Chemistry,already_linked,eaa90016-1cf7-4c5d-9ed6-db422fbe0356
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,Texas A&M Chemical Engineering,already_linked,ed33e383-24d2-453a-9be6-d3331f98c718
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,Industrial Catalysis Labs,linked_new,356afd05-41a8-4d97-bf0a-530fffb21944
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,Carbon Capture Research Programs,linked_existing_actor,23ecfefc-1785-419b-9b42-44226b08f72c
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,Hydrogen Research Initiatives,linked_existing_actor,71b159e9-5a4e-4198-b031-695daabaee4d
+Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),programs_and_labs,Process Systems Engineering Labs,linked_new,e35dd845-eff7-4cc6-9fe5-7a0d51b6a58e
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,University of Illinois Urbana-Champaign,linked_existing_actor,abc71126-8512-4859-91d8-b0d310a5cf0f
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Illinois Materials Research Laboratory,linked_new,de988369-f7be-4245-995c-6b3032b4e840
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Northwestern University Chemistry,linked_new,9ae11791-dc3e-4d8b-a0a7-6bc1db08e071
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Northwestern Materials Research Center,linked_new,61fd209f-49a7-40ae-838e-e7803a9d165c
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,University of Michigan Chemistry,linked_new,10332624-6fbb-4b5a-971c-f4edc6eb7765
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,University of Wisconsin–Madison Chemistry,linked_new,a81c0402-e188-4c0b-9e03-c7b0a9a38e90
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Dow (Midwest Operations),linked_new,1faf604e-b8be-43bb-9e15-13d0f92b8e78
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,3M,rejected,did not pass organization filter
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,DuPont,linked_existing_actor,0225e2e3-597a-4548-89b6-d1c05642fcd3
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,BASF (Regional Operations),linked_new,4b5258dc-d3b3-4161-a13e-55c46d4b3d62
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Automotive Manufacturers,linked_new,5005181d-d5df-4bdf-a911-be831070c23c
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Battery Materials Startups,linked_new,2490de25-d363-48a2-a6f9-d878628f9a5d
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Polymer Manufacturing Firms,linked_new,72d63b78-4885-497b-9630-4525b60aa296
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),composition,Catalysis Research Labs,linked_existing_actor,815b3ba4-b0ec-4840-a189-c6248a4e47cd
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),programs_and_labs,Illinois Materials Research Laboratory,already_linked,de988369-f7be-4245-995c-6b3032b4e840
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),programs_and_labs,Northwestern Materials Research Center,already_linked,61fd209f-49a7-40ae-838e-e7803a9d165c
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),programs_and_labs,Michigan Energy Institute (materials focus),linked_new,1fbc17a2-ba9c-4521-906d-4b8f37d14d19
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),programs_and_labs,Wisconsin Polymer Research Programs,linked_new,be4eb95c-5b27-4080-813d-ad0a23f5e075
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),programs_and_labs,Catalysis Research Centers,linked_new,89641293-7745-4bb1-9902-bb697a65c802
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),programs_and_labs,Advanced Manufacturing Labs,linked_new,a710ea48-a6f0-43d7-96fc-ec34c49751bd
+Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),programs_and_labs,Battery Innovation Programs,linked_new,0ada0e23-e1e0-4b8a-8627-a933225906c2
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,University of Delaware,linked_new,fd4d02f5-af97-4c62-991c-1f7aac3cfe00
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,University of Delaware Chemical Engineering,linked_new,f23b73bd-84ee-4a46-8c76-814aa5947fff
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,University of Pennsylvania Chemistry,linked_new,a338031e-56f2-4f9e-ab90-3a2e39aa76ab
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,DuPont,linked_existing_actor,0225e2e3-597a-4548-89b6-d1c05642fcd3
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,Chemours,linked_existing_actor,f1cca5a8-d32e-44bf-bbdb-172739fc1528
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,FMC Corporation,linked_new,5295697c-66e2-4e13-9622-c5d2d299fda7
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,Corteva Agriscience,linked_existing_actor,9dc13aad-6ffc-408e-9a4e-5c1cf9178351
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,Catalysis Research Centers,linked_existing_actor,89641293-7745-4bb1-9902-bb697a65c802
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,Polymer Research Institutes,linked_new,7bd893dd-9d46-431b-b959-6c1a988e95dc
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,Agrochemical Research Labs,linked_new,ba06ebc9-3783-445f-a9e1-90409bfcf47c
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,Specialty Chemical Manufacturers,linked_new,bc678c9c-e039-449a-908e-d2910b73062d
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),composition,Chemical Pilot Facilities,linked_new,a5a87b46-40bb-48cf-911c-bd669d31b2b3
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),programs_and_labs,University of Delaware Chemistry,linked_new,a0cbf67d-8dd9-40ae-8cc7-93c1d2ea651e
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),programs_and_labs,University of Delaware Chemical Engineering,already_linked,f23b73bd-84ee-4a46-8c76-814aa5947fff
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),programs_and_labs,Catalysis Research Centers,already_linked,89641293-7745-4bb1-9902-bb697a65c802
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),programs_and_labs,Polymer Science Programs,linked_new,ff2a8772-b1d7-460c-9a88-aa2df89a435e
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),programs_and_labs,Agrochemical Research Labs,already_linked,ba06ebc9-3783-445f-a9e1-90409bfcf47c
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),programs_and_labs,DuPont R&D Centers,linked_new,e7b8d8f4-da27-41ae-bf1d-25a9dc1bb945
+Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),programs_and_labs,Chemours Research Facilities,linked_new,04cc6fb2-cf4c-46fd-be33-e5c85fb44abb
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,North Carolina State University,linked_new,b6188d85-8dab-43d6-96ad-ebdc75fa9f16
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,NC State College of Agriculture & Life Sciences,linked_new,412bcb92-26ad-4381-a1ca-f39ce9b06886
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Duke University,linked_new,88e1027b-eed7-4997-9bcd-15ce0bd1dea6
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,UNC Chapel Hill,linked_new,1faa4ae9-cbd4-4c79-9e52-d35a2e7f47ab
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Research Triangle Park,linked_new,bc762eff-0bac-48e6-a002-5cae6955602c
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,BASF Agricultural Solutions,linked_new,c7bf2761-dbbd-4b4a-9626-40c974153b6a
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Syngenta,linked_new,0f3204ac-bd23-4cb4-954f-83c8cf11c413
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Corteva,linked_new,3ac81d89-bbcc-4eea-8c6c-9fa66f834dce
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,FMC Corporation,linked_existing_actor,5295697c-66e2-4e13-9622-c5d2d299fda7
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Bayer Crop Science (regional presence),linked_new,2b4e5e52-42cb-46fa-bf58-c275050bd63b
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Soil Science Research Labs,linked_new,7833c2bc-8949-4e2d-9a4a-e9dec14c187f
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Crop Science Research Programs,linked_new,8be75609-69ec-4ac9-8d5e-427368103f7e
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Agrochemical Formulation Labs,linked_new,bfa08974-0f83-49c5-bcc3-5e7401047c3d
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),composition,Agricultural Field Stations,linked_new,f39cc6ea-78e2-44f6-a714-baa26830f62e
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),programs_and_labs,NC State Chemistry Department,linked_new,bc9dcdec-0406-4dae-ac58-b5c7cd1d4e51
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),programs_and_labs,NC State Soil Science Programs,linked_new,964d388b-f79b-4657-be07-a466cd2109b3
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),programs_and_labs,Duke Chemistry,linked_new,89d33fd7-81a7-46b9-ba71-ba283f89b879
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),programs_and_labs,UNC Chemistry,linked_new,a67b187b-ccb0-489e-8bee-5a7657c68ea8
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),programs_and_labs,Crop Science Research Programs,already_linked,8be75609-69ec-4ac9-8d5e-427368103f7e
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),programs_and_labs,Agrochemical R&D Labs,linked_new,d56bb5a8-844b-46a6-b425-a39f79d315b8
+Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),programs_and_labs,Agricultural Field Testing Programs,linked_new,84994a58-eef1-4146-9bfb-3e7c589305aa
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,Stanford Doerr School of Sustainability,linked_new,d4999d3b-4bd5-4bc7-a1e9-4f53410de0d5
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,UC Berkeley Energy & Resources Group,linked_existing_actor,f9e3bae2-0f25-43f0-b749-cf7fe52b5b58
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,UCLA Institute of the Environment & Sustainability,linked_new,6b122dad-edc0-4b4f-b589-b7bb75614cee
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,Lawrence Berkeley National Laboratory,linked_existing_actor,57eaba90-c52f-42ed-bc44-5cab8512b817
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,California Air Resources Board,linked_existing_actor,85488087-e3bf-4693-b50d-37cb8404b719
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,California Energy Commission,linked_existing_actor,a4567705-6060-47e8-9acb-b79c54229776
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,Climate-Tech Startups,linked_new,8bca7d0c-57d6-431d-bb22-f04a4d3bd7da
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,Direct Air Capture Companies,linked_new,b60f0742-9c0e-4392-beb8-054064c268a9
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,Carbon Market Platforms,linked_new,8bfe3d0a-cbae-431e-8912-2b0fb36afa61
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,Sustainable Finance Labs,linked_new,17a4a37b-e581-4693-b5bd-ae590d8a8e95
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,Water Resilience Research Centers,linked_new,e072b337-7c0d-47d8-b500-3d2b7478b817
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),composition,ESG Investment Firms,linked_new,cef58bd9-1714-466b-8628-ec40de5f5b5c
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,Stanford Doerr School of Sustainability,already_linked,d4999d3b-4bd5-4bc7-a1e9-4f53410de0d5
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,UC Berkeley ERG,linked_new,be79b670-9ce7-422d-94b3-e48a1bbc800b
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,UCLA Sustainability Programs,linked_new,a05cb566-11fb-4b83-9ede-61dce480aae7
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,LBNL Energy Technologies Area,linked_new,f74ea7c5-fa83-4596-8f51-ddc742612b67
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,Berkeley Climate Initiative,linked_new,e0f4bb22-4529-4c57-b2d1-39e94e1da8d7
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,Sustainable Finance Initiatives,linked_new,4090c4e5-54b5-4ed7-a11b-8e3fc6a67662
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,Carbon Market Research Centers,linked_new,1f3d70d1-9921-4b84-81e0-1ea1b5437426
+California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),programs_and_labs,Water-Energy-Food Nexus Programs,linked_new,cce5963d-749e-4787-adc5-36fef9243ed8
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Columbia Climate School,linked_new,9cb90ded-8a67-4693-a93f-599d2a164b73
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Columbia Center on Global Energy Policy,linked_new,781015c4-7c4a-4364-b9f8-c8628420524b
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,NYU Stern Center for Sustainable Business,linked_new,8e05e527-b8fc-46fb-a6ab-5360dd84164a
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Cornell Tech,linked_existing_actor,0a90acaf-2458-4af2-bc52-1327f66835c9
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,NYC Mayor’s Office of Climate & Environmental Justice,linked_new,958193c6-c539-412d-9495-103c6c323f80
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,ESG Investment Firms,linked_existing_actor,cef58bd9-1714-466b-8628-ec40de5f5b5c
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Green Bond Issuers,linked_new,92328885-7a4e-4906-a378-6de797fdc621
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Climate Fintech Startups,linked_new,1732f99a-a08c-497a-be51-500a6f651cfd
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Impact Investment Funds,linked_new,9d3d2b50-138f-4fc2-8569-a132a382670f
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Corporate Sustainability Offices,linked_new,accda81c-1912-4c2c-85df-1055efeb58bd
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Coastal Resilience Programs,linked_new,4d32a991-564a-4d7c-bc97-be39ca9d28e2
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),composition,Climate Risk Analytics Firms,linked_new,d8dca799-7426-4b59-9cd4-b979c531dfbf
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),programs_and_labs,Columbia Climate School,already_linked,9cb90ded-8a67-4693-a93f-599d2a164b73
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),programs_and_labs,Columbia Center on Global Energy Policy,already_linked,781015c4-7c4a-4364-b9f8-c8628420524b
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),programs_and_labs,NYU Stern Center for Sustainable Business,already_linked,8e05e527-b8fc-46fb-a6ab-5360dd84164a
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),programs_and_labs,Cornell Tech Urban Systems Programs,linked_new,8641e6a5-735f-47e3-9035-ed7ba0452f61
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),programs_and_labs,NYC Mayor’s Climate Office,linked_new,42fc6473-6b45-441c-a143-10ccc7140d8b
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),programs_and_labs,Climate Risk Research Centers,linked_new,7dc5596d-227d-4cb4-baaa-ec18cda33993
+New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),programs_and_labs,Green Finance Research Initiatives,linked_new,89fab4bd-e63c-41ef-ab43-2641af17c56b
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,University of Colorado Boulder,linked_existing_actor,a351b388-f122-4e3e-8dfa-a1706c39d70a
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,CIRES,linked_new,e3b7946c-14b8-4c3d-a3c4-92d28a611cf8
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,NCAR,linked_new,1baf3bcb-534b-4466-bc14-db6efb26a5c1
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,NOAA Earth System Research,linked_new,74f36fbe-6647-4b45-95d2-7e415ec3e9b2
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,Colorado State University,linked_new,c048f214-1965-4ee5-8a0d-2c62d5993e18
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,NREL,linked_new,bfc97a22-39db-4257-bd67-dcab250b5684
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,Colorado State Water Center,linked_new,971072d6-8e4e-4056-b563-3544b75702e3
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,Climate Data Centers,linked_new,6c2f3369-460f-42a7-b85a-2735f0b9c7ed
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,Renewable Energy Firms,linked_new,2526addd-75cd-45e6-ae5f-574af484a37c
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,Climate Risk Analytics Firms,linked_existing_actor,d8dca799-7426-4b59-9cd4-b979c531dfbf
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,Water Technology Startups,linked_new,150142ba-af3e-409b-a10a-fe03b7fb649d
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),composition,Atmospheric Research Labs,linked_new,af0b5938-4d74-4e5f-9823-b5a96a41e8fe
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),programs_and_labs,CIRES,already_linked,e3b7946c-14b8-4c3d-a3c4-92d28a611cf8
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),programs_and_labs,NCAR,already_linked,1baf3bcb-534b-4466-bc14-db6efb26a5c1
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),programs_and_labs,NOAA Earth System Research Labs,linked_new,d4e5d0f5-b07a-4057-b1a7-a4a46064135d
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),programs_and_labs,NREL,already_linked,bfc97a22-39db-4257-bd67-dcab250b5684
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),programs_and_labs,Colorado State Water Center,already_linked,971072d6-8e4e-4056-b563-3544b75702e3
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),programs_and_labs,Earth Systems Research Laboratories,linked_new,00c2b62e-762c-45e7-b519-421398c149db
+Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),programs_and_labs,Climate Data and Modeling Platforms,linked_new,dd2c42e4-5cf9-4fe4-8d6f-5b85ac05804c
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,University of Washington,linked_new,2ebf35ea-d24e-433a-8801-6e5d1a43b65e
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,UW College of the Environment,linked_new,955cec58-69d4-420d-aabf-751d212bb8a6
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Oregon State University,linked_new,9235445d-755a-41b1-8f22-bd3cd4575add
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Oregon State College of Forestry,linked_new,5aacadf9-a754-44fc-9c8f-ca50bccb3535
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Portland State University,linked_new,b2f3bebe-aa33-4f1b-9864-214133634fe4
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Bonneville Power Administration,linked_new,2d3ce27e-99a7-4d72-8c7a-dfe896f75b8e
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Microsoft,linked_new,ed0e2ecf-5824-4ccf-b99a-dfbaa705f028
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Amazon,linked_new,b8c132b7-7d96-40c4-b6b1-14217eeaa2ca
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Nike,linked_new,b7c3ad44-c8f1-4a93-91cb-f75da1921611
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Hydropower Operators,linked_new,8e05e863-1e16-43cc-96f5-93fa58c44d9e
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Carbon Sequestration Startups,linked_new,0a2ba984-87fc-42a7-b9bd-2b9ec386741f
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Climate Risk Analytics Firms,linked_existing_actor,d8dca799-7426-4b59-9cd4-b979c531dfbf
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Environmental Justice Research Programs,linked_new,be655096-a5c9-42b4-a156-a406301906ad
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),composition,Oceanographic Research Centers,linked_new,1bbb615a-d496-4b92-abdc-bad8b3c4450f
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),programs_and_labs,UW College of the Environment,already_linked,955cec58-69d4-420d-aabf-751d212bb8a6
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),programs_and_labs,Oregon State College of Forestry,already_linked,5aacadf9-a754-44fc-9c8f-ca50bccb3535
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),programs_and_labs,Oceanographic Research Centers,already_linked,1bbb615a-d496-4b92-abdc-bad8b3c4450f
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),programs_and_labs,Hydropower Research Programs,linked_new,832ba145-6f8e-4b76-93a2-3028ce75289c
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),programs_and_labs,Urban Sustainability Labs,linked_new,b14cdcaf-e05b-4509-a8d1-fa6ecd103319
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),programs_and_labs,Environmental Justice Programs,linked_new,250f8687-7f2d-4eb4-a01c-b3fa61338265
+Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),programs_and_labs,Climate Adaptation Research Initiatives,linked_new,49bb038f-97bd-4787-9de1-e8dbba26d076
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,University of Illinois Urbana-Champaign,linked_existing_actor,abc71126-8512-4859-91d8-b0d310a5cf0f
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,University of Michigan Energy Institute,linked_existing_actor,53c1e16e-7066-4a63-b32a-ced3eb66ca1f
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Northwestern ISEN,linked_existing_actor,74a0ea6e-0067-4df6-a722-4fd802d3e754
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Purdue Energy Center,linked_existing_actor,35793744-4a41-4573-bd88-36f288a8daa1
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Midwest Alliance for Clean Hydrogen,linked_existing_actor,079fc2e8-b0c1-4889-ab7b-c959ed690827
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,U.S. Steel,linked_existing_actor,1cb1e9e3-c169-4ca8-bf56-19b89c75a80e
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Cleveland-Cliffs,linked_existing_actor,f9a12ae5-d8ce-4d95-bcd9-ff5f95882f8a
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,ArcelorMittal USA,linked_existing_actor,cd6b96bb-346b-43ad-84ed-7ab7a581175f
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Ford,linked_existing_actor,a4196d55-27cb-4607-8474-6f0b6e4f998a
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,General Motors,linked_existing_actor,1046c5b1-c064-494b-9896-25858f373187
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Dow Chemical,linked_existing_actor,f476a8c4-a156-4018-a2e6-5e5eab85f1bf
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Cement Manufacturers,linked_new,60268f26-1903-4f63-b687-37a8958e22fe
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Carbon Capture Companies,linked_existing_actor,55be340c-dc37-4ac9-a130-cc032cc3095d
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Hydrogen Technology Firms,linked_existing_actor,354da8e9-8ecb-4d2f-bb56-aff1d463e847
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),composition,Advanced Manufacturing Research Centers,linked_existing_actor,c6283c72-2fe0-49c4-99e8-afa0776c461f
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),programs_and_labs,Illinois Energy Initiative,linked_new,9ff88133-1f28-450a-9e81-59a385c6e319
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),programs_and_labs,Michigan Energy Institute,linked_new,2af2a40a-77e5-414a-bc42-ef229f3bf6dd
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),programs_and_labs,Northwestern ISEN,already_linked,74a0ea6e-0067-4df6-a722-4fd802d3e754
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),programs_and_labs,Purdue Energy Center,already_linked,35793744-4a41-4573-bd88-36f288a8daa1
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),programs_and_labs,Midwest Hydrogen Hub,linked_new,bebfb2b6-02a8-4b53-a61f-7812c0a3c7d1
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),programs_and_labs,Industrial Carbon Capture Programs,linked_new,64f84840-8625-4938-9495-925a6707c279
+Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),programs_and_labs,Advanced Manufacturing Research Centers,already_linked,c6283c72-2fe0-49c4-99e8-afa0776c461f
+Boston- Cambridge Academic Medical Hub,composition,Harvard Medical School,linked_new,05bf5856-eb0e-42f1-a871-2ebd4b4f5ac3
+Boston- Cambridge Academic Medical Hub,composition,Massachusetts General Hospital,linked_new,a3e09832-22a5-4fa7-80b7-7c93b7eae4f5
+Boston- Cambridge Academic Medical Hub,composition,Brigham and Women’s Hospital,linked_new,34651f8b-3b1b-44f6-b36d-c720ad0901eb
+Boston- Cambridge Academic Medical Hub,composition,Boston Children’s Hospital,linked_new,3f92e640-a8c5-4192-91e7-ec2a9885516c
+Boston- Cambridge Academic Medical Hub,composition,MIT,rejected,did not pass organization filter
+Boston- Cambridge Academic Medical Hub,composition,Broad Institute,linked_existing_actor,46c9a1e0-187f-4932-ae24-cc9789502e1d
+Boston- Cambridge Academic Medical Hub,composition,MIT Koch Institute,linked_new,b6e73476-5936-4efd-ae90-af21dcc5fbcf
+Boston- Cambridge Academic Medical Hub,composition,LabCentral,linked_existing_actor,6a8365fd-7185-4cae-81a1-6eccccc2721a
+Boston- Cambridge Academic Medical Hub,composition,Moderna,linked_existing_actor,8b16ecee-bf58-4980-a8c5-a9c148fb9122
+Boston- Cambridge Academic Medical Hub,composition,Biogen,linked_existing_actor,bd90d59b-c31e-4e95-98b9-e5b516721b9e
+Boston- Cambridge Academic Medical Hub,composition,Vertex,linked_new,f4b65cb7-c646-4ae1-9d65-e0423981c409
+Boston- Cambridge Academic Medical Hub,composition,Pfizer (Cambridge),linked_existing_actor,49100a07-16a3-41af-aba7-60200861e45f
+Boston- Cambridge Academic Medical Hub,composition,Novartis Institutes,linked_new,9e7dda83-fd83-4c11-ae54-b4a713b6eeda
+Boston- Cambridge Academic Medical Hub,composition,Flagship Pioneering,linked_existing_actor,011bb16e-cdca-46bc-ab56-46fe3b12305a
+Boston- Cambridge Academic Medical Hub,composition,Third Rock Ventures,linked_new,9c7a7c22-87cf-4672-8acc-56d190fdd474
+Boston- Cambridge Academic Medical Hub,programs_and_labs,Harvard Medical School,already_linked,05bf5856-eb0e-42f1-a871-2ebd4b4f5ac3
+Boston- Cambridge Academic Medical Hub,programs_and_labs,Mass General Brigham Research,linked_new,44be9ef6-2a98-46c4-9865-452ac1dce59a
+Boston- Cambridge Academic Medical Hub,programs_and_labs,MIT Koch Institute,already_linked,b6e73476-5936-4efd-ae90-af21dcc5fbcf
+Boston- Cambridge Academic Medical Hub,programs_and_labs,Broad Institute,already_linked,46c9a1e0-187f-4932-ae24-cc9789502e1d
+Boston- Cambridge Academic Medical Hub,programs_and_labs,Boston Children’s Research Labs,linked_new,fefef9d5-9a49-498b-b547-efcc864430c2
+Boston- Cambridge Academic Medical Hub,programs_and_labs,Clinical & Translational Science Centers,linked_new,9066a79f-53dc-4847-b219-215ac3a5e028
+Boston- Cambridge Academic Medical Hub,programs_and_labs,Digital Health Labs,linked_new,7aed3e87-8279-4bf1-b874-419f05a6b35d
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Mayo Clinic,linked_new,793fdc9d-0f12-4e7b-94e9-e153191b6683
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Cleveland Clinic,linked_new,98a50f29-78b8-4e82-91db-cd136c93b8c6
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,University of Michigan Health,linked_new,62eff4b2-b044-4282-a22a-50d54dc263d7
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Northwestern Medicine,linked_new,0c17f76c-47a0-4ca7-a7c8-ef5942f98520
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,University of Chicago Medicine,linked_new,32203b82-8dc7-45f9-b460-abf14f5f024c
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Abbott Laboratories,linked_new,61f37dcc-ff0d-43a4-aa86-218319f6f740
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Medtronic,linked_new,fcc60b65-064e-4f5e-9296-6635640f4446
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Michigan Translational Research Institute,linked_new,f7ff01c0-335c-43c8-b873-be2789c303b7
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Clinical Trials Networks,linked_new,0a795a89-c9d4-4239-b77c-b3e17ba9d7f1
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Medical Device Innovation Labs,linked_new,a731f001-3291-4a2d-9375-ee04cd0a9e80
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Population Health Institutes,linked_new,56ae9723-e901-4a41-a10b-2bdb3c7f8573
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),composition,Hospital Systems Research Centers,linked_new,d57f516a-792e-4f71-9bc6-503bf9402ff6
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),programs_and_labs,Mayo Clinic Research,linked_new,0ced16f2-663e-47c4-9ba3-628e46c7144a
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),programs_and_labs,Cleveland Clinic Innovation,linked_new,7dbdad03-d5c9-4918-b945-a0f73fd61db5
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),programs_and_labs,Michigan Translational Research Institute,already_linked,f7ff01c0-335c-43c8-b873-be2789c303b7
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),programs_and_labs,Northwestern Clinical Research Programs,linked_new,65723bf6-02df-454a-8111-9fa6bdbe36b3
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),programs_and_labs,Chicago Biomedical Engineering Programs,linked_new,ca9b1d0b-26d3-4a16-af6c-7d228e0d95bc
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),programs_and_labs,Population Health Institutes,already_linked,56ae9723-e901-4a41-a10b-2bdb3c7f8573
+Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),programs_and_labs,Hospital Systems Research Labs,linked_new,3e0729b6-fa00-4620-bc19-d0d210c1b836
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Academic & Medical Anchors,linked_new,3aac8295-515e-466a-82e9-4e87eaa7204d
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Columbia University Vagelos College of Physicians & Surgeons,linked_new,4cd76ef6-b34c-4f54-ae1c-a6a2506440ed
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,NYU Grossman School of Medicine,linked_new,1bdcaec5-2e06-4f0a-9a5e-7dab3f4b3776
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Icahn School of Medicine at Mount Sinai,linked_new,e21ef24e-a410-408c-ab07-e012df1c689e
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Weill Cornell Medicine,linked_new,70f5346c-0b8d-4937-af4f-d819c7d6b8d7
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Major Health Systems,linked_new,4fa773c1-17f6-4fee-80eb-9acfcf08624c
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,NewYork-Presbyterian Hospital,linked_new,a8585b24-67c8-4b81-8864-b1be68703ed5
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,NYU Langone Health,linked_new,a5f4bae6-30d3-42bc-b950-117f33555816
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Mount Sinai Health System,linked_new,765848f0-7801-4ecb-b09b-5ac5d5bf35fa
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,NYC Health + Hospitals,linked_new,b7c08807-e170-496c-9f52-3eb79e7f4f44
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Research Institutes,linked_new,c84d17f9-67e4-48a5-9546-d68c5f7f183c
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Columbia Irving Medical Center,linked_new,076667b0-4dd5-4477-897b-2bb38cfb2988
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,NYU Langone Research,linked_new,32509414-27b6-4e31-9d87-699729e84b6a
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Mount Sinai Biomedical Research Institutes,linked_new,7e20d57e-f787-4055-a009-3b2f64b63a94
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Meyer Cancer Center,linked_new,17624748-10f5-440a-83a5-ae2253b92558
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Cardiovascular Research Institutes Digital Health & Innovation,linked_new,bfc75360-00b8-4e95-b268-22fcda669669
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Cornell Tech (Health Tech initiatives),linked_new,ef7bd2bb-c538-43f9-a6df-0a97aee833dc
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,Digital health startups across NYC,linked_new,1943ea0c-8fc8-49cd-b8ef-0e8a1eeb7af3
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),composition,AI-in-health research labs,linked_new,4681684e-9550-40d0-a02d-2a0ab5f06721
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),programs_and_labs,Precision medicine initiatives,linked_new,1d31f7b9-2be3-4d23-ab66-ee66a5230b04
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),programs_and_labs,Cancer research centers,linked_new,c9e14744-bf63-4acb-8f7b-209c442275ce
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),programs_and_labs,Cardiovascular research institutes,linked_new,7bc8e728-adbd-40cc-a14c-da0d7d86c1d1
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),programs_and_labs,Neuroscience institutes,linked_new,81ee750b-91ff-4353-9903-095616918237
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),programs_and_labs,AI-in-medicine research labs,linked_new,30229be3-031b-489b-9be5-23193e1ebad6
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),programs_and_labs,Population health centers,linked_new,1bed52a6-8346-4547-a527-2d5f3df06128
+New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),programs_and_labs,Digital health innovation programs,linked_new,2502fad8-d574-4116-8359-f965f46d6bc8
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Federal Anchors,linked_new,aa8bb69a-c290-4fbd-9b6a-03582e5bf8f8
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,National Institutes of Health (NIH),linked_new,c7eab368-9d19-4c9d-805d-bb50ead10c71
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Food and Drug Administration (FDA),linked_new,1229003e-e75e-467e-ad13-bc0e8422ae8c
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,National Institute of Standards and Technology (NIST – biosystems & standards),linked_new,40bd7f04-9b85-48b1-90ef-5d34ae798965
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Walter Reed National Military Medical Center,linked_new,51214b5c-55d6-4c7b-8b84-c492558910c8
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Academic Anchors,linked_existing_actor,5ecf8973-d37f-4ae6-b406-9421e0ea8273
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Johns Hopkins University & Johns Hopkins Medicine,linked_new,91fcadb4-c5c3-4ff5-a7fe-c8858d7ac67f
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,University of Maryland School of Medicine,linked_new,45a76517-b142-4ce8-b4df-08b67c817e28
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Georgetown University Medical Center,linked_new,2a9e0729-2a77-42dc-8de4-db9f4a877078
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,George Washington University,linked_new,92bd84b7-5ffa-4657-af7e-58c7406e36ce
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Research & Innovation Platforms,linked_new,605bf39f-a58f-4ebd-af29-ead6a3effba4
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,NIH Intramural Research Program,linked_new,3d4a5306-13a6-49dc-959f-489db5e99242
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Johns Hopkins Applied Physics Laboratory (health security interface),linked_new,f776d377-3d68-43bc-afe3-42ca3ddb8e1a
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,BioHealth Capital Region ecosystem,linked_new,1914454a-72b5-4a87-a611-bbf398a6673a
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),composition,Biomedical Advanced Research and Development Authority (BARDA),linked_new,db928949-ff4b-498e-ab7e-e9fca40e6d1f
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),programs_and_labs,NIH Intramural Research Program,already_linked,3d4a5306-13a6-49dc-959f-489db5e99242
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),programs_and_labs,Johns Hopkins Bloomberg School of Public Health,linked_new,a63bf3bd-cb63-4d33-978e-34ac40d63995
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),programs_and_labs,Johns Hopkins Precision Medicine initiatives,linked_new,7e3128a0-0652-429b-a761-69f16398bfff
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),programs_and_labs,Vaccine Research Center (NIH),linked_new,265dcc0e-a68b-4fc3-b446-069b2f820688
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),programs_and_labs,Clinical Center at NIH,linked_new,b6ea9748-974d-4fe7-ad89-3ac52eff6435
+Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),programs_and_labs,Global health research centers,linked_new,692741ce-6544-4f19-a984-036d8122c410
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,UCSF,linked_new,1ab90303-c5ab-48f3-a02f-d3ff0046dfb5
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Stanford Medicine,linked_new,1cec9180-ce76-40e1-9129-a9b9e8bbe0c6
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,UC Berkeley,linked_existing_actor,2a5007c0-0f02-4ef1-b49b-bbe26e7c3f23
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Gladstone Institutes,linked_new,b096e1cc-350f-46a3-9bc1-55bc0ecb8bb4
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,QB3,rejected,did not pass organization filter
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Genentech,linked_new,a898cf93-e275-4752-a0f0-7b1d3b658424
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Gilead,linked_new,50dd4828-52bc-4cdf-a30c-15566b42beae
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,AI Health Startups,linked_new,7e854e15-293d-4e9a-9c13-3701e9588e48
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Digital Health Companies,linked_new,3546f7ef-7b82-42c8-a57f-e073a4653129
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Biotech Venture Funds,linked_new,f0cfe1b6-8213-4cac-80f5-7a1b1228f9e3
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Precision Medicine Labs,linked_new,a6146edf-811e-4a0d-b874-be5d2f0f01bf
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),composition,Genomics Research Centers,linked_new,691c9a2b-1dad-4e27-bb0a-329e7cb6495e
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),programs_and_labs,UCSF School of Medicine,linked_new,a2f91135-d31f-4923-843d-bd1801221420
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),programs_and_labs,Stanford School of Medicine,linked_new,576b65be-b073-406f-aac5-b86576d56083
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),programs_and_labs,UC Berkeley Bioengineering,linked_new,c33c2f61-bfa3-496b-aba7-4f9f0a41fdfd
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),programs_and_labs,Gladstone Institutes,already_linked,b096e1cc-350f-46a3-9bc1-55bc0ecb8bb4
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),programs_and_labs,QB3 Incubators,linked_new,07640eaa-4c86-41d7-8ee0-177d5d724f1a
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),programs_and_labs,Digital Health Innovation Labs,linked_new,61fc81f6-b2ca-4d71-8672-d17d91742ba3
+San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),programs_and_labs,Precision Medicine Initiatives,linked_existing_actor,1d31f7b9-2be3-4d23-ab66-ee66a5230b04
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Academic & Medical Anchors,linked_existing_actor,3aac8295-515e-466a-82e9-4e87eaa7204d
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Baylor College of Medicine,linked_new,978ea352-b86c-4417-8163-1e8cab7eef61
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,McGovern Medical School (UTHealth Houston),linked_new,26e9f684-bd7b-46b5-a41b-ae8119f2dd2d
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Weill Cornell Medicine (Houston campus),linked_new,62241255-2e6c-4c31-97c7-6b8219e50ace
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,MD Anderson Cancer Center,linked_new,365333cb-1073-4380-a4dc-84ef124854d7
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Texas Children’s Hospital,linked_new,3c9521a2-4e76-4704-af96-fd5f05a3497f
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Houston Methodist Hospital,linked_new,ce163f6d-fec2-4f7f-83a7-c947187a5e29
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Research Institutes,linked_existing_actor,c84d17f9-67e4-48a5-9546-d68c5f7f183c
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,MD Anderson Research Programs,linked_new,b40d1d16-daff-4449-9261-9bc562617e20
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Baylor College of Medicine Research Centers,linked_new,505f223e-7629-4ce0-95f6-63785ca87c78
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Texas Heart Institute,linked_new,1ff4a6ad-9e9e-44db-aeb1-df01db9cb3ab
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,UTHealth Institute for Stroke & Cerebrovascular Disease,linked_new,1fc2d9bb-073c-4d2f-8904-5dc5ee3b5c3d
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Innovation Platforms,linked_new,895ec2d5-8715-4820-a8c0-3014a1500c7a
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,TMC Innovation Factory (health startup accelerator),linked_new,8ee4f997-3459-4d40-a85e-f50635628675
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Helix Park (life sciences commercialization district),linked_new,37f4f30a-7955-4b40-a421-d5fbedd4bbbb
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,TMC Biodesign Program,linked_new,f26ac3d3-d26b-443b-bdae-d1c3722f353c
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),composition,Johnson & Johnson JLABS (Houston presence),linked_new,94107bec-61a1-4071-b9a4-c44e084a4990
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),programs_and_labs,MD Anderson Cancer Research Programs,linked_new,4341dfb0-b474-4983-8cac-762efd9790cc
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),programs_and_labs,TMC Biodesign,linked_new,c96257d7-c3f6-481c-97c5-bcfc6eac9692
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),programs_and_labs,Baylor Translational Research Programs,linked_new,38ab9877-1a85-454f-96c6-e8fcd1036aa2
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),programs_and_labs,UTHealth Clinical Research Institutes,linked_new,4d6c1daa-4a9e-45b8-9c56-f0abe2bee6dc
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),programs_and_labs,Texas Heart Institute Programs,linked_new,8efc4af9-4441-4580-b55a-54380cb6b940
+Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),programs_and_labs,TMC Innovation Accelerator,linked_new,3d82f770-e5d3-4412-b75d-bd3ce049df4f

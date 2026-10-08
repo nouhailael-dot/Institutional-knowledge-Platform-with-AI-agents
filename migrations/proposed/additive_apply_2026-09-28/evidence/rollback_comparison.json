@@ -1,0 +1,22 @@
+{
+  "actual_only_objects": {
+    "columns": [],
+    "functions": [],
+    "indexes": [],
+    "policies": [],
+    "tables": [],
+    "triggers": [],
+    "views": []
+  },
+  "expected_only_objects": {
+    "columns": [],
+    "functions": [],
+    "indexes": [],
+    "policies": [],
+    "tables": [],
+    "triggers": [],
+    "views": []
+  },
+  "objects_equal": true,
+  "row_counts_equal": true
+}

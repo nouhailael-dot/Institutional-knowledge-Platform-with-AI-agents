@@ -1,0 +1,432 @@
+{
+  "actor_count_after": 965,
+  "actor_count_before": 965,
+  "existing_actor_type_count": 30,
+  "existing_verification_statuses": [
+    null,
+    "ai_inferred",
+    "needs_review",
+    "phase_1"
+  ],
+  "insert_results": [
+    {
+      "actor_category": null,
+      "actor_type": null,
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government Agency",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "Organization",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": "innovation_platform",
+      "actor_type": "accelerator",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "aggregate",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "company",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "consortium",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "corporate_rd_lab",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "federal_agency",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "federal_research_system",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "government_agency",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "industrial_partner",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "industry_association",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "intergovernmental_organization",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "national_research_center",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "national_research_lab",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": "foundation_nonprofit",
+      "actor_type": "nonprofit",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "other",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "project_developer",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "research_organization",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "startup",
+      "actor_type": "startup",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "state_agency",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_agency",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_committee",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_programme",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_secretariat",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "university_academic",
+      "actor_type": "university",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "university_lab",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "investor",
+      "actor_type": "venture_capital",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "__ghus_unknown_legacy_actor_type__",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    }
+  ],
+  "tested_actor_types": [
+    null,
+    "Government",
+    "Government Agency",
+    "Organization",
+    "accelerator",
+    "aggregate",
+    "company",
+    "consortium",
+    "corporate_rd_lab",
+    "federal_agency",
+    "federal_research_system",
+    "government_agency",
+    "industrial_partner",
+    "industry_association",
+    "intergovernmental_organization",
+    "national_research_center",
+    "national_research_lab",
+    "nonprofit",
+    "other",
+    "project_developer",
+    "research_organization",
+    "startup",
+    "state_agency",
+    "un_agency",
+    "un_committee",
+    "un_programme",
+    "un_secretariat",
+    "university",
+    "university_lab",
+    "venture_capital",
+    "__ghus_unknown_legacy_actor_type__"
+  ],
+  "tested_verification_statuses": [
+    null,
+    "ai_inferred",
+    "needs_review",
+    "phase_1",
+    "verified",
+    "rejected",
+    "__unknown_status__"
+  ],
+  "transaction_rolled_back": true,
+  "unknown_category_is_null": true,
+  "update_results": [
+    {
+      "actor_category": null,
+      "actor_type": null,
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government Agency",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "Organization",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": "innovation_platform",
+      "actor_type": "accelerator",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "aggregate",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "company",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "consortium",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "corporate_rd_lab",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "federal_agency",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "federal_research_system",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "government_agency",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "industrial_partner",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "industry_association",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "intergovernmental_organization",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "national_research_center",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "national_research_lab",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": "foundation_nonprofit",
+      "actor_type": "nonprofit",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "other",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "project_developer",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "research_organization",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "startup",
+      "actor_type": "startup",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "state_agency",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_agency",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_committee",
+      "record_status": "imported",
+      "verification_status": "phase_1"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_programme",
+      "record_status": null,
+      "verification_status": "verified"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_secretariat",
+      "record_status": null,
+      "verification_status": "rejected"
+    },
+    {
+      "actor_category": "university_academic",
+      "actor_type": "university",
+      "record_status": null,
+      "verification_status": "__unknown_status__"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "university_lab",
+      "record_status": null,
+      "verification_status": null
+    },
+    {
+      "actor_category": "investor",
+      "actor_type": "venture_capital",
+      "record_status": "parked",
+      "verification_status": "ai_inferred"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "__ghus_unknown_legacy_actor_type__",
+      "record_status": "parked",
+      "verification_status": "needs_review"
+    }
+  ],
+  "verified_or_rejected_mapping_count": 0
+}

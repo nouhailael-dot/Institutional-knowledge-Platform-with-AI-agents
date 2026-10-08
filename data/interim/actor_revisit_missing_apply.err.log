@@ -1,0 +1,805 @@
+2026-07-25 22:59:10,219  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-25 22:59:17,128  INFO     src.enrichment.actor_enrichment_candidates  Processing 726 sparse actors
+2026-07-25 22:59:17,350  INFO     src.enrichment.actor_enrichment_candidates  [1/726] 3M Research Laboratories
+2026-07-25 22:59:17,749  INFO     src.enrichment.actor_enrichment_candidates  [2/726] Abbott Laboratories
+2026-07-25 22:59:18,087  INFO     src.enrichment.actor_enrichment_candidates  [3/726] Academic & Medical Anchors
+2026-07-25 22:59:18,428  INFO     src.enrichment.actor_enrichment_candidates  [4/726] Academic Anchors
+2026-07-25 22:59:18,923  INFO     src.enrichment.actor_enrichment_candidates  [5/726] Advanced Manufacturing AI Firms (Pittsburgh Region)
+2026-07-25 22:59:19,528  INFO     src.enrichment.actor_enrichment_candidates  [6/726] Advanced Manufacturing Labs
+2026-07-25 22:59:19,975  INFO     src.enrichment.actor_enrichment_candidates  [7/726] Advanced Manufacturing Research Centers
+2026-07-25 22:59:25,148  INFO     src.enrichment.actor_enrichment_candidates  [8/726] Advanced Materials Startups
+2026-07-25 22:59:26,188  INFO     src.enrichment.actor_enrichment_candidates  [9/726] Advanced Polymer Companies
+2026-07-25 22:59:26,661  INFO     src.enrichment.actor_enrichment_candidates  [10/726] Ag-Biotech Startups (St. Louis Region)
+2026-07-25 22:59:27,271  INFO     src.enrichment.actor_enrichment_candidates  [11/726] Agricultural Field Stations
+2026-07-25 22:59:27,602  INFO     src.enrichment.actor_enrichment_candidates  [12/726] Agricultural Field Testing Programs
+2026-07-25 22:59:27,987  INFO     src.enrichment.actor_enrichment_candidates  [13/726] Agricultural Sustainability Institute
+2026-07-25 22:59:28,321  INFO     src.enrichment.actor_enrichment_candidates  [14/726] Agricultural Water Management Programs
+2026-07-25 22:59:28,653  INFO     src.enrichment.actor_enrichment_candidates  [15/726] Agrochemical Formulation Labs
+2026-07-25 22:59:29,183  INFO     src.enrichment.actor_enrichment_candidates  [16/726] Agrochemical R&D Labs
+2026-07-25 22:59:29,512  INFO     src.enrichment.actor_enrichment_candidates  [17/726] Agrochemical Research Labs
+2026-07-25 22:59:30,879  INFO     src.enrichment.actor_enrichment_candidates  [18/726] AI Health Startups
+2026-07-25 22:59:31,215  INFO     src.enrichment.actor_enrichment_candidates  [19/726] AI House (Seattle AI hub space for community, startups, events)
+2026-07-25 22:59:31,544  INFO     src.enrichment.actor_enrichment_candidates  [20/726] AI House (Seattle AI Hub space)
+2026-07-25 22:59:31,710  INFO     src.enrichment.actor_enrichment_candidates  Progress 20/726, Claude cost $0.0000
+2026-07-25 22:59:31,874  INFO     src.enrichment.actor_enrichment_candidates  [21/726] AI startups cluster (Seattle & Bellevue) across enterprise SaaS, robotics, and mission tech
+2026-07-25 22:59:32,202  INFO     src.enrichment.actor_enrichment_candidates  [22/726] AI-focused accelerators (e.g., Berkeley SkyDeck)
+2026-07-25 22:59:32,537  INFO     src.enrichment.actor_enrichment_candidates  [23/726] AI-Health Startups (Boston Region)
+2026-07-25 22:59:32,879  INFO     src.enrichment.actor_enrichment_candidates  [24/726] AI-in-health research labs
+2026-07-25 22:59:33,407  INFO     src.enrichment.actor_enrichment_candidates  [25/726] AI-in-medicine research labs
+2026-07-25 22:59:33,856  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 25 actors
+2026-07-25 22:59:34,606  INFO     src.enrichment.actor_enrichment_candidates  [26/726] Air Products (hydrogen systems)
+2026-07-25 22:59:34,947  INFO     src.enrichment.actor_enrichment_candidates  [27/726] Albemarle
+2026-07-25 22:59:35,289  INFO     src.enrichment.actor_enrichment_candidates  [28/726] Allen Institute for AI (Ai2)
+2026-07-25 22:59:35,618  INFO     src.enrichment.actor_enrichment_candidates  [29/726] Amazon
+2026-07-25 22:59:35,953  INFO     src.enrichment.actor_enrichment_candidates  [30/726] Amazon (AI & AWS)
+2026-07-25 22:59:36,282  INFO     src.enrichment.actor_enrichment_candidates  [31/726] Ammonia Production Plants
+2026-07-25 22:59:36,611  INFO     src.enrichment.actor_enrichment_candidates  [32/726] Amyris
+2026-07-25 22:59:36,946  INFO     src.enrichment.actor_enrichment_candidates  [33/726] Andreessen Horowitz (a16z)
+2026-07-25 22:59:37,352  INFO     src.enrichment.actor_enrichment_candidates  [34/726] Anthropic
+2026-07-25 22:59:37,685  INFO     src.enrichment.actor_enrichment_candidates  [35/726] Apple AI
+2026-07-25 22:59:38,299  INFO     src.enrichment.actor_enrichment_candidates  [36/726] ArcelorMittal USA
+2026-07-25 22:59:39,068  INFO     src.enrichment.actor_enrichment_candidates  [37/726] Argonne National Laboratory
+2026-07-25 22:59:40,364  INFO     src.enrichment.actor_enrichment_candidates  [38/726] Argonne National Laboratory Catalysis Programs
+2026-07-25 22:59:40,712  INFO     src.enrichment.actor_enrichment_candidates  [39/726] Arianne Phosphate
+2026-07-25 22:59:41,225  INFO     src.enrichment.actor_enrichment_candidates  [40/726] Arizona Department of Water Resources
+2026-07-25 22:59:42,055  INFO     src.enrichment.actor_enrichment_candidates  Progress 40/726, Claude cost $0.0000
+2026-07-25 22:59:42,313  INFO     src.enrichment.actor_enrichment_candidates  [41/726] Arizona Geological Survey
+2026-07-25 22:59:43,269  INFO     src.enrichment.actor_enrichment_candidates  [42/726] Arizona State University (ASU)
+2026-07-25 22:59:44,728  INFO     src.enrichment.actor_enrichment_candidates  [43/726] Arkema
+2026-07-25 22:59:45,057  INFO     src.enrichment.actor_enrichment_candidates  [44/726] ASARCO
+2026-07-25 22:59:45,404  INFO     src.enrichment.actor_enrichment_candidates  [45/726] ASU Global Institute of Sustainability
+2026-07-25 22:59:46,346  INFO     src.enrichment.actor_enrichment_candidates  [46/726] ASU Kyl Center for Water Policy
+2026-07-25 22:59:47,285  INFO     src.enrichment.actor_enrichment_candidates  [47/726] Atmospheric Research Labs
+2026-07-25 22:59:47,620  INFO     src.enrichment.actor_enrichment_candidates  [48/726] Aurora Innovation
+2026-07-25 22:59:47,953  INFO     src.enrichment.actor_enrichment_candidates  [49/726] Automotive Manufacturers
+2026-07-25 22:59:48,282  INFO     src.enrichment.actor_enrichment_candidates  [50/726] Auton Lab
+2026-07-25 22:59:48,898  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 50 actors
+2026-07-25 22:59:49,497  INFO     src.enrichment.actor_enrichment_candidates  [51/726] BASF (Gulf Coast)
+2026-07-25 22:59:49,878  INFO     src.enrichment.actor_enrichment_candidates  [52/726] BASF (Regional Operations)
+2026-07-25 22:59:50,218  INFO     src.enrichment.actor_enrichment_candidates  [53/726] BASF Agricultural Solutions
+2026-07-25 22:59:50,709  INFO     src.enrichment.actor_enrichment_candidates  [54/726] BASF Freeport
+2026-07-25 22:59:51,245  INFO     src.enrichment.actor_enrichment_candidates  [55/726] BASF Midwest Research Operations
+2026-07-25 22:59:51,859  INFO     src.enrichment.actor_enrichment_candidates  [56/726] Battery Innovation Programs
+2026-07-25 22:59:52,223  INFO     src.enrichment.actor_enrichment_candidates  [57/726] Battery Material Startups
+2026-07-25 22:59:52,552  INFO     src.enrichment.actor_enrichment_candidates  [58/726] Battery Materials Startups
+2026-07-25 22:59:53,046  INFO     src.enrichment.actor_enrichment_candidates  [59/726] Battery Storage Companies
+2026-07-25 22:59:53,382  INFO     src.enrichment.actor_enrichment_candidates  [60/726] Bayer Crop Science
+2026-07-25 22:59:53,546  INFO     src.enrichment.actor_enrichment_candidates  Progress 60/726, Claude cost $0.0000
+2026-07-25 22:59:53,888  INFO     src.enrichment.actor_enrichment_candidates  [61/726] Bayer Crop Science (Midwest Presence)
+2026-07-25 22:59:54,460  INFO     src.enrichment.actor_enrichment_candidates  [62/726] Bayer Crop Science (regional presence)
+2026-07-25 22:59:54,794  INFO     src.enrichment.actor_enrichment_candidates  [63/726] Bayer Crop Science R&D Facilities
+2026-07-25 22:59:55,124  INFO     src.enrichment.actor_enrichment_candidates  [64/726] Baylor College of Medicine
+2026-07-25 22:59:55,455  INFO     src.enrichment.actor_enrichment_candidates  [65/726] Baylor College of Medicine Research Centers
+2026-07-25 22:59:55,817  INFO     src.enrichment.actor_enrichment_candidates  [66/726] Baylor Translational Research Programs
+2026-07-25 22:59:56,158  INFO     src.enrichment.actor_enrichment_candidates  [67/726] Berkeley AI Research (BAIR)
+2026-07-25 22:59:56,960  INFO     src.enrichment.actor_enrichment_candidates  [68/726] Berkeley Center for Green Chemistry
+2026-07-25 22:59:57,407  INFO     src.enrichment.actor_enrichment_candidates  [69/726] Berkeley Climate Initiative
+2026-07-25 22:59:57,755  INFO     src.enrichment.actor_enrichment_candidates  [70/726] Berkeley Energy & Climate Institute
+2026-07-25 22:59:58,090  INFO     src.enrichment.actor_enrichment_candidates  [71/726] Berkeley Energy Institute
+2026-07-25 22:59:58,584  INFO     src.enrichment.actor_enrichment_candidates  [72/726] Berkeley SkyDeck
+2026-07-25 22:59:59,038  INFO     src.enrichment.actor_enrichment_candidates  [73/726] Berkeley Water Center
+2026-07-25 22:59:59,529  INFO     src.enrichment.actor_enrichment_candidates  [74/726] Bingham Canyon Mine
+2026-07-25 22:59:59,858  INFO     src.enrichment.actor_enrichment_candidates  [75/726] Biogen
+2026-07-25 23:00:00,357  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 75 actors
+2026-07-25 23:00:00,827  INFO     src.enrichment.actor_enrichment_candidates  [76/726] BioHealth Capital Region ecosystem
+2026-07-25 23:00:01,168  INFO     src.enrichment.actor_enrichment_candidates  [77/726] BioSTL
+2026-07-25 23:00:01,497  INFO     src.enrichment.actor_enrichment_candidates  [78/726] BioSTL Innovation Programs
+2026-07-25 23:00:01,829  INFO     src.enrichment.actor_enrichment_candidates  [79/726] Biotech Venture Funds
+2026-07-25 23:00:02,161  INFO     src.enrichment.actor_enrichment_candidates  [80/726] Blue Diamond Growers
+2026-07-25 23:00:02,338  INFO     src.enrichment.actor_enrichment_candidates  Progress 80/726, Claude cost $0.0000
+2026-07-25 23:00:02,512  INFO     src.enrichment.actor_enrichment_candidates  [81/726] Bonneville Power Administration
+2026-07-25 23:00:03,305  INFO     src.enrichment.actor_enrichment_candidates  [82/726] Boston Children’s Hospital
+2026-07-25 23:00:04,590  INFO     src.enrichment.actor_enrichment_candidates  [83/726] Boston Children’s Research Labs
+2026-07-25 23:00:04,926  INFO     src.enrichment.actor_enrichment_candidates  [84/726] Boston Dynamics
+2026-07-25 23:00:05,254  INFO     src.enrichment.actor_enrichment_candidates  [85/726] Boston Robotics Cluster
+2026-07-25 23:00:05,638  INFO     src.enrichment.actor_enrichment_candidates  [86/726] Brackish Groundwater Desalination Plants
+2026-07-25 23:00:05,967  INFO     src.enrichment.actor_enrichment_candidates  [87/726] Brazil Ecosystem Mapping
+2026-07-25 23:00:06,504  INFO     src.enrichment.actor_enrichment_candidates  [88/726] Break Through Tech AI Program (Cornell Tech talent pipeline / inclusion program)
+2026-07-25 23:00:06,832  INFO     src.enrichment.actor_enrichment_candidates  [89/726] Breakthrough Energy Ventures
+2026-07-25 23:00:07,160  INFO     src.enrichment.actor_enrichment_candidates  [90/726] Brigham and Women’s Hospital
+2026-07-25 23:00:08,128  INFO     src.enrichment.actor_enrichment_candidates  [91/726] Broad Institute
+2026-07-25 23:00:08,481  INFO     src.enrichment.actor_enrichment_candidates  [92/726] Broad Institute AI programs
+2026-07-25 23:00:08,995  INFO     src.enrichment.actor_enrichment_candidates  [93/726] CAISO (grid operator)
+2026-07-25 23:00:09,576  INFO     src.enrichment.actor_enrichment_candidates  [94/726] California Air Resources Board
+2026-07-25 23:00:10,531  INFO     src.enrichment.actor_enrichment_candidates  [95/726] California Department of Food & Agriculture (CDFA)
+2026-07-25 23:00:10,867  INFO     src.enrichment.actor_enrichment_candidates  [96/726] California Department of Toxic Substances Control Green Chemistry Initiative
+2026-07-25 23:00:11,201  INFO     src.enrichment.actor_enrichment_candidates  [97/726] California Department of Water Resources
+2026-07-25 23:00:12,147  INFO     src.enrichment.actor_enrichment_candidates  [98/726] California Green Chemistry Initiative Programs
+2026-07-25 23:00:12,487  INFO     src.enrichment.actor_enrichment_candidates  [99/726] California Independent System Operator (CAISO)
+2026-07-25 23:00:12,830  INFO     src.enrichment.actor_enrichment_candidates  [100/726] California Institute of Technology (Caltech)
+2026-07-25 23:00:14,496  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 100 actors
+2026-07-25 23:00:14,497  INFO     src.enrichment.actor_enrichment_candidates  Progress 100/726, Claude cost $0.0000
+2026-07-25 23:00:14,963  INFO     src.enrichment.actor_enrichment_candidates  [101/726] California Specialty Crop Commodity Boards
+2026-07-25 23:00:15,438  INFO     src.enrichment.actor_enrichment_candidates  [102/726] California State Water Project
+2026-07-25 23:00:15,772  INFO     src.enrichment.actor_enrichment_candidates  [103/726] California State Water Resources Control Board
+2026-07-25 23:00:16,106  INFO     src.enrichment.actor_enrichment_candidates  [104/726] Caltech AI & Computational Science
+2026-07-25 23:00:16,440  INFO     src.enrichment.actor_enrichment_candidates  [105/726] Caltech Resnick Sustainability Institute
+2026-07-25 23:00:17,233  INFO     src.enrichment.actor_enrichment_candidates  [106/726] Cancer research centers
+2026-07-25 23:00:17,567  INFO     src.enrichment.actor_enrichment_candidates  [107/726] Carbon Capture Companies
+2026-07-25 23:00:17,908  INFO     src.enrichment.actor_enrichment_candidates  [108/726] Carbon capture material research labs
+2026-07-25 23:00:18,576  INFO     src.enrichment.actor_enrichment_candidates  [109/726] Carbon capture pilot projects
+2026-07-25 23:00:19,580  INFO     src.enrichment.actor_enrichment_candidates  [110/726] Carbon Capture Projects
+2026-07-25 23:00:20,434  INFO     src.enrichment.actor_enrichment_candidates  [111/726] Carbon Capture Research Labs
+2026-07-25 23:00:24,896  INFO     src.enrichment.actor_enrichment_candidates  [112/726] Carbon Capture Research Programs
+2026-07-25 23:00:25,370  INFO     src.enrichment.actor_enrichment_candidates  [113/726] Carbon Capture Startups
+2026-07-25 23:00:25,769  INFO     src.enrichment.actor_enrichment_candidates  [114/726] Carbon Market Platforms
+2026-07-25 23:00:26,122  INFO     src.enrichment.actor_enrichment_candidates  [115/726] Carbon Market Research Centers
+2026-07-25 23:00:26,481  INFO     src.enrichment.actor_enrichment_candidates  [116/726] Carbon Mineralization Companies
+2026-07-25 23:00:26,812  INFO     src.enrichment.actor_enrichment_candidates  [117/726] Carbon Mineralization Research Initiatives
+2026-07-25 23:00:27,146  INFO     src.enrichment.actor_enrichment_candidates  [118/726] Carbon Removal Startups
+2026-07-25 23:00:27,656  INFO     src.enrichment.actor_enrichment_candidates  [119/726] Carbon Sequestration Startups
+2026-07-25 23:00:27,983  INFO     src.enrichment.actor_enrichment_candidates  [120/726] Cardiovascular research institutes
+2026-07-25 23:00:28,150  INFO     src.enrichment.actor_enrichment_candidates  Progress 120/726, Claude cost $0.0000
+2026-07-25 23:00:28,320  INFO     src.enrichment.actor_enrichment_candidates  [121/726] Cardiovascular Research Institutes Digital Health & Innovation
+2026-07-25 23:00:28,657  INFO     src.enrichment.actor_enrichment_candidates  [122/726] Carnegie Mellon University (CMU)
+2026-07-25 23:00:29,706  INFO     src.enrichment.actor_enrichment_candidates  [123/726] Carnegie Mellon University Energy Programs
+2026-07-25 23:00:30,062  INFO     src.enrichment.actor_enrichment_candidates  [124/726] Catalysis Center for Energy Innovation (CCEI)
+2026-07-25 23:00:30,412  INFO     src.enrichment.actor_enrichment_candidates  [125/726] Catalysis Research Centers
+2026-07-25 23:00:30,888  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 125 actors
+2026-07-25 23:00:31,348  INFO     src.enrichment.actor_enrichment_candidates  [126/726] Catalysis Research Labs
+2026-07-25 23:00:31,690  INFO     src.enrichment.actor_enrichment_candidates  [127/726] Cement Manufacturers
+2026-07-25 23:00:32,023  INFO     src.enrichment.actor_enrichment_candidates  [128/726] Center for Catalytic Science & Technology (CCST)
+2026-07-25 23:00:32,365  INFO     src.enrichment.actor_enrichment_candidates  [129/726] Center for Watershed Sciences
+2026-07-25 23:00:32,701  INFO     src.enrichment.actor_enrichment_candidates  [130/726] Central Arizona Project
+2026-07-25 23:00:33,029  INFO     src.enrichment.actor_enrichment_candidates  [131/726] Central Arizona Project governance bodies
+2026-07-25 23:00:33,362  INFO     src.enrichment.actor_enrichment_candidates  [132/726] Chemical Pilot Facilities
+2026-07-25 23:00:33,732  INFO     src.enrichment.actor_enrichment_candidates  [133/726] Chemours Research Facilities
+2026-07-25 23:00:34,705  INFO     src.enrichment.actor_enrichment_candidates  [134/726] Chevron Phillips Chemical
+2026-07-25 23:00:35,038  INFO     src.enrichment.actor_enrichment_candidates  [135/726] Chevron Phillips Chemical – Cedar Bayou Plant
+2026-07-25 23:00:35,369  INFO     src.enrichment.actor_enrichment_candidates  [136/726] Chicago Biomedical Engineering Programs
+2026-07-25 23:00:35,703  INFO     src.enrichment.actor_enrichment_candidates  [137/726] Chicago Board of Trade (CBOT)
+2026-07-25 23:00:36,033  INFO     src.enrichment.actor_enrichment_candidates  [138/726] City of Seattle Office of Economic Development AI initiatives
+2026-07-25 23:00:36,367  INFO     src.enrichment.actor_enrichment_candidates  [139/726] Clayton Valley Lithium Operations
+2026-07-25 23:00:36,702  INFO     src.enrichment.actor_enrichment_candidates  [140/726] Clean Fraction /Hot Fraction Separations at Scale
+2026-07-25 23:00:37,036  INFO     src.enrichment.actor_enrichment_candidates  Progress 140/726, Claude cost $0.0000
+2026-07-25 23:00:37,199  INFO     src.enrichment.actor_enrichment_candidates  [141/726] Cleveland Clinic
+2026-07-25 23:00:38,074  INFO     src.enrichment.actor_enrichment_candidates  [142/726] Cleveland Clinic Innovation
+2026-07-25 23:00:38,442  INFO     src.enrichment.actor_enrichment_candidates  [143/726] Climate Adaptation Research Initiatives
+2026-07-25 23:00:38,773  INFO     src.enrichment.actor_enrichment_candidates  [144/726] Climate Data and Modeling Platforms
+2026-07-25 23:00:39,660  INFO     src.enrichment.actor_enrichment_candidates  [145/726] Climate Data Centers
+2026-07-25 23:00:40,137  INFO     src.enrichment.actor_enrichment_candidates  [146/726] Climate Fintech Startups
+2026-07-25 23:00:40,470  INFO     src.enrichment.actor_enrichment_candidates  [147/726] Climate Modeling Startups
+2026-07-25 23:00:40,856  INFO     src.enrichment.actor_enrichment_candidates  [148/726] Climate Risk Analytics Firms
+2026-07-25 23:00:41,192  INFO     src.enrichment.actor_enrichment_candidates  [149/726] Climate Risk Research Centers
+2026-07-25 23:00:41,524  INFO     src.enrichment.actor_enrichment_candidates  [150/726] Climate Tech Startups (Boston Region)
+2026-07-25 23:00:41,989  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 150 actors
+2026-07-25 23:00:42,445  INFO     src.enrichment.actor_enrichment_candidates  [151/726] Climate Tech Startups (California)
+2026-07-25 23:00:42,779  INFO     src.enrichment.actor_enrichment_candidates  [152/726] Climate Tech Venture Capital Firms
+2026-07-25 23:00:43,122  INFO     src.enrichment.actor_enrichment_candidates  [153/726] Climate Venture Capital Firms
+2026-07-25 23:00:43,616  INFO     src.enrichment.actor_enrichment_candidates  [154/726] Climate-Tech Startups
+2026-07-25 23:00:44,431  INFO     src.enrichment.actor_enrichment_candidates  [155/726] Clinical & Translational Science Centers
+2026-07-25 23:00:44,758  INFO     src.enrichment.actor_enrichment_candidates  [156/726] Clinical Center at NIH
+2026-07-25 23:00:45,092  INFO     src.enrichment.actor_enrichment_candidates  [157/726] Clinical Trials Networks
+2026-07-25 23:00:45,423  INFO     src.enrichment.actor_enrichment_candidates  [158/726] CMU AI Engineering Institute
+2026-07-25 23:00:45,749  INFO     src.enrichment.actor_enrichment_candidates  [159/726] CMU CyLab
+2026-07-25 23:00:46,088  INFO     src.enrichment.actor_enrichment_candidates  [160/726] CMU CyLab (AI + cybersecurity)
+2026-07-25 23:00:46,259  INFO     src.enrichment.actor_enrichment_candidates  Progress 160/726, Claude cost $0.0000
+2026-07-25 23:00:46,424  INFO     src.enrichment.actor_enrichment_candidates  [161/726] CMU Energy Systems Programs
+2026-07-25 23:00:46,754  INFO     src.enrichment.actor_enrichment_candidates  [162/726] CMU Machine Learning Department
+2026-07-25 23:00:47,573  INFO     src.enrichment.actor_enrichment_candidates  [163/726] CMU Robotics Institute
+2026-07-25 23:00:48,547  INFO     src.enrichment.actor_enrichment_candidates  [164/726] CMU School of Computer Science
+2026-07-25 23:00:50,840  INFO     src.enrichment.actor_enrichment_candidates  [165/726] Coastal Desalination Initiatives
+2026-07-25 23:00:51,558  INFO     src.enrichment.actor_enrichment_candidates  [166/726] Coastal desalination planning bodies
+2026-07-25 23:00:52,683  INFO     src.enrichment.actor_enrichment_candidates  [167/726] Coastal Resilience Programs
+2026-07-25 23:00:53,094  INFO     src.enrichment.actor_enrichment_candidates  [168/726] College of ACES research programs
+2026-07-25 23:00:53,504  INFO     src.enrichment.actor_enrichment_candidates  [169/726] College of Agricultural & Environmental Sciences (CAES)
+2026-07-25 23:00:54,346  INFO     src.enrichment.actor_enrichment_candidates  [170/726] College of Agricultural, Consumer & Environmental Sciences (ACES)
+2026-07-25 23:00:55,328  INFO     src.enrichment.actor_enrichment_candidates  [171/726] College of Agriculture & Life Sciences (Texas A&M)
+2026-07-25 23:00:55,663  INFO     src.enrichment.actor_enrichment_candidates  [172/726] Colorado Energy Office
+2026-07-25 23:00:56,610  INFO     src.enrichment.actor_enrichment_candidates  [173/726] Colorado River Basin Agencies
+2026-07-25 23:00:56,947  INFO     src.enrichment.actor_enrichment_candidates  [174/726] Colorado School of Mines Mining Engineering Department
+2026-07-25 23:00:57,280  INFO     src.enrichment.actor_enrichment_candidates  [175/726] Colorado State University
+2026-07-25 23:00:58,417  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 175 actors
+2026-07-25 23:00:59,237  INFO     src.enrichment.actor_enrichment_candidates  [176/726] Colorado State Water Center
+2026-07-25 23:00:59,928  INFO     src.enrichment.actor_enrichment_candidates  [177/726] Columbia Center on Global Energy Policy
+2026-07-25 23:01:00,264  INFO     src.enrichment.actor_enrichment_candidates  [178/726] Columbia Climate School
+2026-07-25 23:01:01,739  INFO     src.enrichment.actor_enrichment_candidates  [179/726] Columbia Data Science Institute (DSI)
+2026-07-25 23:01:02,198  INFO     src.enrichment.actor_enrichment_candidates  [180/726] Columbia Irving Medical Center
+2026-07-25 23:01:02,424  INFO     src.enrichment.actor_enrichment_candidates  Progress 180/726, Claude cost $0.0000
+2026-07-25 23:01:02,631  INFO     src.enrichment.actor_enrichment_candidates  [181/726] Columbia University Vagelos College of Physicians & Surgeons
+2026-07-25 23:01:03,176  INFO     src.enrichment.actor_enrichment_candidates  [182/726] Complementary Academic Institutions
+2026-07-25 23:01:03,814  INFO     src.enrichment.actor_enrichment_candidates  [183/726] ConocoPhillips
+2026-07-25 23:01:04,976  INFO     src.enrichment.actor_enrichment_candidates  [184/726] Copper Processing Facilities
+2026-07-25 23:01:05,328  INFO     src.enrichment.actor_enrichment_candidates  [185/726] Copper Smelter & Refinery
+2026-07-25 23:01:05,711  INFO     src.enrichment.actor_enrichment_candidates  [186/726] Cornell AI Initiative (university-wide AI effort; useful linkage between Cornell Tech + Ithaca + Weill Cornell)
+2026-07-25 23:01:06,158  INFO     src.enrichment.actor_enrichment_candidates  [187/726] Cornell Center for Technology Licensing
+2026-07-25 23:01:06,673  INFO     src.enrichment.actor_enrichment_candidates  [188/726] Cornell Cooperative Extension
+2026-07-25 23:01:07,904  INFO     src.enrichment.actor_enrichment_candidates  [189/726] Cornell Dairy Research Center
+2026-07-25 23:01:08,419  INFO     src.enrichment.actor_enrichment_candidates  [190/726] Cornell Food Science Pilot Plant
+2026-07-25 23:01:09,230  INFO     src.enrichment.actor_enrichment_candidates  [191/726] Cornell Horticulture Section
+2026-07-25 23:01:10,357  INFO     src.enrichment.actor_enrichment_candidates  [192/726] Cornell Soil Health Laboratory
+2026-07-25 23:01:11,105  INFO     src.enrichment.actor_enrichment_candidates  [193/726] Cornell Tech
+2026-07-25 23:01:12,261  INFO     src.enrichment.actor_enrichment_candidates  [194/726] Cornell Tech (Health Tech initiatives)
+2026-07-25 23:01:12,592  INFO     src.enrichment.actor_enrichment_candidates  [195/726] Cornell Tech AI Research Group
+2026-07-25 23:01:12,922  INFO     src.enrichment.actor_enrichment_candidates  [196/726] Cornell Tech Urban Systems Programs
+2026-07-25 23:01:13,247  INFO     src.enrichment.actor_enrichment_candidates  [197/726] Cornell University
+2026-07-25 23:01:13,573  INFO     src.enrichment.actor_enrichment_candidates  [198/726] Corporate Partners
+2026-07-25 23:01:14,071  INFO     src.enrichment.actor_enrichment_candidates  [199/726] Corporate R&D partnerships
+2026-07-25 23:01:14,410  INFO     src.enrichment.actor_enrichment_candidates  [200/726] Corporate Sustainability Offices
+2026-07-25 23:01:14,904  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 200 actors
+2026-07-25 23:01:14,906  INFO     src.enrichment.actor_enrichment_candidates  Progress 200/726, Claude cost $0.0000
+2026-07-25 23:01:15,374  INFO     src.enrichment.actor_enrichment_candidates  [201/726] Cortex Innovation Community
+2026-07-25 23:01:16,167  INFO     src.enrichment.actor_enrichment_candidates  [202/726] Cortex Startup Incubation Programs
+2026-07-25 23:01:16,501  INFO     src.enrichment.actor_enrichment_candidates  [203/726] Critical Minerals Research Programs
+2026-07-25 23:01:17,274  INFO     src.enrichment.actor_enrichment_candidates  [204/726] Crop Science Research Programs
+2026-07-25 23:01:17,609  INFO     src.enrichment.actor_enrichment_candidates  [205/726] CU Boulder Environmental Studies Program
+2026-07-25 23:01:17,935  INFO     src.enrichment.actor_enrichment_candidates  [206/726] CU Boulder INSTAAR
+2026-07-25 23:01:18,264  INFO     src.enrichment.actor_enrichment_candidates  [207/726] CU Boulder Renewable Energy Research
+2026-07-25 23:01:18,721  INFO     src.enrichment.actor_enrichment_candidates  [208/726] Dairy Research Center
+2026-07-25 23:01:19,514  INFO     src.enrichment.actor_enrichment_candidates  [209/726] DARPA-Funded AI Programs (CMU)
+2026-07-25 23:01:19,845  INFO     src.enrichment.actor_enrichment_candidates  [210/726] Department of Agricultural & Biological Engineering (UIUC)
+2026-07-25 23:01:20,236  INFO     src.enrichment.actor_enrichment_candidates  [211/726] Department of Biological & Agricultural Engineering
+2026-07-25 23:01:23,106  INFO     src.enrichment.actor_enrichment_candidates  [212/726] Department of Crop Sciences (UIUC)
+2026-07-25 23:01:23,440  INFO     src.enrichment.actor_enrichment_candidates  [213/726] Department of Soil & Crop Sciences
+2026-07-25 23:01:23,770  INFO     src.enrichment.actor_enrichment_candidates  [214/726] Departments and Offices
+2026-07-25 23:01:24,781  INFO     src.enrichment.actor_enrichment_candidates  [215/726] Desalination Plants (California)
+2026-07-25 23:01:25,118  INFO     src.enrichment.actor_enrichment_candidates  [216/726] Desert Agriculture Research Programs
+2026-07-25 23:01:25,452  INFO     src.enrichment.actor_enrichment_candidates  [217/726] Desert hydrology research labs
+2026-07-25 23:01:25,785  INFO     src.enrichment.actor_enrichment_candidates  [218/726] Digital Health Companies
+2026-07-25 23:01:26,142  INFO     src.enrichment.actor_enrichment_candidates  [219/726] Digital Health Innovation Labs
+2026-07-25 23:01:26,477  INFO     src.enrichment.actor_enrichment_candidates  [220/726] Digital health innovation programs
+2026-07-25 23:01:26,671  INFO     src.enrichment.actor_enrichment_candidates  Progress 220/726, Claude cost $0.0000
+2026-07-25 23:01:26,849  INFO     src.enrichment.actor_enrichment_candidates  [221/726] Digital Health Labs
+2026-07-25 23:01:27,355  INFO     src.enrichment.actor_enrichment_candidates  [222/726] Digital health startups across NYC
+2026-07-25 23:01:27,693  INFO     src.enrichment.actor_enrichment_candidates  [223/726] Direct Air Capture Companies
+2026-07-25 23:01:28,021  INFO     src.enrichment.actor_enrichment_candidates  [224/726] Direct Lithium Extraction Companies
+2026-07-25 23:01:28,515  INFO     src.enrichment.actor_enrichment_candidates  [225/726] Doe Run Company
+2026-07-25 23:01:29,530  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 225 actors
+2026-07-25 23:01:30,277  INFO     src.enrichment.actor_enrichment_candidates  [226/726] Donald Danforth Plant Science Center
+2026-07-25 23:01:30,755  INFO     src.enrichment.actor_enrichment_candidates  [227/726] Dow (Midwest Operations)
+2026-07-25 23:01:31,253  INFO     src.enrichment.actor_enrichment_candidates  [228/726] Dow Chemical
+2026-07-25 23:01:31,742  INFO     src.enrichment.actor_enrichment_candidates  [229/726] Dow Midwest R&D Operations
+2026-07-25 23:01:32,075  INFO     src.enrichment.actor_enrichment_candidates  [230/726] Dow Texas Operations (Freeport)
+2026-07-25 23:01:32,415  INFO     src.enrichment.actor_enrichment_candidates  [231/726] Drexel University – Chemical & Biomolecular Engineering
+2026-07-25 23:01:32,745  INFO     src.enrichment.actor_enrichment_candidates  [232/726] Driscoll’s
+2026-07-25 23:01:33,073  INFO     src.enrichment.actor_enrichment_candidates  [233/726] Duke Chemistry
+2026-07-25 23:01:33,405  INFO     src.enrichment.actor_enrichment_candidates  [234/726] DuPont
+2026-07-25 23:01:33,745  INFO     src.enrichment.actor_enrichment_candidates  [235/726] DuPont R&D Centers
+2026-07-25 23:01:34,667  INFO     src.enrichment.actor_enrichment_candidates  [236/726] Energy & Resources Group (ERG)
+2026-07-25 23:01:35,335  INFO     src.enrichment.actor_enrichment_candidates  [237/726] Energy Analytics Firms
+2026-07-25 23:01:35,908  INFO     src.enrichment.actor_enrichment_candidates  [238/726] Energy Companies (Water-Energy Nexus)
+2026-07-25 23:01:36,335  INFO     src.enrichment.actor_enrichment_candidates  [239/726] Energy Storage Companies
+2026-07-25 23:01:36,778  INFO     src.enrichment.actor_enrichment_candidates  [240/726] Energy storage research labs
+2026-07-25 23:01:37,036  INFO     src.enrichment.actor_enrichment_candidates  Progress 240/726, Claude cost $0.0000
+2026-07-25 23:01:37,252  INFO     src.enrichment.actor_enrichment_candidates  [241/726] Energy storage research programs
+2026-07-25 23:01:37,581  INFO     src.enrichment.actor_enrichment_candidates  [242/726] Energy Systems Integration Facility (ESIF)
+2026-07-25 23:01:37,924  INFO     src.enrichment.actor_enrichment_candidates  [243/726] Entertainment & Media AI Studios
+2026-07-25 23:01:38,253  INFO     src.enrichment.actor_enrichment_candidates  [244/726] Environmental Consulting Firms
+2026-07-25 23:01:38,594  INFO     src.enrichment.actor_enrichment_candidates  [245/726] Environmental Justice Programs
+2026-07-25 23:01:39,745  INFO     src.enrichment.actor_enrichment_candidates  [246/726] Environmental Justice Research Programs
+2026-07-25 23:01:40,197  INFO     src.enrichment.actor_enrichment_candidates  [247/726] Environmental Monitoring Firms
+2026-07-25 23:01:40,538  INFO     src.enrichment.actor_enrichment_candidates  [248/726] Environmental Reclamation Firms
+2026-07-25 23:01:40,875  INFO     src.enrichment.actor_enrichment_candidates  [249/726] Environmental Reclamation Research
+2026-07-25 23:01:41,223  INFO     src.enrichment.actor_enrichment_candidates  [250/726] Environmental Remediation Firms
+2026-07-25 23:01:41,725  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 250 actors
+2026-07-25 23:01:42,198  INFO     src.enrichment.actor_enrichment_candidates  [251/726] Environmental Remediation Programs
+2026-07-25 23:01:42,796  INFO     src.enrichment.actor_enrichment_candidates  [252/726] Environmental Remediation Research Programs
+2026-07-25 23:01:43,153  INFO     src.enrichment.actor_enrichment_candidates  [253/726] EPA Great Lakes Program
+2026-07-25 23:01:43,485  INFO     src.enrichment.actor_enrichment_candidates  [254/726] ERCOT
+2026-07-25 23:01:44,305  INFO     src.enrichment.actor_enrichment_candidates  [255/726] ERCOT grid research programs
+2026-07-25 23:01:45,011  INFO     src.enrichment.actor_enrichment_candidates  [256/726] ESG Investment Firms
+2026-07-25 23:01:45,341  INFO     src.enrichment.actor_enrichment_candidates  [257/726] ExxonMobil
+2026-07-25 23:01:45,672  INFO     src.enrichment.actor_enrichment_candidates  [258/726] ExxonMobil Baytown Complex
+2026-07-25 23:01:46,483  INFO     src.enrichment.actor_enrichment_candidates  [259/726] ExxonMobil Midwest Technology Collaborations
+2026-07-25 23:01:46,816  INFO     src.enrichment.actor_enrichment_candidates  [260/726] Federal Anchors
+2026-07-25 23:01:46,985  INFO     src.enrichment.actor_enrichment_candidates  Progress 260/726, Claude cost $0.0000
+2026-07-25 23:01:47,146  INFO     src.enrichment.actor_enrichment_candidates  [261/726] Flagship Pioneering
+2026-07-25 23:01:47,486  INFO     src.enrichment.actor_enrichment_candidates  [262/726] Florida Phosphate & Phosphogypsum Hub (Central Florida – Tampa Bay Corridor)
+2026-07-25 23:01:47,986  INFO     src.enrichment.actor_enrichment_candidates  [263/726] FMC (agrochemicals)
+2026-07-25 23:01:48,317  INFO     src.enrichment.actor_enrichment_candidates  [264/726] Food and Drug Administration (FDA)
+2026-07-25 23:01:48,653  INFO     src.enrichment.actor_enrichment_candidates  [265/726] Food Science Pilot Plant
+2026-07-25 23:01:49,856  INFO     src.enrichment.actor_enrichment_candidates  [266/726] Formosa Plastics Point Comfort
+2026-07-25 23:01:50,297  INFO     src.enrichment.actor_enrichment_candidates  [267/726] Freshwater Monitoring Technology Firms
+2026-07-25 23:01:50,645  INFO     src.enrichment.actor_enrichment_candidates  [268/726] Functional Commissions
+2026-07-25 23:01:51,142  INFO     src.enrichment.actor_enrichment_candidates  [269/726] Funds and Programmes
+2026-07-25 23:01:52,403  INFO     src.enrichment.actor_enrichment_candidates  [270/726] Genentech
+2026-07-25 23:01:52,732  INFO     src.enrichment.actor_enrichment_candidates  [271/726] General Catalyst
+2026-07-25 23:01:53,064  INFO     src.enrichment.actor_enrichment_candidates  [272/726] Genomics Research Centers
+2026-07-25 23:01:53,528  INFO     src.enrichment.actor_enrichment_candidates  [273/726] Geological Survey Programs
+2026-07-25 23:01:54,719  INFO     src.enrichment.actor_enrichment_candidates  [274/726] Georgetown University Medical Center
+2026-07-25 23:01:55,272  INFO     src.enrichment.actor_enrichment_candidates  [275/726] Ginkgo Bioworks West Coast Operations
+2026-07-25 23:01:56,193  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 275 actors
+2026-07-25 23:01:56,662  INFO     src.enrichment.actor_enrichment_candidates  [276/726] Global health research centers
+2026-07-25 23:01:57,140  INFO     src.enrichment.actor_enrichment_candidates  [277/726] Google AI (Pittsburgh Presence)
+2026-07-25 23:01:57,476  INFO     src.enrichment.actor_enrichment_candidates  [278/726] Google DeepMind
+2026-07-25 23:01:58,266  INFO     src.enrichment.actor_enrichment_candidates  [279/726] Great Lakes Restoration Initiative
+2026-07-25 23:01:58,596  INFO     src.enrichment.actor_enrichment_candidates  [280/726] Green Bond Issuers
+2026-07-25 23:01:58,763  INFO     src.enrichment.actor_enrichment_candidates  Progress 280/726, Claude cost $0.0000
+2026-07-25 23:01:59,307  INFO     src.enrichment.actor_enrichment_candidates  [281/726] Green Chemistry Initiatives
+2026-07-25 23:01:59,979  INFO     src.enrichment.actor_enrichment_candidates  [282/726] Green Chemistry Research Programs
+2026-07-25 23:02:00,326  INFO     src.enrichment.actor_enrichment_candidates  [283/726] Green Finance Research Initiatives
+2026-07-25 23:02:00,667  INFO     src.enrichment.actor_enrichment_candidates  [284/726] Green Hydrogen Startups
+2026-07-25 23:02:01,012  INFO     src.enrichment.actor_enrichment_candidates  [285/726] Greentown Labs Bay Area
+2026-07-25 23:02:01,354  INFO     src.enrichment.actor_enrichment_candidates  [286/726] Greentown Labs Houston
+2026-07-25 23:02:01,685  INFO     src.enrichment.actor_enrichment_candidates  [287/726] Greentown Labs Houston Energy and Materials Innovation Programs
+2026-07-25 23:02:02,016  INFO     src.enrichment.actor_enrichment_candidates  [288/726] Grid Analytics Firms
+2026-07-25 23:02:02,350  INFO     src.enrichment.actor_enrichment_candidates  [289/726] Grid-Scale Battery Storage Projects
+2026-07-25 23:02:02,687  INFO     src.enrichment.actor_enrichment_candidates  [290/726] Groundwater Active Management Areas
+2026-07-25 23:02:03,014  INFO     src.enrichment.actor_enrichment_candidates  [291/726] Groundwater Sustainability Agencies
+2026-07-25 23:02:03,345  INFO     src.enrichment.actor_enrichment_candidates  [292/726] Harvard Data Science Initiative
+2026-07-25 23:02:05,388  INFO     src.enrichment.actor_enrichment_candidates  [293/726] Harvard Department of Chemistry & Chemical Biology
+2026-07-25 23:02:06,617  INFO     src.enrichment.actor_enrichment_candidates  [294/726] Harvard Medical School
+2026-07-25 23:02:07,643  INFO     src.enrichment.actor_enrichment_candidates  [295/726] Harvard Salata Institute
+2026-07-25 23:02:08,605  INFO     src.enrichment.actor_enrichment_candidates  [296/726] Harvard SEAS
+2026-07-25 23:02:10,621  INFO     src.enrichment.actor_enrichment_candidates  [297/726] Harvard SEAS AI Labs
+2026-07-25 23:02:11,090  INFO     src.enrichment.actor_enrichment_candidates  [298/726] Helix Park (life sciences commercialization district)
+2026-07-25 23:02:11,421  INFO     src.enrichment.actor_enrichment_candidates  [299/726] Horticulture Section
+2026-07-25 23:02:11,919  INFO     src.enrichment.actor_enrichment_candidates  [300/726] Hospital Systems Research Centers
+2026-07-25 23:02:12,406  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 300 actors
+2026-07-25 23:02:12,408  INFO     src.enrichment.actor_enrichment_candidates  Progress 300/726, Claude cost $0.0000
+2026-07-25 23:02:12,895  INFO     src.enrichment.actor_enrichment_candidates  [301/726] Hospital Systems Research Labs
+2026-07-25 23:02:13,618  INFO     src.enrichment.actor_enrichment_candidates  [302/726] Hot-fraction stabilization / immobilization (where the “concentrate” goes)
+2026-07-25 23:02:15,262  INFO     src.enrichment.actor_enrichment_candidates  [303/726] Houston Climate & Energy Investment Ecosystem
+2026-07-25 23:02:15,675  INFO     src.enrichment.actor_enrichment_candidates  [304/726] Houston Flood Control District
+2026-07-25 23:02:16,007  INFO     src.enrichment.actor_enrichment_candidates  [305/726] Houston Methodist Hospital
+2026-07-25 23:02:16,345  INFO     src.enrichment.actor_enrichment_candidates  [306/726] Houston Public Works
+2026-07-25 23:02:17,153  INFO     src.enrichment.actor_enrichment_candidates  [307/726] Houston Ship Channel Authority
+2026-07-25 23:02:17,487  INFO     src.enrichment.actor_enrichment_candidates  [308/726] Hydrogen and Fuel Cell Research Programs
+2026-07-25 23:02:17,998  INFO     src.enrichment.actor_enrichment_candidates  [309/726] Hydrogen Developers
+2026-07-25 23:02:18,335  INFO     src.enrichment.actor_enrichment_candidates  [310/726] Hydrogen development initiatives
+2026-07-25 23:02:18,887  INFO     src.enrichment.actor_enrichment_candidates  [311/726] Hydrogen Development Projects
+2026-07-25 23:02:19,928  INFO     src.enrichment.actor_enrichment_candidates  [312/726] Hydrogen Production Facilities
+2026-07-25 23:02:23,298  INFO     src.enrichment.actor_enrichment_candidates  [313/726] Hydrogen Research Initiatives
+2026-07-25 23:02:24,720  INFO     src.enrichment.actor_enrichment_candidates  [314/726] Hydrogen Research Programs
+2026-07-25 23:02:25,235  INFO     src.enrichment.actor_enrichment_candidates  [315/726] Hydrogen Technology Firms
+2026-07-25 23:02:25,573  INFO     src.enrichment.actor_enrichment_candidates  [316/726] Hydropower Operators
+2026-07-25 23:02:25,905  INFO     src.enrichment.actor_enrichment_candidates  [317/726] Hydropower Research Programs
+2026-07-25 23:02:26,237  INFO     src.enrichment.actor_enrichment_candidates  [318/726] Idaho Phosphate & Geochemistry Hub (Pocatello – Idaho Falls)
+2026-07-25 23:02:26,834  INFO     src.enrichment.actor_enrichment_candidates  [319/726] Illinois Corn Growers Association
+2026-07-25 23:02:27,180  INFO     src.enrichment.actor_enrichment_candidates  [320/726] Illinois Digital Agriculture Initiative
+2026-07-25 23:02:27,352  INFO     src.enrichment.actor_enrichment_candidates  Progress 320/726, Claude cost $0.0000
+2026-07-25 23:02:27,634  INFO     src.enrichment.actor_enrichment_candidates  [321/726] Illinois Energy Initiative
+2026-07-25 23:02:27,963  INFO     src.enrichment.actor_enrichment_candidates  [322/726] Illinois Extension
+2026-07-25 23:02:29,559  INFO     src.enrichment.actor_enrichment_candidates  [323/726] Illinois Materials Research Laboratory
+2026-07-25 23:02:29,893  INFO     src.enrichment.actor_enrichment_candidates  [324/726] Illinois Research Park (UIUC)
+2026-07-25 23:02:30,237  INFO     src.enrichment.actor_enrichment_candidates  [325/726] Illinois Soybean Association
+2026-07-25 23:02:30,738  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 325 actors
+2026-07-25 23:02:31,251  INFO     src.enrichment.actor_enrichment_candidates  [326/726] Impact Investment Funds
+2026-07-25 23:02:31,670  INFO     src.enrichment.actor_enrichment_candidates  [327/726] India Ecosystem Mapping
+2026-07-25 23:02:32,179  INFO     src.enrichment.actor_enrichment_candidates  [328/726] Industrial Actors
+2026-07-25 23:02:32,843  INFO     src.enrichment.actor_enrichment_candidates  [329/726] Industrial Carbon Capture Pilot Facilities
+2026-07-25 23:02:33,230  INFO     src.enrichment.actor_enrichment_candidates  [330/726] Industrial Carbon Capture Programs
+2026-07-25 23:02:33,731  INFO     src.enrichment.actor_enrichment_candidates  [331/726] Industrial Catalysis Labs
+2026-07-25 23:02:34,415  INFO     src.enrichment.actor_enrichment_candidates  [332/726] Industrial Steel & Manufacturing Plants
+2026-07-25 23:02:34,760  INFO     src.enrichment.actor_enrichment_candidates  [333/726] Industrial Water Management Firms
+2026-07-25 23:02:35,099  INFO     src.enrichment.actor_enrichment_candidates  [334/726] Industry-sponsored catalytic research programs
+2026-07-25 23:02:35,447  INFO     src.enrichment.actor_enrichment_candidates  [335/726] INEOS Olefins & Polymers USA
+2026-07-25 23:02:35,790  INFO     src.enrichment.actor_enrichment_candidates  [336/726] Innovation Institute for Food & Health
+2026-07-25 23:02:36,149  INFO     src.enrichment.actor_enrichment_candidates  [337/726] Innovation Platforms
+2026-07-25 23:02:36,507  INFO     src.enrichment.actor_enrichment_candidates  [338/726] Institute for Advancing Health Through Agriculture (IHA)
+2026-07-25 23:02:36,853  INFO     src.enrichment.actor_enrichment_candidates  [339/726] Institute for Energy Conversion
+2026-07-25 23:02:37,180  INFO     src.enrichment.actor_enrichment_candidates  [340/726] Intergovernmental and Expert Bodies
+2026-07-25 23:02:37,526  INFO     src.enrichment.actor_enrichment_candidates  Progress 340/726, Claude cost $0.0000
+2026-07-25 23:02:37,690  INFO     src.enrichment.actor_enrichment_candidates  [341/726] International Joint Commission
+2026-07-25 23:02:38,545  INFO     src.enrichment.actor_enrichment_candidates  [342/726] Interstate Compact Commission
+2026-07-25 23:02:38,872  INFO     src.enrichment.actor_enrichment_candidates  [343/726] Irrigation Technology Firms
+2026-07-25 23:02:39,812  INFO     src.enrichment.actor_enrichment_candidates  [344/726] John Deere (Midwest Operations)
+2026-07-25 23:02:40,150  INFO     src.enrichment.actor_enrichment_candidates  [345/726] Johns Hopkins Applied Physics Laboratory (health security interface)
+2026-07-25 23:02:40,479  INFO     src.enrichment.actor_enrichment_candidates  [346/726] Johns Hopkins Bloomberg School of Public Health
+2026-07-25 23:02:40,829  INFO     src.enrichment.actor_enrichment_candidates  [347/726] Johns Hopkins University & Johns Hopkins Medicine
+2026-07-25 23:02:41,185  INFO     src.enrichment.actor_enrichment_candidates  [348/726] Johnson & Johnson JLABS (Houston presence)
+2026-07-25 23:02:41,575  INFO     src.enrichment.actor_enrichment_candidates  [349/726] Joint BioEnergy Institute
+2026-07-25 23:02:42,032  INFO     src.enrichment.actor_enrichment_candidates  [350/726] Kennecott Smelter Operations
+2026-07-25 23:02:42,528  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 350 actors
+2026-07-25 23:02:43,028  INFO     src.enrichment.actor_enrichment_candidates  [351/726] Kleiner Perkins
+2026-07-25 23:02:43,364  INFO     src.enrichment.actor_enrichment_candidates  [352/726] LA AI startup incubators
+2026-07-25 23:02:43,687  INFO     src.enrichment.actor_enrichment_candidates  [353/726] LA AI Startups
+2026-07-25 23:02:44,331  INFO     src.enrichment.actor_enrichment_candidates  [354/726] LA Tech Venture Capital Firms
+2026-07-25 23:02:44,976  INFO     src.enrichment.actor_enrichment_candidates  [355/726] LabCentral
+2026-07-25 23:02:45,310  INFO     src.enrichment.actor_enrichment_candidates  [356/726] LanzaTech
+2026-07-25 23:02:45,644  INFO     src.enrichment.actor_enrichment_candidates  [357/726] Lawrence Berkeley National Laboratory Energy Biosciences Programs
+2026-07-25 23:03:07,369  WARNING  src.enrichment.actor_enrichment_candidates  DB connection failed while processing actor f74ea7c5-fa83-4596-8f51-ddc742612b67; retrying in 10.0s (1/6): (psycopg2.OperationalError) server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+
+[SQL: SELECT actor.actor_id AS actor_actor_id, actor.name AS actor_name, actor.slug AS actor_slug, actor.actor_type AS actor_actor_type, actor.actor_type_raw AS actor_actor_type_raw, actor.description AS actor_description, actor.website AS actor_website, actor.location_city AS actor_location_city, actor.state AS actor_state, actor.country AS actor_country, actor.primary_technical_focus AS actor_primary_technical_focus, actor.technical_approach AS actor_technical_approach, actor.current_activities AS actor_current_activities, actor.technology_ip_notes AS actor_technology_ip_notes, actor.key_constraints AS actor_key_constraints, actor.funding_summary AS actor_funding_summary, actor.estimated_trl AS actor_estimated_trl, actor.primary_lifecycle_role AS actor_primary_lifecycle_role, actor.source_id AS actor_source_id, actor.verification_status AS actor_verification_status, actor.confidence AS actor_confidence, actor.created_at AS actor_created_at, actor.updated_at AS actor_updated_at 
+FROM actor 
+WHERE actor.actor_id = %(pk_1)s::UUID]
+[parameters: {'pk_1': UUID('f74ea7c5-fa83-4596-8f51-ddc742612b67')}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2026-07-25 23:03:18,796  INFO     src.enrichment.actor_enrichment_candidates  [358/726] LBNL Energy Technologies Area
+2026-07-25 23:03:19,407  INFO     src.enrichment.actor_enrichment_candidates  [359/726] Lithium Americas
+2026-07-25 23:03:21,062  INFO     src.enrichment.actor_enrichment_candidates  [360/726] Lithium Extraction Firms
+2026-07-25 23:03:21,510  INFO     src.enrichment.actor_enrichment_candidates  Progress 360/726, Claude cost $0.0000
+2026-07-25 23:03:21,930  INFO     src.enrichment.actor_enrichment_candidates  [361/726] Lithium Extraction Research Initiatives
+2026-07-25 23:03:24,301  INFO     src.enrichment.actor_enrichment_candidates  [362/726] LNG Export Terminals (Gulf Coast)
+2026-07-25 23:03:24,678  INFO     src.enrichment.actor_enrichment_candidates  [363/726] LyondellBasell – Channelview Complex
+2026-07-25 23:03:25,016  INFO     src.enrichment.actor_enrichment_candidates  [364/726] Mackay School of Earth Sciences & Engineering
+2026-07-25 23:03:25,354  INFO     src.enrichment.actor_enrichment_candidates  [365/726] Major Health Systems
+2026-07-25 23:03:25,721  INFO     src.enrichment.actor_enrichment_candidates  [366/726] Major Texas Livestock & Row-Crop Producers
+2026-07-25 23:03:26,101  INFO     src.enrichment.actor_enrichment_candidates  [367/726] Managed Aquifer Recharge Facilities
+2026-07-25 23:03:26,442  INFO     src.enrichment.actor_enrichment_candidates  [368/726] Marcellus Shale Operators
+2026-07-25 23:03:26,774  INFO     src.enrichment.actor_enrichment_candidates  [369/726] Mass General Brigham
+2026-07-25 23:03:27,110  INFO     src.enrichment.actor_enrichment_candidates  [370/726] Mass General Brigham AI initiatives
+2026-07-25 23:03:27,443  INFO     src.enrichment.actor_enrichment_candidates  [371/726] Mass General Brigham Research
+2026-07-25 23:03:27,793  INFO     src.enrichment.actor_enrichment_candidates  [372/726] Massachusetts Institute of Technology (MIT)
+2026-07-25 23:03:28,138  INFO     src.enrichment.actor_enrichment_candidates  [373/726] Massachusetts Office of Energy & Environmental Affairs
+2026-07-25 23:03:29,360  INFO     src.enrichment.actor_enrichment_candidates  [374/726] Materials Research Science and Engineering Centers (MRSEC – regional sites)
+2026-07-25 23:03:29,753  INFO     src.enrichment.actor_enrichment_candidates  [375/726] Materials Science Labs
+2026-07-25 23:03:30,406  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 375 actors
+2026-07-25 23:03:30,968  INFO     src.enrichment.actor_enrichment_candidates  [376/726] Materials Science Research Labs
+2026-07-25 23:03:31,299  INFO     src.enrichment.actor_enrichment_candidates  [377/726] Mayo Clinic
+2026-07-25 23:03:32,107  INFO     src.enrichment.actor_enrichment_candidates  [378/726] Mayo Clinic Research
+2026-07-25 23:03:32,465  INFO     src.enrichment.actor_enrichment_candidates  [379/726] McGovern Medical School (UTHealth Houston)
+2026-07-25 23:03:33,367  INFO     src.enrichment.actor_enrichment_candidates  [380/726] MD Anderson Cancer Center
+2026-07-25 23:03:33,536  INFO     src.enrichment.actor_enrichment_candidates  Progress 380/726, Claude cost $0.0000
+2026-07-25 23:03:33,702  INFO     src.enrichment.actor_enrichment_candidates  [381/726] MD Anderson Cancer Research Programs
+2026-07-25 23:03:34,315  INFO     src.enrichment.actor_enrichment_candidates  [382/726] MD Anderson Research Programs
+2026-07-25 23:03:34,816  INFO     src.enrichment.actor_enrichment_candidates  [383/726] Medical Device Innovation Labs
+2026-07-25 23:03:35,152  INFO     src.enrichment.actor_enrichment_candidates  [384/726] Medtronic
+2026-07-25 23:03:35,484  INFO     src.enrichment.actor_enrichment_candidates  [385/726] Meta AI
+2026-07-25 23:03:35,823  INFO     src.enrichment.actor_enrichment_candidates  [386/726] Metallurgical Engineering Programs
+2026-07-25 23:03:36,202  INFO     src.enrichment.actor_enrichment_candidates  [387/726] Methane Monitoring Firms
+2026-07-25 23:03:36,540  INFO     src.enrichment.actor_enrichment_candidates  [388/726] Meyer Cancer Center
+2026-07-25 23:03:36,884  INFO     src.enrichment.actor_enrichment_candidates  [389/726] Michigan Energy Institute
+2026-07-25 23:03:38,069  INFO     src.enrichment.actor_enrichment_candidates  [390/726] Michigan Energy Institute (materials focus)
+2026-07-25 23:03:38,650  INFO     src.enrichment.actor_enrichment_candidates  [391/726] Michigan Translational Research Institute
+2026-07-25 23:03:39,397  INFO     src.enrichment.actor_enrichment_candidates  [392/726] Microsoft
+2026-07-25 23:03:39,862  INFO     src.enrichment.actor_enrichment_candidates  [393/726] Microsoft (AI engineering & Azure)
+2026-07-25 23:03:40,472  INFO     src.enrichment.actor_enrichment_candidates  [394/726] Microsoft AI
+2026-07-25 23:03:40,811  INFO     src.enrichment.actor_enrichment_candidates  [395/726] Midwest Alliance for Clean Hydrogen
+2026-07-25 23:03:41,158  INFO     src.enrichment.actor_enrichment_candidates  [396/726] Midwest Alliance for Clean Hydrogen (MACHH2)
+2026-07-25 23:03:41,515  INFO     src.enrichment.actor_enrichment_candidates  [397/726] Midwest Hydrogen Hub
+2026-07-25 23:03:41,867  INFO     src.enrichment.actor_enrichment_candidates  [398/726] Midwest Row-Crop Producers (Corn & Soy Systems)
+2026-07-25 23:03:42,207  INFO     src.enrichment.actor_enrichment_candidates  [399/726] Mine Reclamation Programs
+2026-07-25 23:03:42,715  INFO     src.enrichment.actor_enrichment_candidates  [400/726] Mine Reclamation Research Programs
+2026-07-25 23:03:43,538  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 400 actors
+2026-07-25 23:03:43,539  INFO     src.enrichment.actor_enrichment_candidates  Progress 400/726, Claude cost $0.0000
+2026-07-25 23:03:44,308  INFO     src.enrichment.actor_enrichment_candidates  [401/726] Mineral Processing Facilities
+2026-07-25 23:03:45,068  INFO     src.enrichment.actor_enrichment_candidates  [402/726] Mineral Processing Labs
+2026-07-25 23:03:45,888  INFO     src.enrichment.actor_enrichment_candidates  [403/726] Mineral Processing Pilot Facilities
+2026-07-25 23:03:46,226  INFO     src.enrichment.actor_enrichment_candidates  [404/726] Mineral Processing Research Labs
+2026-07-25 23:03:46,729  INFO     src.enrichment.actor_enrichment_candidates  [405/726] Mines Earth & Environmental Systems
+2026-07-25 23:03:47,854  INFO     src.enrichment.actor_enrichment_candidates  [406/726] Mines Mining Engineering Department
+2026-07-25 23:03:48,827  INFO     src.enrichment.actor_enrichment_candidates  [407/726] Mining Automation Firms
+2026-07-25 23:03:49,758  INFO     src.enrichment.actor_enrichment_candidates  [408/726] Mining Automation Programs
+2026-07-25 23:03:50,353  INFO     src.enrichment.actor_enrichment_candidates  [409/726] Mining Automation Research Initiatives
+2026-07-25 23:03:50,688  INFO     src.enrichment.actor_enrichment_candidates  [410/726] Mining Automation Technology Firms
+2026-07-25 23:03:51,197  INFO     src.enrichment.actor_enrichment_candidates  [411/726] Mining Technology Startups
+2026-07-25 23:03:51,569  INFO     src.enrichment.actor_enrichment_candidates  [412/726] Minnesota Materials Chemistry Programs
+2026-07-25 23:03:52,217  INFO     src.enrichment.actor_enrichment_candidates  [413/726] Missouri Department of Agriculture
+2026-07-25 23:03:53,209  INFO     src.enrichment.actor_enrichment_candidates  [414/726] Missouri Department of Natural Resources
+2026-07-25 23:03:54,657  INFO     src.enrichment.actor_enrichment_candidates  [415/726] Missouri Plant Science Consortium
+2026-07-25 23:03:55,003  INFO     src.enrichment.actor_enrichment_candidates  [416/726] Missouri S&T Metallurgical Engineering
+2026-07-25 23:03:55,339  INFO     src.enrichment.actor_enrichment_candidates  [417/726] Missouri S&T Mining Engineering
+2026-07-25 23:03:56,301  INFO     src.enrichment.actor_enrichment_candidates  [418/726] Missouri University of Science & Technology
+2026-07-25 23:03:57,270  INFO     src.enrichment.actor_enrichment_candidates  [419/726] MIT Chemical Engineering
+2026-07-25 23:03:58,383  INFO     src.enrichment.actor_enrichment_candidates  [420/726] MIT Climate & Sustainability Consortium
+2026-07-25 23:03:59,726  INFO     src.enrichment.actor_enrichment_candidates  Progress 420/726, Claude cost $0.0000
+2026-07-25 23:04:00,159  INFO     src.enrichment.actor_enrichment_candidates  [421/726] MIT Department of Chemistry
+2026-07-25 23:04:01,288  INFO     src.enrichment.actor_enrichment_candidates  [422/726] MIT Energy Initiative
+2026-07-25 23:04:01,631  INFO     src.enrichment.actor_enrichment_candidates  [423/726] MIT Energy Initiative (materials interface)
+2026-07-25 23:04:02,128  INFO     src.enrichment.actor_enrichment_candidates  [424/726] MIT Lincoln Laboratory
+2026-07-25 23:04:03,106  INFO     src.enrichment.actor_enrichment_candidates  [425/726] MIT Schwarzman College of Computing
+2026-07-25 23:04:04,794  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 425 actors
+2026-07-25 23:04:05,307  INFO     src.enrichment.actor_enrichment_candidates  [426/726] Molybdenum Production Facilities
+2026-07-25 23:04:05,642  INFO     src.enrichment.actor_enrichment_candidates  [427/726] Morenci Mine
+2026-07-25 23:04:05,981  INFO     src.enrichment.actor_enrichment_candidates  [428/726] Mount Sinai Biomedical Research Institutes
+2026-07-25 23:04:06,324  INFO     src.enrichment.actor_enrichment_candidates  [429/726] Mount Sinai Health System
+2026-07-25 23:04:06,663  INFO     src.enrichment.actor_enrichment_candidates  [430/726] NASA Jet Propulsion Laboratory (AI systems)
+2026-07-25 23:04:07,004  INFO     src.enrichment.actor_enrichment_candidates  [431/726] National Center for Supercomputing Applications (NCSA)
+2026-07-25 23:04:07,348  INFO     src.enrichment.actor_enrichment_candidates  [432/726] National Institute of Standards and Technology (NIST – biosystems & standards)
+2026-07-25 23:04:07,683  INFO     src.enrichment.actor_enrichment_candidates  [433/726] National Institutes of Health (NIH)
+2026-07-25 23:04:08,025  INFO     src.enrichment.actor_enrichment_candidates  [434/726] National Research Labs
+2026-07-25 23:04:08,541  INFO     src.enrichment.actor_enrichment_candidates  [435/726] National Robotics Engineering Center (NREC)
+2026-07-25 23:04:08,884  INFO     src.enrichment.actor_enrichment_candidates  [436/726] NC State Chemistry Department
+2026-07-25 23:04:10,468  INFO     src.enrichment.actor_enrichment_candidates  [437/726] NC State College of Agriculture & Life Sciences
+2026-07-25 23:04:11,434  INFO     src.enrichment.actor_enrichment_candidates  [438/726] NC State Soil Science Programs
+2026-07-25 23:04:11,793  INFO     src.enrichment.actor_enrichment_candidates  [439/726] NCAR Climate Modeling Programs
+2026-07-25 23:04:12,366  INFO     src.enrichment.actor_enrichment_candidates  [440/726] NCSA (AI & modeling)
+2026-07-25 23:04:12,682  INFO     src.enrichment.actor_enrichment_candidates  Progress 440/726, Claude cost $0.0000
+2026-07-25 23:04:12,971  INFO     src.enrichment.actor_enrichment_candidates  [441/726] Neuroscience institutes
+2026-07-25 23:04:13,475  INFO     src.enrichment.actor_enrichment_candidates  [442/726] Nevada Bureau of Mines & Geology
+2026-07-25 23:04:14,974  INFO     src.enrichment.actor_enrichment_candidates  [443/726] Nevada Mining Association
+2026-07-25 23:04:15,937  INFO     src.enrichment.actor_enrichment_candidates  [444/726] New York Apple Growers Association
+2026-07-25 23:04:16,277  INFO     src.enrichment.actor_enrichment_candidates  [445/726] New York Climate-Smart Agriculture Program
+2026-07-25 23:04:16,624  INFO     src.enrichment.actor_enrichment_candidates  [446/726] New York Dairy Cooperatives
+2026-07-25 23:04:16,959  INFO     src.enrichment.actor_enrichment_candidates  [447/726] New York State Department of Agriculture & Markets
+2026-07-25 23:04:17,305  INFO     src.enrichment.actor_enrichment_candidates  [448/726] New York Wine & Grape Foundation
+2026-07-25 23:04:17,648  INFO     src.enrichment.actor_enrichment_candidates  [449/726] NewYork-Presbyterian Hospital
+2026-07-25 23:04:17,984  INFO     src.enrichment.actor_enrichment_candidates  [450/726] NIH Intramural Research Program
+2026-07-25 23:04:18,460  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 450 actors
+2026-07-25 23:04:18,934  INFO     src.enrichment.actor_enrichment_candidates  [451/726] NOAA Earth System Research
+2026-07-25 23:04:19,991  INFO     src.enrichment.actor_enrichment_candidates  [452/726] NOAA Earth System Research Labs
+2026-07-25 23:04:23,601  INFO     src.enrichment.actor_enrichment_candidates  [453/726] Northrop Grumman
+2026-07-25 23:04:23,938  INFO     src.enrichment.actor_enrichment_candidates  [454/726] Northwestern Catalysis and Surface Science Groups
+2026-07-25 23:04:24,533  INFO     src.enrichment.actor_enrichment_candidates  [455/726] Northwestern Clinical Research Programs
+2026-07-25 23:04:24,867  INFO     src.enrichment.actor_enrichment_candidates  [456/726] Northwestern Environmental Engineering Programs
+2026-07-25 23:04:25,393  INFO     src.enrichment.actor_enrichment_candidates  [457/726] Northwestern ISEN
+2026-07-25 23:04:25,736  INFO     src.enrichment.actor_enrichment_candidates  [458/726] Northwestern Materials Research Center
+2026-07-25 23:04:26,070  INFO     src.enrichment.actor_enrichment_candidates  [459/726] Northwestern Medicine
+2026-07-25 23:04:27,031  INFO     src.enrichment.actor_enrichment_candidates  [460/726] Northwestern University Department of Chemical and Biological Engineering
+2026-07-25 23:04:27,207  INFO     src.enrichment.actor_enrichment_candidates  Progress 460/726, Claude cost $0.0000
+2026-07-25 23:04:27,386  INFO     src.enrichment.actor_enrichment_candidates  [461/726] Northwestern University Department of Chemistry
+2026-07-25 23:04:27,896  INFO     src.enrichment.actor_enrichment_candidates  [462/726] Northwestern University Environmental Engineering
+2026-07-25 23:04:28,236  INFO     src.enrichment.actor_enrichment_candidates  [463/726] Novartis Institutes
+2026-07-25 23:04:28,569  INFO     src.enrichment.actor_enrichment_candidates  [464/726] Novartis Institutes for BioMedical Research
+2026-07-25 23:04:30,169  INFO     src.enrichment.actor_enrichment_candidates  [465/726] Novozymes North America
+2026-07-25 23:04:30,513  INFO     src.enrichment.actor_enrichment_candidates  [466/726] NSF AI Institutes (Boston-based)
+2026-07-25 23:04:30,861  INFO     src.enrichment.actor_enrichment_candidates  [467/726] Nuclear Power Operators (Midwest)
+2026-07-25 23:04:31,195  INFO     src.enrichment.actor_enrichment_candidates  [468/726] Nutrien (Regional Operations)
+2026-07-25 23:04:31,539  INFO     src.enrichment.actor_enrichment_candidates  [469/726] NVIDIA AI Research
+2026-07-25 23:04:31,883  INFO     src.enrichment.actor_enrichment_candidates  [470/726] NYC Economic Development Corporation (NYCEDC) – AI in NYC
+2026-07-25 23:04:32,222  INFO     src.enrichment.actor_enrichment_candidates  [471/726] NYC Health + Hospitals
+2026-07-25 23:04:32,572  INFO     src.enrichment.actor_enrichment_candidates  [472/726] NYC Mayor’s Office AI strategy/report effort
+2026-07-25 23:04:32,912  INFO     src.enrichment.actor_enrichment_candidates  [473/726] NYC Mayor’s Office of Climate & Environmental Justice
+2026-07-25 23:04:33,890  INFO     src.enrichment.actor_enrichment_candidates  [474/726] NYU Center for Data Science (CDS)
+2026-07-25 23:04:35,786  INFO     src.enrichment.actor_enrichment_candidates  [475/726] NYU Grossman School of Medicine
+2026-07-25 23:04:37,047  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 475 actors
+2026-07-25 23:04:37,528  INFO     src.enrichment.actor_enrichment_candidates  [476/726] NYU Langone Health
+2026-07-25 23:04:37,868  INFO     src.enrichment.actor_enrichment_candidates  [477/726] NYU Langone Research
+2026-07-25 23:04:38,209  INFO     src.enrichment.actor_enrichment_candidates  [478/726] NYU Stern Center for Sustainable Business
+2026-07-25 23:04:38,615  INFO     src.enrichment.actor_enrichment_candidates  [479/726] Oceanographic Research Centers
+2026-07-25 23:04:38,962  INFO     src.enrichment.actor_enrichment_candidates  [480/726] Offshore wind planning authorities
+2026-07-25 23:04:39,870  INFO     src.enrichment.actor_enrichment_candidates  Progress 480/726, Claude cost $0.0000
+2026-07-25 23:04:40,426  INFO     src.enrichment.actor_enrichment_candidates  [481/726] Offshore Wind Planning Bodies
+2026-07-25 23:04:40,934  INFO     src.enrichment.actor_enrichment_candidates  [482/726] OpenAI
+2026-07-25 23:04:41,275  INFO     src.enrichment.actor_enrichment_candidates  [483/726] OpenAI Research
+2026-07-25 23:04:41,618  INFO     src.enrichment.actor_enrichment_candidates  [484/726] Ore-Sorting Technology Providers
+2026-07-25 23:04:41,986  INFO     src.enrichment.actor_enrichment_candidates  [485/726] Oregon State College of Forestry
+2026-07-25 23:04:42,864  INFO     src.enrichment.actor_enrichment_candidates  [486/726] Ørsted (Massachusetts Projects)
+2026-07-25 23:04:43,217  INFO     src.enrichment.actor_enrichment_candidates  [487/726] Penn State College of Earth & Mineral Sciences
+2026-07-25 23:04:44,738  INFO     src.enrichment.actor_enrichment_candidates  [488/726] Penn State Energy Institute
+2026-07-25 23:04:45,735  INFO     src.enrichment.actor_enrichment_candidates  [489/726] Penn State Mining Engineering
+2026-07-25 23:04:46,111  INFO     src.enrichment.actor_enrichment_candidates  [490/726] Pennsylvania Department of Environmental Protection
+2026-07-25 23:04:47,861  INFO     src.enrichment.actor_enrichment_candidates  [491/726] Petrochemical Complexes
+2026-07-25 23:04:48,321  INFO     src.enrichment.actor_enrichment_candidates  [492/726] Pfizer (Cambridge)
+2026-07-25 23:04:48,732  INFO     src.enrichment.actor_enrichment_candidates  [493/726] PG System Knowledge and Radiochemistry
+2026-07-25 23:04:49,995  INFO     src.enrichment.actor_enrichment_candidates  [494/726] Phosphogypsum Ecosystem Hubs
+2026-07-25 23:04:50,496  INFO     src.enrichment.actor_enrichment_candidates  [495/726] Pivot Bio
+2026-07-25 23:04:50,836  INFO     src.enrichment.actor_enrichment_candidates  [496/726] Plant Sciences Department
+2026-07-25 23:04:51,342  INFO     src.enrichment.actor_enrichment_candidates  [497/726] Polymer Manufacturing Firms
+2026-07-25 23:04:51,677  INFO     src.enrichment.actor_enrichment_candidates  [498/726] Polymer Reaction Engineering Program
+2026-07-25 23:04:52,021  INFO     src.enrichment.actor_enrichment_candidates  [499/726] Polymer Research Institutes
+2026-07-25 23:04:52,360  INFO     src.enrichment.actor_enrichment_candidates  [500/726] Polymer Science Programs
+2026-07-25 23:04:52,838  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 500 actors
+2026-07-25 23:04:52,839  INFO     src.enrichment.actor_enrichment_candidates  Progress 500/726, Claude cost $0.0000
+2026-07-25 23:04:53,312  INFO     src.enrichment.actor_enrichment_candidates  [501/726] Population health centers
+2026-07-25 23:04:53,663  INFO     src.enrichment.actor_enrichment_candidates  [502/726] Population Health Institutes
+2026-07-25 23:04:54,397  INFO     src.enrichment.actor_enrichment_candidates  [503/726] Port Houston
+2026-07-25 23:04:55,072  INFO     src.enrichment.actor_enrichment_candidates  [504/726] Portland State University
+2026-07-25 23:04:55,880  INFO     src.enrichment.actor_enrichment_candidates  [505/726] Precision medicine initiatives
+2026-07-25 23:04:56,426  INFO     src.enrichment.actor_enrichment_candidates  [506/726] Precision Medicine Labs
+2026-07-25 23:04:56,767  INFO     src.enrichment.actor_enrichment_candidates  [507/726] Process Systems Engineering Labs
+2026-07-25 23:04:57,119  INFO     src.enrichment.actor_enrichment_candidates  [508/726] Purdue Energy Center
+2026-07-25 23:04:58,106  INFO     src.enrichment.actor_enrichment_candidates  [509/726] QB3 Incubators
+2026-07-25 23:04:58,449  INFO     src.enrichment.actor_enrichment_candidates  [510/726] Rare Earth Startups
+2026-07-25 23:04:58,846  INFO     src.enrichment.actor_enrichment_candidates  [511/726] Regional Ag-Tech Startups
+2026-07-25 23:05:00,020  INFO     src.enrichment.actor_enrichment_candidates  [512/726] Regional AgriTech Startups
+2026-07-25 23:05:00,357  INFO     src.enrichment.actor_enrichment_candidates  [513/726] Regional Commissions
+2026-07-25 23:05:00,969  INFO     src.enrichment.actor_enrichment_candidates  [514/726] Regional Irrigation & Precision Agriculture Firms
+2026-07-25 23:05:01,317  INFO     src.enrichment.actor_enrichment_candidates  [515/726] Regional Precision Agriculture & Ag-Tech Startups
+2026-07-25 23:05:01,835  INFO     src.enrichment.actor_enrichment_candidates  [516/726] Regional specialty polymer and advanced material manufacturers
+2026-07-25 23:05:02,170  INFO     src.enrichment.actor_enrichment_candidates  [517/726] Regional venture capital firms investing in AI
+2026-07-25 23:05:02,541  INFO     src.enrichment.actor_enrichment_candidates  [518/726] Regional Zinc Producers
+2026-07-25 23:05:02,880  INFO     src.enrichment.actor_enrichment_candidates  [519/726] RELLIS Applied Research Campus
+2026-07-25 23:05:03,231  INFO     src.enrichment.actor_enrichment_candidates  [520/726] RELLIS Campus
+2026-07-25 23:05:03,402  INFO     src.enrichment.actor_enrichment_candidates  Progress 520/726, Claude cost $0.0000
+2026-07-25 23:05:03,568  INFO     src.enrichment.actor_enrichment_candidates  [521/726] Renewable Energy Firms
+2026-07-25 23:05:03,909  INFO     src.enrichment.actor_enrichment_candidates  [522/726] Renewable Energy Startups (Colorado)
+2026-07-25 23:05:04,259  INFO     src.enrichment.actor_enrichment_candidates  [523/726] Research & Innovation Platforms
+2026-07-25 23:05:04,602  INFO     src.enrichment.actor_enrichment_candidates  [524/726] Research and Training
+2026-07-25 23:05:05,137  INFO     src.enrichment.actor_enrichment_candidates  [525/726] Research Institutes
+2026-07-25 23:05:05,625  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 525 actors
+2026-07-25 23:05:06,090  INFO     src.enrichment.actor_enrichment_candidates  [526/726] Research Park at UIUC
+2026-07-25 23:05:06,436  INFO     src.enrichment.actor_enrichment_candidates  [527/726] Research Triangle Park
+2026-07-25 23:05:07,328  INFO     src.enrichment.actor_enrichment_candidates  [528/726] Rice Materials Science
+2026-07-25 23:05:07,725  INFO     src.enrichment.actor_enrichment_candidates  [529/726] Rice University – Carbon Hub
+2026-07-25 23:05:08,079  INFO     src.enrichment.actor_enrichment_candidates  [530/726] Rice University – Department of Chemical & Biomolecular Engineering
+2026-07-25 23:05:08,739  INFO     src.enrichment.actor_enrichment_candidates  [531/726] Rice University – Smalley-Curl Institute
+2026-07-25 23:05:09,461  INFO     src.enrichment.actor_enrichment_candidates  [532/726] Rice University Baker Institute (Energy Program)
+2026-07-25 23:05:09,879  INFO     src.enrichment.actor_enrichment_candidates  [533/726] Rice University Chemical and Biomolecular Engineering Research Groups
+2026-07-25 23:05:10,362  INFO     src.enrichment.actor_enrichment_candidates  [534/726] Rice University Department of Chemistry
+2026-07-25 23:05:11,343  INFO     src.enrichment.actor_enrichment_candidates  [535/726] Rio Tinto (U.S. operations)
+2026-07-25 23:05:12,363  INFO     src.enrichment.actor_enrichment_candidates  [536/726] Rio Tinto Kennecott
+2026-07-25 23:05:13,326  INFO     src.enrichment.actor_enrichment_candidates  [537/726] Robotics Startups (Boston Region)
+2026-07-25 23:05:13,675  INFO     src.enrichment.actor_enrichment_candidates  [538/726] Robotics Startups (LA Region)
+2026-07-25 23:05:14,013  INFO     src.enrichment.actor_enrichment_candidates  [539/726] Robotics Startups (Pittsburgh Region)
+2026-07-25 23:05:14,357  INFO     src.enrichment.actor_enrichment_candidates  [540/726] Rock Mechanics Labs
+2026-07-25 23:05:14,528  INFO     src.enrichment.actor_enrichment_candidates  Progress 540/726, Claude cost $0.0000
+2026-07-25 23:05:14,702  INFO     src.enrichment.actor_enrichment_candidates  [541/726] Russell Ranch Long-Term Farming Systems Trial
+2026-07-25 23:05:15,063  INFO     src.enrichment.actor_enrichment_candidates  [542/726] Russell Ranch Sustainable Agriculture Facility
+2026-07-25 23:05:15,415  INFO     src.enrichment.actor_enrichment_candidates  [543/726] Sacramento & Central Valley Specialty Crop Producers
+2026-07-25 23:05:15,755  INFO     src.enrichment.actor_enrichment_candidates  [544/726] San Antonio Water System
+2026-07-25 23:05:16,095  INFO     src.enrichment.actor_enrichment_candidates  [545/726] Seattle AI startups (Bellevue & Seattle clusters)
+2026-07-25 23:05:16,432  INFO     src.enrichment.actor_enrichment_candidates  [546/726] Sequoia Capital
+2026-07-25 23:05:16,767  INFO     src.enrichment.actor_enrichment_candidates  [547/726] Shell
+2026-07-25 23:05:17,101  INFO     src.enrichment.actor_enrichment_candidates  [548/726] Shell Chemical Deer Park
+2026-07-25 23:05:17,453  INFO     src.enrichment.actor_enrichment_candidates  [549/726] Silicon Valley Ag-Tech & Climate-Tech Venture Capital Ecosystem
+2026-07-25 23:05:17,802  INFO     src.enrichment.actor_enrichment_candidates  [550/726] Sky Computing Lab
+2026-07-25 23:05:18,283  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 550 actors
+2026-07-25 23:05:18,756  INFO     src.enrichment.actor_enrichment_candidates  [551/726] Smart Water Technology Firms
+2026-07-25 23:05:19,094  INFO     src.enrichment.actor_enrichment_candidates  [552/726] Smelting Operations
+2026-07-25 23:05:19,436  INFO     src.enrichment.actor_enrichment_candidates  [553/726] Soil Health Laboratory
+2026-07-25 23:05:19,932  INFO     src.enrichment.actor_enrichment_candidates  [554/726] Soil Science Research Labs
+2026-07-25 23:05:21,152  INFO     src.enrichment.actor_enrichment_candidates  [555/726] Solar Energy Research Programs
+2026-07-25 23:05:22,139  INFO     src.enrichment.actor_enrichment_candidates  [556/726] Solar Research Facilities
+2026-07-25 23:05:23,014  INFO     src.enrichment.actor_enrichment_candidates  [557/726] Solar Utility Developers
+2026-07-25 23:05:23,972  INFO     src.enrichment.actor_enrichment_candidates  [558/726] SPECIALIZED AGENCIES
+2026-07-25 23:05:24,487  INFO     src.enrichment.actor_enrichment_candidates  [559/726] Specialty Chemical Manufacturers
+2026-07-25 23:05:24,837  INFO     src.enrichment.actor_enrichment_candidates  [560/726] St. Louis Bioscience Venture Capital Network
+2026-07-25 23:05:25,052  INFO     src.enrichment.actor_enrichment_candidates  Progress 560/726, Claude cost $0.0000
+2026-07-25 23:05:25,233  INFO     src.enrichment.actor_enrichment_candidates  [561/726] Stanford AI Lab (SAIL)
+2026-07-25 23:05:26,210  INFO     src.enrichment.actor_enrichment_candidates  [562/726] Stanford Department of Chemistry
+2026-07-25 23:05:27,120  INFO     src.enrichment.actor_enrichment_candidates  [563/726] Stanford Doerr School of Sustainability
+2026-07-25 23:05:28,086  INFO     src.enrichment.actor_enrichment_candidates  [564/726] Stanford HAI
+2026-07-25 23:05:28,420  INFO     src.enrichment.actor_enrichment_candidates  [565/726] Stanford Materials Science
+2026-07-25 23:05:29,402  INFO     src.enrichment.actor_enrichment_candidates  [566/726] Stanford Materials Science & Engineering
+2026-07-25 23:05:30,803  INFO     src.enrichment.actor_enrichment_candidates  [567/726] Stanford Medicine
+2026-07-25 23:05:32,839  INFO     src.enrichment.actor_enrichment_candidates  [568/726] Stanford Precourt Institute
+2026-07-25 23:05:33,970  INFO     src.enrichment.actor_enrichment_candidates  [569/726] Stanford Precourt Institute for Energy
+2026-07-25 23:05:34,937  INFO     src.enrichment.actor_enrichment_candidates  [570/726] Stanford School of Medicine
+2026-07-25 23:05:35,282  INFO     src.enrichment.actor_enrichment_candidates  [571/726] Stanford Sustainable Chemical Engineering Labs
+2026-07-25 23:05:35,625  INFO     src.enrichment.actor_enrichment_candidates  [572/726] Stanford University
+2026-07-25 23:05:35,961  INFO     src.enrichment.actor_enrichment_candidates  [573/726] Stanford University Department of Chemical Engineering
+2026-07-25 23:05:36,450  INFO     src.enrichment.actor_enrichment_candidates  [574/726] Stanford University Department of Chemistry
+2026-07-25 23:05:36,963  INFO     src.enrichment.actor_enrichment_candidates  [575/726] Stanford Water in the West
+2026-07-25 23:05:38,589  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 575 actors
+2026-07-25 23:05:39,061  INFO     src.enrichment.actor_enrichment_candidates  [576/726] Stanford Woods Institute for the Environment
+2026-07-25 23:05:39,569  INFO     src.enrichment.actor_enrichment_candidates  [577/726] State Environmental Agencies (Michigan, Wisconsin, Illinois)
+2026-07-25 23:05:39,904  INFO     src.enrichment.actor_enrichment_candidates  [578/726] State Water Resources Control Board
+2026-07-25 23:05:41,101  INFO     src.enrichment.actor_enrichment_candidates  [579/726] Subsurface Geology Research
+2026-07-25 23:05:41,496  INFO     src.enrichment.actor_enrichment_candidates  [580/726] Subsurface Imaging Labs
+2026-07-25 23:05:41,749  INFO     src.enrichment.actor_enrichment_candidates  Progress 580/726, Claude cost $0.0000
+2026-07-25 23:05:41,922  INFO     src.enrichment.actor_enrichment_candidates  [581/726] Subsurface Modeling Labs
+2026-07-25 23:05:42,255  INFO     src.enrichment.actor_enrichment_candidates  [582/726] Sunrun
+2026-07-25 23:05:42,592  INFO     src.enrichment.actor_enrichment_candidates  [583/726] Sustainable Finance Initiatives
+2026-07-25 23:05:43,098  INFO     src.enrichment.actor_enrichment_candidates  [584/726] Sustainable Finance Labs
+2026-07-25 23:05:43,435  INFO     src.enrichment.actor_enrichment_candidates  [585/726] Syngenta
+2026-07-25 23:05:43,775  INFO     src.enrichment.actor_enrichment_candidates  [586/726] Synthetic Biology Labs
+2026-07-25 23:05:44,121  INFO     src.enrichment.actor_enrichment_candidates  [587/726] Synthetic Biology Startups
+2026-07-25 23:05:44,459  INFO     src.enrichment.actor_enrichment_candidates  [588/726] Tailings Storage Facilities
+2026-07-25 23:05:44,808  INFO     src.enrichment.actor_enrichment_candidates  [589/726] Texas A&M AgriLife Extension Service
+2026-07-25 23:05:45,157  INFO     src.enrichment.actor_enrichment_candidates  [590/726] Texas A&M AgriLife Research
+2026-07-25 23:05:46,410  INFO     src.enrichment.actor_enrichment_candidates  [591/726] Texas A&M AgriLife Research & Extension Centers
+2026-07-25 23:05:46,743  INFO     src.enrichment.actor_enrichment_candidates  [592/726] Texas A&M Chemical Engineering
+2026-07-25 23:05:47,726  INFO     src.enrichment.actor_enrichment_candidates  [593/726] Texas A&M Department of Biological & Agricultural Engineering
+2026-07-25 23:05:48,069  INFO     src.enrichment.actor_enrichment_candidates  [594/726] Texas A&M Department of Soil & Crop Sciences
+2026-07-25 23:05:48,418  INFO     src.enrichment.actor_enrichment_candidates  [595/726] Texas A&M Energy Institute
+2026-07-25 23:05:49,412  INFO     src.enrichment.actor_enrichment_candidates  [596/726] Texas A&M Engineering Extension Service (TEEX) – Gulf Coast
+2026-07-25 23:05:49,808  INFO     src.enrichment.actor_enrichment_candidates  [597/726] Texas A&M Engineering Extension Service Industrial Chemical Safety and Process Programs
+2026-07-25 23:05:50,159  INFO     src.enrichment.actor_enrichment_candidates  [598/726] Texas A&M Water Programs
+2026-07-25 23:05:50,788  INFO     src.enrichment.actor_enrichment_candidates  [599/726] Texas Cattle Feeders Association
+2026-07-25 23:05:51,122  INFO     src.enrichment.actor_enrichment_candidates  [600/726] Texas Children’s Hospital
+2026-07-25 23:05:51,595  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 600 actors
+2026-07-25 23:05:51,596  INFO     src.enrichment.actor_enrichment_candidates  Progress 600/726, Claude cost $0.0000
+2026-07-25 23:05:52,064  INFO     src.enrichment.actor_enrichment_candidates  [601/726] Texas Corn Producers Board
+2026-07-25 23:05:52,503  INFO     src.enrichment.actor_enrichment_candidates  [602/726] Texas Cotton Association
+2026-07-25 23:05:52,850  INFO     src.enrichment.actor_enrichment_candidates  [603/726] Texas Farm Bureau
+2026-07-25 23:05:53,195  INFO     src.enrichment.actor_enrichment_candidates  [604/726] Texas Gulf Coast Materials & Industrial Waste Innovation Hub
+2026-07-25 23:05:53,707  INFO     src.enrichment.actor_enrichment_candidates  [605/726] Texas Heart Institute
+2026-07-25 23:05:54,042  INFO     src.enrichment.actor_enrichment_candidates  [606/726] Texas Heart Institute Programs
+2026-07-25 23:05:54,379  INFO     src.enrichment.actor_enrichment_candidates  [607/726] Texas International Educational Consortium
+2026-07-25 23:05:55,121  INFO     src.enrichment.actor_enrichment_candidates  [608/726] Texas Railroad Commission
+2026-07-25 23:05:56,667  INFO     src.enrichment.actor_enrichment_candidates  [609/726] Texas Water Development Board
+2026-07-25 23:05:57,801  INFO     src.enrichment.actor_enrichment_candidates  [610/726] Texas Water Resources Institute
+2026-07-25 23:05:58,774  INFO     src.enrichment.actor_enrichment_candidates  [611/726] Texas Water Resources Institute (TWRI)
+2026-07-25 23:05:59,116  INFO     src.enrichment.actor_enrichment_candidates  [612/726] Texas-Based AgTech Startups
+2026-07-25 23:05:59,459  INFO     src.enrichment.actor_enrichment_candidates  [613/726] Thacker Pass Project
+2026-07-25 23:05:59,796  INFO     src.enrichment.actor_enrichment_candidates  [614/726] The Engine (MIT)
+2026-07-25 23:06:00,129  INFO     src.enrichment.actor_enrichment_candidates  [615/726] Third Rock Ventures
+2026-07-25 23:06:00,704  INFO     src.enrichment.actor_enrichment_candidates  [616/726] TMC Biodesign
+2026-07-25 23:06:01,138  INFO     src.enrichment.actor_enrichment_candidates  [617/726] TMC Biodesign Program
+2026-07-25 23:06:01,471  INFO     src.enrichment.actor_enrichment_candidates  [618/726] TMC Innovation Accelerator
+2026-07-25 23:06:01,832  INFO     src.enrichment.actor_enrichment_candidates  [619/726] TMC Innovation Factory (health startup accelerator)
+2026-07-25 23:06:02,181  INFO     src.enrichment.actor_enrichment_candidates  [620/726] U.S. Department of Energy (Regional Presence)
+2026-07-25 23:06:02,350  INFO     src.enrichment.actor_enrichment_candidates  Progress 620/726, Claude cost $0.0000
+2026-07-25 23:06:02,520  INFO     src.enrichment.actor_enrichment_candidates  [621/726] U.S. Environmental Protection Agency (Great Lakes Program)
+2026-07-25 23:06:02,964  INFO     src.enrichment.actor_enrichment_candidates  [622/726] U.S. Steel
+2026-07-25 23:06:03,310  INFO     src.enrichment.actor_enrichment_candidates  [623/726] UC Agriculture & Natural Resources (UC ANR)
+2026-07-25 23:06:03,646  INFO     src.enrichment.actor_enrichment_candidates  [624/726] UC ANR Research & Extension Centers
+2026-07-25 23:06:03,982  INFO     src.enrichment.actor_enrichment_candidates  [625/726] UC Berkeley Bioengineering
+2026-07-25 23:06:04,465  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 625 actors
+2026-07-25 23:06:04,935  INFO     src.enrichment.actor_enrichment_candidates  [626/726] UC Berkeley Department of Chemistry
+2026-07-25 23:06:05,972  INFO     src.enrichment.actor_enrichment_candidates  [627/726] UC Berkeley Energy & Resources Group
+2026-07-25 23:06:06,933  INFO     src.enrichment.actor_enrichment_candidates  [628/726] UC Berkeley ERG
+2026-07-25 23:06:07,265  INFO     src.enrichment.actor_enrichment_candidates  [629/726] UC Berkeley Materials Science
+2026-07-25 23:06:08,219  INFO     src.enrichment.actor_enrichment_candidates  [630/726] UC Berkeley Materials Science & Engineering
+2026-07-25 23:06:09,170  INFO     src.enrichment.actor_enrichment_candidates  [631/726] UC Berkeley Water Center
+2026-07-25 23:06:10,129  INFO     src.enrichment.actor_enrichment_candidates  [632/726] UC Davis Biomass Conversion Labs
+2026-07-25 23:06:10,713  INFO     src.enrichment.actor_enrichment_candidates  [633/726] UC Davis Center for Watershed Sciences
+2026-07-25 23:06:11,854  INFO     src.enrichment.actor_enrichment_candidates  [634/726] UC Davis Plant Sciences Department
+2026-07-25 23:06:12,204  INFO     src.enrichment.actor_enrichment_candidates  [635/726] UC Davis Water Chemistry and Membrane Labs
+2026-07-25 23:06:12,546  INFO     src.enrichment.actor_enrichment_candidates  [636/726] UCLA AI & Data Science programs
+2026-07-25 23:06:12,880  INFO     src.enrichment.actor_enrichment_candidates  [637/726] UCLA Institute of the Environment & Sustainability
+2026-07-25 23:06:13,846  INFO     src.enrichment.actor_enrichment_candidates  [638/726] UCLA Robotics & Intelligent Systems
+2026-07-25 23:06:14,196  INFO     src.enrichment.actor_enrichment_candidates  [639/726] UCLA Samueli School of Engineering
+2026-07-25 23:06:15,163  INFO     src.enrichment.actor_enrichment_candidates  [640/726] UCLA Sustainability Programs
+2026-07-25 23:06:15,332  INFO     src.enrichment.actor_enrichment_candidates  Progress 640/726, Claude cost $0.0000
+2026-07-25 23:06:15,810  INFO     src.enrichment.actor_enrichment_candidates  [641/726] UCSF
+2026-07-25 23:06:16,217  INFO     src.enrichment.actor_enrichment_candidates  [642/726] UCSF School of Medicine
+2026-07-25 23:06:16,550  INFO     src.enrichment.actor_enrichment_candidates  [643/726] UIUC Catalysis Research Groups
+2026-07-25 23:06:16,893  INFO     src.enrichment.actor_enrichment_candidates  [644/726] UNC Chapel Hill
+2026-07-25 23:06:17,856  INFO     src.enrichment.actor_enrichment_candidates  [645/726] UNC Chemistry
+2026-07-25 23:06:18,188  INFO     src.enrichment.actor_enrichment_candidates  [646/726] University Labs
+2026-07-25 23:06:18,690  INFO     src.enrichment.actor_enrichment_candidates  [647/726] University of Arizona Mining & Geological Engineering
+2026-07-25 23:06:19,027  INFO     src.enrichment.actor_enrichment_candidates  [648/726] University of Arizona Water Resources Research Center
+2026-07-25 23:06:19,981  INFO     src.enrichment.actor_enrichment_candidates  [649/726] University of California Berkeley Department of Chemical and Biomolecular Engineering
+2026-07-25 23:06:23,077  INFO     src.enrichment.actor_enrichment_candidates  [650/726] University of California Berkeley Department of Chemistry
+2026-07-25 23:06:23,561  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 650 actors
+2026-07-25 23:06:24,040  INFO     src.enrichment.actor_enrichment_candidates  [651/726] University of California Davis Department of Chemical Engineering
+2026-07-25 23:06:24,382  INFO     src.enrichment.actor_enrichment_candidates  [652/726] University of California Davis Department of Chemistry
+2026-07-25 23:06:24,889  INFO     src.enrichment.actor_enrichment_candidates  [653/726] University of California, Los Angeles (UCLA)
+2026-07-25 23:06:25,253  INFO     src.enrichment.actor_enrichment_candidates  [654/726] University of Chicago Medicine
+2026-07-25 23:06:26,169  INFO     src.enrichment.actor_enrichment_candidates  [655/726] University of Colorado Boulder
+2026-07-25 23:06:27,146  INFO     src.enrichment.actor_enrichment_candidates  [656/726] University of Delaware – Department of Chemical & Biomolecular Engineering
+2026-07-25 23:06:27,516  INFO     src.enrichment.actor_enrichment_candidates  [657/726] University of Delaware Chemical Engineering
+2026-07-25 23:06:27,854  INFO     src.enrichment.actor_enrichment_candidates  [658/726] University of Delaware Chemistry
+2026-07-25 23:06:28,360  INFO     src.enrichment.actor_enrichment_candidates  [659/726] University of Houston – William A. Brookshire Department of Chemical & Biomolecular Engineering
+2026-07-25 23:06:28,701  INFO     src.enrichment.actor_enrichment_candidates  [660/726] University of Houston Chemical and Biomolecular Engineering Research Laboratories
+2026-07-25 23:06:28,876  INFO     src.enrichment.actor_enrichment_candidates  Progress 660/726, Claude cost $0.0000
+2026-07-25 23:06:29,043  INFO     src.enrichment.actor_enrichment_candidates  [661/726] University of Houston Chemistry
+2026-07-25 23:06:30,013  INFO     src.enrichment.actor_enrichment_candidates  [662/726] University of Illinois Energy Programs
+2026-07-25 23:06:30,359  INFO     src.enrichment.actor_enrichment_candidates  [663/726] University of Illinois Urbana-Champaign Department of Chemical and Biomolecular Engineering
+2026-07-25 23:06:30,696  INFO     src.enrichment.actor_enrichment_candidates  [664/726] University of Illinois Urbana-Champaign Department of Chemistry
+2026-07-25 23:06:31,405  INFO     src.enrichment.actor_enrichment_candidates  [665/726] University of Maryland School of Medicine
+2026-07-25 23:06:33,422  INFO     src.enrichment.actor_enrichment_candidates  [666/726] University of Michigan Chemistry
+2026-07-25 23:06:34,436  INFO     src.enrichment.actor_enrichment_candidates  [667/726] University of Michigan Energy Institute
+2026-07-25 23:06:35,405  INFO     src.enrichment.actor_enrichment_candidates  [668/726] University of Michigan Health
+2026-07-25 23:06:36,375  INFO     src.enrichment.actor_enrichment_candidates  [669/726] University of Michigan Water Center
+2026-07-25 23:06:37,671  INFO     src.enrichment.actor_enrichment_candidates  [670/726] University of Minnesota Department of Chemical Engineering and Materials Science
+2026-07-25 23:06:38,010  INFO     src.enrichment.actor_enrichment_candidates  [671/726] University of Minnesota Department of Chemistry
+2026-07-25 23:06:38,515  INFO     src.enrichment.actor_enrichment_candidates  [672/726] University of Missouri
+2026-07-25 23:06:38,862  INFO     src.enrichment.actor_enrichment_candidates  [673/726] University of Missouri Plant Science Programs
+2026-07-25 23:06:39,196  INFO     src.enrichment.actor_enrichment_candidates  [674/726] University of Missouri Plant Sciences
+2026-07-25 23:06:39,711  INFO     src.enrichment.actor_enrichment_candidates  [675/726] University of Pennsylvania – Materials Science & Electrochemical Systems
+2026-07-25 23:06:40,191  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 675 actors
+2026-07-25 23:06:40,666  INFO     src.enrichment.actor_enrichment_candidates  [676/726] University of Pennsylvania Chemistry
+2026-07-25 23:06:41,529  INFO     src.enrichment.actor_enrichment_candidates  [677/726] University of Southern California (USC)
+2026-07-25 23:06:41,871  INFO     src.enrichment.actor_enrichment_candidates  [678/726] University of Texas at Austin
+2026-07-25 23:06:42,828  INFO     src.enrichment.actor_enrichment_candidates  [679/726] University of Texas at Austin Energy Institute
+2026-07-25 23:06:43,176  INFO     src.enrichment.actor_enrichment_candidates  [680/726] University of Utah
+2026-07-25 23:06:43,345  INFO     src.enrichment.actor_enrichment_candidates  Progress 680/726, Claude cost $0.0000
+2026-07-25 23:06:43,511  INFO     src.enrichment.actor_enrichment_candidates  [681/726] University of Utah Mining Engineering
+2026-07-25 23:06:43,845  INFO     src.enrichment.actor_enrichment_candidates  [682/726] University of Washington (UW)
+2026-07-25 23:06:44,184  INFO     src.enrichment.actor_enrichment_candidates  [683/726] University of Wisconsin–Madison Chemistry
+2026-07-25 23:06:44,515  INFO     src.enrichment.actor_enrichment_candidates  [684/726] University of Wisconsin–Madison Department of Chemical and Biological Engineering
+2026-07-25 23:06:44,874  INFO     src.enrichment.actor_enrichment_candidates  [685/726] University of Wisconsin–Madison Department of Chemistry
+2026-07-25 23:06:45,383  INFO     src.enrichment.actor_enrichment_candidates  [686/726] University of Wisconsin–Milwaukee School of Freshwater Sciences
+2026-07-25 23:06:46,347  INFO     src.enrichment.actor_enrichment_candidates  [687/726] UNR Mackay School of Earth Sciences & Engineering
+2026-07-25 23:06:47,328  INFO     src.enrichment.actor_enrichment_candidates  [688/726] Upstate NY Specialty Crop Producers
+2026-07-25 23:06:47,667  INFO     src.enrichment.actor_enrichment_candidates  [689/726] Urban Sustainability Labs
+2026-07-25 23:06:48,001  INFO     src.enrichment.actor_enrichment_candidates  [690/726] Urban Water Reuse Facilities
+2026-07-25 23:06:48,345  INFO     src.enrichment.actor_enrichment_candidates  [691/726] USC Information Sciences Institute (ISI)
+2026-07-25 23:06:48,689  INFO     src.enrichment.actor_enrichment_candidates  [692/726] USC Viterbi AI Labs
+2026-07-25 23:06:49,056  INFO     src.enrichment.actor_enrichment_candidates  [693/726] USC Viterbi School of Engineering
+2026-07-25 23:06:49,388  INFO     src.enrichment.actor_enrichment_candidates  [694/726] USDA Research Presence (Regional)
+2026-07-25 23:06:49,719  INFO     src.enrichment.actor_enrichment_candidates  [695/726] USGS Colorado Water Science Center
+2026-07-25 23:06:50,061  INFO     src.enrichment.actor_enrichment_candidates  [696/726] USGS Geological Research
+2026-07-25 23:06:50,395  INFO     src.enrichment.actor_enrichment_candidates  [697/726] UT Austin Water Resources Engineering
+2026-07-25 23:06:50,739  INFO     src.enrichment.actor_enrichment_candidates  [698/726] UT Energy Institute
+2026-07-25 23:06:51,079  INFO     src.enrichment.actor_enrichment_candidates  [699/726] UTHealth Clinical Research Institutes
+2026-07-25 23:06:51,518  INFO     src.enrichment.actor_enrichment_candidates  [700/726] UTHealth Institute for Stroke & Cerebrovascular Disease
+2026-07-25 23:06:52,019  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 700 actors
+2026-07-25 23:06:52,020  INFO     src.enrichment.actor_enrichment_candidates  Progress 700/726, Claude cost $0.0000
+2026-07-25 23:06:52,497  INFO     src.enrichment.actor_enrichment_candidates  [701/726] UW AI Centers & Initiatives (AI, robotics, ethical AI, accessibility)
+2026-07-25 23:06:52,836  INFO     src.enrichment.actor_enrichment_candidates  [702/726] UW College of the Environment
+2026-07-25 23:06:53,403  INFO     src.enrichment.actor_enrichment_candidates  [703/726] UW Paul G. Allen School AI Centers & Initiatives
+2026-07-25 23:06:53,735  INFO     src.enrichment.actor_enrichment_candidates  [704/726] UW+Amazon Science Hub
+2026-07-25 23:06:54,082  INFO     src.enrichment.actor_enrichment_candidates  [705/726] UW+Amazon Science Hub (robotics & AI research collaboration)
+2026-07-25 23:06:54,439  INFO     src.enrichment.actor_enrichment_candidates  [706/726] UWM School of Freshwater Sciences
+2026-07-25 23:06:54,772  INFO     src.enrichment.actor_enrichment_candidates  [707/726] Venture Catalyst (commercialization platform)
+2026-07-25 23:06:55,111  INFO     src.enrichment.actor_enrichment_candidates  [708/726] Venture Catalyst (UC Davis)
+2026-07-25 23:06:55,454  INFO     src.enrichment.actor_enrichment_candidates  [709/726] Vertex
+2026-07-25 23:06:55,795  INFO     src.enrichment.actor_enrichment_candidates  [710/726] Vineyard Wind
+2026-07-25 23:06:56,137  INFO     src.enrichment.actor_enrichment_candidates  [711/726] W.L. Gore
+2026-07-25 23:06:56,469  INFO     src.enrichment.actor_enrichment_candidates  [712/726] Washington University in St. Louis
+2026-07-25 23:06:57,311  INFO     src.enrichment.actor_enrichment_candidates  [713/726] Water Analytics Firms (Colorado)
+2026-07-25 23:06:57,655  INFO     src.enrichment.actor_enrichment_candidates  [714/726] Water Infrastructure Engineering Firms
+2026-07-25 23:06:58,228  INFO     src.enrichment.actor_enrichment_candidates  [715/726] Water Resilience Research Centers
+2026-07-25 23:06:58,753  INFO     src.enrichment.actor_enrichment_candidates  [716/726] Water Technology Startups
+2026-07-25 23:06:59,119  INFO     src.enrichment.actor_enrichment_candidates  [717/726] Water Treatment Companies
+2026-07-25 23:06:59,459  INFO     src.enrichment.actor_enrichment_candidates  [718/726] Water-Energy-Food Nexus Programs
+2026-07-25 23:06:59,794  INFO     src.enrichment.actor_enrichment_candidates  [719/726] Water-Tech Startups (Arizona)
+2026-07-25 23:07:00,127  INFO     src.enrichment.actor_enrichment_candidates  [720/726] Water-Tech Startups (California)
+2026-07-25 23:07:00,465  INFO     src.enrichment.actor_enrichment_candidates  Progress 720/726, Claude cost $0.0000
+2026-07-25 23:07:00,632  INFO     src.enrichment.actor_enrichment_candidates  [721/726] Weill Cornell Medicine
+2026-07-25 23:07:01,600  INFO     src.enrichment.actor_enrichment_candidates  [722/726] Weill Cornell Medicine (Houston campus)
+2026-07-25 23:07:01,942  INFO     src.enrichment.actor_enrichment_candidates  [723/726] Wind Farm Operators (Texas)
+2026-07-25 23:07:02,289  INFO     src.enrichment.actor_enrichment_candidates  [724/726] Wind Technology Center
+2026-07-25 23:07:02,659  INFO     src.enrichment.actor_enrichment_candidates  [725/726] Wisconsin Catalysis and Organometallic Chemistry Groups
+2026-07-25 23:07:03,407  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 725 actors
+2026-07-25 23:07:03,913  INFO     src.enrichment.actor_enrichment_candidates  [726/726] Wisconsin Polymer Research Programs
