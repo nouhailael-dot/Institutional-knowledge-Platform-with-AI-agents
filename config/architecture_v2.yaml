@@ -102,3 +102,23 @@ refresh:
 job2:
   interface: candidate_actors
   mapping_fit_fields_enabled: false
+
+# WS6: actor update subscriptions. These replace the default weekly all-sector
+# ACTOR sweep with opt-in, scoped requests. The EVENT schedule is unchanged.
+#
+# Every value here is AWAITING GHUS SIGN-OFF (brief WS6 item 4). They are
+# configuration rather than constants precisely so a decision changes a value
+# and not the code. sector_rank_weight in particular is a proposal, not an
+# approved number.
+actor_update_subscriptions:
+  default_cadence: monthly
+  allowed_cadences: [once, weekly, monthly, quarterly]
+  # Proposed ~20% weight for sector match in candidate ranking. NOT approved.
+  sector_rank_weight: 0.2
+  # A run is a rehearsal unless someone asks for it to be live.
+  dry_run_default: true
+  # A subscription always ends; an open-ended one is the sweep again.
+  max_duration_days: 365
+  # Who may create one. Until authentication exists this is informational and
+  # requested_by stays null rather than being invented.
+  requested_via_allowed: [map_verification, review_updates]
