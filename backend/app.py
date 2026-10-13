@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +35,9 @@ from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
 from src.generate import ask_handoff, condense_question, stream_answer
+from src.map_agent.actor_profile import LEGACY_CATEGORIES, NOT_CLASSIFIED
+from src.map_agent import parked, review
+from src.map_agent.dedup import mark_possible_duplicates
 from src.map_agent.export import to_pptx, to_xlsx
 from src.map_agent.pipeline import build_map
 from src.map_agent.people_research import research_people
@@ -122,8 +126,20 @@ def _sources(hits: list[dict]) -> list[dict]:
             "name": h["name"],
             "entity_type": h["entity_type"],
             "preview": text[:300] + ("…" if len(text) > 300 else ""),
+            "parked": bool(h.get("parked")),
+            "map": h.get("map"),
         })
     return out
+
+
+def _parked_hits(question: str, hits: list[dict]) -> list[dict]:
+    """Parked organizations for Ask. A secondary source: if it fails, Ask still
+    answers from the database alone."""
+    try:
+        return parked.search(question, map_store(), skip_names=[h["name"] for h in hits])
+    except Exception as exc:
+        print(f"Parked search skipped: {exc}", file=sys.stderr)
+        return []
 
 
 @app.get("/api/ask/stream")
@@ -176,6 +192,7 @@ def ask_stream(question: str = Query(..., min_length=1),
                 mode = "semantic"      # fall back to map search, same as the UI
 
         hits = retrieve(standalone)
+        hits += _parked_hits(standalone, hits)
         yield _sse("meta", {"mode": "semantic", "sources": _sources(hits), "rewritten": rewritten})
         if hits:
             for chunk in stream_answer(standalone, hits):
@@ -272,6 +289,12 @@ def map_record(job_id):
 
 def public_map(job_id):
     record = map_record(job_id)
+    actors = ((record["result"] or {}).get("entities") or {}).get("actor", [])
+    for actor in actors:
+        if actor.get("actor_type") in LEGACY_CATEGORIES:
+            actor["actor_type"] = LEGACY_CATEGORIES[actor["actor_type"]]
+        actor.setdefault("category_type", NOT_CLASSIFIED)
+    mark_possible_duplicates(actors)
     return {k: record[k] for k in ("id", "status", "stage", "description", "result", "error",
                                    "cost", "messages", "plan", "created", "updated")}
 
@@ -481,7 +504,12 @@ def map_start(payload: MapRequest):
         raise HTTPException(status_code=409, detail=str(exc))
     doc_text = record["doc_text"] or doc_text
     approved_plan = record["plan"] or payload.plan
-    map_store().update(job_id, description=desc, doc_text=doc_text, plan=approved_plan)
+    # A follow-up on a built map searches new ground; its message is that round's
+    # request, not the map's. Keep the original as the map's name and request.
+    fields = {"doc_text": doc_text, "plan": approved_plan}
+    if not record["result"]:
+        fields["description"] = desc
+    map_store().update(job_id, **fields)
     _MAP_POOL.submit(_run_map_job, job_id, desc, approved_plan, map_record(job_id)["attempt"])
     return {"job_id": job_id, "status": "running"}
 
@@ -496,6 +524,36 @@ def map_status(job_id: str):
 def map_stop(job_id: str):
     map_record(job_id)
     map_store().stop(job_id)
+    return public_map(job_id)
+
+
+@app.post("/api/map/{job_id}/reopen")
+def map_reopen(job_id: str):
+    map_record(job_id)
+    try:
+        map_store().reopen(job_id)
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return public_map(job_id)
+
+
+class ReviewRequest(BaseModel):
+    name: str
+    website: str | None = None
+    action: Literal["park", "unpark", "reject"]
+
+
+@app.post("/api/map/{job_id}/review")
+def map_review(job_id: str, payload: ReviewRequest):
+    """Park, unpark or permanently reject one organization in a saved map."""
+    map_record(job_id)
+    try:
+        map_store().edit_result(job_id, lambda result, workflow: review.apply(
+            result, workflow, payload.name, payload.website, payload.action))
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     return public_map(job_id)
 
 

@@ -14,8 +14,9 @@ from src.map_agent.entity_schemas import submit_entities_tool
 from src.map_agent.costs import paid_message
 from src.map_agent.planner import _bounded_tasks, _EMPTY_REQS
 from src.map_agent.relationships import link_people_to_actors
+from src.map_agent.review import entity_key
 from src.map_agent.search_backend import ResearchSources, canonical_url, excerpt, operation_key
-from src.map_agent.select import apply_request
+from src.map_agent.select import APPLIED, FAILED, NO_REQUIREMENTS, NONE_MATCHED, apply_request
 from src.map_agent.rankings import (filter_rankings, institution_name, is_ranked_institution,
                                     is_university, same_institution, PUBLISHERS, RANKING_DOMAINS)
 from src.map_agent.actor_profile import LIGHT_GUIDANCE, normalize_actor_profile
@@ -166,6 +167,25 @@ def _collect(sources, query, gaps, max_pages=3):
     return evidence
 
 
+_judged_key = entity_key
+
+
+def _follow_up_summary(found, selection, new_count, prior_outcome):
+    """(note, outcome) for the whole map after a follow-up judged its newcomers."""
+    if selection["outcome"] == FAILED:
+        return (f"Your follow-up's filters could not be applied to the {new_count} newly found "
+                "organizations, so those are unfiltered. Earlier results keep their judgement.", FAILED)
+    if selection["outcome"] == NO_REQUIREMENTS and prior_outcome in (None, NO_REQUIREMENTS):
+        return "", NO_REQUIREMENTS
+    actors = [e for e in found if e.get("_entity_type") == "actor"]
+    matched = sum(1 for e in actors if e.get("_selected"))
+    if not matched:
+        return (f"None of the {len(actors)} organizations matched. They are all shown below, "
+                "marked as left out.", NONE_MATCHED)
+    return (f"{matched} of {len(actors)} match your request, including "
+            f"{len(selection['selected'])} of the {new_count} found by your follow-up.", APPLIED)
+
+
 def _visible(state):
     grouped = {"actor": [], "person": [], "event": []}
     for entity in link_people_to_actors(deduplicate(deepcopy(state["found"]))):
@@ -222,10 +242,16 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
     # only the new tasks are searched. Rankings restart because the set of ranked
     # institutions has changed; completed lookups replay from the operation cache
     # and are not paid for twice.
+    #
+    # The original request and filters are NOT replaced. Organizations already
+    # judged keep their judgement; only newcomers are judged, against the
+    # follow-up. Re-judging everything against "also find national labs" would
+    # mark every earlier university as not matching.
     elif plan and plan.get("tasks") and state.get("phase") == "done":
         state["tasks"] = state["tasks"] + _bounded_tasks(plan["tasks"])
-        state["requirements"] = {**_EMPTY_REQS, **(plan.get("requirements") or {})}
-        state["description"] = description or state["description"]
+        state["judged"] = [_judged_key(e) for e in state["found"]]
+        state["round_description"] = description or state["description"]
+        state["round_requirements"] = {**_EMPTY_REQS, **(plan.get("requirements") or {})}
         state["phase"] = "organizations"
         state["ranking_index"] = 0
 
@@ -239,7 +265,12 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         run.check()
         task = state["tasks"][state["task_index"]]
         evidence = _collect(sources, task["query"], state["gaps"])
-        rows, gap = extract(run, state["description"], task, evidence, client=client)
+        # After a follow-up, every remaining task belongs to it, so extraction is
+        # framed by the follow-up's request rather than the original one.
+        rows, gap = extract(run, state.get("round_description") or state["description"], task,
+                            evidence, client=client)
+        rejected = set(state.get("rejected") or [])
+        rows = [r for r in rows if entity_key(r) not in rejected]
         state["found"] = deduplicate(state["found"] + rows)
         if gap:
             state["gaps"].append(task["query"] + ": " + gap)
@@ -252,10 +283,25 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         save()
     if state["phase"] == "selection":
         run.check()
-        selection = apply_request(state["found"], state["description"], state["requirements"], run=run)
-        state["found"] = selection["selected"] + selection["rest"]
-        state["selection_note"] = selection["note"]
-        state["selection_outcome"] = selection["outcome"]
+        judged = set(state.get("judged") or [])
+        if judged:
+            earlier = [e for e in state["found"] if _judged_key(e) in judged]
+            newcomers = [e for e in state["found"] if _judged_key(e) not in judged]
+            selection = apply_request(newcomers, state["round_description"],
+                                      state["round_requirements"], run=run)
+            # New matches rank after the earlier ones rather than interleaving.
+            offset = max((e.get("_rank") or 0 for e in earlier), default=0)
+            for e in selection["selected"]:
+                if e.get("_rank"):
+                    e["_rank"] += offset
+            state["found"] = earlier + selection["selected"] + selection["rest"]
+            state["selection_note"], state["selection_outcome"] = _follow_up_summary(
+                state["found"], selection, len(newcomers), state.get("selection_outcome"))
+        else:
+            selection = apply_request(state["found"], state["description"], state["requirements"], run=run)
+            state["found"] = selection["selected"] + selection["rest"]
+            state["selection_note"] = selection["note"]
+            state["selection_outcome"] = selection["outcome"]
         state["phase"] = "rankings"
         save()
     if state["phase"] == "rankings":

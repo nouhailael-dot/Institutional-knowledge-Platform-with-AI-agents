@@ -27,19 +27,30 @@ from src.generate import _get_client, MODEL
 SCHEMA = """\
 Postgres schema (answer with standard PostgreSQL). Key tables and columns:
 
-actor(actor_id uuid PK, name text, actor_type text, description text,
-      location_city text, state text, country text, estimated_trl smallint,
-      verification_status text, merged_into_actor_id uuid)
-  - IMPORTANT: only rows WHERE merged_into_actor_id IS NULL are live; ALWAYS
-    add that filter when counting/listing actors (the rest are merged duplicates).
-  - estimated_trl is 1..9 or NULL. verification_status in
-    ('ai_inferred','phase_1','needs_review'). country is free text and
-    inconsistent ('USA' vs 'United States') — match with ILIKE/IN when needed.
+actor_read(actor_id uuid, name text, actor_category text, description text,
+      city text, state_code text, region_code text, country text,
+      estimated_trl smallint, status text, merged_into_actor_id uuid)
+  - ALWAYS query actors through actor_read, never the actor table: it excludes
+    records GHUS rejected. ALWAYS add WHERE merged_into_actor_id IS NULL when
+    counting/listing (the rest are merged duplicates).
+  - actor_category is one of: 'university_academic', 'research_center',
+    'national_laboratory', 'applied_facility', 'hospital_clinical', 'company',
+    'startup', 'innovation_platform', 'investor', 'government',
+    'foundation_nonprofit', 'association_network'.
+    "universities" means 'university_academic'; "labs" usually means
+    'research_center' or 'national_laboratory'.
+  - state_code is the two-letter code ('TX', 'CA', 'DC'), never a full name.
+  - region_code is one of: 'northeast', 'mid_atlantic', 'southeast',
+    'midwest_great_lakes', 'south_central_texas_gulf', 'mountain_west',
+    'west_coast_pacific'.
+  - estimated_trl is 1..9 or NULL. country is free text and inconsistent
+    ('USA' vs 'United States') — match with ILIKE/IN when needed.
 
 hub(hub_id uuid PK, name text, primary_city text, state text, country text, region text)
 
 hub_actor(hub_id uuid, actor_id uuid, relationship_type text, is_primary bool)
-  - many-to-many: which live actors belong to which hub. Join actor to exclude merged.
+  - many-to-many: which actors belong to which hub. Join actor_read to exclude
+    merged and rejected actors.
 
 event(event_id uuid PK, name text, event_type text, location text,
       next_date date, host_actor_id uuid)
@@ -66,7 +77,8 @@ about Mosaic", "which labs research soil health?".
 
 Respond in EXACTLY one of two ways:
 - If STRUCTURED: output only a single SQL statement inside a ```sql code block. \
-Use a SELECT only. Always filter actor.merged_into_actor_id IS NULL when \
+Use a SELECT only. Query actors through actor_read and always filter \
+merged_into_actor_id IS NULL when \
 counting/listing actors. Add a LIMIT (<=100) to list queries.
 
   CRITICAL name-matching rule: when filtering by a name (hub, actor, event), you \

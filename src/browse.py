@@ -1,23 +1,21 @@
 """Browse — structured, filterable lists of the map's entities.
 
 The Ask tab answers a question; Browse lets you *walk* the data: "show me the
-startups in the Bay Area AI Hub", "show me everything that's still AI-inferred".
+startups in the Bay Area AI Hub".
 
-Design choices driven by what the data actually supports (see HANDOFF.md §8):
-  - We browse the dimensions that are POPULATED: hub membership, actor_type, and
-    verification_status. We deliberately DO NOT offer browse-by-sector (the sector
-    table is empty) and we treat TRL/country as optional refinements, not primary
-    axes (TRL is set on only ~8% of actors; country is messy).
-  - verification_status is surfaced as a first-class column, so an AI-inferred
-    actor never looks as authoritative as a hand-verified one. This is the
-    "surface trust" principle from the spec, applied to Browse.
-  - All filtering happens in memory. The whole live actor set is <1000 rows, so
-    one cached read-only query + Python filtering is simpler and more robust than
-    building WHERE clauses over the inconsistent `country` values.
+Reads actors through `actor_read`, the Architecture V2 read view (migrated
+6 Oct 2026): the 12-category code is shown by its display name and the state
+code by its full name. The API keeps its pre-V2 keys (`actor_type`, `state`,
+`verification_status`) so the page did not have to change.
 
-This module is pure data (no Streamlit) so it can be run/tested on its own:
-    PYTHONPATH=~/Desktop/um6p-rag python -m src.browse
-Caching lives in app.py (st.cache_data), same split as retrieve.py / generate.py.
+  - We browse the dimensions that are POPULATED: hub membership, category and
+    status. Sector is not offered (the sector table is empty); TRL and country
+    are optional refinements (TRL is set on few actors; country is messy).
+  - All filtering happens in memory. The live actor set is <1000 rows, so one
+    read-only query + Python filtering is simpler and more robust than building
+    WHERE clauses over the inconsistent `country` values.
+
+Pure data, runnable on its own:  python -m src.browse
 """
 
 from uuid import UUID
@@ -27,22 +25,6 @@ from src.db import get_readonly_connection
 # hub names contain commas, so we join them with a delimiter that can't appear in
 # the data and split it back in Python.
 _HUB_SEP = "||"
-
-# Friendly, trust-ordered labels for verification_status. Used by the UI and as
-# the canonical vocabulary for the Browse trust filter. Order = most to least
-# trustworthy, which is also the order we show them in.
-VERIFICATION_LABELS = {
-    "phase_1": "✅ Verified",
-    "needs_review": "🔶 Needs review",
-    "ai_inferred": "⚠️ AI-inferred",
-    None: "— unset",
-}
-
-
-def verification_label(status: str | None) -> str:
-    """Human label for a raw verification_status (falls back to the raw value)."""
-    return VERIFICATION_LABELS.get(status, status or "— unset")
-
 
 # --- country normalization -------------------------------------------------
 # The `country` column is inconsistent (see the data-quality scan): 'USA' vs
@@ -99,16 +81,26 @@ def load_actors() -> list[dict]:
     `has_profile` marks the ~28 deeply-profiled actors — those with a
     'why valuable for UM6P' write-up. These are the hand-curated, richest
     records, so Browse lets you filter down to just them."""
+    # actor_read is the Architecture V2 read view: it excludes rejected records
+    # (the 153 "collection of organizations" placeholders GHUS rejected) and
+    # brings the descriptive fields back from actor_fact. TRL arrives from the
+    # fact store, so it is cast defensively rather than trusted to be a number.
     sql = f"""
-        SELECT a.actor_id, a.name, a.actor_type, a.verification_status,
-               a.location_city, a.state, a.country, a.estimated_trl,
+        SELECT a.actor_id, a.name,
+               coalesce(cd.display_name, a.actor_category) AS category,
+               a.status, a.city, coalesce(rs.state_name, a.state_code) AS state,
+               a.country,
+               CASE WHEN a.estimated_trl::text ~ '^[0-9]+$'
+                    THEN a.estimated_trl::text::smallint END AS trl,
                a.website, a.description,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,
                (SELECT string_agg(h.name, '{_HUB_SEP}')
                   FROM hub_actor ha JOIN hub h ON h.hub_id = ha.hub_id
                  WHERE ha.actor_id = a.actor_id) AS hub_names
-        FROM actor a
+        FROM actor_read a
+        LEFT JOIN actor_category_definition cd ON cd.category_code = a.actor_category
+        LEFT JOIN region_state rs ON rs.state_code = a.state_code
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
         ORDER BY a.name
@@ -123,13 +115,14 @@ def load_actors() -> list[dict]:
             out.append({
                 "id": str(r["actor_id"]),
                 "name": r["name"],
-                "actor_type": r["actor_type"],
-                "verification_status": r["verification_status"],
-                "city": r["location_city"],
+                # Keys kept from the pre-V2 shape so the API and page are unchanged.
+                "actor_type": r["category"],
+                "verification_status": r["status"],
+                "city": r["city"],
                 "state": r["state"],
                 "country_raw": r["country"],
                 "country": normalize_country(r["country"]),
-                "trl": r["estimated_trl"],
+                "trl": r["trl"],
                 "website": r["website"],
                 "description": r["description"],
                 "has_profile": bool(r["has_profile"]),
@@ -293,7 +286,7 @@ if __name__ == "__main__":
     print(f"Actor types: {len(opts['types'])}  ·  hubs: {len(opts['hubs'])}  ·  "
           f"countries: {opts['countries']}")
     # Spot-check a few filter combos.
-    startups = filter_actors(actors, types=["startup"])
+    startups = filter_actors(actors, types=["Startup / Emerging Technology Company"])
     print(f"\nStartups: {len(startups)} (first 3: "
           f"{[a['name'] for a in startups[:3]]})")
     trl6 = filter_actors(actors, min_trl=6)

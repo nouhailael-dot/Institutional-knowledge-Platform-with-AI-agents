@@ -32,19 +32,23 @@ def _section(label: str, value) -> str:
 
 def assemble_actors() -> list[dict]:
     """One doc per live actor, joining in its partnership profile, relevance
-    narrative, and the hubs it belongs to."""
+    narrative, and the hubs it belongs to.
+
+    Reads `actor_read`, the Architecture V2 view: rejected records are excluded
+    and the descriptive fields come back from the fact store."""
     sql = """
         SELECT
             a.actor_id,
             a.name,
-            a.actor_type,
+            coalesce(cd.display_name, a.actor_category) AS category,
+            a.alt_names,
             a.description,
             a.primary_technical_focus,
             a.technical_approach,
             a.current_activities,
             a.key_constraints,
             a.estimated_trl,
-            a.location_city, a.state, a.country,
+            a.city, coalesce(rs.state_name, a.state_code) AS state, a.country,
             pp.why_valuable_for_um6p,
             pp.thematic_focus,
             pp.key_entry_points,
@@ -56,7 +60,9 @@ def assemble_actors() -> list[dict]:
             (SELECT string_agg(h.name, ', ')
                FROM hub_actor ha JOIN hub h ON h.hub_id = ha.hub_id
               WHERE ha.actor_id = a.actor_id) AS hub_names
-        FROM actor a
+        FROM actor_read a
+        LEFT JOIN actor_category_definition cd ON cd.category_code = a.actor_category
+        LEFT JOIN region_state              rs ON rs.state_code = a.state_code
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
         LEFT JOIN actor_relevance     ar ON ar.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
@@ -70,12 +76,16 @@ def assemble_actors() -> list[dict]:
             r = dict(zip(cols, row))
 
             location = ", ".join(
-                p for p in (r["location_city"], r["state"], r["country"]) if p
+                p for p in (r["city"], r["state"], r["country"]) if p
             )
+            alt = r["alt_names"]
+            alt_names = "; ".join(alt) if isinstance(alt, (list, tuple)) else alt
 
             doc_text = (
                 _section("Name", r["name"])
-                + _section("Type", r["actor_type"])
+                # Abbreviations ("NMSU") are what keyword search needs most.
+                + _section("Other names", alt_names)
+                + _section("Type", r["category"])
                 + _section("Location", location)
                 + _section("Description", r["description"])
                 + _section("Primary technical focus", r["primary_technical_focus"])

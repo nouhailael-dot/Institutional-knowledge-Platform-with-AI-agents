@@ -211,6 +211,7 @@
   .newconv{border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);
     font-weight:600;font-size:13px;padding:7px 14px;border-radius:999px;cursor:pointer;transition:.15s}
   .newconv:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .carry-row{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding-left:42px}
   .welcome{text-align:center;padding:20px 0 4px}
   .welcome .lead{margin-left:auto;margin-right:auto}
   .welcome .hint{justify-content:center}
@@ -591,10 +592,21 @@ function Ask({onCarryOver}){
   useEffect(()=>()=>esRef.current&&esRef.current.close(),[]);
   useEffect(()=>{ if(bottomRef.current) bottomRef.current.scrollIntoView({block:"end",behavior:"smooth"}); },[turns.length]);
 
-  const modeChip=(m)=> m==="sql"
-    ? html`<span class="chip accent">⚡ Exact · from the database</span>`
-    : m==="doc" ? html`<span class="chip accent">📎 Document + map · cited</span>`
-    : m==="semantic" ? html`<span class="chip accent">◎ Map search · cited</span>` : null;
+  const fromDocument=s=>s.entity_type==="uploaded_document";
+  const sourceOrigin=s=> s.parked
+    ? html`<span class="chip violet" title=${"From the saved map: "+(s.map||"untitled")}>Parked — not verified</span>`
+    : fromDocument(s) ? html`<span class="chip slate">Your document</span>`
+    : html`<span class="chip teal">Verified database</span>`;
+  const sourceSummary=sources=>{
+    const parked=sources.filter(s=>s.parked).length, doc=sources.filter(fromDocument).length;
+    const db=sources.length-parked-doc;
+    return [db&&`${db} from the verified database`, doc&&`${doc} from your document`,
+            parked&&`${parked} parked, not verified`].filter(Boolean).join(" · ");
+  };
+  const modeChip=(m,sources)=> m==="sql"
+    ? html`<span class="chip accent">⚡ Exact · verified database</span>`
+    : m==="doc" ? html`<span class="chip accent">📎 Your document + verified database · cited</span>`
+    : m==="semantic" ? html`<span class="chip accent">◎ Verified database search${(sources||[]).some(s=>s.parked)?" + parked organizations":""} · cited</span>` : null;
 
   const empty=turns.length===0;
   return html`
@@ -613,10 +625,7 @@ function Ask({onCarryOver}){
         </div>`
       : html`
         <div class="conv-head"><span class="chip accent">💬 Conversation</span>
-          <button class="newconv" type="button" disabled=${carrying||busy} onClick=${carryOver}>
-            ${carrying?html`<span class="spin"></span> Reading the conversation…`:"⊕ Research this on the web"}</button>
           <button class="newconv" type="button" onClick=${newConversation}>＋ New conversation</button></div>
-        ${carryNote&&html`<div class="hint" style=${{marginBottom:"10px"}}>${carryNote}</div>`}
         <div class="chat">
           ${turns.map((t,i)=>{
             const streaming=(i===turns.length-1)&&busy;
@@ -626,24 +635,29 @@ function Ask({onCarryOver}){
               <div class="avatar">${AVATAR}</div>
               <div class="bubble bot">
                 <div style=${{display:"flex",gap:"10px",alignItems:"center",marginBottom:"10px"}}>
-                  ${modeChip(t.mode)}
+                  ${modeChip(t.mode,t.sources)}
                   ${streaming&&!t.answer&&html`<span class="chip"><span class="spin"></span> thinking…</span>`}
                 </div>
                 ${t.rewritten&&html`<div class="rw">Interpreted as: <b>${t.rewritten}</b></div>`}
                 <div class="answer" ...${md(t.answer)}></div>
                 ${!t.done&&t.answer&&html`<span class="cursor"></span>`}
-                ${t.sql&&html`<details class="sources"><summary>SQL query used</summary>
-                  <pre style=${{marginTop:"10px"}}><code>${t.sql}</code></pre></details>`}
+                ${t.sql&&html`<div class="hint" style=${{marginTop:"18px",borderTop:"1px solid var(--line)",paddingTop:"14px"}}>Source — verified database</div>`}
                 ${t.sources.length>0&&html`
                   <details class="sources">
-                    <summary>Sources — ${t.sources.length} ${t.sources.length===1?"entity":"entities"} retrieved</summary>
+                    <summary>Sources — ${sourceSummary(t.sources)}</summary>
                     ${t.sources.map((s,j)=>html`<div class="src" key=${j}>
-                      <div class="nm">${j+1}. ${s.name} <${EChip} type=${s.entity_type}/></div>
+                      <div class="nm">${j+1}. ${s.name} <${EChip} type=${s.entity_type}/>
+                        ${sourceOrigin(s)}</div>
                       <div class="pv">${s.preview}</div></div>`)}
                   </details>`}
               </div>
             </div>`;
           })}
+          ${!busy&&html`<div class="carry-row">
+            <button class="newconv" type="button" disabled=${carrying} onClick=${carryOver}>
+              ${carrying?html`<span class="spin"></span> Reading the conversation…`:"⊕ Research this on the web"}</button>
+            ${carryNote&&html`<div class="hint">${carryNote}</div>`}
+          </div>`}
           <div ref=${bottomRef}></div>
         </div>`}
 
@@ -902,7 +916,7 @@ const MGROUPS=[["actor","Organizations","accent"],["person","People","teal"],
 // disconnected top-level section.
 const MDISPLAY_GROUPS=MGROUPS.filter(([k])=>k!=="person");
 const MFIELDS={
-  actor:[["actor_type","Category"],["country","Country"],["location_city","City"],["state","State"],
+  actor:[["actor_type","Category"],["category_type","Category type"],["country","Country"],["location_city","City"],["state","State"],
          ["region","Region"],["primary_technical_focus","Focus"],
          ["funding_summary","Funding"],["current_activities","Activity"]],
   person:[["title","Title"],["email","Email"]],
@@ -1007,17 +1021,17 @@ function PeopleSearch({actor,jobId,disabled}){
 }
 function ActorLightProfile({actor}){
   if(actor.profile_version!==2)return null;
-  const fields=[["other_names","Other names"],["category_note","Category review"],
+  const fields=[["other_names","Other names"],
     ["sector","Sector"],["mapped_topic","Mapped topic"],["match_strength","Topic match"],
-    ["match_explanation","Why it matched"],["international_connections","International / Africa / Morocco connections"]];
+    ["match_explanation","Why it matched"],["international_connections","Africa / Morocco connections"]];
   const ranked=rankingRows(actor);
   return html`<details class="mpeople university-rankings"><summary>Actor profile</summary>
+    ${actor.category_note&&html`<div class="mperson-meta"><b>Category note:</b> ${actor.category_note}</div>`}
     ${fields.map(([key,label])=>html`<div class="mperson-meta" key=${key}><b>${label}:</b> ${actor[key]||"Not found"}</div>`)}
     ${isRankedInstitution(actor)&&html`
       <div class="mperson-meta"><b>University rankings:</b> ${ranked.length?"":"Not found in collected sources"}</div>
       ${ranked.map((r,i)=>html`<div class="mperson-meta" key=${i}>${r.system} · ${r.rank} · ${r.year} edition · ${r.scope==="subject"?r.subject+" (subject)":"Overall"} · <a href=${r.source_url} target="_blank" rel="noopener noreferrer">Source</a></div>`)}
       ${ranked.length>0&&html`<div class="hint">Reported from collected evidence, not independently verified. Editions and scopes may differ; no combined score.</div>`}`}
-    <div class="mperson-meta"><b>Multiple locations:</b> ${actor.multi_location===true?"Yes":actor.multi_location===false?"No":"Not found"}</div>
     <div class="mperson-meta"><b>Organization relationships:</b> ${(actor.actor_relationships||[]).length?"":"Not found — no parent is assumed"}</div>
     ${(actor.actor_relationships||[]).map((r,i)=>html`<div class="mperson-meta" key=${i}>${r.relationship}: ${r.organization_name} · <a href=${r.source_url} target="_blank" rel="noopener noreferrer">Source</a></div>`)}
     <div class="mperson-meta"><b>Category-specific information:</b> ${(actor.category_details||[]).length?"":"Not found"}</div>
@@ -1059,9 +1073,26 @@ function matchCount(res){
   return actors.filter(e=>e._rank).length+" of "+actors.length+" match your request.";
 }
 
-function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
+function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onReviewed,reviewDisabled}){
   const [busy,setBusy]=useState(false);
+  const [reviewing,setReviewing]=useState(false);
   const j=e._judge||null, lc=e._link_check||null;
+  const parked=e._review==="parked";
+
+  async function review(action){
+    if(reviewDisabled||reviewing) return;
+    if(action==="reject"&&!confirm(`Remove ${ename(e)} from this map? This can't be undone.`)) return;
+    setReviewing(true);
+    try{
+      const r=await fetch(`/api/map/${jobId}/review`,{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:e.name,website:e.website||null,action})});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Could not update this organization.");
+      onReviewed(d);
+    }catch(err){ if(onError) onError(err.message); }
+    setReviewing(false);
+  }
 
   async function verify(){
     if(disabled||busy) return;
@@ -1097,12 +1128,23 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
       ${badge}
       ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
       ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
-      <span style=${{marginLeft:"auto"}}>
+      ${parked&&html`<span class="chip slate">Parked</span>`}
+      <span style=${{marginLeft:"auto",display:"inline-flex",gap:"6px"}}>
         <button class="example" type="button" disabled=${busy||disabled} onClick=${verify}>
           ${busy?html`<span class="spin"></span>`:(j?"Re-verify":"Verify")}</button>
+        ${e._entity_type==="actor"&&onReviewed&&html`
+          <button class="example" type="button" disabled=${reviewing||reviewDisabled}
+            title=${parked?"Back to not reviewed":"Set aside to decide later; Ask can still find it"}
+            onClick=${()=>review(parked?"unpark":"park")}>${parked?"Unpark":"Park"}</button>
+          <button class="example" type="button" disabled=${reviewing||reviewDisabled}
+            title="Remove from this map for good" onClick=${()=>review("reject")}>Reject</button>`}
       </span>
     </div>
-    ${excluded&&html`<div class="whynot">✕ Doesn't match your request — ${e._why_not||"no reason was recorded for this map."}</div>`}
+    ${excluded&&(e._beyond_limit
+      ?html`<div class="hint" style=${{margin:"0 0 8px"}}>${e._why_not}</div>`
+      :html`<div class="whynot">✕ Doesn't match your request — ${e._why_not||"no reason was recorded for this map."}</div>`)}
+    ${(e._possible_duplicates||[]).length>0&&html`<div class="hint" style=${{margin:"0 0 8px"}}>
+      Possible duplicate of ${e._possible_duplicates.join(", ")}. Check before verifying.</div>`}
     ${e.description&&html`<div class="mdesc">${e.description}</div>`}
     ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
     ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
@@ -1118,7 +1160,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled}){
         rel="noopener noreferrer">LinkedIn</a>`}
     </div>`}
     ${(e.sources||[]).length>0&&html`<details class="msrc">
-      <summary>${e.sources.length} source${e.sources.length>1?"s":""}</summary>
+      <summary>${e.sources.length} web source${e.sources.length>1?"s":""}</summary>
       ${e.sources.map((s,i)=>{
         const res=lc&&(lc.sources||[]).find(r=>r.url===s.url);
         const bad=res&&!res.ok;
@@ -1216,6 +1258,7 @@ function BuildMap({carried,onCarriedChange}){
   const [researchAvailable,setResearchAvailable]=useState(false);
   const [researchReason,setResearchReason]=useState("Live research is disabled until a controlled test is approved.");
   const [runStatus,setRunStatus]=useState("draft");
+  const [parkedOnly,setParkedOnly]=useState(false);
   const activeJob=useRef(null);
   const stopped=useRef(false);
   const generation=useRef(0);
@@ -1321,6 +1364,18 @@ function BuildMap({carried,onCarriedChange}){
       if(version!==generation.current||id!==activeJob.current) return;
       if(!r.ok) throw new Error(d.detail||"Could not confirm the budget extension.");
       setCost(d.cost);
+    }catch(e){if(version===generation.current&&id===activeJob.current)setErr(e.message);}
+  }
+
+  async function reopen(){
+    if(!activeJob.current||busy||!cost?.can_reopen) return;
+    const id=activeJob.current, version=generation.current;
+    try{
+      const r=await post("/api/map/"+id+"/reopen",{});
+      const d=await r.json();
+      if(version!==generation.current||id!==activeJob.current) return;
+      if(!r.ok) throw new Error(d.detail||"Could not reopen the map.");
+      setCost(d.cost); setRunStatus(d.status); setErr(null); refreshRecent();
     }catch(e){if(version===generation.current&&id===activeJob.current)setErr(e.message);}
   }
 
@@ -1496,6 +1551,7 @@ function BuildMap({carried,onCarriedChange}){
   }
 
   const total=all().length;
+  const parkedCount=all().filter(e=>e._review==="parked").length;
 
   return html`<div>
     <h1 class="hero-h">Build the map.</h1>
@@ -1530,6 +1586,10 @@ function BuildMap({carried,onCarriedChange}){
           ${runStatus==="ready"?"Start saved plan":"Continue unfinished research"} — uses remaining budget
         </button>
         <span class="hint">Reuses saved work; the total budget does not reset.</span>
+      </div>`}
+      ${cost.can_reopen&&html`<div>
+        <button class="example" type="button" disabled=${busy} onClick=${reopen}>Reopen this map</button>
+        <span class="hint">Free. Unlocks the conversation so you can carry on; nothing is searched until you start it.</span>
       </div>`}
       <details><summary>Cost by stage</summary>
         ${Object.entries(cost.by_stage).map(([stage,value])=>html`<div key=${stage}>${stage}: $${value.toFixed(4)}</div>`)}
@@ -1604,6 +1664,9 @@ function BuildMap({carried,onCarriedChange}){
         : html`
           <div class="mbar">
             <span class="chip slate">${total} found</span>
+            ${parkedCount>0&&html`<label class="hint" style=${{margin:0,display:"inline-flex",gap:"6px",alignItems:"center"}}>
+              <input type="checkbox" checked=${parkedOnly} onChange=${ev=>setParkedOnly(ev.target.checked)}/>
+              Parked only (${parkedCount})</label>`}
             <button class="example" type="button" disabled=${verifying||busy||!["done","error"].includes(runStatus)} onClick=${verifyAll}>
               ${verifying?html`<span class="spin"></span> Verifying…`:"Verify all"}</button>
             <button class="example" type="button" disabled=${!!exporting}
@@ -1619,9 +1682,12 @@ function BuildMap({carried,onCarriedChange}){
           </div>
           ${(()=>{
             const outcome=selectionOutcome(res);
-            if(outcome==="failed") return html`<div class="selnote">Your filters could not be applied to this map — these results are unfiltered.</div>`;
-            if(outcome==="none_matched") return html`<div class="selnote">None of these organizations matched your filters. They are all shown below, marked as left out.</div>`;
-            if(outcome==="applied") return html`<div class="selnote quiet">${res.selection_note||matchCount(res)}</div>`;
+            // Newer maps store an exact sentence (it differs after a follow-up);
+            // older ones only stored marks, so they get a fixed wording.
+            const said=res.selection_outcome&&res.selection_note;
+            if(outcome==="failed") return html`<div class="selnote">${said||"Your filters could not be applied to this map — these results are unfiltered."}</div>`;
+            if(outcome==="none_matched") return html`<div class="selnote">${said||"None of these organizations matched your filters. They are all shown below, marked as left out."}</div>`;
+            if(outcome==="applied") return html`<div class="selnote quiet">${said||matchCount(res)}</div>`;
             return null;
           })()}
 
@@ -1630,7 +1696,8 @@ function BuildMap({carried,onCarriedChange}){
             // selection did not judge, then the exclusions with their reasons.
             const order=e=>e._rank?e._rank:(e._selected===false?1e6:5e5);
             return MDISPLAY_GROUPS.map(([k,label,tone])=>{
-              const items=[...((res.entities&&res.entities[k])||[])].sort((a,b)=>order(a)-order(b));
+              const items=[...((res.entities&&res.entities[k])||[])]
+                .filter(e=>!(parkedOnly&&parkedCount>0)||e._review==="parked").sort((a,b)=>order(a)-order(b));
               if(!items.length) return null;
               return html`<div class="mgroup" key=${k}>
                 <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
@@ -1638,7 +1705,9 @@ function BuildMap({carried,onCarriedChange}){
                 ${items.map((e,i)=>html`<${MapCard} key=${k+i} e=${e} request=${request}
                   jobId=${jobId} onCost=${setCost} onError=${setErr}
                   onBusy=${v=>{setVerifying(v);poll(jobId);}}
-                  disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}/>`)}
+                  disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}
+                  onReviewed=${d=>{setRes(d.result);setCost(d.cost);}}
+                  reviewDisabled=${busy||verifying||["running","planning","verifying"].includes(runStatus)}/>`)}
               </div>`;
             });
           })()}

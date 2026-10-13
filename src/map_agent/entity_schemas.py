@@ -154,8 +154,15 @@ def submit_entities_tool(entity_type: str) -> dict:
     }
 
 # V2 adds light-pull fields without changing production database columns.
-from src.map_agent.actor_profile import CATEGORIES
+from src.map_agent.actor_profile import ALL_CATEGORY_TYPES, CATEGORIES, CATEGORY_TYPES
 _ACTOR_ITEM['properties']['actor_type'] = {'type': 'string', 'enum': CATEGORIES}
+# One flat list, because the schema cannot tie a list to the chosen category;
+# normalize_actor_profile rejects a type from the wrong category.
+_ACTOR_ITEM['properties']['category_type'] = {
+    'type': 'string', 'enum': ALL_CATEGORY_TYPES,
+    'description': 'Sub-type within the chosen actor_type. Use only that category\'s list: '
+                   + ' | '.join(f'{c}: {", ".join(t)}' for c, t in CATEGORY_TYPES.items())}
+_ACTOR_ITEM['required'] = _ACTOR_ITEM['required'] + ['category_type']
 _ACTOR_ITEM['properties']['country']['description'] = 'Evidence-supported country; do not assume US for an international actor.'
 for key, description in {
     'other_names': 'Former names and abbreviations, separated by semicolons.',
@@ -163,7 +170,7 @@ for key, description in {
     'sector': 'Evidence-supported sectors, separated by semicolons.',
     'mapped_topic': 'Specific topic this actor was found for.',
     'match_explanation': '1–2 sentences explaining the evidence-based match to the topic, not hypothetical GHUS use.',
-    'international_connections': 'Documented international/Africa/Morocco programs or partnerships visible in these sources.',
+    'international_connections': 'Documented Africa/Morocco programs or partnerships visible in these sources.',
 }.items():
     _ACTOR_ITEM['properties'][key] = {'type':'string', 'description':description}
 _ACTOR_ITEM['properties']['match_strength'] = {'type':'string', 'enum':['strong','moderate']}

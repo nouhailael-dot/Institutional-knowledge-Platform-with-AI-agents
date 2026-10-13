@@ -20,6 +20,10 @@ load_dotenv()
 MODEL = "claude-opus-4-8"   # most capable; -> claude-sonnet-5 / -haiku-4-5 to cut cost
 MAX_TOKENS = 2048
 CONDENSE_MODEL = "claude-haiku-4-5"   # cheap: only rewrites a follow-up into a standalone Q
+# The Ask -> Build the Map handoff runs once per click and decides which filters a
+# paid map enforces. On Haiku a constraint set early in the thread was dropped in
+# 1 of 3 runs; on Sonnet it held 5 of 5. Reliability is worth the cents here.
+HANDOFF_MODEL = "claude-sonnet-5"
 
 _client = None
 
@@ -60,17 +64,28 @@ research the topic on the open web. Read the WHOLE conversation and separate wha
 they narrowed to, so none of it has to be retyped.
 
 A constraint set at any point in the conversation counts, even if it was never \
-repeated. Take only what the user actually established — never invent a filter \
-they did not ask for.
+repeated.
 
-- topic: the subject matter they converged on, as a noun phrase.
-- must_be: pass/fail conditions. Organization kind ("universities"), geography \
-("in Texas or New Mexico"). One condition per entry.
-- exclude: what they ruled out ("seawater desalination").
-- prefer: what they leaned toward without requiring it ("pilot-scale").
-- result_limit: only if they named a number, else 0.
-- known_actors: organizations the assistant's answers cited from the database. \
-These are background, not part of the request.
+Constraints come ONLY from what the USER wrote. The DATABASE ANSWER lines show \
+what the database happened to contain - never turn them into a filter. If the \
+answers mention organizations in one state and the user asks about another, the \
+geography is only the one the user asked about. Use the answers solely to \
+understand what the user's words refer to ("those", "them").
+
+Only a stated restriction is must_be or exclude ("startups only", "not \
+corporate labs", "in Ohio"). Something the user merely ASKED about ("do any of them \
+have EU funding?") shows interest, not a requirement — it is at most \
+a prefer entry.
+
+- topic: the subject matter alone, as a short noun phrase. Do not repeat anything \
+that belongs in must_be, exclude or prefer.
+- must_be: pass/fail conditions the user stated - organization kind, geography. \
+One condition per entry.
+- exclude: what the user ruled out.
+- prefer: what the user leaned toward without requiring it.
+- result_limit: only if the user named a number, else 0.
+- known_actors: organizations the database answers cited. These are background, \
+not part of the request.
 
 in_scope is false only when the topic is not about research organizations, \
 people or events at all. Running out of database coverage is exactly when this \
@@ -107,12 +122,12 @@ def ask_handoff(history: list[dict]) -> dict:
     silently empty handoff would send the user to the map page with nothing.
     """
     convo = "\n\n".join(
-        f"User: {turn.get('q','')}\nAssistant: {turn.get('a','')}"
+        f"USER: {turn.get('q','')}\nDATABASE ANSWER (context only, never a filter): {turn.get('a','')}"
         + (f"\n[cited from database: {', '.join(turn.get('sources') or [])}]"
            if turn.get("sources") else "")
         for turn in (history or []))
     resp = _get_client().messages.create(
-        model=CONDENSE_MODEL, max_tokens=1024, system=_HANDOFF_SYSTEM,
+        model=HANDOFF_MODEL, max_tokens=2048, system=_HANDOFF_SYSTEM,
         tools=[_HANDOFF_TOOL],
         messages=[{"role": "user", "content": convo[:24000]}])
     for block in resp.content:
@@ -139,22 +154,28 @@ def _get_client() -> anthropic.Anthropic:
 
 SYSTEM_PROMPT = """\
 You are the UM6P Global Hubs research assistant. You answer questions about a \
-curated map of US institutions, national labs, funders, ventures, and events \
+verified database of US institutions, national labs, funders, ventures, and events \
 that the team tracks for partnership-building.
 
-You will be given a numbered list of SOURCE entities retrieved from the map, \
-followed by a question. Follow these rules exactly:
+You will be given a numbered list of SOURCE entities retrieved from the verified \
+database, followed by a question. Follow these rules exactly:
 
 1. Answer ONLY from the provided sources. Do not use outside knowledge.
 2. Cite the source for every fact, by the entity's name, like: \
 (source: Savannah River National Laboratory).
-3. If the sources do not contain the answer, say plainly: "The map doesn't \
-contain enough information to answer this." Do not guess or fabricate.
+3. If the sources do not contain the answer, say plainly: "The verified database \
+doesn't contain enough information to answer this." Do not guess or fabricate. \
+When you list what the database holds on a subject, say it is what the database \
+holds, not everything that exists.
 4. Be concise and factual. Lead with the direct answer, then supporting detail.
 5. When several entities are relevant, group or list them clearly.
 6. Never explain how the search or retrieval worked — no commentary on query \
 matching, text patterns, false positives, or why certain results were included \
 or excluded. Just answer the question.
+7. Some sources may be marked PARKED: organizations a teammate set aside in a \
+saved map that are not in the verified database. Give the verified database \
+answer first. Then, only if parked sources are relevant, add a short separate \
+part headed "Parked, not verified", naming each one and the map it came from.
 """
 
 
@@ -162,7 +183,9 @@ def _format_context(entities: list[dict]) -> str:
     """Render retrieved entities into a numbered block for the prompt."""
     blocks = []
     for i, e in enumerate(entities, 1):
-        blocks.append(f"[SOURCE {i}] {e['name']} ({e['entity_type']})\n"
+        label = (f" — PARKED, not verified; from the saved map \"{e.get('map') or 'untitled'}\""
+                 if e.get("parked") else "")
+        blocks.append(f"[SOURCE {i}] {e['name']} ({e['entity_type']}){label}\n"
                       f"{e['doc_text']}")
     return "\n\n".join(blocks)
 

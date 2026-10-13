@@ -187,8 +187,23 @@ class ControlledTests(unittest.TestCase):
         saved = self.store.get(self.id)
         self.assertEqual(saved["result"]["counts"]["actor"], 1)
         self.assertEqual(saved["status"], "cancelled")
-        self.assertFalse(saved["cost"]["can_resume"])
+        # Stopping is not final: the unfinished research can be continued explicitly.
+        self.assertTrue(saved["cost"]["can_resume"])
         self.provider.search.assert_called_once()
+
+    def test_a_follow_up_does_not_bring_back_a_rejected_organization(self):
+        from src.map_agent import review
+        self.build()
+        self.store.finish(self.id, "done")
+        self.store.edit_result(self.id, lambda r, w: review.apply(r, w, "Example Lab", URL, "reject"))
+        self.store.claim(self.id, "running", "Research", ("done",))
+        follow_up = {"tasks": [{"entity_type": "actor", "query": "US battery labs, more"}]}
+        run = RunContext(self.store, self.id)
+        result = build_controlled_map("battery labs", follow_up, run,
+                                      ResearchSources(run, self.provider, self.fetcher), self.client)
+        self.assertEqual(result["entities"]["actor"], [])
+        # It was found again and paid for, but not added back.
+        self.assertEqual(self.client.messages.create.call_count, 2)
 
     def test_search_cache_normalizes_whitespace_and_case(self):
         self.sources.search("  US   battery labs ")

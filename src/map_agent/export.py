@@ -35,16 +35,17 @@ SANS   = "Calibri"                    # body / labels
 # the column order in the sheet and the field order on a slide.
 FIELDS = {
     "actor": [
-        ("name", "Name"), ("actor_type", "Type"), ("description", "Description"),
+        ("name", "Name"), ("_review", "Review"), ("actor_type", "Category"), ("category_type", "Category type"),
+        ("description", "Description"),
         ("location_city", "City"), ("state", "State"),
         ("primary_technical_focus", "Focus"), ("technical_approach", "Approach"),
         ("current_activities", "Current activities"),
         ("funding_summary", "Funding"), ("rankings", "University rankings"), ("website", "Website"),
-        ("other_names", "Other names"), ("category_note", "Category review"),
-        ("country", "Country"), ("region", "Region"), ("multi_location", "Multiple locations"),
+        ("other_names", "Other names"), ("category_note", "Category note"),
+        ("country", "Country"), ("region", "Region"),
         ("sector", "Sector"), ("mapped_topic", "Mapped topic"),
         ("match_strength", "Topic match"), ("match_explanation", "Why it matched"),
-        ("international_connections", "International / Africa / Morocco connections"),
+        ("international_connections", "Africa / Morocco connections"),
         ("actor_relationships", "Organization relationships"), ("category_details", "Category-specific information"),
     ],
     "person": [

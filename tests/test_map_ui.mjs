@@ -1,4 +1,6 @@
 // Offline state-transition tests using a tiny hook harness, no browser or API.
+// Run with: node --experimental-vm-modules tests/test_map_ui.mjs
+// (vm.SourceTextModule, used to parse the whole page module, is behind that flag.)
 import fs from 'node:fs';
 import vm from 'node:vm';
 import assert from 'node:assert/strict';
@@ -8,7 +10,7 @@ const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url),
 const script = page.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
 // Parse the entire delivered module, including all templates/imports.
 new vm.SourceTextModule(script);
-const component = script.slice(script.indexOf('function BuildMap(){'), script.indexOf('/* ------------------------------------------------------------------ App */'))
+const component = script.slice(script.indexOf('function BuildMap('), script.indexOf('/* ------------------------------------------------------------------ App */'))
   .replace('const total=all().length;', `const total=all().length;
     globalThis.view={send,stop,restore,reset,poll,refreshRecent,setDesc,extendBudget,continueResearch,
       state:{jobId,cost,res,busy,runStatus,err,msgs}};`);
@@ -33,9 +35,12 @@ function harness(fetcher){
     MGROUPS:[['actor','Organizations','slate'],['person','People','slate'],['event','Events','slate']],
     MDISPLAY_GROUPS:[['actor','Organizations','slate'],['event','Events','slate']],
     AVATAR:'', ICON_SEARCH:'', MapCard(){}, md:()=>({}), ename:e=>e.name||e.full_name,
+    // Helpers the component calls that live outside the sliced source.
+    CarriedRows(){}, requestFromRows:()=>'', askContextFrom:()=>null,
+    selectionOutcome:()=>'no_requirements', matchCount:()=>'',
   });
   vm.runInContext(component,context);
-  const render=()=>{cursor=0;context.BuildMap();return context.view;};
+  const render=()=>{cursor=0;context.BuildMap({});return context.view;};
   render();
   return {render,context,storage,timers};
 }

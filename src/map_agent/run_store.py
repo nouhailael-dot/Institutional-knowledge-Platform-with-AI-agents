@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
+from src.map_agent.review import PARKED
+
 MICRO = 1_000_000
 DEFAULT_BUDGET = 2 * MICRO
 MAX_BUDGET = 3 * MICRO
@@ -167,12 +169,77 @@ class RunStore:
         return json.loads(row["response"])
 
     @staticmethod
-    def _can_resume(row, calls, workflow, required_allowance=1):
+    def _settled(calls):
+        return all(c["status"] == "complete" and c["cost"] is not None
+                   and c["cost"] <= c["reserved"] for c in calls)
+
+    @classmethod
+    def _can_resume(cls, row, calls, workflow, required_allowance=1):
         return (bool(workflow) and workflow.get("version") == 1 and workflow.get("phase") != "done"
-                and row["status"] in ("budget_stopped", "error", "interrupted")
-                and all(c["status"] == "complete" and c["cost"] is not None
-                        and c["cost"] <= c["reserved"] for c in calls)
+                and row["status"] in ("budget_stopped", "error", "interrupted", "cancelled")
+                and cls._settled(calls)
                 and sum(c["cost"] for c in calls) + required_allowance <= row["budget"])
+
+    @classmethod
+    def _can_reopen(cls, row, calls, workflow):
+        """A map stopped by hand with no research left half done."""
+        unfinished = bool(workflow) and workflow.get("phase") != "done"
+        return bool(row["cancelled"]) and row["status"] == "cancelled" \
+            and not unfinished and cls._settled(calls)
+
+    def edit_result(self, run_id, change):
+        """Apply change(result, workflow) -> (result, workflow) while no worker runs."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            if row["status"] in ACTIVE:
+                raise MapStopped("Wait until the map has finished or been stopped.")
+            cached = db.execute("SELECT value FROM work_cache WHERE run_id=? AND key='workflow'",
+                                (run_id,)).fetchone()
+            result, workflow = change(json.loads(row["result"]) if row["result"] else None,
+                                      json.loads(cached[0]) if cached else None)
+            db.execute("UPDATE runs SET result=?,updated=? WHERE id=?",
+                       (json.dumps(result), time.time(), run_id))
+            if workflow is not None:
+                db.execute("INSERT OR REPLACE INTO work_cache VALUES(?,'workflow',?)",
+                           (run_id, json.dumps(workflow)))
+
+    def parked_actors(self):
+        """(run id, map description, organization) for every parked organization."""
+        with self.connect() as db:
+            rows = db.execute("SELECT id,description,result FROM runs WHERE result IS NOT NULL").fetchall()
+        out = []
+        for row in rows:
+            result = json.loads(row["result"]) or {}
+            for actor in (result.get("entities") or {}).get("actor", []):
+                if actor.get("_review") == PARKED:
+                    out.append((row["id"], row["description"], actor))
+        return out
+
+    def reopen(self, run_id):
+        """Unlock a stopped map so its conversation can go on. Starts no work."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            cached = db.execute("SELECT value FROM work_cache WHERE run_id=? AND key='workflow'",
+                                (run_id,)).fetchone()
+            calls = db.execute("SELECT * FROM calls WHERE run_id=?", (run_id,)).fetchall()
+            if not self._can_reopen(row, calls, json.loads(cached[0]) if cached else None):
+                raise MapStopped("This map can't be reopened: a request may still be finishing, "
+                                 "or its unfinished research can be continued instead.")
+            saved = {k: json.loads(row[k]) if row[k] else None for k in ("result", "plan", "messages")}
+            if saved["result"]:
+                status = "done"
+            elif (saved["plan"] or {}).get("tasks"):
+                status = "ready"
+            else:
+                status = "awaiting_reply" if saved["messages"] else "draft"
+            db.execute("UPDATE runs SET cancelled=0,status=?,stage='Reopened',error=NULL,updated=? WHERE id=?",
+                       (status, time.time(), run_id))
 
     def resume(self, run_id):
         """Explicit continuation only, under the original budget and saved plan."""
@@ -225,6 +292,7 @@ class RunStore:
                        "usage_complete": not any(c["status"] == "unknown" for c in calls),
                        "can_extend": self._can_extend(out, calls),
                        "can_resume": self._can_resume(out, calls, workflow, json.loads(needed[0]) if needed else 1),
+                       "can_reopen": self._can_reopen(out, calls, workflow),
                        "by_stage": stages, "calls": calls}
         return out
 

@@ -59,6 +59,42 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue(all(e["_selected"] is True and e["_rank"] is None for e in entities))
         self.assertIn("output limit", result["note"])
 
+    def run_with_limit(self, response, limit):
+        reqs = {**REQS, "result_limit": limit}
+        entities = candidates()
+        with patch.object(select, "paid_message", return_value=response):
+            select.apply_request(entities, "water accelerators", reqs, run=object())
+        return entities
+
+    def test_a_limit_cut_is_not_reported_as_a_mismatch(self):
+        entities = self.run_with_limit(tool_response([{"id": 1, "why": "fits"}], []), limit=1)
+        self.assertTrue(entities[1]["_beyond_limit"])
+        self.assertEqual(entities[1]["_why_not"], "Not among the top 1 you asked for.")
+
+    def test_the_model_can_mark_a_limit_cut_explicitly(self):
+        entities = self.run_with_limit(tool_response(
+            [{"id": 1, "why": "fits"}, {"id": 2, "why": "fits"}],
+            [{"id": 3, "reason": "fits, but sixth", "fits": True}]), limit=5)
+        self.assertTrue(entities[2]["_beyond_limit"])
+
+    def test_a_real_mismatch_keeps_its_reason_even_when_the_limit_is_reached(self):
+        entities = self.run_with_limit(tool_response(
+            [{"id": 1, "why": "fits"}], [{"id": 2, "reason": "company, not an accelerator"}]), limit=1)
+        self.assertFalse(entities[1]["_beyond_limit"])
+        self.assertEqual(entities[1]["_why_not"], "company, not an accelerator")
+        self.assertTrue(entities[2]["_beyond_limit"])
+
+    def test_a_reason_written_under_why_is_still_kept(self):
+        # Observed live: the model used "why" for an excluded item.
+        entities, _, _ = self.run_select(tool_response(
+            [{"id": 1, "why": "fits"}], [{"id": 2, "why": "company, not an accelerator"}]))
+        self.assertEqual(entities[1]["_why_not"], "company, not an accelerator")
+
+    def test_without_a_limit_an_unlisted_candidate_is_not_called_a_limit_cut(self):
+        entities, _, _ = self.run_select(tool_response([{"id": 1, "why": "fits"}], []))
+        self.assertFalse(entities[1]["_beyond_limit"])
+        self.assertEqual(entities[1]["_why_not"], "No reason given.")
+
     def test_no_requirements_skips_the_call(self):
         with patch.object(select, "paid_message") as paid:
             result = select.apply_request(candidates(), "water", {}, run=object())
@@ -80,6 +116,92 @@ class SelectionTests(unittest.TestCase):
         key = lambda paid: paid.call_args.kwargs["operation_key"]
         self.assertNotEqual(key(first), key(second))
         self.assertEqual(key(first), key(again))
+
+
+class HandoffTests(unittest.TestCase):
+    """The Ask -> Build the Map condenser may only take filters from the user."""
+
+    def test_database_answers_are_marked_as_context_and_a_stronger_model_is_used(self):
+        from src import generate
+        captured = {}
+        def create(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(content=[SimpleNamespace(type="tool_use", name="submit_handoff",
+                input={"in_scope": True, "topic": "brackish groundwater desalination"})])
+        client = SimpleNamespace(messages=SimpleNamespace(create=create))
+        history = [{"q": "What about New Mexico?", "a": "The Texas hub has two labs.",
+                    "sources": ["Texas A&M Water Programs"]}]
+        with patch.object(generate, "_get_client", return_value=client):
+            generate.ask_handoff(history)
+        convo = captured["messages"][0]["content"]
+        self.assertIn("USER: What about New Mexico?", convo)
+        self.assertIn("DATABASE ANSWER (context only, never a filter): The Texas hub", convo)
+        self.assertEqual(captured["model"], generate.HANDOFF_MODEL)
+        self.assertIn("ONLY from what the USER wrote", captured["system"])
+
+
+class FollowUpTests(unittest.TestCase):
+    """A follow-up on a built map judges only its newcomers, against itself."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from src.map_agent.run_store import RunStore, RunContext
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.store = RunStore(Path(temp.name) / "runs.sqlite3")
+        self.id = self.store.create("universities in New York")
+        self.store.claim(self.id, "running", "Research", ("draft",))
+        self.run = RunContext(self.store, self.id)
+
+    def build(self, description, query, rows, select_fn):
+        from src.map_agent import research
+        rows = [{**row, "_entity_type": "actor"} for row in rows]   # as extract() tags them
+        plan = {"tasks": [{"entity_type": "actor", "query": query}],
+                "requirements": {"hard_filters": [description], "preferences": [], "result_limit": 0}}
+        with patch.object(research, "_collect", return_value=[{"url": "u", "text": "t"}]), \
+             patch.object(research, "extract", return_value=(rows, "")) as extract, \
+             patch.object(research, "apply_request", side_effect=select_fn) as selection:
+            research.build_controlled_map(description, plan, self.run)
+        return extract, selection
+
+    @staticmethod
+    def rank_all(entities, request, requirements, run=None):
+        for i, e in enumerate(entities, 1):
+            select._mark(e, True, rank=i, why="fits")
+        return {"selected": entities, "rest": [], "note": "", "outcome": select.APPLIED}
+
+    @staticmethod
+    def reject_all(entities, request, requirements, run=None):
+        for e in entities:
+            select._mark(e, False, why_not="not a national laboratory")
+        return {"selected": [], "rest": entities, "note": "", "outcome": select.NONE_MATCHED}
+
+    def test_earlier_results_keep_their_judgement(self):
+        universities = [{"name": "Columbia Energy Lab"}, {"name": "NYU Grid Lab"}]
+        self.build("universities in New York", "NY university energy labs", universities, self.rank_all)
+
+        extract, selection = self.build("also national labs", "national labs building energy",
+                                        [{"name": "Brookhaven National Laboratory"}], self.reject_all)
+
+        judged = [e["name"] for e in selection.call_args.args[0]]
+        self.assertEqual(judged, ["Brookhaven National Laboratory"])
+        self.assertEqual(selection.call_args.args[1], "also national labs")
+        self.assertEqual(extract.call_args.args[1], "also national labs")
+
+        found = {e["name"]: e for e in self.store.cached(self.id, "workflow")["found"]}
+        self.assertTrue(found["Columbia Energy Lab"]["_selected"])
+        self.assertEqual(found["NYU Grid Lab"]["_rank"], 2)
+        self.assertFalse(found["Brookhaven National Laboratory"]["_selected"])
+
+    def test_follow_up_matches_rank_after_earlier_ones(self):
+        self.build("universities in New York", "q1", [{"name": "A Lab"}, {"name": "B Lab"}], self.rank_all)
+        self.build("also national labs", "q2", [{"name": "C National Lab"}], self.rank_all)
+        state = self.store.cached(self.id, "workflow")
+        ranks = {e["name"]: e["_rank"] for e in state["found"]}
+        self.assertEqual(ranks, {"A Lab": 1, "B Lab": 2, "C National Lab": 3})
+        self.assertEqual(state["description"], "universities in New York")
+        self.assertIn("1 of the 1 found by your follow-up", state["selection_note"])
 
 
 if __name__ == "__main__":

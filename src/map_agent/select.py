@@ -70,6 +70,10 @@ _SUBMIT = {
                                    "description": "A few words: 'company, not an "
                                                   "accelerator', 'in Dallas, outside "
                                                   "the region'."},
+                        "fits": {"type": "boolean",
+                                 "description": "True when it meets every hard filter "
+                                                "and was left out only by the result "
+                                                "limit."},
                     },
                     "required": ["id", "reason"],
                 },
@@ -99,8 +103,9 @@ candidate's fields.
 
 Be decisive. Every candidate goes in exactly one list: `selected` or \
 `excluded`. Give each excluded one a short reason naming the requirement it \
-fails — the user sees it next to the organization. Call submit_selection \
-exactly once."""
+fails — the user sees it next to the organization. If a result limit is the \
+only reason a candidate was left out, still list it in `excluded` with \
+fits: true. Call submit_selection exactly once."""
 
 _client = None
 
@@ -118,7 +123,7 @@ def _render(entity: dict, idx: int) -> str:
     """One compact line per candidate — enough to judge, cheap to send."""
     name = entity.get("full_name") or entity.get("name") or "?"
     bits = [f"{idx}. {name}"]
-    for k in ("actor_type", "location_city", "state", "location", "title",
+    for k in ("actor_type", "category_type", "location_city", "state", "location", "title",
               "primary_technical_focus", "event_type", "next_date"):
         v = entity.get(k)
         if v:
@@ -137,9 +142,10 @@ def _has_request(requirements: dict) -> bool:
                 or (r.get("result_limit") or 0) > 0)
 
 
-def _mark(entity, selected, rank=None, why=None, why_not=None):
+def _mark(entity, selected, rank=None, why=None, why_not=None, beyond_limit=False):
     entity["_selected"], entity["_rank"] = selected, rank
     entity["_why"], entity["_why_not"] = why, why_not
+    entity["_beyond_limit"] = beyond_limit
 
 
 def apply_request(entities: list[dict], request: str, requirements: dict,
@@ -207,11 +213,18 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
     for e in entities:
         _mark(e, False)
 
-    reasons = {}
+    reasons, fits = {}, set()
     for item in excluded:
         i = (item.get("id") or 0) - 1
-        if 0 <= i < len(entities) and item.get("reason"):
-            reasons[i] = str(item["reason"]).strip()
+        if not 0 <= i < len(entities):
+            continue
+        # The tool schema is not strictly enforced; in live use the model has
+        # written the reason under "why", the key it uses for selected items.
+        reason = item.get("reason") or item.get("why")
+        if reason:
+            reasons[i] = str(reason).strip()
+        if item.get("fits") is True:
+            fits.add(i)
 
     selected = []
     for rank, item in enumerate(picked, 1):
@@ -221,8 +234,18 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
             selected.append(entities[i])
 
     rest = [e for e in entities if not e["_selected"]]
+    # A result-limit cut is not a mismatch. When the limit was reached, anything
+    # the model left unlisted gets the one label true either way: it is not among
+    # the top N, whether or not it would otherwise have fitted.
+    limit = reqs.get("result_limit") or 0
+    limit_reached = limit > 0 and len(selected) >= limit
     for i, e in enumerate(entities):
-        if not e["_selected"]:
+        if e["_selected"]:
+            continue
+        if limit > 0 and (i in fits or (limit_reached and i not in reasons)):
+            e["_beyond_limit"] = True
+            e["_why_not"] = f"Not among the top {limit} you asked for."
+        else:
             e["_why_not"] = reasons.get(i) or "No reason given."
 
     if not selected:

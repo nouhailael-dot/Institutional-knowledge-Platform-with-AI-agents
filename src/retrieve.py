@@ -19,14 +19,22 @@ from src.embed import embed_texts, _to_pgvector
 
 RRF_K = 60  # RRF constant; 60 is the standard default, tune against evals later
 
+# search_doc is a snapshot rebuilt offline (python -m src.embed). Between rebuilds
+# it can still hold actors that were since rejected or merged, so an actor only
+# counts when it is live in actor_read. Hubs and events are not reviewed.
+LIVE_ONLY = """(entity_type <> 'actor' OR EXISTS (
+    SELECT 1 FROM actor_read a
+    WHERE a.actor_id = search_doc.entity_id AND a.merged_into_actor_id IS NULL))"""
+
 
 def vector_search(question: str, limit: int = 20) -> list[dict]:
     """Semantic search: embed the question, find the nearest doc embeddings."""
     (query_vec,) = embed_texts([question], input_type="query")
-    sql = """
+    sql = f"""
         SELECT entity_id, entity_type, name, doc_text,
                embedding <=> %s::vector AS distance
         FROM search_doc
+        WHERE {LIVE_ONLY}
         ORDER BY distance ASC
         LIMIT %s
     """
@@ -39,11 +47,11 @@ def vector_search(question: str, limit: int = 20) -> list[dict]:
 def keyword_search(question: str, limit: int = 20) -> list[dict]:
     """Lexical search over the tsvector. websearch_to_tsquery handles free text
     (quotes, OR, minus) gracefully, so raw user questions just work."""
-    sql = """
+    sql = f"""
         SELECT entity_id, entity_type, name, doc_text,
                ts_rank(doc_tsv, websearch_to_tsquery('english', %s)) AS rank
         FROM search_doc
-        WHERE doc_tsv @@ websearch_to_tsquery('english', %s)
+        WHERE doc_tsv @@ websearch_to_tsquery('english', %s) AND {LIVE_ONLY}
         ORDER BY rank DESC
         LIMIT %s
     """
