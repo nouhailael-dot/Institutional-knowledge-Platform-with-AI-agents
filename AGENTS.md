@@ -28,7 +28,10 @@ before touching files. Stop if either path differs.
    DDL or writes to shared Supabase.
 3. Every new job and script defaults to dry-run. Live execution requires an
    explicit manual dispatch.
-4. Person discovery remains feature-flagged off until supervisor sign-off.
+4. Person discovery is enabled: supervisor sign-off was confirmed by the
+   platform owner on 2026-10-15 and recorded in the backend's
+   `TARGETING_POLICY.md` section 6. Every person record still routes to human
+   review; none is auto-created or auto-absorbed.
 5. `aggregate` remains excluded from ER candidates, reference sets, and agent
    outputs through the `actor_type` -> `actor_category` rename.
 6. `hub_overlap` remains excluded from the ER model. Do not reintroduce
