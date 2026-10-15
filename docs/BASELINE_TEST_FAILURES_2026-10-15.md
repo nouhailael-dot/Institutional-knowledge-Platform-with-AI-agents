@@ -2,7 +2,7 @@
 
 Run: `python -m pytest tests` in `C:\Users\Ismail\Projects\GHUS-Platform`,
 2026-10-15, against `ghus_v2_final_schema_test` (V2 + 550 + 560).
-**Result: 804 passed, 3 failed, 11 skipped.** The three are below. None is
+**Result: 808 passed, 5 failed, 11 skipped.** They are below. None is
 caused by the discovery or Review work, and none indicates a defect in the
 shipped code.
 
@@ -72,3 +72,34 @@ inspecting the committed version, which contains no canonical write).
 If instead you want to keep that script, it must not live in `scripts/`: move
 it to a test that runs only against an isolated `*_test` database, or the
 allowlist test will keep failing — as designed.
+
+## 4 and 5. `test_isolated_database_contains_v2_schema` and `test_orm_columns_match_isolated_v2_database`
+
+**Cause — which database the suite was pointed at.** Both assert the schema
+*after* the final-contract cutover: no `actor_v1_compat` /
+`actor_profile_current` / `staged_record_agent3_compat` views, `alt_names` and
+`city` renamed, the legacy columns dropped. That is migration **500**, which
+is still in `migrations/proposed/deferred/` and fails closed until the
+pre-cutover data-loss audit is attested:
+
+```
+IF NOT EXISTS (SELECT 1 FROM architecture_v2_cutover_attestation
+               WHERE audit_name='pre_cutover_data_loss_audit' AND passed)
+  THEN RAISE EXCEPTION 'pre_cutover_data_loss_audit has not passed';
+```
+
+Proof that it is the database and not the code: both tests **pass** against a
+post-cutover database —
+
+```bash
+V2_TEST_DATABASE_URL=postgresql+psycopg://ghus_test@127.0.0.1:55432/ghus_v2_ui_test   python -m pytest tests/db/test_architecture_v2_schema.py -k "isolated_database_contains or orm_columns"
+# 2 passed
+```
+
+and fail against `ghus_v2_final_schema_test` (V2 + 550 + 560, 500 deferred).
+
+**Decision: leave both failing until 500 is applied.** They are the signal that
+the cutover has not happened yet. No local database can satisfy both these and
+the integration tests at once, because the integration tests need the seeded
+request data that the post-cutover database does not carry — so state which
+database a run used when quoting its numbers.
