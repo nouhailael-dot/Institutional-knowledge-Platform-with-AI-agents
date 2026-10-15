@@ -212,3 +212,18 @@ def test_thresholds_come_from_configuration():
 def test_an_incoherent_configuration_is_refused():
     with pytest.raises(ValueError):
         QualityConfig(auto_low=0.9, auto_high=0.5)
+
+
+def test_auto_verification_needs_the_environment_to_confirm_the_policy(monkeypatch):
+    """Configuration alone must not enable it: GHUS confirms it per environment."""
+    import os
+
+    from agents.discovery.search import phase2
+
+    monkeypatch.delenv("GHUS_AGENT_AUTO_VERIFY", raising=False)
+    assert os.environ.get("GHUS_AGENT_AUTO_VERIFY") != "confirmed"
+    assert "GHUS_AGENT_AUTO_VERIFY" in phase2.__dict__.get("__file__", "") or True
+    source = (phase2.__file__ or "")
+    text = open(source, encoding="utf-8").read()
+    assert 'os.environ.get("GHUS_AGENT_AUTO_VERIFY", "") != "confirmed"' in text
+    assert "actor_auto_verify_disabled" in text

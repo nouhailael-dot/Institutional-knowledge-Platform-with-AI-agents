@@ -626,6 +626,9 @@ def test_actor_candidate_migration_persists_every_score_input():
 
 
 def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, tmp_path):
+    # Auto-verification is off unless the environment confirms it (2026-10-15);
+    # this test is about the accepted band's reasons, so it confirms it.
+    monkeypatch.setenv("GHUS_AGENT_AUTO_VERIFY", "confirmed")
     config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
     # This test is about which bands reach staging. The stub extractor has no
     # classifier and no official sites, so after-banding classification and
@@ -756,6 +759,7 @@ def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, t
     # Decision 2026-10-14: an accepted actor is created Verified, and the
     # verification states what the agent checked.
     assert config["actor_auto_accept_status"] == "verified"
+    # ...and only where GHUS has confirmed the policy for that environment.
     assert len(accept_reasons) == 1 and "every quality gate held" in accept_reasons[0]
     assert "https://high.example/about" in accept_reasons[0]
     assert stats["actor_band_auto_high"] == 1
