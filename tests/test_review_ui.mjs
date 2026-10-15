@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import {test} from 'node:test';
 
 import {
+  AUDIT_ONLY_FIELDS,
   DERIVED_FIELDS,
   actorReviewSummary,
   canSubmitReview,
@@ -15,6 +16,8 @@ import {
   formatFactValue,
   groupQueue,
   headerBadges,
+  hubDropdownOptions,
+  lightPullBoxes,
   isMigratedBaseline,
   lightFactRows,
   lightPullFacts,
@@ -29,10 +32,20 @@ import {
   reviewRunLabel,
   reviewStatusLabel,
   runChip,
+  SUBSCRIPTION_STATUS_LABELS,
+  hubProposalPlace,
+  requestedViaLabel,
+  whyMatchedFact,
+  thresholdLabel,
+  subscriptionPeriodLabel,
+  subscriptionScopeLabel,
+  subscriptionStatusLabel,
   validateReviewDraft,
 } from '../frontend/review.js';
 import {
   CATEGORIES,
+  COMMON_LIGHT_ROWS,
+  COUNTRIES,
   MISSING,
   NOT_APPLICABLE,
   PARENT_LINK_TYPES,
@@ -40,12 +53,15 @@ import {
   isParentLink,
   isValidPair,
   linkTypeLabel,
+  normalizeCountry,
   regionForState,
+  sectorOptions,
   typeOptions,
 } from '../frontend/taxonomy.js';
 import {
   ACRONYMS,
   BADGES,
+  REQUESTED_VIA,
   SECTIONS,
   SENTENCES,
   TITLE_CASE_GROUPS,
@@ -219,7 +235,7 @@ test('Light Pull rows follow the actor category and separate the kinds of missin
   assert.equal(trl.value, 'TRL 4');
   assert.equal(trl.confidence, 'High');
   assert.equal(trl.source, 'https://example.org/trl');
-  // The layer ran, so an absent row is Not Found rather than Not Yet Checked.
+  // The layer ran, so an absent row is Not Found rather than Not Yet Collected.
   assert.equal(startup.find(row => row.key === 'funding_signal').state, MISSING.notFound);
   assert.equal(startup.find(row => row.key === 'recent_activity').state, MISSING.notFound);
 });
@@ -240,7 +256,19 @@ test('Light Pull is Layer 1 only and Deep Pull evidence stays separate', () => {
   assert.deepEqual(lightPullFacts(candidate).map(fact => fact.fact_key), ['funding_signal']);
   assert.deepEqual(deepPullFacts(candidate).map(fact => fact.fact_key), ['relevant_products']);
   assert.equal(formatFactValue(null), 'No value recorded');
-  assert.match(formatFactValue({actor_category: 'company'}), /"actor_category": "company"/);
+  // A recorded fact is shown to a reviewer, not to a developer. Light Pull
+  // stores structured values, and dumping them as raw JSON put
+  // `{ "reason": "Found by open-web discovery ..." }` on screen instead of the
+  // sentence. A single meaningful sentence renders as itself; a small object
+  // renders as labelled lines.
+  assert.equal(formatFactValue({actor_category: 'company'}), 'Actor Category: company');
+  assert.equal(formatFactValue({reason: 'Found by open-web discovery for hub X'}),
+    'Found by open-web discovery for hub X');
+  assert.equal(formatFactValue({state: 'not_yet_checked'}), 'State: not_yet_checked');
+  assert.equal(formatFactValue(['AI', 'HEALTH']), 'AI, HEALTH');
+  // Several scalars become one labelled line each, and empties are left out.
+  assert.equal(formatFactValue({name: '', country: 'US', latitude: 37.3}),
+    ['Country: US', 'Latitude: 37.3'].join('\n'));
 });
 
 test('history keeps superseded values alongside the current one', () => {
@@ -396,7 +424,16 @@ test('the six numbered boxes are present and the IDs live only in Audit', () => 
   const auditPanel = component.split('review-audit')[1] || '';
   assert.match(auditPanel, /FIELDS\.candidateId/);
   assert.match(auditPanel, /FIELDS\.runId/);
-  assert.match(auditPanel, /FIELDS\.legacyActorType/);
+  // The legacy actor_type is no longer a field a reviewer is shown or asked
+  // about: not a control, not a box, not a row in the Audit panel. It stays in
+  // the raw candidate data, and keeps a label so that a diff against an
+  // existing record still reads properly rather than printing a raw column
+  // name.
+  assert.ok(AUDIT_ONLY_FIELDS.has('actor_type'));
+  assert.ok(AUDIT_ONLY_FIELDS.has('actor_type_raw'));
+  assert.doesNotMatch(auditPanel, /FIELDS\.legacyActorType/);
+  assert.doesNotMatch(component, /summary\?\.legacy_actor_type/);
+  assert.equal(reviewFieldLabel('actor_type'), 'Legacy Actor Type');
   assert.doesNotMatch(component, /class="review-provenance"/);
 });
 
@@ -432,8 +469,9 @@ test('Review is mounted and its navigation entry is present', () => {
 test('no Review string is hard-coded outside the label dictionary', () => {
   // Every user-visible string in the component resolves through labels.js or
   // taxonomy.js, so a typo is fixed in one place.
-  assert.match(component, /from "\.\/labels\.js"/);
-  assert.match(component, /from "\.\/taxonomy\.js"/);
+  // (A ?v= suffix only versions the URL so browsers fetch new code.)
+  assert.match(component, /from "\.\/labels\.js(\?v=\w+)?"/);
+  assert.match(component, /from "\.\/taxonomy\.js(\?v=\w+)?"/);
   const titles = Object.values(SECTIONS);
   for (const title of titles) {
     assert.ok(!component.includes(`>${title}<`), `${title} is written inline instead of via SECTIONS`);
@@ -469,8 +507,11 @@ test('every dictionary label is Title Case with the function words lower case', 
 test('the six missingness words are distinct and never substituted for each other', () => {
   const values = Object.values(MISSING);
   assert.equal(new Set(values).size, values.length);
+  // "Not Yet Collected" is the database's own word (actor_fact.collection_state
+  // allows found / not_found / not_yet_collected), so the screen uses it rather
+  // than a synonym.
   assert.deepEqual(values, [
-    'Not Found', 'Not Yet Checked', 'Not Provided', 'Pending Classification',
+    'Not Found', 'Not Yet Collected', 'Not Provided', 'Pending Classification',
     'Not Available', 'Not Applicable',
   ]);
 });
@@ -484,7 +525,7 @@ test('field labels come from the dictionary', () => {
 });
 
 test('a fact column never claims a search that did not happen', () => {
-  // Decision: "Not Found" means the layer looked. "Not Yet Checked" means it
+  // Decision: "Not Found" means the layer looked. "Not Yet Collected" means it
   // did not run. The source, date, confidence and origin columns carry the same
   // kind of missing as the row they belong to.
   const unchecked = lightFactRows({reviewed_payload: {actor_category: 'company'}});
@@ -524,7 +565,7 @@ test('every review reason has its own label, and none reads as a decision', () =
 // backend repo). A value the database can store must render as a real label,
 // never as a raw code.
 
-test('the ledger state not_yet_collected reads Not Yet Checked', () => {
+test('the ledger state not_yet_collected reads Not Yet Collected', () => {
   // actor_fact_collection_state_check allows exactly found / not_found /
   // not_yet_collected, and anything other than found carries a NULL value.
   const rows = lightFactRows({
@@ -590,12 +631,317 @@ test('controlled strength and confidence values display as labels', () => {
 test('the screen says which dimension decides hub membership', () => {
   // GHUS decision, 2026-10-08. Sector decides; topic is recorded but no longer
   // gates. A reviewer should be able to read that off the screen.
+  // Carried by the badges on the fields themselves rather than by a paragraph
+  // of explanation: the screen is for reviewing a record, not for teaching the
+  // rule. The sector field is marked "Decides Hub". The topic "Secondary"
+  // row was removed at GHUS request (2026-10-15).
   assert.match(component, /BADGES\.hubDimension/);
-  assert.match(component, /SENTENCES\.sectorDecidesHub/);
-  assert.match(component, /BADGES\.secondary/);
-  assert.match(component, /SENTENCES\.topicIsSecondary/);
+  assert.doesNotMatch(component, /BADGES\.secondary/);
   assert.equal(BADGES.hubDimension, 'Decides Hub');
-  assert.equal(BADGES.secondary, 'Secondary');
-  assert.match(SENTENCES.sectorDecidesHub, /sector/i);
-  assert.match(SENTENCES.topicIsSecondary, /no longer decides hub membership/);
+  // And the explanatory prose is gone from the page.
+  assert.doesNotMatch(component, /SENTENCES\.sectorDecidesHub/);
+  assert.doesNotMatch(component, /SENTENCES\.topicIsSecondary/);
+});
+
+// ------------------------------------------- layout correction and dropdowns
+
+test('the filters sit above the workspace, not inside the queue rail', () => {
+  // The original layout put them across the top, and that is where they work:
+  // in the rail they made it tall and heavy and pushed the editing area aside.
+  const filtersAt = component.indexOf('class="review-filters"');
+  const workspaceAt = component.indexOf('class="review-workspace"');
+  assert.ok(filtersAt > 0 && workspaceAt > 0);
+  assert.ok(filtersAt < workspaceAt, 'the filters must come before the workspace');
+  // Only one filter block, so they were moved rather than duplicated.
+  assert.equal(component.split('class="review-filters"').length - 1, 1);
+});
+
+test('the editing area is the dominant pane', () => {
+  const css = fs.readFileSync(new URL('../frontend/review.css', import.meta.url), 'utf8');
+  const grid = css.match(/\.review-workspace\{[^}]*grid-template-columns:([^;]+);/);
+  assert.ok(grid, 'the workspace grid must be declared');
+  // The rail is a fixed, narrow column; the detail takes the rest.
+  assert.match(grid[1], /minmax\(230px,\s*270px\)\s+minmax\(0,\s*1fr\)/);
+});
+
+test('hub assignment is one dropdown of existing hubs, with an explicit no-hub option', () => {
+  assert.match(component, /BUTTONS\.chooseHub/);
+  assert.match(component, /SENTENCES\.noHubOption/);
+  assert.doesNotMatch(component, /select multiple value=\$\{hubIds\}/);
+  // It never creates a hub.
+  assert.match(SENTENCES.hubDropdownRule, /never created here/);
+
+  const options = hubDropdownOptions({agent_metadata: {
+    hub_memberships: [{hub_id: 'h1', name: 'Corn Belt', distance_miles: 18.4}],
+    hub_suggestions: [{hub_id: 'h2', name: 'Delta Valley', distance_miles: 44.1}],
+    hubs: [{hub_id: 'h1', name: 'Corn Belt'}, {hub_id: 'h2', name: 'Delta Valley'},
+           {hub_id: 'h3', name: 'Gulf Coast'}],
+  }});
+  // Assigned first, then suggested, then the rest — each labelled as what it is,
+  // and never listed twice.
+  assert.deepEqual(options.map(o => o.hub_id), ['h1', 'h2', 'h3']);
+  assert.match(options[0].label, /Currently Assigned/);
+  assert.match(options[0].label, /18\.4 mi/);
+  assert.match(options[1].label, /Suggested/);
+  assert.doesNotMatch(options[2].label, /Assigned|Suggested/);
+  assert.deepEqual(hubDropdownOptions({}), []);
+});
+
+test('sector is a controlled dropdown that grows with the reference data', () => {
+  assert.match(component, /FIELDS\.primarySector/);
+  assert.doesNotMatch(component, /review-checklist/);
+  const base = sectorOptions();
+  assert.equal(base.length, 8, 'the eight thematic sectors');
+  assert.deepEqual(base.map(o => o.value),
+    ['AGRI', 'WATER', 'AI', 'ENERGY', 'MINING', 'CHEM', 'HEALTH', 'SUSTAIN']);
+  // A sector already on the record is offered even when it is not thematic, so
+  // an existing value is never dropped from its own dropdown.
+  const widened = sectorOptions(['CROSS']);
+  assert.equal(widened.length, 9);
+  assert.equal(widened.at(-1).label, 'Cross-Cutting');
+  // Duplicates do not accumulate.
+  assert.equal(sectorOptions(['AGRI', 'AGRI']).length, 8);
+});
+
+test('country is a controlled dropdown and the stored spellings resolve', () => {
+  assert.match(component, /countryOptions\(\)/);
+  assert.ok(COUNTRIES.length > 150);
+  // The data holds both spellings for the same country; both resolve to one.
+  assert.equal(normalizeCountry('USA'), 'United States');
+  assert.equal(normalizeCountry('United States'), 'United States');
+  assert.equal(normalizeCountry('Morocco'), 'Morocco');
+  // An unrecognised value is kept exactly as stored rather than discarded.
+  assert.equal(normalizeCountry('Atlantis'), 'Atlantis');
+  assert.equal(normalizeCountry(''), '');
+  // Changing the country re-derives the region.
+  assert.match(component, /function editCountry\(value\)/);
+  assert.match(component, /regionForState\(current\.state, value\)/);
+});
+
+test('Light Pull fills information boxes, and the category drives which ones', () => {
+  // Not a separate table: boxes, in two groups.
+  assert.match(component, /lightPullBoxes\(selected, draft\.actor_category\)/);
+  assert.match(component, /FIELDS\.commonLightPull/);
+  assert.match(component, /review-boxes/);
+
+  const candidate = {reviewed_payload: {actor_category: 'university_academic'}};
+  const university = lightPullBoxes(candidate, 'university_academic');
+  const startup = lightPullBoxes(candidate, 'startup');
+
+  // Common boxes do not change with the category.
+  assert.deepEqual(university.common.map(r => r.key), startup.common.map(r => r.key));
+  // Category-specific ones do, and follow Architecture V2 Sept 5.2.
+  assert.ok(university.specific.some(r => r.key === 'rankings'));
+  assert.ok(!startup.specific.some(r => r.key === 'rankings'));
+  assert.ok(startup.specific.some(r => r.key === 'published_stage_or_trl'));
+  assert.ok(!university.specific.some(r => r.key === 'published_stage_or_trl'));
+
+  // A field already shown as an editable control is not repeated as a box.
+  for (const key of ['description', 'website', 'location', 'actor_category_type']) {
+    assert.ok(!university.common.some(r => r.key === key), `${key} is duplicated`);
+  }
+  // Every box stays visible even with nothing in it, saying which kind of
+  // absence it is.
+  assert.ok(university.specific.every(r => r.state === MISSING.notYetChecked));
+  // An unknown category still yields the common boxes and no specific ones.
+  assert.equal(lightPullBoxes(candidate, '').specific.length, 0);
+  assert.ok(lightPullBoxes(candidate, '').common.length > 0);
+});
+
+test('changing the actor category never discards what the reviewer typed', () => {
+  // lightPullBoxes reads the category it is given and leaves the payload alone.
+  const candidate = {reviewed_payload: {
+    actor_category: 'startup', description: 'Typed by the reviewer.',
+  }};
+  const before = JSON.stringify(candidate.reviewed_payload);
+  lightPullBoxes(candidate, 'university_academic');
+  assert.equal(JSON.stringify(candidate.reviewed_payload), before);
+  // Only an incompatible category TYPE is cleared, and only after confirming.
+  assert.match(component, /window\.confirm\(SENTENCES\.categoryChangeWarning\)/);
+});
+
+// ---------------------------------------------------- WS6 the Updates tab
+
+test('Review has an Updates tab that does not disturb the queue', () => {
+  assert.match(component, /class="review-tabs"/);
+  assert.match(component, /SECTIONS\.updates/);
+  assert.match(component, /request\("\/api\/review\/subscriptions"\)/);
+  // The queue and the updates view are alternatives, not stacked panels.
+  assert.match(component, /view === "queue" && html`<div class="review-workspace">/);
+  assert.match(component, /view === "updates" && html`<section class="review-updates"/);
+  // The list is loaded once, when the tab is first opened.
+  assert.match(component, /if \(view !== "updates" \|\| updates\.loaded\) return;/);
+});
+
+test('a subscription scope reads as the intersection it is', () => {
+  // Sector AGRI plus state CA means agriculture actors in California, not
+  // everything in either, so the joining word is "and".
+  assert.equal(
+    subscriptionScopeLabel({sector_codes: ['AGRI'], state_code: 'CA'}),
+    'Agriculture and CA',
+  );
+  assert.equal(
+    subscriptionScopeLabel({actor_ids: ['a', 'b'], city: 'Davis', country: 'United States'}),
+    '2 named actors and Davis, United States',
+  );
+  assert.equal(subscriptionScopeLabel({actor_ids: ['a']}), '1 named actor');
+  assert.equal(subscriptionScopeLabel({topic_ids: ['t1', 't2']}), '2 topics');
+  // An unscoped subscription would sweep everything, so it says so rather than
+  // rendering as an innocuous blank.
+  assert.equal(subscriptionScopeLabel({}), SENTENCES.subscriptionNoScope);
+  assert.match(SENTENCES.subscriptionNoScope, /must not run/);
+});
+
+test('subscription statuses are labelled and only one of them runs', () => {
+  for (const [status, label] of Object.entries(SUBSCRIPTION_STATUS_LABELS)) {
+    assert.equal(subscriptionStatusLabel(status), label);
+    assert.ok(/^[A-Z]/.test(label));
+  }
+  assert.deepEqual(Object.keys(SUBSCRIPTION_STATUS_LABELS),
+    ['active', 'paused', 'expired', 'cancelled']);
+  // An unrecognised status is shown as stored rather than hidden.
+  assert.equal(subscriptionStatusLabel('draining'), 'draining');
+});
+
+test('the Updates tab shows words, not database codes', () => {
+  // Found by looking at the rendered tab: requested_via was printing its raw
+  // code. review.js's own rule is that debug strings never reach the main view.
+  assert.equal(requestedViaLabel('map_verification'), 'Map Verification');
+  assert.equal(requestedViaLabel('review_updates'), 'Review Updates');
+  assert.deepEqual(Object.keys(REQUESTED_VIA), ['map_verification', 'review_updates']);
+  // An unrecognised channel is still readable rather than blank, because the
+  // value is real data even when this screen does not know the code yet.
+  assert.equal(requestedViaLabel('monthly_report'), 'monthly report');
+  assert.equal(requestedViaLabel(null), '');
+  // And the tab renders through the label, never the bare field.
+  assert.match(component, /requestedViaLabel\(item\.requested_via\)/);
+  assert.doesNotMatch(component, /<dd>\$\{item\.requested_via\}/);
+});
+
+test('a subscription period reads in the same date form as its next due date', () => {
+  // Found by looking at the rendered tab: the period printed ISO "2026-08-30"
+  // beside a localised Next Due. start_date is a calendar date and last_run_at
+  // is epoch seconds, so the two cannot share one formatter.
+  const line = subscriptionPeriodLabel({
+    cadence: 'monthly', start_date: '2026-08-30', end_date: '2027-04-07',
+  });
+  assert.match(line, /^Subscription · Monthly · /);
+  // Assembled as one string, because htm drops the whitespace at a line break
+  // and rendered this as "Monthly· 30/08/2026to 07/04/2027".
+  assert.match(line, / to /);
+  assert.doesNotMatch(line, /\S·|·\S|\d{4}to/);
+  assert.doesNotMatch(line, /2026-08-30/);
+  // A date-only value is built from its parts, so a reader west of Greenwich is
+  // not shown the previous day.
+  assert.match(component, /function formatDay[\s\S]*?split\("-"\)/);
+  assert.doesNotMatch(component, /formatDate\(item\.(start|end)_date\)/);
+  // A period with no recorded end says which kind of missing it is.
+  assert.match(
+    subscriptionPeriodLabel({cadence: 'weekly', start_date: '2026-03-23'}),
+    /to Not Provided$/,
+  );
+});
+
+test('the Updates tab never invents a requester and never creates a subscription', () => {
+  // requested_by is null until authentication exists.
+  assert.match(component, /item\.requested_by \|\| SENTENCES\.noRunRecorded/);
+  // Read-only: no POST, PATCH or DELETE against the subscriptions endpoint.
+  const calls = component.match(/\/api\/review\/subscriptions[^`]*/g) || [];
+  assert.equal(calls.length, 1);
+  assert.doesNotMatch(component, /subscriptions`?,\s*\{\s*method/);
+  assert.match(SENTENCES.subscriptionsExplain, /event update schedule is separate/);
+});
+
+test('a hub proposal says it is only a proposal, with its margin', () => {
+  // Detection proposes; GHUS decides. The page must never suggest a hub exists.
+  assert.equal(
+    hubProposalPlace({primary_city: 'Albany', state: 'OR', country: 'US',
+                      dimension: 'sector', dimension_key: 'AGRI'}),
+    'Albany, OR, US · sector AGRI',
+  );
+  assert.match(hubProposalPlace({}), /Not Provided/);
+
+  // The count alone does not say whether it passed; the requirement alone does
+  // not say by how much. Show both.
+  assert.equal(thresholdLabel(12, 10), '12 of 10 required');
+  assert.equal(thresholdLabel(0, 10), '0 of 10 required');
+  assert.equal(thresholdLabel(null, 10), MISSING.notYetChecked);
+  assert.equal(thresholdLabel(7, null), '7');
+
+  // The tab is read-only: it fetches and never writes.
+  const calls = component.match(/\/api\/review\/hub-proposals[^`]*/g) || [];
+  assert.equal(calls.length, 1);
+  assert.doesNotMatch(component, /hub-proposals`?,\s*\{\s*method/);
+  assert.match(component, /SENTENCES\.noHubCreated/);
+});
+
+test('Why It Matched is one box, reading the explanation discovery recorded', () => {
+  // The dedicated box read agent_metadata.why_matched only, which discovery
+  // does not always set, so a populated Light Pull fact sat beside an empty box
+  // saying Not Yet Collected. One box now, reading either.
+  const candidate = {agent_metadata: {facts: [
+    {fact_key: 'why_matched', collection_state: 'found', confidence: 'medium',
+     source_url: 'https://example.org', date_read: '2026-10-09',
+     value: {reason: "Found by open-web discovery for hub 'NYC AI Hub' (topic AI)"}},
+  ]}};
+  const why = whyMatchedFact(candidate);
+  assert.match(why.reason, /NYC AI Hub/);
+  assert.equal(why.source_url, 'https://example.org');
+  assert.equal(why.date_read, '2026-10-09');
+
+  // Nothing recorded means nothing invented.
+  assert.equal(whyMatchedFact({agent_metadata: {facts: []}}), null);
+  assert.equal(whyMatchedFact({agent_metadata: {facts: [
+    {fact_key: 'why_matched', collection_state: 'not_found', value: null}]}}), null);
+
+  // And it is listed once, not twice.
+  assert.equal(COMMON_LIGHT_ROWS.filter(([key]) => key === 'why_matched').length, 0);
+});
+
+test('a fact value shows what it says, not when it was read', () => {
+  // Recent Activity is stored as {date, description} because Light Pull's
+  // evidence rule requires both. The box should read as the statement, not as
+  // "Date: October 2024 Description: ...". The date stays on the stored fact.
+  assert.equal(
+    formatFactValue({date: 'October 2024', description: 'Empire AI Phase One launched.'}),
+    'Empire AI Phase One launched.',
+  );
+  // Date-like keys are dropped even when nothing else is a headline value.
+  assert.equal(formatFactValue({date_read: '2026-10-09T16:39:44+00:00', funder: 'Seattle City Light'}),
+    'Funder: Seattle City Light');
+  // A fact that is only a date says nothing a reviewer can read.
+  assert.equal(formatFactValue({retrieved_at: '2026-10-09'}), 'No value recorded');
+});
+
+
+test('sectors come from the database and a reviewer can add one', async () => {
+  const {setSectors, sectorOptions, sectorLabel} = await import('../frontend/taxonomy.js');
+  setSectors([{code: 'WATER', name: 'Water'}, {code: 'WATER_TECH', name: 'Water Technology'}]);
+  assert.deepEqual(sectorOptions().map(o => o.value), ['WATER', 'WATER_TECH']);
+  assert.equal(sectorLabel('WATER_TECH'), 'Water Technology');
+  assert.match(component, /api\/review\/sectors/);
+  assert.match(component, /BUTTONS\.addSector/);
+  assert.match(component, /unmatched_sector_suggestion/);
+  setSectors([]);
+});
+
+test('a box the Light Pull read for says which pages it checked', async () => {
+  const {lightFactRows, missingWithPages} = await import('../frontend/review.js');
+  const pages = ['https://thewatercouncil.com/', 'https://thewatercouncil.com/about-us/',
+    'https://thewatercouncil.com/members/'];
+  const candidate = {
+    reviewed_payload: {actor_category: 'association_network'},
+    agent_metadata: {facts: [
+      {fact_key: 'funding_signal', fact_type: 'light_pull', layer: 1, collection_state: 'found', value: '$2 million grant.',
+        source_url: pages[1], confidence: 'high', pages_read: pages},
+      {fact_key: 'um6p_ocp_connection', fact_type: 'light_pull', layer: 1, collection_state: 'not_found', value: null,
+        pages_read: pages},
+    ]},
+  };
+  const rows = Object.fromEntries(lightFactRows(candidate).map((row) => [row.key, row]));
+  assert.equal(rows.funding_signal.value, '$2 million grant.');
+  assert.equal(missingWithPages(rows.um6p_ocp_connection), 'Not Stated on the 3 Pages Read');
+  assert.deepEqual(rows.um6p_ocp_connection.pagesRead, pages);
+  // A box with no fact at all, while others were read, is still plain "Not Found".
+  assert.equal(missingWithPages(rows.recent_activity), rows.recent_activity.state);
 });

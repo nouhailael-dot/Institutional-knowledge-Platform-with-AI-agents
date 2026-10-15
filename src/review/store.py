@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sqlite3
+import tempfile
 import time
 from contextlib import contextmanager
 from copy import deepcopy
@@ -23,6 +24,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from .taxonomy import (
     CATEGORY_LABELS,
+    SELECTABLE_SECTOR_CODES,
     NOT_APPLICABLE,
     TaxonomyError,
     region_for_state,
@@ -49,6 +51,7 @@ EDITABLE_FIELDS = {
     "actor": (
         "name", "actor_category", "category_type", "category_note",
         "actor_type", "actor_type_raw", "description", "website",
+        "primary_sector",
         "location_city", "state", "region", "country", "primary_technical_focus",
         "technical_approach", "current_activities", "technology_ip_notes",
         "key_constraints", "funding_summary", "estimated_trl",
@@ -69,6 +72,7 @@ FIELD_LIMITS = {
     "actor": {
         "name": 255, "actor_category": 80, "category_type": 120,
         "category_note": 500, "actor_type": 40, "actor_type_raw": 255,
+        "primary_sector": 20,
         "website": 500, "location_city": 120, "state": 80, "region": 120,
         "country": 80,
         "primary_lifecycle_role": 30,
@@ -155,6 +159,18 @@ def _clean_text(value: Any, *, required: bool = False, max_length: int = 5000) -
     if len(value) > max_length:
         raise ReviewValidationError(f"A text value exceeds the {max_length}-character limit.")
     return value or None
+
+
+
+def reviewFieldName(field: str) -> str:
+    """The field as the Review screen labels it."""
+    return {
+        "primary_lifecycle_role": "Lifecycle role",
+        "primary_sector": "Primary sector",
+        "category_note": "Category note",
+        "actor_type_raw": "Type as written on the page",
+        "location_city": "City",
+    }.get(field, field.replace("_", " ").capitalize())
 
 
 def _candidate_id(run_id: str, entity_type: str, source_index: str) -> str:
@@ -279,6 +295,15 @@ def _run_trigger(description: Any, source_run_id: Any, recorded: Any = None) -> 
     return "manual"
 
 
+# Sectors present in the database (including ones added in Review). The
+# application registers them whenever it reads the sector list.
+DATABASE_SECTOR_CODES: set[str] = set()
+
+
+def register_sector_codes(codes) -> None:
+    DATABASE_SECTOR_CODES.update(str(code).strip().upper() for code in codes if str(code).strip())
+
+
 def _run_label(description: Any, source_run_id: Any) -> str:
     """A human-readable run label. No UUIDs: those belong in Audit & Details."""
 
@@ -346,6 +371,26 @@ def _require_classification_for_new_record(entity_type: str, payload: dict[str, 
         raise ReviewValidationError(str(exc)) from exc
 
 
+def _validate_actor_sector(payload: dict[str, Any]) -> None:
+    """The primary sector is a controlled value, or deliberately absent.
+
+    Hub membership is decided on sector, so an uncontrolled value here would
+    silently stop an actor matching any hub. Blank means Not Applicable, which
+    is a choice a reviewer is allowed to make.
+    """
+
+    code = str(payload.get("primary_sector") or "").strip().upper()
+    if not code:
+        payload["primary_sector"] = None
+        return
+    allowed = SELECTABLE_SECTOR_CODES | DATABASE_SECTOR_CODES
+    if code not in allowed:
+        raise ReviewValidationError(
+            f"{code!r} is not one of the configured sectors: " + ", ".join(sorted(allowed))
+        )
+    payload["primary_sector"] = code
+
+
 def _derive_actor_region(payload: dict[str, Any]) -> None:
     """Region is computed from the state, never accepted from the client (D8)."""
 
@@ -406,6 +451,70 @@ class ReviewStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.enable_test_canonical = enable_test_canonical
         self._initialize()
+
+    def persistence_warnings(self) -> list[str]:
+        """Reasons this store may not survive a restart or a redeploy.
+
+        Until PostgreSQL can record that a pre-promotion candidate was decided,
+        this SQLite file is the ONLY place that knows. A rejected candidate
+        stays rejected because its row is here; PostgreSQL keeps serving it, and
+        `sync_external_candidates` only declines to re-insert because the row
+        exists. Lose the file and every rejection silently becomes pending
+        again — the queue refills with work a reviewer already refused, and
+        nothing looks broken.
+
+        So this file is durable application state, not a cache, and anything
+        that makes it disposable is worth saying out loud at startup.
+        """
+
+        warnings: list[str] = []
+        configured = os.environ.get("REVIEW_STORE_DB", "").strip()
+        root = Path(__file__).resolve().parents[2]
+
+        if not configured:
+            warnings.append(
+                "REVIEW_STORE_DB is not set, so review decisions are stored at the "
+                f"in-repository default ({self.path}). A redeploy or a fresh "
+                "checkout starts with an empty store and every rejected candidate "
+                "returns to the queue. Set REVIEW_STORE_DB to a path on persistent "
+                "storage that is backed up."
+            )
+        else:
+            try:
+                inside_repo = self.path.resolve().is_relative_to(root)
+            except (OSError, ValueError):
+                inside_repo = False
+            if inside_repo:
+                warnings.append(
+                    f"REVIEW_STORE_DB points inside the repository ({self.path}). "
+                    "Deployments replace the working tree, which would discard "
+                    "every recorded review decision."
+                )
+
+        try:
+            temp_root = Path(tempfile.gettempdir()).resolve()
+            if self.path.resolve().is_relative_to(temp_root):
+                warnings.append(
+                    f"REVIEW_STORE_DB is under the system temporary directory "
+                    f"({self.path}). That storage is not durable."
+                )
+        except (OSError, ValueError):
+            pass
+
+        if warnings:
+            try:
+                with self.connect() as db:
+                    decided = db.execute(
+                        "SELECT count(*) FROM review_decision"
+                    ).fetchone()[0]
+            except sqlite3.Error:
+                decided = None
+            if decided:
+                warnings.append(
+                    f"{decided} review decision(s) are already recorded in this "
+                    "store and would be lost with it."
+                )
+        return warnings
 
     @contextmanager
     def connect(self):
@@ -629,11 +738,43 @@ class ReviewStore:
                 )
                 inserted += cursor.rowcount
                 if not cursor.rowcount:
+                    # The run label is refreshed too (e.g. once a run is known to
+                    # belong to a Discovery request); it is never a reviewer edit.
                     db.execute(
-                        "UPDATE review_candidate SET evidence=?,agent_metadata=?,duplicate_state=? "
-                        "WHERE candidate_id=? AND status='pending_review'",
-                        (_json(evidence), _json(metadata), duplicate_state, candidate_id),
+                        "UPDATE review_candidate SET evidence=?,agent_metadata=?,duplicate_state=?,"
+                        "source_description=? WHERE candidate_id=? AND status='pending_review'",
+                        (_json(evidence), _json(metadata), duplicate_state,
+                         str(candidate.get("source_description") or "External discovery review"),
+                         candidate_id),
                     )
+                    # Refresh the captured payload too, but ONLY while the
+                    # reviewer has not touched it. Enrichment runs after a
+                    # candidate first appears - Light Pull fills in location,
+                    # sector and the rest - and without this the screen keeps
+                    # showing the empty first capture forever while the facts
+                    # beside it update. The reviewed copy still wins the moment
+                    # it differs from the original, so no edit is ever lost.
+                    # "Untouched" means the reviewed copy is still exactly what
+                    # the stored original yields. (Comparing the two raw copies
+                    # never matched - the editable copy always drops a few
+                    # internal keys - so nothing was ever refreshed.)
+                    current = db.execute(
+                        "SELECT original_payload, reviewed_payload FROM review_candidate "
+                        "WHERE candidate_id=? AND status='pending_review'",
+                        (candidate_id,),
+                    ).fetchone()
+                    if current is not None:
+                        stored = json.loads(current["original_payload"] or "{}")
+                        untouched = (json.loads(current["reviewed_payload"] or "{}")
+                                     == _editable_payload(entity_type, stored))
+                        if untouched:
+                            db.execute(
+                                "UPDATE review_candidate SET original_payload=?,"
+                                "reviewed_payload=? WHERE candidate_id=? "
+                                "AND status='pending_review'",
+                                (_json(payload), _json(_editable_payload(entity_type, payload)),
+                                 candidate_id),
+                            )
         return inserted
 
     @staticmethod
@@ -854,13 +995,25 @@ class ReviewStore:
                 raise ReviewValidationError(f"Unsupported value for {field}.")
         for field, limit in FIELD_LIMITS[entity_type].items():
             if field in cleaned and isinstance(cleaned[field], str):
-                cleaned[field] = _clean_text(cleaned[field], max_length=limit)
+                try:
+                    cleaned[field] = _clean_text(cleaned[field], max_length=limit)
+                except ReviewValidationError as exc:
+                    # Which field, and by how much. The agent sometimes writes a
+                    # sentence into a short column ("Government agency managing
+                    # state water resources" into the 30-character lifecycle
+                    # role); without the field name a reviewer could not tell
+                    # what to shorten, and the candidate could never be decided.
+                    raise ReviewValidationError(
+                        f"{reviewFieldName(field)} is {len(cleaned[field])} characters; "
+                        f"the limit is {limit}. Shorten it to save this record."
+                    ) from exc
         cleaned["name"] = _clean_text(
             cleaned.get("name"), required=True,
             max_length=FIELD_LIMITS[entity_type]["name"],
         )
         if entity_type == "actor":
             _validate_actor_classification(cleaned)
+            _validate_actor_sector(cleaned)
             _derive_actor_region(cleaned)
         if entity_type == "person":
             cleaned["affiliation"] = _clean_text(
@@ -1087,11 +1240,30 @@ class ReviewStore:
                 raise ReviewValidationError("Select one of the fixed rejection reasons.")
             if rejection_reason == "Other" and not str(rejection_reason_other or "").strip():
                 raise ReviewValidationError("Explain the Other rejection reason.")
+        metadata = candidate["agent_metadata"]
+        if (str(metadata.get("source_table") or "") == "review_item"
+                and str(metadata.get("review_kind") or "") == "verify_actor"):
+            # The actor already exists (Parked). Verify / Reject here is the
+            # GHUS topic-level verification decision on it - the one Deep Pull
+            # requires - applied by the backend's approved writer. Nothing is
+            # created and no field is edited by this decision.
+            if decision_kind not in {"new", "same_existing", "reject"}:
+                raise ReviewValidationError(
+                    "An actor awaiting verification is verified or rejected; "
+                    "leave it in the queue to decide later.")
+            return {
+                "decision_kind": "verify_actor",
+                "review_item_id": str(metadata.get("review_item_id") or ""),
+                "verified": decision_kind != "reject",
+                "rejection_reason": rejection_reason if decision_kind == "reject" else None,
+                "reviewer": reviewer,
+                "notes": notes,
+                "idempotency_key": idempotency_key,
+            }
         payload = edited_payload if edited_payload is not None else candidate["reviewed_payload"]
         payload = self.validate_payload(candidate["entity_type"], payload)
         if decision_kind == "new":
             _require_classification_for_new_record(candidate["entity_type"], payload)
-        metadata = candidate["agent_metadata"]
         source_table = str(metadata.get("source_table") or "").strip()
         if source_table == "search_candidate":
             source_id = metadata.get("source_candidate_id")

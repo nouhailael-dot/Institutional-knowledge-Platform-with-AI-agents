@@ -402,12 +402,16 @@ def test_a_membership_and_a_suggestion_are_never_the_same_thing(tmp_path):
     assert "hub_memberships" in source and "hub_suggestions" in source
     # Distinct headings, so a reviewer cannot mistake one list for the other.
     assert "FIELDS.currentHubs" in source and "FIELDS.suggestedHubs" in source
-    # Existing memberships are never silently replaced, and an out-of-radius
-    # member is flagged rather than dropped.
-    assert "SENTENCES.membershipsKept" in source
+    # An out-of-radius member is flagged rather than dropped.
     assert "BADGES.hubMemberOutsideRadius" in source
-    # A suggestion says outright that it is not an assignment.
-    assert "SENTENCES.suggestionIsNotADecision" in source
+    # The separation is carried by the structure - two lists under two headings,
+    # each reading its own source - rather than by a sentence explaining the
+    # difference. The explanatory prose was removed from the screen; the lists
+    # it described must still be distinct, which is what this checks.
+    assert source.index("FIELDS.currentHubs") < source.index("FIELDS.suggestedHubs")
+    assert "metadata[\"hub_memberships\"]" not in source  # the UI never conflates them
+    for marker in ("memberships.map", "suggestions.map"):
+        assert marker in source, f"{marker} must render its own list"
 
 
 def test_the_hub_context_reader_asks_for_nothing_it_cannot_find(tmp_path):
@@ -462,3 +466,74 @@ def test_every_actor_review_kind_the_database_allows_reaches_the_screen():
         labelled = set(json.loads(labels.stdout))
         for kind in ("geocode_failed", "possible_duplicate", "fact_conflict", "pending_update"):
             assert kind in labelled, f"{kind} has no label"
+
+
+def test_the_review_query_survives_the_contract_rename():
+    """The V2 contract migration renames the columns this query reads.
+
+    `location_city` becomes `city` and `state` becomes `state_code` when
+    migration 500 runs. A bare `a.location_city` therefore raises
+    UndefinedColumn against a post-contract database, and because
+    fetch_candidates turns a source failure into a warning rather than an
+    error, the entire V2 review-item feed disappears from the queue without
+    anything looking broken.
+
+    Proved against both schemas by hand on 9 Oct 2026; this keeps it proved.
+    """
+
+    source = (Path(__file__).resolve().parents[1]
+              / "src/review/postgres_source.py").read_text(encoding="utf-8")
+
+    # No bare reference to either renamed column.
+    assert "a.location_city" not in source
+    assert "a.state," not in source and "a.state " not in source
+
+    # Both are read through to_jsonb, which tolerates a column that is absent.
+    for before, after in (("location_city", "city"), ("state", "state_code")):
+        assert f"to_jsonb(a)->>'{before}'" in source
+        assert f"to_jsonb(a)->>'{after}'" in source
+
+    # Everything else that the rename touches already used the pattern; make
+    # sure nobody reintroduces a direct read of one.
+    for renamed in ("actor_category", "category_type", "record_status", "region_code"):
+        assert f"a.{renamed}" not in source, f"a.{renamed} must be read through to_jsonb"
+
+
+def _insert_verify_item(store: ReviewStore, candidate_id: str) -> None:
+    import json as _json
+
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO review_candidate"
+            "(candidate_id,source_run_id,source_description,source_index,entity_type,"
+            " display_name,status,created_at,original_payload,reviewed_payload,evidence,"
+            " agent_metadata,duplicate_state)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (candidate_id, "v2-review:t", "Architecture V2 verify_actor review", candidate_id,
+             "actor", "The Water Council", "pending_review", CUTOFF_TS + 10, "{}",
+             _json.dumps({"name": "The Water Council", "actor_category": "association_network",
+                          "category_type": "innovation_consortium"}), "[]",
+             _json.dumps({"source_table": "review_item", "review_kind": "verify_actor",
+                          "review_item_id": "11111111-2222-3333-4444-555555555555"}), "new"),
+        )
+
+
+def test_verifying_a_parked_actor_is_the_ghus_topic_decision(store):
+    """A Parked actor's verify_actor item used to be undecidable from Review."""
+    _insert_verify_item(store, "item-1")
+    decision = store.admission_request(
+        "item-1", decision_kind="new", reviewer="Reviewer", idempotency_key="k-1",
+        confirmed=True)
+    assert decision == {
+        "decision_kind": "verify_actor", "verified": True, "rejection_reason": None,
+        "review_item_id": "11111111-2222-3333-4444-555555555555", "reviewer": "Reviewer",
+        "notes": None, "idempotency_key": "k-1",
+    }
+    rejected = store.admission_request(
+        "item-1", decision_kind="reject", reviewer="Reviewer", idempotency_key="k-2",
+        rejection_reason="Not relevant to GHUS sectors", confirmed=True)
+    assert rejected["verified"] is False
+    assert rejected["rejection_reason"] == "Not relevant to GHUS sectors"
+    with pytest.raises(ReviewValidationError):
+        store.admission_request("item-1", decision_kind="defer", reviewer="Reviewer",
+                                idempotency_key="k-3", confirmed=True)

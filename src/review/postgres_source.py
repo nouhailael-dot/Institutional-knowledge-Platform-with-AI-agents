@@ -166,6 +166,17 @@ def _haversine_miles(lat_a: float, lon_a: float, lat_b: float, lon_b: float) -> 
     return 2 * radius_miles * math.asin(min(1.0, math.sqrt(haversine)))
 
 
+def _number(value: Any) -> float | None:
+    """A numeric column as a float, or None. Decimal does not survive JSON."""
+
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _timestamp(value: Any) -> float | None:
     if isinstance(value, datetime):
         return value.timestamp()
@@ -207,6 +218,8 @@ class PostgresReviewSource:
         "review_item", "actor", "actor_fact", "actor_fact_current_v2",
         "actor_fact_history", "entity_edge", "source",
         "hub_actor", "hub_sector", "sector", "actor_sector", "actor_location",
+        "actor_update_subscription", "actor_update_subscription_run", "collection_run",
+        "proposed_hub", "proposed_hub_member", "hub_detection_run",
     }
 
     def __init__(self, database_url: str):
@@ -368,7 +381,7 @@ class PostgresReviewSource:
         joins = ""
         run_fields = [
             "NULL::text AS run_mode", "NULL::text AS run_status",
-            "NULL::text AS run_status_reason",
+            "NULL::text AS run_status_reason", "NULL::text AS run_request_title",
         ]
         run_cols = all_columns.get("scrape_run", set())
         if {"run_id", "mode", "status"} <= run_cols:
@@ -378,6 +391,10 @@ class PostgresReviewSource:
                 self._select("sr", run_cols, "status_reason") .replace(
                     " AS status_reason", " AS run_status_reason"
                 ),
+                # The Discovery-page request a run was made for, so Review can
+                # tell one request's finds from another's.
+                ("sr.stats->>'discovery_request_title' AS run_request_title"
+                 if "stats" in run_cols else "NULL::text AS run_request_title"),
             ]
         fields.extend(run_fields)
         review_identity = (
@@ -512,10 +529,34 @@ class PostgresReviewSource:
             "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
             "NULLIF(to_jsonb(a)->>'category_note','') AS category_note, "
             "NULLIF(to_jsonb(a)->>'actor_type','') AS actor_type, a.description, "
-            "a.website, a.location_city, a.state, a.country, "
+            "a.website, a.country, "
+            # The V2 contract migration renames location_city -> city and
+            # state -> state_code. Every other renameable column in this
+            # SELECT already reads through to_jsonb for that reason; these
+            # two did not, so this query raised UndefinedColumn against a
+            # post-contract database and the whole V2 review-item feed
+            # vanished from the queue. The output aliases are unchanged.
+            "COALESCE(NULLIF(to_jsonb(a)->>'location_city',''), "
+            "NULLIF(to_jsonb(a)->>'city','')) AS location_city, "
+            "COALESCE(NULLIF(to_jsonb(a)->>'state',''), "
+            "NULLIF(to_jsonb(a)->>'state_code','')) AS state, "
             "NULLIF(to_jsonb(a)->>'state_code','') AS state_code, "
             "NULLIF(to_jsonb(a)->>'region_code','') AS region_code, "
-            "NULLIF(to_jsonb(a)->>'record_status','') AS record_status, "
+            # V2 `status` is the authority and `record_status` is the legacy
+            # column the cutover drops. Reading record_status alone showed a
+            # migrated actor as Parked when status already said verified, and
+            # would read NULL once the column is gone. V2 first, legacy second.
+            "COALESCE(NULLIF(to_jsonb(a)->>'status',''), "
+            "NULLIF(to_jsonb(a)->>'record_status','')) AS record_status, "
+            # The sector the agent recorded, so the Review dropdown has a value
+            # instead of looking like nothing was ever collected. Prefers the
+            # one marked primary; with several and none ranked, it stays empty
+            # and the reviewer chooses rather than the screen guessing.
+            "(SELECT s2.code FROM actor_sector asec JOIN sector s2 "
+            " ON s2.sector_id = asec.sector_id WHERE asec.actor_id = a.actor_id "
+            " ORDER BY asec.is_primary DESC, s2.code LIMIT 1) AS primary_sector, "
+            "(SELECT count(*) FROM actor_sector asec WHERE asec.actor_id = a.actor_id) "
+            " AS sector_link_count, "
             "s.url AS actor_source_url, "
             "COALESCE(f.facts,'[]'::jsonb) AS facts, " + history_field + ", " + edge_field +
             "FROM review_item ri "
@@ -546,6 +587,169 @@ class PostgresReviewSource:
             " 'pending_human_update','identity','classification','relationship_review'"
             ") ORDER BY ri.created_at"
         ).fetchall()
+
+    def fetch_sectors(self) -> list[dict[str, Any]]:
+        """Active sectors from the database, read-only.
+
+        The sector dropdown used to be a fixed list in code, so a sector GHUS
+        added could never be chosen. The database is now the list.
+        """
+        with self.connect() as db:
+            if "sector" not in self._columns(db):
+                return []
+            rows = db.execute(
+                "SELECT code, name, is_thematic FROM sector WHERE active ORDER BY name"
+            ).fetchall()
+        return [{"code": str(r["code"]).upper(), "name": r["name"],
+                 "is_thematic": bool(r["is_thematic"])} for r in rows]
+
+    def fetch_hub_proposals(self) -> list[dict[str, Any]]:
+        """Open hub proposals from Phase 7 detection, read-only.
+
+        Detection only ever proposes; nothing here creates or changes a hub. The
+        proposals had no surface anywhere in the platform before this, so a run
+        could produce one and nobody would see it.
+
+        Returns an empty list when the tables are absent, which is the state
+        before the detection migrations are applied.
+        """
+
+        with self.connect() as db:
+            columns = self._columns(db)
+            if "proposed_hub" not in columns:
+                return []
+            available = columns["proposed_hub"]
+
+            def column(name: str, cast: str = "text") -> str:
+                return f"p.{name}" if name in available else f"NULL::{cast} AS {name}"
+
+            rows = db.execute(
+                "SELECT p.proposed_hub_id::text AS proposed_hub_id, p.name, p.primary_city, "
+                "p.state, p.country, p.rationale, p.status, p.created_at, "
+                f"{column('independent_family_count', 'int')}, {column('category_count', 'int')}, "
+                f"{column('minimum_families_required', 'int')}, "
+                f"{column('minimum_categories_required', 'int')}, "
+                f"{column('center_latitude', 'numeric')}, {column('center_longitude', 'numeric')}, "
+                f"{column('radius_miles', 'numeric')}, {column('core_radius_miles', 'numeric')}, "
+                f"{column('dimension')}, {column('dimension_key')}, "
+                f"{column('membership_fingerprint')}, {column('proposal_kind')}, "
+                "p.final_hub_id::text AS final_hub_id "
+                "FROM proposed_hub p WHERE p.status = 'open' "
+                "ORDER BY p.created_at DESC, p.name"
+            ).fetchall()
+
+            members: dict[str, list[dict[str, Any]]] = {}
+            if {"proposed_hub_member", "actor"} <= set(columns):
+                for row in db.execute(
+                    "SELECT m.proposed_hub_id::text AS proposed_hub_id, a.name, "
+                    "NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
+                    "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
+                    "m.family_root_actor_id::text AS family_root_actor_id "
+                    "FROM proposed_hub_member m JOIN actor a ON a.actor_id = m.actor_id "
+                    "ORDER BY a.name"
+                ).fetchall():
+                    members.setdefault(str(row["proposed_hub_id"]), []).append({
+                        "name": row["name"],
+                        "actor_category": row["actor_category"],
+                        "category_type": row["category_type"],
+                        "family_root_actor_id": row["family_root_actor_id"],
+                    })
+
+            return [
+                {
+                    "proposed_hub_id": str(row["proposed_hub_id"]),
+                    "name": row["name"],
+                    "primary_city": row["primary_city"],
+                    "state": row["state"],
+                    "country": row["country"],
+                    "rationale": row["rationale"],
+                    "status": row["status"],
+                    "created_at": _timestamp(row["created_at"]),
+                    "family_count": row["independent_family_count"],
+                    "category_count": row["category_count"],
+                    "families_required": row["minimum_families_required"],
+                    "categories_required": row["minimum_categories_required"],
+                    "center_latitude": _number(row["center_latitude"]),
+                    "center_longitude": _number(row["center_longitude"]),
+                    "radius_miles": _number(row["radius_miles"]),
+                    "core_radius_miles": _number(row["core_radius_miles"]),
+                    "dimension": row["dimension"],
+                    "dimension_key": row["dimension_key"],
+                    "fingerprint": row["membership_fingerprint"],
+                    "proposal_kind": row["proposal_kind"],
+                    # A proposal that created a hub would no longer be a proposal.
+                    "created_hub": bool(row["final_hub_id"]),
+                    "members": members.get(str(row["proposed_hub_id"]), []),
+                }
+                for row in rows
+            ]
+
+    def fetch_subscriptions(self) -> list[dict[str, Any]]:
+        """Actor update subscriptions and their runs (WS6), read-only.
+
+        Returns an empty list when the table is absent, which is the state
+        before migration 540 is applied. An empty list and "no subscriptions
+        exist" look the same to the screen, which is correct: in both cases
+        there is nothing to show and nothing is being swept.
+        """
+
+        with self.connect() as db:
+            columns = self._columns(db)
+            if "actor_update_subscription" not in columns:
+                return []
+            rows = db.execute(
+                "SELECT s.actor_update_subscription_id::text AS id, s.actor_ids, "
+                "s.sector_codes, s.topic_ids, s.country, s.state_code, s.city, "
+                "s.region_code, s.start_date, s.end_date, s.cadence, s.requested_by, "
+                "s.requested_via, s.status, s.last_run_at, s.next_due_at, s.created_at "
+                "FROM actor_update_subscription s "
+                "ORDER BY s.status, s.next_due_at NULLS LAST, s.created_at"
+            ).fetchall()
+
+            runs: dict[str, list[dict[str, Any]]] = {}
+            if {"actor_update_subscription_run", "collection_run"} <= set(columns):
+                for row in db.execute(
+                    "SELECT r.actor_update_subscription_id::text AS id, "
+                    "r.collection_run_id::text AS run_id, r.dry_run, r.created_at, "
+                    "c.status, c.status_reason "
+                    "FROM actor_update_subscription_run r "
+                    "JOIN collection_run c ON c.collection_run_id = r.collection_run_id "
+                    "ORDER BY r.created_at DESC"
+                ).fetchall():
+                    runs.setdefault(str(row["id"]), []).append({
+                        "run_id": str(row["run_id"]),
+                        "dry_run": bool(row["dry_run"]),
+                        "created_at": _timestamp(row["created_at"]),
+                        "status": row["status"],
+                        "status_reason": row["status_reason"],
+                    })
+
+            return [
+                {
+                    "subscription_id": str(row["id"]),
+                    "scope": {
+                        "actor_ids": [str(value) for value in (row["actor_ids"] or [])],
+                        "sector_codes": list(row["sector_codes"] or []),
+                        "topic_ids": [str(value) for value in (row["topic_ids"] or [])],
+                        "country": row["country"],
+                        "state_code": row["state_code"],
+                        "city": row["city"],
+                        "region_code": row["region_code"],
+                    },
+                    "start_date": str(row["start_date"]) if row["start_date"] else None,
+                    "end_date": str(row["end_date"]) if row["end_date"] else None,
+                    "cadence": row["cadence"],
+                    # Never defaulted: an unknown requester stays null and the
+                    # screen says "Not Recorded".
+                    "requested_by": row["requested_by"],
+                    "requested_via": row["requested_via"],
+                    "status": row["status"],
+                    "last_run_at": _timestamp(row["last_run_at"]),
+                    "next_due_at": _timestamp(row["next_due_at"]),
+                    "runs": runs.get(str(row["id"]), []),
+                }
+                for row in rows
+            ]
 
     def _hub_context(self, db, columns: dict[str, set[str]]) -> dict[str, dict[str, Any]]:
         """Per-actor hub context for the Review screen (WS5.1).
@@ -633,7 +837,7 @@ class PostgresReviewSource:
 
         # Suggestions need the actor's sectors and coordinates. Both may be
         # absent, in which case there is nothing to suggest and the screen says
-        # "Not Yet Checked" rather than offering a guess.
+        # "Not Yet Collected" rather than offering a guess.
         if {"actor_sector", "sector"} <= set(columns) and has_center:
             placed = {
                 (actor_id, item["hub_id"])
@@ -720,12 +924,18 @@ class PostgresReviewSource:
             "run_status": row.get("run_status"),
             "run_status_reason": row.get("run_status_reason"),
         }
+        if entity_type == "actor":
+            _attach_page_facts(payload, metadata, url=row.get("url"),
+                               read_at=row.get("created_at"),
+                               request_title=row.get("run_request_title"))
         return {
             "source_key": f"postgres:search_candidate:{candidate_id}",
             "source_run_id": f"discovery:{run_id}",
             "source_index": candidate_id,
-            "source_description": self._run_description(
-                entity_type, run_id, row.get("run_mode")
+            "source_description": (
+                f"Discovery request: {row['run_request_title']} · {row.get('run_mode') or ''} · {run_id}"
+                if row.get("run_request_title")
+                else self._run_description(entity_type, run_id, row.get("run_mode"))
             ),
             "entity_type": entity_type,
             "payload": payload,
@@ -847,6 +1057,11 @@ class PostgresReviewSource:
             "state": row.get("state") or row.get("state_code"),
             "region": row.get("region_code"),
             "country": row.get("country"),
+            # Only when one sector is unambiguous. Several unranked sectors are
+            # a reviewer's decision, not a default the screen invents.
+            "primary_sector": (
+                row.get("primary_sector") if int(row.get("sector_link_count") or 0) == 1 else None
+            ),
         }
         actor_payload = {key: value for key, value in actor_payload.items() if value is not None}
         source_urls: list[str] = []
@@ -915,3 +1130,157 @@ class PostgresReviewSource:
             existing["evidence"] = incoming["evidence"]
         if incoming["duplicate_state"] != "not_checked":
             existing["duplicate_state"] = incoming["duplicate_state"]
+
+
+# -------------------------------------------------- discovery page -> Light Pull
+# A discovery candidate waiting in Review is not yet an actor, so it has no
+# Light Pull facts of its own, and every box read "Not Collected" although the
+# page the agent read stated most of them. These are those statements, in the
+# same keys and shapes as Light Pull facts, marked as read from the discovery
+# page. Nothing is inferred: a field the page did not state is left out.
+_CATEGORY_PAGE_ROWS: dict[str, tuple[tuple[str, str], ...]] = {
+    "university_academic": (("topic_unit_and_work", "primary_technical_focus"),
+                            ("relevant_centers_programs", "current_activities")),
+    "research_center": (("topic_research_focus", "primary_technical_focus"),
+                        ("active_recent_projects", "current_activities"),
+                        ("main_funders", "funding_summary")),
+    "national_laboratory": (("topic_program_area", "primary_technical_focus"),),
+    "applied_facility": (("testing_demonstration_scope", "technical_approach"),
+                         ("current_project", "current_activities")),
+    "hospital_clinical": (("clinical_research_focus", "primary_technical_focus"),
+                          ("current_initiative", "current_activities")),
+    "company": (("topic_business_segment_product", "primary_technical_focus"),),
+    "startup": (("technology_and_problem", "primary_technical_focus"),),
+    "innovation_platform": (("sector_focus", "primary_technical_focus"),
+                            ("platform_offerings", "technical_approach")),
+    "investor": (("topic_investment_thesis", "primary_technical_focus"),),
+    "government": (("topic_mandate_program", "current_activities"),
+                   ("visible_funding_programs", "funding_summary")),
+    "foundation_nonprofit": (("mission_sector_focus", "primary_technical_focus"),
+                             ("relevant_program", "current_activities")),
+    "association_network": (("sector_geographic_scope", "primary_technical_focus"),
+                            ("current_initiative_working_group", "current_activities")),
+}
+
+
+def _text(value: Any) -> str | None:
+    text = " ".join(str(value or "").split())
+    return text or None
+
+
+def _attach_page_facts(payload: dict[str, Any], metadata: dict[str, Any], *,
+                       url: Any, read_at: Any, request_title: Any = None) -> None:
+    rubric = metadata.get("rubric") or {}
+    sector_rows = [row for row in (rubric.get("sector_codes") or []) if isinstance(row, dict)]
+    sectors = [str(row.get("code") or "").upper() for row in sector_rows if row.get("code")]
+    metadata["sector_codes"] = sectors
+    if sectors and not payload.get("primary_sector"):
+        payload["primary_sector"] = sectors[0]
+    if not sectors:
+        # No GHUS sector fitted. What the page says the organisation works on
+        # is the starting point for a new sector, if a reviewer creates one.
+        metadata["unmatched_sector_suggestion"] = _text(payload.get("primary_technical_focus"))
+    reason = _text(payload.get("match_reason"))
+    evidence_quotes = [_text(row.get("evidence")) for row in sector_rows if _text(row.get("evidence"))]
+    if not reason and evidence_quotes:
+        # Candidates read from an official site (leads, re-reads) were not
+        # given a match sentence at discovery; their page's own sector
+        # evidence is exactly why they matched.
+        found_for = (f"Found for the discovery request '{_text(request_title)}'"
+                     if _text(request_title) else "Matched")
+        reason = (f"{evidence_quotes[0].rstrip('.')}. {found_for} on the page's own "
+                  f"{', '.join(sectors)} sector evidence.")
+    # The page's own sector evidence is a "strong" match by the agent's rule.
+    strength = payload.get("match_strength") or ("strong" if evidence_quotes else None)
+    if reason:
+        metadata["why_matched"] = {
+            "reason": reason, "strength": strength,
+            "source_url": str(url or "") or None,
+        }
+
+    date_read = str(read_at or "")[:10] or None
+    facts: list[dict[str, Any]] = []
+
+    def fact(key: str, value: Any) -> None:
+        if value in (None, "", [], {}):
+            return
+        facts.append({
+            "fact_key": key, "fact_type": "light_pull", "layer": 1, "value": value,
+            "collection_state": "found", "confidence": "medium",
+            "source_url": str(url or "") or None, "source_origin": "newly_found",
+            "date_read": date_read, "read_from": "discovery_page",
+        })
+
+    name = _text(payload.get("name"))
+    fact("official_identity", {"name": name, "other_names": []} if name else None)
+    category, type_code = payload.get("actor_category"), payload.get("category_type")
+    fact("actor_category_type", {"category": category, "type": type_code,
+                                 "category_note": _text(payload.get("category_note"))}
+         if category else None)
+    fact("website", _text(payload.get("website")))
+    fact("description", _text(payload.get("description")))
+    place = {k: _text(payload.get(src)) for k, src in
+             (("city", "location_city"), ("state", "state"), ("country", "country"))}
+    fact("location", {k: v for k, v in place.items() if v} or None)
+    evidence = [_text(row.get("evidence")) for row in sector_rows if _text(row.get("evidence"))]
+    fact("sector_topic", {"sector_codes": sectors, "evidence": evidence[0] if evidence else None}
+         if sectors else None)
+    hubs = [str(row.get("name")) for row in (rubric.get("hub_matches") or [])
+            if isinstance(row, dict) and row.get("name")]
+    fact("hub_assignment", {"suggested_hubs": hubs} if hubs else None)
+    fact("recent_activity", _text(payload.get("current_activities")))
+    fact("funding_signal", _text(payload.get("funding_summary")))
+    if reason:
+        fact("why_matched", {"reason": reason, "strength": strength,
+                             "source_url": str(url or "") or None})
+    for key, field in _CATEGORY_PAGE_ROWS.get(str(category or ""), ()):
+        fact(key, _text(payload.get(field)))
+    metadata["facts"] = _with_collected_light_pull(facts, payload, metadata)
+
+
+# Boxes that show the reviewer-editable record (or the pipeline's own
+# computation). A Light Pull read of the organisation's pages never replaces
+# them; it fills location and why-matched only when the record has none.
+_RECORD_OWNED_BOXES = frozenset({
+    "official_identity", "actor_category_type", "website", "description",
+    "sector_topic", "hub_assignment", "parent_connection",
+})
+_FILL_ONLY_IF_ABSENT = frozenset({"location", "why_matched"})
+
+
+def _with_collected_light_pull(facts: list[dict[str, Any]], payload: dict[str, Any],
+                               metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    """Merge the backend Light Pull read (light_pull_candidates) into the boxes.
+
+    Every box it answered is shown: found, with the page and checked quote it
+    came from, or not stated on the pages read - which pages, listed. These
+    keys are taken OUT of the editable payload: they are evidence for the
+    reviewer, not record fields to edit, and admission reads them from the
+    candidate row itself.
+    """
+    collected = payload.pop("light_pull_evidence", None)
+    read = payload.pop("light_pull_read", None)
+    if not isinstance(collected, dict):
+        return facts
+    read = read if isinstance(read, dict) else {}
+    metadata["light_pull_read"] = read
+    pages = [str(url) for url in (read.get("pages_read") or []) if url]
+    by_key = {f["fact_key"]: f for f in facts}
+    for key, evidence in collected.items():
+        if not isinstance(evidence, dict) or key in _RECORD_OWNED_BOXES:
+            continue
+        found = evidence.get("collection_state") == "found"
+        if key in by_key and (key in _FILL_ONLY_IF_ABSENT or not found):
+            continue
+        by_key[key] = {
+            "fact_key": key, "fact_type": "light_pull", "layer": 1,
+            "value": evidence.get("value") if found else None,
+            "collection_state": "found" if found else "not_found",
+            "confidence": evidence.get("confidence") or "medium",
+            "source_url": evidence.get("source_url") if found else None,
+            "source_origin": "newly_found",
+            "date_read": str(evidence.get("date_read") or read.get("read_at") or "")[:10] or None,
+            "read_from": "official_pages",
+            "pages_read": pages,
+        }
+    return list(by_key.values())

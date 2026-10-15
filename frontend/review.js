@@ -9,18 +9,21 @@
 //
 // Vocabularies come from taxonomy.js; UI text comes from labels.js. Nothing in
 // this file invents a label or a value, and a missing value always says WHICH
-// kind of missing it is — Not Found, Not Yet Checked, Not Provided, Pending
+// kind of missing it is — Not Found, Not Yet Collected, Not Provided, Pending
 // Classification, Not Available, Not Applicable — because those six are not
 // interchangeable.
 
 import {
   CATEGORY_LIGHT_ROWS, COMMON_LIGHT_ROWS, MISSING, NON_US_REGION, NOT_APPLICABLE,
   NO_PARENT_TOOLTIP, PARENT_LINK_TYPES, RETIRED_CATCH_ALL, THEMATIC_SECTORS,
-  categoryLabel, categoryOptions, isParentLink, isValidPair, linkTypeLabel,
-  regionForState, sectorLabel, showsRankings, showsTrl, stateOptions, typeLabel,
-  typeOptions,
-} from "./taxonomy.js";
-import {BADGES, BUTTONS, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES, TRIGGERS} from "./labels.js";
+  categoryLabel, categoryOptions, countryOptions, isParentLink, isValidPair,
+  linkTypeLabel, normalizeCountry, regionForState, sectorLabel, sectorOptions, setSectors,
+  showsRankings, showsTrl, stateOptions, typeLabel, typeOptions,
+} from "./taxonomy.js?v=20261015";
+import {
+  BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, REQUESTED_VIA, SECTIONS, SENTENCES,
+  TRIGGERS,
+} from "./labels.js?v=20261015";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.parked,
@@ -281,9 +284,70 @@ export function deepPullFacts(candidate) {
     .filter(fact => fact?.fact_type === "deep_pull" && Number(fact?.layer) === 2);
 }
 
+// A fact whose whole meaning is one sentence. Showing the sentence is the point;
+// showing {"reason": "..."} around it is noise a reviewer has to read past.
+const FACT_PRIMARY_KEYS = [
+  "reason", "description", "summary", "text", "value", "name", "statement",
+];
+
+// Dates a fact carries about ITSELF - when it was read, when it was recorded -
+// are provenance, and a reviewer reads a box for what it says, not when it was
+// fetched. They stay on the stored fact and in Audit & Details; they are not
+// printed in front of the value.
+const FACT_DATE_KEYS = new Set([
+  "date", "date_read", "dateRead", "retrieved_at", "recorded_at", "collected_at",
+  "as_of", "timestamp", "fetched_at", "observed_at", "updated_at", "created_at",
+]);
+
+/** Turn one key of a fact object into "Label: value", or null if it says nothing. */
+function factEntry(key, value) {
+  if (value === null || value === undefined) return null;
+  if (FACT_DATE_KEYS.has(key)) return null;
+  if (Array.isArray(value)) {
+    const items = value.map(item => (typeof item === "string" ? item : null)).filter(Boolean);
+    if (!items.length) return null;
+    return `${fieldLabel(key)}: ${items.join(", ")}`;
+  }
+  if (typeof value === "object") return null;          // nested objects stay out of a one-liner
+  const text = String(value).trim();
+  if (!text) return null;
+  return `${fieldLabel(key)}: ${text}`;
+}
+
+/** A fact key as a readable label, reusing the screen's own label rules. */
+function fieldLabel(key) {
+  return reviewFieldLabel(String(key || ""));
+}
+
+/**
+ * A recorded fact, readable.
+ *
+ * Light Pull stores structured values, and dumping them as raw JSON made the
+ * boxes unreadable: a reviewer saw `{ "reason": "Found by open-web discovery
+ * ..." }` instead of the sentence. So: a single meaningful sentence is shown as
+ * itself, a small object becomes "Label: value" lines, and JSON remains only as
+ * the last resort for something genuinely structured.
+ */
 export function formatFactValue(value) {
   if (value === null || value === undefined) return "No value recorded";
   if (typeof value === "string") return value;
+  if (typeof value !== "object") return String(value);
+  if (Array.isArray(value)) {
+    const items = value.map(item => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+    return items.length ? items.join(", ") : "No value recorded";
+  }
+  for (const key of FACT_PRIMARY_KEYS) {
+    const primary = value[key];
+    if (typeof primary === "string" && primary.trim()) return primary.trim();
+  }
+  const entries = Object.entries(value);
+  const lines = entries.map(([key, item]) => factEntry(key, item)).filter(Boolean);
+  if (lines.length) return lines.join("\n");
+  // Everything there was to say was a date. Dumping the JSON would put the
+  // timestamp back on screen by the back door.
+  if (entries.length && entries.every(([key]) => FACT_DATE_KEYS.has(key))) {
+    return "No value recorded";
+  }
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
@@ -297,7 +361,7 @@ function present(value) {
  * the recorded facts.
  *
  * A row with no fact says which kind of missing it is. "Not Found" means the
- * layer ran and found nothing; "Not Yet Checked" means it has not run. The two
+ * layer ran and found nothing; "Not Yet Collected" means it has not run. The two
  * are never merged, because merging them turns "we have not looked" into
  * "there is nothing there".
  */
@@ -346,8 +410,50 @@ export function lightFactRows(candidate) {
         dateRead: present(fact.date_read),
         confidence: confidenceLabel(present(fact.confidence)),
         origin: present(fact.source_origin),
+        // The organisation's own pages the Light Pull read for this box. A
+        // "Not Found" with pages listed means those pages were read and none
+        // of them states it - never that nobody looked.
+        pagesRead: Array.isArray(fact.pages_read) ? fact.pages_read.filter(Boolean) : [],
       };
     });
+}
+
+/** "Not Stated on the 3 Pages Read" - the missing state, with what was checked. */
+export function missingWithPages(row) {
+  const count = (row?.pagesRead || []).length;
+  if (row?.state !== MISSING.notFound || !count) return row?.state || null;
+  return `Not Stated on the ${count === 1 ? "Page" : `${count} Pages`} Read`;
+}
+
+// Common Light Pull keys that are already shown as an editable control in the
+// Identity, Location or Sector boxes. Repeating them as a read-only box would
+// say the same thing twice, with one copy stale.
+const LIGHT_ROWS_SHOWN_AS_CONTROLS = new Set([
+  "official_identity", "actor_category_type", "website", "description",
+  "location", "parent_connection", "sector_topic", "hub_assignment",
+]);
+
+/**
+ * The Light Pull information boxes for a record, in two groups.
+ *
+ * `common` are the Section 5.1 fields every actor has; `specific` are the
+ * Section 5.2 fields for this actor's category. Changing the category changes
+ * only the second group, and nothing the reviewer has typed is touched.
+ */
+export function lightPullBoxes(candidate, category) {
+  const resolved = String(
+    category ?? candidate?.reviewed_payload?.actor_category ?? "",
+  );
+  const rows = lightFactRows({
+    ...candidate,
+    reviewed_payload: {...(candidate?.reviewed_payload || {}), actor_category: resolved},
+  });
+  const specificKeys = new Set((CATEGORY_LIGHT_ROWS[resolved] || []).map(([key]) => key));
+  return {
+    common: rows.filter(row => !specificKeys.has(row.key)
+      && !LIGHT_ROWS_SHOWN_AS_CONTROLS.has(row.key)),
+    specific: rows.filter(row => specificKeys.has(row.key)),
+  };
 }
 
 export function factHistoryRows(candidate) {
@@ -460,6 +566,67 @@ export function isMigratedBaseline(candidate) {
   return /existing_canonical_migration/i.test(run) || candidate?.run_trigger === "migration";
 }
 
+/**
+ * The options the hub dropdown offers, in the order a reviewer wants them:
+ * what the actor already belongs to, then what the rule suggests, then the rest
+ * of the live hubs. Each is labelled with which it is, so choosing a suggestion
+ * is a deliberate act rather than an accident of ordering.
+ *
+ * This only ever lists hubs that already exist. A new hub is never created from
+ * here; detection proposes one and GHUS decides.
+ */
+export function hubDropdownOptions(candidate) {
+  const metadata = candidate?.agent_metadata || {};
+  const seen = new Set();
+  const options = [];
+  const add = (hub, suffix) => {
+    const id = String(hub?.hub_id || "");
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    const miles = hub.distance_miles != null ? ` · ${hub.distance_miles} mi` : "";
+    options.push({hub_id: id, label: `${hub.name || id}${miles}${suffix}`});
+  };
+  for (const hub of metadata.hub_memberships || []) add(hub, ` · ${BADGES.currentlyAssigned}`);
+  for (const hub of metadata.hub_suggestions || []) add(hub, ` · ${BADGES.suggested}`);
+  for (const hub of metadata.hubs || []) add(hub, "");
+  return options;
+}
+
+/**
+ * A subscription's scope in words.
+ *
+ * The scopes INTERSECT: sector AGRI plus state CA means agriculture actors in
+ * California, not everything in either. The joining word is "and" for that
+ * reason, and a scope that is somehow empty says so rather than rendering as a
+ * blank, because an unscoped subscription would sweep everything.
+ */
+export function subscriptionScopeLabel(scope = {}) {
+  const parts = [];
+  const actors = (scope.actor_ids || []).length;
+  if (actors) parts.push(`${actors} named actor${actors === 1 ? "" : "s"}`);
+  if ((scope.sector_codes || []).length) {
+    parts.push((scope.sector_codes || []).map(sectorLabel).join(", "));
+  }
+  const topics = (scope.topic_ids || []).length;
+  if (topics) parts.push(`${topics} topic${topics === 1 ? "" : "s"}`);
+  const place = [scope.city, scope.state_code, scope.region_code, scope.country]
+    .map(value => String(value || "").trim()).filter(Boolean);
+  if (place.length) parts.push(place.join(", "));
+  return parts.length ? parts.join(" and ") : SENTENCES.subscriptionNoScope;
+}
+
+/** Only an active subscription runs. The rest say why not. */
+export function subscriptionStatusLabel(status) {
+  return SUBSCRIPTION_STATUS_LABELS[status] || String(status || "").replaceAll("_", " ");
+}
+
+export const SUBSCRIPTION_STATUS_LABELS = {
+  active: BADGES.active,
+  paused: BADGES.paused,
+  expired: BADGES.expired,
+  cancelled: BADGES.cancelled,
+};
+
 function decisionKey() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return `review-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -473,12 +640,55 @@ function errorMessage(body, status) {
   return `The request failed (${status}).`;
 }
 
+const NEW_SECTOR = "__new_sector__";
+
 async function request(url, options = {}) {
   const response = await fetch(url, options);
   let body = {};
   try { body = await response.json(); } catch {}
   if (!response.ok) throw new Error(errorMessage(body, response.status));
   return body;
+}
+
+/**
+ * One Light Pull information box.
+ *
+ * A box is always rendered, even with nothing in it, because the absence of a
+ * field is itself the answer and hiding it would make the record look complete.
+ * Which KIND of absence it is -- Not Found, Not Yet Collected, Not Applicable --
+ * is shown as stated, never substituted.
+ */
+function pageLabel(url) {
+  try {
+    const path = new URL(url).pathname.replace(/\/+$/, "");
+    return path ? path.split("/").pop().replace(/[-_]+/g, " ") : "Home";
+  } catch {
+    return "Page";
+  }
+}
+
+function lightBox(html, row) {
+  // The date a page was read is provenance, not something a reviewer reads a
+  // box for, and a full ISO timestamp in every box crowded out the value. The
+  // source link and the confidence stay; the timestamp is still recorded on the
+  // fact and still shown in Audit & Details.
+  const provenance = [row.source, row.confidence].some(Boolean);
+  return html`<div class="review-box light-box" key=${row.key}>
+    <dt>${row.label}</dt>
+    <dd>${row.state
+      ? html`<span class="review-missing">${missingWithPages(row)}</span>`
+      : formatFactValue(row.value)}</dd>
+    ${row.state && row.pagesRead?.length > 0 && html`<small>Checked:
+      ${row.pagesRead.map((url, index) => html`${index ? " · " : " "}<a href=${url}
+        target="_blank" rel="noreferrer">${pageLabel(url)}</a>`)}
+    </small>`}
+    ${provenance && html`<small>
+      ${row.source
+        ? html`<a href=${row.source} target="_blank" rel="noreferrer">Source</a>`
+        : ""}
+      ${row.confidence ? (row.source ? ` · ${row.confidence}` : row.confidence) : ""}
+    </small>`}
+  </div>`;
 }
 
 function formatSync(lastSync) {
@@ -490,6 +700,80 @@ function formatSync(lastSync) {
 
 function formatDate(seconds) {
   return seconds ? new Date(seconds * 1000).toLocaleDateString() : SENTENCES.noRunRecorded;
+}
+
+/**
+ * A calendar date, in the reader's locale.
+ *
+ * Distinct from formatDate, which takes epoch seconds. A subscription's period
+ * is a date with no time of day, and parsing "2026-08-30" through the Date
+ * constructor would read it as UTC midnight and can show the previous day west
+ * of Greenwich. Splitting the parts avoids inventing a time that was never
+ * recorded.
+ */
+function formatDay(value) {
+  const parts = String(value || "").split("-").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return String(value || "");
+  return new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString();
+}
+
+/**
+ * A subscription's cadence and period on one line.
+ *
+ * Assembled here rather than in the template because htm drops the whitespace
+ * at a line break, which ran the cadence into the start date.
+ */
+export function subscriptionPeriodLabel(item = {}) {
+  const from = item.start_date ? formatDay(item.start_date) : MISSING.notProvided;
+  const to = item.end_date ? formatDay(item.end_date) : MISSING.notProvided;
+  const cadence = CADENCES[item.cadence] || String(item.cadence || "");
+  return `${TRIGGERS.subscription} · ${cadence} · ${from} to ${to}`;
+}
+
+/** Where a proposed hub sits, in words. */
+export function hubProposalPlace(proposal = {}) {
+  const place = [proposal.primary_city, proposal.state, proposal.country]
+    .map(value => String(value || "").trim()).filter(Boolean).join(", ");
+  const key = proposal.dimension_key
+    ? `${proposal.dimension || "sector"} ${proposal.dimension_key}` : "";
+  return [place || MISSING.notProvided, key].filter(Boolean).join(" · ");
+}
+
+/**
+ * A threshold as "12 of 10 required", so a reader sees the margin.
+ *
+ * The count alone does not say whether it passed, and the requirement alone
+ * does not say by how much.
+ */
+export function thresholdLabel(count, required) {
+  if (count === null || count === undefined) return MISSING.notYetChecked;
+  if (required === null || required === undefined) return String(count);
+  return `${count} of ${required} required`;
+}
+
+/**
+ * The recorded explanation of why this record was found.
+ *
+ * Discovery stores it as a Light Pull fact; only some paths also put it on
+ * agent_metadata. Nothing here reconstructs an explanation - if neither holds
+ * one, the box says Not Yet Collected rather than inventing search intent.
+ */
+export function whyMatchedFact(candidate) {
+  const fact = (candidate?.agent_metadata?.facts || [])
+    .find(item => item?.fact_key === "why_matched" && item?.collection_state === "found");
+  const value = fact?.value;
+  if (!value || typeof value !== "object") return null;
+  return {
+    reason: value.reason || null,
+    strength: value.strength ?? fact.confidence ?? null,
+    date_read: value.date_read || fact.date_read || null,
+    source_url: value.source_url || fact.source_url || null,
+  };
+}
+
+/** How a subscription was requested, in words. */
+export function requestedViaLabel(code) {
+  return REQUESTED_VIA[code] || String(code || "").replaceAll("_", " ");
 }
 
 const LONG_FIELDS = /description|activities|approach|summary|constraints|focus|research|category_note|thematic/;
@@ -533,6 +817,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [proposeHub, setProposeHub] = useState(false);
     const [proposedHub, setProposedHub] = useState({name: "", rationale: ""});
     const [factView, setFactView] = useState("current");
+    const [view, setView] = useState("queue");
+    const [updates, setUpdates] = useState({subscriptions: [], configured: false, loaded: false});
+    const [hubDemo, setHubDemo] = useState({proposals: [], configured: false, loaded: false});
+    // Sectors come from the database, so one added here appears at once.
+    const [sectorState, setSectorState] = useState({canCreate: false, version: 0});
+    const [newSector, setNewSector] = useState(null);
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -585,6 +875,61 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       return () => { active = false; };
     }, [selectedId]);
 
+    useEffect(() => {
+      if (view !== "updates" || updates.loaded) return;
+      let active = true;
+      request("/api/review/subscriptions")
+        .then(body => { if (active) setUpdates({...body, loaded: true}); })
+        .catch(exception => { if (active) setError(exception.message); });
+      return () => { active = false; };
+    }, [view, updates.loaded]);
+
+    useEffect(() => {
+      if (view !== "hubs" || hubDemo.loaded) return;
+      let active = true;
+      request("/api/review/hub-proposals")
+        .then(body => { if (active) setHubDemo({...body, loaded: true}); })
+        .catch(exception => { if (active) setError(exception.message); });
+      return () => { active = false; };
+    }, [view, hubDemo.loaded]);
+
+    async function loadSectors() {
+      try {
+        const body = await request("/api/review/sectors");
+        setSectors(body.sectors || []);
+        setSectorState(current => ({canCreate: !!body.can_create, version: current.version + 1}));
+      } catch (exception) { setError(exception.message); }
+    }
+    useEffect(() => { loadSectors(); }, []);
+
+    function startNewSector(suggestion) {
+      setNewSector({name: suggestion || "", description: "", busy: false, error: ""});
+    }
+
+    async function createSector() {
+      if (!newSector) return;
+      if (!reviewer.trim()) {
+        setNewSector({...newSector, error: SENTENCES.sectorNeedsReviewer});
+        return;
+      }
+      setNewSector({...newSector, busy: true, error: ""});
+      try {
+        const created = await request("/api/review/sectors", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({name: newSector.name.trim(),
+                                description: newSector.description.trim() || null,
+                                reviewer: reviewer.trim()}),
+        });
+        await loadSectors();
+        edit("primary_sector", created.code);
+        setNewSector(null);
+        setFeedback(created.created ? SENTENCES.sectorCreated(created.name)
+                                    : SENTENCES.sectorExisted(created.name));
+      } catch (exception) {
+        setNewSector(current => current && {...current, busy: false, error: exception.message});
+      }
+    }
+
     function setFilter(key, value) {
       setFilters(current => ({...current, [key]: value}));
     }
@@ -612,6 +957,13 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     function editState(value) {
       setDraft(current => ({
         ...current, state: value, region: regionForState(value, current.country),
+      }));
+    }
+
+    /** Country moves the region too: a non-US record has no US region. */
+    function editCountry(value) {
+      setDraft(current => ({
+        ...current, country: value, region: regionForState(current.state, value),
       }));
     }
 
@@ -707,8 +1059,15 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     // choose by hand. A suggestion is never shown as a membership.
     const memberships = selected?.agent_metadata?.hub_memberships || [];
     const suggestions = selected?.agent_metadata?.hub_suggestions || [];
+    const hubOptions = selected ? hubDropdownOptions(selected) : [];
     const groups = groupQueue(data.candidates, data.run_groups);
     const isActor = selected?.entity_type === "actor";
+    // Light Pull populates the information boxes. The category-specific group
+    // follows the category currently chosen in the dropdown, so it updates as
+    // soon as the reviewer changes it -- without touching anything they typed.
+    const lightBoxes = selected && isActor
+      ? lightPullBoxes(selected, draft.actor_category)
+      : {common: [], specific: []};
     const summary = isActor
       ? actorReviewSummary(draft, selected?.original_payload || selected?.reviewed_payload)
       : null;
@@ -726,7 +1085,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     return html`<section class="review-page" aria-labelledby="review-title">
       <div class="eyebrow">${SENTENCES.pageEyebrow}</div>
       <h1 class="hero-h" id="review-title">${SENTENCES.pageTitle}</h1>
-      <p class="lead">${SENTENCES.pageLead}</p>
 
       <div class="review-counts" aria-label="Review queue counts">
         ${["pending_review", "approved", "rejected_by_reviewer"].map(status => html`
@@ -748,47 +1106,131 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         <div key=${index} class="review-message error" role="alert">
           <strong>Source sync warning:</strong> ${warning}
         </div>`)}
+      <div class="review-tabs" role="tablist" aria-label="Review views">
+        <button role="tab" aria-selected=${view === "queue"}
+          class=${"btn ghost " + (view === "queue" ? "active" : "")}
+          onClick=${() => setView("queue")}>${QUEUE.title}</button>
+        <button role="tab" aria-selected=${view === "updates"}
+          class=${"btn ghost " + (view === "updates" ? "active" : "")}
+          onClick=${() => setView("updates")}>${SECTIONS.updates}</button>
+        <button role="tab" aria-selected=${view === "hubs"}
+          class=${"btn ghost " + (view === "hubs" ? "active" : "")}
+          onClick=${() => setView("hubs")}>${SECTIONS.hubProposals}</button>
+      </div>
+
+      ${view === "hubs" && html`<section class="review-updates" aria-label=${SECTIONS.hubProposals}>
+        ${!hubDemo.loaded && html`<p class="muted">${SENTENCES.queueLoading}</p>`}
+        ${hubDemo.loaded && !hubDemo.configured && html`
+          <p class="muted">${SENTENCES.hubProposalsUnavailable}</p>`}
+        ${hubDemo.loaded && hubDemo.configured && !hubDemo.proposals.length && html`
+          <p class="muted">${SENTENCES.hubProposalsNone}</p>`}
+        ${hubDemo.proposals.map(proposal => html`
+          <div class="review-match" key=${proposal.proposed_hub_id}>
+            <div class="review-detail-head">
+              <div><strong>${proposal.name}</strong>
+                <p class="review-subhead">${hubProposalPlace(proposal)}</p></div>
+              <span class=${"review-status " + (proposal.created_hub ? "verified" : "parked")}>
+                ${proposal.created_hub ? BADGES.verified : BADGES.parked}</span>
+            </div>
+            <p>${proposal.rationale}</p>
+            <dl class="review-facts">
+              <div><dt>${FIELDS.families}</dt>
+                <dd>${thresholdLabel(proposal.family_count, proposal.families_required)}</dd></div>
+              <div><dt>${FIELDS.categories}</dt>
+                <dd>${thresholdLabel(proposal.category_count, proposal.categories_required)}</dd></div>
+              <div><dt>${FIELDS.clusterRadius}</dt>
+                <dd>${proposal.core_radius_miles ?? "?"} / ${proposal.radius_miles ?? "?"} mi</dd></div>
+              <div><dt>${FIELDS.hubCreated}</dt>
+                <dd>${proposal.created_hub ? BADGES.verified : SENTENCES.noHubCreated}</dd></div>
+            </dl>
+            <h4>${FIELDS.proposedMembers} (${proposal.members.length})</h4>
+            <ul class="review-evidence">
+              ${proposal.members.map((member, index) => html`<li key=${index}>
+                <strong>${member.name}</strong>
+                <span>${categoryLabel(member.actor_category)}${member.category_type
+                  ? " · " + typeLabel(member.actor_category, member.category_type) : ""}</span>
+              </li>`)}
+            </ul>
+          </div>`)}
+      </section>`}
+
+      ${view === "updates" && html`<section class="review-updates" aria-label=${SECTIONS.updates}>
+        ${!updates.loaded && html`<p class="muted">${SENTENCES.queueLoading}</p>`}
+        ${updates.loaded && !updates.configured && html`
+          <p class="muted">${SENTENCES.subscriptionsUnavailable}</p>`}
+        ${updates.loaded && updates.configured && !updates.subscriptions.length && html`
+          <p class="muted">${SENTENCES.subscriptionsNone}</p>`}
+        ${updates.subscriptions.map(item => html`
+          <div class="review-match" key=${item.subscription_id}>
+            <div class="review-detail-head">
+              <div><strong>${subscriptionScopeLabel(item.scope)}</strong>
+                <p class="review-subhead">${subscriptionPeriodLabel(item)}</p></div>
+              <span class=${"review-status " + item.status}>
+                ${subscriptionStatusLabel(item.status)}</span>
+            </div>
+            <dl class="review-facts">
+              <div><dt>${FIELDS.requestedBy}</dt>
+                <dd>${item.requested_by || SENTENCES.noRunRecorded}</dd></div>
+              <div><dt>${FIELDS.requestedVia}</dt>
+                <dd>${requestedViaLabel(item.requested_via)}</dd></div>
+              <div><dt>${FIELDS.lastRun}</dt>
+                <dd>${item.last_run_at ? formatDate(item.last_run_at) : MISSING.notYetChecked}</dd></div>
+              <div><dt>${FIELDS.nextDue}</dt>
+                <dd>${item.next_due_at ? formatDate(item.next_due_at) : MISSING.notApplicable}</dd></div>
+            </dl>
+            <h4>${FIELDS.runs}</h4>
+            ${!item.runs.length && html`<p class="muted">${MISSING.notYetChecked}</p>`}
+            <ul class="review-evidence">
+              ${item.runs.map(run => html`<li key=${run.run_id}>
+                <strong>${formatDate(run.created_at)}</strong>
+                <span>${run.dry_run ? BADGES.dryRun : BADGES.live} · ${run.status}</span>
+                ${run.status_reason && html`<span>${run.status_reason}</span>`}
+              </li>`)}
+            </ul>
+          </div>`)}
+      </section>`}
+
+      ${view === "queue" && html`<div class="review-filters" aria-label="Review filters">
+        <label><span>${FIELDS.recordKind}</span>
+          <select value=${filters.entity_type} onChange=${e => setFilter("entity_type", e.target.value)}>
+            <option value="all">${QUEUE.allTypes}</option>
+            <option value="actor">${BADGES.actor}</option>
+            <option value="person">${BADGES.person}</option>
+            <option value="event">${BADGES.event}</option>
+          </select></label>
+        <label><span>${FIELDS.reviewReason}</span>
+          <select value=${filters.review_reason} onChange=${e => setFilter("review_reason", e.target.value)}>
+            <option value="all">${QUEUE.allReasons}</option>
+            ${Object.keys(REVIEW_REASON_LABELS).map(kind => html`
+              <option key=${kind} value=${kind}>${reviewReasonLabel(kind)}</option>`)}
+          </select></label>
+        <label><span>${FIELDS.sourceRun}</span>
+          <select value=${filters.run_group} onChange=${e => setFilter("run_group", e.target.value)}>
+            <option value="all">${QUEUE.allRuns}</option>
+            ${(data.run_groups || []).map(group => html`
+              <option key=${group.key} value=${group.key}>
+                ${group.label}${group.trigger_label ? ` · ${group.trigger_label}` : ""}
+              </option>`)}
+          </select></label>
+        <label><span>${FIELDS.actorCategory}</span>
+          <select value=${filters.actor_category} onChange=${e => setFilter("actor_category", e.target.value)}>
+            <option value="all">${QUEUE.allCategories}</option>
+            ${categoryOptions().map(option => html`
+              <option key=${option.value} value=${option.value}>${option.label}</option>`)}
+          </select></label>
+        <label><span>${FIELDS.search}</span>
+          <input type="search" value=${filters.search}
+            onInput=${e => setFilter("search", e.target.value)} placeholder="Name or domain"/></label>
+      </div>`}
       ${error && html`<div class="review-message error" role="alert">${error}</div>`}
       ${feedback && html`<div class="review-message success" role="status">${feedback}</div>`}
 
-      <div class="review-workspace">
+      ${view === "queue" && html`<div class="review-workspace">
         <!-- QUEUE (left rail) -->
         <div class="review-queue" aria-label=${QUEUE.title}>
           <div class="review-queue-head">
             <strong>${QUEUE.title}</strong>
             <span>${data.candidates.length} ${QUEUE.shown.toLocaleLowerCase()}</span>
-          </div>
-          <div class="review-filters" aria-label="Review filters">
-            <label><span>${FIELDS.recordKind}</span>
-              <select value=${filters.entity_type} onChange=${e => setFilter("entity_type", e.target.value)}>
-                <option value="all">${QUEUE.allTypes}</option>
-                <option value="actor">${BADGES.actor}</option>
-                <option value="person">${BADGES.person}</option>
-                <option value="event">${BADGES.event}</option>
-              </select></label>
-            <label><span>${FIELDS.reviewReason}</span>
-              <select value=${filters.review_reason} onChange=${e => setFilter("review_reason", e.target.value)}>
-                <option value="all">${QUEUE.allReasons}</option>
-                ${Object.keys(REVIEW_REASON_LABELS).map(kind => html`
-                  <option key=${kind} value=${kind}>${reviewReasonLabel(kind)}</option>`)}
-              </select></label>
-            <label><span>${FIELDS.sourceRun}</span>
-              <select value=${filters.run_group} onChange=${e => setFilter("run_group", e.target.value)}>
-                <option value="all">${QUEUE.allRuns}</option>
-                ${(data.run_groups || []).map(group => html`
-                  <option key=${group.key} value=${group.key}>
-                    ${group.label}${group.trigger_label ? ` · ${group.trigger_label}` : ""}
-                  </option>`)}
-              </select></label>
-            <label><span>${FIELDS.actorCategory}</span>
-              <select value=${filters.actor_category} onChange=${e => setFilter("actor_category", e.target.value)}>
-                <option value="all">${QUEUE.allCategories}</option>
-                ${categoryOptions().map(option => html`
-                  <option key=${option.value} value=${option.value}>${option.label}</option>`)}
-              </select></label>
-            <label><span>${FIELDS.search}</span>
-              <input type="search" value=${filters.search}
-                onInput=${e => setFilter("search", e.target.value)} placeholder="Name or domain"/></label>
           </div>
           ${loading && html`<div class="review-empty" role="status">${SENTENCES.queueLoading}</div>`}
           ${!loading && !data.candidates.length && html`<div class="review-empty">${SENTENCES.queueEmpty}</div>`}
@@ -881,7 +1323,15 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           ${isActor && html`<section class="review-section">
             <h3><span class="review-step">2</span>${SECTIONS.location}</h3>
             <div class="review-field-grid">
-              ${textField(html, selected, "country", draft.country, edit, !pending || busy, draftErrors.country)}
+              <label class="review-field"><span>${FIELDS.country}</span>
+                <select value=${normalizeCountry(draft.country) || ""} disabled=${!pending || busy}
+                  onChange=${e => editCountry(e.target.value)}>
+                  <option value="">${MISSING.notProvided}</option>
+                  ${countryOptions().map(option => html`
+                    <option key=${option.value} value=${option.value}>${option.label}</option>`)}
+                  ${draft.country && !countryOptions().some(o => o.value === normalizeCountry(draft.country))
+                    && html`<option value=${draft.country}>${draft.country}</option>`}
+                </select></label>
               <label class="review-field"><span>${FIELDS.state}</span>
                 <select value=${draft.state ?? ""} disabled=${!pending || busy}
                   onChange=${e => editState(e.target.value)}>
@@ -891,7 +1341,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 </select></label>
               <label class="review-field"><span>${FIELDS.region}</span>
                 <input value=${summary.region} readonly disabled aria-readonly="true"/>
-                <small class="review-hint">${SENTENCES.regionDerived}</small></label>
+</label>
               ${textField(html, selected, "location_city", draft.location_city, edit, !pending || busy, draftErrors.location_city)}
             </div>
             <dl class="review-facts">
@@ -914,7 +1364,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               : html`<p class="review-complete" title=${parent.tooltip}>
                   <strong>${parent.missing}</strong> — ${parent.tooltip}
                 </p>`}
-            <p class="review-hint">${SENTENCES.parentPickerRule}</p>
             <p class="muted">Parent link types offered: ${PARENT_LINK_TYPES.map(o => o.label).join(" · ")}</p>
             <h4>${FIELDS.otherRelationships} <span class="review-chip">${BADGES.readOnly}</span></h4>
             ${!relationships.length && html`<p class="muted">${MISSING.notFound}</p>`}
@@ -935,30 +1384,55 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <div class="review-two-up">
               <div class="review-box">
                 <h4>${FIELDS.sector} <span class="review-chip">${BADGES.hubDimension}</span></h4>
-                <p class="review-hint">${SENTENCES.sectorDecidesHub}</p>
-                <ul class="review-checklist">
-                  ${THEMATIC_SECTORS.map(([code, label]) => html`<li key=${code}>
-                    <label><input type="checkbox" disabled=${!pending || busy}
-                      checked=${(selected.agent_metadata?.sector_codes || []).includes(code)}
-                      onChange=${() => setFeedback(
-                        "Sector edits are recorded through the canonical writer; see the decision panel.")}/>
-                      ${label}</label>
-                  </li>`)}
-                </ul>
-                ${(selected.agent_metadata?.sector_codes || [])
-                  .filter(code => !THEMATIC_SECTORS.some(([value]) => value === code))
-                  .map(code => html`<p key=${code} class="muted">
-                    ${sectorLabel(code)} <span class="review-chip">${BADGES.readOnly}</span>
-                  </p>`)}
+                <label class="review-field">
+                  <span>${FIELDS.primarySector}</span>
+                  <select value=${draft.primary_sector ?? ""} disabled=${!pending || busy}
+                    data-sectors=${sectorState.version}
+                    onChange=${e => e.target.value === NEW_SECTOR
+                      ? startNewSector(selected.agent_metadata?.unmatched_sector_suggestion)
+                      : edit("primary_sector", e.target.value)}>
+                    <option value="">${MISSING.notApplicable}</option>
+                    ${sectorOptions(selected.agent_metadata?.sector_codes || []).map(option => html`
+                      <option key=${option.value} value=${option.value}>${option.label}</option>`)}
+                    ${sectorState.canCreate && pending && html`
+                      <option value=${NEW_SECTOR}>${BUTTONS.addSector}</option>`}
+                  </select></label>
+                ${!(selected.agent_metadata?.sector_codes || []).length
+                  && selected.agent_metadata?.unmatched_sector_suggestion && html`
+                  <p class="review-notice">${SENTENCES.noSectorMatched(
+                    selected.agent_metadata.unmatched_sector_suggestion)}</p>`}
+                ${newSector && html`<div class="review-new-sector">
+                  <label class="review-field"><span>${FIELDS.newSectorName}</span>
+                    <input value=${newSector.name} maxLength="80"
+                      onInput=${e => setNewSector({...newSector, name: e.target.value})}/></label>
+                  <label class="review-field"><span>${FIELDS.newSectorDescription}</span>
+                    <textarea rows="2" maxLength="500" value=${newSector.description}
+                      onInput=${e => setNewSector({...newSector, description: e.target.value})}></textarea></label>
+                  ${newSector.error && html`<p class="field-error">${newSector.error}</p>`}
+                  <div class="review-new-sector-actions">
+                    <button class="btn" disabled=${newSector.busy || newSector.name.trim().length < 2}
+                      onClick=${createSector}>${newSector.busy ? BUTTONS.addingSector : BUTTONS.createSector}</button>
+                    <button class="btn ghost" disabled=${newSector.busy}
+                      onClick=${() => setNewSector(null)}>${BUTTONS.cancel}</button>
+                  </div>
+                </div>`}
+                ${(selected.agent_metadata?.sector_codes || []).length > 0 && html`
+                  <p class="review-hint">${FIELDS.otherSectors}:
+                    ${(selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · ")}
+                    <span class="review-chip">${BADGES.readOnly}</span></p>`}
               </div>
               <div class="review-box">
                 <h4>${FIELDS.whyItMatched}</h4>
                 ${(() => {
-                  const why = selected.agent_metadata?.why_matched;
+                  // Two sources say this, and the dedicated one is often empty:
+                  // discovery records the explanation as a Light Pull fact, while
+                  // agent_metadata.why_matched is only set on some paths. Reading
+                  // both means one box instead of a populated box beside an empty
+                  // one claiming Not Yet Collected.
+                  const why = selected.agent_metadata?.why_matched || whyMatchedFact(selected);
                   if (!why) return html`<p class="muted">${MISSING.notYetChecked}</p>`;
                   return html`<dl class="review-facts">
                     <div><dt>${FIELDS.strength}</dt><dd>${matchStrengthLabel(why.strength)}</dd></div>
-                    <div><dt>${FIELDS.dateRead}</dt><dd>${why.date_read || MISSING.notFound}</dd></div>
                   </dl>
                   <p>${why.reason || MISSING.notFound}</p>
                   ${why.source_url && html`
@@ -966,12 +1440,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 })()}
               </div>
             </div>
-            <dl class="review-facts">
-              <div><dt>${FIELDS.topic} <span class="review-chip">${BADGES.secondary}</span></dt><dd>
-                ${present(selected.agent_metadata?.topic_label) || MISSING.notYetChecked}
-              </dd></div>
-            </dl>
-            <p class="review-hint">${SENTENCES.topicIsSecondary}</p>
             <h4>${FIELDS.currentHubs}</h4>
             ${!memberships.length && html`<p class="muted">${MISSING.notFound}</p>`}
             <ul class="review-evidence">
@@ -983,7 +1451,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   ${BADGES.hubMemberOutsideRadius}</span>`}
               </li>`)}
             </ul>
-            ${memberships.length > 0 && html`<p class="review-hint">${SENTENCES.membershipsKept}</p>`}
             <h4>${FIELDS.suggestedHubs}</h4>
             ${!suggestions.length && html`<p class="muted">${MISSING.notYetChecked}</p>`}
             <ul class="review-evidence">
@@ -994,75 +1461,47 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <span>${FIELDS.suggestion}: ${hub.reason || MISSING.notFound}</span>
               </li>`)}
             </ul>
-            ${suggestions.length > 0 && html`<p class="review-hint">${SENTENCES.suggestionIsNotADecision}</p>`}
-            <div class="review-field-grid">
-              <label class="review-field"><span>${BUTTONS.chooseHub}</span>
-                <select multiple value=${hubIds} disabled=${!pending || busy}
-                  onChange=${e => setHubIds([...e.target.selectedOptions].map(option => option.value))}>
-                  ${hubs.map(hub => html`
-                    <option key=${hub.hub_id} value=${hub.hub_id}>${hub.name || hub.hub_id}</option>`)}
-                </select></label>
-              <label class="review-field"><span>${BUTTONS.leaveUnassigned}</span>
-                <input type="checkbox" checked=${!hubIds.length} disabled=${!pending || busy}
-                  onChange=${() => setHubIds([])}/></label>
-            </div>
+            <label class="review-field"><span>${BUTTONS.chooseHub}</span>
+              <select value=${hubIds[0] ?? ""} disabled=${!pending || busy}
+                onChange=${e => setHubIds(e.target.value ? [e.target.value] : [])}>
+                <option value="">${SENTENCES.noHubOption}</option>
+                ${hubOptions.map(option => html`
+                  <option key=${option.hub_id} value=${option.hub_id}>${option.label}</option>`)}
+              </select></label>
           </section>`}
 
-          <!-- 4 LIGHT PULL FACTS -->
+          <!-- 4 LIGHT PULL INFORMATION -->
           ${isActor && html`<section class="review-section">
             <h3><span class="review-step">4</span>${SECTIONS.facts}</h3>
-            <div class="review-toggle" role="group" aria-label=${SECTIONS.facts}>
-              <button class=${"btn ghost " + (factView === "current" ? "active" : "")}
-                onClick=${() => setFactView("current")}>${FACTS.current}</button>
-              <button class=${"btn ghost " + (factView === "history" ? "active" : "")}
-                onClick=${() => setFactView("history")}>${FACTS.history}</button>
+            <h4>${FIELDS.commonLightPull}</h4>
+            <div class="review-boxes">
+              ${lightBoxes.common.map(row => lightBox(html, row))}
             </div>
-            ${showsTrl(draft.actor_category) && html`
-              <p class="review-hint">${SENTENCES.trlStartupOnly}</p>`}
-            ${showsRankings(draft.actor_category) && html`
-              <p class="review-hint">${SENTENCES.rankingsUniversityOnly}</p>`}
-            ${factView === "current" ? html`<div class="review-match"><table>
-              <thead><tr>
-                <th>${FIELDS.field}</th><th>${FIELDS.value}</th><th>${FIELDS.source}</th>
-                <th>${FIELDS.dateRead}</th><th>${FIELDS.confidence}</th><th>${FIELDS.origin}</th>
-              </tr></thead>
-              <tbody>${factRows.map(row => html`<tr key=${row.key}>
-                <th scope="row">${row.label}</th>
-                <td>${row.state
-                  ? html`<span class="review-missing">${row.state}</span>`
-                  : formatFactValue(row.value)}</td>
-                <td>${row.source
-                  ? html`<a href=${row.source} target="_blank" rel="noreferrer">${row.source}</a>`
-                  : html`<span class="review-missing">${row.metaState}</span>`}</td>
-                <td>${row.dateRead
-                  || html`<span class="review-missing">${row.metaState}</span>`}</td>
-                <td>${row.confidence
-                  || html`<span class="review-missing">${row.metaState}</span>`}</td>
-                <td>${row.origin
-                  || html`<span class="review-missing">${row.metaState}</span>`}</td>
-              </tr>`)}</tbody>
-            </table></div>` : html`<div class="review-match">
+
+            <h4>${categoryLabel(draft.actor_category) || FIELDS.categoryLightPull}</h4>
+            ${!lightBoxes.specific.length && html`
+              <p class="muted">${SENTENCES.chooseCategoryForBoxes}</p>`}
+            <div class="review-boxes">
+              ${lightBoxes.specific.map(row => lightBox(html, row))}
+            </div>
+
+            <details class="review-subsection">
+              <summary>${FACTS.history}</summary>
               ${!historyRows.length && html`<p class="muted">${SENTENCES.noFacts}</p>`}
-              <table><thead><tr>
-                <th>${FIELDS.field}</th><th>${FIELDS.value}</th><th>${FIELDS.dateRead}</th>
-                <th>${FIELDS.confidence}</th><th>${FACTS.current}</th>
-              </tr></thead>
-              <tbody>${historyRows.map((row, index) => html`<tr key=${row.key + index}>
-                <th scope="row">${row.label}</th>
-                <td>${formatFactValue(row.value)}</td>
-                <td>${row.dateRead || MISSING.notFound}</td>
-                <td>${row.confidence || MISSING.notFound}</td>
-                <td>${row.isCurrent ? FACTS.current : row.lifecycle || "Superseded"}</td>
-              </tr>`)}</tbody></table>
-            </div>`}
-            <h4>${FIELDS.um6pOcpConnection}</h4>
-            <p>${(() => {
-              const link = selected.agent_metadata?.um6p_ocp_connection;
-              if (!link) return MISSING.notYetChecked;
-              if (link.found === false) return FACTS.notFoundInSources;
-              return `${FACTS.found}: ${link.entity || MISSING.notFound}`;
-            })()}</p>
-            ${deepFacts.length > 0 && html`<details>
+              <div class="review-match"><table>
+                <thead><tr>
+                  <th>${FIELDS.field}</th><th>${FIELDS.value}</th><th>${FIELDS.dateRead}</th>
+                  <th>${FIELDS.confidence}</th><th>${FACTS.current}</th>
+                </tr></thead>
+                <tbody>${historyRows.map((row, index) => html`<tr key=${row.key + index}>
+                  <th scope="row">${row.label}</th>
+                  <td>${formatFactValue(row.value)}</td>
+                  <td>${row.dateRead || MISSING.notFound}</td>
+                  <td>${row.confidence || MISSING.notFound}</td>
+                  <td>${row.isCurrent ? FACTS.current : row.lifecycle || "Superseded"}</td>
+                </tr>`)}</tbody></table></div>
+            </details>
+            ${deepFacts.length > 0 && html`<details class="review-subsection">
               <summary>Verified Deep Pull evidence</summary>
               <ul class="review-evidence">${deepFacts.map((fact, index) => html`<li key=${index}>
                 <strong>${factRowLabel(selected, String(fact.fact_key))}</strong>
@@ -1084,14 +1523,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <h4>${FIELDS.ghusEventNotes}</h4>
               <p class="muted">${SENTENCES.eventNotesEmpty}</p>
             </div>`}
-            ${selected.entity_type === "person" && html`
-              <p class="review-hint">${SENTENCES.personDiscoveryDisabled}</p>`}
           </section>`}
 
           <!-- 5 POSSIBLE DUPLICATES -->
           ${matches.length > 0 && html`<section class="review-section">
             <h3><span class="review-step">5</span>${SECTIONS.duplicates}</h3>
-            <p class="review-hint">${SENTENCES.duplicatesNoMerge}</p>
             ${matches.map((match, index) => html`<div class="review-match" key=${index}>
               <strong>${match.name || match.entity_id}</strong>
               <table><thead><tr>
@@ -1108,13 +1544,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           <!-- 6 AUDIT & DETAILS -->
           <details class="review-section review-audit">
             <summary><span class="review-step">6</span>${SECTIONS.audit}</summary>
-            <p class="review-hint">${SENTENCES.auditIntro}</p>
             <dl class="review-facts">
               <div><dt>${FIELDS.candidateId}</dt><dd>${selected.candidate_id}</dd></div>
               <div><dt>${FIELDS.runId}</dt><dd>${selected.source_run_id}</dd></div>
               <div><dt>${FIELDS.created}</dt><dd>${formatDate(selected.created_at)}</dd></div>
-              <div><dt>${FIELDS.legacyActorType}</dt>
-                <dd>${summary?.legacy_actor_type || MISSING.notProvided}</dd></div>
+
             </dl>
             ${editableHere.length > 0 && html`<div class="review-field-grid">
               ${editableHere.map(field =>
@@ -1160,8 +1594,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${isActor && ["same_existing", "new"].includes(decisionKind) && html`
               <label class="review-field"><span>${BUTTONS.chooseHub}</span>
                 <input type="checkbox" checked=${proposeHub} disabled=${!pending || busy}
-                  onChange=${e => setProposeHub(e.target.checked)}/>
-                <small class="review-hint">A new hub is only ever a proposal for GHUS.</small></label>`}
+                  onChange=${e => setProposeHub(e.target.checked)}/></label>`}
             ${proposeHub && html`<div class="review-field-grid">
               <label class="review-field"><span>Proposed hub name</span>
                 <input value=${proposedHub.name} disabled=${!pending || busy}
@@ -1196,7 +1629,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               : decisionKind === "defer" ? BUTTONS.park : BUTTONS.verify}</button>
           </footer>`}
         </article>
-      </div>
+      </div>`}
     </section>`;
   };
 }

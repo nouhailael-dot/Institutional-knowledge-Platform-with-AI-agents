@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
@@ -26,8 +27,13 @@ class AdmissionBridge:
         self.project_root = Path(
             project_root or os.environ.get("GHUS_ADMISSION_PROJECT_ROOT") or ""
         )
+        # The interpreter running this app, unless one is named. A bare
+        # "python" picked up whatever was first on PATH, which on this machine
+        # had none of the backend's dependencies: every decision came back
+        # "admission process exited with code 1".
         self.python_executable = str(
-            python_executable or os.environ.get("GHUS_ADMISSION_PYTHON") or "python"
+            python_executable or os.environ.get("GHUS_ADMISSION_PYTHON") or sys.executable
+            or "python"
         )
         self.database_url = database_url or os.environ.get("REVIEW_ADMISSION_DATABASE_URL")
         self._run_command = run_command
@@ -69,7 +75,9 @@ class AdmissionBridge:
                 env=env,
                 text=True,
                 capture_output=True,
-                timeout=120,
+                # The backend loads its entity-resolution model before it can
+                # route a decision; a cold process needs minutes, not 120 s.
+                timeout=float(os.environ.get("GHUS_ADMISSION_TIMEOUT_S") or 600),
                 check=False,
             )
             if completed.returncode != 0:
