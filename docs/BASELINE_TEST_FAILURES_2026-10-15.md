@@ -1,4 +1,4 @@
-# The three remaining backend test failures — causes and decisions
+# The remaining backend test failures — causes and decisions
 
 Run: `python -m pytest tests` in `C:\Users\Ismail\Projects\GHUS-Platform`,
 2026-10-15, against `ghus_v2_final_schema_test` (V2 + 550 + 560).
