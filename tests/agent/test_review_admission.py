@@ -147,3 +147,53 @@ def test_proposed_hub_is_never_a_canonical_hub_writer():
     source = admission.Path(admission.__file__).read_text(encoding="utf-8")
     assert "INSERT INTO proposed_hub" in source
     assert "INSERT INTO hub (" not in source
+
+
+def test_admission_matches_an_existing_actor_by_website_domain(monkeypatch):
+    """A differently written name on the same domain is the same organisation.
+
+    Admission used to route without the mapped actor list, so only the model
+    score could find a match; discovery has always applied the exact rule.
+    """
+    class Resolver:
+        HIGH, LOW = 0.9, 0.5
+
+        def __init__(self, _session):
+            pass
+
+        def _candidates(self, _name):  # the model finds nothing
+            import pandas as pd
+            return pd.DataFrame()
+
+    monkeypatch.setattr(admission, "load_actor_resolver_class", lambda: Resolver)
+    monkeypatch.setattr(admission, "load_actor_candidates", lambda _s: [{
+        "actor_id": "a0000000-0000-0000-0000-000000000001", "name": "Water Council Inc.",
+        "website": "https://www.thewatercouncil.com", "record_status": "verified"}])
+    staged = admission._staged(
+        {"source_id": "s", "payload": {"name": "The Water Council",
+                                      "website": "https://thewatercouncil.com/"}},
+        "actor", {})
+    decision = {"entity_type": "actor", "decision_kind": "new", "hub_ids": []}
+    with pytest.raises(admission.AdmissionConflict, match="website_domain: Water Council Inc."):
+        admission._promotion_route(object(), decision, staged)
+
+
+def test_the_reviewers_v2_classification_and_sector_are_accepted_and_checked():
+    """The Review screen sends these on every decision; admission used to
+    refuse them all with "unsupported edited fields", so no reviewed actor
+    could be created at all."""
+    admission.validate_edited_payload("actor", {
+        "name": "The Water Council", "actor_category": "association_network",
+        "category_type": "innovation_consortium", "primary_sector": "WATER",
+        "sector_codes": ["WATER"], "region": "midwest", "state_code": "WI",
+    })
+    with pytest.raises(admission.AdmissionValidationError, match="12 GHUS categories"):
+        admission.validate_edited_payload("actor", {"actor_category": "state_agency"})
+    with pytest.raises(admission.AdmissionValidationError, match="not a type of"):
+        admission.validate_edited_payload(
+            "actor", {"actor_category": "government", "category_type": "trade_association"})
+    with pytest.raises(admission.AdmissionValidationError, match="one-line note"):
+        admission.validate_edited_payload(
+            "actor", {"actor_category": "government", "category_type": "not_applicable"})
+    with pytest.raises(admission.AdmissionValidationError, match="not a sector code"):
+        admission.validate_edited_payload("actor", {"primary_sector": "water tech!"})

@@ -65,12 +65,19 @@
       "web_search_max_uses": 1,
       "results_per_query": 10,
       "triage_batch_size": 8,
-      "actor_triage_batch_size": 4,
+      # 2026-10-15: 4 per call meant 30 Sonnet calls (~$0.30) per request run,
+      # each repeating the same instructions. 20 per call: 6 calls.
+      "actor_triage_batch_size": 20,
       "event_triage_batch_size": 8,
       "person_triage_batch_size": 8,
       "triage_max_tokens": 8000,
       "max_searches": 52,
       "actor_query_limit": 40,
+      # A Discovery-page request searches one topic in one area. 16, not 24
+      # (2026-10-15): each search costs ~$0.022 and on the Oct-14 run 15 of 24
+      # queries returned nothing worth reading; names in every result are now
+      # harvested as leads, so fewer searches go further.
+      "request_query_limit": 16,
       "actor_max_searches": 52,
       "max_candidates_triaged": 200,
       "fetch_enabled": true,
@@ -88,12 +95,71 @@
       "extraction_max_tokens": 2048,
       "extraction_llm_pricing":
         { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
+      # Light Pull for kept candidates and existing actors (agents/collection/
+      # light_pull_candidates.py): home + About + one topic page, one Sonnet call
+      # per organisation. Its own cap, separate from the $1 discovery budget.
+      "light_pull_model": "claude-sonnet-5",
+      "light_pull_max_usd_per_run": 0.50,
       "actor_rubric_max_tokens": 4096,
       "actor_rubric_content_max_chars": 8000,
+      # Rerank only reordered the review list (~$0.08 a run). Engagement
+      # priority now orders it at no cost.
+      "actor_rerank_enabled": false,
+      # Classify only pages that are kept (a second model call per page).
+      "actor_lazy_classification": true,
+      # Strict budget per requested run, stopped gracefully (see phase2).
+      "request_max_usd_per_run": 1.00,
+      "actor_est_page_usd": 0.03,
+      "actor_budget_reserve_usd": 0.05,
+      # Official-site reads and leads (agents/discovery/search/actor_official.py).
+      "actor_max_official_followups": 8,
+      "actor_followup_min_score": 0.60,
+      "actor_max_leads_per_run": 20,
+      "actor_lead_model": "claude-haiku-4-5",
+      "actor_lead_llm_pricing":
+        { "input_usd_per_million": 1.0, "output_usd_per_million": 5.0 },
       "actor_rerank_max_tokens": 2048,
       "actor_rerank_top_n": 40,
       "actor_rerank_group_size": 10,
-      "actor_score_thresholds": { "auto_low": 0.30, "auto_high": 0.70 },
+      # Recalibrated October 2026 on 95 rubric-scored candidates (median 0.53,
+      # p75 0.72). 0.30 / 0.70 auto-accepted 29% of everything scored, including
+      # third-party pages and directories; 0.45 / 0.80 (0.85 until 2026-10-15) plus the actor_quality
+      # gates below accepts 5% and rejects 27%. "Accept" means created as
+      # Parked with a verify_actor review item - never Verified.
+      "actor_score_thresholds": { "auto_low": 0.45, "auto_high": 0.80 },
+      # Hard gates applied on top of the score. See actor_quality.py.
+      # accept_min_priority: verifying WITHOUT a person also needs engagement
+      # priority >= this (relevance alone would verify 30% unseen; see
+      # actor_quality.QualityConfig).
+      "actor_quality":
+        { "min_evidence_items": 5, "min_description_chars": 60, "accept_min_priority": 0.70 },
+      # relevance (2026-10-15): bands on relevance, priority recorded alongside.
+      # combined: the October 14 single score.
+      "actor_score_model": "relevance",
+      "actor_relevance_rubric_weights":
+        {
+          "own_organisational_page": 0.15,
+          "real_operating_entity": 0.15,
+          "sector_coverage": 0.15,
+          "research_development_or_programmes": 0.25,
+          "partnerships_or_tech_transfer": 0.15,
+          "identity_stated": 0.15,
+        },
+      "actor_priority_rubric_weights":
+        {
+          "use_cases": 0.30,
+          "open_programmes": 0.12,
+          "named_route_in": 0.12,
+          "partnership_precedent": 0.10,
+          "partnerships_or_tech_transfer": 0.10,
+          "network_membership": 0.06,
+          "distinctiveness": 0.15,
+          "hub_match": 0.05,
+        },
+      # Decision 2026-10-14: an ACCEPTED actor (score and every gate) is created
+      # Verified, labelled agent_auto_accept (migration 560). "parked" sends it
+      # to Review for a person to verify instead.
+      "actor_auto_accept_status": "verified",
       "actor_rubric_weights":
         {
           "own_organisational_page": 0.10,

@@ -23,6 +23,7 @@ from sqlalchemy import Enum, String, text
 
 from agents.common.resolve_route import (
     RouteDecision,
+    load_actor_candidates,
     load_actor_resolver_class,
     load_event_candidates,
     load_person_affiliation_candidates,
@@ -34,6 +35,7 @@ from agents.common.resolve_route import (
 from agents.discovery.normalize import is_institution_affiliation
 from agents.discovery.promote import ACTOR_CREATE_FIELDS, EVENT_CREATE_FIELDS, promote
 from agents.discovery.stage import StagedRecord
+from agents.enrichment.decisions import create_sector
 from src.db.models import Actor, Event, Person
 
 ENTITY_TYPES = {"actor", "event", "person"}
@@ -151,7 +153,11 @@ def _normalise_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
 def _field_contract(entity_type: str) -> tuple[set[str], dict[str, tuple[int | None, list[str]]]]:
     if entity_type == "actor":
         model, aliases = Actor, {"name": "name"}
-        allowed = {"name", *ACTOR_CREATE_FIELDS}
+        # ACTOR_CREATE_FIELDS is the V1 inheritable list. A GHUS reviewer also
+        # decides the V2 classification and the actor's primary sector on the
+        # Review screen; without these the screen's own payload was refused
+        # ("unsupported edited fields") and no reviewed actor could be created.
+        allowed = {"name", *ACTOR_CREATE_FIELDS, *V2_ACTOR_EDIT_FIELDS}
     elif entity_type == "event":
         model, aliases = Event, {"title": "name", "start_date": "next_date"}
         allowed = {"name", "title", "start_date", *EVENT_CREATE_FIELDS}
@@ -183,6 +189,8 @@ def validate_edited_payload(entity_type: str, edited_payload: Mapping[str, Any])
     unknown = sorted(set(edited_payload) - allowed)
     if unknown:
         raise AdmissionValidationError("unsupported edited fields: " + ", ".join(unknown))
+    if entity_type == "actor":
+        _validate_actor_v2_fields(edited_payload)
     for field, value in edited_payload.items():
         if value is None:
             continue
@@ -195,12 +203,62 @@ def validate_edited_payload(entity_type: str, edited_payload: Mapping[str, Any])
             )
 
 
+# What a GHUS reviewer may set on the Review screen beyond the V1 fields: the
+# Architecture V2 classification, the chosen primary sector, and the region
+# (which promotion recomputes from the state, so it is accepted, not trusted).
+V2_ACTOR_EDIT_FIELDS = frozenset({
+    "actor_category", "category_type", "category_note", "category_needs_review",
+    "primary_sector", "sector_codes", "region", "region_code", "state_code",
+    "alternate_names", "topic_id",
+})
+
+
+def _validate_actor_v2_fields(payload: Mapping[str, Any]) -> None:
+    """The category/type pair and the sector code, checked against the catalog."""
+    from agents.common.actor_classification import (
+        CATCH_ALL_TYPE_CODES,
+        load_category_catalog,
+    )
+    from agents.enrichment.decisions import SECTOR_CODE
+
+    category = str(payload.get("actor_category") or "").strip()
+    type_code = str(payload.get("category_type") or "").strip()
+    note = str(payload.get("category_note") or "").strip()
+    if category or type_code:
+        catalog = load_category_catalog()
+        if category not in catalog.by_code:
+            raise AdmissionValidationError(
+                f"actor_category must be one of the 12 GHUS categories, not {category!r}")
+        if type_code and not catalog.validates(category, type_code):
+            raise AdmissionValidationError(
+                f"category_type {type_code!r} is not a type of {category!r}")
+        if (type_code in CATCH_ALL_TYPE_CODES
+                or payload.get("category_needs_review")) and not note:
+            raise AdmissionValidationError(
+                "a catch-all type or a flagged category needs a one-line note")
+    for code in [payload.get("primary_sector"), *(payload.get("sector_codes") or [])]:
+        if str(code or "").strip() and not SECTOR_CODE.match(str(code).strip().upper()):
+            raise AdmissionValidationError(f"{code!r} is not a sector code")
+
+
 def _load_source(session, table: str, source_id: str) -> dict[str, Any]:
     if table == "search_candidate":
+        # The topic of the discovery request that found this candidate, so a
+        # reviewed actor is always admitted FOR a topic: Layer 1 facts are
+        # topic-scoped, and promotion collects none without one. Topics mirror
+        # sectors by code. Only used when the record itself states no topic.
         sql = (
-            "SELECT candidate_id::text AS source_id, run_id::text AS run_id, entity_type, "
-            "url AS source_url, record_preview AS payload, created_at AS extracted_at "
-            "FROM search_candidate WHERE candidate_id = CAST(:source_id AS uuid)"
+            "SELECT c.candidate_id::text AS source_id, c.run_id::text AS run_id, c.entity_type, "
+            "c.url AS source_url, c.record_preview AS payload, c.created_at AS extracted_at, "
+            "c.rubric, ("
+            "  SELECT t.topic_id::text FROM actor_update_subscription s"
+            "  JOIN actor_update_subscription_run sr"
+            "    ON sr.actor_update_subscription_id = s.actor_update_subscription_id"
+            "  JOIN collection_run cr ON cr.collection_run_id = sr.collection_run_id"
+            "  JOIN topic t ON t.code = s.sector_codes[1]"
+            "  WHERE cr.config_snapshot->>'search_run_id' = c.run_id::text"
+            "  ORDER BY cr.started_at DESC LIMIT 1) AS request_topic_id "
+            "FROM search_candidate c WHERE c.candidate_id = CAST(:source_id AS uuid)"
         )
     elif table == "event_review_queue":
         sql = (
@@ -231,9 +289,29 @@ def _load_source(session, table: str, source_id: str) -> dict[str, Any]:
     return result
 
 
+def _source_sector_codes(source: Mapping[str, Any], payload: Mapping[str, Any]) -> list[str]:
+    """The reviewer's chosen sector first, then the sectors the page evidenced.
+
+    Admission used to stage a reviewed discovery candidate with NO sector codes,
+    so the actor it created had no sector at all - whatever the page showed and
+    whatever the reviewer chose.
+    """
+    rubric = source.get("rubric") or {}
+    if isinstance(rubric, str):
+        rubric = json.loads(rubric)
+    evidenced = [str(row.get("code") or "").upper() for row in (rubric.get("sector_codes") or [])
+                 if isinstance(row, dict) and row.get("code")]
+    chosen = str(payload.get("primary_sector") or "").strip().upper()
+    listed = [str(c).upper() for c in (payload.get("sector_codes") or []) if str(c).strip()]
+    return list(dict.fromkeys(c for c in [chosen, *listed, *evidenced] if c))
+
+
 def _staged(source: Mapping[str, Any], entity_type: str, edited: Mapping[str, Any]) -> StagedRecord:
     payload = {**dict(source["payload"]), **dict(edited)}
     payload.pop("_discovered_domain", None)
+    if entity_type == "actor" and not payload.get("topic_id") and source.get("request_topic_id"):
+        payload["topic_id"] = str(source["request_topic_id"])
+    sector_codes = _source_sector_codes(source, payload) if entity_type == "actor" else []
     extracted = source.get("extracted_at") or datetime.now(timezone.utc)
     return StagedRecord(
         run_id=str(source.get("run_id") or uuid.uuid4()),
@@ -245,6 +323,7 @@ def _staged(source: Mapping[str, Any], entity_type: str, edited: Mapping[str, An
         prompt_version="human-review-admission-v1",
         extracted_at=extracted.isoformat() if hasattr(extracted, "isoformat") else str(extracted),
         staged_record_id=str(source.get("staged_record_id") or uuid.uuid4()),
+        sector_codes=sector_codes,
     )
 
 
@@ -281,7 +360,12 @@ def _promotion_route(session, decision: Mapping[str, Any], staged: StagedRecord)
             target_entity_id=str(decision["target_id"]), metadata=metadata,
         )
     if entity_type == "actor":
-        route = route_actor(staged.normalized_payload, load_actor_resolver_class()(session))
+        # The same mapped-first rule discovery applies: an exact website-domain
+        # or name / alternate-name match is the existing actor, whatever the
+        # model score says. Without the mapped list a renamed or differently
+        # written organisation on the same domain could be created twice.
+        route = route_actor(staged.normalized_payload, load_actor_resolver_class()(session),
+                            load_actor_candidates(session))
     elif entity_type == "event":
         route = route_event(staged.normalized_payload, load_event_candidates(session))
     else:
@@ -293,8 +377,12 @@ def _promotion_route(session, decision: Mapping[str, Any], staged: StagedRecord)
             actor_resolver=load_actor_resolver_class()(session),
         )
     if route.zone != "create":
+        match = route.metadata or {}
+        found = (f" ({match.get('match_rule')}: {match.get('matched_name') or ''} "
+                 f"{route.target_entity_id or ''})".rstrip() + ")") if match.get("match_rule") else ""
         raise AdmissionConflict(
-            "frozen entity resolution found an existing or ambiguous match; choose same existing or defer"
+            "frozen entity resolution found an existing or ambiguous match"
+            f"{found}; choose same existing or defer"
         )
     metadata.update(dict(route.metadata or {}))
     metadata["hub_ids"] = decision["hub_ids"]
@@ -523,6 +611,28 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
     return {"decision_kind": kind, "status": "applied", **result}
 
 
+def apply_create_sector(session, decision: Mapping[str, Any]) -> dict[str, Any]:
+    """A reviewer adds a sector that a real actor needs (decisions.create_sector)."""
+    reviewer = _clean_required(decision.get("reviewer"), "reviewer", 120)
+    transaction = session.begin()
+    try:
+        result = create_sector(
+            session,
+            name=str(decision.get("name") or ""),
+            code=str(decision.get("code") or "") or None,
+            description=str(decision.get("description") or "") or None,
+            created_by=reviewer,
+        )
+    except ValueError as exc:
+        transaction.rollback()
+        raise AdmissionValidationError(str(exc)) from exc
+    except Exception:
+        transaction.rollback()
+        raise
+    transaction.commit()
+    return {"decision_kind": "create_sector", "status": "applied", **result}
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply one reviewed GHUS discovery decision")
     parser.add_argument("--decision", required=True, type=Path)
@@ -533,7 +643,9 @@ def _main(argv: list[str] | None = None) -> int:
     from src.db.session import SessionLocal
 
     with SessionLocal() as session:
-        if raw.get("decision_kind") == "confirm_category":
+        if raw.get("decision_kind") == "create_sector":
+            outcome = apply_create_sector(session, raw)
+        elif raw.get("decision_kind") == "confirm_category":
             outcome = apply_category_decisions(session, raw)
         elif raw.get("decision_kind") in REVIEW_ITEM_DECISION_KINDS:
             outcome = apply_review_item_decision(session, raw)

@@ -322,6 +322,113 @@ def record_verification_decision(
     return count
 
 
+SECTOR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
+
+
+def sector_code_for(name: str) -> str:
+    """A short code from a sector name: 'Water Technology' -> 'WATER_TECHNOLOGY'."""
+    words = [w for w in re.findall(r"[A-Za-z0-9]+", name or "")
+             if w.lower() not in {"and", "of", "the", "for"}]
+    code = "_".join(w.upper() for w in words[:2])[:20].rstrip("_")
+    return code if SECTOR_CODE.match(code or "") else ""
+
+
+def create_sector(
+    session,
+    *,
+    name: str,
+    created_by: str,
+    code: str | None = None,
+    description: str | None = None,
+) -> dict[str, object]:
+    """Add a GHUS sector, and its topic, when a real actor fits none of them.
+
+    Topics mirror sectors one-to-one (same code). That is what lets a new
+    sector be chosen in Review, requested on the Discovery page and used as a
+    hub dimension. Both rows are reference data written only here. A sector
+    that already exists (by code or name) is returned, never duplicated.
+    """
+    name = " ".join(str(name or "").split())
+    if not 2 <= len(name) <= 80:
+        raise ValueError("a sector name must be 2 to 80 characters")
+    if not str(created_by or "").strip():
+        raise ValueError("created_by is required: a sector is a GHUS decision")
+    explicit = bool(str(code or "").strip())
+    code = (code or sector_code_for(name)).strip().upper()
+    if not SECTOR_CODE.match(code):
+        raise ValueError("a sector code must be 2-20 capital letters, digits or _")
+    # The same sector is found by its name first. A code made FROM the name is
+    # cut to 20 characters, so two different names can produce the same code
+    # ("Water Technology ab12cd" -> WATER_TECHNOLOGY): that is a collision to
+    # avoid, never a match. Only a code the caller gave identifies a sector.
+    existing = session.execute(text(
+        "SELECT sector_id::text AS sector_id, code, name FROM sector "
+        "WHERE lower(name) = lower(:name) OR (:explicit AND upper(code) = :code) "
+        "ORDER BY (lower(name) = lower(:name)) DESC LIMIT 1"
+    ), {"code": code, "name": name, "explicit": explicit}).mappings().first()
+    if existing:
+        return {**dict(existing), "created": False}
+    taken = set(session.execute(text(
+        "SELECT upper(code) FROM sector WHERE upper(code) LIKE :prefix"
+    ), {"prefix": f"{code[:17]}%"}).scalars())
+    if code in taken:
+        code = next(f"{code[:17]}_{n}" for n in range(2, 1000) if f"{code[:17]}_{n}" not in taken)
+    note = (description or "").strip() or None
+    sector_id = execute_canonical_write(
+        session,
+        text(
+            "INSERT INTO sector (code, name, description, is_thematic, active) "
+            "VALUES (:code, :name, :description, true, true) RETURNING sector_id::text"
+        ),
+        {"code": code, "name": name,
+         "description": note or f"Added by {created_by} in Review for a discovered actor."},
+    ).scalar_one()
+    execute_canonical_write(
+        session,
+        text(
+            "INSERT INTO topic (code, name, description, active) VALUES (:code, :name, "
+            ":description, true) ON CONFLICT DO NOTHING"
+        ),
+        {"code": code, "name": name, "description": note or f"Topic for the {name} sector."},
+    )
+    return {"sector_id": sector_id, "code": code, "name": name, "created": True}
+
+
+AGENT_VERIFIER = "discovery-agent"
+
+
+def record_agent_auto_verification(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    reason: str,
+) -> None:
+    """Verify an actor the discovery agent ACCEPTED (score and every gate).
+
+    Decision 2026-10-14: accepted discovery candidates are created Verified.
+    The event is labelled ``agent_auto_accept`` and carries the agent's reasons,
+    so it can never be mistaken for a person's decision, and a person can still
+    reject the actor later in Review. Verify only: an agent never rejects.
+    """
+    if not str(reason or "").strip():
+        raise ValueError("an agent verification must state its reasons")
+    execute_canonical_write(
+        session,
+        text(
+            "INSERT INTO actor_verification_event (actor_id,topic_id,decision,decided_by,"
+            "decided_at,reason,decision_origin) VALUES (CAST(:actor_id AS uuid),"
+            "CAST(:topic_id AS uuid),'verified',:decided_by,now(),:reason,'agent_auto_accept')"
+        ),
+        {
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "decided_by": AGENT_VERIFIER,
+            "reason": reason,
+        },
+    )
+
+
 def record_category_review_decision(
     session,
     *,

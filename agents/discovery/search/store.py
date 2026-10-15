@@ -50,6 +50,15 @@ class SQLSearchCandidateStore:
             for field in ("rubric", "record_preview", "score_breakdown"):
                 row[field] = json.dumps(row[field], sort_keys=True) if row[field] is not None else None
             row["qualification_paths"] = json.dumps(list(candidate.qualification_paths))
+            # The event pipeline marks a collapsed duplicate page with the band
+            # "duplicate", which ck_search_candidate_score_band does not allow;
+            # one such row used to make the whole batch fail to save (seen on
+            # the 2026-10-14 live run). A duplicate is recorded by its verdict
+            # and duplicate_of link, with no band - it is neither queued nor
+            # created.
+            if row.get("score_band") == "duplicate":
+                row["score_band"] = None
+                row["triage_verdict"] = "duplicate"
             rows.append(row)
         if not rows:
             return 0
@@ -75,3 +84,24 @@ class SQLSearchCandidateStore:
         )
         self.session.commit()
         return len(rows)
+
+
+def attach_light_pull(session, candidate_id: str, *, evidence: dict, read: dict) -> None:
+    """Keep a candidate's pre-review Light Pull with it, for Review and admission.
+
+    Stored inside ``record_preview`` (``light_pull_evidence`` per box,
+    ``light_pull_read`` for the pages read and the cost), which admission
+    already passes to promotion: the canonical facts are written there, by
+    the approved writer, only when a person verifies the actor.
+    """
+    session.execute(
+        text(
+            "UPDATE search_candidate SET record_preview = "
+            "COALESCE(record_preview, '{}'::jsonb) || jsonb_build_object("
+            "'light_pull_evidence', CAST(:evidence AS jsonb), "
+            "'light_pull_read', CAST(:read AS jsonb)) "
+            "WHERE candidate_id = CAST(:candidate_id AS uuid)"
+        ),
+        {"candidate_id": candidate_id, "evidence": json.dumps(evidence, sort_keys=True),
+         "read": json.dumps(read, sort_keys=True)},
+    )

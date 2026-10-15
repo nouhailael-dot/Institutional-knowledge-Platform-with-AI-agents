@@ -637,7 +637,8 @@ def test_open_web_actor_scoring_configuration_is_complete():
     max_tokens = int(config["triage_max_tokens"])
 
     assert batch_size == 8
-    assert actor_batch_size == 4
+    # 20 since 2026-10-15: 4 per call cost ~30 Sonnet calls per request run.
+    assert actor_batch_size == 20
     assert max_tokens >= 8000
     assert max_tokens >= batch_size * 1000
     assert config["actor_rubric_max_tokens"] == 4096
@@ -645,9 +646,14 @@ def test_open_web_actor_scoring_configuration_is_complete():
     assert config["actor_rerank_max_tokens"] == 2048
     assert config["actor_rerank_top_n"] == 40
     assert config["actor_rerank_group_size"] == 10
+    # Recalibrated October 2026: fewer auto-accepted, more auto-rejected. See
+    # agents/discovery/search/actor_quality.py for the measured evidence.
     assert config["actor_score_thresholds"] == {
-        "auto_low": 0.30,
-        "auto_high": 0.70,
+        "auto_low": 0.45,
+        "auto_high": 0.80,
+    }
+    assert config["actor_quality"] == {
+        "min_evidence_items": 5, "min_description_chars": 60, "accept_min_priority": 0.70,
     }
     assert sum(config["actor_rubric_weights"].values()) == pytest.approx(1.0)
 
@@ -812,7 +818,8 @@ def test_search_triage_client_actor_prompt_requires_organisation_own_page():
     payload = json.loads(client.calls[0]["cached_user"])
     assert "Bias toward recall" in payload["decision_rule"]
     schema = client.calls[0]["input_schema"]["properties"]["candidates"]["items"]
-    assert set(schema["properties"]) == {"url", "fetch", "reason"}
+    # Answered by id since 2026-10-15: echoing URLs was most of the call's cost.
+    assert set(schema["properties"]) == {"id", "fetch", "reason"}
     assert "score" not in json.dumps(schema).lower()
 
 
@@ -890,8 +897,11 @@ def test_actor_distinctiveness_is_deterministic_from_database_count():
 
     assert score.existing_actor_count == 4
     assert score.distinctiveness == pytest.approx(0.2)
-    assert score.contributions["distinctiveness"] == pytest.approx(0.02)
-    assert score.total == pytest.approx(0.02)
+    # Distinctiveness is engagement PRIORITY since 2026-10-15 (weight 0.15):
+    # being rare on the map makes an actor more valuable, not more relevant.
+    assert score.contributions["priority.distinctiveness"] == pytest.approx(0.03)
+    assert score.priority == pytest.approx(0.03)
+    assert score.total == pytest.approx(0.0)
 
 
 def test_actor_hub_sector_counts_are_loaded_without_actor_details():
@@ -1950,3 +1960,18 @@ def _claude_search_response(
             },
         },
     )()
+
+
+def test_actor_triage_answers_by_id_and_keeps_every_reason():
+    first, second = _result("https://a.example/about", "q"), _result("https://b.example/news", "q")
+    client = StubToolClient([{"candidates": [
+        {"id": 0, "fetch": True, "reason": "Organisation's own about page."},
+        {"id": 1, "fetch": False, "reason": "News article about another company."},
+    ]}])
+    decisions = SearchTriageClient(client, {}).triage(
+        [first, second], entity_type="actor", sectors=[], references=[])
+    assert decisions[first.url].verdict == "accepted"
+    assert decisions[second.url].verdict == "rejected"
+    assert decisions[second.url].reason == "News article about another company."
+    sent = json.loads(client.calls[0]["user"])["candidates"]
+    assert [c["id"] for c in sent] == [0, 1] and "provider" not in sent[0]

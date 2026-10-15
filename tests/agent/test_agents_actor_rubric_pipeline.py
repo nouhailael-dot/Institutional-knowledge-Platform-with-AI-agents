@@ -218,6 +218,8 @@ def test_actor_phase_reports_prompt_cache_hit_rate_and_truncation_count(tmp_path
             "max_pages_fetched": 2,
             "max_new_domains": 2,
             "actor_rubric_content_max_chars": 100,
+            # Counts rubric calls only; classification shares the client.
+            "actor_lazy_classification": False,
         }
     )
     client = CachingStubToolClient(_analysis_payload())
@@ -388,37 +390,44 @@ def test_actor_type_outside_database_values_is_rejected():
 
 
 def test_actor_record_longer_than_canonical_column_is_rejected():
-    payload = _analysis_payload(
-        record={
-            "name": "Example",
-            "actor_type": "company",
-            "primary_lifecycle_role": "x" * 31,
-        }
-    )
+    """Identity fields stay strict; an over-long short LABEL is dropped instead.
 
-    with pytest.raises(
-        ActorRecordValidationError,
-        match=(
-            "primary_lifecycle_role.*exceeds canonical max length 30 "
-            r"\(got 31\)"
-        ),
-    ):
+    Since 2026-10-15 a label such as primary_lifecycle_role that overruns its
+    column is set to null rather than discarding the whole paid-for page (it
+    is a few-word label, not a fact). A name that cannot fit still fails.
+    """
+    from agents.discovery.extractors.actor import ACTOR_STRING_MAX_LENGTHS
+
+    labelled = validate_actor_analysis(
+        _analysis_payload(record={"name": "Example", "actor_type": "company",
+                                  "primary_lifecycle_role": "x" * 31}),
+        actor_types=["company"], sector_codes=["WATER"], hub_names=["Texas Water Systems Hub"],
+    )
+    assert labelled.record["primary_lifecycle_role"] is None
+    assert labelled.record["name"] == "Example"
+
+    too_long = "x" * (ACTOR_STRING_MAX_LENGTHS["name"] + 1)
+    with pytest.raises(ActorRecordValidationError, match="'name'.*exceeds canonical max length"):
         validate_actor_analysis(
-            payload,
-            actor_types=["company"],
-            sector_codes=["WATER"],
+            _analysis_payload(record={"name": too_long, "actor_type": "company"}),
+            actor_types=["company"], sector_codes=["WATER"],
             hub_names=["Texas Water Systems Hub"],
         )
 
-
 def test_actor_record_validation_failure_does_not_stop_other_candidates(tmp_path):
     config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
-    config.update({"max_pages_fetched": 2, "max_new_domains": 2})
+    from agents.discovery.extractors.actor import ACTOR_STRING_MAX_LENGTHS
+
+    # Classification runs after banding by default; this test is about the
+    # page-reading step only.
+    config.update({"max_pages_fetched": 2, "max_new_domains": 2,
+                   "actor_lazy_classification": False})
+    # An identity field that cannot fit the canonical column (an over-long
+    # label is nulled instead since 2026-10-15).
     invalid = _analysis_payload(
         record={
-            "name": "Invalid Actor",
+            "name": "I" * (ACTOR_STRING_MAX_LENGTHS["name"] + 1),
             "actor_type": "company",
-            "primary_lifecycle_role": "x" * 31,
         }
     )
     valid = _analysis_payload(record=_canonical_record("Valid Actor"))
@@ -477,7 +486,7 @@ def test_actor_record_validation_failure_does_not_stop_other_candidates(tmp_path
     first, second = outcome.candidates
     assert first.triage_verdict == "analysis_failed"
     assert first.score_band == "analysis_failed"
-    assert "primary_lifecycle_role" in (first.triage_reason or "")
+    assert "'name'" in (first.triage_reason or "")
     assert second.record_preview["name"] == "Valid Actor"
     assert second.rubric is not None
     assert client.calls == 2
@@ -511,7 +520,12 @@ def test_actor_deterministic_score_is_identical_for_same_stored_evidence(tmp_pat
     )
 
     assert first == second
-    assert sum(first.contributions.values()) == pytest.approx(first.total)
+    # Two scores since 2026-10-15; each one's parts add up to it.
+    relevance_parts = {k: v for k, v in first.contributions.items() if k.startswith("relevance.")}
+    priority_parts = {k: v for k, v in first.contributions.items() if k.startswith("priority.")}
+    assert sum(relevance_parts.values()) == pytest.approx(first.total)
+    assert sum(priority_parts.values()) == pytest.approx(first.priority)
+    assert first.contributions["relevance_score"] == pytest.approx(first.total)
 
 
 def test_page_without_rubric_evidence_lands_below_auto_low():
@@ -613,7 +627,11 @@ def test_actor_candidate_migration_persists_every_score_input():
 
 def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, tmp_path):
     config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
-    config.update({"max_pages_fetched": 3, "max_new_domains": 3})
+    # This test is about which bands reach staging. The stub extractor has no
+    # classifier and no official sites, so after-banding classification and
+    # official-site re-reads are switched off here (both are tested separately).
+    config.update({"max_pages_fetched": 3, "max_new_domains": 3,
+                   "actor_lazy_classification": False, "actor_max_official_followups": 0})
     candidates = [
         _candidate(0, score=None),
         _candidate(1, score=None),
@@ -633,12 +651,37 @@ def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, t
         )
     ]
     analyses = {
+        # A genuinely strong record: read from its OWN site, with a real
+        # description. Since the October 2026 quality gates, a perfect score is
+        # not enough on its own - a page on another domain, or a record with no
+        # description, is held for review rather than auto-accepted.
         "high.example": ActorPageAnalysis(
             rubric=_rubric_with_all_evidence(),
-            record=_canonical_record("High Actor"),
+            record={
+                **_canonical_record("High Actor"),
+                "website": "https://high.example",
+                "description": (
+                    "High Actor is a water-technology company operating three pilot "
+                    "desalination plants in Texas. It runs field trials with municipal "
+                    "utilities and publishes annual efficiency results."
+                ),
+            },
         ),
+        # A genuine middle case: real research and partnerships, but not enough
+        # to accept without a person looking. It scores 0.57, inside the review
+        # band since the October 2026 recalibration (0.45-0.80). The bare
+        # payload this used to use scored 0.41 with evidence only that the
+        # organisation exists - which is now, correctly, rejected outright.
         "review.example": ActorPageAnalysis(
-            rubric=_analysis_payload()["rubric"],
+            rubric={
+                **_analysis_payload()["rubric"],
+                "research_development_or_programmes": {
+                    "present": True, "evidence": "Runs a desalination pilot programme.",
+                },
+                "partnerships_or_tech_transfer": {
+                    "present": True, "evidence": "Partners with two municipal utilities.",
+                },
+            },
             record=_canonical_record("Review Actor"),
         ),
         "low.example": ActorPageAnalysis(
@@ -656,9 +699,11 @@ def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, t
             return analyses[doc.url.split("//", 1)[1].split("/", 1)[0]]
 
     staged_records = []
+    accept_reasons = []
 
     def capture_stage(**kwargs):
         staged_records.extend(kwargs["extractor"].extract(kwargs["doc"]))
+        accept_reasons.append(kwargs.get("auto_accept_reasons"))
         kwargs["stats"]["records_extracted"] += 1
         kwargs["stats"]["records_staged"] += 1
 
@@ -708,6 +753,11 @@ def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, t
     assert by_domain["low.example"].score_band == "auto_low"
     assert by_domain["low.example"].triage_verdict == "rejected"
     assert [record["name"] for record in staged_records] == ["High Actor"]
+    # Decision 2026-10-14: an accepted actor is created Verified, and the
+    # verification states what the agent checked.
+    assert config["actor_auto_accept_status"] == "verified"
+    assert len(accept_reasons) == 1 and "every quality gate held" in accept_reasons[0]
+    assert "https://high.example/about" in accept_reasons[0]
     assert stats["actor_band_auto_high"] == 1
     assert stats["actor_band_review"] == 1
     assert stats["actor_band_auto_low"] == 1

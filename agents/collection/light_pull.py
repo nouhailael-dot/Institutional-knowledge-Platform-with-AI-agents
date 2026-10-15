@@ -162,14 +162,22 @@ def run_light_pull(
     extracted: Mapping[str, object] = {}
     if extractor is not None and documents:
         extracted = extractor(tuple(documents), fields, topic_id) or {}
-    supplied = payload.get("light_pull_evidence")
-    supplied_map = supplied if isinstance(supplied, Mapping) else {}
-    merged = {**supplied_map, **dict(extracted)}
-    unknown = sorted(set(merged).difference(fields))
+    unknown = sorted(set(extracted).difference(fields))
     if unknown:
         raise ValueError(f"Light Pull returned fields outside its schema: {', '.join(unknown)}")
 
     defaults = _payload_evidence(payload, actor_category, topic_id)
+    # Evidence collected BEFORE review (agents.collection.light_pull_reader,
+    # stored on the candidate) fills only what the reviewed record leaves
+    # empty: a reviewer's edit always wins over what the agent read. Boxes of
+    # another category - the reviewer changed the category - do not apply.
+    supplied = payload.get("light_pull_evidence")
+    supplied_map = supplied if isinstance(supplied, Mapping) else {}
+    merged = {
+        key: value for key, value in supplied_map.items()
+        if key in fields and (defaults.get(key) is None or key == "um6p_ocp_connection")
+    }
+    merged.update(dict(extracted))
     facts = tuple(
         _fact(
             field,

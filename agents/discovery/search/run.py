@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import logging
+import re
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -33,6 +34,7 @@ from agents.discovery.search.providers import SearchProvider, build_search_provi
 from agents.discovery.search.query_generation import (
     QueryBundle,
     QueryGenerator,
+    load_active_sectors,
     load_actor_query_hubs,
     load_event_reference_examples,
     load_seeded_sectors,
@@ -46,6 +48,7 @@ from agents.discovery.search.store import InMemorySearchCandidateStore, SQLSearc
 from agents.discovery.search.triage import (
     TRIAGE_INCOMPLETE_REASON_PREFIX,
     SearchTriageClient,
+    actor_document_rejection,
     blocklist_domains_for_entity,
     deterministic_rejection,
     is_triage_incomplete,
@@ -77,6 +80,23 @@ def load_open_web_config(root: Path | None = None) -> dict[str, object]:
         raise RuntimeError("agents/config/sources.yaml must define open_web_discovery")
     return open_web
 
+
+
+def _attach_cost_per_relevant_actor(stats: dict[str, object]) -> None:
+    """What one RELEVANT actor cost, not only what the run cost.
+
+    Relevant = kept: auto-verified plus sent to Review. Accepted alone is also
+    given, since that is the number that needs no person. None when nothing
+    was kept (the run's whole spend bought no relevant actor).
+    """
+    if "actor_scored" not in stats:
+        return
+    cost = float(stats.get("cost_usd") or 0.0)
+    accepted = int(stats.get("actor_band_auto_high", 0) or 0)
+    kept = accepted + int(stats.get("actor_band_review", 0) or 0)
+    stats["actor_relevant_kept"] = kept
+    stats["cost_per_relevant_actor_usd"] = round(cost / kept, 4) if kept else None
+    stats["cost_per_accepted_actor_usd"] = round(cost / accepted, 4) if accepted else None
 
 def run_search_triage(
     args,
@@ -110,6 +130,9 @@ def run_search_triage(
     entity_type = str(getattr(args, "entity", "") or "").strip()
     if entity_type not in {"event", "actor", "person"}:
         raise ValueError("--entity must be one of event, actor, person")
+    discovery_request = getattr(args, "discovery_request", None)
+    if discovery_request is not None and entity_type != "actor":
+        raise ValueError("a discovery request scopes actor discovery only")
     live = bool(getattr(args, "live", False))
     offline = bool(getattr(args, "offline", False))
     person_create_preview = bool(getattr(args, "preview_person_create", False))
@@ -131,7 +154,13 @@ def run_search_triage(
         session = SessionLocal()
         owned_session = True
 
-    cost_meter = cost_meter or CostMeter(max_usd=float(config.get("max_usd_per_run", 5.0)))
+    # A requested run has its own, stricter ceiling (request_max_usd_per_run).
+    run_ceiling = float(
+        config.get("request_max_usd_per_run", config.get("max_usd_per_run", 5.0))
+        if getattr(args, "discovery_request", None) is not None
+        else config.get("max_usd_per_run", 5.0)
+    )
+    cost_meter = cost_meter or CostMeter(max_usd=run_ceiling)
     llm_client = llm_client or _build_llm_client(config, cost_meter)
     run_log = run_log or (InMemoryRunLog() if offline else SQLRunLog(session))
     store = store or (
@@ -172,9 +201,14 @@ def run_search_triage(
         raw_lookup = InMemorySearchCandidateStore(
             seen_raw_urls=store.load_seen_raw_urls()
         )
-        bundle: QueryBundle = query_generator.generate(
-            entity_type, session=session, project_root=root
-        )
+        generate_kwargs = {"session": session, "project_root": root}
+        if discovery_request is not None:
+            # A requested run searches only what was asked for (see
+            # agents/discovery/search/discovery_request.py).
+            generate_kwargs["request"] = discovery_request
+            stats["discovery_request_id"] = discovery_request.subscription_id
+            stats["discovery_request_title"] = discovery_request.title
+        bundle: QueryBundle = query_generator.generate(entity_type, **generate_kwargs)
         cost_meter.enforce()
         generated_queries[entity_type] = bundle.queries
         stats["queries_generated"] = len(bundle.queries)
@@ -232,12 +266,14 @@ def run_search_triage(
             )
 
         search_results: list[SearchResult] = []
+        stage_start = cost_meter.spent_usd
         for query in queries:
             stats["searches_executed"] += 1
             results = search_provider.search(query, count=int(config.get("results_per_query", 10)))
             cost_meter.enforce()
             search_results.extend(results)
         stats["search_results"] = len(search_results)
+        stats["cost_stage_search_usd"] = round(cost_meter.spent_usd - stage_start, 6)
         deduplicated_results = _deduplicate_search_results(search_results)
         stats["search_results_unique"] = len(deduplicated_results)
         stats["search_results_deduplicated"] = len(search_results) - len(deduplicated_results)
@@ -271,6 +307,7 @@ def run_search_triage(
 
         triage_usage_client = getattr(triage_client, "llm_client", llm_client)
         triage_usage_before = llm_usage_snapshot(triage_usage_client)
+        stage_start = cost_meter.spent_usd
         try:
             decisions = _llm_triage(
                 entity_type=entity_type,
@@ -289,6 +326,7 @@ def run_search_triage(
                 before=triage_usage_before,
                 client=triage_usage_client,
             )
+            stats["cost_stage_triage_usd"] = round(cost_meter.spent_usd - stage_start, 6)
         _append_llm_triaged_rows(
             run_id=run_id,
             entity_type=entity_type,
@@ -322,7 +360,8 @@ def run_search_triage(
                     for value in config.get("actor_type_enum", []) or []
                     if str(value).strip()
                 ]
-            sectors = load_seeded_sectors(root)
+            # From the database: sectors added in Review are used from the next run.
+            sectors = load_active_sectors(session, root)
             candidate_hubs = _candidate_hubs_from_query_plan(
                 triaged_results,
                 bundle.metadata or {},
@@ -332,6 +371,22 @@ def run_search_triage(
                 "candidate_hubs": candidate_hubs,
                 "candidate_topics": _candidate_topics(session, candidate_hubs),
             }
+            if discovery_request is not None:
+                actor_context["discovery_scope"] = discovery_request.quality_scope()
+                actor_context["candidate_topics"] = _request_topics(
+                    session, discovery_request, triaged_results
+                )
+                actor_context["max_new_actors"] = discovery_request.max_new_actors
+                # The request's topic, for candidates that were never search
+                # results (official-site re-reads and leads).
+                actor_context["request_topic"] = _request_topics(
+                    session, discovery_request, [SearchResult(
+                        url="request:", title="", snippet="", provider="", query="")]
+                ).get("request:")
+            actor_context.update(_lead_context(
+                config, cost_meter, session=session, sectors=sectors,
+                request=discovery_request,
+            ))
             if actor_resolver is None and session is not None:
                 actor_resolver = load_actor_resolver_class()(session, project_root=root)
             actor_outcome = fetch_score_stage_actors(
@@ -431,6 +486,7 @@ def run_search_triage(
             )
         stats["cost_usd"] = cost_meter.spent_usd
         stats["cost"] = cost_meter.snapshot()
+        _attach_cost_per_relevant_actor(stats)
         status = "attention" if attention_reasons else "succeeded"
         status_reason = "; ".join(attention_reasons)
 
@@ -492,6 +548,7 @@ def run_search_triage(
     except CostLimitExceeded as exc:
         stats["cost_usd"] = cost_meter.spent_usd
         stats["cost"] = cost_meter.snapshot()
+        _attach_cost_per_relevant_actor(stats)
         status_reason = f"max_usd_per_run cap hit: {exc}"
         write_audit_csv(audit_path, audit_rows)
         write_candidate_report(
@@ -543,6 +600,7 @@ def run_search_triage(
         stats["failures"] += 1
         stats["cost_usd"] = cost_meter.spent_usd
         stats["cost"] = cost_meter.snapshot()
+        _attach_cost_per_relevant_actor(stats)
         write_audit_csv(audit_path, audit_rows)
         write_candidate_report(
             report_path,
@@ -656,6 +714,8 @@ def _deterministic_triage(
             ),
             entity_type=entity_type,
         )
+        if rejected is None and entity_type == "actor":
+            rejected = actor_document_rejection(result.url)
         if rejected is None and entity_type == "person":
             rejected = person_scope_rejection(
                 result,
@@ -778,7 +838,9 @@ def _llm_triage(
 ) -> dict[str, TriageDecision]:
     if not results:
         return {}
-    sectors = load_seeded_sectors(root)
+    sectors = (
+        load_active_sectors(session, root) if entity_type == "actor" else load_seeded_sectors(root)
+    )
     if entity_type == "event":
         references = load_event_reference_examples(session)
     else:
@@ -976,6 +1038,73 @@ def _candidate_topics(
         if hub_name:
             topics[url] = {**hub_topics[hub_name], "hub_name": hub_name}
     return topics
+
+
+def _lead_context(config, cost_meter, *, session, sectors, request) -> dict[str, object]:
+    """What the lead step needs: a cheap model, and the map to dedupe against.
+
+    Leads are names to be checked, not decisions, so the cheapest model reads
+    the titles and snippets; every name is then verified for free on its own
+    site and scored by the same model and gates as any other page.
+    """
+    if int(config.get("actor_max_leads_per_run", 20)) <= 0:
+        return {}
+    pricing = dict(config.get("actor_lead_llm_pricing") or config.get("search_llm_pricing") or {})
+    client = ClaudeToolClient(
+        str(config.get("actor_lead_model", "claude-haiku-4-5")),
+        cost_meter=cost_meter,
+        input_usd_per_million=float(pricing.get("input_usd_per_million", 0.0)),
+        output_usd_per_million=float(pricing.get("output_usd_per_million", 0.0)),
+    )
+    names = {code: name for code, name in ((s["code"], s["name"]) for s in sectors)}
+    if request is not None:
+        topic = ", ".join(names.get(code, code) for code in request.sector_codes)
+        if request.focus_terms:
+            topic += " - especially " + ", ".join(request.focus_terms)
+        area = ", ".join(request.geographies())
+    else:
+        topic, area = ", ".join(names.values()), "the United States"
+    existing_names: list[str] = []
+    if session is not None:
+        existing_names = [
+            re.sub(r"[^a-z0-9]+", " ", str(row[0]).casefold()).strip()
+            for row in session.execute(text(
+                "SELECT name FROM actor WHERE merged_into_actor_id IS NULL AND name IS NOT NULL"
+            )).all()
+        ]
+    return {
+        "lead_client": client,
+        "lead_topic": topic,
+        "lead_area": area,
+        "existing_actor_domains": [
+            d for d in (registrable_domain(x) for x in load_existing_actor_domains(session)) if d
+        ] if session is not None else [],
+        "existing_actor_names": existing_names,
+    }
+
+
+def _request_topics(session, request, results) -> dict[str, dict[str, str]]:
+    """Every candidate of a requested run is found for the requested topic.
+
+    Topics mirror sectors by code. With several requested sectors the first is
+    the topic of record; the quality gate has already required the page to
+    evidence at least one of them.
+    """
+    if session is None:
+        return {}
+    code = request.sector_codes[0]
+    row = session.execute(
+        text("SELECT topic_id::text AS topic_id, code FROM topic WHERE code = :code"),
+        {"code": code},
+    ).mappings().first()
+    if row is None:
+        return {}
+    topic = {
+        "topic_id": str(row["topic_id"]),
+        "code": str(row["code"]),
+        "request_title": request.title,
+    }
+    return {result.url: topic for result in results}
 
 
 def _candidate_hubs_from_query_plan(
