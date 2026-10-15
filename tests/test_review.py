@@ -329,7 +329,7 @@ class ReviewStoreTests(unittest.TestCase):
                 actor["candidate_id"], decision_kind="reject",
                 rejection_reason="Other", **base,
             )
-        with self.assertRaisesRegex(ReviewValidationError, "255-character"):
+        with self.assertRaisesRegex(ReviewValidationError, "Name is 256 characters; the limit is 255"):
             self.store.admission_request(
                 actor["candidate_id"], decision_kind="new",
                 edited_payload={**actor["reviewed_payload"], "name": "x" * 256}, **base,
