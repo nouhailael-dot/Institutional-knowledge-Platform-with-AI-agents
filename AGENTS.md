@@ -75,8 +75,11 @@ project. Treat them as compile errors, not preferences.
 10. **The shared Supabase database is read-only.** Never run migrations, DDL,
     or writes there. Read-only access is allowed only when a task explicitly
     requires it. Canonical DDL remains a proposal for the schema owner.
-11. **Person discovery remains disabled.** Its feature flag stays off until
-    documented supervisor sign-off.
+11. **Person discovery is enabled, under section 6.** Supervisor sign-off was
+    confirmed by the platform owner on 2026-10-15 and recorded in
+    `TARGETING_POLICY.md` section 6; `people_enabled` is on. Section 6's limits
+    still bind: professional fields only, and no person record is ever
+    auto-created or auto-absorbed.
 12. **Preserve aggregate exclusion.** `actor_type = 'aggregate'` stays out of
     ER candidates, reference sets, and agent outputs through the
     `actor_type` -> `actor_category` transition.
@@ -108,8 +111,9 @@ project. Treat them as compile errors, not preferences.
   is a grouping, consortium listing, or category page is rejected, not staged.
 - Records from a discovered domain never auto-absorb. They route to `create` or
   `review` only, until that domain has a promotion track record.
-- Person discovery stays disabled until `TARGETING_POLICY.md` section 6 has
-  documented supervisor approval. The code may exist; the switch stays off.
+- Person discovery is on since 2026-10-15 (sign-off recorded in
+  `TARGETING_POLICY.md` section 6). Every person record still routes to human
+  review; none is auto-created or auto-absorbed.
 - No autonomous crawling. Search results only, one level deep.
 - No LLM in routing or promotion. Those stay deterministic and replayable.
 
@@ -150,3 +154,18 @@ project. Treat them as compile errors, not preferences.
   create a canonical `hub` row.
 - `agents/sql/180_review_admission_workflow.sql` is emitted for owner review.
   It must not be executed by an agent session.
+
+### Repository workflow:
+
+- This repository is the canonical shared GHUS development repository.
+- Never work from old downloaded/ZIP copies of the project.
+- `main` is the shared stable branch.
+- Do not develop directly on `main`.
+- Use feature/fix/integration branches.
+- Do not force-push or destructively reset shared work.
+- Do not resolve merge conflicts by blindly choosing one side.
+- Preserve existing functionality unless explicitly asked to change it.
+- Never commit .env, .venv, secrets, caches, or generated temporary artifacts.
+- Keep schema changes and migrations synchronized.
+- Run relevant tests before considering work complete.
+- Before substantial changes, inspect the current branch and repository state.

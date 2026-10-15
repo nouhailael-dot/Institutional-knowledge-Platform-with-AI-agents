@@ -161,9 +161,14 @@ def _staged_person() -> StagedRecord:
     )
 
 
-def test_people_flag_defaults_off_and_extractor_refuses_disabled_path():
+def test_the_people_flag_is_on_by_sign_off_and_the_extractor_still_refuses_it_off():
+    # Supervisor sign-off was recorded on 2026-10-15 (TARGETING_POLICY.md
+    # section 6), so the shipped flag is on. The refusal path below is what
+    # protects every environment where it is NOT.
     config = load_sources_config(PROJECT_ROOT)
-    assert dict(config["open_web_discovery"])["people_enabled"] is False
+    assert dict(config["open_web_discovery"])["people_enabled"] is True
+    policy = (PROJECT_ROOT / "Targeting_Policy.md").read_text(encoding="utf-8")
+    assert "Sign-off record." in policy, "enabling people needs the section 6 record"
 
     extractor = PersonExtractor(NeverCalledClient())
     with pytest.raises(RuntimeError, match="person extraction is disabled"):

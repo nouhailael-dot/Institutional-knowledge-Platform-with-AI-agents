@@ -188,7 +188,9 @@ def test_shipped_sources_config_parses_as_yaml_and_has_required_sources():
     assert int(open_web["max_searches"]) == 52
     assert int(open_web["max_candidates_triaged"]) == 200
     assert float(open_web["max_usd_per_run"]) == 5.00
-    assert open_web["people_enabled"] is False
+    # On since 2026-10-15: supervisor sign-off, recorded in TARGETING_POLICY.md
+    # section 6. Person records still route to review, one by one.
+    assert open_web["people_enabled"] is True
     sources = dict(config["sources"])
     assert set(sources) >= {"climate_week", "unga_programme", "unga_guide"}
     assert dict(sources["climate_week"])["entity_types"] == ["event"]
@@ -1129,7 +1131,7 @@ def test_weekly_orchestrator_runs_every_source_and_downstream_after_source_failu
     assert outcome.exit_code == 1
     summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
     assert (
-            "Discovery succeeded: open_web_event, open_web_actor, unga_programme, unga_guide"
+            "Discovery succeeded: open_web_event, unga_programme, unga_guide"
             in summary
         )
     assert "Discovery failed: climate_week(status=failed,exit=1)" in summary
@@ -1161,12 +1163,33 @@ def test_weekly_orchestrator_missing_digest_is_failure_but_continues(tmp_path):
 
     outcome = weekly_discovery.run_weekly(runs_dir=tmp_path, runner=runner)
 
-    assert len(commands) == 7
+    assert len(commands) == 6
     assert outcome.exit_code == 1
-    assert outcome.discovery[2].name == "climate_week"
-    assert outcome.discovery[2].status == "missing_digest"
+    assert outcome.discovery[1].name == "climate_week"
+    assert outcome.discovery[1].status == "missing_digest"
     summary = (tmp_path / "source-outcomes.md").read_text(encoding="utf-8")
     assert "climate_week(status=missing_digest,exit=1)" in summary
+
+
+def test_weekly_orchestrator_no_longer_sweeps_for_actors(tmp_path):
+    """Actors are discovered only for Discovery-page requests, never on a timer."""
+
+    commands = []
+
+    def runner(command):
+        commands.append(list(command))
+        if "--report-out" in command:
+            Path(command[command.index("--report-out") + 1]).write_text(
+                "Status: **succeeded**\n", encoding="utf-8")
+        if "--digest-out" in command:
+            Path(command[command.index("--digest-out") + 1]).write_text(
+                "**Status:** succeeded\n", encoding="utf-8")
+        return 0
+
+    weekly_discovery.run_weekly(runs_dir=tmp_path, runner=runner)
+    searched = [c[c.index("--entity") + 1] for c in commands
+                if c[c.index("-m") + 1] == "agents.discovery.search.run"]
+    assert searched == ["event"]
 
 
 def test_weekly_orchestrator_passes_live_flag_to_all_commands(tmp_path):

@@ -210,7 +210,11 @@
         },
       "max_usd_per_run": 5.00,
       "forward_window_days": 365,
-      "people_enabled": false,
+      # TARGETING_POLICY.md section 6: supervisor sign-off was confirmed by the
+      # platform owner on 2026-10-15, so person discovery is on. Section 6's own
+      # limits still bind: professional fields only, and no person record is
+      # ever auto-created or auto-absorbed - every one goes to human review.
+      "people_enabled": true,
       "person_query_limit": 40,
       "person_institutional_domain_suffixes":
         [".edu", ".gov", ".mil", ".int", ".org", ".ac.uk", ".ac.ma"],

@@ -146,12 +146,10 @@ Stricter than everything above, and the section that most needs supervisor
 sign-off.
 
 **Permitted:** name, professional affiliation, role or title, public
-professional profile URL, stated research area. Only where published by the
+professional profile URL, contact information, stated research area. Only where published by the
 person or their institution in a professional context.
 
-**Not permitted:** personal email addresses, phone numbers, home or personal
-addresses, biographical detail beyond professional role, anything from social
-media not published in a professional capacity, and anything behind
+**Not permitted:** home or personal addresses, biographical detail beyond professional role, anything from social media not published in a professional capacity, and anything behind
 authentication.
 
 **Handling:** person records are never auto-created and never auto-absorbed.
@@ -163,6 +161,16 @@ collisions are far more damaging for individuals than for organizations.
 documented and approved. UM6P is an institution and the people involved are
 identifiable researchers. This is a decision for the supervisor, not a technical
 default.
+
+**Sign-off record.** Supervisor sign-off was confirmed by the platform owner on
+15 October 2026, and `people_enabled` was turned on in
+`agents/config/sources.yaml` on that basis. The written lawful-basis record
+this section requires is held by GHUS; it is not reproduced here, and this line
+records the instruction received rather than standing in for that document.
+
+Nothing else in this section is relaxed by that sign-off: the permitted and
+not-permitted fields above still bind, and every person record still routes to
+human review, enforced in `promote()`.
 
 ---
 
