@@ -1,7 +1,8 @@
 # Review Redesign — status report
 
 **Against:** *GHUS Platform — Claude Code Implementation Brief* (issued Thu 8 Oct 2026)
-**Covering:** WS0, WS1, WS2, WS4, WS5.2 — the Monday 12 Oct priority set
+**Covering:** WS0-WS8 — the Monday 12 Oct priority set, then P2 and P3
+**Last updated:** 9 Oct 2026
 **Production Supabase:** not contacted. No DDL, no writes, no connection.
 **Pushed:** nothing. Both repositories are committed locally only.
 
@@ -20,15 +21,24 @@
 | **WS5.3** Real-world hub example | **PASS** | Built from committed GHUS-approved evidence; candidate verification blocked by the VPN |
 | **WS7** Schema conformance audit | **PASS** | 18 requirements, 14 findings, all fixes written |
 | **Sector change** Hub membership keys on sector | **PASS** | Detection, assignment, loaders, writer, UI |
-| WS5.1, WS6, WS7, WS8 | not started | P2/P3 in the brief's own priority order |
+| **WS5.1** Manual hub assignment | **PASS** | Hub dropdown with Not Applicable / No Hub, memberships and suggestions |
+| **WS6** Actor update subscriptions | **PASS** | Migration 540, pure planner, contract, Review Updates tab, verified in the browser |
+| **WS8** Secondary items | **AUDIT + SPEC** | Ask parked-lead defect found and specified; three items are Nouhaila's code and were not touched |
 
 **Tests**
 
 | Suite | Before | After |
 |---|---|---|
-| Shared app · pytest | 136 passed, 1 skipped | **249 passed, 1 skipped** |
-| Shared app · node | 15 passed, 1 failed | **54 passed, 0 failed** |
-| Backend · pytest | 495 passed, 24 skipped, 1 error | **635 passed, 24 skipped, 1 error** |
+| Shared app · pytest | 136 passed, 1 skipped | **265 passed, 1 skipped, 30 subtests** |
+| Shared app · node | 15 passed, 1 failed | **52 passed, 0 failed** |
+| Backend · pytest | 495 passed, 24 skipped, 1 error | **664 passed, 24 skipped, 1 error** |
+
+The node figure in the previous version of this report was 54, against a
+version of `tests/test_review_ui.mjs` that the UI correction then rewrote. The
+file is not a superset of that one and I cannot reconstruct the difference
+test-by-test, so the two numbers are not comparable and I am not claiming they
+are. What is checkable: the committed file holds 39 tests, the working copy
+holds 52, and all 52 pass.
 
 Zero regressions. The one backend error is pre-existing and unrelated:
 `tests/integration/test_functional_v2_phase8.py` needs `V2_TEST_DATABASE_URL`,
@@ -315,7 +325,9 @@ belongs after cutover).
 | **WS1** mapping record counts | Same blocker. The CSV is complete; only the count column is `UNVERIFIED`. |
 | **WS3** audit rows and reviewer identity | The three actions are mapped onto the existing states with the confirmations the brief requires, and the existing fail-closed and idempotency tests pass. The dedicated audit-row assertions and the reviewer-identity gap report are not done. There is still no authenticated identity: the reviewer name is recorded exactly as typed and is never defaulted. |
 | **WS4** collection-run migration | The additive migration and Nouhaila's contract note for `trigger_type` / `cadence` / `initiated_by`. |
-| **WS5.1, WS6, WS7, WS8** | P2/P3 in the brief's own order. Not started. |
+| **WS8** Ask parked-lead fix, Build the Map handoff | Audited and specified in `docs/contracts/ws8_ask_parked_leads_and_accounts.md`. Both live in Ask / Build the Map, which are Nouhaila's. I did not change them. **§1 is a pre-deployment blocker, not polish** — see below. |
+| **WS8** Accounts and the monthly email | Spec only, as the brief requires. Blocked on authentication, which does not exist. |
+| **WS8** Parked archival policy | Open GHUS decision. The questions it needs to answer are written down. |
 
 ---
 

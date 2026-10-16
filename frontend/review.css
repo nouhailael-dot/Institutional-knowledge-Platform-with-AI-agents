@@ -16,17 +16,26 @@
 .review-notice{background:#fff7ed;border:1px solid #fed7aa;color:#8a3b12}
 .review-message.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
 .review-message.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.review-tabs{display:flex;gap:8px;margin:16px 0 4px}
+.review-tabs .btn.active{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+.review-updates{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-top:12px}
+.review-status.active{background:#ecfdf5;color:#047857}
+.review-status.paused{background:#fff7ed;color:#9a3412}
+.review-status.expired,.review-status.cancelled{background:var(--surface-2);color:var(--muted)}
 .review-sync{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:.75rem 0;color:var(--muted)}
 
 /* ---------------------------------------------------------------- workspace */
-.review-workspace{display:grid;grid-template-columns:minmax(280px,360px) minmax(0,1fr);gap:16px;align-items:start}
+/* The detail pane is the dominant section: it is where a reviewer reads,
+   edits and decides. The queue is a compact rail beside it, not a peer. */
+.review-workspace{display:grid;grid-template-columns:minmax(230px,270px) minmax(0,1fr);gap:16px;align-items:start}
 .review-queue,.review-detail{background:var(--surface);border:1px solid var(--line);border-radius:10px}
 .review-queue{position:sticky;top:12px;max-height:calc(100vh - 40px);overflow:auto}
+.review-queue .review-queue-head{position:sticky;top:0;background:var(--surface);z-index:1}
 .review-queue-head{display:flex;justify-content:space-between;gap:10px;padding:14px;border-bottom:1px solid var(--line)}
 .review-queue-head span{color:var(--muted);font-size:12px}
 
 /* ---------------------------------------------------------------- filters */
-.review-filters{display:grid;gap:10px;padding:14px;border-bottom:1px solid var(--line)}
+.review-filters{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:16px 0}
 .review-filters label,.review-field{display:grid;gap:6px}
 .review-filters label>span,.review-field>span{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .review-filters input,.review-filters select,.review-field input,.review-field textarea,.review-field select{width:100%;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);padding:10px 11px;font:inherit}
@@ -76,7 +85,21 @@
 .review-section pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;background:var(--surface-2);border-radius:7px;padding:12px;font-size:11px}
 .review-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px}
 .review-two-up{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.review-box{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--surface-2)}
+.review-box{border:1px solid var(--line);border-radius:10px;padding:12px;
+  background:var(--surface-2);min-height:92px}
+.review-boxes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
+  gap:10px;margin-bottom:6px;
+  /* Every box the same height, whatever it holds. A grid sizes each row to
+     its tallest item by default, so a long value in one row made that row
+     taller than the next and the grid read as ragged. */
+  grid-auto-rows:1fr}
+.light-box{display:grid;gap:4px;align-content:start;height:100%}
+.light-box dt{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.light-box dd{margin:0;font-size:13px;overflow-wrap:anywhere;white-space:pre-wrap}
+.light-box small{color:var(--muted);font-size:11px}
+.light-box a{color:var(--accent-ink)}
+.review-subsection{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+.review-subsection summary{cursor:pointer;font-weight:650;font-size:13px}
 .review-box h4{margin-top:0}
 .review-checklist{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px}
 .review-checklist label{display:flex;align-items:center;gap:8px}
@@ -127,11 +150,16 @@
   .review-workspace{grid-template-columns:1fr}
   .review-queue{position:static;max-height:420px}
   .review-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .review-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media(max-width:640px){
-  .review-counts,.review-field-grid,.review-two-up,.review-facts{grid-template-columns:1fr}
+  .review-counts,.review-field-grid,.review-two-up,.review-facts,
+  .review-filters,.review-boxes{grid-template-columns:1fr}
   .review-detail-head{display:grid}
   .review-badges{justify-content:flex-start}
   .review-footer{display:grid}
   .review-footer .btn{width:100%}
 }
+
+.review-new-sector{margin-top:12px;padding:12px;border:1px dashed var(--line-strong);border-radius:8px;display:grid;gap:10px}
+.review-new-sector-actions{display:flex;gap:8px}

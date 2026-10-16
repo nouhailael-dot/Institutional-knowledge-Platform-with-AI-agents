@@ -471,7 +471,8 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
-<link rel="stylesheet" href="/review.css"/>
+<link rel="stylesheet" href="/review.css?v=20261015"/>
+<link rel="stylesheet" href="/discovery.css?v=20261015"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -488,10 +489,12 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js";
+import {createReviewPage} from "./review.js?v=20261015";
+import {createDiscoveryPage} from "./discovery.js?v=20261015";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
+const Discovery=createDiscoveryPage({html,useState,useEffect});
 
 /* colour-coded entity chip */
 const ETONE={actor:"accent",hub:"teal",event:"violet",uploaded_document:"slate"};
@@ -1600,17 +1603,18 @@ function App(){
     <div class="workspace-brand"><div class="brand-name">UM6P</div><div class="brand-caption">GLOBAL HUBS · UNITED STATES</div></div>
     <div class="nav-label">Intelligence platform</div>
     <nav class="workspace-nav" aria-label="Main navigation">
-      ${[["ask","Ask","⌕"],["browse","Browse","▦"],["map","Build the Map","⊕"],["review","Review","✓"]].map(([id,label,symbol])=>html`
+      ${[["ask","Ask","⌕"],["browse","Browse","▦"],["map","Build the Map","⊕"],["discovery","Discovery","◎"],["review","Review","✓"]].map(([id,label,symbol])=>html`
         <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${symbol}</span>${label}</button>`)}
     </nav>
     <div class="sidebar-foot"><strong>Connected intelligence</strong>Organizations, people,<br/>and innovation ecosystems.</div>
   </aside>
   <div class="workspace-main">
-  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map",review:"Review"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
+  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map",discovery:"Discovery",review:"Review"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
   <main class="wrap">
     <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}
       onBuildMap=${(h)=>{setHandoff({...h,at:Date.now()}); setTab("map");}}/></div>
     <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
+    <div style=${{display:tab==="discovery"?"block":"none"}}><${Discovery}/></div>
     <div style=${{display:tab==="review"?"block":"none"}}><${Review}/></div>
     <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
       handoff=${handoff} onHandoffUsed=${()=>setHandoff(null)}/></div>

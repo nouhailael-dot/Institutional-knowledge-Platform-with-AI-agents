@@ -281,3 +281,191 @@ def test_no_decision_path_deletes_anything(store):
     listed = store.list(status="all")["candidates"]
     assert any(row["candidate_id"] == candidate["candidate_id"] for row in listed)
     assert store.get(candidate["candidate_id"])["evidence"]
+
+
+# ------------------------------- the 120-second sync must not undo a decision
+
+def _resync(store: ReviewStore, candidate_id: str = "a", **changes) -> None:
+    """Re-deliver the same candidate, as the periodic PostgreSQL sync does."""
+
+    payload = {
+        "name": "Decision Test Lab",
+        "website": "https://decision.example.org",
+        "actor_category": "research_center",
+        "category_type": "independent_institute",
+        "description": "An independent institute.",
+    }
+    payload.update(changes.pop("payload", {}))
+    store.sync_external_candidates([{
+        "source_key": f"postgres:search_candidate:{candidate_id}",
+        "source_run_id": "discovery:run-2",
+        "source_index": candidate_id,
+        "entity_type": "actor",
+        "payload": payload,
+        "evidence": [{"url": "https://decision.example.org", "supports": "Found again"}],
+        "agent_metadata": {"source_table": "search_candidate"},
+        "duplicate_state": changes.pop("duplicate_state", "new"),
+    }])
+
+
+def test_a_rejected_candidate_is_not_resurrected_by_the_next_sync(store):
+    """The agent finds it again next week. The reviewer's no has to survive that.
+
+    Review mirrors PostgreSQL every 120 seconds. If a re-delivery could move a
+    decided row back to pending_review, a rejection would silently decay into
+    "not yet looked at" and the item would reappear in the queue.
+    """
+
+    candidate = _candidate(store)
+    store.reject(candidate["candidate_id"], reviewer="Ismail",
+                 rejection_reason=REJECTION_REASONS[0], idempotency_key="idem-reject",
+                 confirmed=True)
+
+    _resync(store)
+    assert store.get(candidate["candidate_id"])["status"] == "rejected_by_reviewer"
+
+    # The realistic case: it comes back changed, and newly flagged a duplicate.
+    _resync(store, payload={"name": "Decision Test Lab (renamed)"},
+            duplicate_state="possible_duplicate")
+    after = store.get(candidate["candidate_id"])
+    assert after["status"] == "rejected_by_reviewer"
+    # The decided row is left entirely alone — not even its duplicate flag moves,
+    # because the sync's UPDATE is scoped to WHERE status='pending_review'.
+    assert after["duplicate_state"] == "new"
+
+    assert not store.list(status="pending_review")["candidates"]
+    # And exactly one decision exists: the re-sync created no second history.
+    assert len(_decisions(store)) == 1
+
+
+def test_an_approved_candidate_is_not_reopened_by_the_next_sync(store):
+    """Same property on the other side. A Verify must not decay either."""
+
+    candidate = _candidate(store, "b")
+    store.approve(candidate["candidate_id"], reviewer="Ismail",
+                  idempotency_key="idem-approve", confirmed=True)
+
+    _resync(store, "b", payload={"name": "Decision Test Lab (upstream edit)"})
+    after = store.get(candidate["candidate_id"])
+    assert after["status"] == "approved"
+    # The reviewed values are what was verified, not what the agent later sent.
+    assert after["reviewed_payload"]["name"] == "Decision Test Lab"
+    assert not store.list(status="pending_review")["candidates"]
+
+
+# ------------------------------------------- the store is durable state, not a cache
+
+def test_a_restart_does_not_resurrect_a_rejected_candidate(tmp_path):
+    """Reopen the same file and the reviewer's no is still there.
+
+    The 120-second sync test above covers a running process. This covers the
+    other half: the process dies, a new one opens the same store, PostgreSQL
+    re-delivers the candidate, and it must not reappear in the queue.
+    """
+
+    path = tmp_path / "durable.sqlite3"
+    first = ReviewStore(path, enable_test_canonical=True)
+    candidate = _candidate(first)
+    first.reject(candidate["candidate_id"], reviewer="Ismail",
+                 rejection_reason=REJECTION_REASONS[0],
+                 idempotency_key="idem-restart", confirmed=True)
+
+    # A new process, same file, and the agent finds it again.
+    second = ReviewStore(path, enable_test_canonical=True)
+    _resync(second)
+    assert second.get(candidate["candidate_id"])["status"] == "rejected_by_reviewer"
+    assert not second.list(status="pending_review")["candidates"]
+    assert len(_decisions(second)) == 1
+
+
+def test_losing_the_store_file_is_what_resurrection_actually_looks_like(tmp_path):
+    """The failure this guards against, written down so it is not theoretical.
+
+    A redeploy onto fresh storage is indistinguishable from a brand-new store.
+    PostgreSQL still serves the candidate, nothing declines to insert it, and
+    the rejection is gone. This is why REVIEW_STORE_DB is durable state.
+    """
+
+    path = tmp_path / "lost.sqlite3"
+    first = ReviewStore(path, enable_test_canonical=True)
+    candidate = _candidate(first)
+    first.reject(candidate["candidate_id"], reviewer="Ismail",
+                 rejection_reason=REJECTION_REASONS[0],
+                 idempotency_key="idem-lost", confirmed=True)
+
+    path.unlink()                      # the redeploy
+    rebuilt = ReviewStore(path, enable_test_canonical=True)
+    _resync(rebuilt)
+    assert rebuilt.list(status="pending_review")["candidates"], (
+        "losing the store resurrects the candidate - that is the risk being documented"
+    )
+
+
+def test_the_store_says_so_when_its_persistence_is_not_durable(tmp_path, monkeypatch):
+    monkeypatch.delenv("REVIEW_STORE_DB", raising=False)
+    default = ReviewStore(tmp_path / "unset.sqlite3")
+    warnings = default.persistence_warnings()
+    assert any("REVIEW_STORE_DB is not set" in w for w in warnings)
+    assert any("returns to the queue" in w for w in warnings)
+
+    # A path under the system temporary directory is never durable.
+    monkeypatch.setenv("REVIEW_STORE_DB", str(tmp_path / "temp.sqlite3"))
+    temporary = ReviewStore(tmp_path / "temp.sqlite3")
+    assert any("not durable" in w for w in temporary.persistence_warnings())
+
+
+def test_the_warning_counts_the_decisions_that_would_be_lost(tmp_path, monkeypatch):
+    monkeypatch.delenv("REVIEW_STORE_DB", raising=False)
+    store = ReviewStore(tmp_path / "counted.sqlite3", enable_test_canonical=True)
+    assert not any("decision(s) are already recorded" in w
+                   for w in store.persistence_warnings())
+
+    candidate = _candidate(store)
+    store.reject(candidate["candidate_id"], reviewer="Ismail",
+                 rejection_reason=REJECTION_REASONS[0],
+                 idempotency_key="idem-count", confirmed=True)
+    assert any("1 review decision(s) are already recorded" in w
+               for w in store.persistence_warnings())
+
+
+# ----------------------------------- enrichment that lands after the first sync
+
+def test_a_later_sync_brings_in_enrichment_but_never_overwrites_an_edit(store):
+    """Light Pull runs after a candidate first appears, and the screen must show it.
+
+    A discovered actor reaches Review before enrichment has filled in its
+    location, sector and the rest. Those arrive on a later sync. Freezing the
+    captured payload at first sight left the screen showing empty fields
+    forever while the facts beside them updated - which is exactly how State
+    and Sector came to look missing on actors that had both.
+    """
+
+    candidate = _candidate(store)
+    before = store.get(candidate["candidate_id"])
+    assert not before["reviewed_payload"].get("location_city")
+
+    _resync(store, payload={"location_city": "New York", "state": "NY"})
+    after = store.get(candidate["candidate_id"])
+    assert after["reviewed_payload"]["location_city"] == "New York"
+    assert after["original_payload"]["state"] == "NY"
+
+    # Now a reviewer edits it. From here the enrichment must not win.
+    store.update(candidate["candidate_id"], {"location_city": "Brooklyn"})
+    _resync(store, payload={"location_city": "Albany", "state": "NY"})
+    edited = store.get(candidate["candidate_id"])
+    assert edited["reviewed_payload"]["location_city"] == "Brooklyn", (
+        "a later sync must never overwrite what a reviewer typed"
+    )
+
+
+def test_a_decided_candidate_is_never_refreshed(store):
+    """The payload of a decided record is evidence; it does not move."""
+
+    candidate = _candidate(store, "refresh")
+    store.reject(candidate["candidate_id"], reviewer="Ismail",
+                 rejection_reason=REJECTION_REASONS[0],
+                 idempotency_key="idem-refresh", confirmed=True)
+    _resync(store, "refresh", payload={"location_city": "Somewhere Else"})
+    after = store.get(candidate["candidate_id"])
+    assert after["reviewed_payload"].get("location_city") != "Somewhere Else"
+    assert after["status"] == "rejected_by_reviewer"

@@ -13,12 +13,14 @@
 //      separate: it holds prose the UI owns, not data it displays.
 
 export const SECTIONS = {
+  hubProposals: "Hub Proposals",
   identity: "Identity & Classification",
   location: "Location & Parent",
   sector: "Sector, Topic & Hub",
   facts: "Light Pull Facts",
   duplicates: "Possible Duplicates",
   audit: "Audit & Details",
+  updates: "Updates",
 };
 
 export const BUTTONS = {
@@ -32,9 +34,19 @@ export const BUTTONS = {
   refresh: "Refresh Now",
   cancel: "Cancel",
   confirm: "Confirm",
+  addSector: "+ Add a New Sector…",
+  createSector: "Create Sector",
+  addingSector: "Creating…",
 };
 
 export const FIELDS = {
+  newSectorName: "New Sector Name",
+  newSectorDescription: "What the Sector Covers, Optional",
+  families: "Independent Families",
+  categories: "Matched Categories",
+  clusterRadius: "Core / Cluster Radius",
+  hubCreated: "Hub Created",
+  proposedMembers: "Proposed Members",
   name: "Name",
   otherNames: "Other Names",
   website: "Website",
@@ -53,6 +65,10 @@ export const FIELDS = {
   parentSource: "Source",
   otherRelationships: "Other Relationships",
   sector: "Sector",
+  primarySector: "Primary Sector",
+  otherSectors: "Also Recorded",
+  commonLightPull: "Common Light Pull Fields",
+  categoryLightPull: "Category-Specific Fields",
   whyItMatched: "Why It Matched",
   strength: "Strength",
   topic: "Topic",
@@ -88,6 +104,11 @@ export const FIELDS = {
   rankings: "Rankings",
   ghusNotes: "GHUS Notes",
   ghusEventNotes: "GHUS Event Notes",
+  requestedBy: "Requested by",
+  requestedVia: "Requested Via",
+  lastRun: "Last Run",
+  nextDue: "Next Due",
+  runs: "Runs",
 };
 
 export const BADGES = {
@@ -125,6 +146,14 @@ export const BADGES = {
   notChecked: "Database Match Not Checked",
   testData: "Test Data",
   readOnly: "Read Only",
+  active: "Active",
+  paused: "Paused",
+  expired: "Expired",
+  cancelled: "Cancelled",
+  dryRun: "Dry Run",
+  live: "Live",
+  currentlyAssigned: "Currently Assigned",
+  suggested: "Suggested",
   hubDimension: "Decides Hub",
   secondary: "Secondary",
   high: "High",
@@ -163,6 +192,13 @@ export const TRIGGERS = {
   migration: "Migration",
 };
 
+// How a subscription was asked for. The database stores a code; a reviewer
+// reads words. Raw codes never reach the screen.
+export const REQUESTED_VIA = {
+  map_verification: "Map Verification",
+  review_updates: "Review Updates",
+};
+
 export const CADENCES = {
   once: "Once",
   weekly: "Weekly",
@@ -173,6 +209,15 @@ export const CADENCES = {
 // Prose the UI owns. Full sentences, so normal sentence capitalisation applies
 // and the Title Case test skips this block by design.
 export const SENTENCES = {
+  noSectorMatched: (described) => `No GHUS sector matched this organisation. Its page describes its work as: ${described}. If none of the sectors fits, add a new one.`,
+  sectorNeedsReviewer: "Enter your name in the decision section first: a new sector is recorded as your decision.",
+  sectorCreated: (name) => `Sector “${name}” added. It is now in every sector list.`,
+  sectorExisted: (name) => `Sector “${name}” already exists and has been selected.`,
+  noHubCreated: "No — a proposal only.",
+  hubProposalsExplain: "Detection proposes; GHUS decides. A proposal never creates a hub — it records a cluster that met every threshold, for a person to accept or refuse.",
+  hubProposalsNone: "No open hub proposals. Detection runs produce a proposal only when a cluster meets every threshold.",
+  hubProposalsUnavailable: "Hub proposals are unavailable: no PostgreSQL review source is configured.",
+  demoLabel: "Example / test data — not GHUS-verified production data.",
   queueEmpty: "No candidates match these filters.",
   queueLoading: "Loading candidates…",
   queueSelectOne: "Select a candidate from the queue.",
@@ -203,6 +248,29 @@ export const SENTENCES = {
   suggestionIsNotADecision:
     "A suggestion is the deterministic rule's proposal, not an assignment. Choose one, " +
     "choose a different hub, or leave the actor unassigned.",
+  noHubOption: "Not Applicable — No Hub",
+  subscriptionsExplain:
+    "Actor updates are opt-in. Each subscription keeps a stated scope current for a " +
+    "stated period; nothing outside one is swept. The event update schedule is separate " +
+    "and unchanged.",
+  subscriptionsNone:
+    "No subscriptions yet. One is created when a map is verified, or from here once the " +
+    "scheduler contract is built.",
+  subscriptionsUnavailable:
+    "No PostgreSQL review source is configured, so subscriptions cannot be read.",
+  subscriptionNoScope:
+    "No scope recorded — this subscription would sweep everything and must not run.",
+  hubDropdownRule:
+    "Only existing hubs are listed. A new hub is never created here: detection proposes " +
+    "one and GHUS decides.",
+  lightPullBoxes:
+    "These are the Light Pull fields from Architecture V2 Sept, Sections 5.1 and 5.2. " +
+    "Every box for this actor category stays visible, including the ones with nothing " +
+    "in them, because an empty field is itself an answer.",
+  chooseCategoryForBoxes:
+    "Choose an Actor Category to see the fields collected for it.",
+  deepIsSeparate:
+    "Deep Pull evidence, collected only after a GHUS verification. It is not Light Pull.",
   sectorDecidesHub:
     "Hub membership is decided on sector. An actor joins a hub because it works in that " +
     "hub's sector and sits inside its radius.",
@@ -249,7 +317,9 @@ export const SENTENCES = {
 };
 
 /** Every label the Title Case rule applies to, for the test to walk. */
-export const TITLE_CASE_GROUPS = { SECTIONS, BUTTONS, FIELDS, BADGES, QUEUE, FACTS, TRIGGERS, CADENCES };
+export const TITLE_CASE_GROUPS = {
+  SECTIONS, BUTTONS, FIELDS, BADGES, QUEUE, FACTS, TRIGGERS, CADENCES, REQUESTED_VIA,
+};
 
 export const TITLE_CASE_LOWER_WORDS = new Set([
   "a", "and", "by", "for", "in", "of", "or", "the", "to", "with",

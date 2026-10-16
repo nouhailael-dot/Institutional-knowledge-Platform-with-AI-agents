@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))          # make `src` importable no matter the CWD
@@ -45,6 +45,8 @@ from src.map_agent.verify import summarize, verify
 from src.map_agent.run_store import RunStore, RunContext, MapStopped
 from src.map_agent.search_backend import availability as research_availability
 from src.retrieve import retrieve
+from src.discovery.bridge import DiscoveryBridge, DiscoveryBridgeError
+from src.review.store import register_sector_codes
 from src.review import (AdmissionBridge, AdmissionBridgeError, DuplicateRisk, PostgresReviewSource,
                         PostgresReviewSourceError, ReadOnlyRunStore,
                         ReviewConflict, ReviewNotConfigured, ReviewStore,
@@ -97,13 +99,42 @@ def review_admission_bridge():
     return AdmissionBridge()
 
 
+@lru_cache(maxsize=1)
+def discovery_bridge():
+    return DiscoveryBridge()
+
+
 @asynccontextmanager
 async def lifespan(app):
     map_store().recover()
+    # The review store is the only place that knows a pre-promotion candidate
+    # was decided. If it is configured somewhere a redeploy wipes, every
+    # rejection quietly becomes pending again and the queue refills with work a
+    # reviewer already refused. Say so at startup rather than discovering it.
+    try:
+        for warning in review_store().persistence_warnings():
+            logger.warning("Review persistence: %s", warning)
+    except Exception:
+        logger.exception("Could not check review-store persistence")
     yield
 
 
 app = FastAPI(title="UM6P Intelligence API", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def revalidate_frontend_assets(request, call_next):
+    """Browsers must re-check the page's scripts and styles on every load.
+
+    Module scripts were being served from the browser cache after an update, so
+    a reviewer kept seeing the previous screen. "no-cache" still lets the
+    browser reuse an unchanged file (304); it only forbids skipping the check.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith((".js", ".css", ".html")):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 FRONTEND = ROOT / "frontend"
 
 
@@ -657,6 +688,26 @@ _review_sync_store_key = None
 REVIEW_SYNC_INTERVAL_SECONDS = 120
 
 
+# The headline lives in the UI label; this is the explanation beneath it.
+DEMO_BANNER = (
+    "This instance reads an isolated demonstration database. Nothing shown here "
+    "is a GHUS record, and no decision taken here reaches production."
+)
+
+
+def _demo_banner() -> str | None:
+    """One unmissable line when this instance serves demonstration data.
+
+    Set GHUS_DEMO_MODE=1 only on a demo instance pointed at an isolated test
+    database. It changes nothing except that every Review response says plainly
+    what it is looking at, so a demo can never be mistaken for the real queue.
+    It is deliberately NOT a sync warning: a warning is something that went
+    wrong, and this is a statement about which data is on screen.
+    """
+
+    return DEMO_BANNER if os.environ.get("GHUS_DEMO_MODE", "").strip() == "1" else None
+
+
 def _sync_review_candidates(*, force: bool = False):
     global _review_sync_last, _review_sync_warnings, _review_sync_store_key
     target = review_store()
@@ -774,6 +825,86 @@ def review_catalog():
     return catalog_payload()
 
 
+@app.get("/api/review/subscriptions")
+def review_subscriptions():
+    """Actor update subscriptions and their runs (WS6), read-only.
+
+    Empty when no PostgreSQL source is configured or migration 540 has not been
+    applied. Nothing can be created or changed through this endpoint: a
+    subscription is a GHUS request, and until the scheduler contract is built
+    the Review screen only reports what exists.
+    """
+    source = review_postgres_source()
+    if source is None:
+        return {"subscriptions": [], "configured": False}
+    try:
+        return {"subscriptions": source.fetch_subscriptions(), "configured": True}
+    except PostgresReviewSourceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+class SectorCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    code: str | None = Field(default=None, max_length=20)
+    description: str | None = Field(default=None, max_length=500)
+    reviewer: str = Field(min_length=1, max_length=120)
+
+
+def _fallback_sectors() -> list[dict]:
+    from src.review.taxonomy import NON_THEMATIC_SECTORS, THEMATIC_SECTORS
+
+    return [{"code": c, "name": n, "is_thematic": True} for c, n in THEMATIC_SECTORS] + [
+        {"code": c, "name": n, "is_thematic": False} for c, n in NON_THEMATIC_SECTORS]
+
+
+@app.get("/api/review/sectors")
+def review_sectors():
+    """The sector dropdown's options: the database list, so sectors added in
+    Review appear at once. Falls back to the configured list without one."""
+    source = review_postgres_source()
+    sectors = []
+    if source is not None:
+        try:
+            sectors = source.fetch_sectors()
+        except Exception as exc:  # noqa: BLE001 - the fallback list still works
+            logger.warning("sector list unavailable: %s", exc)
+    sectors = sectors or _fallback_sectors()
+    register_sector_codes(s["code"] for s in sectors)
+    return {"sectors": sectors, "can_create": review_admission_bridge().configured}
+
+
+@app.post("/api/review/sectors")
+def review_create_sector(body: SectorCreate):
+    """Add a sector a real actor needs. Written by the GHUS backend (the
+    approved canonical writer), never by this app."""
+    bridge = review_admission_bridge()
+    if not bridge.configured:
+        raise HTTPException(status_code=503, detail=(
+            "Sectors can only be added when admission is configured on this instance."))
+    try:
+        outcome = bridge.apply({"decision_kind": "create_sector", **body.model_dump()})
+    except AdmissionBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    register_sector_codes([outcome.get("code") or ""])
+    return outcome
+
+
+@app.get("/api/review/hub-proposals")
+def review_hub_proposals():
+    """Open Phase 7 hub proposals. Read-only: detection never creates a hub."""
+    source = review_postgres_source()
+    if source is None:
+        return {"proposals": [], "configured": False}
+    try:
+        return {"proposals": source.fetch_hub_proposals(), "configured": True}
+    except PostgresReviewSourceError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
 @app.get("/api/review/candidates")
 def review_candidates(status: str = Query("pending_review"),
                       entity_type: str | None = Query(None),
@@ -793,6 +924,7 @@ def review_candidates(status: str = Query("pending_review"),
             review_reason=review_reason, region=region,
         )
         result["sync_warnings"] = sync_warnings
+        result["demo_banner"] = _demo_banner()
         result["admission_configured"] = review_admission_bridge().configured
         return result
     except Exception as exc:
@@ -878,6 +1010,82 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
         _raise_review_error(exc)
     except Exception as exc:
         _raise_review_error(exc)
+
+
+# ---------------------------------------------------------------- discovery
+# Actor discovery runs only for requests made here. The page never writes the
+# request tables: every call goes through the backend's own command, which
+# applies the same rules as the scheduler and the database.
+
+class DiscoveryDraft(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    sector_codes: list[str] = Field(default_factory=list, max_length=8)
+    topic_ids: list[str] = Field(default_factory=list, max_length=8)
+    focus_terms: list[str] = Field(default_factory=list, max_length=8)
+    region_code: str | None = None
+    state_code: str | None = None
+    city: str | None = Field(default=None, max_length=120)
+    start_date: str | None = None
+    end_date: str
+    cadence: str
+    max_new_actors_per_run: int = Field(default=10, ge=1, le=50)
+
+
+def _discovery_call(fn, *args):
+    if not discovery_bridge().configured:
+        raise HTTPException(status_code=503, detail=(
+            "Discovery requests are not configured on this instance."))
+    try:
+        return fn(*args)
+    except DiscoveryBridgeError as exc:
+        raise HTTPException(status_code=422 if exc.rejected else 502, detail=str(exc)) from exc
+
+
+@app.get("/api/discovery/status")
+def discovery_status():
+    return {"configured": discovery_bridge().configured}
+
+
+@app.get("/api/discovery/options")
+def discovery_options():
+    return _discovery_call(discovery_bridge().options)
+
+
+@app.get("/api/discovery/requests")
+def discovery_requests():
+    return _discovery_call(discovery_bridge().list_requests)
+
+
+@app.post("/api/discovery/preview")
+def discovery_preview(draft: DiscoveryDraft):
+    return _discovery_call(discovery_bridge().preview, draft.model_dump(exclude_none=True))
+
+
+@app.post("/api/discovery/requests")
+def discovery_create(draft: DiscoveryDraft):
+    return _discovery_call(discovery_bridge().create, draft.model_dump(exclude_none=True))
+
+
+@app.post("/api/discovery/requests/{subscription_id}/run")
+def discovery_run_now(subscription_id: str):
+    """Start a live run of one request now. A person pressing the button is the
+    explicit dispatch a live run requires; the run itself takes minutes."""
+    try:
+        UUID(subscription_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown request") from exc
+    return _discovery_call(discovery_bridge().run_now, subscription_id)
+
+
+@app.post("/api/discovery/requests/{subscription_id}/{action}")
+def discovery_change(subscription_id: str, action: str):
+    if action not in ("pause", "resume", "cancel"):
+        raise HTTPException(status_code=404, detail="unknown action")
+    try:
+        UUID(subscription_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown request") from exc
+    return _discovery_call(discovery_bridge().change, subscription_id, action)
 
 
 @app.get("/api/health")

@@ -260,7 +260,7 @@ export function isParentLink(code) {
 // way to turn "we have not looked yet" into "there is nothing there".
 export const MISSING = {
   notFound: "Not Found",            // searched, and no evidence exists
-  notYetChecked: "Not Yet Checked", // this layer has not run
+  notYetChecked: "Not Yet Collected", // this layer has not run
   notProvided: "Not Provided",      // an optional input is absent (location)
   pending: "Pending Classification", // a legacy NULL category type
   notAvailable: "Not Available",    // there is no parent, and that is complete
@@ -284,7 +284,8 @@ export const COMMON_LIGHT_ROWS = [
   ["location", "Location"],
   ["hub_assignment", "Hub"],
   ["sector_topic", "Sector and Topic"],
-  ["why_matched", "Why It Matched"],
+  // Rendered by its own box, which reads this same fact. Listing it here too
+  // produced two "Why It Matched" boxes, one of them empty.
   ["recent_activity", "Recent Activity"],
   ["funding_signal", "Funding Signal"],
   ["international_connection", "International / Africa / Morocco Connection"],
@@ -407,7 +408,117 @@ export const NON_THEMATIC_SECTORS = [
   ["DIASPORA", "Diaspora"],
 ];
 
+// The sectors in the database, loaded from /api/review/sectors. Once loaded
+// they ARE the list - including any sector GHUS added in Review. The constants
+// above are only the fallback before (or without) a database.
+let DATABASE_SECTORS = [];
+
+export function setSectors(list) {
+  DATABASE_SECTORS = (list || [])
+    .filter(item => item && item.code)
+    .map(item => [String(item.code).toUpperCase(), String(item.name || item.code)]);
+}
+
+function knownSectors() {
+  return DATABASE_SECTORS.length ? DATABASE_SECTORS : [...THEMATIC_SECTORS, ...NON_THEMATIC_SECTORS];
+}
+
 export function sectorLabel(code) {
-  const found = [...THEMATIC_SECTORS, ...NON_THEMATIC_SECTORS].find(([value]) => value === code);
+  const found = [...DATABASE_SECTORS, ...THEMATIC_SECTORS, ...NON_THEMATIC_SECTORS]
+    .find(([value]) => value === code);
   return found ? found[1] : String(code || "");
+}
+
+// ------------------------------------------------------------------ countries
+// ISO 3166-1: code and the short English name. The reviewer picks from this
+// rather than typing, because the stored data already carries both "USA" and
+// "United States" for the same country (680 and 202 rows in the restored copy),
+// which makes every country filter wrong.
+//
+// COUNTRY_ALIASES maps the spellings already in the data onto the ISO name, so
+// an existing record shows its country correctly without anything being
+// rewritten underneath it.
+const COUNTRY_PAIRS =
+  "AF:Afghanistan;AL:Albania;DZ:Algeria;AD:Andorra;AO:Angola;AG:Antigua and Barbuda;" +
+  "AR:Argentina;AM:Armenia;AU:Australia;AT:Austria;AZ:Azerbaijan;BS:Bahamas;BH:Bahrain;" +
+  "BD:Bangladesh;BB:Barbados;BY:Belarus;BE:Belgium;BZ:Belize;BJ:Benin;BT:Bhutan;" +
+  "BO:Bolivia;BA:Bosnia and Herzegovina;BW:Botswana;BR:Brazil;BN:Brunei;BG:Bulgaria;" +
+  "BF:Burkina Faso;BI:Burundi;KH:Cambodia;CM:Cameroon;CA:Canada;CV:Cabo Verde;" +
+  "CF:Central African Republic;TD:Chad;CL:Chile;CN:China;CO:Colombia;KM:Comoros;" +
+  "CG:Congo;CD:Congo (Democratic Republic);CR:Costa Rica;CI:Côte d'Ivoire;HR:Croatia;" +
+  "CU:Cuba;CY:Cyprus;CZ:Czechia;DK:Denmark;DJ:Djibouti;DM:Dominica;" +
+  "DO:Dominican Republic;EC:Ecuador;EG:Egypt;SV:El Salvador;GQ:Equatorial Guinea;" +
+  "ER:Eritrea;EE:Estonia;SZ:Eswatini;ET:Ethiopia;FJ:Fiji;FI:Finland;FR:France;" +
+  "GA:Gabon;GM:Gambia;GE:Georgia;DE:Germany;GH:Ghana;GR:Greece;GD:Grenada;" +
+  "GT:Guatemala;GN:Guinea;GW:Guinea-Bissau;GY:Guyana;HT:Haiti;HN:Honduras;HU:Hungary;" +
+  "IS:Iceland;IN:India;ID:Indonesia;IR:Iran;IQ:Iraq;IE:Ireland;IL:Israel;IT:Italy;" +
+  "JM:Jamaica;JP:Japan;JO:Jordan;KZ:Kazakhstan;KE:Kenya;KI:Kiribati;KW:Kuwait;" +
+  "KG:Kyrgyzstan;LA:Laos;LV:Latvia;LB:Lebanon;LS:Lesotho;LR:Liberia;LY:Libya;" +
+  "LI:Liechtenstein;LT:Lithuania;LU:Luxembourg;MG:Madagascar;MW:Malawi;MY:Malaysia;" +
+  "MV:Maldives;ML:Mali;MT:Malta;MH:Marshall Islands;MR:Mauritania;MU:Mauritius;" +
+  "MX:Mexico;FM:Micronesia;MD:Moldova;MC:Monaco;MN:Mongolia;ME:Montenegro;MA:Morocco;" +
+  "MZ:Mozambique;MM:Myanmar;NA:Namibia;NR:Nauru;NP:Nepal;NL:Netherlands;" +
+  "NZ:New Zealand;NI:Nicaragua;NE:Niger;NG:Nigeria;KP:North Korea;" +
+  "MK:North Macedonia;NO:Norway;OM:Oman;PK:Pakistan;PW:Palau;PS:Palestine;PA:Panama;" +
+  "PG:Papua New Guinea;PY:Paraguay;PE:Peru;PH:Philippines;PL:Poland;PT:Portugal;" +
+  "QA:Qatar;RO:Romania;RU:Russia;RW:Rwanda;KN:Saint Kitts and Nevis;LC:Saint Lucia;" +
+  "VC:Saint Vincent and the Grenadines;WS:Samoa;SM:San Marino;" +
+  "ST:Sao Tome and Principe;SA:Saudi Arabia;SN:Senegal;RS:Serbia;SC:Seychelles;" +
+  "SL:Sierra Leone;SG:Singapore;SK:Slovakia;SI:Slovenia;SB:Solomon Islands;" +
+  "SO:Somalia;ZA:South Africa;KR:South Korea;SS:South Sudan;ES:Spain;LK:Sri Lanka;" +
+  "SD:Sudan;SR:Suriname;SE:Sweden;CH:Switzerland;SY:Syria;TW:Taiwan;TJ:Tajikistan;" +
+  "TZ:Tanzania;TH:Thailand;TL:Timor-Leste;TG:Togo;TO:Tonga;TT:Trinidad and Tobago;" +
+  "TN:Tunisia;TR:Türkiye;TM:Turkmenistan;TV:Tuvalu;UG:Uganda;UA:Ukraine;" +
+  "AE:United Arab Emirates;GB:United Kingdom;US:United States;UY:Uruguay;" +
+  "UZ:Uzbekistan;VU:Vanuatu;VA:Vatican City;VE:Venezuela;VN:Vietnam;YE:Yemen;" +
+  "ZM:Zambia;ZW:Zimbabwe";
+
+export const COUNTRIES = COUNTRY_PAIRS.split(";").map(pair => {
+  const [code, name] = pair.split(":");
+  return [code, name];
+});
+
+const COUNTRY_BY_NAME = new Map(COUNTRIES.map(([code, name]) => [name.toLocaleLowerCase(), name]));
+const COUNTRY_ALIASES = new Map(Object.entries({
+  usa: "United States", "u.s.a.": "United States", "u.s.": "United States",
+  us: "United States", "united states of america": "United States",
+  uk: "United Kingdom", "u.k.": "United Kingdom",
+  "great britain": "United Kingdom", england: "United Kingdom",
+  korea: "South Korea", "republic of korea": "South Korea",
+  "russian federation": "Russia", turkey: "Türkiye",
+  "ivory coast": "Côte d'Ivoire", "cape verde": "Cabo Verde",
+  "czech republic": "Czechia", swaziland: "Eswatini",
+}));
+
+/** The ISO name for a stored country value. Unknown values are kept as stored. */
+export function normalizeCountry(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const key = raw.toLocaleLowerCase();
+  return COUNTRY_ALIASES.get(key) || COUNTRY_BY_NAME.get(key) || raw;
+}
+
+export function countryOptions() {
+  return COUNTRIES.map(([, name]) => ({value: name, label: name}));
+}
+
+/**
+ * Sector options for the Review dropdown.
+ *
+ * Built from the catalog, so adding a sector to the reference data adds it here
+ * with no code change. Any sector already recorded on a record is included even
+ * when it is not one of the eight thematic ones, so an existing value is never
+ * silently dropped from its own dropdown.
+ */
+export function sectorOptions(recorded = []) {
+  const base = DATABASE_SECTORS.length ? knownSectors() : THEMATIC_SECTORS;
+  const options = base.map(([value, label]) => ({value, label}));
+  const known = new Set(options.map(option => option.value));
+  for (const code of recorded) {
+    if (code && !known.has(code)) {
+      known.add(code);
+      options.push({value: code, label: sectorLabel(code)});
+    }
+  }
+  return options;
 }

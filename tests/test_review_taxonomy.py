@@ -400,6 +400,6 @@ def test_the_six_missingness_words_are_distinct():
     values = list(MISSING.values())
     assert len(set(values)) == len(values) == 6
     assert values == [
-        "Not Found", "Not Yet Checked", "Not Provided", "Pending Classification",
+        "Not Found", "Not Yet Collected", "Not Provided", "Pending Classification",
         "Not Available", "Not Applicable",
     ]

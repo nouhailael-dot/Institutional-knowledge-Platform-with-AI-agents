@@ -215,7 +215,7 @@ US_COUNTRY_NAMES = frozenset({"US", "USA", "UNITED STATES", "UNITED STATES OF AM
 # Appendix D. Never interchangeable.
 MISSING = {
     "not_found": "Not Found",
-    "not_yet_checked": "Not Yet Checked",
+    "not_yet_checked": "Not Yet Collected",
     "not_provided": "Not Provided",
     "pending": "Pending Classification",
     "not_available": "Not Available",
@@ -262,6 +262,14 @@ THEMATIC_SECTORS: tuple[tuple[str, str], ...] = (
 )
 NON_THEMATIC_SECTORS: tuple[tuple[str, str], ...] = (
     ("CROSS", "Cross-Cutting"), ("DIASPORA", "Diaspora"),
+)
+
+# What the Review sector dropdown may store. The eight thematic sectors are
+# selectable (decision D13); CROSS and DIASPORA are accepted because records
+# already carry them, pending Appendix H item 3. Adding a sector to the
+# reference data above adds it here, with no other change.
+SELECTABLE_SECTOR_CODES: frozenset[str] = frozenset(
+    code for code, _label in (*THEMATIC_SECTORS, *NON_THEMATIC_SECTORS)
 )
 
 # Decision D14.
