@@ -494,6 +494,11 @@ class PostgresReviewSource:
                 " AND ah.topic_id IS NOT DISTINCT FROM ri.topic_id"
                 ") h ON true "
             )
+        # actor_sector.is_primary arrives with the sector-dimension migration
+        # (520). Without it no sector is ranked, so the first by code is shown
+        # and the reviewer chooses - never a guess presented as the primary.
+        primary_rank = ("asec.is_primary DESC, "
+                        if "is_primary" in all_columns.get("actor_sector", set()) else "")
         edge_field = "'[]'::jsonb AS relationships "
         edge_join = ""
         if {
@@ -554,7 +559,7 @@ class PostgresReviewSource:
             # and the reviewer chooses rather than the screen guessing.
             "(SELECT s2.code FROM actor_sector asec JOIN sector s2 "
             " ON s2.sector_id = asec.sector_id WHERE asec.actor_id = a.actor_id "
-            " ORDER BY asec.is_primary DESC, s2.code LIMIT 1) AS primary_sector, "
+            f" ORDER BY {primary_rank}s2.code LIMIT 1) AS primary_sector, "
             "(SELECT count(*) FROM actor_sector asec WHERE asec.actor_id = a.actor_id) "
             " AS sector_link_count, "
             "s.url AS actor_source_url, "
@@ -595,10 +600,17 @@ class PostgresReviewSource:
         added could never be chosen. The database is now the list.
         """
         with self.connect() as db:
-            if "sector" not in self._columns(db):
+            columns = self._columns(db).get("sector")
+            if not columns:
                 return []
+            # `active` and `is_thematic` arrive with the sector-dimension
+            # migration (520). A database that has not had it - production on
+            # 2026-10-16 - still has sectors, so the list is read without them
+            # rather than failing and leaving the dropdown empty.
+            thematic = "is_thematic" if "is_thematic" in columns else "true AS is_thematic"
+            where = " WHERE active" if "active" in columns else ""
             rows = db.execute(
-                "SELECT code, name, is_thematic FROM sector WHERE active ORDER BY name"
+                f"SELECT code, name, {thematic} FROM sector{where} ORDER BY name"
             ).fetchall()
         return [{"code": str(r["code"]).upper(), "name": r["name"],
                  "is_thematic": bool(r["is_thematic"])} for r in rows]
@@ -844,12 +856,16 @@ class PostgresReviewSource:
                 for actor_id, entry in context.items()
                 for item in entry["current"]
             }
+            # Same compatibility as fetch_sectors: without migration 520 there
+            # is no `active` column, and every sector counts.
+            only_active = (" AND s.active"
+                           if "active" in (self._columns(db).get("sector") or set()) else "")
             for row in db.execute(
                 "SELECT a.actor_id::text AS actor_id, s.code AS sector_code, "
                 "COALESCE(al.latitude, a.latitude) AS latitude, "
                 "COALESCE(al.longitude, a.longitude) AS longitude "
                 "FROM actor a JOIN actor_sector asec ON asec.actor_id = a.actor_id "
-                "JOIN sector s ON s.sector_id = asec.sector_id AND s.active "
+                f"JOIN sector s ON s.sector_id = asec.sector_id{only_active} "
                 "LEFT JOIN LATERAL (SELECT latitude, longitude FROM actor_location "
                 "WHERE actor_id = a.actor_id ORDER BY is_primary DESC, created_at LIMIT 1) al "
                 "ON TRUE ORDER BY a.actor_id, s.code"
