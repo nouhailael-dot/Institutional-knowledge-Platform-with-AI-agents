@@ -150,13 +150,15 @@ export function areaLabel(request, options) {
   return "the United States";
 }
 
+/** The sectors a request names. The backend calls these topics; a person
+ * reading the page calls them sectors, and so does every label here. */
 export function topicLabel(request, options) {
   const topics = options?.topics || [];
   const names = [
     ...(request.sector_codes || []).map((code) => topics.find((t) => t.code === code)?.name || code),
-    ...(request.topic_ids || []).map((id) => topics.find((t) => t.topic_id === id)?.name || "Topic"),
+    ...(request.topic_ids || []).map((id) => topics.find((t) => t.topic_id === id)?.name || "Sector"),
   ];
-  return names.join(", ") || "No topic";
+  return names.join(", ") || "No sector";
 }
 
 // One sentence a person can check against what they meant.
@@ -178,6 +180,104 @@ export function nextRunLabel(request) {
   return skip || "No further runs";
 }
 
+// ---------------------------------------------------------------- the brief
+//
+// What the person types in their own words, turned into the fields the agent
+// actually runs on. Nothing here is guessed quietly: every value this derives
+// is shown back on the page, in the Details panel, where it can be changed.
+
+/**
+ * The sub-topics: every line AFTER the first, split further on commas,
+ * semicolons or bullets.
+ *
+ * The first line names the request, so it is not a search term. It used to be
+ * one, which meant the agent searched for the request's own name - and, worse,
+ * demanded every word of it ("water organizations in Wisconsin") on the
+ * organization's page before keeping it.
+ */
+export function briefTerms(text, limit = 8) {
+  const terms = String(text || "")
+    .split(/\n+/)
+    .slice(1)
+    .join("\n")
+    .split(/[\n,;•]+/)
+    .map((part) => part.replace(/^[\s\-*•\d.)]+/, "").trim())
+    .filter(Boolean);
+  return [...new Set(terms)].slice(0, limit);
+}
+
+/**
+ * The word stems the agent will look for, exactly as actor_quality._stems
+ * builds them: alphabetic words of four letters or more, cut to four.
+ */
+export function termStems(term) {
+  return [...new Set((String(term || "").toLowerCase().match(/[a-z]{4,}/g) || [])
+    .map((word) => word.slice(0, 4)))];
+}
+
+/** More stems than this in one term and the agent rarely matches it. */
+const MAX_TERM_STEMS = 4;
+
+/**
+ * A term the agent is unlikely to match. Every one of its stems must appear on
+ * the organization's own page for the term to count, so a whole sentence
+ * almost never matches - and the actor is held for review as unconfirmed.
+ */
+export function termIsTooLong(term) {
+  // No second parameter on purpose: `terms.some(termIsTooLong)` passes the
+  // array index as the next argument, which read as the limit and flagged
+  // every first term as too long.
+  return termStems(term).length > MAX_TERM_STEMS;
+}
+
+/** The sector, region or state the brief names, by the catalog's own words. */
+export function briefMatches(text, options = {}) {
+  // Normalised, and matched on word boundaries: a name at the end of a line
+  // or before a full stop counts, and "Cross-Thematic" is matched literally.
+  const hay = ` ${String(text || "").toLowerCase().replace(/\s+/g, " ")} `;
+  const escape = (value) => String(value).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const named = (value) =>
+    Boolean(value) && new RegExp(`(^|[^a-z0-9])${escape(value)}([^a-z0-9]|$)`).test(hay);
+  const byName = (rows, key = "name") => (rows || []).find((row) => named(row[key]));
+  const sector = (options.topics || []).find((row) =>
+    named(row.name) || new RegExp(`\\b${String(row.code).toLowerCase()}\\b`).test(hay));
+  return {
+    sector: sector ? sector.code : null,
+    region: (byName(options.regions) || {}).code || null,
+    state: (byName(options.states) || {}).code || null,
+  };
+}
+
+/** The request's name: the brief's first line, which is what a person reads. */
+export function briefTitle(text) {
+  const first = String(text || "").split(/[\n.;]/)[0].trim();
+  return first.slice(0, 160);
+}
+
+/**
+ * The form the page would send: the typed fields win, and anything the person
+ * has not set is taken from the brief.
+ */
+export function resolveDraft(form, options = {}) {
+  const brief = String(form.brief || "").trim();
+  if (!brief) return form;
+  const found = briefMatches(brief, options);
+  const resolved = {
+    ...form,
+    title: form.title.trim() || briefTitle(brief),
+    sector: form.sector || found.sector || "",
+    focusTerms: form.focusTerms.length
+      ? form.focusTerms
+      : briefTerms(brief, options.max_focus_terms || 8),
+  };
+  if (!form.areaTouched) {
+    resolved.areaKind = found.state ? "state" : found.region ? "region" : "us";
+    resolved.region = found.region || "";
+    resolved.state = found.state || "";
+  }
+  return resolved;
+}
+
 // What the form sends. Empty optional fields are left out, never sent blank.
 export function draftPayload(form) {
   const payload = {
@@ -197,10 +297,21 @@ export function draftPayload(form) {
   return payload;
 }
 
-export function draftProblems(form, options) {
+export function draftProblems(rawForm, options) {
+  const form = resolveDraft(rawForm, options);
   const problems = {};
-  if (!form.title.trim()) problems.title = "Give the request a name.";
-  if (!form.sector) problems.sector = "Choose a topic.";
+  if (!form.title.trim()) {
+    problems.brief = "Say what you are looking for.";
+    problems.title = "Give the request a name.";
+  }
+  if (!form.sector) {
+    problems.sector = "Choose a sector.";
+    if (String(rawForm.brief || "").trim()) {
+      // The brief named no sector the catalog knows, so the agent has no part
+      // of the map to grow. Said here rather than only in the hidden panel.
+      problems.brief = "Name one of the sectors below, or choose one in Details.";
+    }
+  }
   if (form.areaKind === "region" && !form.region) problems.area = "Choose a region.";
   if (form.areaKind === "state" && !form.state) problems.area = "Choose a state.";
   const cap = Number(form.cap);
@@ -215,6 +326,7 @@ export function draftProblems(form, options) {
 
 function blankForm(today) {
   return {
+    brief: "", areaTouched: false,
     title: "", sector: "", focusTerms: [], focusInput: "",
     areaKind: "region", region: "", state: "", city: "",
     startDate: today, duration: "3m", endDate: addMonths(today, 3),
@@ -313,6 +425,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const [requests, setRequests] = useState([]);
     const [view, setView] = useState("new");
     const [form, setForm] = useState(() => blankForm(today));
+    // The fields are folded away: the brief is what a person writes, and the
+    // panel below shows what it resolved to for anyone who wants to change it.
+    const [showDetails, setShowDetails] = useState(false);
     const [touched, setTouched] = useState(false);
     const [preview, setPreview] = useState(null);
     const [busy, setBusy] = useState(false);
@@ -355,6 +470,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       set({focusTerms: [...form.focusTerms, term], focusInput: ""});
     }
 
+    // Everything that is sent, summarised or validated runs on the RESOLVED
+    // draft, so the brief and the panel can never disagree about what will run.
+    const draft = resolveDraft(form, options || {});
     const problems = draftProblems(form, options);
     const valid = Object.keys(problems).length === 0;
     const shown = touched ? problems : {};
@@ -364,7 +482,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       if (!valid) return;
       setBusy(true); setWorking("preview"); setMessage(null);
       try {
-        setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(draftPayload(form))}));
+        setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(draftPayload(draft))}));
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setBusy(false); setWorking("");
     }
@@ -374,9 +492,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       if (!valid) return;
       setBusy(true); setWorking("create"); setMessage(null);
       try {
-        await api("/api/discovery/requests", {method: "POST", body: JSON.stringify(draftPayload(form))});
-        setMessage({kind: "success", text: `Request “${form.title.trim()}” created.`});
-        setForm(blankForm(today)); setTouched(false); setPreview(null);
+        await api("/api/discovery/requests", {method: "POST", body: JSON.stringify(draftPayload(draft))});
+        setMessage({kind: "success", text: `Request “${draft.title.trim()}” created.`});
+        setForm(blankForm(today)); setTouched(false); setPreview(null); setShowDetails(false);
         await load();
         setView("requests");
       } catch (err) { setMessage({kind: "error", text: err.message}); }
@@ -415,18 +533,19 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     }
 
     const summaryDraft = {
-      ...draftPayload(form),
-      start_date: form.startDate,
-      region_code: form.areaKind === "region" ? form.region : null,
-      state_code: form.areaKind === "state" ? form.state : null,
-      city: form.areaKind === "state" ? form.city.trim() : null,
+      ...draftPayload(draft),
+      start_date: draft.startDate,
+      region_code: draft.areaKind === "region" ? draft.region : null,
+      state_code: draft.areaKind === "state" ? draft.state : null,
+      city: draft.areaKind === "state" ? draft.city.trim() : null,
     };
     const activeCount = requests.filter((r) => r.status === "active" || r.status === "paused").length;
 
     return html`<div class="discovery-page">
-      <div class="eyebrow">Actor discovery</div>
-      <h1 class="hero-h">Ask the agent to find organizations.</h1>
-      <p class="lead">Choose a topic, an area, how long and how often. The agent searches only for what you ask.</p>
+      <div class="eyebrow">Organizations updating agent</div>
+      <h1 class="hero-h">Ask the agent to find and keep organizations up to date.</h1>
+      <p class="lead">Say what you are looking for in your own words. The agent searches
+        only for that, and only where you ask.</p>
 
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
       ${status.loaded && !status.configured && html`<p class="discovery-message error">Discovery requests are not available on this instance.</p>`}
@@ -438,21 +557,59 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       </div>
 
       ${view === "new" && html`<section class="discovery-card">
-        <div class="discovery-grid">
+        <${Field} label="What should the agent look for?" error=${shown.brief} wide=${true}>
+          <textarea class="discovery-brief" rows="4" value=${form.brief}
+            placeholder=${"Water utilities and water-technology organizations in Wisconsin.\nwastewater reuse\nphosphorus removal"}
+            onInput=${(e) => set({brief: e.target.value})}></textarea>
+          <small class="muted">
+            <strong>First line:</strong> what you want, in a sentence. It names the
+            request, and it should say the sector — ${(options.topics || []).map((t) => t.name).join(", ")} —
+            and where to look.
+            <strong>Then one sub-topic per line.</strong> Each becomes a search, and an
+            organization is kept only when its own pages use those words, so a few
+            words a line finds more than a sentence. No sub-topics searches the
+            sector itself.
+          </small>
+        <//>
+
+        ${form.brief.trim() && html`<div class="discovery-resolved">
+          <p>
+            <strong>Sector:</strong> ${draft.sector
+              ? (options.topics.find((t) => t.code === draft.sector) || {}).name || draft.sector
+              : "none named yet"}
+            · <strong>Area:</strong> ${areaLabel(summaryDraft, options)}
+            · <strong>Searches:</strong> ${draft.focusTerms.length || "the sector name"}
+          </p>
+          ${draft.focusTerms.length > 0 && html`<div class="discovery-terms">
+            ${draft.focusTerms.map((term) => html`<span key=${term}
+              class=${"discovery-term" + (termIsTooLong(term) ? " long" : "")}>${term}</span>`)}
+          </div>`}
+          ${draft.focusTerms.some(termIsTooLong) && html`<small class="muted">
+            A line marked in amber is long. Every word in it has to appear on the
+            organization's own page for it to count, so short lines find more.
+          </small>`}
+        </div>`}
+
+        <button type="button" class="discovery-disclose" aria-expanded=${showDetails}
+          onClick=${() => setShowDetails(!showDetails)}>
+          ${showDetails ? "Hide the details" : "Details — name, sector, area, frequency"}
+        </button>
+
+        ${showDetails && html`<div class="discovery-grid">
           <${Field} label="Request name" error=${shown.title} wide=${true}>
-            <input value=${form.title} maxLength="160" placeholder="Energy organizations in the Northeast"
+            <input value=${draft.title} maxLength="160" placeholder="Energy organizations in the Northeast"
               onInput=${(e) => set({title: e.target.value})}/>
           <//>
-          <${Field} label="Topic" error=${shown.sector}>
-            <select value=${form.sector} onChange=${(e) => set({sector: e.target.value})}>
-              <option value="">Choose a topic</option>
+          <${Field} label="Sector" error=${shown.sector}>
+            <select value=${draft.sector} onChange=${(e) => set({sector: e.target.value})}>
+              <option value="">Choose a sector</option>
               ${options.topics.map((t) => html`<option key=${t.code} value=${t.code}>${t.name}</option>`)}
             </select>
           <//>
           <${Field} label=${`Sub-topics (up to ${options.max_focus_terms})`}>
             <div class="discovery-terms">
-              ${form.focusTerms.map((term) => html`<span key=${term} class="discovery-term">${term}
-                <button type="button" aria-label=${`Remove ${term}`} onClick=${() => set({focusTerms: form.focusTerms.filter((t) => t !== term)})}>×</button></span>`)}
+              ${draft.focusTerms.map((term) => html`<span key=${term} class=${"discovery-term" + (termIsTooLong(term) ? " long" : "")}>${term}
+                <button type="button" aria-label=${`Remove ${term}`} onClick=${() => set({focusTerms: draft.focusTerms.filter((t) => t !== term)})}>×</button></span>`)}
               <input value=${form.focusInput} placeholder=${form.focusTerms.length ? "Add another" : "e.g. battery storage"}
                 onInput=${(e) => set({focusInput: e.target.value})}
                 onKeyDown=${(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addFocus(); } }}
@@ -462,14 +619,14 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           <${Field} label="Area" error=${shown.area} wide=${true}>
             <div class="discovery-segment">
               ${[["region", "Region"], ["state", "State"], ["us", "Whole United States"]].map(([id, label]) => html`
-                <button type="button" key=${id} class=${form.areaKind === id ? "active" : ""} onClick=${() => set({areaKind: id})}>${label}</button>`)}
+                <button type="button" key=${id} class=${draft.areaKind === id ? "active" : ""} onClick=${() => set({areaKind: id, areaTouched: true})}>${label}</button>`)}
             </div>
-            ${form.areaKind === "region" && html`<select value=${form.region} onChange=${(e) => set({region: e.target.value})}>
+            ${draft.areaKind === "region" && html`<select value=${draft.region} onChange=${(e) => set({region: e.target.value, areaTouched: true})}>
               <option value="">Choose a region</option>
               ${options.regions.map((r) => html`<option key=${r.code} value=${r.code}>${r.name}</option>`)}
             </select>`}
-            ${form.areaKind === "state" && html`<div class="discovery-inline">
-              <select value=${form.state} onChange=${(e) => set({state: e.target.value})}>
+            ${draft.areaKind === "state" && html`<div class="discovery-inline">
+              <select value=${draft.state} onChange=${(e) => set({state: e.target.value, areaTouched: true})}>
                 <option value="">Choose a state</option>
                 ${options.states.map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
               </select>
@@ -495,7 +652,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           <${Field} label="New organizations per run" error=${shown.cap}>
             <input type="number" min="1" max=${options.max_new_actors_per_run} value=${form.cap} onInput=${(e) => set({cap: e.target.value})}/>
           <//>
-        </div>
+        </div>`}
 
         <p class="discovery-summary">${requestSummary(summaryDraft, options)}</p>
 

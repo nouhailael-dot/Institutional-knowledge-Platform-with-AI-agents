@@ -97,9 +97,10 @@ test('the page writes nothing itself: every call goes to /api/discovery', () => 
   for (const url of urls) assert.ok(url.startsWith('/api/discovery/'), url);
 });
 
-test('Discovery is in the main navigation', () => {
+test('the organizations updating agent is in the main navigation', () => {
   const index = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
-  assert.match(index, /\["discovery","Discovery",/);
+  assert.match(index, /\["discovery","Organization Updates",/);
+  assert.match(index, /discovery:"Organization Updates"/);
   assert.match(index, /createDiscoveryPage/);
 });
 
@@ -143,4 +144,55 @@ test('a run shows its cost per relevant actor, not only its total', async () => 
   assert.equal(costPerRelevantActor({spent_usd: 1.0, staged_count: 2, review_item_count: 2}), '$0.25');
   assert.equal(costPerRelevantActor({spent_usd: 0.5, staged_count: 0, review_item_count: 0}), 'None kept');
   assert.equal(costPerRelevantActor({spent_usd: null, staged_count: 1}), '');
+});
+
+test('a brief in plain words becomes the fields the agent runs on', async () => {
+  const {resolveDraft, briefTerms, briefTitle, briefMatches} = await import('../frontend/discovery.js');
+  const brief = 'Energy organizations in the Northeast\nbattery storage\ngrid modernisation';
+  // The first line names the request; it is never searched for.
+  assert.deepEqual(briefTerms(brief), ['battery storage', 'grid modernisation']);
+  assert.deepEqual(briefTerms('One line only, with commas'), []);
+  assert.equal(briefTitle(brief), 'Energy organizations in the Northeast');
+  assert.deepEqual(briefMatches(brief, OPTIONS), {sector: 'ENERGY', region: 'northeast', state: null});
+
+  const blank = form({title: '', sector: '', focusTerms: [], areaKind: 'region', region: '', brief});
+  const draft = resolveDraft(blank, OPTIONS);
+  assert.equal(draft.title, 'Energy organizations in the Northeast');
+  assert.equal(draft.sector, 'ENERGY');
+  assert.equal(draft.areaKind, 'region');
+  assert.equal(draft.region, 'northeast');
+  assert.ok(draft.focusTerms.includes('battery storage'));
+});
+
+test('what a person typed always beats what the brief implies', async () => {
+  const {resolveDraft} = await import('../frontend/discovery.js');
+  const typed = form({brief: 'Water organizations in Texas', title: 'My own name',
+    sector: 'ENERGY', focusTerms: ['battery storage'], areaKind: 'us', areaTouched: true});
+  const draft = resolveDraft(typed, OPTIONS);
+  assert.equal(draft.title, 'My own name');
+  assert.equal(draft.sector, 'ENERGY');
+  assert.deepEqual(draft.focusTerms, ['battery storage']);
+  assert.equal(draft.areaKind, 'us');
+});
+
+test('a brief naming no known sector is refused, and says so', async () => {
+  const {draftProblems} = await import('../frontend/discovery.js');
+  const vague = form({title: '', sector: '', focusTerms: [], brief: 'interesting places near me'});
+  const problems = draftProblems(vague, OPTIONS);
+  assert.match(problems.brief, /Name one of the sectors/);
+  assert.ok(problems.sector);
+  // With a sector named, the same brief is accepted.
+  assert.equal(draftProblems(form({title: '', sector: '', focusTerms: [],
+    brief: 'Energy organizations, battery storage'}), OPTIONS).sector, undefined);
+});
+
+test('a long line is flagged: every word of it must appear on the page', async () => {
+  const {termIsTooLong, termStems} = await import('../frontend/discovery.js');
+  assert.deepEqual(termStems('battery storage'), ['batt', 'stor']);
+  assert.equal(termIsTooLong('battery storage'), false);
+  assert.equal(termIsTooLong('organizations that work on battery storage for rural utilities'), true);
+  // Passed straight to .some/.map, which hand the callback the index too: the
+  // index must not be read as a limit, or every first term looks too long.
+  assert.equal(['battery storage', 'grid modernisation'].some(termIsTooLong), false);
+  assert.deepEqual(['battery storage', 'grid modernisation'].map(termIsTooLong), [false, false]);
 });
