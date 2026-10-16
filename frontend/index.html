@@ -1329,6 +1329,9 @@ function BuildMap({carried,onCarriedChange}){
       const r=await fetch("/api/map/"+id);
       const d=await r.json();
       if(version!==generation.current) return;
+      // A remembered map that no longer exists: start fresh instead of
+      // showing the same error on every visit.
+      if(r.status===404){ remember(null); return; }
       if(!r.ok) throw new Error(d.detail||"Could not load the saved map.");
       remember(id); setMsgs(d.messages||[]); setRequest(d.description||"");
       setDesc(""); setFile(null); setDocId(null); setSummary(null);
@@ -1550,6 +1553,20 @@ function BuildMap({carried,onCarriedChange}){
     setRes({...res,entities:next});
   }
 
+  // Send is disabled outside a conversation state; say why and what to do instead.
+  function sendBlockedNote(){
+    if(!researchAvailable) return null;   // already explained at the top of the page
+    const fresh=" Or start a fresh one with “+ New map”.";
+    if(runStatus==="cancelled") return (cost?.can_resume
+      ? "This map was stopped mid-research. Use “Continue unfinished research” above to carry on."
+      : cost?.can_reopen ? "This map was stopped. Use “Reopen this map” above to keep chatting."
+      : "This map was stopped.")+fresh;
+    if(runStatus==="ready") return "A search plan is ready. Use “Start saved plan” above to run it."+fresh;
+    if(runStatus==="budget_stopped") return "This map reached its budget. Approve the extra $1 above, then continue."+fresh;
+    if(runStatus==="interrupted") return "This map was interrupted. Use “Continue unfinished research” above."+fresh;
+    return null;
+  }
+
   const total=all().length;
   const parkedCount=all().filter(e=>e._review==="parked").length;
 
@@ -1633,6 +1650,7 @@ function BuildMap({carried,onCarriedChange}){
       </div>
       <button class="btn" disabled=${busy||verifying||!researchAvailable||!["draft","awaiting_reply","done","error"].includes(runStatus)}>${busy?html`<span class="spin"></span>`:"Send"}</button>
     </form>
+    ${!busy&&!verifying&&sendBlockedNote()&&html`<div class="hint" role="status" style=${{marginTop:"8px"}}>${sendBlockedNote()}</div>`}
 
     ${!msgs.length&&!busy&&!err&&html`<div class="attach-row">
       ${examples.map(x=>html`<button key=${x} class="example" type="button"
