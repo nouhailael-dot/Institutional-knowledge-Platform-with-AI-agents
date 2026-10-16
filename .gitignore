@@ -25,3 +25,6 @@ env/
 
 # Isolated Review-page demonstration databases
 .demo/
+
+# Backups of the env file hold the real connection string.
+.env.bak*
