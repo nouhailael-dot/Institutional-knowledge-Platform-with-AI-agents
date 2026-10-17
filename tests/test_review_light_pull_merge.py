@@ -87,3 +87,34 @@ def test_an_over_long_field_says_which_field_and_by_how_much():
             "name": "California Department of Water Resources",
             "primary_lifecycle_role": "Government agency managing state water resources",
         })
+
+
+def test_a_refusal_says_why_instead_of_an_exit_code():
+    from src.review.admission import refusal_reason
+
+    stderr = (
+        "Traceback (most recent call last):\n  ...\n"
+        "AdmissionConflict: frozen entity resolution found an existing or ambiguous match "
+        "(website_domain: North Dakota Water Users Association "
+        "fdee588b-625d-4974-89bc-28add40e58c0); choose same existing or defer\n")
+    said = refusal_reason(stderr, 1)
+    assert "already on the map" in said and "North Dakota Water Users Association" in said
+    assert "same website" in said and "fdee588b" not in said
+    close = refusal_reason("AdmissionConflict: frozen entity resolution found an existing "
+                           "or ambiguous match; choose same existing or defer", 1)
+    assert "close match" in close
+    assert refusal_reason("agents.review.admission.AdmissionValidationError: "
+                          "unsupported edited fields: foo", 1) == "unsupported edited fields: foo"
+    # Anything that is not a named refusal never reaches the page.
+    assert refusal_reason("psycopg.OperationalError: password authentication failed", 1) == \
+        "Admission process exited with code 1."
+
+
+def test_a_coloured_traceback_still_yields_the_reason():
+    """Python 3.13 colours tracebacks; the server's environment asks for it."""
+    from src.review.admission import refusal_reason
+
+    coloured = ("\x1b[1;35mAdmissionConflict\x1b[0m: \x1b[35mfrozen entity resolution found an "
+                "existing or ambiguous match (website_domain: North Dakota Water Users Association "
+                "fdee588b-625d-4974-89bc-28add40e58c0)); choose same existing or defer\x1b[0m")
+    assert "already on the map as “North Dakota Water Users Association”" in refusal_reason(coloured, 1)

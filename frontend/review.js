@@ -21,7 +21,7 @@ import {
   showsRankings, showsTrl, stateOptions, typeLabel, typeOptions,
 } from "./taxonomy.js?v=20261015";
 import {
-  BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, REQUESTED_VIA, SECTIONS, SENTENCES,
+  BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
 
@@ -50,15 +50,15 @@ export const REVIEW_REASON_LABELS = {
   verify_actor: BADGES.awaitingVerification,
   verify_person: BADGES.awaitingPersonVerification,
   verify_event: BADGES.awaitingEventVerification,
-  category_doubt: BADGES.categoryDoubt,
+  category_doubt: "Category Unsure",
   geocode_failed: BADGES.geocodeFailed,
   hub_needs_review: BADGES.hubNeedsReview,
-  hub_assignment: BADGES.hubAssignment,
+  hub_assignment: "Hub to Confirm",
   hub_radius_overlap: BADGES.hubRadiusOverlap,
   hub_member_outside_radius: BADGES.hubMemberOutsideRadius,
   hub_center_drift: BADGES.hubCenterDrift,
   hub_proposal: BADGES.hubProposal,
-  same_topic_overlap: BADGES.sameTopicOverlap,
+  same_topic_overlap: "Overlaps Another Hub",
   possible_duplicate: BADGES.possibleDuplicate,
   fact_conflict: BADGES.factConflict,
   pending_update: BADGES.pendingUpdate,
@@ -66,11 +66,81 @@ export const REVIEW_REASON_LABELS = {
   // a real queue row would show a raw lower-case code.
   identity: BADGES.identityReview,
   affiliation_change: BADGES.affiliationChange,
-  classification: BADGES.classificationReview,
-  geocode: BADGES.geocodeReview,
+  classification: "Category to Confirm",
+  geocode: "Location to Confirm",
   new_hub: BADGES.newHubProposal,
   pending_human_update: BADGES.pendingHumanUpdate,
+  // Why an item waits for a person, as the review store derives it from what
+  // its source recorded (src/review/store.py derive_review_reason). These
+  // replace the sources' internal codes - rubric_band, fuzzy_match,
+  // relationship_review - which read as nothing to a reviewer.
+  borderline_score: "Borderline Score",
+  third_party_page: "Read From Another Site",
+  website_unverified: "Website Not Confirmed",
+  page_not_organisation: "A Page, Not an Organisation",
+  focus_unconfirmed: "Sub-topic Not Confirmed",
+  thin_evidence: "Too Little Evidence",
+  weak_description: "Description Too Thin",
+  low_priority: "Low Engagement Priority",
+  new_person: "New Person to Confirm",
+  new_record: "New Record to Confirm",
+  location_unplaced: "Location Not on the Map",
+  relationship_check: "Link to Confirm",
+  map_agent: "Proposed by Build the Map",
 };
+
+/** One sentence per reason: what the agent could not settle, and so asks you. */
+export const REVIEW_REASON_HINTS = {
+  borderline_score: "The agent scored it between reject and accept, so a person decides.",
+  third_party_page: "It was read from a page about the organisation on someone else's site, not its own.",
+  website_unverified: "The page states no website of its own, so who published it is unconfirmed.",
+  page_not_organisation: "The description reads like a web page or portal, not an organisation.",
+  focus_unconfirmed: "Its own pages do not use the sub-topic words the request asked for.",
+  thin_evidence: "Too few of the scoring criteria are evidenced on its page to accept it unseen.",
+  weak_description: "The description is missing, too short, or a slogan.",
+  low_priority: "Relevant, but its engagement priority is below what accepting it unseen needs.",
+  new_person: "People are never added without a person's decision.",
+  new_record: "A new record found by discovery, waiting for a decision.",
+  possible_duplicate: "It may already be on the map; confirm it is new, or the same one.",
+  location_unplaced: "Its address could not be placed on the map; give the city and state.",
+  relationship_check: "A link between two organisations needs confirming before it is shown.",
+  map_agent: "Proposed by a Build the Map run, waiting for a decision.",
+  verify_actor: "On the map but not yet verified for this topic; Deep Pull needs this.",
+  category_doubt: "The agent was unsure which category fits; choose one.",
+  hub_assignment: "The hub this actor was placed in needs confirming.",
+  same_topic_overlap: "It sits in two hubs on the same topic; keep the right one.",
+  classification: "Its category or type needs a person to confirm.",
+  geocode: "Its location was placed, but needs confirming.",
+};
+
+export function reviewReasonHint(value) {
+  return REVIEW_REASON_HINTS[value] || "";
+}
+
+/**
+ * A run in the run filter: what it was, and how many of its items still wait.
+ * The trigger is added only when one was recorded - "Manual" is the fallback
+ * for an unrecorded trigger, and printed on every run it told a reader nothing
+ * (and was wrong for the map's own checks).
+ */
+export function runOptionLabel(group = {}) {
+  const trigger = group.trigger && group.trigger !== "manual" ? group.trigger_label : null;
+  const waiting = Number(group.pending_count || 0);
+  return [group.label, trigger].filter(Boolean).join(" · ") + (waiting ? ` (${waiting})` : "");
+}
+
+/**
+ * The reason filter's options: only reasons actually waiting, most first.
+ * It used to list every reason that could ever exist (34, from "Hub Center
+ * Drift" to "Same Topic Overlap"), most of them never present. A chosen
+ * reason stays listed even if nothing matches it any more.
+ */
+export function reasonOptions(counts = {}, chosen = "all") {
+  const rows = Object.entries(counts || {}).filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1] || reviewReasonLabel(a[0]).localeCompare(reviewReasonLabel(b[0])));
+  if (chosen && chosen !== "all" && !rows.some(([kind]) => kind === chosen)) rows.push([chosen, 0]);
+  return rows;
+}
 export const RECORD_KIND_LABELS = {actor: BADGES.actor, event: BADGES.event, person: BADGES.person};
 
 export const REJECTION_REASONS = [
@@ -548,7 +618,8 @@ export function headerBadges(candidate) {
   const recordStatus = RECORD_STATUS_LABELS[String(candidate.record_status || "").toLocaleLowerCase()];
   badges.push({tone: candidate.status, label: recordStatus || reviewStatusLabel(candidate.status)});
   if (candidate.review_reason) {
-    badges.push({tone: "reason", label: reviewReasonLabel(candidate.review_reason)});
+    badges.push({tone: "reason", label: reviewReasonLabel(candidate.review_reason),
+      hint: reviewReasonHint(candidate.review_reason)});
   }
   if (candidate.duplicate_state === "possible_duplicate") {
     badges.push({tone: "duplicate", label: BADGES.possibleDuplicate});
@@ -591,41 +662,6 @@ export function hubDropdownOptions(candidate) {
   for (const hub of metadata.hubs || []) add(hub, "");
   return options;
 }
-
-/**
- * A subscription's scope in words.
- *
- * The scopes INTERSECT: sector AGRI plus state CA means agriculture actors in
- * California, not everything in either. The joining word is "and" for that
- * reason, and a scope that is somehow empty says so rather than rendering as a
- * blank, because an unscoped subscription would sweep everything.
- */
-export function subscriptionScopeLabel(scope = {}) {
-  const parts = [];
-  const actors = (scope.actor_ids || []).length;
-  if (actors) parts.push(`${actors} named actor${actors === 1 ? "" : "s"}`);
-  if ((scope.sector_codes || []).length) {
-    parts.push((scope.sector_codes || []).map(sectorLabel).join(", "));
-  }
-  const topics = (scope.topic_ids || []).length;
-  if (topics) parts.push(`${topics} topic${topics === 1 ? "" : "s"}`);
-  const place = [scope.city, scope.state_code, scope.region_code, scope.country]
-    .map(value => String(value || "").trim()).filter(Boolean);
-  if (place.length) parts.push(place.join(", "));
-  return parts.length ? parts.join(" and ") : SENTENCES.subscriptionNoScope;
-}
-
-/** Only an active subscription runs. The rest say why not. */
-export function subscriptionStatusLabel(status) {
-  return SUBSCRIPTION_STATUS_LABELS[status] || String(status || "").replaceAll("_", " ");
-}
-
-export const SUBSCRIPTION_STATUS_LABELS = {
-  active: BADGES.active,
-  paused: BADGES.paused,
-  expired: BADGES.expired,
-  cancelled: BADGES.cancelled,
-};
 
 function decisionKey() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -717,19 +753,6 @@ function formatDay(value) {
   return new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString();
 }
 
-/**
- * A subscription's cadence and period on one line.
- *
- * Assembled here rather than in the template because htm drops the whitespace
- * at a line break, which ran the cadence into the start date.
- */
-export function subscriptionPeriodLabel(item = {}) {
-  const from = item.start_date ? formatDay(item.start_date) : MISSING.notProvided;
-  const to = item.end_date ? formatDay(item.end_date) : MISSING.notProvided;
-  const cadence = CADENCES[item.cadence] || String(item.cadence || "");
-  return `${TRIGGERS.subscription} · ${cadence} · ${from} to ${to}`;
-}
-
 /** Where a proposed hub sits, in words. */
 export function hubProposalPlace(proposal = {}) {
   const place = [proposal.primary_city, proposal.state, proposal.country]
@@ -769,11 +792,6 @@ export function whyMatchedFact(candidate) {
     date_read: value.date_read || fact.date_read || null,
     source_url: value.source_url || fact.source_url || null,
   };
-}
-
-/** How a subscription was requested, in words. */
-export function requestedViaLabel(code) {
-  return REQUESTED_VIA[code] || String(code || "").replaceAll("_", " ");
 }
 
 const LONG_FIELDS = /description|activities|approach|summary|constraints|focus|research|category_note|thematic/;
@@ -818,7 +836,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [proposedHub, setProposedHub] = useState({name: "", rationale: ""});
     const [factView, setFactView] = useState("current");
     const [view, setView] = useState("queue");
-    const [updates, setUpdates] = useState({subscriptions: [], configured: false, loaded: false});
     const [hubDemo, setHubDemo] = useState({proposals: [], configured: false, loaded: false});
     // Sectors come from the database, so one added here appears at once.
     const [sectorState, setSectorState] = useState({canCreate: false, version: 0});
@@ -875,14 +892,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       return () => { active = false; };
     }, [selectedId]);
 
-    useEffect(() => {
-      if (view !== "updates" || updates.loaded) return;
-      let active = true;
-      request("/api/review/subscriptions")
-        .then(body => { if (active) setUpdates({...body, loaded: true}); })
-        .catch(exception => { if (active) setError(exception.message); });
-      return () => { active = false; };
-    }, [view, updates.loaded]);
 
     useEffect(() => {
       if (view !== "hubs" || hubDemo.loaded) return;
@@ -1110,9 +1119,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         <button role="tab" aria-selected=${view === "queue"}
           class=${"btn ghost " + (view === "queue" ? "active" : "")}
           onClick=${() => setView("queue")}>${QUEUE.title}</button>
-        <button role="tab" aria-selected=${view === "updates"}
-          class=${"btn ghost " + (view === "updates" ? "active" : "")}
-          onClick=${() => setView("updates")}>${SECTIONS.updates}</button>
         <button role="tab" aria-selected=${view === "hubs"}
           class=${"btn ghost " + (view === "hubs" ? "active" : "")}
           onClick=${() => setView("hubs")}>${SECTIONS.hubProposals}</button>
@@ -1154,41 +1160,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           </div>`)}
       </section>`}
 
-      ${view === "updates" && html`<section class="review-updates" aria-label=${SECTIONS.updates}>
-        ${!updates.loaded && html`<p class="muted">${SENTENCES.queueLoading}</p>`}
-        ${updates.loaded && !updates.configured && html`
-          <p class="muted">${SENTENCES.subscriptionsUnavailable}</p>`}
-        ${updates.loaded && updates.configured && !updates.subscriptions.length && html`
-          <p class="muted">${SENTENCES.subscriptionsNone}</p>`}
-        ${updates.subscriptions.map(item => html`
-          <div class="review-match" key=${item.subscription_id}>
-            <div class="review-detail-head">
-              <div><strong>${subscriptionScopeLabel(item.scope)}</strong>
-                <p class="review-subhead">${subscriptionPeriodLabel(item)}</p></div>
-              <span class=${"review-status " + item.status}>
-                ${subscriptionStatusLabel(item.status)}</span>
-            </div>
-            <dl class="review-facts">
-              <div><dt>${FIELDS.requestedBy}</dt>
-                <dd>${item.requested_by || SENTENCES.noRunRecorded}</dd></div>
-              <div><dt>${FIELDS.requestedVia}</dt>
-                <dd>${requestedViaLabel(item.requested_via)}</dd></div>
-              <div><dt>${FIELDS.lastRun}</dt>
-                <dd>${item.last_run_at ? formatDate(item.last_run_at) : MISSING.notYetChecked}</dd></div>
-              <div><dt>${FIELDS.nextDue}</dt>
-                <dd>${item.next_due_at ? formatDate(item.next_due_at) : MISSING.notApplicable}</dd></div>
-            </dl>
-            <h4>${FIELDS.runs}</h4>
-            ${!item.runs.length && html`<p class="muted">${MISSING.notYetChecked}</p>`}
-            <ul class="review-evidence">
-              ${item.runs.map(run => html`<li key=${run.run_id}>
-                <strong>${formatDate(run.created_at)}</strong>
-                <span>${run.dry_run ? BADGES.dryRun : BADGES.live} · ${run.status}</span>
-                ${run.status_reason && html`<span>${run.status_reason}</span>`}
-              </li>`)}
-            </ul>
-          </div>`)}
-      </section>`}
+
 
       ${view === "queue" && html`<div class="review-filters" aria-label="Review filters">
         <label><span>${FIELDS.recordKind}</span>
@@ -1201,16 +1173,15 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         <label><span>${FIELDS.reviewReason}</span>
           <select value=${filters.review_reason} onChange=${e => setFilter("review_reason", e.target.value)}>
             <option value="all">${QUEUE.allReasons}</option>
-            ${Object.keys(REVIEW_REASON_LABELS).map(kind => html`
-              <option key=${kind} value=${kind}>${reviewReasonLabel(kind)}</option>`)}
+            ${reasonOptions(data.reason_counts, filters.review_reason).map(([kind, count]) => html`
+              <option key=${kind} value=${kind} title=${reviewReasonHint(kind)}>
+                ${reviewReasonLabel(kind)}${count ? ` (${count})` : ""}</option>`)}
           </select></label>
         <label><span>${FIELDS.sourceRun}</span>
           <select value=${filters.run_group} onChange=${e => setFilter("run_group", e.target.value)}>
             <option value="all">${QUEUE.allRuns}</option>
             ${(data.run_groups || []).map(group => html`
-              <option key=${group.key} value=${group.key}>
-                ${group.label}${group.trigger_label ? ` · ${group.trigger_label}` : ""}
-              </option>`)}
+              <option key=${group.key} value=${group.key}>${runOptionLabel(group)}</option>`)}
           </select></label>
         <label><span>${FIELDS.actorCategory}</span>
           <select value=${filters.actor_category} onChange=${e => setFilter("actor_category", e.target.value)}>
@@ -1268,7 +1239,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             </div>
             <div class="review-badges">
               ${headerBadges(selected).map((badge, index) => html`
-                <span key=${index} class=${"review-status " + badge.tone}>${badge.label}</span>`)}
+                <span key=${index} class=${"review-status " + badge.tone}
+                  title=${badge.hint || ""}>${badge.label}</span>`)}
             </div>
           </header>
           ${isMigratedBaseline(selected) && html`<div class="review-notice" role="status">

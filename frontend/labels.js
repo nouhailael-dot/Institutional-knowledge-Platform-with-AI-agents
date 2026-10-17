@@ -20,7 +20,6 @@ export const SECTIONS = {
   facts: "Light Pull Facts",
   duplicates: "Possible Duplicates",
   audit: "Audit & Details",
-  updates: "Updates",
 };
 
 export const BUTTONS = {

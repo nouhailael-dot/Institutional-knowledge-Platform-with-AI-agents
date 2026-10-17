@@ -1,11 +1,13 @@
-"""WS4: run labels, the pre-redesign backlog grouping, and the write guards.
+"""Run groups and labels in the Review queue, and the write guards.
 
 Two properties matter more than anything else here:
 
   * Grouping is a VIEW. Stored ``source_run_id`` values and provenance are
     identical before and after, and the original run stays visible under Audit
     & Details. The tests assert the stored rows byte for byte.
-  * Grouping is deterministic around the cutoff, including exactly ON it.
+  * Every run is its own group, labelled for what it is. (Runs before the
+    redesign cutoff used to be merged into one "Pre-Redesign Backlog" group;
+    on a long-running database that hid every run.)
 """
 
 from __future__ import annotations
@@ -19,8 +21,6 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.review.store import (  # noqa: E402
-    BACKLOG_GROUP_KEY,
-    BACKLOG_GROUP_LABEL,
     NOT_RECORDED,
     ReviewStore,
     ReviewValidationError,
@@ -68,7 +68,7 @@ def test_the_cutoff_is_configurable_and_rejects_nonsense(monkeypatch):
     assert review_redesign_cutoff() == pytest.approx(CUTOFF_TS)
 
 
-def test_grouping_is_deterministic_around_the_cutoff(store):
+def test_every_run_is_its_own_group_whenever_it_ran(store):
     _insert(store, "before", created_at=CUTOFF_TS - 1,
             source_run_id="run-old", description="Open-web actor discovery")
     _insert(store, "exactly-on", created_at=CUTOFF_TS,
@@ -78,36 +78,45 @@ def test_grouping_is_deterministic_around_the_cutoff(store):
 
     listing = store.list(status="all")
     by_id = {item["candidate_id"]: item for item in listing["candidates"]}
-    # Strictly before the cutoff is backlog; the cutoff instant itself is not.
-    assert by_id["before"]["run_group_key"] == BACKLOG_GROUP_KEY
+    assert by_id["before"]["run_group_key"] == "run-old"
     assert by_id["exactly-on"]["run_group_key"] == "run-edge"
     assert by_id["after"]["run_group_key"] == "run-new"
     # Same input, same output.
     assert store.list(status="all")["run_groups"] == listing["run_groups"]
 
 
-def test_the_backlog_group_comes_first_and_then_the_newest_run(store):
+def test_runs_are_listed_newest_first_each_with_its_own_label(store):
     _insert(store, "old-1", created_at=CUTOFF_TS - 500, source_run_id="run-a",
-            description="Open-web actor discovery")
-    _insert(store, "old-2", created_at=CUTOFF_TS - 400, source_run_id="run-b",
-            description="Architecture V2 verify_actor review")
+            description="Open-web actor discovery · dry_run · run-a")
+    _insert(store, "old-2", created_at=CUTOFF_TS - 400, source_run_id="v2-review:unscoped",
+            description="Architecture V2 geocode_failed review")
     _insert(store, "new-1", created_at=CUTOFF_TS + 100, source_run_id="run-c",
-            description="Open-web actor discovery · manual")
+            description="Discovery request: Water technology in the Great Lakes · live · run-c")
     _insert(store, "new-2", created_at=CUTOFF_TS + 900, source_run_id="run-d",
-            description="Actor update subscription · monthly")
+            description="find companies in the US that focus on water reuse and desalination")
 
     groups = store.list(status="all")["run_groups"]
-    assert [group["key"] for group in groups] == [BACKLOG_GROUP_KEY, "run-d", "run-c"]
-    backlog = groups[0]
-    assert backlog["label"] == BACKLOG_GROUP_LABEL
-    assert backlog["is_backlog"] is True
-    assert backlog["candidate_count"] == 2
-    # The backlog spans several real runs, and names every one of them.
-    assert backlog["source_run_ids"] == ["run-a", "run-b"]
+    # Runs newest first; the map's own checks are ongoing, so they come last.
+    assert [group["key"] for group in groups] == ["run-d", "run-c", "run-a", "map-checks"]
+    labels = {group["key"]: group["label"] for group in groups}
+    assert labels["run-c"].startswith("Discovery request · Water technology in the Great Lakes · ")
+    assert labels["run-a"].startswith("Actor discovery · test run · ")
+    assert labels["map-checks"] == "Map checks"
+    assert labels["run-d"].startswith("Build the Map · find companies in the US that focus on")
+    assert not any(group["is_backlog"] for group in groups)
     # No authenticated identity exists yet, so it is reported as unrecorded and
     # never invented.
-    assert backlog["initiated_by"] == NOT_RECORDED
     assert all(group["initiated_by"] == NOT_RECORDED for group in groups)
+
+
+def test_two_runs_on_the_same_day_are_told_apart_by_the_time(store):
+    _insert(store, "a", created_at=CUTOFF_TS + 3_600, source_run_id="run-a",
+            description="Open-web actor discovery · dry_run · run-a")
+    _insert(store, "b", created_at=CUTOFF_TS + 7_200, source_run_id="run-b",
+            description="Open-web actor discovery · dry_run · run-b")
+    labels = [group["label"] for group in store.list(status="all")["run_groups"]]
+    assert len(set(labels)) == 2
+    assert all(label.endswith(" UTC") for label in labels)
 
 
 def test_the_trigger_is_read_from_the_source_and_never_guessed(store):
@@ -135,7 +144,8 @@ def test_run_labels_hide_uuids_and_stored_provenance_is_untouched(store):
             description=description)
 
     item = store.list(status="all")["candidates"][0]
-    assert item["run_label"] == "Open-web actor discovery · dry_run"
+    assert item["run_label"] == "Actor discovery · test run · Oct 8, 2026"
+    assert "577bd0bd" not in item["run_label"]
     # The label is a projection. The stored values are identical.
     assert item["source_run_id"] == run_id
     assert item["source_description"] == description
@@ -157,12 +167,9 @@ def test_filtering_by_group_never_rewrites_what_is_stored(store):
             "SELECT * FROM review_candidate ORDER BY candidate_id")]
 
     assert [item["candidate_id"] for item in
-            store.list(status="all", run_group=BACKLOG_GROUP_KEY)["candidates"]] == ["old"]
+            store.list(status="all", run_group="run-a")["candidates"]] == ["old"]
     assert [item["candidate_id"] for item in
             store.list(status="all", run_group="run-b")["candidates"]] == ["new"]
-    # A run id that belongs to the backlog is not reachable as its own group,
-    # because the backlog is the group it was put in.
-    assert store.list(status="all", run_group="run-a")["candidates"] == []
 
     with store.connect() as db:
         after = [dict(row) for row in db.execute(
@@ -318,11 +325,9 @@ def test_the_queue_endpoint_exposes_the_run_groups(tmp_path):
         _insert(store, "new", created_at=CUTOFF_TS + 10, source_run_id="run-b",
                 description="Actor update subscription · monthly")
         body = client.get("/api/review/candidates?status=all").json()
-        assert [group["key"] for group in body["run_groups"]] == [BACKLOG_GROUP_KEY, "run-b"]
-        assert body["run_groups"][1]["trigger_label"] == "Subscription"
-        assert body["review_redesign_cutoff"] == CUTOFF_TS
-        filtered = client.get(
-            f"/api/review/candidates?status=all&run_group={BACKLOG_GROUP_KEY}").json()
+        assert [group["key"] for group in body["run_groups"]] == ["run-b", "run-a"]
+        assert body["run_groups"][0]["trigger_label"] == "Subscription"
+        filtered = client.get("/api/review/candidates?status=all&run_group=run-a").json()
         assert [row["candidate_id"] for row in filtered["candidates"]] == ["old"]
     finally:
         for item in patches:
@@ -537,3 +542,54 @@ def test_verifying_a_parked_actor_is_the_ghus_topic_decision(store):
     with pytest.raises(ReviewValidationError):
         store.admission_request("item-1", decision_kind="defer", reviewer="Reviewer",
                                 idempotency_key="k-3", confirmed=True)
+
+
+def test_the_review_reason_says_why_an_item_waits_in_plain_words():
+    from src.review.store import derive_review_reason
+
+    def reason(entity="actor", **metadata):
+        return derive_review_reason(metadata, entity)
+
+    # The sources' internal codes become what they mean.
+    assert reason(review_kind="rubric_band") == "borderline_score"
+    assert reason(review_kind="fuzzy_match") == "possible_duplicate"
+    assert reason(review_kind="geocode_failed") == "location_unplaced"
+    assert reason(review_kind="relationship_review") == "relationship_check"
+    assert reason(review_kind="verify_actor") == "verify_actor"
+    # A discovery result: the agent's own gate sentence names the reason, the
+    # most actionable first.
+    assert reason(source_table="search_candidate", score_band="review", triage_reason=(
+        "Read from edegan.com, but the organisation's own site is tmc.org: the page is "
+        "about it, not by it. Score 0.70 is below the accept threshold 0.80.")) == "third_party_page"
+    assert reason(source_table="search_candidate", score_band="review",
+                  triage_reason="actor rubric score 0.480 -> review") == "borderline_score"
+    assert reason("person", source_table="search_candidate", score_band="auto_high",
+                  triage_reason="person rubric score 1.000 -> auto_high") == "new_person"
+    assert reason(review_run_source="map", workflow="research") == "map_agent"
+    assert reason() is None
+
+
+def test_the_queue_counts_each_waiting_reason_before_filtering_by_one(store):
+    import json as _json
+    for cid, kind in (("a", "geocode_failed"), ("b", "geocode_failed"), ("c", "rubric_band")):
+        _insert(store, cid, created_at=CUTOFF_TS + 1, source_run_id="run-a",
+                description="Open-web actor discovery")
+        with store.connect() as db:
+            db.execute("UPDATE review_candidate SET agent_metadata=? WHERE candidate_id=?",
+                       (_json.dumps({"review_kind": kind}), cid))
+    listing = store.list(status="all", review_reason="borderline_score")
+    assert listing["reason_counts"] == {"location_unplaced": 2, "borderline_score": 1}
+    assert [item["candidate_id"] for item in listing["candidates"]] == ["c"]
+
+
+def test_the_maps_own_checks_are_one_group_whatever_their_topic(store):
+    for cid, run in (("a", "v2-review:topic-1"), ("b", "v2-review:topic-2"), ("c", "v2-review:unscoped")):
+        _insert(store, cid, created_at=CUTOFF_TS + 1, source_run_id=run,
+                description="Architecture V2 verify_actor review")
+    groups = store.list(status="all")["run_groups"]
+    assert [(g["key"], g["label"], g["candidate_count"]) for g in groups] == [("map-checks", "Map checks", 3)]
+    listed = store.list(status="all", run_group="map-checks")["candidates"]
+    assert sorted(item["candidate_id"] for item in listed) == ["a", "b", "c"]
+    # The stored run ids are untouched.
+    assert sorted(item["source_run_id"] for item in listed) == [
+        "v2-review:topic-1", "v2-review:topic-2", "v2-review:unscoped"]

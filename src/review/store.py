@@ -304,16 +304,109 @@ def register_sector_codes(codes) -> None:
     DATABASE_SECTOR_CODES.update(str(code).strip().upper() for code in codes if str(code).strip())
 
 
-def _run_label(description: Any, source_run_id: Any) -> str:
-    """A human-readable run label. No UUIDs: those belong in Audit & Details."""
+# The map's own review items are keyed per topic ("v2-review:<topic>"), which
+# split them into several identically labelled groups. They are one group.
+MAP_CHECKS_PREFIX = "v2-review:"
+MAP_CHECKS_KEY = "map-checks"
+MAP_CHECKS_LABEL = "Map checks"
 
-    raw = str(description or "").strip()
-    cleaned = _UUID_PATTERN.sub("", raw)
-    cleaned = cleaned.replace("·  ·", "·").strip(" ·:—-\t\n")
-    cleaned = " ".join(cleaned.split())
-    if cleaned and cleaned.casefold() != "discovery":
-        return cleaned
-    return "Discovery Run"
+_DISCOVERY_KIND = re.compile(r"^Open-web (actor|event|person) discovery", re.IGNORECASE)
+_REQUEST_TITLE = re.compile(r"^Discovery request:\s*(.+?)\s*(?:·|$)")
+
+
+def _short_day(when: Any) -> str | None:
+    try:
+        stamp = float(when)
+    except (TypeError, ValueError):
+        return None
+    if stamp <= 0:
+        return None
+    return datetime.fromtimestamp(stamp, tz=timezone.utc).strftime("%b %d, %Y").replace(" 0", " ")
+
+
+def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
+    """What a run IS, in words a reviewer reads - never a UUID or a code.
+
+        Discovery request · Water technology organizations in the Great Lakes · Oct 15, 2026
+        Actor discovery · test run · Oct 7, 2026
+        Map checks · locations and links
+        Build the Map · find companies in the US that focus on…
+    """
+
+    raw = " ".join(str(description or "").split())
+    run_id = str(source_run_id or "")
+    day = _short_day(when)
+    request = _REQUEST_TITLE.match(raw)
+    kind = _DISCOVERY_KIND.match(raw)
+    if request:
+        parts = ["Discovery request", request.group(1)]
+    elif kind:
+        parts = [f"{kind.group(1).capitalize()} discovery"]
+        if "dry_run" in raw or "dry run" in raw.casefold():
+            parts.append("test run")
+    elif run_id.startswith(MAP_CHECKS_PREFIX) or raw.startswith("Architecture V2"):
+        # Review items the map itself raised - a verification, a place that
+        # would not geocode, a link or a hub to confirm. No run is behind them,
+        # so no date; the review reason says which check each one is.
+        return MAP_CHECKS_LABEL
+    elif raw:
+        # A Build the Map run: its description is what the person asked for.
+        words = _UUID_PATTERN.sub("", raw).split()
+        prompt = " ".join(words[:8]) + ("…" if len(words) > 8 else "")
+        parts = ["Build the Map", prompt]
+    else:
+        parts = ["Discovery run"]
+    if day:
+        parts.append(day)
+    return " · ".join(part for part in parts if part)
+
+
+# Why an item is waiting for a person, in plain words. The queue's review
+# reason used to be the source's internal code - "rubric_band", "fuzzy_match",
+# "relationship_review" - or nothing at all for most discovery results. It is
+# now one of these, derived only from what the source recorded: the kind of
+# review item, or the agent's own gate sentences (agents/discovery/search/
+# actor_quality.py). Nothing is inferred from the payload.
+_KIND_REASONS = {
+    "fuzzy_match": "possible_duplicate",
+    "possible_duplicate": "possible_duplicate",
+    "rubric_band": "borderline_score",
+    "geocode_failed": "location_unplaced",
+    "relationship_review": "relationship_check",
+}
+# Most actionable first: the first sentence found names the reason.
+_GATE_REASONS = (
+    ("the page is about it, not by it", "third_party_page"),
+    ("No official website is stated", "website_unverified"),
+    ("presents this as a web page", "page_not_organisation"),
+    ("does not mention the requested sub-topic", "focus_unconfirmed"),
+    ("rubric criteria are evidenced", "thin_evidence"),
+    ("does not establish that this is an operating organisation", "thin_evidence"),
+    ("names no concrete programmes", "thin_evidence"),
+    ("description is missing, too short, or a tagline", "weak_description"),
+    ("engagement priority", "low_priority"),
+    ("below the accept threshold", "borderline_score"),
+)
+
+
+def derive_review_reason(metadata: dict[str, Any], entity_type: Any = None) -> str | None:
+    kind = str(metadata.get("review_kind") or "").strip()
+    if kind:
+        return _KIND_REASONS.get(kind, kind)
+    if not metadata.get("source_table"):
+        if metadata.get("review_run_source") or metadata.get("workflow"):
+            return "map_agent"
+        return None
+    said = str(metadata.get("triage_reason") or "")
+    for fragment, reason in _GATE_REASONS:
+        if fragment in said:
+            return reason
+    if str(entity_type or "") == "person":
+        # Section 6: a person is never created without a person deciding.
+        return "new_person"
+    if metadata.get("score_band") == "review" or "-> review" in said:
+        return "borderline_score"
+    return "new_record"
 
 
 def _validate_actor_classification(payload: dict[str, Any]) -> None:
@@ -794,17 +887,18 @@ class ReviewStore:
         item["rejection_reasons"] = list(REJECTION_REASONS)
         item["top_matches"] = item.get("agent_metadata", {}).get("top_matches") or []
         metadata = item.get("agent_metadata") or {}
-        # The review reason drives the badge and the queue filter. It comes from
-        # the source's own review_kind; it is never inferred from the payload.
-        item["review_reason"] = str(metadata.get("review_kind") or "").strip() or None
+        # The review reason drives the badge and the queue filter: why this item
+        # is waiting for a person, from what its source recorded (see
+        # derive_review_reason). Never inferred from the payload.
+        item["review_reason"] = derive_review_reason(metadata, item.get("entity_type"))
         item["record_status"] = str(metadata.get("record_status") or "").strip() or None
-        # WS4: view-level run grouping. Nothing stored is rewritten.
-        created_at = item.get("created_at") or 0
-        is_backlog = float(created_at) < review_redesign_cutoff()
-        item["run_group_key"] = (
-            BACKLOG_GROUP_KEY if is_backlog else str(item.get("source_run_id") or "")
-        )
-        item["run_label"] = _run_label(item.get("source_description"), item.get("source_run_id"))
+        # View-level run grouping: one group per run, each with its own label.
+        # (Runs before the redesign cutoff used to be merged into one backlog
+        # group, which on a long-running database hid every run.)
+        run_id = str(item.get("source_run_id") or "")
+        item["run_group_key"] = MAP_CHECKS_KEY if run_id.startswith(MAP_CHECKS_PREFIX) else run_id
+        item["run_label"] = _run_label(item.get("source_description"), item.get("source_run_id"),
+                                       item.get("created_at"))
         metadata = item.get("agent_metadata") or {}
         item["run_trigger"] = _run_trigger(
             item.get("source_description"), item.get("source_run_id"),
@@ -845,16 +939,12 @@ class ReviewStore:
             where.append("(lower(display_name) LIKE ? OR lower(reviewed_payload) LIKE ?)")
             needle = f"%{search.strip().casefold()}%"
             params.extend((needle, needle))
-        if run_group and run_group != "all":
-            # The backlog spans every run created before the cutoff, so it is a
-            # time filter rather than a run-id filter. Either way nothing stored
-            # is touched.
-            if run_group == BACKLOG_GROUP_KEY:
-                where.append("created_at < ?")
-                params.append(review_redesign_cutoff())
-            else:
-                where.append("source_run_id=? AND created_at >= ?")
-                params.extend((run_group, review_redesign_cutoff()))
+        if run_group == MAP_CHECKS_KEY:
+            where.append("source_run_id LIKE ?")
+            params.append(f"{MAP_CHECKS_PREFIX}%")
+        elif run_group and run_group != "all":
+            where.append("source_run_id=?")
+            params.append(run_group)
         clause = " WHERE " + " AND ".join(where) if where else ""
         with self.connect() as db:
             rows = db.execute(
@@ -878,6 +968,13 @@ class ReviewStore:
                 item for item in candidates
                 if str(item["reviewed_payload"].get("actor_category") or "") == actor_category
             ]
+        # The reason filter offers only the reasons actually waiting, with how
+        # many: counted before it is applied, so choosing one keeps the others
+        # in the list.
+        reason_counts: dict[str, int] = {}
+        for item in candidates:
+            if item.get("review_reason"):
+                reason_counts[item["review_reason"]] = reason_counts.get(item["review_reason"], 0) + 1
         if review_reason and review_reason != "all":
             candidates = [item for item in candidates if item.get("review_reason") == review_reason]
         if region and region != "all":
@@ -893,20 +990,21 @@ class ReviewStore:
             "counts": {key: counts.get(key, 0) for key in STATUSES},
             "source_maps": maps,
             "run_groups": self.run_groups(),
+            "reason_counts": dict(sorted(reason_counts.items(), key=lambda kv: (-kv[1], kv[0]))),
             "review_redesign_cutoff": review_redesign_cutoff(),
             "admission_configured": self.admission_configured,
             "last_sync": self.sync_state(),
         }
 
     def run_groups(self) -> list[dict[str, Any]]:
-        """Queue groups: the Pre-Redesign Backlog, then one group per later run.
+        """Queue groups: one per run, newest first, each with a readable label.
 
-        A pure projection over what is already stored (WS4 task 2). The order is
-        deterministic: the backlog first, then newest run first, then by run id,
-        so the same data always renders the same queue.
+        A pure projection over what is already stored. Deterministic: newest
+        run first, then by run id, so the same data always renders the same
+        queue. Discovery requests, open-web runs, Build the Map runs and the
+        map's own checks sit side by side, each labelled for what it is.
         """
 
-        cutoff = review_redesign_cutoff()
         with self.connect() as db:
             rows = db.execute(
                 "SELECT source_run_id, max(source_description) AS description, "
@@ -915,54 +1013,51 @@ class ReviewStore:
                 "sum(CASE WHEN status='pending_review' THEN 1 ELSE 0 END) AS pending_count "
                 "FROM review_candidate GROUP BY source_run_id"
             ).fetchall()
-
-        backlog: dict[str, Any] = {
-            "key": BACKLOG_GROUP_KEY,
-            "label": BACKLOG_GROUP_LABEL,
-            "trigger": None,
-            "trigger_label": None,
-            "initiated_by": NOT_RECORDED,
-            "candidate_count": 0,
-            "pending_count": 0,
-            "earliest": None,
-            "latest": None,
-            "is_backlog": True,
-            "source_run_ids": [],
-        }
         groups: list[dict[str, Any]] = []
+        checks: dict[str, Any] | None = None
         for row in rows:
-            earliest = float(row["earliest"] or 0)
-            if earliest < cutoff:
-                backlog["candidate_count"] += int(row["candidate_count"] or 0)
-                backlog["pending_count"] += int(row["pending_count"] or 0)
-                backlog["source_run_ids"].append(row["source_run_id"])
-                for key, value in (("earliest", earliest), ("latest", float(row["latest"] or 0))):
-                    current = backlog[key]
-                    if current is None:
-                        backlog[key] = value
-                    else:
-                        backlog[key] = min(current, value) if key == "earliest" else max(current, value)
+            if str(row["source_run_id"] or "").startswith(MAP_CHECKS_PREFIX):
+                if checks is None:
+                    checks = {
+                        "key": MAP_CHECKS_KEY, "label": MAP_CHECKS_LABEL, "trigger": None,
+                        "trigger_label": None, "initiated_by": NOT_RECORDED,
+                        "candidate_count": 0, "pending_count": 0, "earliest": 0.0,
+                        "latest": 0.0, "is_backlog": False, "source_run_ids": [],
+                    }
+                checks["candidate_count"] += int(row["candidate_count"] or 0)
+                checks["pending_count"] += int(row["pending_count"] or 0)
+                checks["latest"] = max(checks["latest"], float(row["latest"] or 0))
+                checks["source_run_ids"].append(row["source_run_id"])
                 continue
             trigger = _run_trigger(row["description"], row["source_run_id"])
-            # The recorded trigger lives per candidate, not on this aggregate
-            # row, so the group label uses the derivation until the backend run
-            # model is joined in. Candidates already carry the recorded value.
             groups.append({
                 "key": row["source_run_id"],
-                "label": _run_label(row["description"], row["source_run_id"]),
+                "label": _run_label(row["description"], row["source_run_id"], row["earliest"]),
                 "trigger": trigger,
                 "trigger_label": TRIGGER_LABELS[trigger],
                 "initiated_by": NOT_RECORDED,
                 "candidate_count": int(row["candidate_count"] or 0),
                 "pending_count": int(row["pending_count"] or 0),
-                "earliest": earliest,
+                "earliest": float(row["earliest"] or 0),
                 "latest": float(row["latest"] or 0),
                 "is_backlog": False,
                 "source_run_ids": [row["source_run_id"]],
             })
         groups.sort(key=lambda group: (-group["latest"], str(group["key"])))
-        backlog["source_run_ids"].sort(key=str)
-        return ([backlog] if backlog["candidate_count"] else []) + groups
+        if checks is not None:
+            checks["source_run_ids"].sort(key=str)
+            # Ongoing rather than a run: listed after the runs, always in the same place.
+            groups.append(checks)
+        # Two runs of the same kind on the same day would read identically
+        # ("Actor discovery · test run · Oct 7, 2026" twice): give those the time.
+        seen: dict[str, int] = {}
+        for group in groups:
+            seen[group["label"]] = seen.get(group["label"], 0) + 1
+        for group in groups:
+            if seen[group["label"]] > 1 and group["earliest"]:
+                stamp = datetime.fromtimestamp(group["earliest"], tz=timezone.utc)
+                group["label"] = f"{group['label']} · {stamp:%H:%M} UTC"
+        return groups
 
     @staticmethod
     def validate_payload(entity_type: str, payload: dict[str, Any]) -> dict[str, Any]:

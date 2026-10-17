@@ -32,14 +32,9 @@ import {
   reviewRunLabel,
   reviewStatusLabel,
   runChip,
-  SUBSCRIPTION_STATUS_LABELS,
   hubProposalPlace,
-  requestedViaLabel,
   whyMatchedFact,
   thresholdLabel,
-  subscriptionPeriodLabel,
-  subscriptionScopeLabel,
-  subscriptionStatusLabel,
   validateReviewDraft,
 } from '../frontend/review.js';
 import {
@@ -555,8 +550,9 @@ test('every review reason has its own label, and none reads as a decision', () =
   assert.equal(reviewReasonLabel('verify_actor'), 'Awaiting Verification');
   assert.equal(reviewReasonLabel('verify_person'), 'Awaiting Person Verification');
   assert.equal(reviewReasonLabel('verify_event'), 'Awaiting Event Verification');
-  assert.equal(reviewReasonLabel('hub_assignment'), 'Hub Assignment');
-  assert.equal(reviewReasonLabel('same_topic_overlap'), 'Same Topic Overlap');
+  // Plain words for what the reviewer is asked to do, not the source's code.
+  assert.equal(reviewReasonLabel('hub_assignment'), 'Hub to Confirm');
+  assert.equal(reviewReasonLabel('same_topic_overlap'), 'Overlaps Another Hub');
 });
 
 // ------------------------------- agreement with the database's own vocabulary
@@ -760,96 +756,25 @@ test('changing the actor category never discards what the reviewer typed', () =>
   assert.match(component, /window\.confirm\(SENTENCES\.categoryChangeWarning\)/);
 });
 
-// ---------------------------------------------------- WS6 the Updates tab
+// --------------------------------------- requests and runs live in Discovery
 
-test('Review has an Updates tab that does not disturb the queue', () => {
-  assert.match(component, /class="review-tabs"/);
-  assert.match(component, /SECTIONS\.updates/);
-  assert.match(component, /request\("\/api\/review\/subscriptions"\)/);
-  // The queue and the updates view are alternatives, not stacked panels.
-  assert.match(component, /view === "queue" && html`<div class="review-workspace">/);
-  assert.match(component, /view === "updates" && html`<section class="review-updates"/);
-  // The list is loaded once, when the tab is first opened.
-  assert.match(component, /if \(view !== "updates" \|\| updates\.loaded\) return;/);
+test('Review has no Updates tab: Discovery shows the requests and their runs', () => {
+  assert.doesNotMatch(component, /view === "updates"/);
+  assert.doesNotMatch(component, /setView\("updates"\)/);
+  assert.doesNotMatch(component, /\/api\/review\/subscriptions/);
+  assert.equal(SECTIONS.updates, undefined);
 });
 
-test('a subscription scope reads as the intersection it is', () => {
-  // Sector AGRI plus state CA means agriculture actors in California, not
-  // everything in either, so the joining word is "and".
-  assert.equal(
-    subscriptionScopeLabel({sector_codes: ['AGRI'], state_code: 'CA'}),
-    'Agriculture and CA',
-  );
-  assert.equal(
-    subscriptionScopeLabel({actor_ids: ['a', 'b'], city: 'Davis', country: 'United States'}),
-    '2 named actors and Davis, United States',
-  );
-  assert.equal(subscriptionScopeLabel({actor_ids: ['a']}), '1 named actor');
-  assert.equal(subscriptionScopeLabel({topic_ids: ['t1', 't2']}), '2 topics');
-  // An unscoped subscription would sweep everything, so it says so rather than
-  // rendering as an innocuous blank.
-  assert.equal(subscriptionScopeLabel({}), SENTENCES.subscriptionNoScope);
-  assert.match(SENTENCES.subscriptionNoScope, /must not run/);
-});
-
-test('subscription statuses are labelled and only one of them runs', () => {
-  for (const [status, label] of Object.entries(SUBSCRIPTION_STATUS_LABELS)) {
-    assert.equal(subscriptionStatusLabel(status), label);
-    assert.ok(/^[A-Z]/.test(label));
+test('every review reason a source sends has a plain label and a reason why', async () => {
+  const {reviewReasonLabel, reviewReasonHint} = await import('../frontend/review.js');
+  for (const code of ['borderline_score', 'third_party_page', 'website_unverified',
+    'page_not_organisation', 'focus_unconfirmed', 'thin_evidence', 'weak_description',
+    'low_priority', 'new_person', 'new_record', 'possible_duplicate', 'location_unplaced',
+    'relationship_check', 'map_agent']) {
+    const label = reviewReasonLabel(code);
+    assert.ok(label && !label.includes('_') && label !== code.replaceAll('_', ' '), code);
+    assert.ok(reviewReasonHint(code).length > 20, `${code} has no explanation`);
   }
-  assert.deepEqual(Object.keys(SUBSCRIPTION_STATUS_LABELS),
-    ['active', 'paused', 'expired', 'cancelled']);
-  // An unrecognised status is shown as stored rather than hidden.
-  assert.equal(subscriptionStatusLabel('draining'), 'draining');
-});
-
-test('the Updates tab shows words, not database codes', () => {
-  // Found by looking at the rendered tab: requested_via was printing its raw
-  // code. review.js's own rule is that debug strings never reach the main view.
-  assert.equal(requestedViaLabel('map_verification'), 'Map Verification');
-  assert.equal(requestedViaLabel('review_updates'), 'Review Updates');
-  assert.deepEqual(Object.keys(REQUESTED_VIA), ['map_verification', 'review_updates']);
-  // An unrecognised channel is still readable rather than blank, because the
-  // value is real data even when this screen does not know the code yet.
-  assert.equal(requestedViaLabel('monthly_report'), 'monthly report');
-  assert.equal(requestedViaLabel(null), '');
-  // And the tab renders through the label, never the bare field.
-  assert.match(component, /requestedViaLabel\(item\.requested_via\)/);
-  assert.doesNotMatch(component, /<dd>\$\{item\.requested_via\}/);
-});
-
-test('a subscription period reads in the same date form as its next due date', () => {
-  // Found by looking at the rendered tab: the period printed ISO "2026-08-30"
-  // beside a localised Next Due. start_date is a calendar date and last_run_at
-  // is epoch seconds, so the two cannot share one formatter.
-  const line = subscriptionPeriodLabel({
-    cadence: 'monthly', start_date: '2026-08-30', end_date: '2027-04-07',
-  });
-  assert.match(line, /^Subscription · Monthly · /);
-  // Assembled as one string, because htm drops the whitespace at a line break
-  // and rendered this as "Monthly· 30/08/2026to 07/04/2027".
-  assert.match(line, / to /);
-  assert.doesNotMatch(line, /\S·|·\S|\d{4}to/);
-  assert.doesNotMatch(line, /2026-08-30/);
-  // A date-only value is built from its parts, so a reader west of Greenwich is
-  // not shown the previous day.
-  assert.match(component, /function formatDay[\s\S]*?split\("-"\)/);
-  assert.doesNotMatch(component, /formatDate\(item\.(start|end)_date\)/);
-  // A period with no recorded end says which kind of missing it is.
-  assert.match(
-    subscriptionPeriodLabel({cadence: 'weekly', start_date: '2026-03-23'}),
-    /to Not Provided$/,
-  );
-});
-
-test('the Updates tab never invents a requester and never creates a subscription', () => {
-  // requested_by is null until authentication exists.
-  assert.match(component, /item\.requested_by \|\| SENTENCES\.noRunRecorded/);
-  // Read-only: no POST, PATCH or DELETE against the subscriptions endpoint.
-  const calls = component.match(/\/api\/review\/subscriptions[^`]*/g) || [];
-  assert.equal(calls.length, 1);
-  assert.doesNotMatch(component, /subscriptions`?,\s*\{\s*method/);
-  assert.match(SENTENCES.subscriptionsExplain, /event update schedule is separate/);
 });
 
 test('a hub proposal says it is only a proposal, with its margin', () => {
@@ -944,4 +869,24 @@ test('a box the Light Pull read for says which pages it checked', async () => {
   assert.deepEqual(rows.um6p_ocp_connection.pagesRead, pages);
   // A box with no fact at all, while others were read, is still plain "Not Found".
   assert.equal(missingWithPages(rows.recent_activity), rows.recent_activity.state);
+});
+
+test('the reason filter offers only reasons that are waiting, most first', async () => {
+  const {reasonOptions} = await import('../frontend/review.js');
+  assert.deepEqual(reasonOptions({location_unplaced: 154, borderline_score: 97, map_agent: 0}),
+    [['location_unplaced', 154], ['borderline_score', 97]]);
+  // A chosen reason stays in the list even when nothing matches it any more.
+  assert.deepEqual(reasonOptions({borderline_score: 3}, 'possible_duplicate'),
+    [['borderline_score', 3], ['possible_duplicate', 0]]);
+  assert.deepEqual(reasonOptions(undefined), []);
+});
+
+test('a run reads as what it was and how many items wait, not "Manual"', async () => {
+  const {runOptionLabel} = await import('../frontend/review.js');
+  assert.equal(runOptionLabel({label: 'Actor discovery · test run · Oct 7, 2026',
+    trigger: 'manual', trigger_label: 'Manual', pending_count: 15}),
+    'Actor discovery · test run · Oct 7, 2026 (15)');
+  assert.equal(runOptionLabel({label: 'Discovery request · Water · Oct 15, 2026',
+    trigger: 'subscription', trigger_label: 'Subscription', pending_count: 0}),
+    'Discovery request · Water · Oct 15, 2026 · Subscription');
 });

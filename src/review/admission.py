@@ -3,12 +3,49 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 import os
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Callable
+
+
+# The backend's own refusals, in words a reviewer can act on. Only these named
+# exceptions are passed through; anything else (a traceback, a driver error)
+# stays a generic message, so no internal detail reaches the page.
+_REFUSAL = re.compile(r"^(?:\w+\.)*(AdmissionConflict|AdmissionValidationError): (.+)$")
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_EXACT_MATCH = re.compile(r"\((website_domain|name_or_alternate_name): (.+?) [0-9a-f-]{36}\)")
+
+
+def refusal_reason(stderr: str | None, returncode: int) -> str:
+    """Why GHUS refused, from the backend's last named refusal, else the exit code.
+
+    "Admission process exited with code 1" told a reviewer nothing; the backend
+    had already said the organisation was on the map under the same website.
+    """
+    # Python 3.13 colours tracebacks when the environment asks for colour
+    # ("\x1b[1;35mAdmissionConflict\x1b[0m: ..."), which hid every refusal.
+    plain = _ANSI.sub("", str(stderr or ""))
+    for line in reversed(plain.strip().splitlines()):
+        found = _REFUSAL.match(line.strip())
+        if not found:
+            continue
+        kind, message = found.groups()
+        match = _EXACT_MATCH.search(message)
+        if kind == "AdmissionConflict" and match:
+            rule, name = match.groups()
+            how = "the same website" if rule == "website_domain" else "the same name"
+            return (f"It is already on the map as “{name}” ({how}). "
+                    "Choose “Same as existing” to add this evidence to it, or Defer.")
+        if kind == "AdmissionConflict":
+            return ("It may already be on the map: a close match was found. "
+                    "Choose “Same as existing” with the right record, or Defer.")
+        return message[:300]
+    return f"Admission process exited with code {returncode}."
 
 
 class AdmissionBridgeError(RuntimeError):
@@ -66,6 +103,10 @@ class AdmissionBridge:
             env = os.environ.copy()
             env["DATABASE_URL"] = str(self.database_url)
             env["REVIEW_ADMISSION_WRITES_ENABLED"] = "true"
+            # Plain error output, so the refusal can be read and shown.
+            env["NO_COLOR"] = "1"
+            env["PYTHON_COLORS"] = "0"
+            env.pop("FORCE_COLOR", None)
             completed = self._run_command(
                 [
                     self.python_executable, "-m", "agents.review.admission",
@@ -81,9 +122,16 @@ class AdmissionBridge:
                 check=False,
             )
             if completed.returncode != 0:
+                # The backend's last error line, for whoever runs the server: a
+                # refusal (duplicate, invalid field) or an environment failure.
+                tail = [line for line in str(getattr(completed, "stderr", "") or "").splitlines()
+                        if line.strip()]
+                logging.getLogger(__name__).warning(
+                    "GHUS admission exited %s: %s", completed.returncode,
+                    _ANSI.sub("", tail[-1] if tail else "(no error output)")[:400])
                 raise AdmissionBridgeError(
                     "GHUS rejected the decision; no local final decision was recorded. "
-                    f"Admission process exited with code {completed.returncode}."
+                    + refusal_reason(getattr(completed, "stderr", ""), completed.returncode)
                 )
             try:
                 outcome = json.loads(completed.stdout)
