@@ -20,6 +20,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Callable
 
@@ -55,6 +56,9 @@ class DiscoveryBridge:
             python_executable
             or os.environ.get("GHUS_DISCOVERY_PYTHON")
             or os.environ.get("GHUS_ADMISSION_PYTHON")
+            # This app's interpreter: a bare "python" from PATH may lack the
+            # backend's dependencies (the admission bridge failed that way).
+            or sys.executable
             or "python"
         )
         self.database_url = database_url or os.environ.get("DISCOVERY_REQUESTS_DATABASE_URL")
@@ -122,8 +126,28 @@ class DiscoveryBridge:
             log.close()
         return {"started": True, "subscription_id": subscription_id}
 
+    def update_actor(self, actor_id: str, *, topic: str | None, fields: str,
+                     live: bool) -> dict[str, Any]:
+        """Re-read one existing actor's own pages for the boxes asked for.
+
+        A preview reads and compares, and writes nothing. ``live`` is a person
+        pressing "Update"; the backend then writes through its approved fact
+        writer, and never lets a silent page overwrite a recorded value.
+        """
+        if not _UUID.match(actor_id or ""):
+            raise DiscoveryBridgeError("unknown actor", rejected=True)
+        arguments = ["update", "--actor-id", actor_id, "--fields", fields or ""]
+        if topic:
+            arguments += ["--topic", topic]
+        if live:
+            arguments.append("--live")
+        return self._call(arguments, module="agents.collection.actor_updates",
+                          timeout=300,
+                          extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"} if live else None)
+
     # ------------------------------------------------------------- plumbing
-    def _call(self, arguments: list[str]) -> dict[str, Any]:
+    def _call(self, arguments: list[str], *, module: str = "agents.collection.discovery_requests",
+              timeout: float = 120, extra_env: dict[str, str] | None = None) -> dict[str, Any]:
         if not self.configured:
             raise DiscoveryBridgeError(
                 "Discovery requests are not configured. Set GHUS_DISCOVERY_PROJECT_ROOT and "
@@ -131,15 +155,15 @@ class DiscoveryBridge:
             )
         env = os.environ.copy()
         env["DATABASE_URL"] = str(self.database_url)
+        env.update(extra_env or {})
         try:
             completed = self._run_command(
-                [self.python_executable, "-m", "agents.collection.discovery_requests",
-                 *arguments],
+                [self.python_executable, "-m", module, *arguments],
                 cwd=self.project_root,
                 env=env,
                 text=True,
                 capture_output=True,
-                timeout=120,
+                timeout=timeout,
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:

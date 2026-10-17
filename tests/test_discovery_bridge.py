@@ -144,3 +144,44 @@ def test_run_now_starts_a_live_run_of_that_request_only(tmp_path):
     with pytest.raises(DiscoveryBridgeError):
         bridge.run_now("../../etc")
     assert len(started) == 1
+
+
+def test_an_actor_update_runs_the_backend_and_only_a_live_one_may_write(tmp_path):
+    """Preview reads and writes nothing; only "Update the map" sets the write switch."""
+    import json as _json
+    import sys as _sys
+    import types
+
+    from src.discovery.bridge import DiscoveryBridge
+
+    root = tmp_path / "backend"
+    (root / "agents" / "collection").mkdir(parents=True)
+    (root / "agents" / "collection" / "discovery_requests.py").write_text("", encoding="utf-8")
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs["env"], kwargs["timeout"]))
+        return types.SimpleNamespace(returncode=0, stdout=_json.dumps({"ok": True, "boxes": []}))
+
+    bridge = DiscoveryBridge(project_root=root, database_url="postgresql://x/y_test",
+                             run_command=fake_run)
+    actor = "11111111-2222-3333-4444-555555555555"
+    bridge.update_actor(actor, topic="ENERGY", fields="funding_activity", live=False)
+    bridge.update_actor(actor, topic=None, fields="", live=True)
+
+    preview, live = calls
+    assert preview[0][:3] == [_sys.executable, "-m", "agents.collection.actor_updates"]
+    assert "--live" not in preview[0] and "ACTOR_UPDATE_WRITES_ENABLED" not in preview[1]
+    assert preview[0][preview[0].index("--topic") + 1] == "ENERGY"
+    assert "--live" in live[0] and live[1]["ACTOR_UPDATE_WRITES_ENABLED"] == "true"
+    assert preview[2] >= 300  # reading three pages and calling the model takes time
+
+
+def test_an_actor_update_refuses_an_id_that_is_not_one():
+    import pytest
+
+    from src.discovery.bridge import DiscoveryBridge, DiscoveryBridgeError
+
+    with pytest.raises(DiscoveryBridgeError):
+        DiscoveryBridge(database_url="postgresql://x/y_test").update_actor(
+            "'; drop table actor; --", topic=None, fields="", live=True)

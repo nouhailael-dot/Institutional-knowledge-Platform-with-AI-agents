@@ -278,6 +278,107 @@ export function resolveDraft(form, options = {}) {
   return resolved;
 }
 
+// ------------------------------------------------------ specific actor updates
+
+/** What a person can ask to refresh on one actor; ids are backend presets. */
+export const ACTOR_UPDATE_SCOPES = [
+  {id: "funding_activity", label: "Funding & recent activity"},
+  {id: "connections", label: "International & UM6P/OCP links"},
+  {id: "", label: "Every box"},
+];
+
+/** One word per outcome, the way the backend (actor_updates.compare) means it. */
+export const OUTCOME_LABELS = {
+  filled: "Filled",
+  updated: "Updated",
+  confirmed: "Confirmed",
+  unchanged: "Kept",
+  "not stated": "Not stated",
+  refused: "Refused",
+};
+
+const BOX_LABELS = {
+  funding_signal: "Funding",
+  recent_activity: "Recent activity",
+  international_connection: "International links",
+  um6p_ocp_connection: "UM6P / OCP link",
+  why_matched: "Why it matters",
+  location: "Location",
+};
+
+export function boxLabel(field) {
+  const known = BOX_LABELS[field];
+  if (known) return known;
+  const words = String(field || "").replaceAll("_", " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A recorded value in one readable line: "Aug 12, 2026 — Opened ...". */
+export function factLine(value) {
+  if (value === null || value === undefined || value === "") return "";
+  let v = value;
+  if (typeof v === "string") {
+    try { v = JSON.parse(v); } catch { return v; }
+  }
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    if (v.date && v.description) return `${v.date} — ${v.description}`;
+    if (v.reason) return v.reason;
+    return Object.values(v).filter((x) => x !== null && x !== "").join(" · ");
+  }
+  if (Array.isArray(v)) return v.map(factLine).join("; ");
+  return String(v);
+}
+
+/** The query string for an actor search: words typed plus the chosen group. */
+export function actorSearchParams(query, group = {}) {
+  const params = new URLSearchParams();
+  if (String(query || "").trim()) params.set("q", String(query).trim());
+  if (group.sector) params.set("sector", group.sector);
+  if (group.category) params.set("category", group.category);
+  if (group.state) params.set("state", group.state);
+  if (group.everyone) params.set("everyone", "true");
+  return params.toString();
+}
+
+/**
+ * A name split around what was typed, for highlighting a suggestion:
+ * "CPower Energy" + "pow" -> [{"C"}, {"Pow", match}, {"er Energy"}].
+ * Case-insensitive; every occurrence; plain text in, plain text out.
+ */
+export function highlightParts(text, query) {
+  const source = String(text || "");
+  const needle = String(query || "").trim();
+  if (!needle) return [{text: source, match: false}];
+  const parts = [];
+  const lower = source.toLowerCase();
+  const target = needle.toLowerCase();
+  let at = 0;
+  for (let hit = lower.indexOf(target); hit !== -1; hit = lower.indexOf(target, at)) {
+    if (hit > at) parts.push({text: source.slice(at, hit), match: false});
+    parts.push({text: source.slice(hit, hit + needle.length), match: true});
+    at = hit + needle.length;
+  }
+  if (at < source.length) parts.push({text: source.slice(at), match: false});
+  return parts.length ? parts : [{text: source, match: false}];
+}
+
+/** "17 actors · Water · Research centre · showing 12" - what the list is drawn from. */
+export function groupCaption(total, shown, group = {}, sectors = [], states = []) {
+  const sector = group.sector && ((sectors.find((s) => s.code === group.sector) || {}).name || group.sector);
+  const type = group.category && (CATEGORY_LABELS[group.category] || group.category);
+  const state = group.state && ((states.find((s) => s.code === group.state) || {}).name || group.state);
+  return [`${total} ${total === 1 ? "actor" : "actors"}`, sector, type, state,
+    shown < total ? `showing ${shown}` : null].filter(Boolean).join(" · ");
+}
+
+/** "1 updated · 1 kept", most consequential first. */
+export function outcomeSummary(counts = {}) {
+  return ["filled", "updated", "confirmed", "unchanged", "not stated", "refused"]
+    .filter((key) => counts[key])
+    .map((key) => `${counts[key]} ${OUTCOME_LABELS[key].toLowerCase()}`)
+    .join(" · ");
+}
+
 // What the form sends. Empty optional fields are left out, never sent blank.
 export function draftPayload(form) {
   const payload = {
@@ -351,6 +452,201 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       <span class="discovery-label">${label}</span>${children}
       ${error && html`<small class="field-error">${error}</small>`}
     </div>`;
+  }
+
+  function ActorUpdates({onFindNew, sectors, states}) {
+    const [query, setQuery] = useState("");
+    const [group, setGroup] = useState({sector: "", category: "", state: "", everyone: false});
+    const [results, setResults] = useState([]);
+    const [total, setTotal] = useState(0);
+    const [searched, setSearched] = useState(null);
+    const [open, setOpen] = useState(false);
+    const [active, setActive] = useState(0);
+    const [selected, setSelected] = useState(null);
+    const [scope, setScope] = useState("funding_activity");
+    const [topic, setTopic] = useState("");
+    const [busy, setBusy] = useState("");
+    const [result, setResult] = useState(null);
+    const [error, setError] = useState("");
+    // Every sector (the page's own Discovery options), so an actor with no
+    // sector link yet can still be updated: facts are kept per sector, and
+    // choosing it is a person's decision.
+    const allSectors = sectors || [];
+    const grouped = Boolean(group.sector || group.category || group.state);
+
+    // Suggestions as the person types, within the chosen group; with a group
+    // chosen and nothing typed, the group itself is listed. Last answer wins.
+    useEffect(() => {
+      const q = query.trim();
+      if (q.length < 2 && !grouped) { setResults([]); setTotal(0); setSearched(null); return undefined; }
+      let live = true;
+      const timer = setTimeout(async () => {
+        try {
+          const body = await api(`/api/discovery/actors?${actorSearchParams(q, group)}`);
+          if (live) {
+            setResults(body.actors || []); setTotal(body.total || 0);
+            setSearched(q); setActive(0); setError("");
+          }
+        } catch (err) { if (live) setError(err.message); }
+      }, 200);
+      return () => { live = false; clearTimeout(timer); };
+    }, [query, group.sector, group.category, group.state, group.everyone]);
+
+    function setGroupField(patch) {
+      setGroup((g) => ({...g, ...patch})); setSelected(null); setResult(null); setOpen(true);
+    }
+
+    function onKey(e) {
+      if (!results.length) return;
+      if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((i) => (i + 1) % results.length); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => (i - 1 + results.length) % results.length); }
+      else if (e.key === "Enter" || (e.key === "Tab" && open && query.trim())) {
+        e.preventDefault(); choose(results[active] || results[0]);
+      } else if (e.key === "Escape") { setOpen(false); }
+    }
+
+    function choose(actor) {
+      setSelected(actor); setResult(null); setError(""); setOpen(false);
+      setQuery(actor.name);
+      setTopic((actor.sectors || [])[0] || group.sector || "");
+    }
+
+    async function run(live) {
+      if (!selected) return;
+      if (live && !window.confirm(
+        `Read ${selected.name}'s own pages now and write what changed to the map?`)) return;
+      setBusy(live ? "live" : "preview"); setError(""); setResult(null);
+      try {
+        setResult(await api(`/api/discovery/actors/${selected.actor_id}/update`, {
+          method: "POST", body: JSON.stringify({topic: topic || null, fields: scope, live}),
+        }));
+      } catch (err) { setError(err.message); }
+      setBusy("");
+    }
+
+    const where = (a) => [a.city, a.state].filter(Boolean).join(", ");
+    return html`<section class="discovery-card actor-updates">
+      <p class="muted actor-updates-lead">Pick an organization already on the map. The agent
+        re-reads its own website and tells you what changed — nothing is written until you say so.</p>
+
+      <div class="actor-group" role="group" aria-label="Which actors">
+        <select aria-label="Sector" value=${group.sector} onChange=${(e) => setGroupField({sector: e.target.value})}>
+          <option value="">Every sector</option>
+          ${allSectors.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
+        </select>
+        <select aria-label="Type" value=${group.category} onChange=${(e) => setGroupField({category: e.target.value})}>
+          <option value="">Every type</option>
+          ${Object.entries(CATEGORY_LABELS).map(([code, label]) => html`<option key=${code} value=${code}>${label}</option>`)}
+        </select>
+        <select aria-label="State" value=${group.state} onChange=${(e) => setGroupField({state: e.target.value})}>
+          <option value="">Every state</option>
+          ${(states || []).map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
+        </select>
+        <label class="actor-everyone"><input type="checkbox" checked=${group.everyone}
+          onChange=${(e) => setGroupField({everyone: e.target.checked})}/> Include actors with no website</label>
+      </div>
+
+      <div class="actor-combo">
+        <input class="actor-search" role="combobox" aria-expanded=${open && results.length > 0}
+          aria-controls="actor-suggestions" aria-autocomplete="list" autocomplete="off"
+          value=${query} placeholder=${grouped ? "Type to narrow this group…" : "Start typing a name or website — e.g. CPo, calwep"}
+          onInput=${(e) => { setQuery(e.target.value); setSelected(null); setResult(null); setOpen(true); }}
+          onFocus=${() => setOpen(true)} onKeyDown=${onKey}/>
+
+        ${!selected && open && results.length > 0 && html`<div class="actor-suggest">
+          <div class="actor-suggest-head">${groupCaption(total, results.length, group, allSectors, states)}
+            <span class="muted">↑ ↓ to move · Enter to choose</span></div>
+          <ul id="actor-suggestions" role="listbox" class="actor-results">
+            ${results.map((a, i) => html`<li key=${a.actor_id} role="option" aria-selected=${i === active}>
+              <button type="button" class=${i === active ? "active" : ""}
+                onMouseEnter=${() => setActive(i)} onClick=${() => choose(a)}>
+                <strong>${highlightParts(a.name, query).map((part, k) =>
+                  part.match ? html`<mark key=${k}>${part.text}</mark>` : part.text)}</strong>
+                <span>${[a.actor_category ? (CATEGORY_LABELS[a.actor_category] || a.actor_category.replaceAll("_", " ")) : "Unclassified",
+                  where(a), (a.sectors || []).join(" / ")].filter(Boolean).join(" · ")}</span>
+                <span class="actor-flags">
+                  ${a.funding_signal && html`<em>funding on record</em>`}
+                  ${a.recent_activity && html`<em>activity on record</em>`}
+                  ${!a.website && html`<em class="warn">no website</em>`}
+                </span>
+              </button></li>`)}
+          </ul>
+        </div>`}
+      </div>
+
+      ${!selected && searched !== null && results.length === 0 && html`<div class="actor-none">
+        <span>${searched ? `“${searched}” is not on the map${grouped ? " in this group" : ""}.` : "No actor on the map in this group."}</span>
+        ${searched && html`<button type="button" class="btn ghost" onClick=${() => onFindNew(searched)}>Find it with Discovery</button>`}
+      </div>`}
+
+      ${selected && html`<div class="actor-selected">
+        <div class="actor-head">
+          <div>
+            <h3>${selected.name}</h3>
+            ${selected.website
+              ? html`<a href=${selected.website} target="_blank" rel="noreferrer">${selected.website}</a>`
+              : html`<span class="warn">No website on record</span>`}
+          </div>
+          <button type="button" class="link" onClick=${() => { setSelected(null); setResult(null); }}>Change</button>
+        </div>
+
+        <dl class="actor-now">
+          <div><dt>Funding on record</dt><dd>${factLine(selected.funding_signal) || "—"}</dd></div>
+          <div><dt>Recent activity on record</dt><dd>${factLine(selected.recent_activity) || "—"}</dd></div>
+        </dl>
+
+        <div class="discovery-segment">
+          ${ACTOR_UPDATE_SCOPES.map((s) => html`<button type="button" key=${s.id}
+            class=${scope === s.id ? "active" : ""} onClick=${() => setScope(s.id)}>${s.label}</button>`)}
+        </div>
+        <label class="actor-topic">Update it for the sector
+          <select value=${topic} onChange=${(e) => setTopic(e.target.value)}>
+            ${!(selected.sectors || []).length && html`<option value="">Choose a sector</option>`}
+            ${(selected.sectors || []).length > 0 && html`<optgroup label="Its sectors">
+              ${selected.sectors.map((code) => html`<option key=${code} value=${code}>
+                ${(allSectors.find((x) => x.code === code) || {}).name || code}</option>`)}
+            </optgroup>`}
+            <optgroup label=${(selected.sectors || []).length ? "Other sectors" : "Sectors"}>
+              ${allSectors.filter((x) => !(selected.sectors || []).includes(x.code)).map((x) =>
+                html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
+            </optgroup>
+          </select></label>
+        ${!(selected.sectors || []).length && html`<small class="muted">Not linked to a sector
+          on the map yet — choose the one this update is for.</small>`}
+
+        <div class="discovery-actions">
+          <button class="btn ghost" disabled=${!!busy || !selected.website || !topic} onClick=${() => run(false)}>
+            ${busy === "preview" ? "Reading its pages…" : "Preview changes"}</button>
+          <button class="btn" disabled=${!!busy || !selected.website || !topic} onClick=${() => run(true)}>
+            ${busy === "live" ? "Updating…" : "Update the map"}</button>
+        </div>
+        ${busy && html`<p class="muted">Reading up to three of its own pages — about half a minute.</p>`}
+      </div>`}
+
+      ${error && html`<p class="discovery-message error">${error}</p>`}
+
+      ${result && html`<div class="actor-result">
+        <p class="actor-result-head">
+          <strong>${result.mode === "live" ? "Updated" : "Preview"}</strong>
+          · ${outcomeSummary(result.counts) || "nothing to report"}
+          · ${result.topic?.name}
+          ${result.mode === "live" && html` · ${result.written} written`}
+          · $${Number(result.cost_usd || 0).toFixed(3)}
+        </p>
+        <table class="actor-boxes">
+          <thead><tr><th>Box</th><th>Result</th><th>On record before</th><th>Its pages now say</th></tr></thead>
+          <tbody>${result.boxes.map((b) => html`<tr key=${b.field}>
+            <td>${boxLabel(b.field)}</td>
+            <td><span class=${"outcome " + b.outcome.replace(" ", "-")}>${OUTCOME_LABELS[b.outcome] || b.outcome}</span></td>
+            <td>${factLine(b.before) || "—"}${b.before_read && html`<small> (read ${b.before_read})</small>`}</td>
+            <td>${factLine(b.after) || (b.reason ? html`<small class="muted">${b.reason}</small>` : "—")}
+              ${b.source_url && html` <a href=${b.source_url} target="_blank" rel="noreferrer">source</a>`}</td>
+          </tr>`)}</tbody>
+        </table>
+        <p class="muted">Pages read: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}
+          ${result.mode !== "live" && html`<br/>Nothing was written. “Update the map” writes the filled and updated boxes; a box its pages no longer mention keeps what is on record.`}</p>
+      </div>`}
+    </section>`;
   }
 
   function RequestCard({request, options, busy, onAction, onRun}) {
@@ -542,8 +838,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const activeCount = requests.filter((r) => r.status === "active" || r.status === "paused").length;
 
     return html`<div class="discovery-page">
-      <div class="eyebrow">Organizations updating agent</div>
-      <h1 class="hero-h">Ask the agent to find and keep organizations up to date.</h1>
+      <div class="eyebrow">Discovery</div>
+      <h1 class="hero-h">Ask the agent to find organizations, and keep them up to date.</h1>
       <p class="lead">Say what you are looking for in your own words. The agent searches
         only for that, and only where you ask.</p>
 
@@ -554,6 +850,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       <div class="subnav">
         <button class=${view === "new" ? "active" : ""} onClick=${() => setView("new")}>New request</button>
         <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests (${activeCount})</button>
+        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Actor updates</button>
       </div>
 
       ${view === "new" && html`<section class="discovery-card">
@@ -663,6 +960,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           <button class="btn" disabled=${busy} onClick=${create}>${working === "create" ? "Creating…" : "Create request"}</button>
         </div>
       </section>`}
+
+      ${view === "actors" && html`<${ActorUpdates} sectors=${options.topics} states=${options.states}
+        onFindNew=${(name) => { set({brief: name}); setView("new"); }}/>`}
 
       ${view === "requests" && html`<section class="discovery-list">
         ${requests.length === 0

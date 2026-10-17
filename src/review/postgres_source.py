@@ -13,6 +13,7 @@ import math
 import re
 import socket
 import subprocess
+import time
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
@@ -84,18 +85,40 @@ def _public_ipv4_addresses(host: str, port: int) -> list[str]:
     return addresses
 
 
+# Resolved once per host for a while, not on every connection. Each Review
+# refresh and each actor-search keystroke opens a connection; resolving every
+# time cost ~4 s each (three PowerShell DNS lookups on Windows).
+_HOSTADDR_TTL_S = 600.0
+_hostaddr_cache: dict[str, tuple[float, str | None]] = {}
+
+
 def _reachable_hostaddr(database_url: str) -> str | None:
     parsed = urlsplit(database_url)
-    if not parsed.hostname:
+    host = parsed.hostname
+    if not host or host == "localhost":
         return None
+    try:
+        ipaddress.ip_address(host)
+        # An address already: nothing to resolve. 127.0.0.1 used to fall
+        # through to the PowerShell lookups, because loopback is not "global".
+        return None
+    except ValueError:
+        pass
     port = parsed.port or 5432
-    for ip in _public_ipv4_addresses(parsed.hostname, port):
+    key = f"{host}:{port}"
+    cached = _hostaddr_cache.get(key)
+    if cached and time.monotonic() - cached[0] < _HOSTADDR_TTL_S:
+        return cached[1]
+    found = None
+    for ip in _public_ipv4_addresses(host, port):
         try:
             with socket.create_connection((ip, port), timeout=3):
-                return ip
+                found = ip
+                break
         except OSError:
             continue
-    return None
+    _hostaddr_cache[key] = (time.monotonic(), found)
+    return found
 
 
 def _database_url_from_environment() -> str | None:
@@ -219,7 +242,7 @@ class PostgresReviewSource:
         "actor_fact_history", "entity_edge", "source",
         "hub_actor", "hub_sector", "sector", "actor_sector", "actor_location",
         "actor_update_subscription", "actor_update_subscription_run", "collection_run",
-        "proposed_hub", "proposed_hub_member", "hub_detection_run",
+        "proposed_hub", "proposed_hub_member", "hub_detection_run", "topic",
     }
 
     def __init__(self, database_url: str):
@@ -614,6 +637,102 @@ class PostgresReviewSource:
             ).fetchall()
         return [{"code": str(r["code"]).upper(), "name": r["name"],
                  "is_thematic": bool(r["is_thematic"])} for r in rows]
+
+    def search_actors(self, query: str = "", *, sector: str | None = None,
+                      category: str | None = None, state: str | None = None,
+                      updatable_only: bool = True, limit: int = 12) -> dict[str, Any]:
+        """Existing actors for the Discovery page's actor updates, read-only.
+
+        Two ways in, and both narrow the same group: words typed (a name, an
+        alternate name or a website), and filters - sector, category, state.
+        With a filter set, nothing needs to be typed: the page lists the group.
+        ``total`` is the size of the whole group, not just the rows returned.
+
+        ``updatable_only`` (the default) keeps to actors with a website of their
+        own, the only ones an update can read. It also keeps out the unnamed
+        placeholders imported with the map ("Water Technology Startups"), which
+        have no category and no website. Merged and aggregate rows are never
+        offered. Columns go through to_jsonb so the query works before and after
+        the V2 cutover.
+        """
+        needle = " ".join(str(query or "").split())
+        filtered = bool(sector or category or state)
+        if len(needle) < 2 and not filtered:
+            return {"actors": [], "total": 0}
+        like = f"%{needle}%" if needle else "%"
+        with self.connect() as db:
+            sectors_sql = self._actor_sectors_sql(self._columns(db))
+            rows = db.execute(
+                "WITH base AS ("
+                " SELECT a.actor_id::text AS actor_id, a.name, "
+                " NULLIF(to_jsonb(a)->>'website','') AS website, "
+                " NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
+                " COALESCE(NULLIF(to_jsonb(a)->>'city',''), "
+                "          NULLIF(to_jsonb(a)->>'location_city','')) AS city, "
+                " COALESCE(NULLIF(to_jsonb(a)->>'state_code',''), "
+                "          NULLIF(to_jsonb(a)->>'state','')) AS state, "
+                " COALESCE(NULLIF(to_jsonb(a)->>'status',''), "
+                "          NULLIF(to_jsonb(a)->>'record_status','')) AS status, "
+                f" {sectors_sql} AS sectors "
+                " FROM actor a "
+                " WHERE (a.name ILIKE %s "
+                "   OR COALESCE(to_jsonb(a)->>'website','') ILIKE %s "
+                "   OR COALESCE(to_jsonb(a)->>'alt_names', to_jsonb(a)->>'alternate_names', '') ILIKE %s) "
+                " AND COALESCE(to_jsonb(a)->>'merged_into_actor_id','') = '' "
+                " AND COALESCE(to_jsonb(a)->>'actor_category','') <> 'aggregate' "
+                " AND (NOT %s OR COALESCE(to_jsonb(a)->>'website','') <> '') "
+                " AND (%s::text IS NULL OR to_jsonb(a)->>'actor_category' = %s::text) "
+                " AND (%s::text IS NULL OR upper(COALESCE(to_jsonb(a)->>'state_code', "
+                "      to_jsonb(a)->>'state','')) = upper(%s::text)) "
+                "), matched AS ("
+                " SELECT * FROM base WHERE %s::text IS NULL OR %s::text = ANY(sectors)"
+                ") "
+                "SELECT m.*, count(*) OVER () AS total, "
+                "(SELECT f.fact_value FROM actor_fact f WHERE f.actor_id = m.actor_id::uuid "
+                " AND f.fact_key = 'funding_signal' AND f.collection_state = 'found' "
+                " ORDER BY f.retrieved_at DESC LIMIT 1) AS funding_signal, "
+                "(SELECT f.fact_value FROM actor_fact f WHERE f.actor_id = m.actor_id::uuid "
+                " AND f.fact_key = 'recent_activity' AND f.collection_state = 'found' "
+                " ORDER BY f.retrieved_at DESC LIMIT 1) AS recent_activity, "
+                "(SELECT max(f.retrieved_at) FROM actor_fact f WHERE f.actor_id = m.actor_id::uuid "
+                " AND f.layer = 1) AS last_read "
+                "FROM matched m "
+                "ORDER BY (m.name ILIKE %s) DESC, length(m.name), m.name LIMIT %s",
+                (like, like, like, bool(updatable_only),
+                 category or None, category or None, state or None, state or None,
+                 (sector or None) and sector.upper(), (sector or None) and sector.upper(),
+                 f"{needle}%" if needle else "%", int(limit)),
+            ).fetchall()
+        total = int(rows[0]["total"]) if rows else 0
+        return {"total": total, "actors": [
+            {**{k: v for k, v in dict(row).items() if k != "total"},
+             "sectors": list(row["sectors"] or []),
+             "last_read": str(row["last_read"])[:10] if row["last_read"] else None}
+            for row in rows]}
+
+    @staticmethod
+    def _actor_sectors_sql(columns: dict[str, set[str]]) -> str:
+        """An actor's sector codes by every route this schema has.
+
+        The same routes, in the same order, as the backend's
+        actor_updates.actor_topics: imported actors have no direct sector
+        link, and in production (no migration 520) their hub's own topic is
+        the only route there is.
+        """
+        routes = []
+        if {"actor_sector", "sector"} <= set(columns):
+            routes.append("SELECT s.code FROM actor_sector x JOIN sector s "
+                          "ON s.sector_id = x.sector_id WHERE x.actor_id = a.actor_id")
+        if {"hub_actor", "hub_sector", "sector"} <= set(columns):
+            routes.append("SELECT s.code FROM hub_actor ha JOIN hub_sector hs ON hs.hub_id = ha.hub_id "
+                          "JOIN sector s ON s.sector_id = hs.sector_id WHERE ha.actor_id = a.actor_id")
+        if "hub_actor" in columns and "topic" in columns and "topic_id" in columns.get("hub", set()):
+            routes.append("SELECT t.code FROM hub_actor ha JOIN hub h ON h.hub_id = ha.hub_id "
+                          "JOIN topic t ON t.topic_id = h.topic_id WHERE ha.actor_id = a.actor_id")
+        if not routes:
+            return "NULL::text[]"
+        return ("(SELECT array_agg(DISTINCT code ORDER BY code) FROM ("
+                + " UNION ".join(routes) + ") routes(code))")
 
     def fetch_hub_proposals(self) -> list[dict[str, Any]]:
         """Open hub proposals from Phase 7 detection, read-only.

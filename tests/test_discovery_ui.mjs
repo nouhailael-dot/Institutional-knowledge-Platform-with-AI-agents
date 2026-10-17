@@ -97,10 +97,10 @@ test('the page writes nothing itself: every call goes to /api/discovery', () => 
   for (const url of urls) assert.ok(url.startsWith('/api/discovery/'), url);
 });
 
-test('the organizations updating agent is in the main navigation', () => {
+test('Discovery is in the main navigation', () => {
   const index = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
-  assert.match(index, /\["discovery","Organization Updates",/);
-  assert.match(index, /discovery:"Organization Updates"/);
+  assert.match(index, /\["discovery","Discovery",/);
+  assert.match(index, /discovery:"Discovery"/);
   assert.match(index, /createDiscoveryPage/);
 });
 
@@ -195,4 +195,36 @@ test('a long line is flagged: every word of it must appear on the page', async (
   // index must not be read as a limit, or every first term looks too long.
   assert.equal(['battery storage', 'grid modernisation'].some(termIsTooLong), false);
   assert.deepEqual(['battery storage', 'grid modernisation'].map(termIsTooLong), [false, false]);
+});
+
+
+test('actor updates read back each outcome the backend reports', async () => {
+  const {OUTCOME_LABELS, outcomeSummary, factLine, boxLabel, ACTOR_UPDATE_SCOPES} =
+    await import('../frontend/discovery.js');
+  for (const key of ['filled', 'updated', 'confirmed', 'unchanged', 'not stated', 'refused']) {
+    assert.ok(OUTCOME_LABELS[key], key);
+  }
+  assert.equal(outcomeSummary({updated: 1, unchanged: 1}), '1 updated · 1 kept');
+  assert.equal(outcomeSummary({}), '');
+  assert.equal(factLine({date: 'Aug. 12, 2026', description: 'Hosted GridFuture.'}),
+    'Aug. 12, 2026 — Hosted GridFuture.');
+  assert.equal(factLine('"$2M grant."'), '$2M grant.');
+  assert.equal(factLine(null), '');
+  assert.equal(boxLabel('funding_signal'), 'Funding');
+  assert.equal(boxLabel('topic_mandate_program'), 'Topic mandate program');
+  assert.deepEqual(ACTOR_UPDATE_SCOPES.map((s) => s.id), ['funding_activity', 'connections', '']);
+});
+
+test('suggestions highlight what was typed, and the group narrows the search', async () => {
+  const {highlightParts, actorSearchParams, groupCaption} = await import('../frontend/discovery.js');
+  assert.deepEqual(highlightParts('CPower Energy', 'pow'), [
+    {text: 'C', match: false}, {text: 'Pow', match: true}, {text: 'er Energy', match: false}]);
+  assert.deepEqual(highlightParts('Water for Water', 'water').filter((p) => p.match).length, 2);
+  assert.deepEqual(highlightParts('CMU CyLab', ''), [{text: 'CMU CyLab', match: false}]);
+  assert.equal(actorSearchParams('cpo', {sector: 'ENERGY', everyone: true}),
+    'q=cpo&sector=ENERGY&everyone=true');
+  assert.equal(actorSearchParams('  ', {state: 'WI'}), 'state=WI');
+  assert.equal(groupCaption(17, 12, {sector: 'WATER', category: 'research_center'},
+    [{code: 'WATER', name: 'Water'}]), '17 actors · Water · Research centre · showing 12');
+  assert.equal(groupCaption(1, 1, {}), '1 actor');
 });

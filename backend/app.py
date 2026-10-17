@@ -1077,6 +1077,50 @@ def discovery_run_now(subscription_id: str):
     return _discovery_call(discovery_bridge().run_now, subscription_id)
 
 
+# ------------------------------------------------------- specific actor updates
+# Refresh what the map says about ONE existing actor - its funding, its recent
+# activity, or every box - from its own pages. Search is a read-only query; the
+# update itself runs in the GHUS backend, which writes through its approved
+# fact writer. The page never writes canonical data.
+
+class ActorUpdateRequest(BaseModel):
+    topic: str | None = Field(default=None, max_length=20)
+    fields: str = Field(default="funding_activity", max_length=400)
+    live: bool = False
+
+
+@app.get("/api/discovery/actors")
+def discovery_actor_search(q: str = Query("", max_length=120),
+                           sector: str | None = Query(None, max_length=20),
+                           category: str | None = Query(None, max_length=60),
+                           state: str | None = Query(None, max_length=4),
+                           everyone: bool = Query(False),
+                           limit: int = Query(12, ge=1, le=50)):
+    """Actors on the map, by words typed and/or a group (sector, category, state).
+
+    ``everyone`` includes actors with no website, which an update cannot read.
+    """
+    source = review_postgres_source()
+    if source is None:
+        raise HTTPException(status_code=503, detail="Actor search is not available on this instance.")
+    try:
+        return source.search_actors(q, sector=sector, category=category, state=state,
+                                    updatable_only=not everyone, limit=limit)
+    except PostgresReviewSourceError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/discovery/actors/{actor_id}/update")
+def discovery_actor_update(actor_id: str, payload: ActorUpdateRequest):
+    try:
+        UUID(actor_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown actor") from exc
+    return _discovery_call(
+        lambda: discovery_bridge().update_actor(
+            actor_id, topic=payload.topic, fields=payload.fields, live=payload.live))
+
+
 @app.post("/api/discovery/requests/{subscription_id}/{action}")
 def discovery_change(subscription_id: str, action: str):
     if action not in ("pause", "resume", "cancel"):
