@@ -562,13 +562,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             placeholder=${"Water utilities and water-technology organizations in Wisconsin.\nwastewater reuse\nphosphorus removal"}
             onInput=${(e) => set({brief: e.target.value})}></textarea>
           <small class="muted">
-            <strong>First line:</strong> what you want, in a sentence. It names the
-            request, and it should say the sector — ${(options.topics || []).map((t) => t.name).join(", ")} —
-            and where to look.
-            <strong>Then one sub-topic per line.</strong> Each becomes a search, and an
-            organization is kept only when its own pages use those words, so a few
-            words a line finds more than a sentence. No sub-topics searches the
-            sector itself.
+            <strong>First line:</strong> what you want, naming a sector.
+            <strong>Each line after:</strong> one thing to search for, a few words.
           </small>
         <//>
 
@@ -577,7 +572,6 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             <strong>Sector:</strong> ${draft.sector
               ? (options.topics.find((t) => t.code === draft.sector) || {}).name || draft.sector
               : "none named yet"}
-            · <strong>Area:</strong> ${areaLabel(summaryDraft, options)}
             · <strong>Searches:</strong> ${draft.focusTerms.length || "the sector name"}
           </p>
           ${draft.focusTerms.length > 0 && html`<div class="discovery-terms">
@@ -592,7 +586,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
         <button type="button" class="discovery-disclose" aria-expanded=${showDetails}
           onClick=${() => setShowDetails(!showDetails)}>
-          ${showDetails ? "Hide the details" : "Details — name, sector, area, frequency"}
+          ${showDetails ? "Hide name, sector and sub-topics" : "Name, sector and sub-topics"}
         </button>
 
         ${showDetails && html`<div class="discovery-grid">
@@ -616,6 +610,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
                 onBlur=${addFocus}/>
             </div>
           <//>
+        </div>`}
+
+        <div class="discovery-grid">
           <${Field} label="Area" error=${shown.area} wide=${true}>
             <div class="discovery-segment">
               ${[["region", "Region"], ["state", "State"], ["us", "Whole United States"]].map(([id, label]) => html`
@@ -652,7 +649,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           <${Field} label="New organizations per run" error=${shown.cap}>
             <input type="number" min="1" max=${options.max_new_actors_per_run} value=${form.cap} onInput=${(e) => set({cap: e.target.value})}/>
           <//>
-        </div>`}
+        </div>
 
         <p class="discovery-summary">${requestSummary(summaryDraft, options)}</p>
 
