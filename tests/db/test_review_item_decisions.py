@@ -88,3 +88,43 @@ def test_relationship_review_needs_a_source_to_create_an_edge(connection):
         "SELECT status FROM review_item WHERE review_item_id=CAST(:i AS uuid)"),
         {"i": rejected}).scalar()
     assert status == "rejected"
+
+
+def test_fact_conflict_review_routes_to_the_fact_decision(connection):
+    """Review's "use the new value" goes through the approved writer, both facts kept."""
+    import uuid
+    from datetime import UTC, datetime, timedelta
+
+    from agents.common.facts import ActorFactWrite
+    from agents.enrichment.decisions import append_actor_fact
+
+    actor = connection.execute(text("SELECT actor_id::text FROM actor LIMIT 1")).scalar_one()
+    topic = connection.execute(text(
+        "INSERT INTO topic(code, name) VALUES (:c, 'Fact review test') RETURNING topic_id::text"
+    ), {"c": f"FR{uuid.uuid4().hex[:8].upper()}"}).scalar_one()
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    now = datetime.now(UTC)
+
+    def write(value, when, confidence):
+        return append_actor_fact(session, ActorFactWrite(
+            actor_id=actor, topic_id=topic, field_key="funding_signal", fact_type="light_pull",
+            layer=1, value=value, collection_state="found",
+            source_url="https://co.example/about", source_origin="newly_found", date_read=when,
+            confidence=confidence, created_by="agent.test"), live=True)
+
+    current = write("$1M.", now, "high")
+    proposed = write("$3M.", now - timedelta(days=3), "low")
+    session.commit()  # releases the savepoint; the outer transaction still rolls back
+    session.close()
+    item = connection.execute(text(
+        "SELECT review_item_id::text FROM review_item WHERE review_kind='fact_conflict' "
+        "AND payload->>'new_fact_id'=:f"), {"f": proposed}).scalar_one()
+    result = _decide(connection, decision_kind="resolve_fact", review_item_id=item, accept=True)
+    assert result["status"] == "applied" and result["action"] == "decided"
+    assert connection.execute(text(
+        "SELECT actor_fact_id::text FROM actor_fact_current_pointer WHERE actor_id=CAST(:a AS uuid) "
+        "AND topic_id=CAST(:t AS uuid) AND fact_key='funding_signal'"),
+        {"a": actor, "t": topic}).scalar_one() == proposed
+    assert connection.execute(text(
+        "SELECT count(*) FROM actor_fact WHERE actor_fact_id=CAST(:f AS uuid)"),
+        {"f": current}).scalar_one() == 1

@@ -1,30 +1,60 @@
-"""Update ONE existing actor: re-read its own pages for the boxes asked for.
+"""Update an actor already on the map: plan, check its own pages, then apply.
 
-    python -m agents.collection.actor_updates update --actor-id ID [--topic CODE]
-        [--fields funding_signal,recent_activity] [--live] [--max-usd 0.15]
+    python -m agents.collection.actor_updates plan  --actor-id ID [options]
+    python -m agents.collection.actor_updates check --actor-id ID [options]
+    python -m agents.collection.actor_updates apply --check-id CHECK
+
+    options: --topic CODE --scope topic|general|missing|outdated|specific
+             --depth light|deep --fields a,b --categories funding,partnerships
+             --focus "words" --max-usd 0.15
 
 The Discovery page's "Actor updates" panel calls this through the platform's
-bridge. It reads the actor's homepage, About page and one topic page
-(``light_pull_reader``: three pages, checked quotes, Light Pull evidence rules)
-and compares every requested box with what the map holds now:
+bridge, in three steps, so a person sees what will happen before it costs or
+changes anything:
 
-    filled      nothing was recorded, the pages now state it
-    updated     the pages state something different from what is recorded
-    confirmed   the pages state what is recorded (corroboration, no new value)
-    unchanged   the pages do not state it; what is recorded is kept
-    not stated  the pages do not state it, and nothing was recorded
-    refused     an answer failed the quote check or a Light Pull rule
+``plan``  (free: no page read, no model call, nothing written)
+    Which boxes the request would re-read and why the others are skipped, the
+    Deep Pull gate for this exact actor and sector, the configured cost cap
+    and what past updates actually cost, and a one-paragraph summary.
 
-With ``--live`` the results are written through
-``agents.enrichment.decisions.append_actor_fact`` - the approved immutable
-writer, which corroborates, supersedes and routes conflicts. One rule is added
-here: a page that is silent never overwrites a recorded value, because "not on
-today's pages" is not evidence that last year's grant did not happen.
+``check`` (one Light Refresh read, capped; nothing written to the database)
+    Reads the actor's homepage, About page and one topic page
+    (``light_pull_reader``: checked quotes, Light Pull evidence rules), then
+    compares every box with the current fact and predicts what the Phase 11
+    writer will do with it:
 
-Dry-run by default: the pages are read and the model is called (the only way
-to show what would change), nothing is written. Live writes against a database
-other than a local ``*_test`` one also need ACTOR_UPDATE_WRITES_ENABLED=true,
-which only the platform bridge sets.
+        new           nothing (or only "not found") recorded; the pages state it
+        changed       a different value, from evidence at least as strong and
+                      newer: it supersedes the current fact (history kept)
+        corroborated  the pages state what is recorded (a corroboration row)
+        conflict      a different value from weaker or older evidence: the
+                      current value is kept and the conflict goes to Review
+        protected     the current value was set by GHUS: never overwritten; a
+                      pending update goes to Review
+        unchanged     the pages are silent; the recorded value is kept
+        not_found     the pages are silent and nothing was recorded
+        not_yet_collected   in the actor's schema, never recorded, not read now
+
+    The findings are kept for ``check_valid_hours`` under agents/runs so the
+    apply step writes exactly what was checked, without paying for a second
+    read.
+
+``apply`` (writes)
+    Records the run in ``collection_request``/``collection_run`` (the existing
+    run ledger: cost, pages, counts) and writes each finding through
+    ``agents.enrichment.decisions.append_actor_fact`` - the approved immutable
+    writer, which corroborates, supersedes, flags conflicts and raises the
+    Review items. Each fact carries the run as its ``request_id``. A silent
+    page never overwrites a recorded value. One failed box does not stop the
+    others; applying the same check again retries only the boxes that failed.
+
+Deep Pull is refused unless the latest GHUS decision verified this actor for
+this exact sector (``deep_pull.actor_is_verified_for_topic``); the refusal
+says why and offers the Light Refresh. Even when permitted it is not run here:
+Phase 10 built the gate and the writer, not a Deep Pull reader.
+
+Live writes against a database other than a local ``*_test`` one also need
+ACTOR_UPDATE_WRITES_ENABLED=true, which only the platform bridge sets.
 """
 
 from __future__ import annotations
@@ -33,20 +63,115 @@ import argparse
 import json
 import os
 import re
+import statistics
 import sys
-from datetime import UTC, datetime
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from sqlalchemy import text
 
 ROOT = Path(__file__).resolve().parents[2]
+RUNS_DIR = ROOT / "agents" / "runs" / "actor-updates"
+JOB_NAME = "actor_update"
+REQUESTED_BY = "actor_updates_page"
+CREATED_BY = "agent:actor_updates"
 
-# What a person usually means by "update this actor".
+SCOPES = ("topic", "general", "missing", "outdated", "specific")
+DEPTHS = ("light", "deep")
+
+# What a person usually means by "update this actor" (kept for the CLI).
 PRESETS = {
     "funding_activity": ("funding_signal", "recent_activity"),
     "connections": ("international_connection", "um6p_ocp_connection"),
 }
+
+# Change categories only ORDER the boxes and steer which topic page is read;
+# they never add a box outside the actor's category schema.
+CHANGE_CATEGORIES: dict[str, dict[str, tuple[str, ...]]] = {
+    "research": {
+        "fields": ("recent_activity", "topic_unit_and_work", "relevant_centers_programs",
+                   "topic_research_focus", "active_recent_projects", "topic_program_area",
+                   "current_project", "clinical_research_focus", "current_initiative",
+                   "relevant_program", "current_initiative_working_group"),
+        "pages": ("research", "projects", "programs"),
+    },
+    "funding": {
+        "fields": ("funding_signal", "main_funders", "funding_stage", "published_fund_size",
+                   "visible_funding_programs", "programs_grant_themes"),
+        "pages": ("funding", "grants", "sponsors", "investors"),
+    },
+    "partnerships": {
+        "fields": ("international_connection", "um6p_ocp_connection", "pilot_customer_evidence",
+                   "linked_members", "parent_academic_link"),
+        "pages": ("partners", "partnerships", "collaborations", "members"),
+    },
+    "products": {
+        "fields": ("topic_business_segment_product", "technology_and_problem",
+                   "published_stage_or_trl", "platform_offerings", "testing_demonstration_scope"),
+        "pages": ("products", "solutions", "technology", "services"),
+    },
+    "organization": {
+        "fields": ("ownership_and_size", "institution_control", "parent_and_center_type",
+                   "sponsoring_agency", "formal_national_designation", "facility_type_operator",
+                   "hospital_type_scale", "platform_type_operator", "investor_type_headquarters",
+                   "jurisdiction_parent_agency", "association_type", "member_types",
+                   "founding_year_location", "mission_sector_focus", "land_grant_designation",
+                   "rankings", "scale_indicator"),
+        "pages": ("about", "leadership", "company"),
+    },
+    "geography": {
+        "fields": ("location", "mapped_geography_operations", "geographic_focus",
+                   "sector_geographic_scope", "network_scope_locations"),
+        "pages": ("locations", "offices", "contact"),
+    },
+}
+# "category" = the boxes of the actor's own category; "all" = no preference.
+CATEGORY_CHOICES = ("all", *CHANGE_CATEGORIES, "category")
+
+# Boxes whose value dates quickly: an "outdated" update re-reads them sooner.
+TIME_SENSITIVE = frozenset({
+    "recent_activity", "funding_signal", "active_recent_projects", "current_project",
+    "current_initiative", "funding_stage", "pilot_customer_evidence", "published_fund_size",
+    "current_initiative_working_group", "rankings", "scale_indicator",
+})
+
+GROUPS = {
+    "new": "new", "changed": "changed", "corroborated": "confirmed",
+    "conflict": "conflicts", "protected": "conflicts", "unchanged": "no_change",
+    "not_found": "missing", "not_yet_collected": "missing",
+}
+# What the Phase 11 writer does with each finding when it is applied.
+RESOLUTION = {
+    "new": "Recorded as a new sourced fact.",
+    "changed": "Replaces the current value; the old value stays in the history.",
+    "corroborated": "The current value is kept and this source is added as corroboration.",
+    "conflict": "The current value is kept; the difference goes to Review.",
+    "protected": "Set by GHUS, so never overwritten; a pending update goes to Review.",
+    "unchanged": "Nothing is written; the recorded value is kept.",
+    "not_found": "Recorded as not found on the actor's pages.",
+    "not_yet_collected": "Not read in this update.",
+}
+WRITTEN = frozenset({"new", "changed", "corroborated", "conflict", "protected", "not_found"})
+
+DEFAULT_SETTINGS = {
+    "max_usd_per_actor": 0.15,
+    "max_actors_per_request": 10,
+    "stale_after_days": 365,
+    "time_sensitive_stale_after_days": 180,
+    "recheck_not_found_after_days": 90,
+    "check_valid_hours": 24,
+}
+
+
+class ActorUpdateError(ValueError):
+    """A request that cannot run, in words the page can show."""
+
+
+def settings(config: dict | None) -> dict:
+    section = dict((config or {}).get("actor_updates") or {})
+    return {key: section.get(key, default) for key, default in DEFAULT_SETTINGS.items()}
 
 
 def _local_test_database() -> bool:
@@ -66,6 +191,8 @@ def _has_column(session, table: str, column: str) -> bool:
         "WHERE table_schema = ANY (current_schemas(false)) AND table_name = :t AND column_name = :c"
     ), {"t": table, "c": column}).scalar())
 
+
+# --------------------------------------------------------------------- actor
 
 def actor_topics(session, actor_id: str) -> list[dict]:
     """The sectors (topics) this actor belongs to, by every route the schema has.
@@ -112,11 +239,18 @@ def topic_by_code(session, code: str) -> dict | None:
 
 
 def load_actor(session, actor_id: str) -> dict | None:
+    try:
+        actor_id = str(uuid.UUID(str(actor_id)))
+    except ValueError:
+        return None
     row = session.execute(text(
         "SELECT a.actor_id::text AS actor_id, a.name, "
         "NULLIF(to_jsonb(a)->>'website', '') AS website, "
         "NULLIF(to_jsonb(a)->>'actor_category', '') AS actor_category, "
         "NULLIF(to_jsonb(a)->>'category_type', '') AS category_type, "
+        "NULLIF(to_jsonb(a)->>'location_city', '') AS city, "
+        "COALESCE(NULLIF(to_jsonb(a)->>'state_code', ''), NULLIF(to_jsonb(a)->>'state', '')) "
+        "AS state, NULLIF(to_jsonb(a)->>'country', '') AS country, "
         "COALESCE(NULLIF(to_jsonb(a)->>'status', ''), NULLIF(to_jsonb(a)->>'record_status', '')) "
         "AS status FROM actor a WHERE a.actor_id = CAST(:id AS uuid)"
     ), {"id": actor_id}).mappings().first()
@@ -127,17 +261,290 @@ def load_actor(session, actor_id: str) -> dict | None:
     return actor
 
 
+def schema_fields(actor_category: str | None) -> list[str]:
+    """The boxes a Light Refresh may fill for this category - and only those."""
+    from agents.collection.light_pull import CATEGORY_LIGHT_FIELDS
+    from agents.collection.light_pull_reader import COMMON_READ_FIELDS
+
+    return [*COMMON_READ_FIELDS, *CATEGORY_LIGHT_FIELDS.get(actor_category or "", ())]
+
+
 def current_values(session, actor_id: str, topic_id: str, keys) -> dict[str, dict]:
     """What the map holds now for each box: the current pointer's fact."""
     rows = session.execute(text(
-        "SELECT p.fact_key, f.collection_state, f.fact_value, f.confidence, "
-        "f.retrieved_at FROM actor_fact_current_pointer p "
+        "SELECT p.fact_key, f.actor_fact_id::text AS actor_fact_id, f.collection_state, "
+        "f.fact_value, f.confidence, f.retrieved_at, f.creator_class, f.layer, "
+        "s.url AS source_url FROM actor_fact_current_pointer p "
         "JOIN actor_fact f ON f.actor_fact_id = p.actor_fact_id "
+        "LEFT JOIN source s ON s.source_id = f.source_id "
         "WHERE p.actor_id = CAST(:a AS uuid) AND p.topic_id = CAST(:t AS uuid) "
         "AND p.fact_key = ANY(:keys)"
     ), {"a": actor_id, "t": topic_id, "keys": list(keys)}).mappings()
     return {r["fact_key"]: dict(r) for r in rows}
 
+
+def deep_eligibility(session, *, actor_id: str, topic: dict | None) -> dict:
+    """Whether Deep Pull is permitted, and why - never a bypass of the gate."""
+    from agents.collection.deep_pull import actor_is_verified_for_topic
+
+    if topic is None:
+        return {"permitted": False, "reason": "No sector is chosen, and Deep Pull is "
+                                              "permitted per sector."}
+    if actor_is_verified_for_topic(session, actor_id=actor_id, topic_id=topic["topic_id"]):
+        return {"permitted": True, "reason": f"GHUS verified this actor for {topic['name']}."}
+    return {"permitted": False,
+            "reason": f"GHUS has not verified this actor for {topic['name']}. Deep Pull "
+                      "needs that decision for this exact sector; verify it in Review "
+                      "first. A Light Refresh is permitted now."}
+
+
+# ------------------------------------------------------------- field choice
+
+def _age_days(when, today: datetime) -> int | None:
+    if when is None:
+        return None
+    if isinstance(when, str):
+        when = datetime.fromisoformat(when)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return (today - when).days
+
+
+def prioritise(fields: list[str], categories) -> list[str]:
+    """Boxes of the chosen change categories first; the order is otherwise kept."""
+    chosen = [c for c in (categories or ()) if c in CHANGE_CATEGORIES]
+    if not chosen:
+        return list(fields)
+    wanted = {f for c in chosen for f in CHANGE_CATEGORIES[c]["fields"]}
+    return [f for f in fields if f in wanted] + [f for f in fields if f not in wanted]
+
+
+def plan_fields(scope: str, schema: list[str], current: dict[str, dict], *, fields=(),
+                categories=(), category_fields=(), today: datetime, limits: dict
+                ) -> tuple[list[str], list[dict]]:
+    """Which boxes to read, and why each other box in the schema is skipped.
+
+    Gap-aware: "missing" reads only what is empty (or was not found long
+    enough ago to look again), "outdated" only values older than the
+    freshness window. Nothing outside the category's schema is ever read, so an
+    inapplicable box is never mistaken for a missing one.
+    """
+    if scope not in SCOPES:
+        raise ActorUpdateError(f"Unknown update scope {scope!r}.")
+    if "category" in (categories or ()):
+        categories = [*categories, "_own"]
+    read: list[str] = []
+    skipped: list[dict] = []
+    stale_days = int(limits["stale_after_days"])
+    quick_days = int(limits["time_sensitive_stale_after_days"])
+    recheck_days = int(limits["recheck_not_found_after_days"])
+    asked = [f for f in (fields or ()) if f]
+    for key in asked:
+        if key not in schema:
+            skipped.append({"field": key, "reason": "Not in this actor's category schema, "
+                                                    "so it is never filled."})
+    for key in schema:
+        fact = current.get(key)
+        has_value = bool(fact) and fact.get("collection_state") == "found"
+        age = _age_days(fact.get("retrieved_at"), today) if fact else None
+        if scope == "specific":
+            if key in asked:
+                read.append(key)
+            continue
+        if scope == "missing":
+            if has_value:
+                skipped.append({"field": key, "reason": "Already has a value."})
+            elif fact and age is not None and age < recheck_days:
+                skipped.append({"field": key, "reason": (
+                    f"Checked {age} days ago and not stated; looked at again after "
+                    f"{recheck_days} days.")})
+            else:
+                read.append(key)
+            continue
+        if scope == "outdated":
+            window = quick_days if key in TIME_SENSITIVE else stale_days
+            if not has_value:
+                skipped.append({"field": key, "reason": "Nothing recorded yet "
+                                                        "(choose Missing information)."})
+            elif age is not None and age < window:
+                skipped.append({"field": key, "reason": (
+                    f"Read {age} days ago; still fresh (re-read after {window} days).")})
+            else:
+                read.append(key)
+            continue
+        read.append(key)  # topic / general: every box of the schema
+    if scope == "specific" and not read:
+        raise ActorUpdateError("Choose at least one box to update.")
+    ordered = prioritise(read, [c for c in categories or () if c != "_own"])
+    if "_own" in (categories or ()):
+        own = [f for f in ordered if f in category_fields]
+        ordered = own + [f for f in ordered if f not in category_fields]
+    return ordered, skipped
+
+
+# --------------------------------------------------------------------- cost
+
+def cost_estimate(session, limits: dict, *, runs_dir: Path = RUNS_DIR) -> dict:
+    """The cap that will be enforced, and what past updates really cost.
+
+    Never invented: with no history the estimate is the cap alone, and says so.
+    """
+    spent: list[float] = []
+    if _has_table(session, "collection_run"):
+        spent += [float(v) for v in session.execute(text(
+            "SELECT spent_usd FROM collection_run WHERE job_name = :job AND spent_usd > 0 "
+            "ORDER BY started_at DESC LIMIT 50"
+        ), {"job": JOB_NAME}).scalars()]
+    for path in sorted(Path(runs_dir).glob("*.json"))[-50:] if Path(runs_dir).is_dir() else ():
+        try:
+            check = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not check.get("applied_run_id") and float(check.get("cost_usd") or 0) > 0:
+            spent.append(float(check["cost_usd"]))
+    cap = float(limits["max_usd_per_actor"])
+    if not spent:
+        return {"cap_usd": cap, "runs": 0, "low_usd": None, "typical_usd": None,
+                "high_usd": None,
+                "basis": f"No update has run yet, so there is no history; it can never "
+                         f"cost more than the ${cap:.2f} cap."}
+    return {"cap_usd": cap, "runs": len(spent), "low_usd": round(min(spent), 4),
+            "typical_usd": round(statistics.median(spent), 4),
+            "high_usd": round(max(spent), 4),
+            "basis": f"From the last {len(spent)} actor update read(s); capped at ${cap:.2f}."}
+
+
+def last_update(session, actor_id: str) -> dict | None:
+    if not (_has_table(session, "collection_run") and _has_table(session, "collection_request")):
+        return None
+    row = session.execute(text(
+        "SELECT r.finished_at, r.status, r.spent_usd FROM collection_run r "
+        "JOIN collection_request q ON q.collection_request_id = r.collection_request_id "
+        "WHERE r.job_name = :job AND q.actor_id = CAST(:a AS uuid) "
+        "AND r.status IN ('succeeded', 'attention') ORDER BY r.finished_at DESC NULLS LAST LIMIT 1"
+    ), {"job": JOB_NAME, "a": actor_id}).mappings().first()
+    if row is None:
+        return None
+    return {"finished_at": str(row["finished_at"] or "")[:19], "status": row["status"],
+            "spent_usd": float(row["spent_usd"] or 0)}
+
+
+# --------------------------------------------------------------------- plan
+
+def _label(key: str) -> str:
+    return key.replace("_", " ")
+
+
+def describe(plan: dict) -> str:
+    """The request in one paragraph, from the plan itself."""
+    actor, topic = plan["actor"], plan.get("topic")
+    scope_words = {
+        "topic": "every box for the chosen sector",
+        "general": "its whole profile",
+        "missing": "only the boxes still empty",
+        "outdated": "only the values that are out of date",
+        "specific": "the boxes you chose",
+    }[plan["scope"]]
+    parts = [f"Re-read {actor['name']}'s own website ({actor.get('website') or 'no website'}) "
+             f"for {scope_words}"]
+    if topic:
+        parts[0] += f", in {topic['name']}"
+    parts[0] += "."
+    if plan["fields"]:
+        listed = ", ".join(_label(f) for f in plan["fields"][:6])
+        more = len(plan["fields"]) - 6
+        parts.append(f"{len(plan['fields'])} box(es): {listed}" + (f" and {more} more." if more > 0
+                                                                     else "."))
+    else:
+        parts.append("Nothing needs reading, so nothing will be spent.")
+    if plan["depth"] == "deep" and not plan["deep"]["permitted"]:
+        parts.append("Deep Pull is not permitted: " + plan["deep"]["reason"])
+    cost = plan["cost"]
+    if plan["fields"]:
+        if cost["typical_usd"] is not None:
+            parts.append(f"Usually about ${cost['typical_usd']:.2f}; never more than "
+                         f"${cost['cap_usd']:.2f}.")
+        else:
+            parts.append(f"Never more than ${cost['cap_usd']:.2f}.")
+    parts.append("Checking writes nothing; you see every change before it is written.")
+    return " ".join(parts)
+
+
+def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope: str = "general",
+                depth: str = "light", fields=(), categories=(), focus: str = "",
+                config: dict | None = None, today: datetime | None = None,
+                runs_dir: Path = RUNS_DIR) -> dict:
+    """What a request would do. Free: no page is read and nothing is written."""
+    if depth not in DEPTHS:
+        raise ActorUpdateError(f"Unknown depth {depth!r}.")
+    if scope not in SCOPES:
+        raise ActorUpdateError(f"Unknown update scope {scope!r}.")
+    unknown = [c for c in categories or () if c not in CATEGORY_CHOICES]
+    if unknown:
+        raise ActorUpdateError(f"Unknown change category: {', '.join(unknown)}.")
+    limits = settings(config)
+    today = today or datetime.now(UTC)
+    actor = load_actor(session, actor_id)
+    if actor is None:
+        return {"ok": False, "error": "No actor with that id."}
+    summary_actor = {k: actor.get(k) for k in ("actor_id", "name", "website", "actor_category",
+                                                "category_type", "city", "state", "country",
+                                                "status")}
+    topics = actor["topics"]
+    # A sector the person chose wins - it may be one the actor is not linked to
+    # yet, which is exactly the case for imported actors. Otherwise its own.
+    chosen = topic_by_code(session, topic_code) if topic_code else None
+    if topic_code and chosen is None:
+        return {"ok": False, "actor": summary_actor, "error": f"No sector with code {topic_code}."}
+    if scope == "topic" and chosen is None:
+        return {"ok": False, "actor": summary_actor, "needs_topic": True,
+                "error": "A topic update needs the sector to update it for."}
+    topic = chosen or (topics[0] if topics else None)
+    base = {"actor": summary_actor, "topics": [{"code": t["code"], "name": t["name"]}
+                                               for t in topics],
+            "scope": scope, "depth": depth, "categories": list(categories or ()),
+            "focus": focus.strip()[:200], "last_update": last_update(session, actor["actor_id"])}
+    if not str(actor.get("website") or "").strip():
+        return {**base, "ok": False,
+                "error": "This actor has no website on record, so there are no pages "
+                         "of its own to read. Add the website in Review first."}
+    if topic is None:
+        return {**base, "ok": False, "needs_topic": True,
+                "error": "This actor is not linked to a sector yet, and facts are kept "
+                         "per sector. Choose the sector to update it for."}
+    schema = schema_fields(actor["actor_category"])
+    from agents.collection.light_pull import CATEGORY_LIGHT_FIELDS
+
+    current = current_values(session, actor["actor_id"], topic["topic_id"], schema)
+    to_read, skipped = plan_fields(
+        scope, schema, current, fields=fields, categories=categories,
+        category_fields=CATEGORY_LIGHT_FIELDS.get(actor["actor_category"] or "", ()),
+        today=today, limits=limits)
+    deep = deep_eligibility(session, actor_id=actor["actor_id"], topic=topic)
+    plan = {
+        **base, "ok": True,
+        "topic": {"code": topic["code"], "name": topic["name"], "source": topic.get("source")},
+        "deep": deep,
+        "fields": to_read,
+        "skipped": skipped,
+        "schema": schema,
+        "schema_size": len(schema),
+        "cost": cost_estimate(session, limits, runs_dir=runs_dir),
+        "pages": "Up to 3 pages of the actor's own website (home, About, one topic page); "
+                 "no web search.",
+        "can_check": bool(to_read) and depth == "light",
+    }
+    if depth == "deep":
+        plan["can_check"] = False
+        plan["refusal"] = (deep["reason"] if not deep["permitted"] else
+                           "Deep Pull is permitted for this actor and sector, but no Deep Pull "
+                           "reader exists yet (Phase 10 built the gate and the writer). Run a "
+                           "Light Refresh instead.")
+    plan["summary"] = describe(plan)
+    return plan
+
+
+# ----------------------------------------------------------------- compare
 
 def _signature(value) -> tuple[set[str], set[str]]:
     """The numbers in a value, and its words cut to five letters."""
@@ -173,157 +580,397 @@ def _same(before, after) -> bool:
     return len(words_a & words_b) / min(len(words_a), len(words_b)) >= 0.7
 
 
-def compare(field: str, before: dict | None, evidence: dict | None,
-            rejected: str | None) -> dict:
-    """One box: what was recorded, what the pages say, and what that means."""
+def _contained(before, after) -> bool:
+    """The new reading says less, not something else.
+
+    Seen on CPower Energy, 2026-10-18: the map held "an NRG company; 4,600
+    customers and 21,000 sites", the About page now says only "an NRG
+    company". That page omits detail; it does not contradict it, and
+    superseding would replace a richer value with a poorer one. Contained =
+    every number in the new reading is in the recorded value, and nearly all
+    of its words are too (the same 70% as _same).
+    """
+    numbers_a, words_a = _signature(before)
+    numbers_b, words_b = _signature(after)
+    if not numbers_b <= numbers_a or not words_b:
+        return False
+    return len(words_a & words_b) / len(words_b) >= 0.7
+
+
+def _what_changed(outcome: str, before, after) -> str:
+    if outcome == "changed" or outcome in {"conflict", "protected"}:
+        numbers_a, _ = _signature(before)
+        numbers_b, _ = _signature(after)
+        if numbers_a != numbers_b and (numbers_a or numbers_b):
+            gone = ", ".join(sorted(numbers_a - numbers_b)) or "none"
+            new = ", ".join(sorted(numbers_b - numbers_a)) or "none"
+            return f"Different figures or dates (was: {gone}; now: {new})."
+        return "Different wording and content."
+    return {
+        "new": "Nothing was recorded; the pages now state it.",
+        "corroborated": "The pages state what is recorded.",
+        "unchanged": "The pages do not state it; the recorded value stands.",
+        "not_found": "The pages do not state it, and nothing was recorded.",
+        "not_yet_collected": "Not read in this update.",
+    }.get(outcome, "")
+
+
+def classify(field: str, before: dict | None, evidence: dict | None, rejected: str | None,
+             *, read_at: datetime, topic_name: str) -> dict:
+    """One box: what is recorded, what the pages say, and what the writer will do.
+
+    Mirrors ``decisions.append_actor_fact`` so the preview is the outcome:
+    same value -> corroborate; nothing current -> new; current set by GHUS ->
+    protected; at least as confident and newer -> changed; else conflict.
+    """
+    from agents.enrichment.decisions import _confidence_rank
+
     had = bool(before) and before.get("collection_state") == "found"
     found = bool(evidence) and evidence.get("collection_state") == "found"
-    if rejected and not found:
-        # A refused answer never touches what is recorded; with nothing
-        # recorded it is reported as refused, with the reason.
-        outcome = "unchanged" if had else "refused"
-    elif found and not had:
-        outcome = "filled"
-    elif found and _same(before.get("fact_value"), evidence.get("value")):
-        outcome = "confirmed"
-    elif found:
-        outcome = "updated"
+    if evidence is None:
+        outcome = "unchanged" if had else "not_yet_collected"
+    elif not found:
+        outcome = "unchanged" if had else "not_found"
+    elif not had:
+        outcome = "new"
+    elif (_same(before.get("fact_value"), evidence.get("value"))
+          or _contained(before.get("fact_value"), evidence.get("value"))):
+        outcome = "corroborated"
+    elif before.get("creator_class") == "ghus_human":
+        outcome = "protected"
     else:
-        outcome = "unchanged" if had else "not stated"
+        previous_read = before.get("retrieved_at")
+        if isinstance(previous_read, str):
+            previous_read = datetime.fromisoformat(previous_read)
+        if previous_read is not None and previous_read.tzinfo is None:
+            previous_read = previous_read.replace(tzinfo=UTC)
+        stronger = (_confidence_rank(evidence.get("confidence") or "medium")
+                    >= _confidence_rank(before.get("confidence") or "low"))
+        newer = previous_read is None or read_at > previous_read
+        outcome = "changed" if stronger and newer else "conflict"
+    previous = None
+    if before:
+        previous = {"value": before.get("fact_value") if had else None,
+                    "state": before.get("collection_state"),
+                    "source_url": before.get("source_url"),
+                    "date_read": str(before.get("retrieved_at") or "")[:10] or None,
+                    "confidence": before.get("confidence"),
+                    "set_by": "GHUS" if before.get("creator_class") == "ghus_human" else "agent"}
+    proposed = None
+    if found:
+        proposed = {"value": evidence.get("value"), "source_url": evidence.get("source_url"),
+                    "date_read": str(evidence.get("date_read") or "")[:10],
+                    "confidence": evidence.get("confidence")}
     return {
         "field": field,
+        "topic": topic_name,
         "outcome": outcome,
-        "before": before.get("fact_value") if had else None,
-        "before_read": str(before.get("retrieved_at") or "")[:10] if had else None,
-        "after": evidence.get("value") if found else None,
-        "source_url": evidence.get("source_url") if found else None,
+        "group": GROUPS[outcome],
+        "previous": previous,
+        "proposed": proposed,
+        "what_changed": _what_changed(outcome, previous and previous["value"],
+                                      proposed and proposed["value"]),
+        # An answer that failed a check is not evidence of absence either.
+        "resolution": ("Nothing is written: the answer failed a check."
+                       if rejected and outcome == "not_found" else RESOLUTION[outcome]),
         "reason": rejected,
+        # Kept for apply; not shown.
+        "_evidence": evidence,
+        "_current_value": before.get("fact_value") if had else None,
     }
 
 
-def update_actor(session, *, actor_id: str, topic_code: str | None, fields, live: bool,
-                 max_usd: float, reader_factory=None) -> dict:
-    actor = load_actor(session, actor_id)
-    if actor is None:
-        return {"ok": False, "error": "No actor with that id."}
-    if not str(actor.get("website") or "").strip():
-        return {"ok": False, "actor": actor,
-                "error": "This actor has no website on record, so there are no pages "
-                         "of its own to read. Add the website in Review first."}
-    topics = actor["topics"]
-    # A sector the person chose wins - it may be one the actor is not linked to
-    # yet, which is exactly the case for imported actors. Otherwise its own.
-    chosen = topic_by_code(session, topic_code) if topic_code else None
-    topic = chosen or (topics[0] if topics else None)
-    if topic is None:
-        return {"ok": False, "actor": actor, "needs_topic": True,
-                "error": "This actor is not linked to a sector yet, and facts are kept "
-                         "per sector. Choose the sector to update it for."}
+def counts_of(findings) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for finding in findings:
+        counts[finding["group"]] = counts.get(finding["group"], 0) + 1
+    return counts
 
-    from agents.collection.light_pull import CATEGORY_LIGHT_FIELDS
-    from agents.collection.light_pull_reader import COMMON_READ_FIELDS
 
-    allowed = [*COMMON_READ_FIELDS, *CATEGORY_LIGHT_FIELDS.get(actor["actor_category"] or "", ())]
-    wanted = [f for f in (fields or allowed) if f in allowed] or list(allowed)
+def public(finding: dict) -> dict:
+    return {k: v for k, v in finding.items() if not k.startswith("_")}
 
-    if reader_factory is None:
-        from agents.collection.light_pull_candidates import _reader
+
+# -------------------------------------------------------------------- check
+
+def _check_path(runs_dir: Path, check_id: str) -> Path:
+    if not re.fullmatch(r"[0-9a-f]{32}", str(check_id or "")):
+        raise ActorUpdateError("That check id is not valid.")
+    return Path(runs_dir) / f"{check_id}.json"
+
+
+def check_update(session, *, actor_id: str, topic_code: str | None = None,
+                 scope: str = "general", depth: str = "light", fields=(), categories=(),
+                 focus: str = "", max_usd: float | None = None, config: dict | None = None,
+                 reader_factory=None, runs_dir: Path = RUNS_DIR,
+                 today: datetime | None = None) -> dict:
+    """Read the actor's pages once and compare every box. Writes no database row."""
+    if config is None:
         from agents.discovery.search.run import load_open_web_config
 
-        reader, meter, model = _reader(load_open_web_config(ROOT), max_usd)
-    else:
-        reader, meter, model = reader_factory(max_usd)
+        config = load_open_web_config(ROOT)
+    limits = settings(config)
+    plan = plan_update(session, actor_id=actor_id, topic_code=topic_code, scope=scope,
+                       depth=depth, fields=fields, categories=categories, focus=focus,
+                       config=config, today=today, runs_dir=runs_dir)
+    if not plan.get("ok"):
+        return plan
+    if depth == "deep":
+        return {**plan, "ok": False, "error": plan["refusal"]}
+    if not plan["fields"]:
+        return {**plan, "ok": True, "findings": [], "counts": {}, "cost_usd": 0.0,
+                "pages_read": [], "check_id": None,
+                "note": "Every box in scope is filled and fresh, so nothing was read."}
+    cap = float(limits["max_usd_per_actor"])
+    cap = min(cap, float(max_usd)) if max_usd else cap
+    if reader_factory is None:
+        from agents.collection.light_pull_candidates import _reader
 
-    before = current_values(session, actor_id, topic["topic_id"], wanted)
+        reader, meter, model = _reader(config, cap)
+    else:
+        reader, meter, model = reader_factory(cap)
+
+    actor = load_actor(session, actor_id)
+    topic = topic_by_code(session, plan["topic"]["code"])
+    terms = [topic["name"]]
+    if plan["focus"]:
+        terms.append(plan["focus"])
+    for category in plan["categories"]:
+        terms += list(CHANGE_CATEGORIES.get(category, {}).get("pages", ()))
+    before = current_values(session, actor["actor_id"], topic["topic_id"], plan["fields"])
     read_at = datetime.now(UTC)
     read = reader.read(name=actor["name"], website=actor["website"],
                        actor_category=actor["actor_category"],
                        category_type=str(actor.get("category_type") or ""),
-                       topic_terms=[topic["name"]], read_at=read_at, fields=wanted)
+                       topic_terms=terms, read_at=read_at, fields=plan["fields"])
+    spent = round(float(meter.spent_usd), 4)
     if not read.pages:
         # Nothing was read - the site refused (403), did not resolve, or had no
-        # text. Reporting each box as "not stated" would claim the pages were
+        # text. Reporting each box as "not found" would claim the pages were
         # read and were silent; say what actually happened instead.
-        return {"ok": False, "actor": {k: actor[k] for k in ("actor_id", "name", "website")},
+        return {**plan, "ok": False, "cost_usd": spent,
                 "error": f"{actor['name']}'s website could not be read, so nothing was "
-                         f"compared or written. {read.error or ''}".strip(),
-                "cost_usd": round(float(meter.spent_usd), 4)}
-    boxes = [compare(f, before.get(f), read.evidence.get(f), read.rejected.get(f))
-             for f in wanted]
-
-    written = 0
-    if live and read.pages:
-        from agents.enrichment.decisions import ActorFactWrite, append_actor_fact
-
-        for box in boxes:
-            evidence = read.evidence.get(box["field"]) or {}
-            # A silent page never overwrites a recorded value.
-            if box["outcome"] in {"unchanged", "refused"} or not evidence:
-                continue
-            append_actor_fact(session, ActorFactWrite(
-                actor_id=actor_id, topic_id=topic["topic_id"], fact_type="light_pull",
-                field_key=box["field"], value=evidence.get("value"), layer=1,
-                collection_state=evidence["collection_state"],
-                confidence=evidence.get("confidence") or "medium",
-                source_url=evidence.get("source_url") or read.pages[0],
-                date_read=read_at, source_origin="newly_found",
-                created_by="agent:actor_updates",
-            ), live=True)
-            written += 1
-        session.commit()
-
-    counts: dict[str, int] = {}
-    for box in boxes:
-        counts[box["outcome"]] = counts.get(box["outcome"], 0) + 1
-    return {
-        "ok": read.error is None,
-        "error": read.error,
-        "mode": "live" if live else "preview",
-        "actor": {k: actor[k] for k in ("actor_id", "name", "website", "actor_category",
-                                        "status")},
-        "topic": {"code": topic["code"], "name": topic["name"], "source": topic.get("source")},
-        "topics": [{"code": t["code"], "name": t["name"]} for t in topics],
-        "pages_read": read.pages,
-        "boxes": boxes,
-        "counts": counts,
-        "written": written,
-        "cost_usd": round(float(meter.spent_usd), 4),
-        "model": model,
+                         f"compared or written. {read.error or ''}".strip()}
+    findings = [classify(f, before.get(f), read.evidence.get(f), read.rejected.get(f),
+                         read_at=read_at, topic_name=topic["name"]) for f in plan["fields"]]
+    # Boxes in the schema with nothing recorded and not read now.
+    schema = schema_fields(actor["actor_category"])
+    others = current_values(session, actor["actor_id"], topic["topic_id"],
+                            [f for f in schema if f not in plan["fields"]])
+    unread = [classify(f, None, None, None, read_at=read_at, topic_name=topic["name"])
+              for f in schema if f not in plan["fields"] and f not in others]
+    check_id = uuid.uuid4().hex
+    record = {
+        "check_id": check_id, "created_at": read_at.isoformat(), "read_at": read_at.isoformat(),
+        "actor_id": actor["actor_id"], "actor_name": actor["name"],
+        "topic_id": topic["topic_id"], "topic_code": topic["code"], "topic_name": topic["name"],
+        "scope": scope, "depth": depth, "categories": plan["categories"], "focus": plan["focus"],
+        "fields": plan["fields"], "pages_read": read.pages, "cost_usd": spent, "cap_usd": cap,
+        "model": model, "summary": plan["summary"], "findings": findings,
+        "applied_run_id": None, "written_fields": [],
     }
+    Path(runs_dir).mkdir(parents=True, exist_ok=True)
+    _check_path(runs_dir, check_id).write_text(json.dumps(record, default=str, indent=1),
+                                               encoding="utf-8")
+    return {**plan, "ok": True, "check_id": check_id, "pages_read": read.pages,
+            "findings": [public(f) for f in findings], "unread": [public(f) for f in unread],
+            "counts": counts_of(findings), "cost_usd": spent, "model": model,
+            "writes": sum(1 for f in findings if f["outcome"] in WRITTEN
+                          and not (f["outcome"] == "not_found" and f.get("reason"))),
+            "error": read.error}
+
+
+# -------------------------------------------------------------------- apply
+
+def _record_run(session, record: dict) -> tuple[str, str]:
+    """The run in the existing ledger, written by its one writer (subscription_store)."""
+    from agents.collection import subscription_store as store
+
+    return store.start_actor_update_run(
+        session, actor_id=record["actor_id"], topic_id=record["topic_id"],
+        need=f"Actor update ({record['scope']}): {record['summary']}",
+        requested_by=REQUESTED_BY, job_name=JOB_NAME, cap_usd=float(record["cap_usd"]),
+        spent_usd=float(record["cost_usd"]), pages_fetched=len(record["pages_read"]),
+        snapshot={
+            "check_id": record["check_id"], "scope": record["scope"], "depth": record["depth"],
+            "categories": record["categories"], "focus": record["focus"],
+            "fields": record["fields"], "pages_read": record["pages_read"],
+            "model": record["model"], "read_at": record["read_at"],
+        })
+
+
+def _finish_run(session, run_id: str, *, status: str, reason: str | None, results) -> None:
+    from agents.collection import subscription_store as store
+
+    store.finish_actor_update_run(
+        session, run_id, status=status, reason=reason,
+        found=sum(1 for r in results if r.get("written") and r["outcome"] != "not_found"),
+        review_items=sum(1 for r in results
+                         if r.get("written") and r["outcome"] in {"conflict", "protected"}),
+        outcomes={r["field"]: r.get("actual") or r["outcome"] for r in results})
+
+
+def _actual(session, fact_id: str, current_id: str | None) -> str:
+    """What the writer really did, read back from the fact it returned."""
+    if current_id and fact_id == current_id:
+        return "corroborated"
+    state = session.execute(text(
+        "SELECT lifecycle_state, supersedes_fact_id IS NOT NULL AS supersedes FROM actor_fact "
+        "WHERE actor_fact_id = CAST(:id AS uuid)"), {"id": fact_id}).mappings().first()
+    if state is None:
+        return "unknown"
+    if state["lifecycle_state"] == "pending_update":
+        return "protected"
+    if state["lifecycle_state"] == "conflict_flagged":
+        return "conflict"
+    return "changed" if state["supersedes"] else "new"
+
+
+def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: dict | None = None,
+                now: datetime | None = None) -> dict:
+    """Write what a check found, through the Phase 11 writer. No second read."""
+    from agents.common.facts import ActorFactWrite
+    from agents.enrichment.decisions import append_actor_fact
+
+    path = _check_path(runs_dir, check_id)
+    if not path.is_file():
+        return {"ok": False, "error": "That check was not found; run the check again."}
+    record = json.loads(path.read_text(encoding="utf-8"))
+    limits = settings(config)
+    now = now or datetime.now(UTC)
+    created = datetime.fromisoformat(record["created_at"])
+    if now - created > timedelta(hours=float(limits["check_valid_hours"])):
+        return {"ok": False, "error": (
+            f"This check is older than {limits['check_valid_hours']} hours; its pages may "
+            "have changed. Run the check again.")}
+    done = set(record.get("written_fields") or ())
+    pending = [f for f in record["findings"] if f["outcome"] in WRITTEN
+               and not (f["outcome"] == "not_found" and f.get("reason"))
+               and f["field"] not in done]
+    if not pending:
+        return {"ok": True, "check_id": check_id, "run_id": record.get("applied_run_id"),
+                "results": [], "note": "Everything in this check was already written."}
+    read_at = datetime.fromisoformat(record["read_at"])
+    if record.get("applied_run_id"):
+        run_id = record["applied_run_id"]
+        request_id = record["applied_request_id"]
+    else:
+        request_id, run_id = _record_run(session, record)
+        session.commit()
+        record["applied_run_id"], record["applied_request_id"] = run_id, request_id
+    current = current_values(session, record["actor_id"], record["topic_id"],
+                             [f["field"] for f in pending])
+    results = []
+    for finding in pending:
+        evidence = finding["_evidence"] or {}
+        now_current = current.get(finding["field"])
+        value = evidence.get("value")
+        if finding["outcome"] == "corroborated" and now_current \
+                and now_current.get("collection_state") == "found":
+            # Same fact in other words: corroborate the recorded value itself,
+            # so the writer adds this source instead of a near-duplicate fact.
+            value = now_current["fact_value"]
+        result = public(finding)
+        savepoint = session.begin_nested()
+        try:
+            fact_id = append_actor_fact(session, ActorFactWrite(
+                actor_id=record["actor_id"], topic_id=record["topic_id"], fact_type="light_pull",
+                field_key=finding["field"],
+                value=value if evidence.get("collection_state") == "found" else None,
+                layer=1, collection_state=evidence.get("collection_state") or "not_found",
+                confidence=evidence.get("confidence") or "medium",
+                source_url=evidence.get("source_url") or record["pages_read"][0],
+                date_read=read_at, source_origin="newly_found", created_by=CREATED_BY,
+                request_id=request_id,
+            ), live=True)
+            savepoint.commit()
+        except Exception as exc:  # noqa: BLE001 - one box must not stop the others
+            savepoint.rollback()
+            result.update(written=False, error=f"{type(exc).__name__}: {exc}"[:300])
+            results.append(result)
+            continue
+        actual = _actual(session, fact_id,
+                         now_current.get("actor_fact_id") if now_current else None)
+        if finding["outcome"] == "not_found":
+            actual = "not_found"
+        result.update(written=True, fact_id=fact_id, actual=actual)
+        results.append(result)
+    failed = [r for r in results if not r.get("written")]
+    status = "attention" if failed else "succeeded"
+    reason = (f"{len(failed)} box(es) failed; apply the same check again to retry them."
+              if failed else None)
+    _finish_run(session, run_id, status=status, reason=reason, results=results)
+    session.commit()
+    record["written_fields"] = sorted(done | {r["field"] for r in results if r.get("written")})
+    path.write_text(json.dumps(record, default=str, indent=1), encoding="utf-8")
+    counts: dict[str, int] = {}
+    for r in results:
+        if r.get("written"):
+            counts[r["actual"]] = counts.get(r["actual"], 0) + 1
+    return {"ok": not failed, "check_id": check_id, "run_id": run_id, "results": results,
+            "counts": counts, "failed": len(failed), "error": reason,
+            "review_items": sum(1 for r in results
+                                if r.get("written") and r["actual"] in {"conflict", "protected"})}
+
+
+# --------------------------------------------------------------------- CLI
+
+def _common(parser) -> None:
+    parser.add_argument("--actor-id", required=True)
+    parser.add_argument("--topic", default=None, help="sector code; default: the actor's first")
+    parser.add_argument("--scope", default="general", choices=SCOPES)
+    parser.add_argument("--depth", default="light", choices=DEPTHS)
+    parser.add_argument("--fields", default="",
+                        help="comma-separated box keys, or a preset: " + ", ".join(PRESETS))
+    parser.add_argument("--categories", default="", help="comma-separated change categories")
+    parser.add_argument("--focus", default="", help="words to steer which topic page is read")
+
+
+def _split(value: str) -> list[str]:
+    return [v.strip() for v in str(value or "").split(",") if v.strip()]
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    up = sub.add_parser("update")
-    up.add_argument("--actor-id", required=True)
-    up.add_argument("--topic", default=None, help="sector code; default: the actor's first")
-    up.add_argument("--fields", default="",
-                    help="comma-separated box keys, or a preset: "
-                         + ", ".join(PRESETS) + "; empty means every box")
-    up.add_argument("--live", action="store_true", help="write; absent means preview")
-    up.add_argument("--max-usd", type=float, default=0.15)
+    _common(sub.add_parser("plan"))
+    check = sub.add_parser("check")
+    _common(check)
+    check.add_argument("--max-usd", type=float, default=None)
+    apply = sub.add_parser("apply")
+    apply.add_argument("--check-id", required=True)
     args = parser.parse_args(argv)
 
     sys.path.insert(0, str(ROOT))
     from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env", override=False)  # API key only; the caller's DATABASE_URL wins
-    if args.live and not _local_test_database() \
+    if args.command == "apply" and not _local_test_database() \
             and os.environ.get("ACTOR_UPDATE_WRITES_ENABLED", "").lower() != "true":
         print(json.dumps({"ok": False, "error": (
-            "Live actor updates outside a local *_test database need "
+            "Writing actor updates outside a local *_test database needs "
             "ACTOR_UPDATE_WRITES_ENABLED=true (the platform bridge sets it).")}))
         return 0
-    fields = PRESETS.get(args.fields) or [f.strip() for f in args.fields.split(",") if f.strip()]
 
     from agents.collection.discovery_requests import open_session
+    from agents.discovery.search.run import load_open_web_config
 
+    config = load_open_web_config(ROOT)
     session = open_session()
     try:
-        result = update_actor(session, actor_id=args.actor_id, topic_code=args.topic,
-                              fields=fields, live=args.live, max_usd=args.max_usd)
+        if args.command == "apply":
+            result = apply_check(session, args.check_id, config=config)
+        else:
+            fields = list(PRESETS.get(args.fields) or _split(args.fields))
+            options = dict(actor_id=args.actor_id, topic_code=args.topic, scope=args.scope,
+                           depth=args.depth, fields=fields, categories=_split(args.categories),
+                           focus=args.focus, config=config)
+            result = (plan_update(session, **options) if args.command == "plan"
+                      else check_update(session, max_usd=args.max_usd, **options))
+    except ActorUpdateError as exc:
+        result = {"ok": False, "error": str(exc)}
     except Exception as exc:  # noqa: BLE001 - the page shows the reason, never a traceback
+        session.rollback()
         result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:400]}
     finally:
         session.close()

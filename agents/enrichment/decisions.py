@@ -580,6 +580,75 @@ def record_actor_verification_review_decision(
     return {**outcome, "action": "decided"}
 
 
+FACT_REVIEW_KINDS = ("fact_conflict", "pending_update")
+
+
+def record_fact_review_decision(
+    session,
+    *,
+    review_item_id: str,
+    decided_by: str,
+    accept: bool,
+    notes: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """GHUS decides a fact conflict or a pending update raised by ``append_actor_fact``.
+
+    ``accept`` makes the proposed fact current: the current fact is resolved
+    ``superseded`` and the pointer moves. Otherwise the proposed fact is
+    resolved ``rejected`` and the current one stands. Both facts stay in the
+    ledger; nothing is deleted. If the current value changed after the review
+    item was raised, accepting is refused rather than overwriting the newer value.
+    """
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    item, payload = _pending_review_item(session, review_item_id, FACT_REVIEW_KINDS)
+    new_id = str(payload.get("new_fact_id") or "")
+    current_id = str(payload.get("current_fact_id") or "")
+    if not new_id or not current_id:
+        raise ValueError("this review item does not name the two facts it compares")
+    outcome: dict[str, object] = {
+        "review_item_id": review_item_id, "actor_id": item["entity_id"],
+        "field_key": payload.get("field_key"), "new_fact_id": new_id,
+        "current_fact_id": current_id,
+        "decision": "use_new_value" if accept else "keep_current_value",
+    }
+    if item["status"] != "pending":
+        return {**outcome, "action": "already_resolved"}
+    fact = session.execute(text(
+        "SELECT actor_id::text AS actor_id, topic_id::text AS topic_id, fact_key "
+        "FROM actor_fact WHERE actor_fact_id=CAST(:id AS uuid)"
+    ), {"id": new_id}).mappings().first()
+    if fact is None:
+        raise ValueError("the proposed fact no longer exists")
+    pointer = session.execute(text(
+        "SELECT actor_fact_id::text FROM actor_fact_current_pointer WHERE "
+        "actor_id=CAST(:a AS uuid) AND topic_id=CAST(:t AS uuid) AND fact_key=:k FOR UPDATE"
+    ), {"a": fact["actor_id"], "t": fact["topic_id"], "k": fact["fact_key"]}).scalar()
+    if accept and pointer != current_id:
+        raise ValueError("the current value changed after this review was raised; "
+                         "check the actor again before replacing it")
+    if not live:
+        return {**outcome, "action": "would_decide"}
+    reason = ("GHUS review: use the new value" if accept else
+              "GHUS review: keep the current value") + (f"; {notes}" if notes else "")
+    if accept:
+        _append_fact_resolution(session, current_id, "superseded", new_id, reviewer, reason)
+        _append_fact_resolution(session, new_id, "accepted", current_id, reviewer, reason)
+        execute_canonical_write(session, text(
+            "UPDATE actor_fact_current_pointer SET actor_fact_id=CAST(:fact AS uuid),"
+            "changed_at=now() WHERE actor_id=CAST(:a AS uuid) AND topic_id=CAST(:t AS uuid) "
+            "AND fact_key=:k"
+        ), {"fact": new_id, "a": fact["actor_id"], "t": fact["topic_id"], "k": fact["fact_key"]})
+    else:
+        _append_fact_resolution(session, new_id, "rejected", current_id, reviewer, reason)
+    _close_review_item(session, review_item_id, decision="approve" if accept else "reject",
+                       status="approved" if accept else "rejected", decided_by=reviewer,
+                       reason=reason)
+    return {**outcome, "action": "decided"}
+
+
 def record_geocode_review_decision(
     session,
     *,

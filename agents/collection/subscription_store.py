@@ -414,3 +414,64 @@ def expire_finished(session, subscriptions: Iterable[Subscription], *, today: da
             "AND status = 'active'"
         ), {"id": subscription_id})
     return ended
+
+
+# ------------------------------------------------------------- actor updates
+# One person-requested update of one actor (agents/collection/actor_updates.py)
+# is recorded in the same ledger as discovery runs, by this one writer.
+
+ACTOR_UPDATE_FETCH_BUDGET = 3  # home, About, one topic page
+
+
+def start_actor_update_run(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str,
+    need: str,
+    requested_by: str,
+    job_name: str,
+    cap_usd: float,
+    spent_usd: float,
+    pages_fetched: int,
+    snapshot: Mapping[str, object],
+) -> tuple[str, str]:
+    """A collection request for the actor and its run; returns both ids."""
+    request_id = str(session.execute(text(
+        "INSERT INTO collection_request (requested_by, request_kind, topic_id, actor_id, "
+        "need_text, layer) VALUES (:by, 'mapping', CAST(:topic AS uuid), CAST(:actor AS uuid), "
+        ":need, 1) RETURNING collection_request_id::text"
+    ), {"by": requested_by, "topic": topic_id, "actor": actor_id,
+        "need": need[:2000]}).scalar_one())
+    run_id = str(session.execute(text(
+        "INSERT INTO collection_run (collection_request_id, job_name, dry_run, status, "
+        "fetch_budget, fetch_count, max_usd, spent_usd, trigger_type, cadence, initiated_by, "
+        "config_snapshot) VALUES (CAST(:request AS uuid), :job, false, 'running', :budget, "
+        ":fetched, :cap, :spent, 'manual', 'once', :by, CAST(:snapshot AS jsonb)) "
+        "RETURNING collection_run_id::text"
+    ), {"request": request_id, "job": job_name, "budget": ACTOR_UPDATE_FETCH_BUDGET,
+        "fetched": min(int(pages_fetched), ACTOR_UPDATE_FETCH_BUDGET),
+        # The call that trips the cap can overshoot it slightly: the true spend
+        # is kept and the cap cleared for this row, as finish_run does.
+        "cap": cap_usd if spent_usd <= cap_usd else None, "spent": spent_usd,
+        "by": requested_by, "snapshot": json.dumps(dict(snapshot), default=str)}).scalar_one())
+    return request_id, run_id
+
+
+def finish_actor_update_run(
+    session,
+    run_id: str,
+    *,
+    status: str,
+    reason: str | None,
+    found: int,
+    review_items: int,
+    outcomes: Mapping[str, str],
+) -> None:
+    session.execute(text(
+        "UPDATE collection_run SET status = :status, status_reason = :reason, "
+        "finished_at = now(), found_count = :found, staged_count = 0, deduplicated_count = 0, "
+        "review_item_count = :review, config_snapshot = COALESCE(config_snapshot, '{}'::jsonb) "
+        "|| CAST(:outcomes AS jsonb) WHERE collection_run_id = CAST(:run AS uuid)"
+    ), {"status": status, "reason": reason, "found": int(found), "review": int(review_items),
+        "run": run_id, "outcomes": json.dumps({"outcomes": dict(outcomes)})})

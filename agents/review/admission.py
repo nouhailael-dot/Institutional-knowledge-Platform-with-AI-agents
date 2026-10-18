@@ -561,7 +561,8 @@ def apply_category_decisions(session, decision: Mapping[str, Any]) -> dict[str, 
     }
 
 
-REVIEW_ITEM_DECISION_KINDS = {"resolve_location", "resolve_relationship", "verify_actor"}
+REVIEW_ITEM_DECISION_KINDS = {"resolve_location", "resolve_relationship", "verify_actor",
+                              "resolve_fact"}
 
 
 def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str, Any]:
@@ -572,6 +573,7 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
     """
     from agents.enrichment.decisions import (
         record_actor_verification_review_decision,
+        record_fact_review_decision,
         record_geocode_review_decision,
         record_relationship_review_decision,
     )
@@ -590,6 +592,13 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
                 session, review_item_id=item_id, decided_by=reviewer,
                 verified=bool(decision.get("verified")),
                 rejection_reason=decision.get("rejection_reason"), notes=notes, live=True,
+            )
+        elif kind == "resolve_fact":
+            # A fact conflict or pending update: use the proposed value or keep
+            # the current one. Both facts stay in the ledger either way.
+            result = record_fact_review_decision(
+                session, review_item_id=item_id, decided_by=reviewer,
+                accept=bool(decision.get("accept")), notes=notes, live=True,
             )
         elif kind == "resolve_location":
             result = record_geocode_review_decision(
