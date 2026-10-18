@@ -108,8 +108,20 @@ def load_actors() -> list[dict]:
                )
                    AS actor_category,
                NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
-               a.verification_status,
-               a.location_city, a.state, a.country, a.estimated_trl,
+               -- Migration 500 drops verification_status, estimated_trl and
+               -- renames location_city -> city, state -> state_code. Reading
+               -- them directly raised UndefinedColumn and emptied Browse on a
+               -- migrated database. Legacy value first; after 500 the V2
+               -- record status (verified / parked / rejected) is what is
+               -- recorded, shown as itself, never relabelled as a legacy tier.
+               COALESCE(NULLIF(to_jsonb(a)->>'verification_status', ''),
+                        NULLIF(to_jsonb(a)->>'status', '')) AS verification_status,
+               COALESCE(NULLIF(to_jsonb(a)->>'location_city', ''),
+                        NULLIF(to_jsonb(a)->>'city', '')) AS location_city,
+               COALESCE(NULLIF(to_jsonb(a)->>'state', ''),
+                        NULLIF(to_jsonb(a)->>'state_code', '')) AS state,
+               a.country,
+               CAST(NULLIF(to_jsonb(a)->>'estimated_trl', '') AS integer) AS estimated_trl,
                a.website, a.description,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,

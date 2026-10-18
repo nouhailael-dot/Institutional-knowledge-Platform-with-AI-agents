@@ -48,6 +48,19 @@ class ActorCategoryCompatibilityTests(unittest.TestCase):
         self.assertIn('_section("Actor category", r["actor_category"])', source)
         self.assertIn('_section("Category type", r["category_type"])', source)
 
+    def test_browse_reads_columns_migration_500_drops_or_renames_through_to_jsonb(self):
+        """Browse raised UndefinedColumn on production after 500 and showed no actors."""
+        import re
+
+        source = Path("src/browse.py").read_text(encoding="utf-8")
+        sql = source[source.index("def load_actors"):source.index("def load_hubs")]
+        for column in ("verification_status", "location_city", "estimated_trl"):
+            self.assertNotRegex(sql, rf"\ba\.{column}\b")
+        self.assertIsNone(re.search(r"\ba\.state\b", sql))
+        for column in ("verification_status", "status", "location_city", "city",
+                       "state", "state_code", "estimated_trl"):
+            self.assertIn(f"to_jsonb(a)->>'{column}'", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
