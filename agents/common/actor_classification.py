@@ -226,7 +226,17 @@ def classify_actor_category_type(
     kind = llm_client.extract_with_tool(
         system=(
             "Decide whether the subject is an organization actor, a person, or a time-bound "
-            "event. Use only the supplied name and official self-description."
+            "event. Use only the supplied name and official self-description.\n"
+            "An ACTOR is a standing organization or an operating unit of one - a university, "
+            "a department or institute within it, a company or a named site of one, an agency, "
+            "an association, a fund, a laboratory. It persists; it is not scheduled.\n"
+            "An EVENT is bounded in time: a conference, summit, workshop, call or programme "
+            "intake with dates. A recurring series is still an event.\n"
+            "A PERSON is a named human being, even one described by their role.\n"
+            "Judge what the subject IS, not what the page is about: a page announcing a "
+            "conference hosted by an institute describes an event, while the institute's own "
+            "page describes an actor. This decision gates everything after it, so when the "
+            "description genuinely does not settle it, say so rather than guessing."
         ),
         user=str(subject),
         tool_name="classify_record_kind",

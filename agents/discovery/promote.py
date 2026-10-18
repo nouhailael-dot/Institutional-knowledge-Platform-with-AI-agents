@@ -41,7 +41,11 @@ from agents.common.provenance import insert_source
 from agents.common.relationships import actor_relationship_requests
 from agents.common.resolve_route import RouteDecision
 from agents.discovery.stage import StagedRecord
-from agents.enrichment.decisions import append_actor_fact, append_entity_edge
+from agents.enrichment.decisions import (
+    append_actor_fact,
+    append_entity_edge,
+    record_agent_auto_verification,
+)
 from src.ML.entity_resolution.resolve_or_create import (
     INHERITABLE_FIELDS as ACTOR_FIELDS,
 )
@@ -61,6 +65,9 @@ EVENT_CREATE_FIELDS = [
 
 EVENT_ABSORB_FIELDS = EVENT_CREATE_FIELDS.copy()
 DISCOVERED_DOMAIN_PAYLOAD_KEY = "_discovered_domain"
+# Set by the open-web actor pipeline only for a candidate it ACCEPTED (score
+# and every quality gate). Its value is the agent's stated reasons.
+AUTO_ACCEPT_PAYLOAD_KEY = "_auto_accept_reasons"
 ACTOR_CREATE_FIELDS = [*ACTOR_FIELDS, "funding_summary"]
 ACTOR_ABSORB_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_CONNECTOR_RE = re.compile(
@@ -361,6 +368,61 @@ def _discovery_collection_request(session, staged: StagedRecord) -> str:
     ), {"need": need}).scalar_one())
 
 
+def _append_actor_sectors(session, *, actor_id: str, staged: StagedRecord, source_id: str) -> int:
+    """Persist the sectors the page's own evidence supports.
+
+    Until now these codes were used to match hubs and then discarded, so no
+    actor carried a sector at all. That emptied the Review sector field and left
+    sector-grouped Phase 7 detection with nothing to cluster, because
+    `actor_sector` stayed empty no matter how many actors were discovered.
+
+    `is_primary` is set only when the evidence names exactly one sector. With
+    several, the agent has not ranked them and neither will this: a reviewer
+    chooses. `ux_actor_sector_primary` allows at most one primary per actor, and
+    an unranked set simply has none.
+    """
+
+    if not _table_columns(session, "actor_sector"):
+        return 0
+    codes = sorted({str(code).strip().upper() for code in staged.sector_codes if str(code).strip()})
+    if not codes:
+        return 0
+    sectors = session.execute(text(
+        "SELECT sector_id::text AS sector_id, code FROM sector "
+        "WHERE active AND code = ANY(CAST(:codes AS text[]))"
+    ), {"codes": codes}).mappings().all()
+    if not sectors:
+        return 0
+    sole = len(sectors) == 1
+    # A reviewer's choice at admission is the primary sector; otherwise only a
+    # sole evidenced sector is.
+    chosen = str(staged.normalized_payload.get("primary_sector") or "").strip().upper()
+    written = 0
+    for sector in sectors:
+        by_reviewer = bool(chosen) and sector["code"] == chosen
+        session.execute(
+            text(
+                "INSERT INTO actor_sector (actor_id,sector_id,source_id,match_strength,"
+                "match_reason,is_primary) VALUES (CAST(:actor AS uuid),CAST(:sector AS uuid),"
+                "CAST(:source AS uuid),'moderate',:reason,:primary) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "actor": actor_id,
+                "sector": sector["sector_id"],
+                "source": source_id,
+                "primary": by_reviewer or (sole and not chosen),
+                "reason": (
+                    "Chosen as the primary sector by the GHUS reviewer at admission."
+                    if by_reviewer else
+                    f"Open-web discovery: the source page's own sector evidence matches "
+                    f"{sector['code']}. Agent-assigned and awaiting GHUS review."
+                ),
+            },
+        )
+        written += 1
+    return written
+
+
 def _append_event_topics(session, *, event_id: str, staged: StagedRecord, source_id: str) -> int:
     """Architecture V2: link the event to every active topic its own page evidences."""
     if not _table_columns(session, "event_topic"):
@@ -565,6 +627,10 @@ ACTOR_MAPPING_STEPS = (
     "parked",
     "verify_actor",
 )
+# The last step is one of two outcomes: queued for a person to verify, or -
+# for a candidate the discovery agent accepted (decision 2026-10-14) - verified
+# by the agent through a labelled verification event.
+ACTOR_FINAL_STEPS = ("verify_actor", "verified_by_agent")
 
 
 def map_new_actor(
@@ -722,6 +788,9 @@ def map_new_actor(
                 )
             _mapping_step(route, trace, "light_pull")
             actor_id = _insert_actor_v2(session, geography.actor_values, source_id)
+            _append_actor_sectors(
+                session, actor_id=actor_id, staged=staged, source_id=source_id
+            )
             relationships = actor_relationship_requests(
                 actor_id=actor_id,
                 payload=staged.normalized_payload,
@@ -775,11 +844,23 @@ def map_new_actor(
                 source_id=source_id,
                 plan=hub_plan,
             )
+            auto_accept = str(
+                staged.normalized_payload.get(AUTO_ACCEPT_PAYLOAD_KEY) or ""
+            ).strip()
             _mapping_step(route, trace, "parked")
-            review_id = _insert_verify_actor_review(
-                session, staged, actor_id=actor_id, topic_id=topic_id, trace=trace
-            )
-            _mapping_step(route, trace, "verify_actor")
+            if auto_accept:
+                # Accepted on score and every quality gate: verified through a
+                # labelled agent verification event instead of being queued.
+                record_agent_auto_verification(
+                    session, actor_id=actor_id, topic_id=topic_id, reason=auto_accept
+                )
+                review_id = None
+                _mapping_step(route, trace, "verified_by_agent")
+            else:
+                review_id = _insert_verify_actor_review(
+                    session, staged, actor_id=actor_id, topic_id=topic_id, trace=trace
+                )
+                _mapping_step(route, trace, "verify_actor")
             _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
             result = PromotionResult(
                 action="created",
@@ -811,6 +892,8 @@ def map_new_actor(
 
 def _mapping_step(route: RouteDecision, trace: list[str], step: str) -> None:
     expected = ACTOR_MAPPING_STEPS[len(trace)]
+    if expected == ACTOR_MAPPING_STEPS[-1] and step in ACTOR_FINAL_STEPS:
+        expected = step
     if step != expected:
         raise RuntimeError(f"actor mapping order violation: expected {expected}, got {step}")
     trace.append(step)
@@ -1346,7 +1429,7 @@ def _plan_actor_hubs(
             "SELECT h.hub_id::text AS hub_id,h.name,h.topic_id::text AS topic_id,"
             "h.center_latitude,h.center_longitude,COALESCE(h.radius_miles,200) AS radius_miles"
             + sector_select +
-            "FROM hub h WHERE (:topic_id IS NOT NULL AND h.topic_id=CAST(:topic_id AS uuid)) "
+            "FROM hub h WHERE (CAST(:topic_id AS uuid) IS NOT NULL AND h.topic_id=CAST(:topic_id AS uuid)) "
             "OR h.hub_id::text = ANY(CAST(:hub_ids AS text[]))" + sector_clause +
             " ORDER BY h.hub_id"
         ),
@@ -1448,6 +1531,18 @@ def _persist_hub_assignment_plan(
                 evidence=evidence,
             )
         if evaluation.selected:
+            # hub_actor.topic_id is the HUB's controlled topic, not the actor's.
+            # Approved migration 486 fills it as coalesce(ha.topic_id, h.topic_id)
+            # and contract 405 constrains (hub_id, topic_id) against hub itself,
+            # so the only value that satisfies both is the hub's own topic.
+            #
+            # Writing the actor's topic here was invisible while membership was
+            # decided BY topic, because the two were equal by construction. Since
+            # the 2026-10-08 amendment made sector Test 1 they can differ, and a
+            # topicless actor - which is most of them, because GHUS decision 3
+            # leaves actor topics to Light Pull - wrote NULL into a NOT NULL
+            # column and failed promotion outright.
+            membership_topic_id = evaluation.hub_topic_id
             session.execute(
                 text(
                     "INSERT INTO hub_actor (hub_id,actor_id,relationship_type,is_primary,"
@@ -1459,7 +1554,7 @@ def _persist_hub_assignment_plan(
                 {
                     "hub_id": evaluation.hub_id,
                     "actor_id": actor_id,
-                    "topic_id": topic_id,
+                    "topic_id": membership_topic_id,
                     "distance_miles": evaluation.distance_miles,
                     "overlap_flag": bool(plan.same_topic_overlap_hub_ids),
                     "source_id": source_id,

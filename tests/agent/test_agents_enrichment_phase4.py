@@ -336,7 +336,21 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             "hub_detection_run": {Path("agents/hubs/detect.py")},
             "review_admission_decision": {Path("agents/review/admission.py")},
             "review_item_decision": {Path("agents/enrichment/decisions.py")},
-            "collection_request": {Path("agents/discovery/promote.py")},
+            "collection_request": {
+                Path("agents/discovery/promote.py"),
+                Path("agents/collection/subscription_store.py"),
+            },
+            # Discovery requests and their run records: one writer. These say
+            # what to look for and what was looked at; they are not entities.
+            "collection_run": {Path("agents/collection/subscription_store.py")},
+            # Reference data: a reviewer adds a sector (and its mirror topic)
+            # when a real actor fits none - one writer, decisions.create_sector.
+            "sector": {Path("agents/enrichment/decisions.py")},
+            "topic": {Path("agents/enrichment/decisions.py")},
+            "actor_update_subscription": {Path("agents/collection/subscription_store.py")},
+            "actor_update_subscription_run": {
+                Path("agents/collection/subscription_store.py"),
+            },
             "event_topic": {Path("agents/discovery/promote.py")},
                 "actor_fact": {
                     Path("agents/discovery/promote.py"),
@@ -346,6 +360,10 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
                 "fact_corroboration": {Path("agents/enrichment/decisions.py")},
                 "fact_resolution": {Path("agents/enrichment/decisions.py")},
             "actor_topic": {Path("agents/discovery/promote.py")},
+            # Same writer as its siblings above. It was missing only because
+            # nothing wrote actor_sector at all, which is why no discovered
+            # actor carried a sector and Phase 7 had nothing to cluster.
+            "actor_sector": {Path("agents/discovery/promote.py")},
             "actor_location": {Path("agents/discovery/promote.py")},
             "review_item": {
                 Path("agents/discovery/promote.py"),

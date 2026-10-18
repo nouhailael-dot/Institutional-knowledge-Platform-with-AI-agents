@@ -10,7 +10,7 @@ def current_actor_facts(session, *, actor_id: str, topic_id: str | None = None):
     return session.execute(
         text(
             "SELECT * FROM actor_fact_current_v2 WHERE actor_id=CAST(:actor AS uuid) "
-            "AND (:topic IS NULL OR topic_id=CAST(:topic AS uuid)) "
+            "AND (CAST(:topic AS uuid) IS NULL OR topic_id=CAST(:topic AS uuid)) "
             "ORDER BY topic_id,fact_key"
         ),
         {"actor": actor_id, "topic": topic_id},
@@ -24,8 +24,8 @@ def actor_fact_history(
     return session.execute(
         text(
             "SELECT * FROM actor_fact_history WHERE actor_id=CAST(:actor AS uuid) "
-            "AND (:topic IS NULL OR topic_id=CAST(:topic AS uuid)) "
-            "AND (:fact_key IS NULL OR fact_key=:fact_key) "
+            "AND (CAST(:topic AS uuid) IS NULL OR topic_id=CAST(:topic AS uuid)) "
+            "AND (CAST(:fact_key AS text) IS NULL OR fact_key=:fact_key) "
             "ORDER BY topic_id,fact_key,created_at,actor_fact_id"
         ),
         {"actor": actor_id, "topic": topic_id, "fact_key": fact_key},

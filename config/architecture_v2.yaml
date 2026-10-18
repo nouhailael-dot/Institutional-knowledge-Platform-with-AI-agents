@@ -112,7 +112,9 @@ job2:
 # approved number.
 actor_update_subscriptions:
   default_cadence: monthly
-  allowed_cadences: [once, weekly, monthly, quarterly]
+  # biweekly added with the Discovery page (migration 550). No daily: the
+  # organisations being mapped do not change daily.
+  allowed_cadences: [once, weekly, biweekly, monthly, quarterly]
   # Proposed ~20% weight for sector match in candidate ranking. NOT approved.
   sector_rank_weight: 0.2
   # A run is a rehearsal unless someone asks for it to be live.
@@ -121,4 +123,7 @@ actor_update_subscriptions:
   max_duration_days: 365
   # Who may create one. Until authentication exists this is informational and
   # requested_by stays null rather than being invented.
-  requested_via_allowed: [map_verification, review_updates]
+  requested_via_allowed: [map_verification, review_updates, discovery_page]
+  # A Discovery-page request stages at most this many new actors per run
+  # unless the person asks for fewer; the database caps it at 50.
+  default_max_new_actors_per_run: 10

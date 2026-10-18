@@ -226,7 +226,19 @@ class QueryGenerator:
         self.config = config
         self.today = today or datetime.now(UTC).date()
 
-    def generate(self, entity_type: str, *, session=None, project_root: Path | None = None) -> QueryBundle:
+    def generate(
+        self,
+        entity_type: str,
+        *,
+        session=None,
+        project_root: Path | None = None,
+        request=None,
+    ) -> QueryBundle:
+        """Queries for one run.
+
+        ``request`` is a ``DiscoveryRequest``. For actors it replaces the hub
+        grid entirely: a requested run searches only what was asked for.
+        """
         if entity_type == "person" and not bool(self.config.get("people_enabled", False)):
             raise RuntimeError(
                 "open-web people discovery is disabled pending TARGETING_POLICY.md section 6 approval"
@@ -269,6 +281,37 @@ class QueryGenerator:
                     "address, postcode, room, suite, or floor."
                 ),
             }
+        elif entity_type == "actor" and request is not None:
+            from agents.discovery.search.discovery_request import request_actor_queries
+
+            queries, metadata = request_actor_queries(
+                request,
+                sectors,
+                max_queries=int(
+                    self.config.get("request_query_limit")
+                    or self.config.get("actor_query_limit")
+                    or 24
+                ),
+                rotation_seed=_actor_type_rotation_seed(self.today, self.config),
+            )
+            # The page-scoring stage classifies against the database's own
+            # actor types; the readable phrases above are for searching only.
+            if session is not None:
+                metadata["actor_type_enum"] = list(load_actor_types(session))
+            deterministic = _interleave_queries(
+                queries, list(metadata.get("use_case_queries") or [])
+            )
+            queries = _distinct_queries(deterministic)
+            if not queries:
+                raise RuntimeError("query generation returned zero queries for the request")
+            return QueryBundle(
+                entity_type=entity_type,
+                queries=queries,
+                deterministic_queries=deterministic,
+                llm_queries=[],
+                reference_count=0,
+                metadata=metadata,
+            )
         elif entity_type == "actor":
             actor_types = load_actor_types(session)
             hubs = load_actor_query_hubs(session)
@@ -384,6 +427,21 @@ def load_seeded_sectors(project_root: Path) -> list[dict[str, str]]:
                     for code, name in ast.literal_eval(node.value)
                 ]
     raise RuntimeError(f"could not find SECTORS in {seed_path}")
+
+
+def load_active_sectors(session, project_root: Path) -> list[dict[str, str]]:
+    """The sectors in the database, so one a reviewer adds in Review is used by
+    the next discovery run. Falls back to the seed file without a database."""
+    if session is not None:
+        try:
+            rows = session.execute(text(
+                "SELECT code, name FROM sector WHERE active ORDER BY code"
+            )).mappings().all()
+        except Exception:  # noqa: BLE001 - a missing table falls back to the seed
+            rows = []
+        if rows:
+            return [{"code": str(r["code"]).upper(), "name": str(r["name"])} for r in rows]
+    return load_seeded_sectors(project_root)
 
 
 def load_event_geographies(session, *, limit: int = 20) -> list[str]:

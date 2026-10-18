@@ -81,26 +81,9 @@ def run_weekly(
     if open_web_status == "missing_digest":
         open_web_exit = open_web_exit or 1
     discovery.append(StepOutcome("open_web_event", open_web_status, open_web_exit))
-    open_web_actor_report = output_dir / "open-web-actor-report.md"
-    open_web_actor_command = [
-        sys.executable,
-        "-m",
-        "agents.discovery.search.run",
-        "--entity",
-        "actor",
-        *live_arg,
-        "--report-out",
-        str(open_web_actor_report),
-        "--audit-out",
-        str(output_dir / "open-web-actor-audit.csv"),
-    ]
-    open_web_actor_exit = int(command_runner(open_web_actor_command) or 0)
-    open_web_actor_status = digest_status(open_web_actor_report)
-    if open_web_actor_status == "missing_digest":
-        open_web_actor_exit = open_web_actor_exit or 1
-    discovery.append(
-        StepOutcome("open_web_actor", open_web_actor_status, open_web_actor_exit)
-    )
+    # No actor sweep here. Actor discovery runs only for requests made on the
+    # Discovery page, on the schedule each request sets - see
+    # agents/collection/subscription_runner.py and discovery-requests.yml.
 
     for source in DISCOVERY_SOURCES:
         digest_path = output_dir / f"{source}-digest.md"

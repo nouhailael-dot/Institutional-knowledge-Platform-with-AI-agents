@@ -141,7 +141,17 @@ class SearchTriageClient:
             raise RuntimeError(
                 "person relevance triage is disabled pending TARGETING_POLICY.md section 6 approval"
             )
-        candidate_payloads = [candidate.__dict__ for candidate in candidates]
+        # Actors: answer by number with a short reason. Echoing every URL back
+        # was ~70% of a triage call's cost (1,793 output tokens for 20 results,
+        # measured 2026-10-15); the reasons stay - they are the recorded
+        # exclusion reasons.
+        compact = entity_type == "actor" and bool(self.config.get("actor_triage_compact", True))
+        id_to_url = {index: candidate.url for index, candidate in enumerate(candidates)}
+        candidate_payloads = (
+            [{"id": index, "url": c.url, "title": c.title, "snippet": c.snippet}
+             for index, c in enumerate(candidates)]
+            if compact else [candidate.__dict__ for candidate in candidates]
+        )
         user_payload = _triage_user_payload(
             entity_type=entity_type,
             sectors=sectors,
@@ -184,13 +194,19 @@ class SearchTriageClient:
                 if entity_type in {"actor", "event", "person"}
                 else "Return deterministic-search survivors with fit scores and reasons."
             ),
-            input_schema=_triage_input_schema(entity_type),
+            input_schema=_compact_gate_schema() if compact else _triage_input_schema(entity_type),
             max_tokens=int(self.config.get("triage_max_tokens", 2048)),
         )
         returned = _candidate_items_from_payload(payload)
         if returned is None:
             self._log_raw_payload_once(payload, "non-list candidates")
             raise TriageResponseError("LLM triage returned non-list candidates")
+        if compact:
+            returned = [
+                # By id; a model that echoes the url anyway is still understood.
+                {**item, "url": id_to_url.get(_as_int(item.get("id")), item.get("url") or "")}
+                for item in returned if isinstance(item, dict)
+            ]
 
         decisions: dict[str, TriageDecision] = {}
         for item in returned:
@@ -253,7 +269,8 @@ def _triage_user_payload(
                 "snippets are incomplete and the fetched page performs the real assessment. Set "
                 "fetch=false only when the result itself clearly shows a third-party, news, "
                 "directory, category, consortium-listing, or non-organisation page. Return no "
-                "score and no other fields."
+                "score and no other fields. Identify each candidate by its id and keep every "
+                "reason under 12 words."
             ),
         }
     if entity_type == "event":
@@ -324,6 +341,32 @@ def _triage_input_schema(entity_type: str) -> dict[str, object]:
     return {
         "type": "object",
         "properties": {"candidates": {"type": "array", "items": item_schema}},
+        "required": ["candidates"],
+        "additionalProperties": False,
+    }
+
+
+def _as_int(value: object) -> int | None:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _compact_gate_schema() -> dict[str, object]:
+    return {
+        "type": "object",
+        "properties": {"candidates": {"type": "array", "items": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer", "description": "The candidate's id."},
+                "fetch": {"type": "boolean"},
+                "reason": {"type": "string", "minLength": 1, "maxLength": 120,
+                           "description": "Under 12 words."},
+            },
+            "required": ["id", "fetch", "reason"],
+            "additionalProperties": False,
+        }}},
         "required": ["candidates"],
         "additionalProperties": False,
     }
@@ -504,6 +547,32 @@ def deterministic_rejection(
         if str(fragment).lower() in path:
             return DeterministicReject(f"obvious non-content URL pattern: {fragment}", domain=domain)
     return None
+
+
+# Documents and filings, not organisations' own pages. On the 2026-10-14 run a
+# cheaper triage model passed ten of these (PUC dockets, legislative PDFs, a
+# data catalogue) that Sonnet would then have paid to read. Their titles and
+# snippets still feed lead harvesting, which costs no page reads.
+_ACTOR_DOCUMENT_SUFFIXES = (".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx")
+_ACTOR_DOCUMENT_PATHS = (
+    "/sites/g/files/", "showdocument", "viewdoc", "virtualfileroom", "/archives/edgar/",
+    "/documents/", "/docs/default-source/", "/uploads/", "/download",
+)
+_ACTOR_DOCUMENT_HOSTS = ("legislature.", "catalog.data.gov", "documents.", "docs.", "cga.ct.gov")
+
+
+def actor_document_rejection(url: str) -> DeterministicReject | None:
+    """A document repository or file, not an organisation's own page."""
+    parsed = urlparse(url)
+    path, host = parsed.path.lower(), (parsed.hostname or "").lower()
+    hit = next((s for s in _ACTOR_DOCUMENT_SUFFIXES if path.endswith(s)), None)         or next((f for f in _ACTOR_DOCUMENT_PATHS if f in path), None)         or next((h for h in _ACTOR_DOCUMENT_HOSTS if host.startswith(h) or host == h), None)
+    if hit is None:
+        return None
+    return DeterministicReject(
+        f"document or filing, not an organisation's own page ({hit}); "
+        "organisations it names are still considered as leads",
+        domain=normalized_domain(url),
+    )
 
 
 def blocklist_domains_for_entity(entity_type: str, config: dict[str, object]) -> list[str]:

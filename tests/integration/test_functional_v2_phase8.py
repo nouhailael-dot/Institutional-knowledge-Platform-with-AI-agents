@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
@@ -17,6 +18,16 @@ from tests.integration.test_functional_v2_phase3_7 import (
     _promote_live,
     _stage,
     _topic,
+)
+
+
+# The same guard its four sibling modules carry. Without it `_guarded_url()`
+# raises a KeyError inside the module fixture when V2_TEST_DATABASE_URL is
+# absent, so this module reported an ERROR where the others reported SKIP. The
+# coverage is unchanged: with the database configured these tests still run.
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("V2_TEST_DATABASE_URL"),
+    reason="V2_TEST_DATABASE_URL is required for isolated integration tests",
 )
 
 

@@ -269,3 +269,67 @@ def test_the_migration_refuses_an_unscoped_subscription_in_the_database_too():
     assert "actor_update_subscription_run_append_only" in sql
     # Nothing is seeded: a subscription is a GHUS request, not a default.
     assert "No subscription rows" in sql
+
+
+# ------------------------------------------- discovery requests (migration 550)
+
+def _request(**overrides) -> Subscription:
+    return _subscription(**{
+        "requested_via": "discovery_page", "title": "Energy actors in the Northeast",
+        "sector_codes": ("ENERGY",), "region_code": "northeast",
+        "focus_terms": ("battery storage",), **overrides,
+    })
+
+
+def test_a_discovery_request_must_name_a_topic_not_just_an_area():
+    with pytest.raises(SubscriptionError, match="needs a topic or sector"):
+        _request(sector_codes=(), topic_ids=())
+    assert _request(sector_codes=(), topic_ids=("t-1",)).is_discovery_request
+
+
+def test_a_discovery_request_is_bounded_like_the_database_bounds_it():
+    with pytest.raises(SubscriptionError, match="sub-topic"):
+        _request(focus_terms=tuple(f"term {i}" for i in range(9)))
+    for cap in (0, 51):
+        with pytest.raises(SubscriptionError, match="max_new_actors_per_run"):
+            _request(max_new_actors_per_run=cap)
+    with pytest.raises(SubscriptionError, match="title"):
+        _request(title="   ")
+    with pytest.raises(SubscriptionError, match="requested_via"):
+        _request(requested_via="nightly_sweep")
+
+
+def test_biweekly_runs_every_fourteen_days():
+    request = _request(cadence="biweekly", last_run_at=date(2026, 10, 1))
+    assert not request.is_due(date(2026, 10, 14))
+    assert request.is_due(date(2026, 10, 15))
+    assert request.next_due(date(2026, 10, 8)) == date(2026, 10, 15)
+
+
+def test_next_due_stops_at_the_end_of_the_period():
+    request = _request(cadence="monthly", end_date=date(2026, 10, 20),
+                       last_run_at=date(2026, 10, 1))
+    assert request.next_due(TODAY) is None
+    assert _request(status=PAUSED).next_due(TODAY) is None
+    assert _request(cadence="once", last_run_at=date(2026, 10, 2)).next_due(TODAY) is None
+    assert _request().next_due(TODAY) == TODAY  # never run, in period: today
+
+
+def test_one_run_never_stages_more_than_the_request_allows():
+    plan = plan_subscription_run(
+        _request(max_new_actors_per_run=3),
+        [f"Actor {i}" for i in range(10)] + ["Known Org"], ["known org"],
+    )
+    assert plan.to_discover == ("Actor 0", "Actor 1", "Actor 2")
+    assert plan.scope["focus_terms"] == ["battery storage"]
+    assert plan.scope["max_new_actors_per_run"] == 3
+
+
+def test_migration_550_adds_the_request_fields_additively():
+    sql = (ROOT / "agents/sql/550_v2_discovery_requests.sql").read_text(encoding="utf-8")
+    assert "DROP COLUMN" not in sql and "RENAME" not in sql
+    assert "COALESCE(cardinality(sector_codes), 0) > 0" in sql
+    assert "'discovery_page'" in sql and "'biweekly'" in sql
+    rollback = (ROOT / "agents/sql/rollback/550_v2_discovery_requests.sql").read_text(
+        encoding="utf-8")
+    assert "a rollback never deletes a request" in rollback

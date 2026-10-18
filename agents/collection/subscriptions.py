@@ -31,6 +31,7 @@ from datetime import date, timedelta
 CADENCE_DAYS: dict[str, int | None] = {
     "once": None,
     "weekly": 7,
+    "biweekly": 14,
     "monthly": 30,
     "quarterly": 91,
 }
@@ -39,6 +40,14 @@ PAUSED = "paused"
 EXPIRED = "expired"
 CANCELLED = "cancelled"
 RUNNABLE_STATUSES = (ACTIVE,)
+DISCOVERY_PAGE = "discovery_page"
+REQUESTED_VIA = ("map_verification", "review_updates", DISCOVERY_PAGE)
+# Mirrors the migration 550 constraints, so a bad request is refused before it
+# reaches the database rather than by it.
+MAX_FOCUS_TERMS = 8
+MAX_NEW_ACTORS_PER_RUN = 50
+DEFAULT_NEW_ACTORS_PER_RUN = 10
+MAX_TITLE_CHARS = 160
 
 
 class SubscriptionError(ValueError):
@@ -63,8 +72,16 @@ class Subscription:
     # Nullable until authentication exists. Never defaulted, never inferred.
     requested_by: str | None = None
     last_run_at: date | None = None
+    # Discovery requests (migration 550).
+    title: str | None = None
+    focus_terms: tuple[str, ...] = ()
+    max_new_actors_per_run: int = DEFAULT_NEW_ACTORS_PER_RUN
 
     def __post_init__(self) -> None:
+        if self.requested_via not in REQUESTED_VIA:
+            raise SubscriptionError(
+                f"requested_via must be one of {list(REQUESTED_VIA)}, got {self.requested_via!r}"
+            )
         if self.cadence not in CADENCE_DAYS:
             raise SubscriptionError(
                 f"cadence must be one of {sorted(CADENCE_DAYS)}, got {self.cadence!r}"
@@ -78,6 +95,23 @@ class Subscription:
                 "a subscription needs a scope: actors, sectors, topics or a place. "
                 "An unscoped subscription is the all-sector sweep it replaces."
             )
+        if self.requested_via == DISCOVERY_PAGE and not (self.sector_codes or self.topic_ids):
+            raise SubscriptionError(
+                "a discovery request needs a topic or sector: an area alone is the "
+                "unscoped sweep this design replaces"
+            )
+        if self.title is not None and not 1 <= len(self.title.strip()) <= MAX_TITLE_CHARS:
+            raise SubscriptionError(f"a title must be 1 to {MAX_TITLE_CHARS} characters")
+        if len(self.focus_terms) > MAX_FOCUS_TERMS:
+            raise SubscriptionError(f"at most {MAX_FOCUS_TERMS} sub-topic terms")
+        if not 1 <= int(self.max_new_actors_per_run) <= MAX_NEW_ACTORS_PER_RUN:
+            raise SubscriptionError(
+                f"max_new_actors_per_run must be 1 to {MAX_NEW_ACTORS_PER_RUN}"
+            )
+
+    @property
+    def is_discovery_request(self) -> bool:
+        return self.requested_via == DISCOVERY_PAGE
 
     @property
     def has_scope(self) -> bool:
@@ -107,6 +141,19 @@ class Subscription:
         if interval is None:
             return False  # 'once' has already run
         return today >= self.last_run_at + timedelta(days=interval)
+
+    def next_due(self, today: date) -> date | None:
+        """The next date this subscription will run, or None if it never will again."""
+
+        if self.status not in RUNNABLE_STATUSES or self.is_expired(today):
+            return None
+        if self.last_run_at is None:
+            return max(today, self.start_date)
+        interval = CADENCE_DAYS[self.cadence]
+        if interval is None:
+            return None
+        nxt = max(self.last_run_at + timedelta(days=interval), self.start_date)
+        return nxt if nxt <= self.end_date else None
 
     def skip_reason(self, today: date) -> str | None:
         """Why this subscription is not running, in words a report can print."""
@@ -197,6 +244,8 @@ def plan_subscription_run(
             continue
         seen.add(key)
         (already if key in mapped else fresh).append(str(candidate).strip())
+    # The per-run ceiling: one request can never flood the review queue.
+    fresh = fresh[: subscription.max_new_actors_per_run]
     return SubscriptionPlan(
         subscription_id=subscription.subscription_id,
         dry_run=dry_run,
@@ -208,6 +257,8 @@ def plan_subscription_run(
             "state_code": subscription.state_code,
             "city": subscription.city,
             "region_code": subscription.region_code,
+            "focus_terms": list(subscription.focus_terms),
+            "max_new_actors_per_run": subscription.max_new_actors_per_run,
         },
         already_mapped=tuple(already),
         to_discover=tuple(fresh),

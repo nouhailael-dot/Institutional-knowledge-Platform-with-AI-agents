@@ -67,11 +67,75 @@ def validate_actor_record_lengths(record: dict[str, object]) -> None:
             )
 
 
+# What each field is actually for, in the schema the model is handed.
+#
+# Without these, every field arrived as a bare `{"type": ["string","null"]}`
+# slot: the model was told a description was a string and nothing else, and
+# returned whatever the page's banner happened to say - a tagline, a navigation
+# label, sometimes not a description of the organisation at all. The field
+# guidance is the one lever that reliably changes extraction quality, and
+# `description` matters twice over because the Phase 5 classifier reads it as
+# the actor's self-description.
+FIELD_GUIDANCE: dict[str, str] = {
+    "name": (
+        "The organisation's own full official name as the page writes it. Not a page "
+        "title, not a tagline, not a programme or event name."
+    ),
+    "description": (
+        "What this organisation IS and DOES, in 1 to 3 complete factual sentences, "
+        "drawn from the page's own account of itself. Say the kind of organisation it "
+        "is, the work it actually does, and who it does it for or with. "
+        "Good: 'A non-profit research institute operating three field stations in the "
+        "Central Valley. It runs irrigation-efficiency trials with grower cooperatives "
+        "and publishes annual water-use benchmarks.' "
+        "Not acceptable: a marketing tagline ('Innovating for tomorrow'), a bare "
+        "category ('A university'), a navigation label, a sentence about the website, "
+        "or anything the page does not state. If the page genuinely never says what "
+        "the organisation does, return null rather than padding."
+    ),
+    "website": "The organisation's own primary site, as an absolute URL.",
+    "location_city": "The city of the operating location this page is about.",
+    "state": "The US state or province of that location, as the page writes it.",
+    "country": "The country of that location.",
+    "actor_type_raw": (
+        "How the page labels the organisation in its own words, a few words at most "
+        "(for example 'national laboratory', 'trade association')."
+    ),
+    "primary_technical_focus": (
+        "The specific technical or scientific subject this organisation works on, as "
+        "the page states it. A field of work, not a slogan."
+    ),
+    "technical_approach": (
+        "How it does that work - methods, facilities, platforms or programmes the page "
+        "names explicitly."
+    ),
+    "current_activities": (
+        "Work the page says is happening now or recently: named projects, programmes, "
+        "trials, services or facilities. Not aspirations or history."
+    ),
+    "key_constraints": (
+        "Limits the page itself states - capacity, funding, regulatory or geographic. "
+        "Null unless the page says so."
+    ),
+    "primary_lifecycle_role": (
+        "A few words for where it sits in the innovation lifecycle (for example "
+        "'research', 'scale-up', 'deployment'), only if the page makes that explicit."
+    ),
+    "funding_summary": (
+        "What the page states about how it is funded: named funders, grants, awards or "
+        "budget figures. Null if the page does not say."
+    ),
+}
+
+
 def _nullable_string_schema(field_name: str) -> dict[str, object]:
     schema: dict[str, object] = {"type": ["string", "null"]}
     max_length = ACTOR_STRING_MAX_LENGTHS.get(field_name)
     if max_length is not None:
         schema["maxLength"] = max_length
+    guidance = FIELD_GUIDANCE.get(field_name)
+    if guidance:
+        schema["description"] = guidance
     return schema
 
 ACTOR_TOOL_SCHEMA: dict[str, Any] = {

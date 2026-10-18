@@ -45,6 +45,7 @@ from agents.discovery.normalize import (
     normalize_person_record,
 )
 from agents.discovery.promote import (
+    AUTO_ACCEPT_PAYLOAD_KEY,
     DISCOVERED_DOMAIN_PAYLOAD_KEY,
     guard_actor_absorb_route,
     promote,
@@ -523,6 +524,7 @@ def _extract_stage_route_promote(
     event_review_metadata: dict[str, object] | None = None,
     person_review_metadata: dict[str, object] | None = None,
     person_affiliation_candidates: list[dict[str, object]] | None = None,
+    auto_accept_reasons: str | None = None,
 ) -> None:
     if entity_type == "person" and not people_enabled:
         raise RuntimeError(
@@ -587,6 +589,11 @@ def _extract_stage_route_promote(
     if discovered_domain:
         normalized = [
             {**record, DISCOVERED_DOMAIN_PAYLOAD_KEY: discovered_domain}
+            for record in normalized
+        ]
+    if auto_accept_reasons and entity_type == "actor":
+        normalized = [
+            {**record, AUTO_ACCEPT_PAYLOAD_KEY: auto_accept_reasons}
             for record in normalized
         ]
     stats["records_extracted"] += len(normalized)
@@ -762,6 +769,42 @@ def _extract_stage_route_promote(
         else:
             raise NotImplementedError(f"discovery does not support entity_type={entity_type!r}")
         staged = mark_routed(stage_store, staged, decision)
+        # A new actor cannot be promoted without a category: migration 495's
+        # ck_actor_category_complete refuses the row, and an unguarded attempt
+        # aborts the whole run on one bad candidate. Preserve the staged record,
+        # say why, and carry on with the others - the candidate stays available
+        # for review or a retry. This never applies to an existing actor, whose
+        # approved category is already canonical.
+        if (
+            entity_type == "actor"
+            and decision.zone == "create"
+            and not str(record.get("actor_category") or "").strip()
+        ):
+            stats["actors_unclassified_not_promoted"] = int(
+                stats.get("actors_unclassified_not_promoted", 0) or 0
+            ) + 1
+            logger.warning(
+                "actor %r staged but not promoted: no actor_category, so canonical "
+                "admission would violate ck_actor_category_complete",
+                record.get("name") or record.get("source_url"),
+            )
+            audit_rows.append(
+                {
+                    "run_id": run_id,
+                    "source": source_name,
+                    "entity_type": entity_type,
+                    "source_url": record.get("source_url"),
+                    "content_hash": doc.content_hash,
+                    "natural_key": record.get("natural_key"),
+                    "zone": decision.zone,
+                    "score": decision.score,
+                    "target_entity_id": "",
+                    "candidate_ids": decision.candidate_ids,
+                    "status": "staged_unclassified",
+                    "error": "no actor_category; staged for review rather than promoted",
+                }
+            )
+            continue
         if entity_type == "person":
             result = promote(
                 staged,

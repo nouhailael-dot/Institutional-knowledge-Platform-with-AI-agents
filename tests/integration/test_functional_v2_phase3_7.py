@@ -106,6 +106,18 @@ def _topic(session, code: str) -> str:
 # Unique per run: this database is not reset between runs, so a fixed code
 # would make each run's hubs candidates for the next one's actors.
 FIXTURE_SECTOR = f"FXSECT{uuid.uuid4().hex[:8].upper()}"
+
+
+def _scenario_sector() -> str:
+    """A sector of its own, so one scenario's hubs do not compete in another.
+
+    Since 2026-10-08 hub membership gates on SECTOR, not topic. A shared
+    fixture sector therefore makes every synthetic hub a candidate
+    everywhere, which is how the nearest-wins case below ended up tying on
+    distance against a hub from an unrelated scenario.
+    """
+
+    return f"FXSECT{uuid.uuid4().hex[:8].upper()}"
 FIXTURE_OTHER_SECTOR = f"FXOTHER{uuid.uuid4().hex[:8].upper()}"
 
 
@@ -151,7 +163,8 @@ def _hub(session, *, topic_id: str, latitude: float, longitude: float, radius: f
     return hub_id
 
 
-def _new_payload(name: str, topic_id: str, *, lat: float = 42.3601, lon: float = -71.0589):
+def _new_payload(name: str, topic_id: str, *, lat: float = 42.3601, lon: float = -71.0589,
+                 sector_code: str = FIXTURE_SECTOR):
     return {
         "name": name,
         "website": f"https://{uuid.uuid4().hex}.example.test",
@@ -168,7 +181,7 @@ def _new_payload(name: str, topic_id: str, *, lat: float = 42.3601, lon: float =
         "longitude": lon,
         "topic_id": topic_id,
         # Hub membership gates on sector; the staged record carries it through.
-        "sector_codes": [FIXTURE_SECTOR],
+        "sector_codes": [sector_code],
     }
 
 
@@ -209,9 +222,12 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
         assert close.action == "queued_for_review"
 
         topic_inside = _topic(session, f"inside-{uuid.uuid4().hex[:10]}")
-        inside_hub = _hub(session, topic_id=topic_inside, latitude=42.36, longitude=-71.06)
+        sector_inside = _scenario_sector()
+        inside_hub = _hub(session, topic_id=topic_inside, latitude=42.36, longitude=-71.06,
+                          sector_code=sector_inside)
         created_staged = _stage(
-            session, _new_payload(f"Functional New Actor {uuid.uuid4().hex[:8]}", topic_inside),
+            session, _new_payload(f"Functional New Actor {uuid.uuid4().hex[:8]}", topic_inside,
+                                  sector_code=sector_inside),
             suffix="new",
         )
         created_route = route_actor(created_staged.normalized_payload, Resolver(), load_actor_candidates(session))
@@ -326,9 +342,12 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
         assert gate["sector_matched"] is False and gate["dimension"] == "sector"
 
         topic_outside = _topic(session, f"outside-{uuid.uuid4().hex[:10]}")
-        _hub(session, topic_id=topic_outside, latitude=34.0522, longitude=-118.2437, radius=50)
+        sector_outside = _scenario_sector()
+        _hub(session, topic_id=topic_outside, latitude=34.0522, longitude=-118.2437, radius=50,
+             sector_code=sector_outside)
         outside_staged = _stage(
-            session, _new_payload(f"Outside Actor {uuid.uuid4().hex[:8]}", topic_outside),
+            session, _new_payload(f"Outside Actor {uuid.uuid4().hex[:8]}", topic_outside,
+                                  sector_code=sector_outside),
             suffix="outside",
         )
         outside_route = route_actor(outside_staged.normalized_payload, Resolver(), load_actor_candidates(session))
@@ -339,10 +358,14 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
         ).scalar_one() == 1
 
         topic_overlap = _topic(session, f"overlap-{uuid.uuid4().hex[:10]}")
-        near = _hub(session, topic_id=topic_overlap, latitude=42.36, longitude=-71.06)
-        far = _hub(session, topic_id=topic_overlap, latitude=42.50, longitude=-71.20)
+        sector_overlap = _scenario_sector()
+        near = _hub(session, topic_id=topic_overlap, latitude=42.36, longitude=-71.06,
+                    sector_code=sector_overlap)
+        far = _hub(session, topic_id=topic_overlap, latitude=42.50, longitude=-71.20,
+                   sector_code=sector_overlap)
         overlap_staged = _stage(
-            session, _new_payload(f"Overlap Actor {uuid.uuid4().hex[:8]}", topic_overlap),
+            session, _new_payload(f"Overlap Actor {uuid.uuid4().hex[:8]}", topic_overlap,
+                                  sector_code=sector_overlap),
             suffix="overlap",
         )
         overlap_route = route_actor(overlap_staged.normalized_payload, Resolver(), load_actor_candidates(session))
@@ -353,6 +376,8 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
         ).scalars().all()
         assert selected == [near]
         assert far not in selected
+
+
         assert session.execute(
             text(
                 "SELECT count(*) FROM review_item WHERE entity_id=CAST(:id AS uuid) "
@@ -362,3 +387,187 @@ def test_phase3_7_real_pipeline_and_hub_cases(session_factory):
             ),
             {"id": overlap.entity_id},
         ).scalar_one() == 1
+
+
+def test_a_same_sector_hub_is_assignable_even_when_its_topic_differs(session_factory):
+    """Test 1 is the SECTOR. A same-sector hub is a legitimate match.
+
+    The membership then records the HUB's topic, which is what
+    `hub_actor.topic_id` means: approved migration 486 fills it as
+    coalesce(ha.topic_id, h.topic_id), and contract 405 constrains the pair
+    (hub_id, topic_id) against hub. Recording the actor's topic instead made
+    this insert fail the foreign key.
+    """
+
+    with session_factory() as session:
+        sector = _scenario_sector()
+        hub_topic = _topic(session, f"hubtopic-{uuid.uuid4().hex[:10]}")
+        actor_topic = _topic(session, f"acttopic-{uuid.uuid4().hex[:10]}")
+        hub_id = _hub(session, topic_id=hub_topic, latitude=42.36, longitude=-71.06,
+                      sector_code=sector)
+        staged = _stage(
+            session,
+            _new_payload(f"Cross Topic Actor {uuid.uuid4().hex[:8]}", actor_topic,
+                         sector_code=sector),
+            suffix="crosstopic",
+        )
+        route = route_actor(staged.normalized_payload, Resolver(), load_actor_candidates(session))
+        promoted = _promote_live(session, staged, route)
+        assigned = session.execute(
+            text("SELECT hub_id::text FROM hub_actor WHERE actor_id=CAST(:id AS uuid)"),
+            {"id": promoted.entity_id},
+        ).scalars().all()
+        assert assigned == [hub_id], "a same-sector hub must be assignable whatever its topic"
+        # And the row carries the hub's topic, not the actor's.
+        recorded = session.execute(
+            text("SELECT topic_id::text FROM hub_actor WHERE actor_id=CAST(:id AS uuid)"),
+            {"id": promoted.entity_id},
+        ).scalar_one()
+        assert recorded == hub_topic
+        assert recorded != actor_topic
+
+
+def test_an_actor_with_a_sector_and_no_topic_can_still_be_promoted(session_factory):
+    """A sector is enough to match a hub. Having no topic must not break promotion.
+
+    GHUS decision 3 leaves actor topics to Light Pull enrichment, so most actors
+    have none. The membership still needs a topic because contract 405 makes the
+    column NOT NULL - and it takes the hub's.
+    """
+
+    with session_factory() as session:
+        sector = _scenario_sector()
+        hub_topic = _topic(session, f"notopic-{uuid.uuid4().hex[:10]}")
+        _hub(session, topic_id=hub_topic, latitude=42.36, longitude=-71.06,
+             sector_code=sector)
+        payload = _new_payload(f"Topicless Actor {uuid.uuid4().hex[:8]}", hub_topic,
+                               sector_code=sector)
+        payload.pop("topic_id")          # what Light Pull has not filled in yet
+        staged = _stage(session, payload, suffix="notopic")
+        route = route_actor(staged.normalized_payload, Resolver(), load_actor_candidates(session))
+        promoted = _promote_live(session, staged, route)
+        assert promoted.entity_id, "an actor without a topic must still promote"
+        recorded = session.execute(
+            text("SELECT topic_id::text FROM hub_actor WHERE actor_id=CAST(:id AS uuid)"),
+            {"id": promoted.entity_id},
+        ).scalars().all()
+        assert recorded == [hub_topic], "the membership takes the hub's topic"
+
+
+
+def test_an_accepted_candidate_is_created_verified_by_the_agent(session_factory):
+    """Decision 2026-10-14: accepted (score and every gate) -> Verified, labelled.
+
+    Written after the first live request run stopped at exactly this step.
+    """
+    from agents.discovery.promote import AUTO_ACCEPT_PAYLOAD_KEY
+
+    with session_factory() as session:
+        topic = _topic(session, f"auto-{uuid.uuid4().hex[:10]}")
+        sector = _scenario_sector()
+        _hub(session, topic_id=topic, latitude=42.36, longitude=-71.06, sector_code=sector)
+        payload = {
+            **_new_payload(f"Accepted Actor {uuid.uuid4().hex[:8]}", topic, sector_code=sector),
+            AUTO_ACCEPT_PAYLOAD_KEY: "Accepted by the discovery agent: score 0.91 meets 0.85 "
+                                     "and every quality gate held.",
+        }
+        staged = _stage(session, payload, suffix="accepted")
+        route = route_actor(staged.normalized_payload, Resolver(), load_actor_candidates(session))
+        created = _promote_live(session, staged, route)
+
+        assert created.action == "created"
+        assert created.review_id is None
+        assert created.step_trace == [*ACTOR_MAPPING_STEPS[:-1], "verified_by_agent"]
+        status = session.execute(
+            text("SELECT status FROM actor WHERE actor_id=CAST(:id AS uuid)"),
+            {"id": created.entity_id},
+        ).scalar_one()
+        assert status == "verified"
+        event = session.execute(
+            text("SELECT decision, decided_by, decision_origin, reason FROM actor_verification_event "
+                 "WHERE actor_id=CAST(:id AS uuid)"),
+            {"id": created.entity_id},
+        ).mappings().one()
+        assert event["decision_origin"] == "agent_auto_accept"
+        assert event["decided_by"] == "discovery-agent"
+        assert "every quality gate held" in event["reason"]
+        assert session.execute(
+            text("SELECT count(*) FROM review_item WHERE entity_id=CAST(:id AS uuid) "
+                 "AND review_kind='verify_actor'"),
+            {"id": created.entity_id},
+        ).scalar_one() == 0
+
+
+def test_an_agent_verified_actor_cannot_be_deep_pulled_without_a_person(session_factory):
+    """Auto-Verified (agent_auto_accept) never authorizes topic-specific Deep Pull.
+
+    Deep Pull needs the latest GHUS PERSON decision for that exact actor and
+    topic. An agent's verification is ignored by that gate; a person's
+    verification authorizes that one topic only.
+    """
+    from datetime import UTC, datetime
+
+    from agents.collection.deep_pull import (
+        CollectedValue, DeepPullRequest, actor_is_verified_for_topic, append_deep_pull,
+    )
+    from agents.discovery.promote import AUTO_ACCEPT_PAYLOAD_KEY
+    from agents.enrichment.decisions import record_verification_decision
+
+    with session_factory() as session:
+        topic = _topic(session, f"deep-{uuid.uuid4().hex[:10]}")
+        other_topic = _topic(session, f"deep-other-{uuid.uuid4().hex[:10]}")
+        sector = _scenario_sector()
+        _hub(session, topic_id=topic, latitude=42.36, longitude=-71.06, sector_code=sector)
+        payload = {
+            **_new_payload(f"Agent Verified {uuid.uuid4().hex[:8]}", topic, sector_code=sector),
+            AUTO_ACCEPT_PAYLOAD_KEY: "Accepted by the discovery agent: score 0.91; every gate held.",
+        }
+        staged = _stage(session, payload, suffix="deep")
+        route = route_actor(staged.normalized_payload, Resolver(), load_actor_candidates(session))
+        created = _promote_live(session, staged, route)
+        actor_id = created.entity_id
+        assert session.execute(
+            text("SELECT status FROM actor WHERE actor_id=CAST(:id AS uuid)"), {"id": actor_id}
+        ).scalar_one() == "verified"
+
+        request = DeepPullRequest(
+            actor_id=actor_id, topic_id=topic, actor_category="company",
+            selected_fields=("rd_innovation",), requested_by="integration-test",
+            request_id=str(uuid.uuid4()),
+        )
+        value = CollectedValue(field_key="rd_innovation", value="x", collection_state="found",
+                               source_url="https://example.test", source_origin="newly_found",
+                               date_read=datetime.now(UTC), confidence="medium")
+        # Verified by the agent - but not by a person, so no Deep Pull.
+        assert actor_is_verified_for_topic(session, actor_id=actor_id, topic_id=topic) is False
+        with pytest.raises(PermissionError):
+            append_deep_pull(session, request, {"rd_innovation": value}, live=False)
+
+        # A person verifies it for THIS topic: that topic opens, no other.
+        record_verification_decision(
+            session, entity_type="actor", entity_ids=[actor_id], decision="verified",
+            decided_by="ghus-reviewer", topic_id=topic,
+        )
+        session.commit()
+        assert actor_is_verified_for_topic(session, actor_id=actor_id, topic_id=topic) is True
+        assert actor_is_verified_for_topic(session, actor_id=actor_id, topic_id=other_topic) is False
+
+
+def test_a_reviewer_can_add_a_sector_and_its_topic_once(session_factory):
+    """A real actor fits no GHUS sector: a reviewer adds one, written only by
+    decisions.create_sector, with its mirror topic; asking twice reuses it."""
+    from agents.enrichment.decisions import create_sector
+
+    name = f"Water Technology {uuid.uuid4().hex[:6]}"
+    with session_factory() as session:
+        created = create_sector(session, name=name, created_by="integration-reviewer",
+                                code=f"WT{uuid.uuid4().hex[:6].upper()}")
+        session.commit()
+        assert created["created"] is True
+        row = session.execute(text(
+            "SELECT s.active, s.is_thematic, t.code AS topic_code FROM sector s "
+            "JOIN topic t ON t.code = s.code WHERE s.code = :code"), {"code": created["code"]}
+        ).mappings().one()
+        assert row["active"] and row["is_thematic"] and row["topic_code"] == created["code"]
+        again = create_sector(session, name=name.upper(), created_by="someone-else")
+        assert again["created"] is False and again["code"] == created["code"]

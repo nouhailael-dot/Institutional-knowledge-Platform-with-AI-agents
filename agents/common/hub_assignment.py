@@ -72,6 +72,12 @@ class HubEvaluation:
     outside_radius: bool
     selected: bool = False
     method_version: str = HUB_ASSIGNMENT_METHOD_VERSION
+    # The HUB's controlled topic, not the actor's. `hub_actor.topic_id` records
+    # the topic of the hub a membership is in: approved migration 486 fills it
+    # as coalesce(ha.topic_id, h.topic_id), and contract 405 constrains the pair
+    # (hub_id, topic_id) against hub itself. Carried here so the writer has it
+    # without a second query.
+    hub_topic_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -128,6 +134,7 @@ def evaluate_hub_candidate(
             location_evaluated=False,
             distance_miles=None,
             radius_miles=hub.radius_miles,
+            hub_topic_id=hub.topic_id,
             outside_radius=False,
         )
     coordinates = (
@@ -148,6 +155,7 @@ def evaluate_hub_candidate(
             location_evaluated=False,
             distance_miles=None,
             radius_miles=hub.radius_miles,
+            hub_topic_id=hub.topic_id,
             outside_radius=False,
         )
     distance = distance_fn(*(float(value) for value in coordinates))
@@ -164,6 +172,7 @@ def evaluate_hub_candidate(
         distance_miles=distance,
         radius_miles=hub.radius_miles,
         outside_radius=outside,
+        hub_topic_id=hub.topic_id,
     )
 
 

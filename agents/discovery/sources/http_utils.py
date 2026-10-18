@@ -73,9 +73,15 @@ class RobotsAwareHttp:
             robots_url = urlunparse((parsed.scheme, parsed.netloc, "/robots.txt", "", "", ""))
             response = self._robots_response(robots_url)
             parser = RobotFileParser()
-            if response.status_code == 404:
+            if 400 <= response.status_code < 500 and response.status_code != 429:
+                # RFC 9309 s2.3.1.3: a 4xx robots.txt is "unavailable" and the
+                # crawler MAY access the site. Treating 401/403 here as a hard
+                # failure lost NYSERDA, UMass, Eversource, National Grid and
+                # Enphase on the 2026-10-14 run - their pages were never asked
+                # for. The page request itself still decides (and is honest
+                # about who is asking). 429 means "slow down", not "no file".
                 parser.parse([])
-            elif 400 <= response.status_code < 500:
+            elif response.status_code == 429:
                 response.raise_for_status()
             else:
                 response.raise_for_status()

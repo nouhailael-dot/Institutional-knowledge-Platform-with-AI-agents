@@ -141,6 +141,9 @@ class ClaudeToolClient:
         )
         response = self._get_client().messages.create(**kwargs)
         self._record_usage(response)
+        # Why the model stopped ("end_turn", "tool_use", "max_tokens"): lets a
+        # caller tell a truncated answer from a malformed one.
+        self.last_stop_reason = getattr(response, "stop_reason", None)
 
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == tool_name:
