@@ -1,4 +1,4 @@
-"""Run the discovery requests that are due - and nothing else.
+"""Run the discovery and actor update requests that are due - and nothing else.
 
     python -m agents.collection.subscription_runner           # plan only (default)
     python -m agents.collection.subscription_runner --live    # run what is due
@@ -12,6 +12,11 @@ the exact queries each would search. It writes nothing and spends nothing.
 ``--live`` runs each due request through the open-web actor pipeline scoped to
 that request, records the run, and moves the request to its next date - or
 closes it when its period is over.
+
+Actor update requests (Discovery page -> Actor updates, migration 570) are run
+here too, so there is one scheduler: a due request re-reads its actors with the
+most missing or out-of-date boxes first (``actor_updates.run_request``), within
+its actor cap and spend ceiling, and writes through the Phase 11 fact writer.
 
 One failed request does not stop the others, and a failed run does not move its
 request forward: it is due again next time.
@@ -51,6 +56,7 @@ class RequestOutcome:
     counts: dict[str, int] = field(default_factory=dict)
     collection_run_id: str | None = None
     next_status: str | None = None
+    kind: str = "discovery"
 
 
 @dataclass
@@ -130,6 +136,7 @@ def run_due_requests(
     config: dict[str, object] | None = None,
     discover: Callable[[DiscoveryRequest], dict[str, object]] | None = None,
     request_id: str | None = None,
+    update: Callable | None = None,
 ) -> RunnerReport:
     """Run what is due; or, with ``request_id``, run that one request now.
 
@@ -144,7 +151,9 @@ def run_due_requests(
     report = RunnerReport(live=live, today=today)
 
     subscriptions = []
-    for row in store.load_discovery_requests(session, include_finished=False):
+    rows = store.load_discovery_requests(session, include_finished=False)
+    rows += store.load_actor_update_requests(session, include_finished=False)
+    for row in rows:
         try:
             subscriptions.append(store.subscription_from_row(row))
         except ValueError as exc:
@@ -163,7 +172,24 @@ def run_due_requests(
 
     generator = QueryGenerator(None, config, today=today)
     requests: list[tuple[object, DiscoveryRequest]] = []
+    updates: list[object] = []
     for subscription in due:
+        if subscription.is_actor_update_request:
+            from agents.collection import actor_updates
+
+            try:
+                plan = actor_updates.plan_subscription(session, subscription, config=config)
+            except (actor_updates.ActorUpdateError, ValueError) as exc:
+                report.invalid[subscription.subscription_id] = str(exc)
+                continue
+            updates.append(subscription)
+            report.outcomes.append(RequestOutcome(
+                subscription_id=subscription.subscription_id,
+                title=subscription.title or "Actor update request",
+                queries=[f"{a['name']}: {a['boxes']} box(es) to read" for a in plan["chosen"]],
+                kind="actor_update",
+            ))
+            continue
         try:
             request = DiscoveryRequest.from_subscription(subscription, topic_codes=codes)
             bundle = generator.generate("actor", project_root=root, request=request)
@@ -195,6 +221,12 @@ def run_due_requests(
             _run_one(session, subscription, request, outcome, discover=discover,
                      config=config, topic_id=topic_by_code.get(request.sector_codes[0]),
                      today=today)
+        for subscription in updates:
+            topic = (subscription.update_options.get("topic")
+                     or (subscription.sector_codes or (None,))[0])
+            _run_update(session, subscription, by_id[subscription.subscription_id],
+                        config=config, topic_id=topic_by_code.get(topic) if topic else None,
+                        today=today, update=update)
     finally:
         # A failed statement leaves the transaction aborted; clear it first so
         # the unlock runs and the original error is the one that surfaces.
@@ -252,10 +284,71 @@ def _run_one(session, subscription, request, outcome, *, discover, config, topic
     session.commit()
 
 
+def _run_update(session, subscription, outcome, *, config, topic_id, today, update=None):
+    """One live run of an actor update request, recorded like a discovery run."""
+    from agents.collection import actor_updates
+
+    update = update or actor_updates.run_request
+    per_run = int(subscription.update_options.get("max_actors_per_run") or 1)
+    request_id = store.ensure_collection_request(session, subscription, topic_id)
+    run_id = store.start_run(
+        session,
+        collection_request_id=request_id,
+        subscription=subscription,
+        fetch_budget=per_run * store.ACTOR_UPDATE_FETCH_BUDGET,
+        max_usd=float(subscription.max_usd_per_run),
+        config_snapshot={"update_request": dict(subscription.update_options),
+                         "planned": outcome.queries},
+    )
+    session.commit()
+    outcome.collection_run_id = run_id
+    try:
+        result = update(session, subscription, ledger=(request_id, run_id), config=config)
+    except Exception as exc:  # one request must not stop the others
+        logger.exception("actor update request %s failed", subscription.subscription_id)
+        session.rollback()
+        outcome.status, outcome.status_reason = "failed", str(exc)[:500]
+        store.finish_run(session, collection_run_id=run_id, subscription=subscription,
+                         status="failed", status_reason=outcome.status_reason, counts={},
+                         fetch_count=0, spent_usd=0.0)
+        session.commit()
+        return
+    results = result["actor_results"]
+    reached = [r for r in results if r.get("ok")]
+    if results and not reached:
+        outcome.status = "failed"
+    elif result["failed"] or result["stopped"]:
+        outcome.status = "attention"
+    else:
+        outcome.status = "succeeded"
+    reasons = [result["stopped"]] if result["stopped"] else []
+    if result["failed"]:
+        reasons.append(f"{result['failed']} actor(s) could not be updated")
+    if not results:
+        reasons.append("no actor had anything missing or out of date")
+    outcome.status_reason = "; ".join(reasons)
+    outcome.counts = {"found": result["found"], "review": result["review_items"],
+                      "actors": len(reached)}
+    store.finish_run(
+        session,
+        collection_run_id=run_id,
+        subscription=subscription,
+        status=outcome.status,
+        status_reason=outcome.status_reason or None,
+        counts={"found": result["found"], "review": result["review_items"]},
+        fetch_count=min(result["pages"], per_run * store.ACTOR_UPDATE_FETCH_BUDGET),
+        spent_usd=result["spent_usd"],
+        snapshot_extra={"actor_results": results, "stopped": result["stopped"]},
+    )
+    if outcome.status in ("succeeded", "attention"):
+        outcome.next_status = store.advance_schedule(session, subscription, ran_on=today)
+    session.commit()
+
+
 def render_report(report: RunnerReport) -> str:
     mode = "live" if report.live else "plan only - nothing searched, nothing written"
     lines = [
-        "# Discovery requests",
+        "# Discovery and actor update requests",
         "",
         f"**Status:** {report.status}",
         f"Date: {report.today.isoformat()} ({mode})",
@@ -272,7 +365,8 @@ def render_report(report: RunnerReport) -> str:
             lines.append(", ".join(f"{k}: {v}" for k, v in outcome.counts.items()))
         if outcome.next_status:
             lines.append(f"Request is now: {outcome.next_status}")
-        lines.append(f"Queries ({len(outcome.queries)}):")
+        label = "Actors" if outcome.kind == "actor_update" else "Queries"
+        lines.append(f"{label} ({len(outcome.queries)}):")
         lines.extend(f"- {query}" for query in outcome.queries)
         lines.append("")
     if report.skipped:

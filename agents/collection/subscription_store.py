@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from agents.collection.subscriptions import (
     ACTIVE,
+    ACTOR_UPDATES,
     CANCELLED,
     DISCOVERY_PAGE,
     EXPIRED,
@@ -41,8 +42,15 @@ _SUBSCRIPTION_COLUMNS = (
     "actor_update_subscription_id::text AS subscription_id, actor_ids::text[] AS actor_ids, "
     "sector_codes, topic_ids::text[] AS topic_ids, country, state_code, city, region_code, "
     "start_date, end_date, cadence, requested_by, requested_via, status, last_run_at, "
-    "next_due_at, created_at, title, focus_terms, max_new_actors_per_run"
+    "next_due_at, created_at, title, focus_terms, max_new_actors_per_run, "
+    # Migration 570 columns, read through to_jsonb so a database without 570
+    # (production until it is approved) still answers: {} and NULL.
+    "COALESCE(to_jsonb(actor_update_subscription)->'update_options', '{}'::jsonb) "
+    "AS update_options, "
+    "(to_jsonb(actor_update_subscription)->>'max_usd_per_run')::numeric AS max_usd_per_run"
 )
+# The request sources a person manages from the Discovery page.
+_MANAGED_VIA = (DISCOVERY_PAGE, ACTOR_UPDATES)
 
 
 @dataclass(frozen=True)
@@ -80,12 +88,15 @@ def subscription_from_row(row: Mapping[str, object]) -> Subscription:
         title=row.get("title"),
         focus_terms=tuple(row.get("focus_terms") or ()),
         max_new_actors_per_run=int(row.get("max_new_actors_per_run") or 10),
+        update_options=dict(row.get("update_options") or {}),
+        max_usd_per_run=(float(row["max_usd_per_run"])
+                         if row.get("max_usd_per_run") is not None else None),
     )
 
 
 # ------------------------------------------------------------------- reading
 
-def load_discovery_requests(session, *, include_finished: bool = True) -> list[dict[str, object]]:
+def _load_requests(session, via: str, include_finished: bool) -> list[dict[str, object]]:
     sql = (
         f"SELECT {_SUBSCRIPTION_COLUMNS} FROM actor_update_subscription "
         "WHERE requested_via = :via"
@@ -93,7 +104,25 @@ def load_discovery_requests(session, *, include_finished: bool = True) -> list[d
     if not include_finished:
         sql += " AND status IN ('active', 'paused')"
     sql += " ORDER BY created_at DESC"
-    return [dict(row) for row in session.execute(text(sql), {"via": DISCOVERY_PAGE}).mappings()]
+    return [dict(row) for row in session.execute(text(sql), {"via": via}).mappings()]
+
+
+def load_discovery_requests(session, *, include_finished: bool = True) -> list[dict[str, object]]:
+    return _load_requests(session, DISCOVERY_PAGE, include_finished)
+
+
+def load_actor_update_requests(session, *, include_finished: bool = True) -> list[dict[str, object]]:
+    """Actor update requests (migration 570); none on a database without it."""
+    return _load_requests(session, ACTOR_UPDATES, include_finished)
+
+
+def has_update_requests(session) -> bool:
+    """Whether migration 570 is applied, so actor update requests can be saved."""
+    return bool(session.execute(text(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = "
+        "ANY (current_schemas(false)) AND table_name = 'actor_update_subscription' "
+        "AND column_name IN ('update_options', 'max_usd_per_run')"
+    )).scalar() == 2)
 
 
 def load_request_runs(session, subscription_id: str, *, limit: int = 20) -> list[dict[str, object]]:
@@ -101,7 +130,10 @@ def load_request_runs(session, subscription_id: str, *, limit: int = 20) -> list
         "SELECT cr.collection_run_id::text AS collection_run_id, cr.status, cr.dry_run, "
         "cr.started_at, cr.finished_at, cr.found_count, cr.deduplicated_count, "
         "cr.staged_count, cr.review_item_count, cr.status_reason, cr.spent_usd, "
-        "cr.config_snapshot->>'search_run_id' AS search_run_id "
+        "cr.config_snapshot->>'search_run_id' AS search_run_id, "
+        # Actor update runs: what each actor's update found (NULL otherwise).
+        "cr.config_snapshot->'actor_results' AS actor_results, "
+        "cr.config_snapshot->>'stopped' AS stopped "
         "FROM actor_update_subscription_run sr "
         "JOIN collection_run cr ON cr.collection_run_id = sr.collection_run_id "
         "WHERE sr.actor_update_subscription_id = CAST(:id AS uuid) "
@@ -258,6 +290,73 @@ def create_request(
     return WriteResult(True, str(new_id), statement, values)
 
 
+def create_update_request(
+    session,
+    *,
+    title: str,
+    end_date: date,
+    cadence: str,
+    update_options: Mapping[str, object],
+    max_usd_per_run: float,
+    actor_ids: Iterable[str] = (),
+    sector_codes: Iterable[str] = (),
+    region_code: str | None = None,
+    state_code: str | None = None,
+    start_date: date | None = None,
+    requested_by: str | None = None,
+    live: bool = False,
+) -> WriteResult:
+    """Validate an actor update request and, when live, record it (needs 570)."""
+
+    candidate = Subscription(
+        subscription_id="new",
+        start_date=start_date or _today(),
+        end_date=end_date,
+        cadence=cadence,
+        requested_via=ACTOR_UPDATES,
+        actor_ids=tuple(str(a) for a in actor_ids if str(a).strip()),
+        sector_codes=tuple(code.strip().upper() for code in sector_codes if code.strip()),
+        state_code=(state_code or "").strip().upper() or None,
+        region_code=(region_code or "").strip() or None,
+        title=title.strip(),
+        requested_by=requested_by,
+        update_options=dict(update_options),
+        max_usd_per_run=float(max_usd_per_run),
+    )
+    values = {
+        "title": candidate.title,
+        "actor_ids": list(candidate.actor_ids) or None,
+        "sector_codes": list(candidate.sector_codes) or None,
+        "region_code": candidate.region_code,
+        "state_code": candidate.state_code,
+        "start_date": candidate.start_date,
+        "end_date": candidate.end_date,
+        "cadence": candidate.cadence,
+        "requested_via": ACTOR_UPDATES,
+        "requested_by": requested_by,
+        "update_options": json.dumps(candidate.update_options, sort_keys=True),
+        "max_usd_per_run": candidate.max_usd_per_run,
+        "next_due_at": candidate.start_date,
+    }
+    statement = (
+        "INSERT INTO actor_update_subscription (title, actor_ids, sector_codes, region_code, "
+        "state_code, start_date, end_date, cadence, requested_via, requested_by, "
+        "update_options, max_usd_per_run, next_due_at) VALUES (:title, "
+        "CAST(:actor_ids AS uuid[]), :sector_codes, :region_code, :state_code, :start_date, "
+        ":end_date, :cadence, :requested_via, :requested_by, CAST(:update_options AS jsonb), "
+        ":max_usd_per_run, :next_due_at) RETURNING actor_update_subscription_id::text"
+    )
+    if not live:
+        return WriteResult(False, None, statement, values)
+    if not has_update_requests(session):
+        raise SubscriptionError(
+            "Saving update requests needs migration 570 on this database; it is not applied "
+            "yet. A one-time update of one actor works without it.")
+    new_id = session.execute(text(statement), values).scalar_one()
+    session.commit()
+    return WriteResult(True, str(new_id), statement, values)
+
+
 def change_status(session, subscription_id: str, action: str, *, live: bool = False) -> WriteResult:
     """Pause, resume or cancel. Refuses a change the current status does not allow."""
 
@@ -270,8 +369,8 @@ def change_status(session, subscription_id: str, action: str, *, live: bool = Fa
     ), {"id": subscription_id}).mappings().first()
     if row is None:
         raise SubscriptionError(f"no request {subscription_id}")
-    if row["requested_via"] != DISCOVERY_PAGE:
-        raise SubscriptionError("only Discovery-page requests are managed here")
+    if row["requested_via"] not in _MANAGED_VIA:
+        raise SubscriptionError("only Discovery-page and actor update requests are managed here")
     new_status = allowed.get(str(row["status"]))
     if new_status is None:
         raise SubscriptionError(f"a {row['status']} request cannot be {action}d")
@@ -294,6 +393,28 @@ def change_status(session, subscription_id: str, action: str, *, live: bool = Fa
 # ---------------------------------------------------------- what a run records
 
 def ensure_collection_request(session, subscription: Subscription, topic_id: str | None) -> str:
+    if subscription.is_actor_update_request:
+        return _ensure_request(session, topic_id, by=ACTOR_UPDATES,
+                               need=f"Actor update request {subscription.subscription_id}: "
+                                    f"{subscription.title or ''}".strip())
+    return _discovery_collection_request(session, subscription, topic_id)
+
+
+def _ensure_request(session, topic_id: str | None, *, by: str, need: str) -> str:
+    existing = session.execute(text(
+        "SELECT collection_request_id::text FROM collection_request "
+        "WHERE requested_by = :by AND need_text = :need LIMIT 1"
+    ), {"by": by, "need": need}).scalar()
+    if existing:
+        return str(existing)
+    return str(session.execute(text(
+        "INSERT INTO collection_request (requested_by, request_kind, topic_id, need_text, layer) "
+        "VALUES (:by, 'mapping', CAST(:topic AS uuid), :need, 1) "
+        "RETURNING collection_request_id::text"
+    ), {"by": by, "topic": topic_id, "need": need}).scalar_one())
+
+
+def _discovery_collection_request(session, subscription: Subscription, topic_id: str | None) -> str:
     """The WS4 collection request a requested discovery run belongs to.
 
     One per request, created on its first run. ``approved`` is left false: no
@@ -301,17 +422,7 @@ def ensure_collection_request(session, subscription: Subscription, topic_id: str
     """
 
     need = f"Discovery request {subscription.subscription_id}: {subscription.title or ''}".strip()
-    existing = session.execute(text(
-        "SELECT collection_request_id::text FROM collection_request "
-        "WHERE requested_by = 'discovery_page' AND need_text = :need LIMIT 1"
-    ), {"need": need}).scalar()
-    if existing:
-        return str(existing)
-    return str(session.execute(text(
-        "INSERT INTO collection_request (requested_by, request_kind, topic_id, need_text, layer) "
-        "VALUES ('discovery_page', 'mapping', CAST(:topic AS uuid), :need, 1) "
-        "RETURNING collection_request_id::text"
-    ), {"topic": topic_id, "need": need}).scalar_one())
+    return _ensure_request(session, topic_id, by=DISCOVERY_PAGE, need=need)
 
 
 def start_run(
@@ -326,13 +437,16 @@ def start_run(
     return str(session.execute(text(
         "INSERT INTO collection_run (collection_request_id, job_name, dry_run, status, "
         "fetch_budget, max_usd, trigger_type, cadence, initiated_by, config_snapshot) "
-        "VALUES (CAST(:request AS uuid), 'discovery_request', false, 'running', :budget, "
-        ":max_usd, 'subscription', :cadence, 'discovery_page', CAST(:snapshot AS jsonb)) "
+        "VALUES (CAST(:request AS uuid), :job, false, 'running', :budget, "
+        ":max_usd, 'subscription', :cadence, :by, CAST(:snapshot AS jsonb)) "
         "RETURNING collection_run_id::text"
     ), {
         "request": collection_request_id,
         "budget": int(fetch_budget),
         "max_usd": max_usd,
+        "job": "actor_update_request" if subscription.is_actor_update_request
+        else "discovery_request",
+        "by": subscription.requested_via,
         "cadence": subscription.cadence,
         "snapshot": json.dumps(dict(config_snapshot), default=str),
     }).scalar_one())
@@ -349,6 +463,7 @@ def finish_run(
     fetch_count: int,
     spent_usd: float,
     search_run_id: str | None = None,
+    snapshot_extra: Mapping[str, object] | None = None,
 ) -> None:
     session.execute(text(
         # The call that trips the cost cap can overshoot it slightly. The true
@@ -366,6 +481,7 @@ def finish_run(
         # Which open-web search run this was, so its candidates can be shown.
         "config_snapshot = COALESCE(config_snapshot, '{}'::jsonb) || "
         "  jsonb_strip_nulls(jsonb_build_object('search_run_id', CAST(:search_run AS text))) "
+        "  || CAST(:extra AS jsonb) "
         "WHERE collection_run_id = CAST(:run AS uuid)"
     ), {
         "status": status,
@@ -378,6 +494,7 @@ def finish_run(
         "review": int(counts.get("review", 0)),
         "run": collection_run_id,
         "search_run": search_run_id,
+        "extra": json.dumps(dict(snapshot_extra or {}), default=str),
     })
     session.execute(text(
         "INSERT INTO actor_update_subscription_run "

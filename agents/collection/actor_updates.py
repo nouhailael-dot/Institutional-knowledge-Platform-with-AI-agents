@@ -158,6 +158,7 @@ WRITTEN = frozenset({"new", "changed", "corroborated", "conflict", "protected", 
 DEFAULT_SETTINGS = {
     "max_usd_per_actor": 0.15,
     "max_actors_per_request": 10,
+    "max_usd_per_request_run": 1.50,
     "stale_after_days": 365,
     "time_sensitive_stale_after_days": 180,
     "recheck_not_found_after_days": 90,
@@ -248,6 +249,7 @@ def load_actor(session, actor_id: str) -> dict | None:
         "NULLIF(to_jsonb(a)->>'website', '') AS website, "
         "NULLIF(to_jsonb(a)->>'actor_category', '') AS actor_category, "
         "NULLIF(to_jsonb(a)->>'category_type', '') AS category_type, "
+        "NULLIF(to_jsonb(a)->>'actor_type', '') AS actor_type, "
         "NULLIF(to_jsonb(a)->>'location_city', '') AS city, "
         "COALESCE(NULLIF(to_jsonb(a)->>'state_code', ''), NULLIF(to_jsonb(a)->>'state', '')) "
         "AS state, NULLIF(to_jsonb(a)->>'country', '') AS country, "
@@ -504,6 +506,10 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
                                                for t in topics],
             "scope": scope, "depth": depth, "categories": list(categories or ()),
             "focus": focus.strip()[:200], "last_update": last_update(session, actor["actor_id"])}
+    if "aggregate" in (actor.get("actor_category"), actor.get("actor_type")):
+        return {**base, "ok": False,
+                "error": "This record is an aggregate placeholder, not an organisation, so "
+                         "it is never updated by an agent."}
     if not str(actor.get("website") or "").strip():
         return {**base, "ok": False,
                 "error": "This actor has no website on record, so there are no pages "
@@ -739,10 +745,14 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
         terms += list(CHANGE_CATEGORIES.get(category, {}).get("pages", ()))
     before = current_values(session, actor["actor_id"], topic["topic_id"], plan["fields"])
     read_at = datetime.now(UTC)
-    read = reader.read(name=actor["name"], website=actor["website"],
-                       actor_category=actor["actor_category"],
-                       category_type=str(actor.get("category_type") or ""),
-                       topic_terms=terms, read_at=read_at, fields=plan["fields"])
+    try:
+        read = reader.read(name=actor["name"], website=actor["website"],
+                           actor_category=actor["actor_category"],
+                           category_type=str(actor.get("category_type") or ""),
+                           topic_terms=terms, read_at=read_at, fields=plan["fields"])
+    except Exception as exc:  # noqa: BLE001 - a stalled call or the cost cap; say what was spent
+        return {**plan, "ok": False, "cost_usd": round(float(meter.spent_usd), 4),
+                "error": f"{actor['name']} could not be checked: {type(exc).__name__}: {exc}"[:400]}
     spent = round(float(meter.spent_usd), 4)
     if not read.pages:
         # Nothing was read - the site refused (403), did not resolve, or had no
@@ -827,8 +837,13 @@ def _actual(session, fact_id: str, current_id: str | None) -> str:
 
 
 def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: dict | None = None,
-                now: datetime | None = None) -> dict:
-    """Write what a check found, through the Phase 11 writer. No second read."""
+                now: datetime | None = None, ledger: tuple[str, str] | None = None) -> dict:
+    """Write what a check found, through the Phase 11 writer. No second read.
+
+    ``ledger`` is (collection request id, run id) when the check belongs to an
+    update request's run: the facts carry that request and the request runner
+    records and closes the run. Without it this check is its own run.
+    """
     from agents.common.facts import ActorFactWrite
     from agents.enrichment.decisions import append_actor_fact
 
@@ -851,7 +866,10 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
         return {"ok": True, "check_id": check_id, "run_id": record.get("applied_run_id"),
                 "results": [], "note": "Everything in this check was already written."}
     read_at = datetime.fromisoformat(record["read_at"])
-    if record.get("applied_run_id"):
+    if ledger is not None:
+        request_id, run_id = ledger
+        record["applied_run_id"], record["applied_request_id"] = run_id, request_id
+    elif record.get("applied_run_id"):
         run_id = record["applied_run_id"]
         request_id = record["applied_request_id"]
     else:
@@ -899,7 +917,8 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
     status = "attention" if failed else "succeeded"
     reason = (f"{len(failed)} box(es) failed; apply the same check again to retry them."
               if failed else None)
-    _finish_run(session, run_id, status=status, reason=reason, results=results)
+    if ledger is None:
+        _finish_run(session, run_id, status=status, reason=reason, results=results)
     session.commit()
     record["written_fields"] = sorted(done | {r["field"] for r in results if r.get("written")})
     path.write_text(json.dumps(record, default=str, indent=1), encoding="utf-8")
@@ -911,6 +930,417 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
             "counts": counts, "failed": len(failed), "error": reason,
             "review_items": sum(1 for r in results
                                 if r.get("written") and r["actual"] in {"conflict", "protected"})}
+
+
+# ----------------------------------------------------------------- requests
+# An update request keeps chosen actors current: one actor or a bounded group,
+# once or on a frequency, for a stated period. It is an actor_update_subscription
+# (migration 570) run by the existing request runner - there is no second
+# scheduler. A run re-reads the actors with the most missing or out-of-date
+# boxes first, stops at the request's actor cap or spend ceiling, and writes
+# through the same check -> Phase 11 writer path as a single update.
+
+SCOPE_NAMES = {"general": "General profile", "topic": "Specific topic",
+               "missing": "Missing information", "outdated": "Outdated information",
+               "specific": "Specific changes"}
+REQUEST_KEYS = frozenset({
+    "title", "actor_ids", "group", "topic", "scope", "depth", "categories", "fields", "focus",
+    "cadence", "start_date", "end_date", "max_actors_per_run", "max_usd_per_run",
+})
+GROUP_KEYS = frozenset({"sector", "category", "state"})
+
+
+def _max_duration_days() -> int:
+    from agents.collection.discovery_requests import _max_duration_days as configured
+
+    return configured()
+
+
+def request_options(payload: dict, *, config: dict | None = None,
+                    today=None) -> dict:
+    """The page's request, checked and normalised. Unknown keys are refused."""
+    from datetime import date as _date
+
+    from agents.collection.subscriptions import CADENCE_DAYS
+
+    limits = settings(config)
+    unknown = set(payload) - REQUEST_KEYS
+    if unknown:
+        raise ActorUpdateError(f"Unknown request field(s): {', '.join(sorted(unknown))}.")
+    group = dict(payload.get("group") or {})
+    if set(group) - GROUP_KEYS:
+        raise ActorUpdateError("A group is chosen by sector, type and state only.")
+    actor_ids = []
+    for value in payload.get("actor_ids") or []:
+        try:
+            actor_ids.append(str(uuid.UUID(str(value))))
+        except ValueError as exc:
+            raise ActorUpdateError("An actor id is not valid.") from exc
+    actor_ids = list(dict.fromkeys(actor_ids))
+    most = int(limits["max_actors_per_request"])
+    if len(actor_ids) > most:
+        raise ActorUpdateError(f"Choose at most {most} actors for one request.")
+    sector = str(group.get("sector") or "").strip().upper() or None
+    topic = str(payload.get("topic") or "").strip().upper() or sector
+    if not actor_ids and not sector:
+        raise ActorUpdateError("Choose the actors, or a group with a sector: an update "
+                               "request never sweeps the whole map.")
+    scope = str(payload.get("scope") or "general")
+    if scope not in SCOPES:
+        raise ActorUpdateError(f"Unknown update scope {scope!r}.")
+    if scope == "topic" and not topic:
+        raise ActorUpdateError("A topic update needs the sector to update it for.")
+    depth = str(payload.get("depth") or "light")
+    if depth != "light":
+        raise ActorUpdateError("Saved and group requests use the Light refresh. Deep "
+                               "enrichment is asked for one actor at a time, and only when "
+                               "GHUS verified it for that sector.")
+    categories = [str(c) for c in payload.get("categories") or []]
+    if any(c not in CATEGORY_CHOICES for c in categories):
+        raise ActorUpdateError("Unknown change category.")
+    fields = [str(f) for f in payload.get("fields") or []]
+    if scope == "specific" and not fields:
+        raise ActorUpdateError("Choose at least one box to update.")
+    cadence = str(payload.get("cadence") or "once")
+    if cadence not in CADENCE_DAYS:
+        raise ActorUpdateError(f"Unknown frequency {cadence!r}.")
+    today = today or datetime.now(UTC).date()
+    start = _date.fromisoformat(payload["start_date"]) if payload.get("start_date") else today
+    if start < today:
+        raise ActorUpdateError("A request cannot start in the past.")
+    if cadence == "once":
+        end = start
+    else:
+        if not payload.get("end_date"):
+            raise ActorUpdateError("A recurring request needs an end date: every request ends.")
+        end = _date.fromisoformat(payload["end_date"])
+        if end < start:
+            raise ActorUpdateError("The end date is before the start.")
+        if (end - start).days > _max_duration_days():
+            raise ActorUpdateError(f"A request may run for at most {_max_duration_days()} days.")
+    per_run = int(payload.get("max_actors_per_run") or min(len(actor_ids) or most, most))
+    if not 1 <= per_run <= most:
+        raise ActorUpdateError(f"Actors per run must be 1 to {most}.")
+    ceiling = float(payload.get("max_usd_per_run") or limits["max_usd_per_request_run"])
+    if not 0 < ceiling <= float(limits["max_usd_per_request_run"]):
+        raise ActorUpdateError(
+            f"The spend ceiling per run must be above $0 and at most "
+            f"${float(limits['max_usd_per_request_run']):.2f}.")
+    state = str(group.get("state") or "").strip().upper() or None
+    category = str(group.get("category") or "").strip() or None
+    title = " ".join(str(payload.get("title") or "").split())[:160]
+    return {
+        "title": title, "actor_ids": actor_ids, "sector": sector, "state": state,
+        "start_date": start, "end_date": end, "cadence": cadence,
+        "max_usd_per_run": round(ceiling, 4),
+        "options": {"scope": scope, "depth": depth, "categories": categories,
+                    "fields": fields, "focus": " ".join(str(payload.get("focus") or "")
+                                                       .split())[:200],
+                    "topic": topic, "category": category, "max_actors_per_run": per_run},
+    }
+
+
+def group_actors(session, *, sector: str, category: str | None, state: str | None) -> list[dict]:
+    """Actors on the map in a sector (by every route), with a website."""
+    topic = topic_by_code(session, sector)
+    if topic is None:
+        raise ActorUpdateError(f"No sector with code {sector}.")
+    routes = []
+    if _has_table(session, "actor_sector"):
+        routes.append("SELECT x.actor_id FROM actor_sector x JOIN sector s "
+                      "ON s.sector_id = x.sector_id WHERE upper(s.code) = :code")
+    if _has_table(session, "hub_actor") and _has_table(session, "hub_sector"):
+        routes.append("SELECT ha.actor_id FROM hub_actor ha JOIN hub_sector hs "
+                      "ON hs.hub_id = ha.hub_id JOIN sector s ON s.sector_id = hs.sector_id "
+                      "WHERE upper(s.code) = :code")
+    if _has_table(session, "hub_actor") and _has_column(session, "hub", "topic_id"):
+        routes.append("SELECT ha.actor_id FROM hub_actor ha JOIN hub h ON h.hub_id = ha.hub_id "
+                      "WHERE h.topic_id = CAST(:topic AS uuid)")
+    if not routes:
+        return []
+    rows = session.execute(text(
+        "SELECT a.actor_id::text AS actor_id, a.name, "
+        "NULLIF(to_jsonb(a)->>'actor_category', '') AS actor_category "
+        f"FROM actor a WHERE a.actor_id IN ({' UNION '.join(routes)}) "
+        "AND NULLIF(to_jsonb(a)->>'website', '') IS NOT NULL "
+        "AND NULLIF(to_jsonb(a)->>'merged_into_actor_id', '') IS NULL "
+        # Aggregate placeholders are not organisations (AGENTS rule 5).
+        "AND COALESCE(NULLIF(to_jsonb(a)->>'actor_category', ''), "
+        "  NULLIF(to_jsonb(a)->>'actor_type', ''), '') <> 'aggregate' "
+        "AND (CAST(:category AS text) IS NULL OR to_jsonb(a)->>'actor_category' = :category) "
+        "AND (CAST(:state AS text) IS NULL OR upper(COALESCE(NULLIF(to_jsonb(a)->>'state_code', ''), "
+        "  to_jsonb(a)->>'state')) = :state) ORDER BY a.name"
+    ), {"code": sector.upper(), "topic": topic["topic_id"], "category": category,
+        "state": state}).mappings()
+    return [dict(r) for r in rows]
+
+
+def choose_actors(session, prepared: dict, *, config: dict | None = None,
+                  today: datetime | None = None) -> dict:
+    """Which actors a run updates, most gaps first, and why the others wait.
+
+    Gap-aware: an actor with nothing missing or out of date for the request's
+    scope is not read at all, so it costs nothing. The actor cap is applied
+    after ordering, so the cap spends the run on the actors that need it most.
+    """
+    from agents.collection.light_pull import CATEGORY_LIGHT_FIELDS
+
+    limits = settings(config)
+    today = today or datetime.now(UTC)
+    options = prepared["options"]
+    if prepared["actor_ids"]:
+        pool = []
+        for actor_id in prepared["actor_ids"]:
+            actor = load_actor(session, actor_id)
+            if actor is not None:
+                pool.append(actor)
+        matched = len(pool)
+    else:
+        pool = group_actors(session, sector=prepared["sector"], category=options["category"],
+                            state=prepared["state"])
+        matched = len(pool)
+    chosen_topic = topic_by_code(session, options["topic"]) if options["topic"] else None
+    ready, waiting = [], []
+    for actor in pool:
+        if "aggregate" in (actor.get("actor_category"), actor.get("actor_type")):
+            waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                            "reason": "An aggregate placeholder, not an organisation; never updated."})
+            continue
+        if actor.get("website") is None and "website" in actor:
+            waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                            "reason": "No website on record."})
+            continue
+        topics = actor.get("topics")
+        if topics is None and chosen_topic is None:
+            topics = actor_topics(session, actor["actor_id"])
+        topic = chosen_topic or (topics[0] if topics else None)
+        if topic is None:
+            waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                            "reason": "Not linked to a sector; choose one for the request."})
+            continue
+        schema = schema_fields(actor.get("actor_category"))
+        current = current_values(session, actor["actor_id"], topic["topic_id"], schema)
+        try:
+            fields, _ = plan_fields(
+                options["scope"], schema, current, fields=options["fields"],
+                categories=options["categories"],
+                category_fields=CATEGORY_LIGHT_FIELDS.get(actor.get("actor_category") or "", ()),
+                today=today, limits=limits)
+        except ActorUpdateError:
+            fields = []
+        if not fields:
+            waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                            "reason": "Nothing to read: every box in scope is filled and fresh."})
+            continue
+        ready.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                      "actor_category": actor.get("actor_category"),
+                      "topic": topic["code"], "boxes": len(fields), "fields": fields})
+    ready.sort(key=lambda a: (-a["boxes"], a["name"]))
+    cap = int(options["max_actors_per_run"])
+    for actor in ready[cap:]:
+        waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                        "reason": f"Over this run's cap of {cap} actors; it comes first next run "
+                                  "if it still has the most gaps."})
+    return {"matched": matched, "chosen": ready[:cap], "waiting": waiting}
+
+
+def _runs_in_period(prepared: dict) -> int:
+    from agents.collection.subscriptions import CADENCE_DAYS
+
+    interval = CADENCE_DAYS[prepared["cadence"]]
+    if interval is None:
+        return 1
+    return (prepared["end_date"] - prepared["start_date"]).days // interval + 1
+
+
+def _request_title(prepared: dict, chosen: list[dict], sector_name: str | None = None) -> str:
+    if prepared["title"]:
+        return prepared["title"]
+    scope = SCOPE_NAMES[prepared["options"]["scope"]]
+    if prepared["actor_ids"]:
+        names = [a["name"] for a in chosen] or ["chosen actors"]
+        who = names[0] if len(prepared["actor_ids"]) == 1 else f"{len(prepared['actor_ids'])} actors"
+    else:
+        category = (prepared["options"]["category"] or "").replace("_", " ") or None
+        who = " · ".join(filter(None, [sector_name or prepared["sector"], category,
+                                       prepared["state"]]))
+    return f"{scope}: {who}"[:160]
+
+
+def plan_request(session, payload: dict, *, config: dict | None = None,
+                 runs_dir: Path = RUNS_DIR, today: datetime | None = None) -> dict:
+    """What a request would do on its first run. Free: nothing read or written."""
+    from agents.collection import subscription_store as store
+
+    prepared = request_options(payload, config=config,
+                               today=(today.date() if today else None))
+    choice = choose_actors(session, prepared, config=config, today=today)
+    limits = settings(config)
+    cost = cost_estimate(session, limits, runs_dir=runs_dir)
+    n = len(choice["chosen"])
+    ceiling = prepared["max_usd_per_run"]
+    per_actor = min(float(limits["max_usd_per_actor"]), ceiling)
+    if cost["typical_usd"] is not None:
+        expected = min(round(cost["typical_usd"] * n, 4), ceiling)
+    else:
+        expected = None
+    # Even if every read cost the full per-actor cap, this many are reached.
+    reachable = min(n, int(ceiling // per_actor)) if per_actor else n
+    runs = _runs_in_period(prepared)
+    sector = topic_by_code(session, prepared["sector"]) if prepared["sector"] else None
+    title = _request_title(prepared, choice["chosen"], sector["name"] if sector else None)
+    frequency = {"once": "once", "weekly": "every week", "biweekly": "every two weeks",
+                 "monthly": "every month", "quarterly": "every three months"}[prepared["cadence"]]
+    summary = (
+        f"“{title}”: re-read up to {prepared['options']['max_actors_per_run']} actor(s) "
+        f"{frequency}"
+        + (f" from {prepared['start_date']} to {prepared['end_date']} ({runs} runs)"
+           if prepared["cadence"] != "once" else f" on {prepared['start_date']}")
+        + f", each from its own website (Light refresh, up to 3 pages, no web search). "
+        f"{choice['matched']} actor(s) match; {n} would be read on the first run, those "
+        f"with the most missing or out-of-date boxes first. Each run stops at "
+        f"${ceiling:.2f}. New and changed values are written with their source; "
+        f"conflicts and changes to GHUS values go to Review."
+    )
+    return {
+        "ok": True, "title": title, "summary": summary, "cadence": prepared["cadence"],
+        "start_date": prepared["start_date"].isoformat(),
+        "end_date": prepared["end_date"].isoformat(), "runs": runs,
+        "matched": choice["matched"], "chosen": choice["chosen"], "waiting": choice["waiting"],
+        "options": prepared["options"], "max_usd_per_run": ceiling,
+        "cost": {**cost, "per_actor_cap_usd": per_actor, "expected_usd": expected,
+                 "reachable_actors": min(reachable, n)},
+        "next_run": prepared["start_date"].isoformat(),
+        "can_save": store.has_update_requests(session),
+        "needs_migration": None if store.has_update_requests(session) else (
+            "Saving update requests needs migration 570 on this database. A one-time "
+            "update of one actor works without it."),
+    }
+
+
+def create_request(session, payload: dict, *, config: dict | None = None,
+                   live: bool = False) -> dict:
+    """Save a request (live) or say what would be saved. The runner does the rest."""
+    from agents.collection import subscription_store as store
+    from agents.collection.subscriptions import SubscriptionError
+
+    plan = plan_request(session, payload, config=config)
+    prepared = request_options(payload, config=config)
+    try:
+        written = store.create_update_request(
+            session, title=plan["title"], end_date=prepared["end_date"],
+            start_date=prepared["start_date"], cadence=prepared["cadence"],
+            update_options=prepared["options"], max_usd_per_run=prepared["max_usd_per_run"],
+            actor_ids=prepared["actor_ids"],
+            sector_codes=[prepared["sector"]] if prepared["sector"] else [],
+            state_code=prepared["state"], live=live)
+    except SubscriptionError as exc:
+        raise ActorUpdateError(str(exc)) from exc
+    return {**plan, "live": written.live, "subscription_id": written.subscription_id}
+
+
+def _prepared_from(subscription) -> dict:
+    options = dict(subscription.update_options)
+    return {
+        "title": subscription.title or "", "actor_ids": list(subscription.actor_ids),
+        "sector": (subscription.sector_codes or (None,))[0], "state": subscription.state_code,
+        "start_date": subscription.start_date, "end_date": subscription.end_date,
+        "cadence": subscription.cadence, "max_usd_per_run": subscription.max_usd_per_run,
+        "options": {"scope": options.get("scope", "general"), "depth": "light",
+                    "categories": list(options.get("categories") or []),
+                    "fields": list(options.get("fields") or []),
+                    "focus": options.get("focus") or "", "topic": options.get("topic"),
+                    "category": options.get("category"),
+                    "max_actors_per_run": int(options.get("max_actors_per_run") or 1)},
+    }
+
+
+def plan_subscription(session, subscription, *, config: dict | None = None) -> dict:
+    """The actors a due request would read now (the runner's plan-only report)."""
+    return choose_actors(session, _prepared_from(subscription), config=config)
+
+
+def run_request(session, subscription, *, ledger: tuple[str, str], config: dict | None = None,
+                reader_factory=None, runs_dir: Path = RUNS_DIR) -> dict:
+    """One live run of a request: check and write each chosen actor, within the ceiling.
+
+    Each actor's check is capped at min(per-actor cap, what is left of the
+    run's ceiling); when less than a cent is left the run stops and says which
+    actors it did not reach. One actor's failure never stops the others.
+    """
+    limits = settings(config)
+    prepared = _prepared_from(subscription)
+    choice = choose_actors(session, prepared, config=config)
+    ceiling = float(subscription.max_usd_per_run)
+    spent, pages, results, stopped = 0.0, 0, [], None
+    options = prepared["options"]
+    for index, actor in enumerate(choice["chosen"]):
+        left = round(ceiling - spent, 4)
+        if left < 0.01:
+            stopped = (f"Stopped at the ${ceiling:.2f} spend ceiling; "
+                       f"{len(choice['chosen']) - index} actor(s) not reached this run.")
+            break
+        cap = min(float(limits["max_usd_per_actor"]), left)
+        entry = {"actor_id": actor["actor_id"], "name": actor["name"], "topic": actor["topic"],
+                 "boxes": actor["boxes"]}
+        try:
+            check = check_update(
+                session, actor_id=actor["actor_id"], topic_code=actor["topic"],
+                scope=options["scope"], fields=options["fields"],
+                categories=options["categories"], focus=options["focus"], max_usd=cap,
+                config=config, reader_factory=reader_factory, runs_dir=runs_dir)
+        except Exception as exc:  # noqa: BLE001 - one actor must not stop the others
+            session.rollback()
+            check = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+        spent += float(check.get("cost_usd") or 0)
+        pages += len(check.get("pages_read") or [])
+        if not check.get("ok") or not check.get("check_id"):
+            entry.update(ok=False, error=check.get("error") or check.get("note"),
+                         spent_usd=round(float(check.get("cost_usd") or 0), 4))
+            results.append(entry)
+            continue
+        try:
+            applied = apply_check(session, check["check_id"], runs_dir=runs_dir, config=config,
+                                  ledger=ledger)
+        except Exception as exc:  # noqa: BLE001
+            session.rollback()
+            applied = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300], "counts": {}}
+        entry.update(ok=bool(applied.get("ok")), error=applied.get("error"),
+                     counts=applied.get("counts") or {},
+                     review_items=int(applied.get("review_items") or 0),
+                     spent_usd=round(float(check.get("cost_usd") or 0), 4))
+        results.append(entry)
+    written = [r for r in results if r.get("counts")]
+    return {
+        "actor_results": results, "spent_usd": round(spent, 4), "pages": pages,
+        "stopped": stopped, "waiting": len(choice["waiting"]),
+        "found": sum(r["counts"].get("new", 0) + r["counts"].get("changed", 0) for r in written),
+        "review_items": sum(r.get("review_items", 0) for r in results),
+        "failed": sum(1 for r in results if not r.get("ok")),
+    }
+
+
+def list_requests(session) -> dict:
+    """Every actor update request, with its next run and its run history."""
+    from agents.collection import subscription_store as store
+
+    today = datetime.now(UTC).date()
+    requests = []
+    for row in store.load_actor_update_requests(session):
+        item = dict(row)
+        try:
+            subscription = store.subscription_from_row(row)
+            item["next_run"] = subscription.next_due(today)
+            item["skip_reason"] = subscription.skip_reason(today)
+        except ValueError as exc:
+            item["next_run"], item["skip_reason"] = None, f"invalid: {exc}"
+        ids = list(row.get("actor_ids") or [])
+        item["actor_names"] = [r[0] for r in session.execute(text(
+            "SELECT name FROM actor WHERE actor_id = ANY(CAST(:ids AS uuid[])) ORDER BY name"
+        ), {"ids": ids})] if ids else []
+        item["runs"] = store.load_request_runs(session, str(row["subscription_id"]))
+        requests.append(item)
+    return {"requests": requests, "ready": store.has_update_requests(session)}
 
 
 # --------------------------------------------------------------------- CLI
@@ -939,13 +1369,25 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--max-usd", type=float, default=None)
     apply = sub.add_parser("apply")
     apply.add_argument("--check-id", required=True)
+    # Update requests (migration 570), run by the request runner.
+    for name in ("request-plan", "request-create"):
+        command = sub.add_parser(name)
+        command.add_argument("--json", dest="payload", required=True)
+        command.add_argument("--live", action="store_true")
+    sub.add_parser("requests")
+    status = sub.add_parser("request-status")
+    status.add_argument("--id", required=True)
+    status.add_argument("--action", required=True, choices=["pause", "resume", "cancel"])
+    status.add_argument("--live", action="store_true")
     args = parser.parse_args(argv)
 
     sys.path.insert(0, str(ROOT))
     from dotenv import load_dotenv
 
     load_dotenv(ROOT / ".env", override=False)  # API key only; the caller's DATABASE_URL wins
-    if args.command == "apply" and not _local_test_database() \
+    writes = args.command == "apply" or (
+        args.command in ("request-create", "request-status") and args.live)
+    if writes and not _local_test_database() \
             and os.environ.get("ACTOR_UPDATE_WRITES_ENABLED", "").lower() != "true":
         print(json.dumps({"ok": False, "error": (
             "Writing actor updates outside a local *_test database needs "
@@ -960,6 +1402,25 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "apply":
             result = apply_check(session, args.check_id, config=config)
+        elif args.command in ("request-plan", "request-create"):
+            payload = json.loads(args.payload)
+            if not isinstance(payload, dict):
+                raise ActorUpdateError("A request is a JSON object.")
+            result = (plan_request(session, payload, config=config)
+                      if args.command == "request-plan"
+                      else create_request(session, payload, config=config, live=args.live))
+        elif args.command == "requests":
+            result = {"ok": True, **list_requests(session)}
+        elif args.command == "request-status":
+            from agents.collection import subscription_store as store
+            from agents.collection.subscriptions import SubscriptionError
+
+            try:
+                written = store.change_status(session, args.id, args.action, live=args.live)
+            except SubscriptionError as exc:
+                raise ActorUpdateError(str(exc)) from exc
+            result = {"ok": True, "live": written.live, "subscription_id": args.id,
+                      "status": written.values["status"]}
         else:
             fields = list(PRESETS.get(args.fields) or _split(args.fields))
             options = dict(actor_id=args.actor_id, topic_code=args.topic, scope=args.scope,
@@ -967,7 +1428,8 @@ def main(argv: list[str] | None = None) -> int:
                            focus=args.focus, config=config)
             result = (plan_update(session, **options) if args.command == "plan"
                       else check_update(session, max_usd=args.max_usd, **options))
-    except ActorUpdateError as exc:
+    except (ActorUpdateError, ValueError) as exc:
+        session.rollback()
         result = {"ok": False, "error": str(exc)}
     except Exception as exc:  # noqa: BLE001 - the page shows the reason, never a traceback
         session.rollback()

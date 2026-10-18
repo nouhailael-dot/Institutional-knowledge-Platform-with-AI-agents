@@ -108,6 +108,7 @@
         {
           "max_usd_per_actor": 0.15,
           "max_actors_per_request": 10,
+          "max_usd_per_request_run": 1.50,
           "stale_after_days": 365,
           "time_sensitive_stale_after_days": 180,
           "recheck_not_found_after_days": 90,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -236,3 +237,95 @@ def test_writing_outside_a_local_test_database_needs_the_bridge_switch(monkeypat
     result = json.loads(capsys.readouterr().out)
     assert result["ok"] is False and "ACTOR_UPDATE_WRITES_ENABLED" in result["error"]
 
+
+# ---------------------------------------------------------------- requests
+
+from datetime import date  # noqa: E402
+
+from agents.collection.actor_updates import request_options  # noqa: E402
+
+TODAY = date(2026, 10, 18)
+ACTOR = "11111111-2222-3333-4444-555555555555"
+
+
+def _request(**changes):
+    payload = {"actor_ids": [ACTOR], "scope": "missing", "cadence": "monthly",
+               "start_date": "2026-10-20", "end_date": "2027-01-20"}
+    payload.update(changes)
+    return request_options(payload, config={}, today=TODAY)
+
+
+def test_a_request_is_normalised_into_what_the_table_stores():
+    prepared = _request(categories=["funding"], max_usd_per_run=0.5)
+    assert prepared["actor_ids"] == [ACTOR]
+    assert prepared["max_usd_per_run"] == 0.5
+    assert prepared["options"] == {
+        "scope": "missing", "depth": "light", "categories": ["funding"], "fields": [],
+        "focus": "", "topic": None, "category": None, "max_actors_per_run": 1}
+    # A one-time request ends the day it starts.
+    once = _request(cadence="once", end_date=None)
+    assert once["end_date"] == once["start_date"]
+
+
+@pytest.mark.parametrize("changes,words", [
+    ({"actor_ids": [], "group": {}}, "never sweeps"),
+    ({"group": {"sector": "WATER", "town": "x"}}, "sector, type and state"),
+    ({"depth": "deep"}, "Light refresh"),
+    ({"scope": "specific"}, "at least one box"),
+    ({"max_usd_per_run": 9}, "spend ceiling"),
+    ({"max_usd_per_run": -1}, "spend ceiling"),
+    ({"max_actors_per_run": 99}, "Actors per run"),
+    ({"actor_ids": [str(uuid.uuid4()) for _ in range(11)]}, "at most 10"),
+    ({"end_date": None}, "end date"),
+    ({"start_date": "2026-10-01"}, "past"),
+    ({"end_date": "2030-01-01"}, "at most"),
+    ({"cadence": "daily"}, "frequency"),
+    ({"surprise": 1}, "Unknown request field"),
+])
+def test_a_request_that_could_run_unbounded_or_wrong_is_refused(changes, words):
+    with pytest.raises(ActorUpdateError, match=words):
+        _request(**changes)
+
+
+def test_a_group_request_needs_a_sector_and_takes_its_facts_there():
+    prepared = _request(actor_ids=[], group={"sector": "water", "state": "ca"})
+    assert (prepared["sector"], prepared["state"], prepared["options"]["topic"]) == (
+        "WATER", "CA", "WATER")
+
+
+def test_the_subscription_itself_refuses_an_update_request_without_a_ceiling():
+    from agents.collection.subscriptions import ACTOR_UPDATES, Subscription, SubscriptionError
+
+    with pytest.raises(SubscriptionError, match="spend ceiling"):
+        Subscription(subscription_id="x", end_date=TODAY, cadence="once",
+                     requested_via=ACTOR_UPDATES, start_date=TODAY, actor_ids=(ACTOR,),
+                     update_options={"scope": "general"})
+    ok = Subscription(subscription_id="x", end_date=TODAY, cadence="once",
+                      requested_via=ACTOR_UPDATES, start_date=TODAY, actor_ids=(ACTOR,),
+                      update_options={"scope": "general"}, max_usd_per_run=0.5)
+    assert ok.is_actor_update_request and not ok.is_discovery_request
+
+
+def test_saving_a_request_without_migration_570_says_so():
+    from agents.collection import subscription_store as store
+    from agents.collection.subscriptions import SubscriptionError
+
+    class NoColumns:
+        def execute(self, *args, **kwargs):
+            class Result:
+                def scalar(self):
+                    return 0
+            return Result()
+
+    with pytest.raises(SubscriptionError, match="migration 570"):
+        store.create_update_request(
+            NoColumns(), title="t", end_date=TODAY, start_date=TODAY, cadence="once",
+            update_options={"scope": "general"}, max_usd_per_run=0.5, actor_ids=[ACTOR],
+            live=True)
+
+
+def test_request_writes_outside_a_local_test_database_need_the_bridge_switch(monkeypatch, capsys):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user@db.example.supabase.co:5432/postgres")
+    monkeypatch.delenv("ACTOR_UPDATE_WRITES_ENABLED", raising=False)
+    assert au.main(["request-create", "--json", "{}", "--live"]) == 0
+    assert "ACTOR_UPDATE_WRITES_ENABLED" in json.loads(capsys.readouterr().out)["error"]

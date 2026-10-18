@@ -439,3 +439,199 @@ def test_review_refuses_to_accept_over_a_value_that_changed_since(session_factor
                                         accept=True, live=True)
         session.rollback()
 
+
+# ---------------------------------------------------------- update requests
+# Need migration 570 (applied to the local clone only).
+
+def _has_570(session):
+    from agents.collection import subscription_store as store
+
+    return store.has_update_requests(session)
+
+
+@pytest.fixture()
+def three_actors(session_factory, world):
+    with session_factory() as session:
+        if not _has_570(session):
+            pytest.skip("migration 570 is not applied to this test database")
+        ids = session.execute(text(
+            "SELECT actor_id::text FROM actor WHERE actor_category = 'company' "
+            "AND website LIKE 'http%' ORDER BY actor_id LIMIT 3")).scalars().all()
+    return ids
+
+
+def _payload(world, ids, **changes):
+    payload = {"actor_ids": ids, "topic": world["code"], "scope": "general",
+               "cadence": "once", "max_actors_per_run": len(ids), "max_usd_per_run": 1.0}
+    payload.update(changes)
+    return payload
+
+
+def _runner(session, subscription_id, tmp_path, reader, **kwargs):
+    from agents.collection import subscription_runner as runner
+
+    def update(session_, subscription, *, ledger, config):
+        return au.run_request(session_, subscription, ledger=ledger, config=CONFIG,
+                              reader_factory=_factory(reader, **kwargs), runs_dir=tmp_path)
+
+    return runner.run_due_requests(session, live=True, request_id=subscription_id,
+                                   config={"max_pages_fetched": 30, "max_usd_per_run": 5.0},
+                                   runs_dir=tmp_path, update=update)
+
+
+def test_a_request_plan_is_free_and_orders_actors_by_their_gaps(
+        session_factory, world, three_actors, tmp_path):
+    with session_factory() as session:
+        # The first actor already has every box filled and fresh: it waits.
+        for key in au.schema_fields("company"):
+            _seed(session, {**world, "actor": three_actors[0]}, key, f"Recorded {key}.",
+                  when=datetime.now(UTC))
+        _seed(session, {**world, "actor": three_actors[1]}, "location", "Austin, TX",
+              when=datetime.now(UTC))
+        session.commit()
+        before = _ledger(session)
+        plan = au.plan_request(session, _payload(world, three_actors, scope="missing"),
+                               config=CONFIG, runs_dir=tmp_path)
+        assert _ledger(session) == before
+    assert plan["can_save"] and plan["matched"] == 3
+    assert [a["actor_id"] for a in plan["chosen"]] == [three_actors[2], three_actors[1]]
+    assert plan["chosen"][0]["boxes"] > plan["chosen"][1]["boxes"]
+    assert plan["waiting"][0]["actor_id"] == three_actors[0]
+    assert "filled and fresh" in plan["waiting"][0]["reason"]
+    assert plan["cost"]["per_actor_cap_usd"] == CONFIG["actor_updates"]["max_usd_per_actor"]
+    assert plan["runs"] == 1 and "Review" in plan["summary"]
+
+
+def test_a_saved_request_is_paused_resumed_and_cancelled(session_factory, world, three_actors):
+    from agents.collection import subscription_store as store
+
+    with session_factory() as session:
+        made = au.create_request(session, _payload(world, three_actors, cadence="monthly",
+                                                   end_date="2027-03-01"),
+                                 config=CONFIG, live=True)
+        listed = {r["subscription_id"]: r for r in au.list_requests(session)["requests"]}
+        request = listed[made["subscription_id"]]
+        assert request["status"] == "active" and request["cadence"] == "monthly"
+        assert request["update_options"]["scope"] == "general"
+        assert float(request["max_usd_per_run"]) == 1.0
+        assert len(request["actor_names"]) == 3
+        for action, status in (("pause", "paused"), ("resume", "active"),
+                               ("cancel", "cancelled")):
+            assert store.change_status(session, made["subscription_id"], action,
+                                       live=True).values["status"] == status
+        with pytest.raises(Exception, match="cannot be resumed"):
+            store.change_status(session, made["subscription_id"], "resume", live=True)
+
+
+def test_the_runner_runs_a_due_update_request_and_records_one_run(
+        session_factory, world, three_actors, tmp_path):
+    with session_factory() as session:
+        made = au.create_request(session, _payload(world, three_actors), config=CONFIG,
+                                 live=True)
+        report = _runner(session, made["subscription_id"], tmp_path, FakeReader(EVIDENCE))
+        outcome = report.outcomes[0]
+        assert outcome.kind == "actor_update" and outcome.status == "succeeded", outcome
+        assert outcome.next_status == "expired"  # a one-time request is done
+        run = session.execute(text(
+            "SELECT r.job_name, r.status, r.spent_usd, r.trigger_type, r.initiated_by, "
+            "r.config_snapshot->'actor_results' AS results, "
+            "r.collection_request_id::text AS req "
+            "FROM collection_run r WHERE r.collection_run_id = CAST(:id AS uuid)"),
+            {"id": outcome.collection_run_id}).mappings().one()
+        assert (run["job_name"], run["status"], run["trigger_type"], run["initiated_by"]) == (
+            "actor_update_request", "succeeded", "subscription", "actor_updates")
+        assert float(run["spent_usd"]) == pytest.approx(0.09)
+        assert {r["actor_id"] for r in run["results"]} == set(three_actors)
+        # Every fact the run wrote carries the request; the run is in the request history.
+        assert _count(session, "SELECT count(DISTINCT actor_id) FROM actor_fact "
+                               "WHERE request_id = CAST(:r AS uuid)", r=run["req"]) == 3
+        requests = au.list_requests(session)["requests"]
+        mine = next(r for r in requests if r["subscription_id"] == made["subscription_id"])
+        assert mine["status"] == "expired" and len(mine["runs"]) == 1
+        assert mine["runs"][0]["actor_results"]
+
+
+def test_a_run_stops_at_its_spend_ceiling_and_says_who_waits(
+        session_factory, world, three_actors, tmp_path):
+    with session_factory() as session:
+        made = au.create_request(session, _payload(world, three_actors, max_usd_per_run=0.05),
+                                 config=CONFIG, live=True)
+        report = _runner(session, made["subscription_id"], tmp_path, FakeReader(EVIDENCE))
+        outcome = report.outcomes[0]
+        assert outcome.status == "attention"
+        assert "spend ceiling" in outcome.status_reason
+        run = session.execute(text(
+            "SELECT spent_usd, max_usd, status_reason, jsonb_array_length("
+            "config_snapshot->'actor_results') AS reached FROM collection_run "
+            "WHERE collection_run_id = CAST(:id AS uuid)"),
+            {"id": outcome.collection_run_id}).mappings().one()
+        assert run["reached"] == 2  # $0.03, then $0.03 against the $0.02 left
+        # The true spend is recorded and the overshoot stated, never hidden.
+        assert float(run["spent_usd"]) == pytest.approx(0.06)
+        assert run["max_usd"] is None and "over the" in run["status_reason"]
+
+
+def test_one_actor_failing_does_not_stop_the_run(session_factory, world, three_actors,
+                                                 tmp_path):
+    class OneSiteDown(FakeReader):
+        down = ""
+
+        def read(self, **kwargs):
+            if kwargs["name"] == self.down:
+                self.calls.append(kwargs)
+                read = LightRead()
+                read.error = "site could not be read: HTTPError: 403"
+                return read
+            return super().read(**kwargs)
+
+    with session_factory() as session:
+        names = dict(session.execute(text(
+            "SELECT actor_id::text, name FROM actor "
+            "WHERE actor_id = ANY(CAST(:ids AS uuid[]))"), {"ids": three_actors}).all())
+        reader = OneSiteDown(EVIDENCE)
+        reader.down = names[three_actors[1]]
+        made = au.create_request(session, _payload(world, three_actors), config=CONFIG,
+                                 live=True)
+        outcome = _runner(session, made["subscription_id"], tmp_path, reader).outcomes[0]
+        assert outcome.status == "attention"
+        assert "1 actor(s) could not be updated" in outcome.status_reason
+        assert outcome.counts["actors"] == 2
+
+
+def test_the_plan_only_runner_lists_update_requests_and_writes_nothing(
+        session_factory, world, three_actors, tmp_path):
+    from agents.collection import subscription_runner as runner
+
+    with session_factory() as session:
+        made = au.create_request(session, _payload(world, three_actors), config=CONFIG,
+                                 live=True)
+        before = _ledger(session)
+        report = runner.run_due_requests(session, live=False,
+                                         request_id=made["subscription_id"],
+                                         config={}, runs_dir=tmp_path)
+        assert _ledger(session) == before
+    outcome = report.outcomes[0]
+    assert outcome.kind == "actor_update" and outcome.status == "planned"
+    assert len(outcome.queries) == 3 and "box(es) to read" in outcome.queries[0]
+    assert "Actors (3):" in runner.render_report(report)
+
+
+def test_aggregate_placeholders_are_never_updated(session_factory, world, tmp_path):
+    """AGENTS rule 5: aggregate stays out of agent outputs."""
+    with session_factory() as session:
+        aggregate = session.execute(text(
+            "SELECT actor_id::text FROM actor WHERE COALESCE(NULLIF(to_jsonb(actor)->>'actor_category', ''), "
+            "to_jsonb(actor)->>'actor_type') = 'aggregate' LIMIT 1")).scalar()
+        if aggregate is None:
+            pytest.skip("no aggregate row in this test database")
+        plan = au.plan_update(session, actor_id=aggregate, topic_code=world["code"],
+                              config=CONFIG, runs_dir=tmp_path)
+        assert plan["ok"] is False and "aggregate" in plan["error"]
+        sector = session.execute(text(
+            "SELECT t.code FROM hub_actor ha JOIN hub h ON h.hub_id = ha.hub_id "
+            "JOIN topic t ON t.topic_id = h.topic_id GROUP BY t.code "
+            "ORDER BY count(*) DESC LIMIT 1")).scalar()
+        if sector and _has_570(session):
+            members = au.group_actors(session, sector=sector, category=None, state=None)
+            categories = {m["actor_category"] for m in members}
+            assert "aggregate" not in categories

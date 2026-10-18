@@ -41,7 +41,11 @@ EXPIRED = "expired"
 CANCELLED = "cancelled"
 RUNNABLE_STATUSES = (ACTIVE,)
 DISCOVERY_PAGE = "discovery_page"
-REQUESTED_VIA = ("map_verification", "review_updates", DISCOVERY_PAGE)
+# Actor update requests (migration 570): keep chosen actors current.
+ACTOR_UPDATES = "actor_updates"
+REQUESTED_VIA = ("map_verification", "review_updates", DISCOVERY_PAGE, ACTOR_UPDATES)
+# Mirrors the migration 570 hard bound; the configured ceiling is lower.
+MAX_USD_PER_RUN = 5.0
 # Mirrors the migration 550 constraints, so a bad request is refused before it
 # reaches the database rather than by it.
 MAX_FOCUS_TERMS = 8
@@ -76,6 +80,10 @@ class Subscription:
     title: str | None = None
     focus_terms: tuple[str, ...] = ()
     max_new_actors_per_run: int = DEFAULT_NEW_ACTORS_PER_RUN
+    # Actor update requests (migration 570). Validated in full by
+    # agents/collection/actor_updates.py; here only what the table enforces.
+    update_options: dict = field(default_factory=dict)
+    max_usd_per_run: float | None = None
 
     def __post_init__(self) -> None:
         if self.requested_via not in REQUESTED_VIA:
@@ -100,6 +108,13 @@ class Subscription:
                 "a discovery request needs a topic or sector: an area alone is the "
                 "unscoped sweep this design replaces"
             )
+        if self.requested_via == ACTOR_UPDATES:
+            if not self.update_options.get("scope"):
+                raise SubscriptionError("an actor update request needs a scope")
+            if self.max_usd_per_run is None or not 0 < float(self.max_usd_per_run) <= MAX_USD_PER_RUN:
+                raise SubscriptionError(
+                    f"an actor update request needs a spend ceiling above $0 and at most "
+                    f"${MAX_USD_PER_RUN:.2f} per run")
         if self.title is not None and not 1 <= len(self.title.strip()) <= MAX_TITLE_CHARS:
             raise SubscriptionError(f"a title must be 1 to {MAX_TITLE_CHARS} characters")
         if len(self.focus_terms) > MAX_FOCUS_TERMS:
@@ -112,6 +127,10 @@ class Subscription:
     @property
     def is_discovery_request(self) -> bool:
         return self.requested_via == DISCOVERY_PAGE
+
+    @property
+    def is_actor_update_request(self) -> bool:
+        return self.requested_via == ACTOR_UPDATES
 
     @property
     def has_scope(self) -> bool:
