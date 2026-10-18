@@ -146,42 +146,107 @@ def test_run_now_starts_a_live_run_of_that_request_only(tmp_path):
     assert len(started) == 1
 
 
-def test_an_actor_update_runs_the_backend_and_only_a_live_one_may_write(tmp_path):
-    """Preview reads and writes nothing; only "Update the map" sets the write switch."""
-    import json as _json
-    import sys as _sys
+def _update_bridge(tmp_path, calls, answer=None):
     import types
-
-    from src.discovery.bridge import DiscoveryBridge
 
     root = tmp_path / "backend"
     (root / "agents" / "collection").mkdir(parents=True)
     (root / "agents" / "collection" / "discovery_requests.py").write_text("", encoding="utf-8")
-    calls = []
 
     def fake_run(command, **kwargs):
         calls.append((command, kwargs["env"], kwargs["timeout"]))
-        return types.SimpleNamespace(returncode=0, stdout=_json.dumps({"ok": True, "boxes": []}))
+        return types.SimpleNamespace(returncode=0, stdout=json.dumps(answer or {"ok": True}))
 
-    bridge = DiscoveryBridge(project_root=root, database_url="postgresql://x/y_test",
-                             run_command=fake_run)
+    return DiscoveryBridge(project_root=root, database_url="postgresql://x/y_test",
+                           run_command=fake_run)
+
+
+def test_plan_and_check_never_set_the_write_switch_and_only_apply_does(tmp_path):
+    """Plan is free, check reads and writes nothing; only "Write" may write."""
+    import sys as _sys
+
+    calls = []
+    bridge = _update_bridge(tmp_path, calls)
     actor = "11111111-2222-3333-4444-555555555555"
-    bridge.update_actor(actor, topic="ENERGY", fields="funding_activity", live=False)
-    bridge.update_actor(actor, topic=None, fields="", live=True)
+    options = {"scope": "specific", "depth": "light", "topic": "ENERGY",
+               "fields": ["funding_signal", "recent_activity"], "categories": ["funding"],
+               "focus": "  new   DOE grants "}
+    bridge.plan_update(actor, options)
+    bridge.check_update(actor, options)
+    bridge.apply_update("a" * 32)
 
-    preview, live = calls
-    assert preview[0][:3] == [_sys.executable, "-m", "agents.collection.actor_updates"]
-    assert "--live" not in preview[0] and "ACTOR_UPDATE_WRITES_ENABLED" not in preview[1]
-    assert preview[0][preview[0].index("--topic") + 1] == "ENERGY"
-    assert "--live" in live[0] and live[1]["ACTOR_UPDATE_WRITES_ENABLED"] == "true"
-    assert preview[2] >= 300  # reading three pages and calling the model takes time
+    plan, check, apply = calls
+    assert plan[0][:4] == [_sys.executable, "-m", "agents.collection.actor_updates", "plan"]
+    assert check[0][3] == "check" and apply[0][3:] == ["apply", "--check-id", "a" * 32]
+    for command, env, _ in (plan, check):
+        assert "ACTOR_UPDATE_WRITES_ENABLED" not in env
+        assert command[command.index("--scope") + 1] == "specific"
+        assert command[command.index("--topic") + 1] == "ENERGY"
+        assert command[command.index("--fields") + 1] == "funding_signal,recent_activity"
+        assert command[command.index("--categories") + 1] == "funding"
+        assert command[command.index("--focus") + 1] == "new DOE grants"
+    assert apply[1]["ACTOR_UPDATE_WRITES_ENABLED"] == "true"
+    assert check[2] >= 300  # reading three pages and calling the model takes time
 
 
-def test_an_actor_update_refuses_an_id_that_is_not_one():
-    import pytest
-
-    from src.discovery.bridge import DiscoveryBridge, DiscoveryBridgeError
-
+@pytest.mark.parametrize("actor,options", [
+    ("'; drop table actor; --", {}),
+    ("11111111-2222-3333-4444-555555555555", {"scope": "everything"}),
+    ("11111111-2222-3333-4444-555555555555", {"depth": "deepest"}),
+    ("11111111-2222-3333-4444-555555555555", {"topic": "WATER; rm -rf"}),
+    ("11111111-2222-3333-4444-555555555555", {"fields": ["funding signal"]}),
+    ("11111111-2222-3333-4444-555555555555", {"categories": ["--live"]}),
+])
+def test_an_actor_update_refuses_what_is_not_a_known_value(tmp_path, actor, options):
+    calls = []
+    bridge = _update_bridge(tmp_path, calls)
     with pytest.raises(DiscoveryBridgeError):
-        DiscoveryBridge(database_url="postgresql://x/y_test").update_actor(
-            "'; drop table actor; --", topic=None, fields="", live=True)
+        bridge.check_update(actor, options)
+    assert calls == []
+
+
+def test_apply_refuses_a_check_id_that_is_not_one(tmp_path):
+    calls = []
+    with pytest.raises(DiscoveryBridgeError):
+        _update_bridge(tmp_path, calls).apply_update("../../.env")
+    assert calls == []
+
+
+def test_actor_update_routes_validate_before_calling_the_backend(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import backend.app as app_module
+
+    class Recording:
+        configured = True
+
+        def __init__(self):
+            self.calls = []
+
+        def plan_update(self, actor_id, options):
+            self.calls.append(("plan", actor_id, options))
+            return {"summary": "x"}
+
+        def check_update(self, actor_id, options):
+            self.calls.append(("check", actor_id, options))
+            return {"check_id": "b" * 32}
+
+        def apply_update(self, check_id):
+            self.calls.append(("apply", check_id))
+            return {"run_id": "r"}
+
+    bridge = Recording()
+    monkeypatch.setattr(app_module, "discovery_bridge", lambda: bridge)
+    client = TestClient(app_module.app)
+    actor = "11111111-2222-3333-4444-555555555555"
+    assert client.post("/api/discovery/actors/not-an-id/plan", json={}).status_code == 404
+    assert client.post("/api/discovery/actor-checks/xyz/apply").status_code == 404
+    assert client.post(f"/api/discovery/actors/{actor}/check",
+                       json={"focus": "x" * 300}).status_code == 422
+    assert client.post(f"/api/discovery/actors/{actor}/plan",
+                       json={"scope": "missing"}).json() == {"summary": "x"}
+    assert client.post(f"/api/discovery/actor-checks/{'b' * 32}/apply").json() == {"run_id": "r"}
+    assert [c[0] for c in bridge.calls] == ["plan", "apply"]
+    assert bridge.calls[0][2]["scope"] == "missing"
+    # The old one-step read-and-write route is gone.
+    assert client.post(f"/api/discovery/actors/{actor}/update", json={}).status_code in (404, 405)

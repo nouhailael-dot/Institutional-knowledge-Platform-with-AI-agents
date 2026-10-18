@@ -26,6 +26,37 @@ from typing import Any, Callable
 
 ACTIONS = ("pause", "resume", "cancel")
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_CHECK_ID = re.compile(r"^[0-9a-f]{32}$")
+_KEYS = re.compile(r"^[a-z0-9_]+(,[a-z0-9_]+)*$")
+_SECTOR = re.compile(r"^[A-Za-z0-9_-]{1,20}$")
+UPDATE_SCOPES = ("topic", "general", "missing", "outdated", "specific")
+UPDATE_DEPTHS = ("light", "deep")
+
+
+def _update_arguments(actor_id: str, options: dict[str, Any]) -> list[str]:
+    """Command-line arguments for one actor update, checked before they leave."""
+    if not _UUID.match(actor_id or ""):
+        raise DiscoveryBridgeError("unknown actor", rejected=True)
+    scope = str(options.get("scope") or "general")
+    depth = str(options.get("depth") or "light")
+    if scope not in UPDATE_SCOPES or depth not in UPDATE_DEPTHS:
+        raise DiscoveryBridgeError("unknown update scope or depth", rejected=True)
+    arguments = ["--actor-id", actor_id, "--scope", scope, "--depth", depth]
+    topic = str(options.get("topic") or "")
+    if topic:
+        if not _SECTOR.match(topic):
+            raise DiscoveryBridgeError("unknown sector", rejected=True)
+        arguments += ["--topic", topic]
+    for name in ("fields", "categories"):
+        value = ",".join(str(v).strip() for v in options.get(name) or () if str(v).strip())
+        if value:
+            if not _KEYS.match(value):
+                raise DiscoveryBridgeError(f"unknown {name}", rejected=True)
+            arguments += [f"--{name}", value]
+    focus = " ".join(str(options.get("focus") or "").split())[:200]
+    if focus:
+        arguments += ["--focus", focus]
+    return arguments
 
 
 class DiscoveryBridgeError(RuntimeError):
@@ -126,24 +157,24 @@ class DiscoveryBridge:
             log.close()
         return {"started": True, "subscription_id": subscription_id}
 
-    def update_actor(self, actor_id: str, *, topic: str | None, fields: str,
-                     live: bool) -> dict[str, Any]:
-        """Re-read one existing actor's own pages for the boxes asked for.
+    # Actor updates: plan (free), check (one capped read, writes nothing),
+    # apply (writes what the check found through the backend's fact writer).
+    def plan_update(self, actor_id: str, options: dict[str, Any]) -> dict[str, Any]:
+        return self._call(["plan", *_update_arguments(actor_id, options)],
+                          module="agents.collection.actor_updates", timeout=120)
 
-        A preview reads and compares, and writes nothing. ``live`` is a person
-        pressing "Update"; the backend then writes through its approved fact
-        writer, and never lets a silent page overwrite a recorded value.
-        """
-        if not _UUID.match(actor_id or ""):
-            raise DiscoveryBridgeError("unknown actor", rejected=True)
-        arguments = ["update", "--actor-id", actor_id, "--fields", fields or ""]
-        if topic:
-            arguments += ["--topic", topic]
-        if live:
-            arguments.append("--live")
-        return self._call(arguments, module="agents.collection.actor_updates",
-                          timeout=300,
-                          extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"} if live else None)
+    def check_update(self, actor_id: str, options: dict[str, Any]) -> dict[str, Any]:
+        """Read the actor's own pages once and compare every box. Nothing is written."""
+        return self._call(["check", *_update_arguments(actor_id, options)],
+                          module="agents.collection.actor_updates", timeout=300)
+
+    def apply_update(self, check_id: str) -> dict[str, Any]:
+        """A person pressing "Write to the map": the explicit dispatch a write needs."""
+        if not _CHECK_ID.match(check_id or ""):
+            raise DiscoveryBridgeError("unknown check", rejected=True)
+        return self._call(["apply", "--check-id", check_id],
+                          module="agents.collection.actor_updates", timeout=300,
+                          extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"})
 
     # ------------------------------------------------------------- plumbing
     def _call(self, arguments: list[str], *, module: str = "agents.collection.discovery_requests",

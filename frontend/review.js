@@ -60,8 +60,8 @@ export const REVIEW_REASON_LABELS = {
   hub_proposal: BADGES.hubProposal,
   same_topic_overlap: "Overlaps Another Hub",
   possible_duplicate: BADGES.possibleDuplicate,
-  fact_conflict: BADGES.factConflict,
-  pending_update: BADGES.pendingUpdate,
+  fact_conflict: "Different Value Found",
+  pending_update: "Change to a GHUS Value",
   // The remaining kinds the review_item CHECK constraint allows. Without these
   // a real queue row would show a raw lower-case code.
   identity: BADGES.identityReview,
@@ -111,6 +111,8 @@ export const REVIEW_REASON_HINTS = {
   same_topic_overlap: "It sits in two hubs on the same topic; keep the right one.",
   classification: "Its category or type needs a person to confirm.",
   geocode: "Its location was placed, but needs confirming.",
+  fact_conflict: "An update found a different value from weaker or older evidence; the map keeps its value until you choose.",
+  pending_update: "An update found a different value for one GHUS set; GHUS values change only by your decision.",
 };
 
 export function reviewReasonHint(value) {
@@ -250,7 +252,55 @@ export function editableReviewPayload(candidate, draft) {
     .map(field => [field, draft[field]]));
 }
 
-export function decisionOptions(entityType) {
+// Review items about one box's value: the decision is between two values.
+export const FACT_REVIEW_KINDS = ["fact_conflict", "pending_update"];
+
+export function isFactReview(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  return meta.source_table === "review_item" && FACT_REVIEW_KINDS.includes(meta.review_kind);
+}
+
+/** The two values a fact review decides between, as rows for a table. */
+export function factChangeRows(candidate) {
+  const change = candidate?.agent_metadata?.fact_change || {};
+  const side = (fact, label) => fact ? {
+    label,
+    value: formatFactValue(fact.value),
+    source_url: fact.source_url || null,
+    date_read: fact.date_read ? String(fact.date_read).slice(0, 10) : "—",
+    confidence: fact.confidence || "—",
+    set_by: fact.set_by === "ghus_human" ? "GHUS" : "Agent",
+  } : null;
+  return {
+    field: change.field_key || "",
+    rows: [side(change.current, "On the map now"), side(change.proposed, "Found by the update")]
+      .filter(Boolean),
+  };
+}
+
+function factChangeBlock(html, candidate) {
+  const {field, rows} = factChangeRows(candidate);
+  return html`<section class="review-section">
+    <h3>${reviewFieldLabel(field) || "Value"}: which one is right?</h3>
+    <table><thead><tr><th></th><th>Value</th><th>Source</th><th>Read</th>
+      <th>Confidence</th><th>Set by</th></tr></thead>
+    <tbody>${rows.map(row => html`<tr key=${row.label}>
+      <th scope="row">${row.label}</th><td>${row.value}</td>
+      <td>${row.source_url ? html`<a href=${row.source_url} target="_blank" rel="noreferrer">open</a>` : "—"}</td>
+      <td>${row.date_read}</td><td>${row.confidence}</td><td>${row.set_by}</td>
+    </tr>`)}</tbody></table>
+    <p class="review-hint">${reviewReasonHint(candidate?.agent_metadata?.review_kind)}</p>
+  </section>`;
+}
+
+export function decisionOptions(entityType, candidate = null) {
+  if (isFactReview(candidate)) {
+    return [
+      {value: "new", label: "Use the new value"},
+      {value: "reject", label: "Keep the current value"},
+      {value: "defer", label: BUTTONS.park},
+    ];
+  }
   const noun = {actor: "actor", event: "event", person: "person"}[entityType] || "record";
   return [
     {value: "same_existing", label: `Same as existing ${noun}`},
@@ -296,6 +346,7 @@ export function canSubmitReview({
   const kind = decisionKind || decision;
   if (!candidate || candidate.status !== "pending_review" || busy || !admissionConfigured
       || !String(reviewer || "").trim() || Object.keys(draftErrors).length) return false;
+  if (isFactReview(candidate)) return ["new", "reject", "defer"].includes(kind);
   if (kind === "same_existing" && !String(targetId || "").trim()) return false;
   if (kind === "reject") {
     return REJECTION_REASONS.includes(rejectionReason)
@@ -881,7 +932,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         if (!active) return;
         setSelected(candidate);
         setDraft({...candidate.reviewed_payload});
-        setDecisionKind(candidate.duplicate_state === "already_exists" ? "same_existing" : "new");
+        // Two values for one box: keeping the map's value is the safe default.
+        setDecisionKind(isFactReview(candidate) ? "reject"
+          : candidate.duplicate_state === "already_exists" ? "same_existing" : "new");
         setTargetId("");
         setRejectionReason("");
         setRejectionOther("");
@@ -997,7 +1050,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
     function confirmText(kind) {
       const edits = pendingEdits(selected, draft);
-      const lines = [`${selected.display_name} — ${decisionOptions(selected.entity_type)
+      const lines = [`${selected.display_name} — ${decisionOptions(selected.entity_type, selected)
         .find(option => option.value === kind)?.label}`];
       if (edits.length) {
         lines.push("", "Pending edits:");
@@ -1005,10 +1058,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           lines.push(`  ${reviewFieldLabel(item.field)}: ${item.before ?? "—"} → ${item.after ?? "—"}`);
         }
       }
-      if (kind === "new" || kind === "same_existing") {
+      if (isFactReview(selected)) {
+        if (kind !== "defer") lines.push("", "Both values stay in the history; nothing is deleted.");
+      } else if (kind === "new" || kind === "same_existing") {
         lines.push("", SENTENCES.verifyConsequences);
       }
-      if (kind === "reject") {
+      if (kind === "reject" && !isFactReview(selected)) {
         lines.push("", `${FIELDS.rejectionReason}: ${rejectionReason}`
           + (rejectionReason === "Other" ? ` — ${rejectionOther}` : ""), SENTENCES.noDeletion);
       }
@@ -1497,6 +1552,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             </div>`}
           </section>`}
 
+          ${isFactReview(selected) && factChangeBlock(html, selected)}
+
           <!-- 5 POSSIBLE DUPLICATES -->
           ${matches.length > 0 && html`<section class="review-section">
             <h3><span class="review-step">5</span>${SECTIONS.duplicates}</h3>
@@ -1541,7 +1598,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <label class="review-field"><span>Decision</span>
                 <select value=${decisionKind} disabled=${!pending || busy}
                   onChange=${e => setDecisionKind(e.target.value)}>
-                  ${decisionOptions(selected.entity_type).map(option => html`
+                  ${decisionOptions(selected.entity_type, selected).map(option => html`
                     <option key=${option.value} value=${option.value}>${option.label}</option>`)}
                 </select></label>
               ${decisionKind === "same_existing" && html`
@@ -1549,7 +1606,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   <input value=${targetId} disabled=${!pending || busy}
                     onInput=${e => setTargetId(e.target.value)} placeholder="Existing record ID"/></label>`}
             </div>
-            ${decisionKind === "reject" && html`<div class="review-field-grid">
+            ${decisionKind === "reject" && !isFactReview(selected) && html`<div class="review-field-grid">
               <label class="review-field"><span>${FIELDS.rejectionReason}</span>
                 <select value=${rejectionReason} onChange=${e => setRejectionReason(e.target.value)}
                   disabled=${!pending || busy}>
@@ -1589,7 +1646,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
           <footer class="review-footer">
             <button class="btn danger" disabled=${!pending || busy || writerDown}
-              onClick=${() => { setDecisionKind("reject"); }}>${BUTTONS.reject}</button>
+              onClick=${() => { setDecisionKind("reject"); }}>${isFactReview(selected)
+                ? "Keep the current value" : BUTTONS.reject}</button>
             <button class="btn ghost" disabled=${!pending || busy || writerDown}
               onClick=${() => { setDecisionKind("defer"); }}>${BUTTONS.park}</button>
             <button class="btn ghost" disabled=${!pending || busy || Object.keys(draftErrors).length > 0}
@@ -1597,7 +1655,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <button class="btn" onClick=${decide} disabled=${!canSubmitReview({
               candidate: selected, reviewer, rejectionReason, rejectionOther, decisionKind,
               targetId, busy, admissionConfigured: data.admission_configured, draftErrors,
-            })}>${decisionKind === "reject" ? BUTTONS.reject
+            })}>${isFactReview(selected) && decisionKind !== "defer"
+              ? decisionOptions(selected.entity_type, selected).find(o => o.value === decisionKind)?.label
+              : decisionKind === "reject" ? BUTTONS.reject
               : decisionKind === "defer" ? BUTTONS.park : BUTTONS.verify}</button>
           </footer>`}
         </article>

@@ -586,6 +586,22 @@ class PostgresReviewSource:
             "(SELECT count(*) FROM actor_sector asec WHERE asec.actor_id = a.actor_id) "
             " AS sector_link_count, "
             "s.url AS actor_source_url, "
+            # A fact conflict or pending update names two facts: the current
+            # one and the one proposed. Both are shown so the reviewer decides
+            # between values, not between ids. Compared as text so a malformed
+            # payload yields nothing rather than a failed query.
+            "CASE WHEN ri.review_kind IN ('fact_conflict','pending_update') THEN "
+            " jsonb_build_object('field_key',ri.payload->>'field_key',"
+            "  'current',(SELECT jsonb_build_object('value',cf.fact_value,"
+            "   'confidence',cf.confidence,'date_read',cf.retrieved_at,"
+            "   'set_by',to_jsonb(cf)->>'creator_class','source_url',cs.url)"
+            "   FROM actor_fact cf LEFT JOIN source cs ON cs.source_id=cf.source_id"
+            "   WHERE cf.actor_fact_id::text=ri.payload->>'current_fact_id'),"
+            "  'proposed',(SELECT jsonb_build_object('value',nf.fact_value,"
+            "   'confidence',nf.confidence,'date_read',nf.retrieved_at,"
+            "   'set_by',to_jsonb(nf)->>'creator_class','source_url',ns.url)"
+            "   FROM actor_fact nf LEFT JOIN source ns ON ns.source_id=nf.source_id"
+            "   WHERE nf.actor_fact_id::text=ri.payload->>'new_fact_id')) END AS fact_change, "
             "COALESCE(f.facts,'[]'::jsonb) AS facts, " + history_field + ", " + edge_field +
             "FROM review_item ri "
             "JOIN actor a ON ri.entity_type='actor' AND a.actor_id=ri.entity_id "
@@ -1234,6 +1250,7 @@ class PostgresReviewSource:
                 "facts": facts,
                 "fact_history": fact_history,
                 "relationships": relationships,
+                "fact_change": _json_object(row.get("fact_change")) or None,
             },
             "duplicate_state": (
                 "possible_duplicate" if row.get("review_kind") == "possible_duplicate"

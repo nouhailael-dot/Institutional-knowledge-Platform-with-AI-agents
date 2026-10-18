@@ -128,12 +128,34 @@
 .actor-boxes td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 .outcome{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;
   background:var(--surface-2,#f1efe9)}
-.outcome.filled{background:#dff3e4;color:#1c6b33}
-.outcome.updated{background:#e3ecfb;color:#1f4f9c}
-.outcome.confirmed{background:#eef2ea;color:#4a5b3a}
-.outcome.refused{background:#fbe6e1;color:#9a3d12}
+.outcome.new{background:#dff3e4;color:#1c6b33}
+.outcome.changed{background:#e3ecfb;color:#1f4f9c}
+.outcome.corroborated{background:#eef2ea;color:#4a5b3a}
+.outcome.conflict,.outcome.protected{background:#fbe6e1;color:#9a3d12}
+.outcome.not_found,.outcome.not_yet_collected{background:#f4efe2;color:#6b5a2a}
+.update-builder{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 14px}
+.update-builder .discovery-field.wide{grid-column:1 / -1}
+.discovery-segment button:disabled{opacity:.45;cursor:not-allowed}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-strong);border-radius:999px;
+  padding:5px 12px;font-size:13px;cursor:pointer;background:var(--surface)}
+.chip input{margin:0}
+.chip.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.update-preview{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:10px;
+  padding:12px 16px;margin:0 0 14px;background:var(--surface)}
+.update-preview.loading{opacity:.7}
+.update-preview h4{margin:0 0 6px}
+.update-preview p{margin:0 0 10px}
+.update-preview .actor-now{margin-bottom:8px}
+.skipped{margin:8px 0 0;padding-left:18px;font-size:13px}
+.result-filters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+.result-filters button{border:1px solid var(--line-strong);background:var(--surface);border-radius:999px;
+  padding:4px 12px;font:inherit;font-size:13px;cursor:pointer;color:var(--muted)}
+.result-filters button.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+.what-changed{display:block;margin-top:4px}
 @media (max-width:720px){
   .actor-now{grid-template-columns:1fr}
+  .update-builder{grid-template-columns:1fr}
   .actor-boxes thead{display:none}
   .actor-boxes tr{display:grid;gap:4px;padding:8px 0;border-bottom:1px solid var(--line)}
   .actor-boxes td{border:0;padding:2px 0}

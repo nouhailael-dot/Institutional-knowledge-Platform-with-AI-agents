@@ -36,6 +36,19 @@
         "ghus_v2_hubdemo_test"
       ],
       "port": 8031
+    },
+    {
+      "name": "ghus-actor-updates-test",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "scripts.run_demo_server",
+        "--port",
+        "8032",
+        "--database",
+        "ghus_v2_actor_updates_test"
+      ],
+      "port": 8032
     }
   ]
 }

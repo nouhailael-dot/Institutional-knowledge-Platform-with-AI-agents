@@ -307,6 +307,8 @@ def register_sector_codes(codes) -> None:
 # The map's own review items are keyed per topic ("v2-review:<topic>"), which
 # split them into several identically labelled groups. They are one group.
 MAP_CHECKS_PREFIX = "v2-review:"
+# Review items about one box's value (raised by the Phase 11 fact writer).
+FACT_REVIEW_KINDS = ("fact_conflict", "pending_update")
 MAP_CHECKS_KEY = "map-checks"
 MAP_CHECKS_LABEL = "Map checks"
 
@@ -1328,6 +1330,23 @@ class ReviewStore:
         candidate = self.get(candidate_id)
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This candidate has already been decided.")
+        metadata = candidate["agent_metadata"]
+        if (str(metadata.get("source_table") or "") == "review_item"
+                and str(metadata.get("review_kind") or "") in FACT_REVIEW_KINDS):
+            # Two values for one box: the one on the map and one an update
+            # found. "Use the new value" (new) or "Keep the current value"
+            # (reject); the backend's approved writer keeps both facts either way.
+            if decision_kind not in {"new", "reject"}:
+                raise ReviewValidationError(
+                    "Choose the new value or keep the current one; or leave it in the queue.")
+            return {
+                "decision_kind": "resolve_fact",
+                "review_item_id": str(metadata.get("review_item_id") or ""),
+                "accept": decision_kind == "new",
+                "reviewer": reviewer,
+                "notes": notes,
+                "idempotency_key": idempotency_key,
+            }
         if decision_kind == "same_existing" and not str(target_id or "").strip():
             raise ReviewValidationError("Select the existing record for a same-existing decision.")
         if decision_kind == "reject":
@@ -1335,7 +1354,6 @@ class ReviewStore:
                 raise ReviewValidationError("Select one of the fixed rejection reasons.")
             if rejection_reason == "Other" and not str(rejection_reason_other or "").strip():
                 raise ReviewValidationError("Explain the Other rejection reason.")
-        metadata = candidate["agent_metadata"]
         if (str(metadata.get("source_table") or "") == "review_item"
                 and str(metadata.get("review_kind") or "") == "verify_actor"):
             # The actor already exists (Parked). Verify / Reject here is the

@@ -13,6 +13,7 @@ retrieve / generate / router / browse.
 import json
 import logging
 import os
+import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -1085,8 +1086,11 @@ def discovery_run_now(subscription_id: str):
 
 class ActorUpdateRequest(BaseModel):
     topic: str | None = Field(default=None, max_length=20)
-    fields: str = Field(default="funding_activity", max_length=400)
-    live: bool = False
+    scope: str = Field(default="general", max_length=20)
+    depth: str = Field(default="light", max_length=10)
+    fields: list[str] = Field(default_factory=list, max_length=40)
+    categories: list[str] = Field(default_factory=list, max_length=10)
+    focus: str = Field(default="", max_length=200)
 
 
 @app.get("/api/discovery/actors")
@@ -1110,15 +1114,34 @@ def discovery_actor_search(q: str = Query("", max_length=120),
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.post("/api/discovery/actors/{actor_id}/update")
-def discovery_actor_update(actor_id: str, payload: ActorUpdateRequest):
+def _actor_update_call(actor_id: str, step: str, payload: ActorUpdateRequest):
     try:
         UUID(actor_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown actor") from exc
-    return _discovery_call(
-        lambda: discovery_bridge().update_actor(
-            actor_id, topic=payload.topic, fields=payload.fields, live=payload.live))
+    bridge = discovery_bridge()
+    call = bridge.plan_update if step == "plan" else bridge.check_update
+    return _discovery_call(lambda: call(actor_id, payload.model_dump()))
+
+
+@app.post("/api/discovery/actors/{actor_id}/plan")
+def discovery_actor_plan(actor_id: str, payload: ActorUpdateRequest):
+    """What an update would do: boxes, Deep Pull gate, cost. Free; writes nothing."""
+    return _actor_update_call(actor_id, "plan", payload)
+
+
+@app.post("/api/discovery/actors/{actor_id}/check")
+def discovery_actor_check(actor_id: str, payload: ActorUpdateRequest):
+    """Read the actor's own pages once (capped) and compare. Writes nothing."""
+    return _actor_update_call(actor_id, "check", payload)
+
+
+@app.post("/api/discovery/actor-checks/{check_id}/apply")
+def discovery_actor_apply(check_id: str):
+    """Write what a check found, through the backend's approved fact writer."""
+    if not re.fullmatch(r"[0-9a-f]{32}", check_id or ""):
+        raise HTTPException(status_code=404, detail="unknown check")
+    return _discovery_call(discovery_bridge().apply_update, check_id)
 
 
 @app.post("/api/discovery/requests/{subscription_id}/{action}")

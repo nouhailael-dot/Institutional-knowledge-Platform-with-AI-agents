@@ -593,3 +593,46 @@ def test_the_maps_own_checks_are_one_group_whatever_their_topic(store):
     # The stored run ids are untouched.
     assert sorted(item["source_run_id"] for item in listed) == [
         "v2-review:topic-1", "v2-review:topic-2", "v2-review:unscoped"]
+
+
+def _insert_fact_item(store: ReviewStore, candidate_id: str, kind: str) -> None:
+    import json as _json
+
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO review_candidate"
+            "(candidate_id,source_run_id,source_description,source_index,entity_type,"
+            " display_name,status,created_at,original_payload,reviewed_payload,evidence,"
+            " agent_metadata,duplicate_state)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (candidate_id, "v2-review:t", f"Architecture V2 {kind} review", candidate_id,
+             "actor", "CPower", "pending_review", CUTOFF_TS + 10, "{}",
+             _json.dumps({"name": "CPower"}), "[]",
+             _json.dumps({"source_table": "review_item", "review_kind": kind,
+                          "review_item_id": "11111111-2222-3333-4444-555555555555",
+                          "fact_change": {"field_key": "funding_signal",
+                                          "current": {"value": "$1M."},
+                                          "proposed": {"value": "$2M."}}}), "new"),
+        )
+
+
+@pytest.mark.parametrize("kind", ["fact_conflict", "pending_update"])
+def test_a_fact_review_is_a_choice_between_two_values(store, kind):
+    """An update's conflict reaches the backend's fact decision, never a record admission."""
+    _insert_fact_item(store, "fact-1", kind)
+    use_new = store.admission_request(
+        "fact-1", decision_kind="new", reviewer="Reviewer", idempotency_key="k-1",
+        confirmed=True)
+    assert use_new == {
+        "decision_kind": "resolve_fact", "accept": True,
+        "review_item_id": "11111111-2222-3333-4444-555555555555", "reviewer": "Reviewer",
+        "notes": None, "idempotency_key": "k-1",
+    }
+    # Keeping the current value needs no rejection reason: nothing is rejected.
+    keep = store.admission_request(
+        "fact-1", decision_kind="reject", reviewer="Reviewer", idempotency_key="k-2",
+        confirmed=True)
+    assert keep["decision_kind"] == "resolve_fact" and keep["accept"] is False
+    with pytest.raises(ReviewValidationError):
+        store.admission_request("fact-1", decision_kind="same_existing", reviewer="Reviewer",
+                                idempotency_key="k-3", target_id="x", confirmed=True)

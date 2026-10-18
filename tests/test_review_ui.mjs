@@ -890,3 +890,29 @@ test('a run reads as what it was and how many items wait, not "Manual"', async (
     trigger: 'subscription', trigger_label: 'Subscription', pending_count: 0}),
     'Discovery request · Water · Oct 15, 2026 · Subscription');
 });
+
+test('a fact conflict is a choice between the value on the map and the one found', async () => {
+  const {factChangeRows, isFactReview, decisionOptions: options, canSubmitReview: canSubmit,
+    REVIEW_REASON_LABELS: labels} = await import('../frontend/review.js');
+  const candidate = {status: 'pending_review', agent_metadata: {
+    source_table: 'review_item', review_kind: 'pending_update', fact_change: {
+      field_key: 'funding_signal',
+      current: {value: '$1M grant.', source_url: 'https://a.example/', date_read: '2026-01-02T00:00:00',
+        confidence: 'high', set_by: 'ghus_human'},
+      proposed: {value: '$2M grant.', source_url: 'https://b.example/about',
+        date_read: '2026-10-18T09:00:00', confidence: 'high', set_by: 'agent'}}}};
+  assert.equal(isFactReview(candidate), true);
+  assert.equal(isFactReview({agent_metadata: {source_table: 'review_item', review_kind: 'verify_actor'}}), false);
+  assert.deepEqual(options('actor', candidate).map(x => x.value), ['new', 'reject', 'defer']);
+  assert.deepEqual(options('actor', candidate).slice(0, 2).map(x => x.label),
+    ['Use the new value', 'Keep the current value']);
+  // Keeping the current value needs no rejection reason.
+  assert.equal(canSubmit({candidate, reviewer: 'R', decisionKind: 'reject', admissionConfigured: true}), true);
+  assert.equal(canSubmit({candidate, reviewer: 'R', decisionKind: 'same_existing', targetId: 'x', admissionConfigured: true}), false);
+  const {field, rows} = factChangeRows(candidate);
+  assert.equal(field, 'funding_signal');
+  assert.deepEqual(rows.map(r => [r.label, r.value, r.date_read, r.set_by]), [
+    ['On the map now', '$1M grant.', '2026-01-02', 'GHUS'],
+    ['Found by the update', '$2M grant.', '2026-10-18', 'Agent']]);
+  assert.ok(labels.fact_conflict && labels.pending_update);
+});

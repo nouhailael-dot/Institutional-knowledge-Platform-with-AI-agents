@@ -199,20 +199,56 @@ test('a long line is flagged: every word of it must appear on the page', async (
 
 
 test('actor updates read back each outcome the backend reports', async () => {
-  const {OUTCOME_LABELS, outcomeSummary, factLine, boxLabel, ACTOR_UPDATE_SCOPES} =
+  const {OUTCOME_LABELS, RESULT_GROUPS, outcomeSummary, factLine, boxLabel, findingsIn} =
     await import('../frontend/discovery.js');
-  for (const key of ['filled', 'updated', 'confirmed', 'unchanged', 'not stated', 'refused']) {
+  // Every outcome actor_updates.classify can return has a label.
+  for (const key of ['new', 'changed', 'corroborated', 'conflict', 'protected', 'unchanged',
+    'not_found', 'not_yet_collected']) {
     assert.ok(OUTCOME_LABELS[key], key);
   }
-  assert.equal(outcomeSummary({updated: 1, unchanged: 1}), '1 updated · 1 kept');
+  assert.deepEqual(RESULT_GROUPS.map((g) => g.id),
+    ['new', 'changed', 'conflicts', 'confirmed', 'missing', 'no_change']);
+  assert.equal(outcomeSummary({changed: 2, new: 1, conflicts: 1}),
+    '1 new · 2 changed · 1 conflicts requiring review');
   assert.equal(outcomeSummary({}), '');
+  const findings = [{field: 'a', group: 'new'}, {field: 'b', group: 'conflicts'}];
+  assert.deepEqual(findingsIn(findings, 'conflicts').map((f) => f.field), ['b']);
+  assert.equal(findingsIn(findings, 'all').length, 2);
   assert.equal(factLine({date: 'Aug. 12, 2026', description: 'Hosted GridFuture.'}),
     'Aug. 12, 2026 — Hosted GridFuture.');
   assert.equal(factLine('"$2M grant."'), '$2M grant.');
   assert.equal(factLine(null), '');
+  assert.equal(factLine({city: 'Austin', country: 'US', is_multi_location: false}), 'Austin · US');
   assert.equal(boxLabel('funding_signal'), 'Funding');
   assert.equal(boxLabel('topic_mandate_program'), 'Topic mandate program');
-  assert.deepEqual(ACTOR_UPDATE_SCOPES.map((s) => s.id), ['funding_activity', 'connections', '']);
+});
+
+test('an update request sends only what was chosen, in the backend words', async () => {
+  const {ACTOR_UPDATE_SCOPES, UPDATE_DEPTHS, UPDATE_FREQUENCIES, updateRequestBody} =
+    await import('../frontend/discovery.js');
+  assert.deepEqual(ACTOR_UPDATE_SCOPES.map((s) => s.id),
+    ['general', 'topic', 'missing', 'outdated', 'specific']);
+  assert.deepEqual(UPDATE_DEPTHS.map((d) => d.id), ['light', 'deep']);
+  // Recurring updates are shown, but only "once" can run until the scheduler step.
+  assert.deepEqual(UPDATE_FREQUENCIES.filter((f) => f.available).map((f) => f.id), ['once']);
+  const form = {scope: 'general', depth: 'light', topic: 'WATER', fields: ['funding_signal'],
+    categories: [], focus: 'desalination'};
+  // Boxes and look-for words only belong to the scopes that use them.
+  assert.deepEqual(updateRequestBody(form), {scope: 'general', depth: 'light', topic: 'WATER'});
+  assert.deepEqual(updateRequestBody({...form, scope: 'specific', categories: ['funding']}), {
+    scope: 'specific', depth: 'light', topic: 'WATER', fields: ['funding_signal'],
+    categories: ['funding'], focus: 'desalination'});
+  assert.deepEqual(updateRequestBody({...form, scope: 'topic', focus: '  '}),
+    {scope: 'topic', depth: 'light', topic: 'WATER'});
+});
+
+test('the cost line states the cap and only history that exists', async () => {
+  const {costLine} = await import('../frontend/discovery.js');
+  assert.equal(costLine({cap_usd: 0.15, runs: 0, typical_usd: null}),
+    'No update has run yet, so there is no history; never more than $0.15.');
+  assert.equal(costLine({cap_usd: 0.15, runs: 4, low_usd: 0.02, typical_usd: 0.03, high_usd: 0.05}),
+    'Usually $0.03 (4 past reads, $0.02–$0.05); never more than $0.15.');
+  assert.equal(costLine(null), '');
 });
 
 test('suggestions highlight what was typed, and the group narrows the search', async () => {

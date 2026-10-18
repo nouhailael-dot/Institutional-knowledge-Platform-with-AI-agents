@@ -280,22 +280,87 @@ export function resolveDraft(form, options = {}) {
 
 // ------------------------------------------------------ specific actor updates
 
-/** What a person can ask to refresh on one actor; ids are backend presets. */
+/** What an update covers (backend actor_updates.SCOPES). */
 export const ACTOR_UPDATE_SCOPES = [
-  {id: "funding_activity", label: "Funding & recent activity"},
-  {id: "connections", label: "International & UM6P/OCP links"},
-  {id: "", label: "Every box"},
+  {id: "general", label: "General profile", hint: "Every box its category has."},
+  {id: "topic", label: "Specific topic", hint: "Every box, read for one sector — add words to steer it."},
+  {id: "missing", label: "Missing information", hint: "Only the boxes that are still empty."},
+  {id: "outdated", label: "Outdated information", hint: "Only values older than the freshness window."},
+  {id: "specific", label: "Specific changes", hint: "Only the boxes you tick."},
 ];
 
-/** One word per outcome, the way the backend (actor_updates.compare) means it. */
+export const UPDATE_DEPTHS = [
+  {id: "light", label: "Light refresh", hint: "Its own home, About and one topic page."},
+  {id: "deep", label: "Deep enrichment", hint: "Only for an actor GHUS verified for this exact sector."},
+];
+
+/** Change categories only reorder the boxes and steer which page is read. */
+export const CHANGE_CATEGORY_OPTIONS = [
+  {id: "research", label: "Research & programmes"},
+  {id: "funding", label: "Funding & grants"},
+  {id: "partnerships", label: "Partnerships"},
+  {id: "products", label: "Products & technology"},
+  {id: "organization", label: "Organisation"},
+  {id: "geography", label: "Geography"},
+  {id: "category", label: "Its category's own boxes"},
+];
+
+/** Recurring updates arrive with the request scheduler in the next step. */
+export const UPDATE_FREQUENCIES = [
+  {id: "once", label: "Once", available: true},
+  {id: "weekly", label: "Weekly", available: false},
+  {id: "biweekly", label: "Every 2 weeks", available: false},
+  {id: "monthly", label: "Monthly", available: false},
+  {id: "quarterly", label: "Quarterly", available: false},
+];
+
+/** One word per finding, the way the backend (actor_updates.classify) means it. */
 export const OUTCOME_LABELS = {
-  filled: "Filled",
-  updated: "Updated",
-  confirmed: "Confirmed",
-  unchanged: "Kept",
-  "not stated": "Not stated",
-  refused: "Refused",
+  new: "New",
+  changed: "Changed",
+  corroborated: "Confirmed",
+  conflict: "Conflict",
+  protected: "GHUS value kept",
+  unchanged: "No change",
+  not_found: "Not found",
+  not_yet_collected: "Not yet collected",
 };
+
+/** The result groups, most consequential first. */
+export const RESULT_GROUPS = [
+  {id: "new", label: "New"},
+  {id: "changed", label: "Changed"},
+  {id: "conflicts", label: "Conflicts requiring review"},
+  {id: "confirmed", label: "Confirmed"},
+  {id: "missing", label: "Missing"},
+  {id: "no_change", label: "No change"},
+];
+
+/** What the page sends to plan or check one update. Empty choices are left out. */
+export function updateRequestBody(form) {
+  const body = {scope: form.scope, depth: form.depth};
+  if (form.topic) body.topic = form.topic;
+  if (form.scope === "specific" && form.fields?.length) body.fields = [...form.fields];
+  if (form.categories?.length) body.categories = [...form.categories];
+  const focus = String(form.focus || "").trim();
+  if (focus && (form.scope === "topic" || form.scope === "specific")) body.focus = focus.slice(0, 200);
+  return body;
+}
+
+/** "Usually $0.031 (12 past reads, $0.020–$0.052); never more than $0.15." */
+export function costLine(cost) {
+  if (!cost) return "";
+  const cap = `never more than ${formatUsd(cost.cap_usd)}`;
+  if (cost.typical_usd === null || cost.typical_usd === undefined) {
+    return `No update has run yet, so there is no history; ${cap}.`;
+  }
+  return `Usually ${formatUsd(cost.typical_usd)} (${cost.runs} past ${cost.runs === 1 ? "read" : "reads"}, `
+    + `${formatUsd(cost.low_usd)}–${formatUsd(cost.high_usd)}); ${cap}.`;
+}
+
+export function findingsIn(findings, group) {
+  return (findings || []).filter((f) => !group || group === "all" || f.group === group);
+}
 
 const BOX_LABELS = {
   funding_signal: "Funding",
@@ -323,7 +388,8 @@ export function factLine(value) {
   if (v && typeof v === "object" && !Array.isArray(v)) {
     if (v.date && v.description) return `${v.date} — ${v.description}`;
     if (v.reason) return v.reason;
-    return Object.values(v).filter((x) => x !== null && x !== "").join(" · ");
+    // Flags (is_multi_location: false) are not something to read out.
+    return Object.values(v).filter((x) => x !== null && x !== "" && typeof x !== "boolean").join(" · ");
   }
   if (Array.isArray(v)) return v.map(factLine).join("; ");
   return String(v);
@@ -371,11 +437,10 @@ export function groupCaption(total, shown, group = {}, sectors = [], states = []
     shown < total ? `showing ${shown}` : null].filter(Boolean).join(" · ");
 }
 
-/** "1 updated · 1 kept", most consequential first. */
+/** "1 new · 2 changed · 1 conflicts requiring review", most consequential first. */
 export function outcomeSummary(counts = {}) {
-  return ["filled", "updated", "confirmed", "unchanged", "not stated", "refused"]
-    .filter((key) => counts[key])
-    .map((key) => `${counts[key]} ${OUTCOME_LABELS[key].toLowerCase()}`)
+  return RESULT_GROUPS.filter((g) => counts[g.id])
+    .map((g) => `${counts[g.id]} ${g.label.toLowerCase()}`)
     .join(" · ");
 }
 
@@ -463,11 +528,16 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const [open, setOpen] = useState(false);
     const [active, setActive] = useState(0);
     const [selected, setSelected] = useState(null);
-    const [scope, setScope] = useState("funding_activity");
-    const [topic, setTopic] = useState("");
+    const [form, setForm] = useState({scope: "general", topic: "", depth: "light",
+      categories: [], fields: [], focus: "", cadence: "once"});
+    const [plan, setPlan] = useState(null);
+    const [planning, setPlanning] = useState(false);
     const [busy, setBusy] = useState("");
     const [result, setResult] = useState(null);
+    const [applied, setApplied] = useState(null);
+    const [show, setShow] = useState("all");
     const [error, setError] = useState("");
+    const topic = form.topic;
     // Every sector (the page's own Discovery options), so an actor with no
     // sector link yet can still be updated: facts are kept per sector, and
     // choosing it is a person's decision.
@@ -506,20 +576,57 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     }
 
     function choose(actor) {
-      setSelected(actor); setResult(null); setError(""); setOpen(false);
+      setSelected(actor); setResult(null); setApplied(null); setError(""); setOpen(false);
       setQuery(actor.name);
-      setTopic((actor.sectors || [])[0] || group.sector || "");
+      setForm((f) => ({...f, topic: (actor.sectors || [])[0] || group.sector || "", fields: []}));
     }
 
-    async function run(live) {
-      if (!selected) return;
-      if (live && !window.confirm(
-        `Read ${selected.name}'s own pages now and write what changed to the map?`)) return;
-      setBusy(live ? "live" : "preview"); setError(""); setResult(null);
+    function change(patch) {
+      setForm((f) => ({...f, ...patch})); setResult(null); setApplied(null);
+    }
+
+    function toggle(name, id) {
+      const list = form[name] || [];
+      change({[name]: list.includes(id) ? list.filter((x) => x !== id) : [...list, id]});
+    }
+
+    // The request preview follows every choice. It is free: nothing is read
+    // from the web and nothing is written; it only asks the backend what the
+    // request would do. Last answer wins.
+    useEffect(() => {
+      if (!selected || !form.topic) { setPlan(null); return undefined; }
+      let live = true;
+      setPlanning(true);
+      const timer = setTimeout(async () => {
+        try {
+          const body = await api(`/api/discovery/actors/${selected.actor_id}/plan`, {
+            method: "POST", body: JSON.stringify(updateRequestBody(form))});
+          if (live) { setPlan(body); setError(""); }
+        } catch (err) { if (live) { setPlan(null); setError(err.message); } }
+        if (live) setPlanning(false);
+      }, 350);
+      return () => { live = false; clearTimeout(timer); };
+    }, [selected?.actor_id, form.topic, form.scope, form.depth, form.focus,
+      form.categories.join(","), form.fields.join(",")]);
+
+    async function check() {
+      if (!selected || !plan?.can_check) return;
+      setBusy("check"); setError(""); setResult(null); setApplied(null); setShow("all");
       try {
-        setResult(await api(`/api/discovery/actors/${selected.actor_id}/update`, {
-          method: "POST", body: JSON.stringify({topic: topic || null, fields: scope, live}),
-        }));
+        setResult(await api(`/api/discovery/actors/${selected.actor_id}/check`, {
+          method: "POST", body: JSON.stringify(updateRequestBody(form))}));
+      } catch (err) { setError(err.message); }
+      setBusy("");
+    }
+
+    async function apply() {
+      if (!result?.check_id) return;
+      if (!window.confirm(`Write ${result.writes} finding(s) for ${selected.name} to the map?\n\n`
+        + "New and changed values are recorded with their source; the old values stay in the "
+        + "history. Conflicts and changes to GHUS values go to Review instead.")) return;
+      setBusy("apply"); setError("");
+      try {
+        setApplied(await api(`/api/discovery/actor-checks/${result.check_id}/apply`, {method: "POST"}));
       } catch (err) { setError(err.message); }
       setBusy("");
     }
@@ -591,60 +698,132 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         </div>
 
         <dl class="actor-now">
-          <div><dt>Funding on record</dt><dd>${factLine(selected.funding_signal) || "—"}</dd></div>
-          <div><dt>Recent activity on record</dt><dd>${factLine(selected.recent_activity) || "—"}</dd></div>
+          <div><dt>Type</dt><dd>${selected.actor_category ? (CATEGORY_LABELS[selected.actor_category] || selected.actor_category.replaceAll("_", " ")) : "Unclassified"}</dd></div>
+          <div><dt>Where</dt><dd>${where(selected) || "—"}</dd></div>
+          <div><dt>Sectors</dt><dd>${(selected.sectors || []).map((code) =>
+            (allSectors.find((x) => x.code === code) || {}).name || code).join(", ") || "Not linked yet"}</dd></div>
+          <div><dt>Status</dt><dd>${plan?.actor?.status || selected.status || "—"}</dd></div>
+          <div><dt>Last update</dt><dd>${plan?.last_update
+            ? `${formatDay(plan.last_update.finished_at)} · ${formatUsd(plan.last_update.spent_usd)}`
+            : "Never updated here"}</dd></div>
         </dl>
 
-        <div class="discovery-segment">
-          ${ACTOR_UPDATE_SCOPES.map((s) => html`<button type="button" key=${s.id}
-            class=${scope === s.id ? "active" : ""} onClick=${() => setScope(s.id)}>${s.label}</button>`)}
+        <div class="update-builder">
+          ${Field({label: "What to update", wide: true, children: html`
+            <div class="discovery-segment">
+              ${ACTOR_UPDATE_SCOPES.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
+                class=${form.scope === x.id ? "active" : ""} onClick=${() => change({scope: x.id})}>${x.label}</button>`)}
+            </div>
+            <small class="muted">${ACTOR_UPDATE_SCOPES.find((x) => x.id === form.scope)?.hint}</small>`})}
+
+          ${Field({label: "Sector", children: html`
+            <select value=${topic} onChange=${(e) => change({topic: e.target.value})}>
+              ${!(selected.sectors || []).length && html`<option value="">Choose a sector</option>`}
+              ${(selected.sectors || []).length > 0 && html`<optgroup label="Its sectors">
+                ${selected.sectors.map((code) => html`<option key=${code} value=${code}>
+                  ${(allSectors.find((x) => x.code === code) || {}).name || code}</option>`)}
+              </optgroup>`}
+              <optgroup label=${(selected.sectors || []).length ? "Other sectors" : "Sectors"}>
+                ${allSectors.filter((x) => !(selected.sectors || []).includes(x.code)).map((x) =>
+                  html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
+              </optgroup>
+            </select>
+            ${!(selected.sectors || []).length && html`<small class="muted">Not linked to a sector yet —
+              facts are kept per sector, so choose the one this update is for.</small>`}`})}
+
+          ${Field({label: "Depth", children: html`
+            <div class="discovery-segment">
+              ${UPDATE_DEPTHS.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
+                class=${form.depth === x.id ? "active" : ""} onClick=${() => change({depth: x.id})}>${x.label}</button>`)}
+            </div>`})}
+
+          ${Field({label: "Frequency", children: html`
+            <div class="discovery-segment">
+              ${UPDATE_FREQUENCIES.map((x) => html`<button type="button" key=${x.id} disabled=${!x.available}
+                title=${x.available ? "" : "Recurring updates arrive with the request scheduler in the next step."}
+                class=${form.cadence === x.id ? "active" : ""} onClick=${() => change({cadence: x.id})}>${x.label}</button>`)}
+            </div>`})}
+
+          ${(form.scope === "topic" || form.scope === "specific") && Field({label: "Look for (optional)", wide: true, children: html`
+            <input value=${form.focus} maxLength="200" placeholder="e.g. desalination pilots, new DOE grants"
+              onInput=${(e) => change({focus: e.target.value})}/>`})}
+
+          ${form.scope === "specific" && plan?.schema && Field({label: "Boxes", wide: true, children: html`
+            <div class="chips">${plan.schema.map((key) => html`<label key=${key} class=${"chip" + (form.fields.includes(key) ? " on" : "")}>
+              <input type="checkbox" checked=${form.fields.includes(key)} onChange=${() => toggle("fields", key)}/>${boxLabel(key)}</label>`)}</div>`})}
+
+          ${Field({label: "Changes to look for first", wide: true, children: html`
+            <div class="chips">${CHANGE_CATEGORY_OPTIONS.map((x) => html`<label key=${x.id} class=${"chip" + (form.categories.includes(x.id) ? " on" : "")}>
+              <input type="checkbox" checked=${form.categories.includes(x.id)} onChange=${() => toggle("categories", x.id)}/>${x.label}</label>`)}</div>
+            <small class="muted">${form.categories.length ? "Read first, and they steer which page is read; nothing outside its category is filled." : "All changes."}</small>`})}
         </div>
-        <label class="actor-topic">Update it for the sector
-          <select value=${topic} onChange=${(e) => setTopic(e.target.value)}>
-            ${!(selected.sectors || []).length && html`<option value="">Choose a sector</option>`}
-            ${(selected.sectors || []).length > 0 && html`<optgroup label="Its sectors">
-              ${selected.sectors.map((code) => html`<option key=${code} value=${code}>
-                ${(allSectors.find((x) => x.code === code) || {}).name || code}</option>`)}
-            </optgroup>`}
-            <optgroup label=${(selected.sectors || []).length ? "Other sectors" : "Sectors"}>
-              ${allSectors.filter((x) => !(selected.sectors || []).includes(x.code)).map((x) =>
-                html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-            </optgroup>
-          </select></label>
-        ${!(selected.sectors || []).length && html`<small class="muted">Not linked to a sector
-          on the map yet — choose the one this update is for.</small>`}
+
+        ${(plan || planning) && html`<div class=${"update-preview" + (planning ? " loading" : "")}>
+          <h4>Request preview ${planning && html`<span class="muted">· updating…</span>`}</h4>
+          ${plan && html`
+            <p>${plan.summary}</p>
+            <dl class="actor-now">
+              <div><dt>Boxes to read</dt><dd>${plan.fields.length} of ${plan.schema_size}</dd></div>
+              <div><dt>Searches</dt><dd>${plan.pages}</dd></div>
+              <div><dt>Cost</dt><dd>${costLine(plan.cost)}</dd></div>
+              <div><dt>Deep Pull</dt><dd>${plan.deep.permitted ? "Permitted" : "Not permitted"} — ${plan.deep.reason}</dd></div>
+              <div><dt>Runs</dt><dd>Once, when you press Check. Nothing is written until you confirm.</dd></div>
+            </dl>
+            ${plan.refusal && html`<p class="discovery-message error">${plan.refusal}
+              ${form.depth === "deep" && html` <button type="button" class="link" onClick=${() => change({depth: "light"})}>Use a Light refresh</button>`}</p>`}
+            ${plan.skipped.length > 0 && html`<details><summary>${plan.skipped.length} box(es) skipped, and why</summary>
+              <ul class="skipped">${plan.skipped.map((x) => html`<li key=${x.field}><strong>${boxLabel(x.field)}</strong> — ${x.reason}</li>`)}</ul></details>`}`}
+        </div>`}
 
         <div class="discovery-actions">
-          <button class="btn ghost" disabled=${!!busy || !selected.website || !topic} onClick=${() => run(false)}>
-            ${busy === "preview" ? "Reading its pages…" : "Preview changes"}</button>
-          <button class="btn" disabled=${!!busy || !selected.website || !topic} onClick=${() => run(true)}>
-            ${busy === "live" ? "Updating…" : "Update the map"}</button>
+          <button class="btn" disabled=${!!busy || planning || !plan?.can_check} onClick=${check}>
+            ${busy === "check" ? "Reading its pages…" : "Check its website"}</button>
         </div>
-        ${busy && html`<p class="muted">Reading up to three of its own pages — about half a minute.</p>`}
+        ${busy === "check" && html`<p class="muted">Reading up to three of its own pages — about half a minute.</p>`}
       </div>`}
 
       ${error && html`<p class="discovery-message error">${error}</p>`}
 
       ${result && html`<div class="actor-result">
         <p class="actor-result-head">
-          <strong>${result.mode === "live" ? "Updated" : "Preview"}</strong>
-          · ${outcomeSummary(result.counts) || "nothing to report"}
-          · ${result.topic?.name}
-          ${result.mode === "live" && html` · ${result.written} written`}
-          · $${Number(result.cost_usd || 0).toFixed(3)}
+          <strong>${applied ? "Written" : "Checked"}</strong>
+          · ${outcomeSummary(result.counts) || result.note || "nothing to report"}
+          · ${result.topic?.name} · ${formatUsd(result.cost_usd)}
         </p>
+        ${result.findings?.length > 0 && html`<div class="result-filters" role="group" aria-label="Show">
+          <button type="button" class=${show === "all" ? "active" : ""} onClick=${() => setShow("all")}>All ${result.findings.length}</button>
+          ${RESULT_GROUPS.filter((g) => result.counts?.[g.id]).map((g) => html`<button type="button" key=${g.id}
+            class=${show === g.id ? "active" : ""} onClick=${() => setShow(g.id)}>${g.label} ${result.counts[g.id]}</button>`)}
+        </div>
         <table class="actor-boxes">
-          <thead><tr><th>Box</th><th>Result</th><th>On record before</th><th>Its pages now say</th></tr></thead>
-          <tbody>${result.boxes.map((b) => html`<tr key=${b.field}>
-            <td>${boxLabel(b.field)}</td>
-            <td><span class=${"outcome " + b.outcome.replace(" ", "-")}>${OUTCOME_LABELS[b.outcome] || b.outcome}</span></td>
-            <td>${factLine(b.before) || "—"}${b.before_read && html`<small> (read ${b.before_read})</small>`}</td>
-            <td>${factLine(b.after) || (b.reason ? html`<small class="muted">${b.reason}</small>` : "—")}
-              ${b.source_url && html` <a href=${b.source_url} target="_blank" rel="noreferrer">source</a>`}</td>
-          </tr>`)}</tbody>
-        </table>
-        <p class="muted">Pages read: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}
-          ${result.mode !== "live" && html`<br/>Nothing was written. “Update the map” writes the filled and updated boxes; a box its pages no longer mention keeps what is on record.`}</p>
+          <thead><tr><th>Box</th><th>Result</th><th>On the map now</th><th>Its pages say</th><th>What writing does</th></tr></thead>
+          <tbody>${findingsIn(result.findings, show).map((f) => {
+            const done = applied?.results?.find((r) => r.field === f.field);
+            return html`<tr key=${f.field}>
+            <td>${boxLabel(f.field)}<small class="muted"> · ${f.topic}</small></td>
+            <td><span class=${"outcome " + f.outcome}>${OUTCOME_LABELS[f.outcome] || f.outcome}</span></td>
+            <td>${f.previous?.value != null ? factLine(f.previous.value) : "—"}
+              ${f.previous?.date_read && html`<small> (read ${f.previous.date_read}${f.previous.set_by === "GHUS" ? ", set by GHUS" : ""})</small>`}</td>
+            <td>${f.proposed ? html`${factLine(f.proposed.value)}<small>
+                · ${f.proposed.confidence} confidence · read ${f.proposed.date_read}
+                · <a href=${f.proposed.source_url} target="_blank" rel="noreferrer">source</a></small>`
+              : (f.reason ? html`<small class="muted">${f.reason}</small>` : "—")}
+              <small class="muted what-changed">${f.what_changed}</small></td>
+            <td>${done ? (done.written ? html`<strong>Done</strong> — ${OUTCOME_LABELS[done.actual] || done.actual}`
+                : html`<span class="warn">Failed: ${done.error}</span>`) : f.resolution}</td>
+          </tr>`; })}</tbody>
+        </table>`}
+        <p class="muted">Pages read: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}</p>
+        ${!applied && result.check_id && html`<div class="discovery-actions">
+          <button class="btn" disabled=${!!busy || !result.writes} onClick=${apply}>
+            ${busy === "apply" ? "Writing…" : `Write ${result.writes} finding(s) to the map`}</button>
+          <span class="muted">Checked, nothing written yet. The check stays valid for 24 hours.</span>
+        </div>`}
+        ${applied && html`<p class="discovery-message">${applied.failed
+          ? `${applied.failed} box(es) failed — press Retry to write only those.`
+          : "Written through the GHUS fact writer and recorded as a run."}
+          ${applied.review_items > 0 ? ` ${applied.review_items} item(s) now wait in Review → Map checks.` : ""}</p>
+          ${applied.failed > 0 && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => { setApplied(null); apply(); }}>Retry the failed boxes</button>`}`}
       </div>`}
     </section>`;
   }
