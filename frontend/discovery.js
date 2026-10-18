@@ -305,14 +305,81 @@ export const CHANGE_CATEGORY_OPTIONS = [
   {id: "category", label: "Its category's own boxes"},
 ];
 
-/** Recurring updates arrive with the request scheduler in the next step. */
+/** "Once" checks now; any other frequency saves a request the runner keeps. */
 export const UPDATE_FREQUENCIES = [
-  {id: "once", label: "Once", available: true},
-  {id: "weekly", label: "Weekly", available: false},
-  {id: "biweekly", label: "Every 2 weeks", available: false},
-  {id: "monthly", label: "Monthly", available: false},
-  {id: "quarterly", label: "Quarterly", available: false},
+  {id: "once", label: "Once"},
+  {id: "weekly", label: "Weekly"},
+  {id: "biweekly", label: "Every 2 weeks"},
+  {id: "monthly", label: "Monthly"},
+  {id: "quarterly", label: "Quarterly"},
 ];
+
+export const UPDATE_DURATIONS = [
+  {months: 1, label: "1 month"},
+  {months: 3, label: "3 months"},
+  {months: 6, label: "6 months"},
+  {months: 12, label: "1 year"},
+];
+
+/** The boxes every category has: what a group's "Specific changes" may ask for. */
+export const UPDATE_COMMON_BOXES = ["location", "why_matched", "recent_activity", "funding_signal",
+  "international_connection", "um6p_ocp_connection"];
+
+/**
+ * What the page sends to plan or save an update request. One actor sends its
+ * id; several send the picked ids, or the group (a sector is required: a
+ * request never sweeps the whole map). Empty choices are left out.
+ */
+export function updateRequestDraft({mode, form, selected, picked = [], group = {}, useGroup,
+  schedule}) {
+  const draft = {...updateRequestBody(form), cadence: form.cadence};
+  if (mode === "one") {
+    draft.actor_ids = selected ? [selected.actor_id] : [];
+    draft.max_actors_per_run = 1;
+  } else if (useGroup) {
+    draft.group = Object.fromEntries(Object.entries({
+      sector: group.sector, category: group.category, state: group.state,
+    }).filter(([, v]) => v));
+    draft.max_actors_per_run = Number(schedule.maxActors);
+  } else {
+    draft.actor_ids = picked.map((a) => a.actor_id);
+    draft.max_actors_per_run = Math.min(Number(schedule.maxActors), picked.length || 1);
+  }
+  draft.start_date = schedule.startDate;
+  if (form.cadence !== "once") draft.end_date = addMonths(schedule.startDate, Number(schedule.months));
+  draft.max_usd_per_run = Number(schedule.maxUsd);
+  const title = String(schedule.title || "").trim();
+  if (title) draft.title = title.slice(0, 160);
+  return draft;
+}
+
+/** "Missing information · Water · Company · up to 5 actors a run · at most $1.50 a run". */
+export function updateRequestScope(request, sectors = []) {
+  const options = request.update_options || {};
+  const scope = (ACTOR_UPDATE_SCOPES.find((s) => s.id === options.scope) || {}).label;
+  const sectorName = (code) => (sectors.find((x) => x.code === code) || {}).name || code;
+  const names = request.actor_names || [];
+  const who = names.length
+    ? (names.length <= 3 ? names.join(", ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`)
+    : [(request.sector_codes || [])[0] && sectorName(request.sector_codes[0]),
+      options.category && (CATEGORY_LABELS[options.category] || options.category), request.state_code]
+      .filter(Boolean).join(" · ");
+  return [scope, who, options.max_actors_per_run && `up to ${options.max_actors_per_run} `
+    + `${options.max_actors_per_run === 1 ? "actor" : "actors"} a run`,
+  request.max_usd_per_run != null && `at most ${formatUsd(request.max_usd_per_run)} a run`]
+    .filter(Boolean).join(" · ");
+}
+
+/** One actor in a run: "CPower: 2 new · 1 changed · 1 to Review · $0.03". */
+export function actorResultLine(result) {
+  if (!result.ok) return `${result.name}: not updated — ${result.error || "no reason recorded"}`;
+  const counts = result.counts || {};
+  const parts = [["new", "new"], ["changed", "changed"], ["corroborated", "confirmed"],
+    ["not_found", "not found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
+  if (result.review_items) parts.push(`${result.review_items} to Review`);
+  if (!parts.length) parts.push("nothing new");
+  return `${result.name}: ${parts.join(" · ")} · ${formatUsd(result.spent_usd)}`;
+}
 
 /** One word per finding, the way the backend (actor_updates.classify) means it. */
 export const OUTCOME_LABELS = {
@@ -537,7 +604,18 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const [applied, setApplied] = useState(null);
     const [show, setShow] = useState("all");
     const [error, setError] = useState("");
+    // Update requests: several actors, or any actor on a frequency.
+    const [mode, setMode] = useState("one");
+    const [picked, setPicked] = useState([]);
+    const [useGroup, setUseGroup] = useState(false);
+    const [schedule, setSchedule] = useState({startDate: isoDate(new Date()), months: 3,
+      maxActors: 5, maxUsd: 1.5, title: ""});
+    const [reqPlan, setReqPlan] = useState(null);
+    const [reqPlanning, setReqPlanning] = useState(false);
+    const [saved, setSaved] = useState({requests: [], ready: true, loaded: false});
+    const [notice, setNotice] = useState("");
     const topic = form.topic;
+    const asRequest = mode === "several" || form.cadence !== "once";
     // Every sector (the page's own Discovery options), so an actor with no
     // sector link yet can still be updated: facts are kept per sector, and
     // choosing it is a person's decision.
@@ -576,6 +654,14 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     }
 
     function choose(actor) {
+      if (mode === "several") {
+        // Several actors: each choice is added to the list (at most 10).
+        setPicked((list) => list.some((a) => a.actor_id === actor.actor_id) || list.length >= 10
+          ? list : [...list, actor]);
+        setUseGroup(false); setQuery(""); setOpen(false);
+        setForm((f) => ({...f, topic: f.topic || (actor.sectors || [])[0] || group.sector || ""}));
+        return;
+      }
       setSelected(actor); setResult(null); setApplied(null); setError(""); setOpen(false);
       setQuery(actor.name);
       setForm((f) => ({...f, topic: (actor.sectors || [])[0] || group.sector || "", fields: []}));
@@ -609,6 +695,75 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     }, [selected?.actor_id, form.topic, form.scope, form.depth, form.focus,
       form.categories.join(","), form.fields.join(",")]);
 
+    function draft() {
+      return updateRequestDraft({mode, form, selected, picked, group, useGroup, schedule});
+    }
+
+    const requestReady = mode === "one" ? Boolean(selected && form.topic)
+      : useGroup ? Boolean(group.sector) : picked.length > 0;
+
+    async function refreshRequests() {
+      try {
+        const body = await api("/api/discovery/update-requests");
+        setSaved({requests: body.requests || [], ready: body.ready !== false, loaded: true});
+      } catch (err) { setSaved((v) => ({...v, loaded: true})); setError(err.message); }
+    }
+    useEffect(() => { refreshRequests(); }, []);
+    // While a run is going, look again every 15 s; it records its result itself.
+    useEffect(() => {
+      if (!saved.requests.some(isRunning)) return undefined;
+      const timer = setInterval(refreshRequests, 15000);
+      return () => clearInterval(timer);
+    }, [saved.requests.map((r) => (r.runs || [])[0]?.status).join(",")]);
+
+    // The request preview: which actors the first run reads, its cost and its
+    // runs. Free, like the one-actor preview. Last answer wins.
+    useEffect(() => {
+      if (!asRequest || !requestReady) { setReqPlan(null); return undefined; }
+      let live = true;
+      setReqPlanning(true);
+      const timer = setTimeout(async () => {
+        try {
+          const body = await api("/api/discovery/update-requests/plan", {
+            method: "POST", body: JSON.stringify(draft())});
+          if (live) { setReqPlan(body); setError(""); }
+        } catch (err) { if (live) { setReqPlan(null); setError(err.message); } }
+        if (live) setReqPlanning(false);
+      }, 400);
+      return () => { live = false; clearTimeout(timer); };
+    }, [asRequest, requestReady, JSON.stringify(asRequest && requestReady ? draft() : null)]);
+
+    async function saveRequest(runNow) {
+      if (!reqPlan?.can_save) return;
+      const runWords = runNow ? " and run it now (it reads the actors' websites and writes what changed)"
+        : "";
+      if (!window.confirm(`Save “${reqPlan.title}”${runWords}?\n\n${reqPlan.summary}`)) return;
+      setBusy("save"); setError(""); setNotice("");
+      try {
+        const made = await api("/api/discovery/update-requests", {
+          method: "POST", body: JSON.stringify(draft())});
+        if (runNow) {
+          await api(`/api/discovery/update-requests/${made.subscription_id}/run`, {method: "POST"});
+        }
+        setNotice(runNow ? "Saved and started. The run appears below when it finishes."
+          : "Saved. It runs on its start date, and you can run it now from the list below.");
+        await refreshRequests();
+      } catch (err) { setError(err.message); }
+      setBusy("");
+    }
+
+    async function requestAction(request, action) {
+      if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
+      if (action === "run" && !window.confirm(`Run “${request.title}” now? It reads the actors' `
+        + "websites and writes what changed; conflicts go to Review.")) return;
+      setBusy(`${action}:${request.subscription_id}`); setError("");
+      try {
+        await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
+        await refreshRequests();
+      } catch (err) { setError(err.message); }
+      setBusy("");
+    }
+
     async function check() {
       if (!selected || !plan?.can_check) return;
       setBusy("check"); setError(""); setResult(null); setApplied(null); setShow("all");
@@ -632,9 +787,160 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     }
 
     const where = (a) => [a.city, a.state].filter(Boolean).join(", ");
+
+    function updateBuilder({schema, sectorControl, lightOnly}) {
+      return html`<div class="update-builder">
+        ${Field({label: "What to update", wide: true, children: html`
+          <div class="discovery-segment">
+            ${ACTOR_UPDATE_SCOPES.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
+              class=${form.scope === x.id ? "active" : ""} onClick=${() => change({scope: x.id})}>${x.label}</button>`)}
+          </div>
+          <small class="muted">${ACTOR_UPDATE_SCOPES.find((x) => x.id === form.scope)?.hint}</small>`})}
+
+        ${Field({label: "Sector", children: sectorControl})}
+
+        ${Field({label: "Depth", children: html`
+          <div class="discovery-segment">
+            ${UPDATE_DEPTHS.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
+              disabled=${lightOnly && x.id === "deep"}
+              class=${form.depth === x.id ? "active" : ""} onClick=${() => change({depth: x.id})}>${x.label}</button>`)}
+          </div>
+          ${(lightOnly || asRequest) && html`<small class="muted">Saved and group requests use the Light
+            refresh; Deep enrichment is one actor at a time.</small>`}`})}
+
+        ${Field({label: "Frequency", children: html`
+          <div class="discovery-segment">
+            ${UPDATE_FREQUENCIES.map((x) => html`<button type="button" key=${x.id}
+              class=${form.cadence === x.id ? "active" : ""}
+              onClick=${() => change({cadence: x.id, ...(x.id !== "once" ? {depth: "light"} : {})})}>${x.label}</button>`)}
+          </div>`})}
+
+        ${(form.scope === "topic" || form.scope === "specific") && Field({label: "Look for (optional)", wide: true, children: html`
+          <input value=${form.focus} maxLength="200" placeholder="e.g. desalination pilots, new DOE grants"
+            onInput=${(e) => change({focus: e.target.value})}/>`})}
+
+        ${form.scope === "specific" && schema && Field({label: "Boxes", wide: true, children: html`
+          <div class="chips">${schema.map((key) => html`<label key=${key} class=${"chip" + (form.fields.includes(key) ? " on" : "")}>
+            <input type="checkbox" checked=${form.fields.includes(key)} onChange=${() => toggle("fields", key)}/>${boxLabel(key)}</label>`)}</div>`})}
+
+        ${Field({label: "Changes to look for first", wide: true, children: html`
+          <div class="chips">${CHANGE_CATEGORY_OPTIONS.map((x) => html`<label key=${x.id} class=${"chip" + (form.categories.includes(x.id) ? " on" : "")}>
+            <input type="checkbox" checked=${form.categories.includes(x.id)} onChange=${() => toggle("categories", x.id)}/>${x.label}</label>`)}</div>
+          <small class="muted">${form.categories.length ? "Read first, and they steer which page is read; nothing outside its category is filled." : "All changes."}</small>`})}
+      </div>`;
+    }
+
+    function setScheduleField(patch) { setSchedule((v) => ({...v, ...patch})); }
+
+    // Schedule, limits, the request preview and Save - for several actors or a frequency.
+    function requestPanel() {
+      return html`<div class="update-request">
+        <div class="update-builder">
+          ${Field({label: "Start", children: html`<input type="date" value=${schedule.startDate}
+            min=${isoDate(new Date())} onInput=${(e) => setScheduleField({startDate: e.target.value})}/>`})}
+          ${form.cadence !== "once" && Field({label: "For", children: html`
+            <select value=${schedule.months} onChange=${(e) => setScheduleField({months: Number(e.target.value)})}>
+              ${UPDATE_DURATIONS.map((d) => html`<option key=${d.months} value=${d.months}>${d.label}</option>`)}
+            </select>`})}
+          ${mode === "several" && Field({label: "Actors per run", children: html`
+            <input type="number" min="1" max="10" value=${schedule.maxActors}
+              onInput=${(e) => setScheduleField({maxActors: e.target.value})}/>`})}
+          ${Field({label: "Spend ceiling per run ($)", children: html`
+            <input type="number" min="0.05" max="1.5" step="0.05" value=${schedule.maxUsd}
+              onInput=${(e) => setScheduleField({maxUsd: e.target.value})}/>`})}
+          ${Field({label: "Name (optional)", wide: true, children: html`
+            <input value=${schedule.title} maxLength="160" placeholder=${reqPlan?.title || "Named for you from the choices above"}
+              onInput=${(e) => setScheduleField({title: e.target.value})}/>`})}
+        </div>
+
+        ${(reqPlan || reqPlanning) && html`<div class=${"update-preview" + (reqPlanning ? " loading" : "")}>
+          <h4>Request preview ${reqPlanning && html`<span class="muted">· updating…</span>`}</h4>
+          ${reqPlan && html`
+            <p>${reqPlan.summary}</p>
+            <dl class="actor-now">
+              <div><dt>Actors</dt><dd>${reqPlan.matched} match · ${reqPlan.chosen.length} on the first run</dd></div>
+              <div><dt>Runs</dt><dd>${reqPlan.runs === 1 ? `Once, on ${formatDay(reqPlan.start_date)}`
+                : `${reqPlan.runs} runs, ${formatDay(reqPlan.start_date)} to ${formatDay(reqPlan.end_date)}`}</dd></div>
+              <div><dt>Cost per run</dt><dd>${reqPlan.cost.expected_usd != null
+                ? `About ${formatUsd(reqPlan.cost.expected_usd)} from past reads; `
+                : "No history yet; "}never more than ${formatUsd(reqPlan.max_usd_per_run)} (${formatUsd(reqPlan.cost.per_actor_cap_usd)} per actor at most)</dd></div>
+              <div><dt>Searches</dt><dd>Each actor's own website, up to 3 pages; no web search.</dd></div>
+            </dl>
+            ${reqPlan.chosen.length > 0 && html`<ol class="skipped">${reqPlan.chosen.map((a) =>
+              html`<li key=${a.actor_id}><strong>${a.name}</strong> — ${a.boxes} box(es) to read</li>`)}</ol>`}
+            ${reqPlan.waiting.length > 0 && html`<details><summary>${reqPlan.waiting.length} actor(s) not on the first run, and why</summary>
+              <ul class="skipped">${reqPlan.waiting.map((x) => html`<li key=${x.actor_id}><strong>${x.name}</strong> — ${x.reason}</li>`)}</ul></details>`}
+            ${reqPlan.needs_migration && html`<p class="discovery-message error">${reqPlan.needs_migration}</p>`}`}
+        </div>`}
+
+        <div class="discovery-actions">
+          <button class="btn ghost" disabled=${!!busy || reqPlanning || !reqPlan?.can_save} onClick=${() => saveRequest(false)}>
+            ${busy === "save" ? "Saving…" : "Save request"}</button>
+          <button class="btn" disabled=${!!busy || reqPlanning || !reqPlan?.can_save || !reqPlan?.chosen.length}
+            onClick=${() => saveRequest(true)}>Save and run now</button>
+        </div>
+      </div>`;
+    }
+
+    function updateRequestList() {
+      const requests = saved.requests || [];
+      if (!saved.loaded) return null;
+      return html`<div class="update-requests">
+        <div class="update-requests-head">
+          <h3>Update requests</h3>
+          <button type="button" class="btn ghost" onClick=${refreshRequests}>Refresh</button>
+        </div>
+        ${!saved.ready && html`<p class="muted">Saved update requests need migration 570 on this database.
+          One-time updates of one actor work without it.</p>`}
+        ${saved.ready && !requests.length && html`<p class="muted">None yet. Choose several actors, or a
+          frequency other than Once, to make one.</p>`}
+        ${requests.map((r) => {
+          const live = r.status === "active" || r.status === "paused";
+          const doing = (action) => busy === `${action}:${r.subscription_id}`;
+          return html`<article key=${r.subscription_id} class="discovery-request">
+            <div class="discovery-request-head">
+              <div>
+                <h3>${r.title || "Update request"}</h3>
+                <p>${updateRequestScope(r, allSectors)}</p>
+                <p class="muted">${CADENCE_LABELS[r.cadence] || r.cadence} · ${formatDay(r.start_date)}${r.cadence !== "once"
+                  ? ` to ${formatDay(r.end_date)}` : ""} · next run: ${live ? nextRunLabel(r) : "none"}</p>
+              </div>
+              <span class=${"discovery-status " + r.status}>${STATUS_LABELS[r.status] || r.status}</span>
+            </div>
+            ${isRunning(r) && html`<p class="discovery-message running">Running now: reading the actors' websites.
+              Results appear here when it finishes.</p>`}
+            <div class="discovery-actions">
+              ${r.status === "active" && html`<button class="btn" disabled=${!!busy || isRunning(r)}
+                onClick=${() => requestAction(r, "run")}>${doing("run") ? "Starting…" : "Run now"}</button>`}
+              ${r.status === "active" && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => requestAction(r, "pause")}>Pause</button>`}
+              ${r.status === "paused" && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => requestAction(r, "resume")}>Resume</button>`}
+              ${live && html`<button class="btn ghost danger" disabled=${!!busy} onClick=${() => requestAction(r, "cancel")}>Cancel request</button>`}
+            </div>
+            ${(r.runs || []).length > 0 && html`<details class="update-runs"><summary>${r.runs.length} run(s) — last: ${formatDay(r.runs[0].started_at)}, ${{succeeded: "completed", attention: "completed with limits", failed: "failed", running: "running"}[r.runs[0].status] || r.runs[0].status}, ${formatUsd(r.runs[0].spent_usd)}</summary>
+              ${r.runs.map((run) => html`<div key=${run.collection_run_id} class="update-run">
+                <p><strong>${formatDay(run.started_at)}</strong> · ${{succeeded: "Completed", attention: "Completed with limits", failed: "Failed", running: "Running"}[run.status] || run.status}
+                  · ${run.found_count ?? 0} new or changed · ${run.review_item_count ?? 0} to Review · ${formatUsd(run.spent_usd)}</p>
+                ${run.status_reason && html`<p class="muted">${run.status_reason}</p>`}
+                ${(run.actor_results || []).length > 0 && html`<ul class="skipped">${run.actor_results.map((a) =>
+                  html`<li key=${a.actor_id} class=${a.ok ? "" : "warn"}>${actorResultLine(a)}</li>`)}</ul>`}
+              </div>`)}
+            </details>`}
+          </article>`;
+        })}
+      </div>`;
+    }
+
     return html`<section class="discovery-card actor-updates">
       <p class="muted actor-updates-lead">Pick an organization already on the map. The agent
         re-reads its own website and tells you what changed — nothing is written until you say so.</p>
+
+      <div class="discovery-segment actor-mode" role="group" aria-label="How many actors">
+        <button type="button" class=${mode === "one" ? "active" : ""}
+          onClick=${() => { setMode("one"); setReqPlan(null); }}>One actor</button>
+        <button type="button" class=${mode === "several" ? "active" : ""}
+          onClick=${() => { setMode("several"); setSelected(null); setResult(null);
+            setForm((f) => ({...f, depth: "light"})); }}>Several actors</button>
+      </div>
 
       <div class="actor-group" role="group" aria-label="Which actors">
         <select aria-label="Sector" value=${group.sector} onChange=${(e) => setGroupField({sector: e.target.value})}>
@@ -653,7 +959,20 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           onChange=${(e) => setGroupField({everyone: e.target.checked})}/> Include actors with no website</label>
       </div>
 
-      <div class="actor-combo">
+      ${mode === "several" && html`<div class="several-choice">
+        <label class="actor-everyone"><input type="checkbox" checked=${useGroup} disabled=${!group.sector}
+          onChange=${(e) => { setUseGroup(e.target.checked); setOpen(false); if (e.target.checked) setPicked([]); }}/>
+          ${group.sector ? `Update the whole group (${groupCaption(total, total, group, allSectors, states)}), most gaps first`
+            : "To update a whole group, choose its sector in the filters above"}</label>
+        ${!useGroup && html`<div class="picked" role="group" aria-label="Chosen actors">
+          ${picked.map((a) => html`<span key=${a.actor_id} class="chip on">${a.name}
+            <button type="button" class="link" aria-label=${`Remove ${a.name}`}
+              onClick=${() => setPicked((list) => list.filter((x) => x.actor_id !== a.actor_id))}>×</button></span>`)}
+          ${!picked.length && html`<span class="muted">Or type below to add actors one by one (up to 10).</span>`}
+        </div>`}
+      </div>`}
+
+      ${!(mode === "several" && useGroup) && html`<div class="actor-combo">
         <input class="actor-search" role="combobox" aria-expanded=${open && results.length > 0}
           aria-controls="actor-suggestions" aria-autocomplete="list" autocomplete="off"
           value=${query} placeholder=${grouped ? "Type to narrow this group…" : "Start typing a name or website — e.g. CPo, calwep"}
@@ -679,7 +998,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               </button></li>`)}
           </ul>
         </div>`}
-      </div>
+      </div>`}
 
       ${!selected && searched !== null && results.length === 0 && html`<div class="actor-none">
         <span>${searched ? `“${searched}” is not on the map${grouped ? " in this group" : ""}.` : "No actor on the map in this group."}</span>
@@ -708,15 +1027,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             : "Never updated here"}</dd></div>
         </dl>
 
-        <div class="update-builder">
-          ${Field({label: "What to update", wide: true, children: html`
-            <div class="discovery-segment">
-              ${ACTOR_UPDATE_SCOPES.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
-                class=${form.scope === x.id ? "active" : ""} onClick=${() => change({scope: x.id})}>${x.label}</button>`)}
-            </div>
-            <small class="muted">${ACTOR_UPDATE_SCOPES.find((x) => x.id === form.scope)?.hint}</small>`})}
-
-          ${Field({label: "Sector", children: html`
+        ${updateBuilder({schema: plan?.schema, sectorControl: html`
             <select value=${topic} onChange=${(e) => change({topic: e.target.value})}>
               ${!(selected.sectors || []).length && html`<option value="">Choose a sector</option>`}
               ${(selected.sectors || []).length > 0 && html`<optgroup label="Its sectors">
@@ -731,34 +1042,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             ${!(selected.sectors || []).length && html`<small class="muted">Not linked to a sector yet —
               facts are kept per sector, so choose the one this update is for.</small>`}`})}
 
-          ${Field({label: "Depth", children: html`
-            <div class="discovery-segment">
-              ${UPDATE_DEPTHS.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
-                class=${form.depth === x.id ? "active" : ""} onClick=${() => change({depth: x.id})}>${x.label}</button>`)}
-            </div>`})}
-
-          ${Field({label: "Frequency", children: html`
-            <div class="discovery-segment">
-              ${UPDATE_FREQUENCIES.map((x) => html`<button type="button" key=${x.id} disabled=${!x.available}
-                title=${x.available ? "" : "Recurring updates arrive with the request scheduler in the next step."}
-                class=${form.cadence === x.id ? "active" : ""} onClick=${() => change({cadence: x.id})}>${x.label}</button>`)}
-            </div>`})}
-
-          ${(form.scope === "topic" || form.scope === "specific") && Field({label: "Look for (optional)", wide: true, children: html`
-            <input value=${form.focus} maxLength="200" placeholder="e.g. desalination pilots, new DOE grants"
-              onInput=${(e) => change({focus: e.target.value})}/>`})}
-
-          ${form.scope === "specific" && plan?.schema && Field({label: "Boxes", wide: true, children: html`
-            <div class="chips">${plan.schema.map((key) => html`<label key=${key} class=${"chip" + (form.fields.includes(key) ? " on" : "")}>
-              <input type="checkbox" checked=${form.fields.includes(key)} onChange=${() => toggle("fields", key)}/>${boxLabel(key)}</label>`)}</div>`})}
-
-          ${Field({label: "Changes to look for first", wide: true, children: html`
-            <div class="chips">${CHANGE_CATEGORY_OPTIONS.map((x) => html`<label key=${x.id} class=${"chip" + (form.categories.includes(x.id) ? " on" : "")}>
-              <input type="checkbox" checked=${form.categories.includes(x.id)} onChange=${() => toggle("categories", x.id)}/>${x.label}</label>`)}</div>
-            <small class="muted">${form.categories.length ? "Read first, and they steer which page is read; nothing outside its category is filled." : "All changes."}</small>`})}
-        </div>
-
-        ${(plan || planning) && html`<div class=${"update-preview" + (planning ? " loading" : "")}>
+        ${!asRequest && (plan || planning) && html`<div class=${"update-preview" + (planning ? " loading" : "")}>
           <h4>Request preview ${planning && html`<span class="muted">· updating…</span>`}</h4>
           ${plan && html`
             <p>${plan.summary}</p>
@@ -775,11 +1059,21 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               <ul class="skipped">${plan.skipped.map((x) => html`<li key=${x.field}><strong>${boxLabel(x.field)}</strong> — ${x.reason}</li>`)}</ul></details>`}`}
         </div>`}
 
-        <div class="discovery-actions">
+        ${!asRequest && html`<div class="discovery-actions">
           <button class="btn" disabled=${!!busy || planning || !plan?.can_check} onClick=${check}>
             ${busy === "check" ? "Reading its pages…" : "Check its website"}</button>
-        </div>
+        </div>`}
         ${busy === "check" && html`<p class="muted">Reading up to three of its own pages — about half a minute.</p>`}
+        ${asRequest && requestPanel()}
+      </div>`}
+
+      ${mode === "several" && html`<div class="actor-selected">
+        ${updateBuilder({schema: UPDATE_COMMON_BOXES, sectorControl: html`
+          <select value=${topic} onChange=${(e) => change({topic: e.target.value})}>
+            <option value="">${useGroup && group.sector ? "The group's sector" : "Each actor's own sector"}</option>
+            ${allSectors.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
+          </select>`, lightOnly: true})}
+        ${requestPanel()}
       </div>`}
 
       ${error && html`<p class="discovery-message error">${error}</p>`}
@@ -825,6 +1119,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           ${applied.review_items > 0 ? ` ${applied.review_items} item(s) now wait in Review → Map checks.` : ""}</p>
           ${applied.failed > 0 && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => { setApplied(null); apply(); }}>Retry the failed boxes</button>`}`}
       </div>`}
+
+      ${notice && html`<p class="discovery-message">${notice}</p>`}
+      ${updateRequestList()}
     </section>`;
   }
 

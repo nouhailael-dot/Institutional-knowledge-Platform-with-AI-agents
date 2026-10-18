@@ -176,3 +176,16 @@
 .actor-results button.active{background:var(--accent-soft)}
 .actor-results mark{background:transparent;color:var(--accent-ink);font-weight:800;text-decoration:underline;
   text-underline-offset:2px}
+/* Update requests: several actors, or one actor on a frequency. */
+.actor-mode{margin:0 0 14px}
+.picked{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 10px}
+.picked .chip .link{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;padding:0 0 0 4px}
+.update-request{margin-top:6px}
+.update-requests{margin-top:22px;border-top:1px solid var(--line);padding-top:14px}
+.update-requests-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.update-requests-head h3{margin:0}
+.update-runs{margin-top:10px}
+.update-run{border-top:1px solid var(--line);padding:8px 0}
+.update-run p{margin:0 0 4px}
+.skipped li.warn{color:#9a3d12}
+.several-choice{margin:0 0 10px}

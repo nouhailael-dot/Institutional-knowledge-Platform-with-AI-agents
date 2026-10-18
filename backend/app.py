@@ -1144,6 +1144,67 @@ def discovery_actor_apply(check_id: str):
     return _discovery_call(discovery_bridge().apply_update, check_id)
 
 
+# ------------------------------------------------------- actor update requests
+# Keep chosen actors current: one actor or a bounded group, once or on a
+# frequency, within an actor cap and a spend ceiling per run. Saved as a
+# request in the GHUS backend and run by its request runner (the same one as
+# Discovery requests); the page never writes these tables itself.
+
+class UpdateRequestGroup(BaseModel):
+    sector: str | None = Field(default=None, max_length=20)
+    category: str | None = Field(default=None, max_length=60)
+    state: str | None = Field(default=None, max_length=4)
+
+
+class UpdateRequestDraft(BaseModel):
+    title: str | None = Field(default=None, max_length=160)
+    actor_ids: list[str] = Field(default_factory=list, max_length=50)
+    group: UpdateRequestGroup | None = None
+    topic: str | None = Field(default=None, max_length=20)
+    scope: str = Field(default="general", max_length=20)
+    depth: str = Field(default="light", max_length=10)
+    categories: list[str] = Field(default_factory=list, max_length=10)
+    fields: list[str] = Field(default_factory=list, max_length=40)
+    focus: str = Field(default="", max_length=200)
+    cadence: str = Field(default="once", max_length=20)
+    start_date: str | None = Field(default=None, max_length=10)
+    end_date: str | None = Field(default=None, max_length=10)
+    max_actors_per_run: int | None = Field(default=None, ge=1, le=50)
+    max_usd_per_run: float | None = Field(default=None, gt=0, le=5)
+
+
+@app.get("/api/discovery/update-requests")
+def discovery_update_requests():
+    return _discovery_call(discovery_bridge().list_update_requests)
+
+
+@app.post("/api/discovery/update-requests/plan")
+def discovery_update_request_plan(draft: UpdateRequestDraft):
+    """Which actors a request would read first, its cost and its runs. Free."""
+    return _discovery_call(discovery_bridge().plan_update_request,
+                           draft.model_dump(exclude_none=True))
+
+
+@app.post("/api/discovery/update-requests")
+def discovery_update_request_create(draft: UpdateRequestDraft):
+    return _discovery_call(discovery_bridge().create_update_request,
+                           draft.model_dump(exclude_none=True))
+
+
+@app.post("/api/discovery/update-requests/{subscription_id}/{action}")
+def discovery_update_request_change(subscription_id: str, action: str):
+    """Pause, resume or cancel - or "run": run it now, live, in the background."""
+    try:
+        UUID(subscription_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown request") from exc
+    if action == "run":
+        return _discovery_call(discovery_bridge().run_now, subscription_id)
+    if action not in ("pause", "resume", "cancel"):
+        raise HTTPException(status_code=404, detail="unknown action")
+    return _discovery_call(discovery_bridge().change_update_request, subscription_id, action)
+
+
 @app.post("/api/discovery/requests/{subscription_id}/{action}")
 def discovery_change(subscription_id: str, action: str):
     if action not in ("pause", "resume", "cancel"):

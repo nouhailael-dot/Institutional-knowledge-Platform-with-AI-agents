@@ -168,6 +168,31 @@ class DiscoveryBridge:
         return self._call(["check", *_update_arguments(actor_id, options)],
                           module="agents.collection.actor_updates", timeout=300)
 
+    # Update requests: one actor or a bounded group, once or on a frequency.
+    # They are saved as requests and run by the backend's request runner -
+    # the same one as Discovery requests ("Run now" starts it for one request).
+    def list_update_requests(self) -> dict[str, Any]:
+        return self._call(["requests"], module="agents.collection.actor_updates")
+
+    def plan_update_request(self, draft: dict[str, Any]) -> dict[str, Any]:
+        """What a request would do on its first run. Free: nothing read or written."""
+        return self._call(["request-plan", "--json", json.dumps(draft)],
+                          module="agents.collection.actor_updates")
+
+    def create_update_request(self, draft: dict[str, Any]) -> dict[str, Any]:
+        return self._call(["request-create", "--json", json.dumps(draft), "--live"],
+                          module="agents.collection.actor_updates",
+                          extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"})
+
+    def change_update_request(self, subscription_id: str, action: str) -> dict[str, Any]:
+        if action not in ACTIONS:
+            raise DiscoveryBridgeError(f"unknown action {action!r}", rejected=True)
+        if not _UUID.match(subscription_id or ""):
+            raise DiscoveryBridgeError("unknown request", rejected=True)
+        return self._call(["request-status", "--id", subscription_id, "--action", action,
+                           "--live"], module="agents.collection.actor_updates",
+                          extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"})
+
     def apply_update(self, check_id: str) -> dict[str, Any]:
         """A person pressing "Write to the map": the explicit dispatch a write needs."""
         if not _CHECK_ID.match(check_id or ""):

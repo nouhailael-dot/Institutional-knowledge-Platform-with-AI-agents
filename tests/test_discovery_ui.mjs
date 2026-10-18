@@ -229,8 +229,9 @@ test('an update request sends only what was chosen, in the backend words', async
   assert.deepEqual(ACTOR_UPDATE_SCOPES.map((s) => s.id),
     ['general', 'topic', 'missing', 'outdated', 'specific']);
   assert.deepEqual(UPDATE_DEPTHS.map((d) => d.id), ['light', 'deep']);
-  // Recurring updates are shown, but only "once" can run until the scheduler step.
-  assert.deepEqual(UPDATE_FREQUENCIES.filter((f) => f.available).map((f) => f.id), ['once']);
+  // Once checks now; every other frequency saves a request for the runner.
+  assert.deepEqual(UPDATE_FREQUENCIES.map((f) => f.id),
+    ['once', 'weekly', 'biweekly', 'monthly', 'quarterly']);
   const form = {scope: 'general', depth: 'light', topic: 'WATER', fields: ['funding_signal'],
     categories: [], focus: 'desalination'};
   // Boxes and look-for words only belong to the scopes that use them.
@@ -263,4 +264,42 @@ test('suggestions highlight what was typed, and the group narrows the search', a
   assert.equal(groupCaption(17, 12, {sector: 'WATER', category: 'research_center'},
     [{code: 'WATER', name: 'Water'}]), '17 actors · Water · Research centre · showing 12');
   assert.equal(groupCaption(1, 1, {}), '1 actor');
+});
+
+test('an update request is sent as one actor, the picked actors, or a group with a sector', async () => {
+  const {updateRequestDraft} = await import('../frontend/discovery.js');
+  const form = {scope: 'missing', depth: 'light', topic: '', fields: [], categories: ['funding'],
+    focus: '', cadence: 'monthly'};
+  const schedule = {startDate: '2026-10-20', months: 3, maxActors: 5, maxUsd: 1.5, title: ' '};
+  assert.deepEqual(updateRequestDraft({mode: 'one', form, selected: {actor_id: 'a1'}, schedule}), {
+    scope: 'missing', depth: 'light', categories: ['funding'], cadence: 'monthly',
+    actor_ids: ['a1'], max_actors_per_run: 1, start_date: '2026-10-20', end_date: '2027-01-20',
+    max_usd_per_run: 1.5});
+  const picked = [{actor_id: 'a1'}, {actor_id: 'a2'}];
+  const several = updateRequestDraft({mode: 'several', form: {...form, cadence: 'once'}, picked,
+    schedule: {...schedule, title: 'Water funders'}});
+  // A run never reads more actors than were picked; once has no end date.
+  assert.deepEqual([several.actor_ids, several.max_actors_per_run, several.end_date, several.title],
+    [['a1', 'a2'], 2, undefined, 'Water funders']);
+  const grouped = updateRequestDraft({mode: 'several', form, useGroup: true, schedule,
+    group: {sector: 'WATER', category: '', state: 'CA'}});
+  assert.deepEqual([grouped.group, grouped.actor_ids, grouped.max_actors_per_run],
+    [{sector: 'WATER', state: 'CA'}, undefined, 5]);
+});
+
+test('saved requests and their runs read back in plain words', async () => {
+  const {updateRequestScope, actorResultLine} = await import('../frontend/discovery.js');
+  assert.equal(updateRequestScope({update_options: {scope: 'missing', category: 'company',
+    max_actors_per_run: 5}, sector_codes: ['WATER'], state_code: 'CA', max_usd_per_run: 1.5},
+  [{code: 'WATER', name: 'Water'}]),
+  'Missing information · Water · Company · CA · up to 5 actors a run · at most $1.50 a run');
+  assert.equal(updateRequestScope({update_options: {scope: 'general', max_actors_per_run: 1},
+    actor_names: ['CPower Energy'], max_usd_per_run: 0.15}),
+  'General profile · CPower Energy · up to 1 actor a run · at most $0.15 a run');
+  assert.equal(actorResultLine({name: 'CPower', ok: true, counts: {new: 2, changed: 1},
+    review_items: 1, spent_usd: 0.031}), 'CPower: 2 new · 1 changed · 1 to Review · $0.03');
+  assert.equal(actorResultLine({name: 'X', ok: false, error: 'site could not be read'}),
+    'X: not updated — site could not be read');
+  assert.equal(actorResultLine({name: 'Y', ok: true, counts: {}, spent_usd: 0}),
+    'Y: nothing new · $0.00');
 });

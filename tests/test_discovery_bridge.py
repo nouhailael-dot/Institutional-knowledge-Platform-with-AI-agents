@@ -250,3 +250,79 @@ def test_actor_update_routes_validate_before_calling_the_backend(monkeypatch):
     assert bridge.calls[0][2]["scope"] == "missing"
     # The old one-step read-and-write route is gone.
     assert client.post(f"/api/discovery/actors/{actor}/update", json={}).status_code in (404, 405)
+
+
+def test_update_requests_go_to_the_backend_and_only_writes_set_the_switch(tmp_path):
+    calls = []
+    bridge = _update_bridge(tmp_path, calls)
+    draft = {"actor_ids": ["11111111-2222-3333-4444-555555555555"], "scope": "missing",
+             "cadence": "monthly"}
+    bridge.list_update_requests()
+    bridge.plan_update_request(draft)
+    bridge.create_update_request(draft)
+    bridge.change_update_request("11111111-2222-3333-4444-555555555555", "pause")
+    listing, plan, create, pause = calls
+    assert listing[0][3:] == ["requests"]
+    assert plan[0][3] == "request-plan" and json.loads(plan[0][5]) == draft
+    assert "--live" not in plan[0] and "ACTOR_UPDATE_WRITES_ENABLED" not in plan[1]
+    assert create[0][3] == "request-create" and "--live" in create[0]
+    assert create[1]["ACTOR_UPDATE_WRITES_ENABLED"] == "true"
+    assert pause[0][3:] == ["request-status", "--id", "11111111-2222-3333-4444-555555555555",
+                            "--action", "pause", "--live"]
+    with pytest.raises(DiscoveryBridgeError):
+        bridge.change_update_request("11111111-2222-3333-4444-555555555555", "delete")
+    with pytest.raises(DiscoveryBridgeError):
+        bridge.change_update_request("../x", "pause")
+    assert len(calls) == 4
+
+
+def test_update_request_routes_validate_and_run_now_starts_the_runner(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    import backend.app as app_module
+
+    class Recording:
+        configured = True
+
+        def __init__(self):
+            self.calls = []
+
+        def plan_update_request(self, draft):
+            self.calls.append(("plan", draft))
+            return {"title": "t"}
+
+        def create_update_request(self, draft):
+            self.calls.append(("create", draft))
+            return {"subscription_id": "s"}
+
+        def list_update_requests(self):
+            return {"requests": [], "ready": True}
+
+        def change_update_request(self, subscription_id, action):
+            self.calls.append((action, subscription_id))
+            return {"status": "paused"}
+
+        def run_now(self, subscription_id):
+            self.calls.append(("run", subscription_id))
+            return {"started": True}
+
+    bridge = Recording()
+    monkeypatch.setattr(app_module, "discovery_bridge", lambda: bridge)
+    client = TestClient(app_module.app)
+    request_id = "00000000-0000-4000-8000-000000000001"
+    assert client.get("/api/discovery/update-requests").json() == {"requests": [], "ready": True}
+    assert client.post("/api/discovery/update-requests/plan",
+                       json={"actor_ids": ["a"], "scope": "general"}).status_code == 200
+    # Out-of-range limits are refused before the backend is called.
+    assert client.post("/api/discovery/update-requests",
+                       json={"max_usd_per_run": 50}).status_code == 422
+    assert client.post("/api/discovery/update-requests", json={"group": {"sector": "WATER"},
+                       "cadence": "weekly"}).json() == {"subscription_id": "s"}
+    assert client.post(f"/api/discovery/update-requests/{request_id}/pause").status_code == 200
+    assert client.post(f"/api/discovery/update-requests/{request_id}/run").json() == {"started": True}
+    assert client.post(f"/api/discovery/update-requests/{request_id}/delete").status_code == 404
+    assert client.post("/api/discovery/update-requests/not-an-id/run").status_code == 404
+    assert [c[0] for c in bridge.calls] == ["plan", "create", "pause", "run"]
+    # Unset choices are not sent: the backend applies its own defaults.
+    assert bridge.calls[0][1] == {"actor_ids": ["a"], "scope": "general", "depth": "light",
+                                  "categories": [], "fields": [], "focus": "", "cadence": "once"}
