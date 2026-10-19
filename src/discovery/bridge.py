@@ -146,7 +146,7 @@ class DiscoveryBridge:
         try:
             self._start_process(
                 [self.python_executable, "-m", "agents.collection.subscription_runner",
-                 "--live", "--request-id", subscription_id,
+                 "--live", "--request-id", subscription_id, "--light-pull",
                  "--report-out", str(runs / f"{stem}-summary.md")],
                 cwd=self.project_root, env=env, stdout=log, stderr=log,
                 stdin=subprocess.DEVNULL, creationflags=flags,

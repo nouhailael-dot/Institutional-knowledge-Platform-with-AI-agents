@@ -498,8 +498,11 @@ export function normalizeCountry(value) {
   return COUNTRY_ALIASES.get(key) || COUNTRY_BY_NAME.get(key) || raw;
 }
 
+/** Every country, the United States first (most actors are there), then A–Z. */
 export function countryOptions() {
-  return COUNTRIES.map(([, name]) => ({value: name, label: name}));
+  const options = COUNTRIES.map(([, name]) => ({value: name, label: name}));
+  return [...options.filter(o => o.value === "United States"),
+    ...options.filter(o => o.value !== "United States")];
 }
 
 /**

@@ -865,7 +865,7 @@ test('a box the Light Pull read for says which pages it checked', async () => {
   };
   const rows = Object.fromEntries(lightFactRows(candidate).map((row) => [row.key, row]));
   assert.equal(rows.funding_signal.value, '$2 million grant.');
-  assert.equal(missingWithPages(rows.um6p_ocp_connection), 'Not Stated on the 3 Pages Read');
+  assert.equal(missingWithPages(rows.um6p_ocp_connection), 'Not Found');
   assert.deepEqual(rows.um6p_ocp_connection.pagesRead, pages);
   // A box with no fact at all, while others were read, is still plain "Not Found".
   assert.equal(missingWithPages(rows.recent_activity), rows.recent_activity.state);
@@ -915,4 +915,53 @@ test('a fact conflict is a choice between the value on the map and the one found
     ['On the map now', '$1M grant.', '2026-01-02', 'GHUS'],
     ['Found by the update', '$2M grant.', '2026-10-18', 'Agent']]);
   assert.ok(labels.fact_conflict && labels.pending_update);
+});
+
+test('a proposed link and a hub proposal are each a choice between two answers', async () => {
+  const {twoWayKind, twoWaySummary, decisionOptions: options, canSubmitReview: canSubmit} =
+    await import('../frontend/review.js');
+  const link = {status: 'pending_review', display_name: 'CPower', agent_metadata: {
+    source_table: 'review_item', review_kind: 'relationship_review', entity_id: 'a1',
+    candidate_name: 'NRG Energy', pipeline: {subject_actor_id: 'a1', object_actor_id: 'a2',
+      proposed_relationship_type: 'unit_of', source_url: 'https://cpower.example/about'}}};
+  const hub = {status: 'pending_review', display_name: 'CPower', agent_metadata: {
+    source_table: 'review_item', review_kind: 'hub_assignment', proposed_hub_name: 'Northeast Energy Hub',
+    pipeline: {proposal: 'membership', deterministic_evidence: {sector_code: 'ENERGY',
+      distance_miles: 12.5, radius_miles: 200}}}};
+  const legacyHub = {agent_metadata: {source_table: 'review_item', review_kind: 'hub_assignment',
+    pipeline: {issue: 'needs_review_sector'}}};
+  assert.deepEqual([twoWayKind(link), twoWayKind(hub), twoWayKind(legacyHub)],
+    ['relationship', 'hub', null]);
+  assert.deepEqual(options('actor', link).slice(0, 2).map(o => o.label), ['Confirm the link', 'Not a link']);
+  assert.deepEqual(options('actor', hub).slice(0, 2).map(o => o.label), ['Add to the hub', 'Keep it out']);
+  assert.equal(twoWaySummary(link).question, 'CPower is a unit of NRG Energy?');
+  assert.equal(twoWaySummary(link).source_url, 'https://cpower.example/about');
+  // The other side is the subject when the proposal says so.
+  const reversed = {...link, agent_metadata: {...link.agent_metadata,
+    pipeline: {...link.agent_metadata.pipeline, subject_actor_id: 'a2'}}};
+  assert.equal(twoWaySummary(reversed).question, 'NRG Energy is a unit of CPower?');
+  assert.equal(twoWaySummary(hub).question, 'Add CPower to Northeast Energy Hub?');
+  assert.match(twoWaySummary(hub).detail, /12.5 miles from the centre/);
+  // Refusing needs no rejection reason.
+  assert.equal(canSubmit({candidate: link, reviewer: 'R', decisionKind: 'reject', admissionConfigured: true}), true);
+});
+
+test('an actor update card shows what it wrote and is a two-answer check', async () => {
+  const {twoWayKind, updateRows, decisionOptions: options} = await import('../frontend/review.js');
+  const card = {status: 'pending_review', agent_metadata: {source_table: 'actor_update',
+    review_kind: 'actor_update', written: [
+      {fact_key: 'location', collection_state: 'found', value: {city: 'Montpelier', state: 'VT'},
+        previous_value: {region: 'Not Provided', country: 'US'}, lifecycle_state: 'accepted',
+        source_url: 'https://www.cleanegroup.org/', confidence: 'high'},
+      {fact_key: 'international_connection', collection_state: 'not_found', value: null,
+        previous_value: null, lifecycle_state: 'accepted', source_url: 'https://www.cleanegroup.org/'},
+      {fact_key: 'funding_signal', collection_state: 'found', value: '$3M',
+        previous_value: '$1M', lifecycle_state: 'conflict_flagged', source_url: null}]}};
+  assert.equal(twoWayKind(card), 'update');
+  assert.deepEqual(options('actor', card).slice(0, 2).map(o => o.label),
+    ['Looks right', 'Flag it (the map is not changed)']);
+  const rows = updateRows(card);
+  assert.deepEqual(rows.map(r => r.how), ['Replaced the earlier value (kept in history)',
+    'Recorded as not found', 'Conflict — in this run, for a decision']);
+  assert.equal(rows[1].after, 'Not stated on its pages');
 });

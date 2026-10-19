@@ -303,3 +303,21 @@ test('saved requests and their runs read back in plain words', async () => {
   assert.equal(actorResultLine({name: 'Y', ok: true, counts: {}, spent_usd: 0}),
     'Y: nothing new · $0.00');
 });
+
+test('hub fit and named organisations read back in plain words', async () => {
+  const {hubSummary, relatedLine} = await import('../frontend/discovery.js');
+  assert.equal(hubSummary({ok: true, memberships: [
+    {name: 'Bay Hub', fit: 'fits', preserved: false},
+    {name: 'Far Hub', fit: 'outside_radius', preserved: true}], proposals: []}),
+  'In Bay Hub (fits), Far Hub (now outside its radius — kept, for a person to look at, GHUS membership)');
+  assert.equal(hubSummary({ok: true, memberships: [], proposals: [
+    {name: 'Delta Hub', distance_miles: 12.5}], note: null}),
+  'Newly fits Delta Hub (12.5 mi) — proposed to Review when written, never assigned directly');
+  assert.equal(hubSummary({ok: true, memberships: [], proposals: [],
+    note: 'In no hub, and no hub of its sector contains it today. It stays eligible.'}),
+  'In no hub, and no hub of its sector contains it today. It stays eligible.');
+  assert.equal(relatedLine({name: 'NSF', relation: 'funder', status: 'on_map'}),
+    'NSF · funder · On the map — the link goes to Review when written');
+  assert.equal(relatedLine({name: 'Acme', relation: 'member', status: 'not_on_map'}),
+    'Acme · member · Not on the map');
+});

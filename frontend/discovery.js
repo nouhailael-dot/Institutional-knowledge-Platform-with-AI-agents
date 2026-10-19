@@ -370,6 +370,44 @@ export function updateRequestScope(request, sectors = []) {
     .filter(Boolean).join(" · ");
 }
 
+const FIT_WORDS = {
+  fits: "fits",
+  outside_radius: "now outside its radius — kept, for a person to look at",
+  sector_no_longer_matches: "sector no longer matches — kept, for a person to look at",
+  location_unknown: "location unknown — kept",
+};
+
+/** Hub fit today: "In Bay Area Water Hub (fits) · Newly fits: Delta Hub (12 mi), to Review". */
+export function hubSummary(hubs) {
+  if (!hubs || hubs.ok === false) return "";
+  const parts = [];
+  if (hubs.memberships?.length) {
+    parts.push("In " + hubs.memberships.map((m) => `${m.name} (${FIT_WORDS[m.fit] || m.fit}`
+      + `${m.preserved ? ", GHUS membership" : ""})`).join(", "));
+  }
+  if (hubs.proposals?.length) {
+    parts.push("Newly fits " + hubs.proposals.map((p) => `${p.name}`
+      + (p.distance_miles != null ? ` (${p.distance_miles} mi)` : "")).join(", ")
+      + " — proposed to Review when written, never assigned directly");
+  }
+  if (hubs.note) parts.push(hubs.note);
+  return parts.join(" · ") || "In no hub.";
+}
+
+const RELATED_STATUS = {
+  on_map: "On the map — the link goes to Review when written",
+  ambiguous: "Several records match — nothing is written; a person decides",
+  not_on_map: "Not on the map",
+};
+
+/** One organisation the pages name: "Acme Water · funder · On the map — ...". */
+export function relatedLine(item) {
+  const relation = {partner: "partner", funder: "funder", funded_by_this: "funded by it",
+    parent: "parent", unit: "a unit of it", body_this_is_member_of: "it is a member",
+    member: "member", operator: "operator", investor: "investor"}[item.relation] || item.relation;
+  return `${item.name} · ${relation} · ${RELATED_STATUS[item.status] || item.status}`;
+}
+
 /** One actor in a run: "CPower: 2 new · 1 changed · 1 to Review · $0.03". */
 export function actorResultLine(result) {
   if (!result.ok) return `${result.name}: not updated — ${result.error || "no reason recorded"}`;
@@ -1051,6 +1089,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               <div><dt>Searches</dt><dd>${plan.pages}</dd></div>
               <div><dt>Cost</dt><dd>${costLine(plan.cost)}</dd></div>
               <div><dt>Deep Pull</dt><dd>${plan.deep.permitted ? "Permitted" : "Not permitted"} — ${plan.deep.reason}</dd></div>
+              <div><dt>Hubs</dt><dd>${hubSummary(plan.hubs) || "—"}</dd></div>
               <div><dt>Runs</dt><dd>Once, when you press Check. Nothing is written until you confirm.</dd></div>
             </dl>
             ${plan.refusal && html`<p class="discovery-message error">${plan.refusal}
@@ -1108,6 +1147,17 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           </tr>`; })}</tbody>
         </table>`}
         <p class="muted">Pages read: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}</p>
+        ${(result.related?.length > 0 || result.related_error) && html`<div class="related">
+          <h4>Organisations its pages name</h4>
+          ${result.related_error && html`<p class="muted">${result.related_error}</p>`}
+          <ul class="skipped">${(result.related || []).map((r) => html`<li key=${r.name}>
+            ${relatedLine(r)}
+            ${r.status === "ambiguous" && html`<small class="muted"> (${r.matches.map((m) => m.name).join(", ")})</small>`}
+            ${r.status === "not_on_map" && html` <button type="button" class="link" onClick=${() => onFindNew(r.name)}>Find it with Discovery</button>`}
+            ${r.source_url && html` <a href=${r.source_url} target="_blank" rel="noreferrer">source</a>`}
+          </li>`)}</ul>
+        </div>`}
+        ${result.hubs && html`<p class="muted"><strong>Hubs:</strong> ${hubSummary(result.hubs)}</p>`}
         ${!applied && result.check_id && html`<div class="discovery-actions">
           <button class="btn" disabled=${!!busy || !result.writes} onClick=${apply}>
             ${busy === "apply" ? "Writing…" : `Write ${result.writes} finding(s) to the map`}</button>
@@ -1116,7 +1166,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         ${applied && html`<p class="discovery-message">${applied.failed
           ? `${applied.failed} box(es) failed — press Retry to write only those.`
           : "Written through the GHUS fact writer and recorded as a run."}
-          ${applied.review_items > 0 ? ` ${applied.review_items} item(s) now wait in Review → Map checks.` : ""}</p>
+          ${applied.review_items > 0 ? ` ${applied.review_items} item(s) now wait in Review → Map checks.` : ""}
+          ${(applied.proposals || []).filter((p) => p.action === "proposed").map((p) => html`<br/>Proposed to Review:
+            ${p.kind === "hub" ? `add to ${p.name}` : `link with ${p.name}`}`)}</p>
           ${applied.failed > 0 && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => { setApplied(null); apply(); }}>Retry the failed boxes</button>`}`}
       </div>`}
 

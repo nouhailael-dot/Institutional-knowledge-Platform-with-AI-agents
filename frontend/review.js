@@ -15,11 +15,11 @@
 
 import {
   CATEGORY_LIGHT_ROWS, COMMON_LIGHT_ROWS, MISSING, NON_US_REGION, NOT_APPLICABLE,
-  NO_PARENT_TOOLTIP, PARENT_LINK_TYPES, RETIRED_CATCH_ALL, THEMATIC_SECTORS,
+  NO_PARENT_TOOLTIP, RETIRED_CATCH_ALL, THEMATIC_SECTORS,
   categoryLabel, categoryOptions, countryOptions, isParentLink, isValidPair,
   linkTypeLabel, normalizeCountry, regionForState, sectorLabel, sectorOptions, setSectors,
   showsRankings, showsTrl, stateOptions, typeLabel, typeOptions,
-} from "./taxonomy.js?v=20261015";
+} from "./taxonomy.js?v=20261019";
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
@@ -61,6 +61,7 @@ export const REVIEW_REASON_LABELS = {
   same_topic_overlap: "Overlaps Another Hub",
   possible_duplicate: BADGES.possibleDuplicate,
   fact_conflict: "Different Value Found",
+  actor_update: "Update to Check",
   pending_update: "Change to a GHUS Value",
   // The remaining kinds the review_item CHECK constraint allows. Without these
   // a real queue row would show a raw lower-case code.
@@ -112,6 +113,7 @@ export const REVIEW_REASON_HINTS = {
   classification: "Its category or type needs a person to confirm.",
   geocode: "Its location was placed, but needs confirming.",
   fact_conflict: "An update found a different value from weaker or older evidence; the map keeps its value until you choose.",
+  actor_update: "What an actor update wrote, with its sources. Already on the map; say it looks right or flag it.",
   pending_update: "An update found a different value for one GHUS set; GHUS values change only by your decision.",
 };
 
@@ -256,8 +258,117 @@ export function editableReviewPayload(candidate, draft) {
 export const FACT_REVIEW_KINDS = ["fact_conflict", "pending_update"];
 
 export function isFactReview(candidate) {
+  return twoWayKind(candidate) === "fact";
+}
+
+/**
+ * Review items decided by one of two answers - no rejection reason, no record
+ * created: a fact conflict, a proposed link between two actors, or a hub an
+ * unassigned actor now fits. null for everything else.
+ */
+export function twoWayKind(candidate) {
   const meta = candidate?.agent_metadata || {};
-  return meta.source_table === "review_item" && FACT_REVIEW_KINDS.includes(meta.review_kind);
+  if (meta.source_table === "actor_update") return "update";
+  if (meta.source_table !== "review_item") return null;
+  if (FACT_REVIEW_KINDS.includes(meta.review_kind)) return "fact";
+  if (meta.review_kind === "relationship_review") return "relationship";
+  if (meta.review_kind === "hub_assignment" && meta.pipeline?.proposal === "membership") return "hub";
+  return null;
+}
+
+const TWO_WAY_ANSWERS = {
+  fact: ["Use the new value", "Keep the current value"],
+  relationship: ["Confirm the link", "Not a link"],
+  hub: ["Add to the hub", "Keep it out"],
+  update: ["Looks right", "Flag it (the map is not changed)"],
+};
+
+const LINK_WORDS = {
+  collaborates_with: "works with", funded_by: "is funded by", unit_of: "is a unit of",
+  member_of: "is a member of", operated_by: "is operated by", portfolio_of: "is backed by",
+  spinout_of: "is a spin-out of",
+};
+
+/** What a link or hub proposal asks, in one sentence, with its evidence. */
+export function twoWaySummary(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  const pipeline = meta.pipeline || {};
+  const name = candidate?.display_name || candidate?.reviewed_payload?.name || "This actor";
+  if (twoWayKind(candidate) === "relationship") {
+    const other = meta.candidate_name || "another actor on the map";
+    const words = LINK_WORDS[pipeline.proposed_relationship_type] || "is linked to";
+    // The stored direction: subject -> object. The item's actor is the subject
+    // unless the proposal says otherwise.
+    const subjectIsThis = !pipeline.subject_actor_id || pipeline.subject_actor_id === meta.entity_id;
+    return {
+      question: subjectIsThis ? `${name} ${words} ${other}?` : `${other} ${words} ${name}?`,
+      source_url: pipeline.source_url || null,
+      detail: pipeline.source_url ? "Read on this page by an actor update."
+        : "No source page is recorded for this link, so it can only be refused or left.",
+    };
+  }
+  if (twoWayKind(candidate) === "hub") {
+    const evidence = pipeline.deterministic_evidence || {};
+    const hub = meta.proposed_hub_name || "a hub";
+    return {
+      question: `Add ${name} to ${hub}?`,
+      source_url: null,
+      detail: [evidence.sector_code && `Same sector (${evidence.sector_code})`,
+        evidence.distance_miles != null && `${evidence.distance_miles} miles from the centre, `
+          + `inside its ${evidence.radius_miles}-mile radius`,
+        "it is in no hub of that sector yet"].filter(Boolean).join("; ") + ".",
+    };
+  }
+  return null;
+}
+
+/** What an actor update wrote: one row per box, before and after, with its source. */
+export function updateRows(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  return (meta.written || []).map((fact) => ({
+    field: fact.fact_key,
+    before: fact.previous_value != null ? formatFactValue(fact.previous_value) : "—",
+    after: fact.collection_state === "found" ? formatFactValue(fact.value) : "Not stated on its pages",
+    how: fact.lifecycle_state === "conflict_flagged" ? "Conflict — in this run, for a decision"
+      : fact.lifecycle_state === "pending_update" ? "GHUS value kept — change in this run, for a decision"
+      : fact.collection_state !== "found" ? "Recorded as not found"
+      : fact.previous_value != null ? "Replaced the earlier value (kept in history)" : "New",
+    source_url: fact.source_url || null,
+    confidence: fact.confidence || "—",
+  }));
+}
+
+function updateBlock(html, candidate) {
+  const meta = candidate?.agent_metadata || {};
+  const rows = updateRows(candidate);
+  return html`<section class="review-section">
+    <h3>What this update wrote</h3>
+    <p class="review-hint">Already on the map, written through the GHUS fact writer with its
+      sources; earlier values stay in the history. ${meta.corroborated
+        ? `${meta.corroborated} recorded value(s) were confirmed by its pages. ` : ""}Read
+      ${(meta.pages_read || []).length} page(s) · ${typeof meta.spent_usd === "number"
+        ? `$${meta.spent_usd.toFixed(3)}` : ""}.</p>
+    <table><thead><tr><th>Box</th><th>Before</th><th>Now</th><th>What it did</th><th>Source</th></tr></thead>
+    <tbody>${rows.map(row => html`<tr key=${row.field}>
+      <th scope="row">${reviewFieldLabel(row.field)}</th><td>${row.before}</td><td>${row.after}</td>
+      <td>${row.how}</td>
+      <td>${row.source_url ? html`<a href=${row.source_url} target="_blank" rel="noreferrer">open</a>` : "—"}</td>
+    </tr>`)}</tbody></table>
+    ${(meta.pages_read || []).length > 0 && html`<p class="review-hint">Pages read:
+      ${meta.pages_read.map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank"
+        rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}</p>`}
+  </section>`;
+}
+
+function twoWayBlock(html, candidate) {
+  const summary = twoWaySummary(candidate);
+  if (!summary) return null;
+  return html`<section class="review-section">
+    <h3>${summary.question}</h3>
+    <p>${summary.detail}${summary.source_url && html` <a href=${summary.source_url}
+      target="_blank" rel="noreferrer">Open the page</a>`}</p>
+    <p class="review-hint">${reviewReasonHint(candidate?.agent_metadata?.review_kind)}</p>
+  </section>`;
 }
 
 /** The two values a fact review decides between, as rows for a table. */
@@ -294,10 +405,12 @@ function factChangeBlock(html, candidate) {
 }
 
 export function decisionOptions(entityType, candidate = null) {
-  if (isFactReview(candidate)) {
+  const twoWay = twoWayKind(candidate);
+  if (twoWay) {
+    const [yes, no] = TWO_WAY_ANSWERS[twoWay];
     return [
-      {value: "new", label: "Use the new value"},
-      {value: "reject", label: "Keep the current value"},
+      {value: "new", label: yes},
+      {value: "reject", label: no},
       {value: "defer", label: BUTTONS.park},
     ];
   }
@@ -346,7 +459,7 @@ export function canSubmitReview({
   const kind = decisionKind || decision;
   if (!candidate || candidate.status !== "pending_review" || busy || !admissionConfigured
       || !String(reviewer || "").trim() || Object.keys(draftErrors).length) return false;
-  if (isFactReview(candidate)) return ["new", "reject", "defer"].includes(kind);
+  if (twoWayKind(candidate)) return ["new", "reject", "defer"].includes(kind);
   if (kind === "same_existing" && !String(targetId || "").trim()) return false;
   if (kind === "reject") {
     return REJECTION_REASONS.includes(rejectionReason)
@@ -539,11 +652,9 @@ export function lightFactRows(candidate) {
     });
 }
 
-/** "Not Stated on the 3 Pages Read" - the missing state, with what was checked. */
+/** The missing state, said plainly ("Not Found"); the pages checked are listed under it. */
 export function missingWithPages(row) {
-  const count = (row?.pagesRead || []).length;
-  if (row?.state !== MISSING.notFound || !count) return row?.state || null;
-  return `Not Stated on the ${count === 1 ? "Page" : `${count} Pages`} Read`;
+  return row?.state || null;
 }
 
 // Common Light Pull keys that are already shown as an editable control in the
@@ -933,7 +1044,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         setSelected(candidate);
         setDraft({...candidate.reviewed_payload});
         // Two values for one box: keeping the map's value is the safe default.
-        setDecisionKind(isFactReview(candidate) ? "reject"
+        // Keeping the map as it is is the safe default; a proposal waits.
+        setDecisionKind(isFactReview(candidate) ? "reject" : twoWayKind(candidate) ? "defer"
           : candidate.duplicate_state === "already_exists" ? "same_existing" : "new");
         setTargetId("");
         setRejectionReason("");
@@ -1060,10 +1172,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       }
       if (isFactReview(selected)) {
         if (kind !== "defer") lines.push("", "Both values stay in the history; nothing is deleted.");
+      } else if (twoWayKind(selected) === "update") {
+        if (kind !== "defer") lines.push("", "Recorded in Review only; the map is not changed.");
+      } else if (twoWayKind(selected)) {
+        if (kind !== "defer") lines.push("", twoWaySummary(selected).question);
       } else if (kind === "new" || kind === "same_existing") {
         lines.push("", SENTENCES.verifyConsequences);
       }
-      if (kind === "reject" && !isFactReview(selected)) {
+      if (kind === "reject" && !twoWayKind(selected)) {
         lines.push("", `${FIELDS.rejectionReason}: ${rejectionReason}`
           + (rejectionReason === "Other" ? ` — ${rejectionOther}` : ""), SENTENCES.noDeletion);
       }
@@ -1391,7 +1507,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               : html`<p class="review-complete" title=${parent.tooltip}>
                   <strong>${parent.missing}</strong> — ${parent.tooltip}
                 </p>`}
-            <p class="muted">Parent link types offered: ${PARENT_LINK_TYPES.map(o => o.label).join(" · ")}</p>
             <h4>${FIELDS.otherRelationships} <span class="review-chip">${BADGES.readOnly}</span></h4>
             ${!relationships.length && html`<p class="muted">${MISSING.notFound}</p>`}
             <ul class="review-evidence">
@@ -1553,6 +1668,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           </section>`}
 
           ${isFactReview(selected) && factChangeBlock(html, selected)}
+          ${twoWayKind(selected) === "update" && updateBlock(html, selected)}
+          ${["relationship", "hub"].includes(twoWayKind(selected)) && twoWayBlock(html, selected)}
 
           <!-- 5 POSSIBLE DUPLICATES -->
           ${matches.length > 0 && html`<section class="review-section">
@@ -1606,7 +1723,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   <input value=${targetId} disabled=${!pending || busy}
                     onInput=${e => setTargetId(e.target.value)} placeholder="Existing record ID"/></label>`}
             </div>
-            ${decisionKind === "reject" && !isFactReview(selected) && html`<div class="review-field-grid">
+            ${decisionKind === "reject" && !twoWayKind(selected) && html`<div class="review-field-grid">
               <label class="review-field"><span>${FIELDS.rejectionReason}</span>
                 <select value=${rejectionReason} onChange=${e => setRejectionReason(e.target.value)}
                   disabled=${!pending || busy}>
@@ -1636,8 +1753,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <label class=${"review-field " + (pending && !reviewer.trim() ? "invalid" : "")}>
                 <span>${FIELDS.reviewer}</span>
                 <input value=${reviewer} disabled=${!pending || busy} required
-                  onInput=${e => setReviewer(e.target.value)}/>
-                <small class="review-hint">${SENTENCES.reviewerRequired}</small></label>
+                  onInput=${e => setReviewer(e.target.value)}/></label>
               <label class="review-field"><span>${FIELDS.notes}</span>
                 <input value=${notes} disabled=${!pending || busy}
                   onInput=${e => setNotes(e.target.value)}/></label>
@@ -1646,8 +1762,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
           <footer class="review-footer">
             <button class="btn danger" disabled=${!pending || busy || writerDown}
-              onClick=${() => { setDecisionKind("reject"); }}>${isFactReview(selected)
-                ? "Keep the current value" : BUTTONS.reject}</button>
+              onClick=${() => { setDecisionKind("reject"); }}>${twoWayKind(selected)
+                ? TWO_WAY_ANSWERS[twoWayKind(selected)][1] : BUTTONS.reject}</button>
             <button class="btn ghost" disabled=${!pending || busy || writerDown}
               onClick=${() => { setDecisionKind("defer"); }}>${BUTTONS.park}</button>
             <button class="btn ghost" disabled=${!pending || busy || Object.keys(draftErrors).length > 0}
@@ -1655,7 +1771,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <button class="btn" onClick=${decide} disabled=${!canSubmitReview({
               candidate: selected, reviewer, rejectionReason, rejectionOther, decisionKind,
               targetId, busy, admissionConfigured: data.admission_configured, draftErrors,
-            })}>${isFactReview(selected) && decisionKind !== "defer"
+            })}>${twoWayKind(selected) && decisionKind !== "defer"
               ? decisionOptions(selected.entity_type, selected).find(o => o.value === decisionKind)?.label
               : decisionKind === "reject" ? BUTTONS.reject
               : decisionKind === "defer" ? BUTTONS.park : BUTTONS.verify}</button>

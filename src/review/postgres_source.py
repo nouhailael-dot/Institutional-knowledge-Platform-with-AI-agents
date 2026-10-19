@@ -200,6 +200,11 @@ def _number(value: Any) -> float | None:
         return None
 
 
+# The run-ledger jobs an actor update records (backend actor_updates.py and
+# the request runner).
+UPDATE_JOBS = "('actor_update','actor_update_request')"
+
+
 def _timestamp(value: Any) -> float | None:
     if isinstance(value, datetime):
         return value.timestamp()
@@ -243,6 +248,7 @@ class PostgresReviewSource:
         "hub_actor", "hub_sector", "sector", "actor_sector", "actor_location",
         "actor_update_subscription", "actor_update_subscription_run", "collection_run",
         "proposed_hub", "proposed_hub_member", "hub_detection_run", "topic",
+        "collection_request", "fact_corroboration", "actor_fact_current_pointer",
     }
 
     def __init__(self, database_url: str):
@@ -366,7 +372,125 @@ class PostgresReviewSource:
                         metadata["hubs"] = entry["available"]
                     candidates[candidate["source_key"]] = candidate
 
+            if {"collection_run", "collection_request", "actor_fact",
+                    "actor_update_subscription_run"} <= set(columns):
+                for candidate in self._actor_update_cards(db):
+                    candidates.setdefault(candidate["source_key"], candidate)
+                # One name per update run: what its cards say (the request's
+                # title, or the actor), also on the conflicts and proposals it
+                # raised - otherwise the run took whichever item came first.
+                names = {c["source_run_id"]: c["source_description"]
+                         for c in candidates.values()
+                         if c["agent_metadata"].get("source_table") == "actor_update"}
+                for candidate in candidates.values():
+                    if candidate["source_run_id"] in names:
+                        candidate["source_description"] = names[candidate["source_run_id"]]
+
             return list(candidates.values()), warnings
+
+    def _actor_update_cards(self, db, *, limit: int = 60) -> list[dict[str, Any]]:
+        """What each actor update wrote, as one card per actor, under its run.
+
+        Read-only. An update writes through the backend's fact writer; most of
+        what it writes needs no decision, so it never reached Review and could
+        not be shown there. A card lists every fact the run wrote for the
+        actor - before and after, with its source - and its run groups it as
+        "Actor update". Conflicts and proposals it raised join the same run.
+        """
+        runs = db.execute(
+            "SELECT r.collection_run_id::text AS run_id, r.started_at, r.finished_at, r.status, "
+            "r.spent_usd, r.job_name, q.collection_request_id::text AS request_id, "
+            "q.actor_id::text AS actor_id, r.config_snapshot, "
+            # A request run is named by its request; a one-actor update by its actor.
+            "(SELECT s.title FROM actor_update_subscription_run sr JOIN actor_update_subscription s "
+            " ON s.actor_update_subscription_id = sr.actor_update_subscription_id "
+            " WHERE sr.collection_run_id = r.collection_run_id LIMIT 1) AS request_title "
+            "FROM collection_run r JOIN collection_request q USING (collection_request_id) "
+            f"WHERE r.job_name IN {UPDATE_JOBS} AND r.status IN ('succeeded','attention') "
+            "ORDER BY r.started_at DESC LIMIT %s", (limit,)
+        ).fetchall()
+        cards = []
+        for run in runs:
+            snapshot = _json_object(run.get("config_snapshot"))
+            actor_ids = ([run["actor_id"]] if run.get("actor_id") else
+                         [str(a.get("actor_id")) for a in _json_list(snapshot.get("actor_results"))
+                          if isinstance(a, dict) and a.get("ok")])
+            for actor_id in actor_ids:
+                card = self._actor_update_card(db, run, snapshot, actor_id)
+                if card is not None:
+                    cards.append(card)
+        return cards
+
+    def _actor_update_card(self, db, run, snapshot, actor_id) -> dict[str, Any] | None:
+        actor = db.execute(
+            "SELECT a.actor_id::text AS actor_id, a.name, a.website, a.description, "
+            "NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
+            "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
+            "COALESCE(NULLIF(to_jsonb(a)->>'location_city',''), NULLIF(to_jsonb(a)->>'city','')) "
+            "AS location_city, COALESCE(NULLIF(to_jsonb(a)->>'state_code',''), "
+            "NULLIF(to_jsonb(a)->>'state','')) AS state, "
+            "NULLIF(to_jsonb(a)->>'region_code','') AS region_code, a.country, "
+            "COALESCE(NULLIF(to_jsonb(a)->>'status',''), NULLIF(to_jsonb(a)->>'record_status','')) "
+            "AS record_status FROM actor a WHERE a.actor_id = CAST(%s AS uuid)", (actor_id,)
+        ).fetchone()
+        if actor is None:
+            return None
+        written = db.execute(
+            "SELECT f.fact_key, f.collection_state, f.fact_value, f.confidence, f.retrieved_at, "
+            "f.lifecycle_state, s.url AS source_url, pf.fact_value AS previous_value, "
+            "(cp.actor_fact_id = f.actor_fact_id) AS is_current "
+            "FROM actor_fact f LEFT JOIN source s ON s.source_id = f.source_id "
+            "LEFT JOIN actor_fact pf ON pf.actor_fact_id = f.supersedes_fact_id "
+            "LEFT JOIN actor_fact_current_pointer cp ON cp.actor_id = f.actor_id "
+            " AND cp.topic_id = f.topic_id AND cp.fact_key = f.fact_key "
+            "WHERE f.request_id = CAST(%s AS uuid) AND f.actor_id = CAST(%s AS uuid) "
+            "AND f.created_at BETWEEN %s AND COALESCE(%s, now()) ORDER BY f.fact_key",
+            (run["request_id"], actor_id, run["started_at"], run["finished_at"])
+        ).fetchall()
+        corroborated = db.execute(
+            "SELECT count(*) AS n FROM fact_corroboration c JOIN actor_fact f "
+            # A corroboration carries the page's read time (before the write),
+            # so it is matched by its update request, not by the run's window.
+            "ON f.actor_fact_id = c.actor_fact_id WHERE c.request_id = CAST(%s AS uuid) "
+            "AND f.actor_id = CAST(%s AS uuid)",
+            (run["request_id"], actor_id)
+        ).fetchone()
+        facts = [{
+            "fact_key": w["fact_key"], "collection_state": w["collection_state"],
+            "value": w["fact_value"], "previous_value": w["previous_value"],
+            "confidence": w["confidence"], "date_read": _timestamp(w["retrieved_at"]),
+            "lifecycle_state": w["lifecycle_state"], "source_url": w["source_url"],
+            "is_current": bool(w["is_current"]),
+        } for w in written]
+        pages = [str(u) for u in _json_list(snapshot.get("pages_read")) if u]
+        payload = {k: v for k, v in {
+            "name": actor["name"], "website": actor["website"],
+            "description": actor["description"], "actor_category": actor["actor_category"],
+            "category_type": actor["category_type"], "location_city": actor["location_city"],
+            "state": actor["state"], "region": actor["region_code"], "country": actor["country"],
+        }.items() if v is not None}
+        evidence = []
+        for url in dict.fromkeys([*pages, *(f["source_url"] for f in facts if f["source_url"])]):
+            evidence.extend(_source_evidence(url, supports="Page read by the actor update"))
+        return {
+            "source_key": f"postgres:actor_update:{run['run_id']}:{actor_id}",
+            "source_run_id": f"actor-update:{run['run_id']}",
+            "source_index": f"actor-update:{run['run_id']}:{actor_id}",
+            "source_description": f"Actor update: {run.get('request_title') or actor['name']}",
+            "entity_type": "actor",
+            "payload": payload,
+            "evidence": evidence,
+            "agent_metadata": {
+                "source_table": "actor_update", "review_kind": "actor_update",
+                "entity_id": actor_id, "run_id": run["run_id"], "run_status": run["status"],
+                "record_status": actor["record_status"],
+                "spent_usd": float(run["spent_usd"] or 0), "pages_read": pages,
+                "written": facts, "corroborated": int(corroborated["n"] or 0),
+                "scope": snapshot.get("scope") or (snapshot.get("update_request") or {}).get("scope"),
+            },
+            "duplicate_state": "not_checked",
+            "created_at": _timestamp(run["finished_at"] or run["started_at"]),
+        }
 
     def _columns(self, db) -> dict[str, set[str]]:
         rows = db.execute(
@@ -602,6 +726,26 @@ class PostgresReviewSource:
             "   'set_by',to_jsonb(nf)->>'creator_class','source_url',ns.url)"
             "   FROM actor_fact nf LEFT JOIN source ns ON ns.source_id=nf.source_id"
             "   WHERE nf.actor_fact_id::text=ri.payload->>'new_fact_id')) END AS fact_change, "
+            # The other side of a proposed link, and the hub a membership is
+            # proposed for, by name: a reviewer decides between names, not ids.
+            "(SELECT ca.name FROM actor ca WHERE ca.actor_id=ri.candidate_entity_id) "
+            " AS candidate_name, "
+            "(SELECT ph.name FROM hub ph WHERE ph.hub_id::text=ri.payload->>'proposed_hub_id') "
+            " AS proposed_hub_name, "
+            # The actor update run that raised this item, if one did: a fact it
+            # wrote (conflict, GHUS change) or a proposal carrying its request.
+            # It groups the item under "Actor update", not "Map checks".
+            "COALESCE("
+            " (SELECT ur.collection_run_id::text FROM actor_fact uf JOIN collection_run ur "
+            "  ON ur.collection_request_id=uf.request_id "
+            f"  WHERE uf.actor_fact_id::text=ri.payload->>'new_fact_id' AND ur.job_name IN {UPDATE_JOBS} "
+            "  AND uf.created_at BETWEEN ur.started_at AND COALESCE(ur.finished_at, now()) "
+            "  ORDER BY ur.started_at DESC LIMIT 1),"
+            " (SELECT ur.collection_run_id::text FROM collection_run ur "
+            "  WHERE ur.collection_request_id::text=ri.payload->>'request_id' "
+            f"  AND ur.job_name IN {UPDATE_JOBS} "
+            "  AND ri.created_at BETWEEN ur.started_at AND COALESCE(ur.finished_at, now()) "
+            "  ORDER BY ur.started_at DESC LIMIT 1)) AS update_run_id, "
             "COALESCE(f.facts,'[]'::jsonb) AS facts, " + history_field + ", " + edge_field +
             "FROM review_item ri "
             "JOIN actor a ON ri.entity_type='actor' AND a.actor_id=ri.entity_id "
@@ -1230,11 +1374,14 @@ class PostgresReviewSource:
         evidence = []
         for url in source_urls:
             evidence.extend(_source_evidence(url, supports="Architecture V2 actor fact or discovery evidence"))
+        update_run = row.get("update_run_id")
         return {
             "source_key": f"postgres:review_item:{review_id}",
-            "source_run_id": f"v2-review:{row.get('topic_id') or 'unscoped'}",
+            "source_run_id": (f"actor-update:{update_run}" if update_run
+                              else f"v2-review:{row.get('topic_id') or 'unscoped'}"),
             "source_index": f"review-item:{review_id}",
-            "source_description": f"Architecture V2 {row.get('review_kind')} review",
+            "source_description": (f"Actor update: {row.get('name')}" if update_run
+                                   else f"Architecture V2 {row.get('review_kind')} review"),
             "entity_type": "actor",
             "payload": actor_payload,
             "evidence": evidence,
@@ -1251,6 +1398,8 @@ class PostgresReviewSource:
                 "fact_history": fact_history,
                 "relationships": relationships,
                 "fact_change": _json_object(row.get("fact_change")) or None,
+                "candidate_name": row.get("candidate_name"),
+                "proposed_hub_name": row.get("proposed_hub_name"),
             },
             "duplicate_state": (
                 "possible_duplicate" if row.get("review_kind") == "possible_duplicate"
