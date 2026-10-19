@@ -66,8 +66,10 @@ COMMON_READ_FIELDS = (
 
 FIELD_CRITERIA: dict[str, str] = {
     # ---- common
-    "location": "Where the organisation is based, as a page states it: city and state "
-                "(and country if outside the US).",
+    "location": "Where the organisation is headquartered, as a page states it - often in "
+                "the footer or contact details: give {\"city\": ..., \"state\": ...} (and "
+                "\"country\" if outside the US). Not stated when no page gives a city or "
+                "state; a country alone, or the places it works in, is not its location.",
     "why_matched": "Why this organisation fits the requested topic, in 1-2 sentences that "
                    "cite what a page says it does on that topic. 'strong' only when the "
                    "topic is its main work; 'moderate' when it is one part of its work.",
@@ -249,10 +251,40 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
     return docs[:MAX_LIGHT_PULL_FETCHES]
 
 
+# A page's footer is where most organisations print their address. The shared
+# text extractor drops <footer> (right for scoring a page's content), so the
+# location box was "not stated" on sites that state it in every footer. The
+# reader keeps it, labelled, after the main text.
+FOOTER_CHARS = 1200
+
+
+def _footer_text(content: str) -> str:
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(content or "", "html.parser")
+    parts = soup.find_all("footer") + soup.find_all(attrs={"role": "contentinfo"})
+    seen, lines = set(), []
+    for part in parts:
+        for element in part.find_all(["script", "style", "noscript", "template"]):
+            element.decompose()
+        for line in part.stripped_strings:
+            line = " ".join(line.split())
+            if line and line not in seen:
+                seen.add(line)
+                lines.append(line)
+    return " ".join(lines)[:FOOTER_CHARS]
+
+
+def _page_text(content: str) -> str:
+    footer = _footer_text(content)
+    room = MAX_PAGE_CHARS - (len(footer) + 10 if footer else 0)
+    text = _visible_html_text(content or "")[:room]
+    return f"{text}\nFooter: {footer}" if footer else text
+
+
 def light_documents(docs, *, read_at: datetime) -> tuple[LightDocument, ...]:
     return tuple(
-        LightDocument(url=d.url, text=_visible_html_text(d.content or "")[:MAX_PAGE_CHARS],
-                      date_read=read_at)
+        LightDocument(url=d.url, text=_page_text(d.content or ""), date_read=read_at)
         for d in docs
     )
 

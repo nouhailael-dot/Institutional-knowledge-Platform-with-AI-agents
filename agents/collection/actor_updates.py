@@ -348,6 +348,10 @@ def plan_fields(scope: str, schema: list[str], current: dict[str, dict], *, fiel
     for key in schema:
         fact = current.get(key)
         has_value = bool(fact) and fact.get("collection_state") == "found"
+        if has_value and key == "location":
+            # {"region": "Not Provided", "country": "US"} was stored as found;
+            # a location with no city or state is missing, not filled.
+            has_value = any(location_parts(fact.get("fact_value"))[:2])
         age = _age_days(fact.get("retrieved_at"), today) if fact else None
         if scope == "specific":
             if key in asked:
@@ -837,6 +841,48 @@ def _finish_run(session, run_id: str, *, status: str, reason: str | None, result
         outcomes={r["field"]: r.get("actual") or r["outcome"] for r in results})
 
 
+def location_parts(value) -> tuple[str | None, str | None, str | None]:
+    """(city, state, country) from a location fact: an object, or "City, State"."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            pass
+    if isinstance(value, dict):
+        city = value.get("city") or value.get("location_city")
+        state = value.get("state") or value.get("state_code")
+        return (str(city).strip() if city else None, str(state).strip() if state else None,
+                value.get("country"))
+    parts = [part.strip() for part in str(value or "").split(",") if part.strip()]
+    if len(parts) >= 2:
+        country = parts[2] if len(parts) > 2 else None
+        # "Montpelier, VT 05602" -> state "VT"
+        return parts[0], re.sub(r"\s+\d{5}(-\d{4})?$", "", parts[1]), country
+    return None, None, None
+
+
+def _fill_location(session, record: dict, results: list[dict]) -> dict | None:
+    """A location the pages stated fills the actor's record if it is empty."""
+    from agents.enrichment.decisions import fill_actor_location
+
+    written = next((r for r in results if r["field"] == "location" and r.get("written")
+                    and r.get("actual") in {"new", "changed", "corroborated"}), None)
+    if written is None or not written.get("proposed"):
+        return None
+    city, state, country = location_parts(written["proposed"]["value"])
+    if not city or not state:
+        return {"action": "not_enough", "detail": "the pages gave no city and state"}
+    savepoint = session.begin_nested()
+    try:
+        result = fill_actor_location(session, actor_id=record["actor_id"], city=city,
+                                     state=state, country=country or "US", live=True)
+        savepoint.commit()
+    except Exception as exc:  # noqa: BLE001 - the fact stands; say why the record did not move
+        savepoint.rollback()
+        result = {"action": "failed", "error": f"{type(exc).__name__}: {exc}"[:200]}
+    return result
+
+
 def _proposal_count(related, hubs) -> int:
     return (sum(1 for r in related or () if r.get("status") == "on_map")
             + len((hubs or {}).get("proposals") or ()))
@@ -871,7 +917,8 @@ def _write_proposals(session, record: dict, request_id: str) -> list[dict]:
             result = propose_hub_membership(
                 session, actor_id=record["actor_id"], hub_id=hub["hub_id"],
                 distance_miles=hub["distance_miles"], radius_miles=hub["radius_miles"],
-                sector_code=hub["sector"], topic_id=record["topic_id"], live=True)
+                sector_code=hub["sector"], topic_id=record["topic_id"], request_id=request_id,
+                live=True)
             savepoint.commit()
         except Exception as exc:  # noqa: BLE001
             savepoint.rollback()
@@ -973,6 +1020,7 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
             actual = "not_found"
         result.update(written=True, fact_id=fact_id, actual=actual)
         results.append(result)
+    location = _fill_location(session, record, results)
     proposals = []
     if not record.get("proposals_written"):
         proposals = _write_proposals(session, record, request_id)
@@ -993,7 +1041,7 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
     proposed = sum(1 for p in proposals if p.get("action") == "proposed")
     return {"ok": not failed, "check_id": check_id, "run_id": run_id, "results": results,
             "counts": counts, "failed": len(failed), "error": reason,
-            "proposals": proposals,
+            "proposals": proposals, "location": location,
             "review_items": proposed + sum(1 for r in results
                                            if r.get("written")
                                            and r["actual"] in {"conflict", "protected"})}

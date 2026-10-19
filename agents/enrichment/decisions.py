@@ -710,6 +710,7 @@ def propose_hub_membership(
     radius_miles: float,
     sector_code: str | None,
     topic_id: str | None = None,
+    request_id: str | None = None,
     live: bool = False,
 ) -> dict[str, object]:
     """Ask GHUS to confirm that an unassigned actor now fits a hub.
@@ -740,7 +741,7 @@ def propose_hub_membership(
         "canonical_outcome": "assigned", "issue": "newly_eligible",
         "deterministic_evidence": {"sector_code": sector_code, "distance_miles": distance_miles,
                                    "radius_miles": radius_miles},
-        "origin": "actor_update"}, sort_keys=True, default=str)})
+        "origin": "actor_update", "request_id": request_id}, sort_keys=True, default=str)})
     return {"action": "proposed", "review_item_id": review_id}
 
 
@@ -849,6 +850,53 @@ def record_geocode_review_decision(
                        reason=f"located at {result.city}, {result.state_code} (Census gazetteer)"
                        + (f"; {reason}" if reason else ""))
     return {**outcome, "action": "located"}
+
+
+def fill_actor_location(
+    session,
+    *,
+    actor_id: str,
+    city: str | None,
+    state: str | None,
+    country: str | None = "US",
+    live: bool = False,
+) -> dict[str, object]:
+    """Fill an actor's EMPTY location from a location fact its own page stated.
+
+    Only a record with no city, no state and no coordinates is filled - a value
+    on the record, GHUS's or anyone's, is never overwritten. The place must be
+    found in the vendored Census gazetteer (coordinates and region come from
+    it, not from the page); anything else is left for a person.
+    """
+    from agents.common.geography import default_gazetteer
+
+    city_column = "city" if _has_column(session, "actor", "city") else "location_city"
+    current = session.execute(text(
+        f"SELECT NULLIF(to_jsonb(a)->>'{city_column}', '') AS city, "
+        "COALESCE(NULLIF(to_jsonb(a)->>'state_code', ''), NULLIF(to_jsonb(a)->>'state', '')) "
+        "AS state, NULLIF(to_jsonb(a)->>'latitude', '') AS latitude FROM actor a "
+        "WHERE a.actor_id=CAST(:id AS uuid)"), {"id": actor_id}).mappings().first()
+    if current is None:
+        raise ValueError("no actor with that id")
+    if current["city"] or current["state"] or current["latitude"]:
+        return {"action": "already_located"}
+    if (country or "US").strip().upper() not in {"US", "USA", "UNITED STATES"}:
+        return {"action": "outside_us"}
+    result = default_gazetteer().lookup(city, state, "US")
+    if not result.found:
+        return {"action": "not_in_gazetteer", "reason": result.reason}
+    outcome = {"city": result.city, "state_code": result.state_code,
+               "region_code": result.region_code, "latitude": result.latitude,
+               "longitude": result.longitude}
+    if not live:
+        return {"action": "would_locate", **outcome}
+    legacy_state = ",state=:state_code" if _has_column(session, "actor", "state") else ""
+    execute_canonical_write(session, text(
+        f"UPDATE actor SET {city_column}=:city,state_code=:state_code{legacy_state},"
+        "region_code=:region_code,country='US',latitude=:latitude,longitude=:longitude,"
+        "updated_at=now() WHERE actor_id=CAST(:actor AS uuid)"
+    ), {**outcome, "actor": actor_id})
+    return {"action": "located", **outcome}
 
 
 def record_relationship_review_decision(

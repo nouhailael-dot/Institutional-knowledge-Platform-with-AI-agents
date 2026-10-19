@@ -380,6 +380,37 @@ def render_report(report: RunnerReport) -> str:
     return "\n".join(lines)
 
 
+def _light_pull_after(report: RunnerReport) -> None:
+    """Read the kept candidates of each discovery request that just ran.
+
+    A discovery run scores pages; the Light Pull read - the organisation's own
+    homepage, About page and one topic page - is what fills its boxes, the
+    location among them. Without it, a reviewer saw most boxes empty. Uses
+    light_pull_candidates as is: its own spend cap, and its refusal of any
+    database but a local *_test one unless an operator allows it.
+    """
+    from agents.collection import light_pull_candidates
+
+    for outcome in report.outcomes:
+        if outcome.kind != "discovery" or outcome.status not in ("succeeded", "attention"):
+            continue
+        try:
+            # A second pass reads only the candidates the first could not (a
+            # model timeout leaves a candidate unread); it costs nothing when
+            # every candidate was read.
+            for _ in range(2):
+                light_pull_candidates.main(["--request-id", outcome.subscription_id, "--live"])
+            outcome.status_reason = "; ".join(filter(None, [
+                outcome.status_reason, "candidates' own pages read (Light Pull)"]))
+        except SystemExit as exc:  # the guard refuses a shared database: say so
+            outcome.status_reason = "; ".join(filter(None, [
+                outcome.status_reason, f"Light Pull not run: {exc}"[:300]]))
+        except Exception as exc:  # noqa: BLE001 - the discovery run itself stands
+            logger.exception("Light Pull after request %s failed", outcome.subscription_id)
+            outcome.status_reason = "; ".join(filter(None, [
+                outcome.status_reason, f"Light Pull failed: {type(exc).__name__}"]))
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run due Discovery-page requests.")
     parser.add_argument("--live", action="store_true",
@@ -388,6 +419,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--report-out", default="agents/runs/discovery-requests-report.md")
     parser.add_argument("--request-id", default=None,
                         help="Run this one request now, whatever its cadence says.")
+    parser.add_argument("--light-pull", action="store_true",
+                        help="After a live discovery request, read every kept candidate's own "
+                             "pages so Review shows its boxes filled (capped).")
     return parser
 
 
@@ -402,6 +436,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"database: {target}", file=sys.stderr)
         report = run_due_requests(session, live=args.live, today=args.today,
                                   request_id=args.request_id)
+    if args.live and args.light_pull:
+        _light_pull_after(report)
     text_report = render_report(report)
     out = Path(args.report_out)
     out.parent.mkdir(parents=True, exist_ok=True)

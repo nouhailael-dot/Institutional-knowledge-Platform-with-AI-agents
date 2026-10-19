@@ -663,6 +663,7 @@ def test_named_organisations_are_routed_mapped_first_and_proposed_to_review(
         other = session.execute(text(
             "SELECT actor_id::text, name FROM actor WHERE actor_id <> CAST(:a AS uuid) "
             "AND actor_category = 'research_center' AND name ~ '^[A-Za-z ]+$' "
+            "AND merged_into_actor_id IS NULL "  # a merged record is not on the map
             # One no earlier run has linked or proposed, so each run starts clean.
             "AND NOT EXISTS (SELECT 1 FROM entity_edge e WHERE e.subject_id = CAST(:a AS uuid) "
             "  AND e.object_id = actor.actor_id) "
@@ -806,3 +807,28 @@ def test_an_unassigned_actor_stays_eligible_for_a_hub_added_later(session_factor
         # Assessing never writes.
         assert _count(session, "SELECT count(*) FROM hub_actor WHERE actor_id = CAST(:a AS uuid)",
                       a=actor.actor_id) == 0
+
+
+def test_a_found_location_fills_only_an_empty_record(session_factory):
+    from agents.enrichment.decisions import fill_actor_location
+
+    with session_factory() as session:
+        located = session.execute(text(
+            "SELECT actor_id::text FROM actor WHERE latitude IS NOT NULL LIMIT 1")).scalar_one()
+        assert fill_actor_location(session, actor_id=located, city="Austin", state="TX",
+                                   live=True)["action"] == "already_located"
+        empty = session.execute(text(
+            "SELECT actor_id::text FROM actor WHERE latitude IS NULL "
+            "AND NULLIF(to_jsonb(actor)->>'state_code', '') IS NULL "
+            "AND NULLIF(to_jsonb(actor)->>'state', '') IS NULL "
+            "AND NULLIF(to_jsonb(actor)->>'location_city', '') IS NULL LIMIT 1")).scalar_one()
+        assert fill_actor_location(session, actor_id=empty, city="Nowhereville", state="TX",
+                                   live=True)["action"] == "not_in_gazetteer"
+        result = fill_actor_location(session, actor_id=empty, city="Montpelier", state="VT",
+                                     live=True)
+        assert (result["action"], result["region_code"]) == ("located", "northeast")
+        row = session.execute(text(
+            "SELECT state_code, region_code, latitude IS NOT NULL FROM actor "
+            "WHERE actor_id = CAST(:a AS uuid)"), {"a": empty}).one()
+        assert tuple(row) == ("VT", "northeast", True)
+        session.rollback()  # leave the clone as it was

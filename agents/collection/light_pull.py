@@ -239,8 +239,14 @@ def _payload_evidence(
             "country", "state", "state_code", "location_city", "city", "region",
             "region_code", "latitude", "longitude", "multi_location",
         ) if payload.get(key) not in (None, "", [], {})
+        and str(payload.get(key)).strip().casefold() not in _PLACEHOLDERS
     }
-    values["location"] = _maybe_found(location)
+    # A country and a flag are not a location. Stored as found, {"region":
+    # "Not Provided", "country": "US"} hid that no city or state was ever
+    # read (two verified actors, 2026-10-15) and left their records empty.
+    pinned = any(location.get(k) for k in ("city", "location_city", "state", "state_code",
+                                          "latitude"))
+    values["location"] = _maybe_found(location) if pinned else None
     values["parent_connection"] = _maybe_found(
         payload.get("parent_connection") or payload.get("relationships")
     )
@@ -406,6 +412,11 @@ def _fetch(fetcher: object, url: str) -> object:
 
 def _found(value: object) -> dict[str, object]:
     return {"collection_state": "found", "value": value}
+
+
+# Words an extractor writes when a page says nothing; never a value.
+_PLACEHOLDERS = frozenset({"not provided", "not stated", "unknown", "n/a", "na", "none",
+                           "not available", "not specified", "-"})
 
 
 def _maybe_found(value: object) -> dict[str, object] | None:

@@ -306,12 +306,45 @@ def _source_sector_codes(source: Mapping[str, Any], payload: Mapping[str, Any]) 
     return list(dict.fromkeys(c for c in [chosen, *listed, *evidenced] if c))
 
 
+def _location_from_light_pull(payload: dict[str, Any]) -> None:
+    """The city (and state) from the Light Pull read when the record has no city.
+
+    Two actors verified on 2026-10-15 had their headquarters on their own
+    pages and none on their record: the read was evidence only. The record's
+    state often comes from the request's area ("Texas"); the city is filled
+    only when the read's state agrees with it. A different state (a Texas
+    page about a Pennsylvania company) is left for the reviewer, who sees
+    both. A reviewer's values always win; the gazetteer decides coordinates.
+    """
+    from agents.common.geography import normalize_state
+
+    if payload.get("location_city") or payload.get("city"):
+        return
+    evidence = (payload.get("light_pull_evidence") or {}).get("location") or {}
+    if not isinstance(evidence, Mapping) or evidence.get("collection_state") != "found":
+        return
+    from agents.collection.actor_updates import location_parts
+
+    city, state, country = location_parts(evidence.get("value"))
+    if not city or not state:
+        return
+    recorded = payload.get("state_code") or payload.get("state")
+    if recorded and normalize_state(recorded) != normalize_state(state):
+        return
+    payload["location_city"] = city
+    if not recorded:
+        payload["state"] = state
+    payload.setdefault("country", country or "US")
+
+
 def _staged(source: Mapping[str, Any], entity_type: str, edited: Mapping[str, Any]) -> StagedRecord:
     payload = {**dict(source["payload"]), **dict(edited)}
     payload.pop("_discovered_domain", None)
     if entity_type == "actor" and not payload.get("topic_id") and source.get("request_topic_id"):
         payload["topic_id"] = str(source["request_topic_id"])
     sector_codes = _source_sector_codes(source, payload) if entity_type == "actor" else []
+    if entity_type == "actor":
+        _location_from_light_pull(payload)
     extracted = source.get("extracted_at") or datetime.now(timezone.utc)
     return StagedRecord(
         run_id=str(source.get("run_id") or uuid.uuid4()),
