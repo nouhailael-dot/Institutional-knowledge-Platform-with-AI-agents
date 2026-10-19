@@ -100,6 +100,12 @@ the request, still ordered best first.
 something the user asked for — the raw text is authoritative.
 5. Judge only on the evidence shown. Do not assume facts not present in a \
 candidate's fields.
+6. An event whose date status is "date unconfirmed" does not meet a requirement \
+about when it takes place (for example "in the next 12 months"); exclude it \
+with that reason.
+7. A person whose affiliation is marked "unconfirmed" is not established as \
+working there now, so a requirement about their current organization or \
+location is not met; exclude them with that reason.
 
 Be decisive. Every candidate goes in exactly one list: `selected` or \
 `excluded`. Give each excluded one a short reason naming the requirement it \
@@ -124,7 +130,8 @@ def _render(entity: dict, idx: int) -> str:
     name = entity.get("full_name") or entity.get("name") or "?"
     bits = [f"{idx}. {name}"]
     for k in ("actor_type", "category_type", "location_city", "state", "location", "title",
-              "primary_technical_focus", "event_type", "next_date"):
+              "organization_name", "organization_location", "affiliation_note", "expertise",
+              "primary_technical_focus", "event_type", "next_date", "date_status"):
         v = entity.get(k)
         if v:
             bits.append(str(v))
@@ -248,9 +255,12 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
         else:
             e["_why_not"] = reasons.get(i) or "No reason given."
 
+    kinds = {e.get("_entity_type") for e in entities}
+    noun = {"person": "people", "event": "events"}.get(kinds.pop(), "organizations") \
+        if len(kinds) == 1 else "results"
     if not selected:
         return {"selected": [], "rest": rest, "outcome": NONE_MATCHED,
-                "note": f"None of the {len(entities)} organizations matched your filters. "
+                "note": f"None of the {len(entities)} {noun} matched your filters. "
                         "Each is shown with the reason it was left out."}
     return {"selected": selected, "rest": rest, "outcome": APPLIED,
             "note": f"{len(selected)} of {len(entities)} match your request."}

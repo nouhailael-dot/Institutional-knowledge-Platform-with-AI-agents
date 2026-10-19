@@ -5,6 +5,7 @@ with visible results. Replaying after a safe interruption uses saved responses,
 never repeats a completed paid operation. Unknown charges prohibit resumption.
 """
 from copy import deepcopy
+from datetime import date
 from urllib.parse import urlsplit
 import json
 
@@ -12,7 +13,7 @@ from src.map_agent.dedup import deduplicate
 from src.map_agent.client import get_client
 from src.map_agent.entity_schemas import submit_entities_tool
 from src.map_agent.costs import paid_message
-from src.map_agent.planner import _bounded_tasks, _EMPTY_REQS
+from src.map_agent.planner import _bounded_tasks, _EMPTY_REQS, MAP_TYPES
 from src.map_agent.relationships import link_people_to_actors
 from src.map_agent.review import entity_key
 from src.map_agent.search_backend import ResearchSources, canonical_url, excerpt, operation_key
@@ -58,6 +59,67 @@ a verbatim evidence_quote and source_url from the supplied evidence; otherwise
 mark it not established. Keep leadership distinct from participation.
 Use the submit_entities tool exactly once. There are no other tools."""
 
+# Architecture V2 §5.3 and §5.4 light pulls, for people and event maps.
+PEOPLE_MAP_GUIDANCE = """This is a map of PEOPLE. Use the Architecture V2 light pull only:
+name, title, organization at the most specific unit the sources document (the
+department rather than the university when named), that organization's city and
+state, their relevant expertise, a public professional profile, brief evidence of
+relevant work, and any UM6P/OCP connection shown in the supplied sources. Each
+person must be documented as currently at that organization. Public professional
+information only, never private details. Give contact details only if the request
+explicitly asks for them, and only official public contacts."""
+
+EVENT_GUIDANCE = """This is a map of EVENTS. Use the Architecture V2 light pull only:
+name and type, sector and topic, date and location, organizer, website, whether it
+is annual, recurring or one-time, why it matches, whether the edition found is
+upcoming, past or its date is unconfirmed, any visible UM6P/OCP involvement, and a
+short description including any notable publicly stated claim about its scale or
+standing, with its source. Keep past events; they are historical evidence. Do not
+collect speakers, sponsors, agendas or participants."""
+
+
+def _date_status(event, today=None):
+    """A full date is checked against today; the model's word is kept otherwise."""
+    raw = str(event.get("next_date") or "").strip()
+    if not raw:
+        event["date_status"] = "date unconfirmed"
+        return
+    try:
+        day = date.fromisoformat(raw[:10])
+    except ValueError:
+        event.setdefault("date_status", "date unconfirmed")
+        return
+    event["date_status"] = "upcoming" if day >= (today or date.today()) else "past"
+
+
+AFFILIATION_MAX_AGE = 3   # years; older evidence no longer shows where someone works now
+
+
+def _affiliation_note(person, today=None):
+    """How current the evidence of a person's affiliation is, in words."""
+    raw = str(person.get("affiliation_evidence_year") or "").strip()[:4]
+    if not raw.isdigit():
+        person["affiliation_note"] = "Source undated"
+        return
+    year = int(raw)
+    if (today or date.today()).year - year > AFFILIATION_MAX_AGE:
+        person["affiliation_note"] = f"Shown in {year} — unconfirmed, may have changed"
+    else:
+        person["affiliation_note"] = f"Shown in {year}"
+
+
+def _um6p_ocp_check(entity, available):
+    """A stated connection needs one of the supplied sources behind it."""
+    found = entity.get("um6p_ocp_status") == "found"
+    try:
+        sourced = canonical_url(entity.get("um6p_ocp_source") or "") in available
+    except (ValueError, TypeError):
+        sourced = False
+    if not (found and sourced):
+        entity["um6p_ocp_status"] = "not found in what's been read"
+        entity.pop("um6p_ocp_detail", None)
+        entity.pop("um6p_ocp_source", None)
+
 
 def _host(url):
     try:
@@ -88,16 +150,26 @@ def extract(run, request, task, evidence, client=None, target=None):
     if not evidence:
         return [], "No readable evidence returned."
     et = "person" if target else task["entity_type"]
+    # A people search on a people map (no target organization) uses the map's own
+    # light-pull record; the targeted search from an organization card is unchanged.
+    people_map = et == "person" and not target
     payload = {"request": request, "task": task, "target_organization": target, "sources": evidence}
-    response = paid_message(client or get_client(), run, "People extraction" if target else "Organization extraction" if et == "actor" else "Event extraction",
-        operation_key=operation_key("extract-people-v2" if target else "extract-actor-fields-v3" if et == "actor" else "extract-v1", payload),
+    stage = ("People extraction" if et == "person" else
+             "Organization extraction" if et == "actor" else "Event extraction")
+    key = ("extract-people-v2" if target else "extract-map-people-v1" if people_map else
+           "extract-actor-fields-v3" if et == "actor" else "extract-v1")
+    response = paid_message(client or get_client(), run, stage,
+        operation_key=operation_key(key, payload),
         model=EXTRACTION_MODEL, max_tokens=8192 if target else 16000,
         system=SYSTEM + ("\n" + LIGHT_GUIDANCE + "\nKeep organization records concise and prioritize completing the "
                         "structured response over returning more organizations: a truncated response loses the "
                         "whole batch." if et == "actor" else "") + ("\nKeep person records concise: at most two sentences per bio, "
                         "one short explanation per criterion, and only the source quotes needed to support it. "
-                        "Prioritize completing the structured response over returning more people." if target else ""),
-        tools=[submit_entities_tool(et)], tool_choice={"type": "tool", "name": "submit_entities"},
+                        "Prioritize completing the structured response over returning more people." if target else "")
+               + ("\n" + PEOPLE_MAP_GUIDANCE if people_map else "")
+               + ("\n" + EVENT_GUIDANCE if et == "event" else ""),
+        tools=[submit_entities_tool("map_person" if people_map else et)],
+        tool_choice={"type": "tool", "name": "submit_entities"},
         messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
     available = {canonical_url(e["url"]): e for e in evidence}
     output, gap = [], ""
@@ -124,6 +196,12 @@ def extract(run, request, task, evidence, client=None, target=None):
                 rejected += 1
                 continue
             entity["_entity_type"] = et
+            if people_map or et == "event":
+                _um6p_ocp_check(entity, available)
+            if people_map:
+                _affiliation_note(entity)
+            if et == "event":
+                _date_status(entity)
             if et == "person" and target:
                 if not affiliation_matches(entity.get("organization_name", ""), target["name"]):
                     rejected += 1
@@ -170,19 +248,19 @@ def _collect(sources, query, gaps, max_pages=3):
 _judged_key = entity_key
 
 
-def _follow_up_summary(found, selection, new_count, prior_outcome):
+def _follow_up_summary(found, selection, new_count, prior_outcome, map_type="organizations"):
     """(note, outcome) for the whole map after a follow-up judged its newcomers."""
     if selection["outcome"] == FAILED:
         return (f"Your follow-up's filters could not be applied to the {new_count} newly found "
-                "organizations, so those are unfiltered. Earlier results keep their judgement.", FAILED)
+                f"{map_type}, so those are unfiltered. Earlier results keep their judgement.", FAILED)
     if selection["outcome"] == NO_REQUIREMENTS and prior_outcome in (None, NO_REQUIREMENTS):
         return "", NO_REQUIREMENTS
-    actors = [e for e in found if e.get("_entity_type") == "actor"]
-    matched = sum(1 for e in actors if e.get("_selected"))
+    results = [e for e in found if e.get("_entity_type") == MAP_TYPES[map_type]]
+    matched = sum(1 for e in results if e.get("_selected"))
     if not matched:
-        return (f"None of the {len(actors)} organizations matched. They are all shown below, "
+        return (f"None of the {len(results)} {map_type} matched. They are all shown below, "
                 "marked as left out.", NONE_MATCHED)
-    return (f"{matched} of {len(actors)} match your request, including "
+    return (f"{matched} of {len(results)} match your request, including "
             f"{len(selection['selected'])} of the {new_count} found by your follow-up.", APPLIED)
 
 
@@ -190,9 +268,13 @@ def _visible(state):
     grouped = {"actor": [], "person": [], "event": []}
     for entity in link_people_to_actors(deduplicate(deepcopy(state["found"]))):
         grouped[entity["_entity_type"]].append(entity)
-    selected = {a["name"].casefold() for a in grouped["actor"] if a.get("_selected", True)}
-    for person in grouped["person"]:
-        person["_selected"] = any(o["actor_name"].casefold() in selected for o in person["organizations"])
+    map_type = state.get("map_type", "organizations")
+    # On an organization map a person counts through their organization; on a
+    # people map each person was judged directly against the request.
+    if map_type != "people":
+        selected = {a["name"].casefold() for a in grouped["actor"] if a.get("_selected", True)}
+        for person in grouped["person"]:
+            person["_selected"] = any(o["actor_name"].casefold() in selected for o in person["organizations"])
     gaps = list(dict.fromkeys(state["gaps"]))
     pending = []
     if state["phase"] == "organizations":
@@ -203,16 +285,17 @@ def _visible(state):
         pending.append("Finalizing institutional results.")
     elif state["phase"] == "rankings":
         pending.append("Looking up university rankings on approved publisher websites.")
-    return {"tasks": state["tasks"], "requirements": state["requirements"],
+    coverage = ("Focused evidence-based map, not an exhaustive census. "
+                "Up to four distinct topic queries; ten search hits and three page reads per query.")
+    if map_type == "organizations":
+        coverage += (" Selected whole universities also receive official-site ranking lookups within the map allowance. "
+                     "Deeper people research starts only when requested on an organization card.")
+    return {"map_type": map_type, "tasks": state["tasks"], "requirements": state["requirements"],
             "entities": grouped, "counts": {k: len(v) for k, v in grouped.items()},
             "partial": state["phase"] != "done", "coverage_gaps": gaps + pending,
             "selection_note": state.get("selection_note", "Selection has not completed."),
             "selection_outcome": state.get("selection_outcome"),
-            "workflow": "controlled-v1", "failures": [],
-            "coverage_note": "Focused evidence-based map, not an exhaustive census. "
-                             "Up to four distinct topic queries; ten search hits and three page reads per query. "
-                             "Selected whole universities also receive official-site ranking lookups within the map allowance. "
-                             "Deeper people research starts only when requested on an organization card."}
+            "workflow": "controlled-v1", "failures": [], "coverage_note": coverage}
 
 
 def build_controlled_map(description, plan, run, sources=None, client=None):
@@ -225,11 +308,13 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         if not plan or not plan.get("tasks"):
             raise ValueError("A saved search plan is required before research")
         tasks = _bounded_tasks(plan["tasks"])
-        # Even people-only requests establish organizations first, then their people.
-        for task in tasks:
-            if task["entity_type"] == "person":
-                task["entity_type"] = "actor"
-        state = {"version": 1, "description": description, "tasks": tasks,
+        map_type = plan.get("map_type") if plan.get("map_type") in MAP_TYPES else "organizations"
+        if map_type == "organizations":
+            # An organization map establishes organizations first, then their people.
+            for task in tasks:
+                if task["entity_type"] == "person":
+                    task["entity_type"] = "actor"
+        state = {"version": 1, "map_type": map_type, "description": description, "tasks": tasks,
                  "requirements": {**_EMPTY_REQS, **(plan.get("requirements") or {})},
                  "phase": "organizations", "task_index": 0, "found": [], "gaps": [],
                  "people_targets": [], "people_index": 0}
@@ -248,7 +333,9 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
     # follow-up. Re-judging everything against "also find national labs" would
     # mark every earlier university as not matching.
     elif plan and plan.get("tasks") and state.get("phase") == "done":
-        state["tasks"] = state["tasks"] + _bounded_tasks(plan["tasks"])
+        kind = MAP_TYPES[state.get("map_type", "organizations")]
+        state["tasks"] = state["tasks"] + [t for t in _bounded_tasks(plan["tasks"])
+                                           if t["entity_type"] == kind]
         state["judged"] = [_judged_key(e) for e in state["found"]]
         state["round_description"] = description or state["description"]
         state["round_requirements"] = {**_EMPTY_REQS, **(plan.get("requirements") or {})}
@@ -296,7 +383,8 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                     e["_rank"] += offset
             state["found"] = earlier + selection["selected"] + selection["rest"]
             state["selection_note"], state["selection_outcome"] = _follow_up_summary(
-                state["found"], selection, len(newcomers), state.get("selection_outcome"))
+                state["found"], selection, len(newcomers), state.get("selection_outcome"),
+                state.get("map_type", "organizations"))
         else:
             selection = apply_request(state["found"], state["description"], state["requirements"], run=run)
             state["found"] = selection["selected"] + selection["rest"]

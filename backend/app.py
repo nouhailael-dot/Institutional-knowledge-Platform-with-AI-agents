@@ -541,15 +541,16 @@ class ReviewRequest(BaseModel):
     name: str
     website: str | None = None
     action: Literal["park", "unpark", "reject"]
+    kind: Literal["actor", "person", "event"] = "actor"
 
 
 @app.post("/api/map/{job_id}/review")
 def map_review(job_id: str, payload: ReviewRequest):
-    """Park, unpark or permanently reject one organization in a saved map."""
+    """Park, unpark or permanently reject one organization, person or event in a saved map."""
     map_record(job_id)
     try:
         map_store().edit_result(job_id, lambda result, workflow: review.apply(
-            result, workflow, payload.name, payload.website, payload.action))
+            result, workflow, payload.name, payload.website, payload.action, payload.kind))
     except MapStopped as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except LookupError as exc:

@@ -1,6 +1,20 @@
 """Structured output schemas shared by controlled map extraction."""
 
-_RESULT_LIMITS = {"actor": 10, "person": 8, "event": 8}
+_RESULT_LIMITS = {"actor": 10, "person": 8, "map_person": 8, "event": 8}
+
+# Architecture V2 §5.5: what counts as a UM6P/OCP entity, and the states recorded.
+_UM6P_OCP = ("A documented connection to a UM6P/OCP entity: OCP Group or its units, UM6P "
+             "or its units (including UM6P United States), or INNOVX and its funds and "
+             "ventures. A name with only 'UM6' (not 'UM6P') does not count. Check only "
+             "the supplied sources.")
+_UM6P_OCP_FIELDS = {
+    "um6p_ocp_status": {"type": "string", "enum": ["found", "not found in what's been read"],
+                        "description": _UM6P_OCP},
+    "um6p_ocp_detail": {"type": "string",
+                        "description": "When found: which UM6P/OCP entity and the kind of connection."},
+    "um6p_ocp_source": {"type": "string",
+                        "description": "When found: the supplied source URL showing it."},
+}
 
 # -- Per-entity-type schemas for the submit tool --
 
@@ -82,20 +96,57 @@ _ACTOR_ITEM = {
     "additionalProperties": False,
 }
 
+# A person found by a people map: Architecture V2 §5.3 light pull, plus the
+# organization's location so regional requests can be judged. The person record
+# above stays as it is for the "Find relevant people" search on organization cards.
+_MAP_PERSON_ITEM = {
+    "type": "object",
+    "properties": {
+        "full_name":         {"type": "string", "description": "Person's full name."},
+        "title":             {"type": "string", "description": "Current role."},
+        "organization_name": {"type": "string", "description": "Current organization, at the most "
+                              "specific level documented (the department rather than the university "
+                              "when the sources name it)."},
+        "organization_location": {"type": "string", "description": "City, State of that organization, "
+                                  "if the sources show it."},
+        "affiliation_evidence_year": {"type": "string", "description": "Year (YYYY) of the newest supplied "
+                                      "source showing them at this organization. Use the current year when "
+                                      "it is the organization's own current staff or profile page. Leave "
+                                      "empty if the source is undated."},
+        "expertise":         {"type": "string", "description": "Their expertise relevant to the request, "
+                              "in a few words."},
+        "profile_url":       {"type": "string", "description": "A public professional profile, preferring "
+                              "the official organization page."},
+        "work_evidence":     {"type": "string", "description": "Brief evidence of relevant work (a project, "
+                              "publication, grant or role), supported by the cited sources."},
+        **_UM6P_OCP_FIELDS,
+        "email":             {"type": "string", "description": "Official public email, ONLY if the request "
+                              "explicitly asks for contact details."},
+    },
+    "required": ["full_name", "organization_name"],
+    "additionalProperties": False,
+}
+
+# Architecture V2 §5.4 light pull.
 _EVENT_ITEM = {
     "type": "object",
     "properties": {
         "name":                {"type": "string", "description": "Event name."},
         "event_type":          {"type": "string", "description": "e.g. conference, summit, workshop, demo day, hackathon."},
-        "description":         {"type": "string", "description": "What the event is about."},
+        "description":         {"type": "string", "description": "Short description. Include any notable "
+                                "publicly stated claim about its scale, reputation or standing (e.g. 'the "
+                                "leading AI conference'), quoted and backed by a cited source."},
+        "sector":              {"type": "string", "description": "Sector, e.g. water, energy, agriculture, mining."},
+        "thematic_focus":      {"type": "string", "description": "Topic or themes."},
         "location":            {"type": "string", "description": "City, State or venue."},
         "website":             {"type": "string", "description": "Event website URL."},
-        "next_date":           {"type": "string", "description": "Next occurrence date (YYYY-MM-DD if known)."},
-        "recurring_pattern":   {"type": "string", "description": "e.g. annual, quarterly, one-time."},
-        "sponsoring_orgs":     {"type": "string", "description": "Organizations behind the event."},
-        "thematic_focus":      {"type": "string", "description": "Key themes or topics."},
-        "expected_attendance": {"type": "string", "description": "Estimated number of attendees."},
-        "access_type":         {"type": "string", "description": "e.g. open, invite-only, paid."},
+        "next_date":           {"type": "string", "description": "Date of the edition found (YYYY-MM-DD if known)."},
+        "date_status":         {"type": "string", "enum": ["upcoming", "past", "date unconfirmed"],
+                                "description": "Whether that edition is upcoming, past, or its date is unconfirmed."},
+        "recurring_pattern":   {"type": "string", "description": "annual, recurring, or one-time."},
+        "organizer":           {"type": "string", "description": "Organization that runs the event."},
+        "match_explanation":   {"type": "string", "description": "Why it matches the request, in one or two sentences."},
+        **_UM6P_OCP_FIELDS,
     },
     "required": ["name"],
     "additionalProperties": False,
@@ -124,6 +175,7 @@ _SOURCES_FIELD = {
 _ENTITY_SCHEMAS = {
     "actor": _ACTOR_ITEM,
     "person": _PERSON_ITEM,
+    "map_person": _MAP_PERSON_ITEM,
     "event": _EVENT_ITEM,
 }
 
@@ -142,7 +194,8 @@ def submit_entities_tool(entity_type: str) -> dict:
             "properties": {
                 "entities": {
                     "type": "array",
-                    "description": f"Best matching {entity_type}s found, up to "
+                    "description": f"Best matching "
+                                   f"{'people' if entity_type == 'map_person' else entity_type + 's'} found, up to "
                                    f"{_RESULT_LIMITS[entity_type]} results.",
                     "items": _ENTITY_SCHEMAS[entity_type],
                     "maxItems": _RESULT_LIMITS[entity_type],

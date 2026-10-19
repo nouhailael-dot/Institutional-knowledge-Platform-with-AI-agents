@@ -28,7 +28,15 @@ def _sources(items: list[dict] | None) -> list[dict]:
 def _merge_person(existing: dict, new: dict) -> dict:
     merged = dict(existing)
     for field, value in new.items():
-        if not value or field in ("sources", "organizations", "organization_name"):
+        if field == "organization_name" and value:
+            # Kept from the first record: a people-map card shows it as text.
+            merged.setdefault(field, value)
+            continue
+        if field == "_selected":
+            # False is a judgement, not an empty value; selected by any record wins.
+            merged[field] = bool(merged.get(field)) or bool(value)
+            continue
+        if not value or field in ("sources", "organizations"):
             continue
         old = merged.get(field)
         if not old or (isinstance(old, str) and isinstance(value, str)

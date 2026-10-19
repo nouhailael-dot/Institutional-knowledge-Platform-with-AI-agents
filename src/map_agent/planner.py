@@ -5,6 +5,7 @@ uses one tracked model request without web tools.
 """
 
 import os
+from datetime import date
 
 import anthropic
 from dotenv import load_dotenv
@@ -24,6 +25,12 @@ _SUBMIT_PLAN = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "map_type": {
+                "type": "string",
+                "enum": ["organizations", "people", "events"],
+                "description": "What this map is about. Exactly one; every task must "
+                               "target this type.",
+            },
             "summary": {
                 "type": "string",
                 "description": "What you will look for, in PLAIN ENGLISH, addressed to "
@@ -83,10 +90,12 @@ _SUBMIT_PLAN = {
                 "additionalProperties": False,
             },
         },
-        "required": ["summary", "tasks", "requirements"],
+        "required": ["map_type", "summary", "tasks", "requirements"],
         "additionalProperties": False,
     },
 }
+
+MAP_TYPES = {"organizations": "actor", "people": "person", "events": "event"}
 
 _SYSTEM = """\
 You are a research planner for a US innovation-ecosystem mapping platform.
@@ -95,31 +104,32 @@ You are a research planner for a US innovation-ecosystem mapping platform.
 Given a user's description of a domain, venture, or program they want mapped, \
 produce a set of web-search tasks that will find relevant entities.
 
-Entity types you can target:
-- actor: organizations (startups, labs, accelerators, institutes, companies).
-- person: founders, researchers, directors, and other key people. Every person
-          must be tied to a named organization.
-- event: conferences, summits, workshops, demo days
-       ** OPT-IN ONLY — see rule 7. **
+A map is about exactly ONE type of result, set as `map_type`:
+- organizations (entity_type `actor`): universities, labs, companies, startups,
+  accelerators, agencies, foundations, associations.
+- people (entity_type `person`): experts, researchers, founders, directors —
+  each tied to their organization.
+- events (entity_type `event`): conferences, summits, workshops, demo days.
 
 Rules:
 1. Scope is US only — all queries should target the United States.
 2. Produce one to four distinct focused search tasks according to the topic's
-   breadth. Avoid near-duplicate queries. Research organizations first; the
-   backend separately looks for people in selected organizations if needed.
+   breadth. Avoid near-duplicate queries. Every task's entity_type must match
+   map_type; never mix types in one map.
 3. Each query should be a realistic web-search string (what you'd type into Google).
 4. If the user's input mentions specific sub-domains, geographies, or roles, \
 create targeted queries for those.
 5. If a document is provided, extract the key themes and programs to search for.
 6. Call submit_plan exactly once with your tasks.
-7. NEVER create an `event` task unless the user EXPLICITLY asked for events —
-   i.e. they used words like events, conferences, summits, workshops, symposia,
-   demo days, or "where does this community meet". A domain that merely happens
-   to have conferences is NOT a request for them. When in doubt, leave events
-   out; a search task is expensive and unasked-for events waste it.
-8. Do not create a separate `person` task. Use one actor task and collect only
-   key people encountered in the same bounded research. If the user explicitly
-   asks only for people, a person task is allowed instead.
+7. Choose map_type only when the user made it clear: organizations ("universities
+   working on…", "which companies…"), people ("experts on…", "researchers who…",
+   "who works on…"), or events ("conferences", "summits", "workshops", "events
+   in the next six months"). If it is NOT clear which one they want, or they
+   asked for more than one type, do not plan — ask which single type this map
+   should be about.
+8. People and event maps search for people or events directly. Organization
+   maps collect only key people already named in the same evidence; deeper people
+   research is a separate request made on an organization card.
 
 THE REQUEST IS A SPECIFICATION, NOT JUST A TOPIC. Separate the two:
 - The SUBJECT MATTER becomes your search queries.
@@ -134,7 +144,7 @@ THE REQUEST IS A SPECIFICATION, NOT JUST A TOPIC. Separate the two:
 - If the user stated no requirements, return empty arrays and 0. Do not invent
   constraints they did not ask for.
 
-ACTOR FOCUS — {focus_rule}
+ACTOR FOCUS (organization maps only) — {focus_rule}
 
 Word queries so they actually surface the requested kind of organization. A query \
 like "<domain> startups" returns only companies; to reach academia you must ask \
@@ -156,6 +166,10 @@ YOU ARE TALKING WITH THE USER. This is a conversation, not a form.
   in `summary`.
 - Do not drag it out. If the request is already clear, plan immediately without
   asking anything. If you have asked once and been answered, commit.
+- If you cannot tell whether they want a map of organizations, people or events,
+  or they asked for more than one, ask exactly that first: which one should this
+  map be about? Mention that each map covers one type and another type can be a
+  new map.
 
 NEVER show the user search keywords, query strings, or how the search works. Talk
 about the kinds of organizations, labs, and people you will look for. The queries
@@ -221,21 +235,25 @@ def _bounded_tasks(tasks: list[dict]) -> list[dict]:
 
 _FOUND_RULE = """
 
-THIS MAP HAS ALREADY BEEN BUILT. The organizations below were found and are on
-the user's screen right now.
+THIS MAP HAS ALREADY BEEN BUILT. It is a map of {map_type}. The results below
+were found and are on the user's screen right now.
 
 Most follow-ups are QUESTIONS ABOUT WHAT IS THERE — "which of these are in
 Texas", "why is this one included", "summarise the top three". Answer those from
 the list in prose. Do not plan new searching for a question you can already
 answer; searching again is slow and spends their budget.
 
-Plan only when they genuinely ask for organizations that are NOT in the list —
+Plan only when they genuinely ask for {map_type} that are NOT in the list —
 "also look for national labs", "what about New Mexico". Then write tasks for the
-NEW ground only; what is already found will be kept and merged, so repeating a
-previous search wastes the budget. Say what you are looking for, do not ask
-permission.
+NEW ground only, with map_type {map_type}; what is already found will be kept
+and merged, so repeating a previous search wastes the budget. Say what you are
+looking for, do not ask permission.
 
-ORGANIZATIONS ALREADY FOUND:
+If they ask for a different type of result than {map_type}, do not plan: reply
+that this map covers {map_type} and they can start a new map ("+ New map") for
+the other type.
+
+RESULTS ALREADY FOUND:
 {found}"""
 
 
@@ -271,11 +289,16 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
     submit_plan, that text is what the user should see. (An earlier version forced
     a tool call, so questions were silently swallowed and the map came back empty.)
     """
+    today = date.today()
     system = _SYSTEM.format(
-        focus_rule=_FOCUS_RULES.get(actor_focus, _FOCUS_RULES["research"])) + _CHAT_RULE
+        focus_rule=_FOCUS_RULES.get(actor_focus, _FOCUS_RULES["research"])) + _CHAT_RULE + (
+        f"\n\nTODAY'S DATE is {today.isoformat()}. Queries that name years must use "
+        f"{today.year} or {today.year + 1}, never earlier years, unless the user asked "
+        "about the past. For events, search for upcoming editions.")
     found = _found_summary(result)
+    built_type = (result or {}).get("map_type") or "organizations"
     if found:
-        system += _FOUND_RULE.format(found=found)
+        system += _FOUND_RULE.format(found=found, map_type=built_type)
     msgs = list(messages or [])
     if doc_text and msgs:
         msgs = [{"role": "user",
@@ -315,9 +338,19 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
     for block in resp.content:
         if block.type == "tool_use" and block.name == "submit_plan":
             reqs = block.input.get("requirements") or {}
-            return {"status": "plan",
+            # A built map keeps its type; a new one takes what the planner chose.
+            map_type = built_type if found else block.input.get("map_type")
+            if map_type not in MAP_TYPES:
+                map_type = "organizations"
+            tasks = [t for t in _bounded_tasks(block.input.get("tasks", []))
+                     if t["entity_type"] == MAP_TYPES[map_type]]
+            if not tasks:
+                return {"status": "reply", "message":
+                        f"This map covers {map_type}. To look for something else, "
+                        f"start a new map with “+ New map”."}
+            return {"status": "plan", "map_type": map_type,
                     "summary": block.input.get("summary", ""),
-                    "tasks": _bounded_tasks(block.input.get("tasks", [])),
+                    "tasks": tasks,
                     "requirements": {**_EMPTY_REQS, **reqs}}
         if block.type == "text" and block.text.strip():
             text.append(block.text.strip())

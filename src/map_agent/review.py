@@ -1,4 +1,4 @@
-"""Park and Reject on a map's organizations.
+"""Park and Reject on a map's organizations, people and events.
 
 A map keeps two copies of what it found: the result shown on the page and the
 saved research state that later follow-ups rebuild the result from. Both are
@@ -9,23 +9,28 @@ import time
 
 PARKED = "parked"
 ACTIONS = ("park", "unpark", "reject")
+KINDS = ("actor", "person", "event")
+
+
+def _name(entity: dict):
+    return entity.get("full_name") if entity.get("_entity_type") == "person" else entity.get("name")
 
 
 def entity_key(entity: dict) -> str:
-    name = entity.get("full_name") if entity.get("_entity_type") == "person" else entity.get("name")
-    return f"{entity.get('_entity_type')}|{str(name or '').strip().casefold()}"
+    return f"{entity.get('_entity_type')}|{str(_name(entity) or '').strip().casefold()}"
 
 
-def apply(result, workflow, name: str, website: str | None, action: str):
-    """Return (result, workflow) with the action applied to one organization."""
-    actors = ((result or {}).get("entities") or {}).get("actor", [])
-    matches = [a for a in actors
-               if a.get("name") == name and (a.get("website") or "") == (website or "")]
+def apply(result, workflow, name: str, website: str | None, action: str, kind: str = "actor"):
+    """Return (result, workflow) with the action applied to one record of `kind`."""
+    records = ((result or {}).get("entities") or {}).get(kind, [])
+    matches = [r for r in records
+               if _name({**r, "_entity_type": kind}) == name
+               and (r.get("website") or "") == (website or "")]
     if len(matches) != 1:
-        raise LookupError("That organization is no longer in this map.")
-    key = entity_key({**matches[0], "_entity_type": "actor"})
+        raise LookupError("That result is no longer in this map.")
+    key = entity_key({**matches[0], "_entity_type": kind})
     found = [e for e in (workflow or {}).get("found", [])
-             if e.get("_entity_type") == "actor" and entity_key(e) == key]
+             if e.get("_entity_type") == kind and entity_key(e) == key]
 
     if action == "park":
         for entity in matches + found:
@@ -35,9 +40,9 @@ def apply(result, workflow, name: str, website: str | None, action: str):
             entity.pop("_review", None)
             entity.pop("_parked_at", None)
     elif action == "reject":
-        result["entities"]["actor"] = [a for a in actors if a is not matches[0]]
+        result["entities"][kind] = [r for r in records if r is not matches[0]]
         if "counts" in result:
-            result["counts"]["actor"] = len(result["entities"]["actor"])
+            result["counts"][kind] = len(result["entities"][kind])
         if workflow is not None:
             workflow["found"] = [e for e in workflow.get("found", []) if not any(e is f for f in found)]
             # Kept only so this map's own follow-up searches don't add it back.

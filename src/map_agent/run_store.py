@@ -206,16 +206,17 @@ class RunStore:
                 db.execute("INSERT OR REPLACE INTO work_cache VALUES(?,'workflow',?)",
                            (run_id, json.dumps(workflow)))
 
-    def parked_actors(self):
-        """(run id, map description, organization) for every parked organization."""
+    def parked_records(self):
+        """(run id, map description, record) for every parked organization, person or event."""
         with self.connect() as db:
             rows = db.execute("SELECT id,description,result FROM runs WHERE result IS NOT NULL").fetchall()
         out = []
         for row in rows:
-            result = json.loads(row["result"]) or {}
-            for actor in (result.get("entities") or {}).get("actor", []):
-                if actor.get("_review") == PARKED:
-                    out.append((row["id"], row["description"], actor))
+            entities = (json.loads(row["result"]) or {}).get("entities") or {}
+            for kind in ("actor", "person", "event"):
+                for record in entities.get(kind) or []:
+                    if record.get("_review") == PARKED:
+                        out.append((row["id"], row["description"], {**record, "_entity_type": kind}))
         return out
 
     def reopen(self, run_id):

@@ -49,16 +49,21 @@ FIELDS = {
         ("actor_relationships", "Organization relationships"), ("category_details", "Category-specific information"),
     ],
     "person": [
-        ("full_name", "Name"), ("organizations", "Organizations"),
-        ("title", "Title"), ("bio", "Bio"),
+        ("full_name", "Name"), ("_review", "Review"), ("title", "Title"), ("organization_name", "Organization"),
+        ("organization_location", "Organization location"), ("affiliation_note", "Affiliation"),
+        ("organizations", "Organizations"),
+        ("expertise", "Expertise"), ("work_evidence", "Relevant work"),
+        ("profile_url", "Profile"), ("um6p_ocp_status", "UM6P/OCP connection"),
+        ("um6p_ocp_detail", "UM6P/OCP details"), ("bio", "Bio"),
         ("email", "Email"), ("linkedin_url", "LinkedIn"),
     ],
     "event": [
-        ("name", "Name"), ("event_type", "Type"), ("description", "Description"),
-        ("location", "Location"), ("next_date", "Next date"),
-        ("recurring_pattern", "Recurs"), ("sponsoring_orgs", "Sponsors"),
-        ("thematic_focus", "Themes"), ("expected_attendance", "Attendance"),
-        ("access_type", "Access"), ("website", "Website"),
+        ("name", "Name"), ("_review", "Review"), ("event_type", "Type"), ("description", "Description"),
+        ("sector", "Sector"), ("thematic_focus", "Topic"),
+        ("next_date", "Date"), ("date_status", "Date status"), ("location", "Location"),
+        ("organizer", "Organizer"), ("recurring_pattern", "Recurs"),
+        ("match_explanation", "Why it matched"), ("um6p_ocp_status", "UM6P/OCP involvement"),
+        ("um6p_ocp_detail", "UM6P/OCP details"), ("website", "Website"),
     ],
 }
 
