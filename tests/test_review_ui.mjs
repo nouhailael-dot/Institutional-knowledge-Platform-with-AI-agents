@@ -865,7 +865,7 @@ test('a box the Light Pull read for says which pages it checked', async () => {
   };
   const rows = Object.fromEntries(lightFactRows(candidate).map((row) => [row.key, row]));
   assert.equal(rows.funding_signal.value, '$2 million grant.');
-  assert.equal(missingWithPages(rows.um6p_ocp_connection), 'Not Stated on the 3 Pages Read');
+  assert.equal(missingWithPages(rows.um6p_ocp_connection), 'Not Found');
   assert.deepEqual(rows.um6p_ocp_connection.pagesRead, pages);
   // A box with no fact at all, while others were read, is still plain "Not Found".
   assert.equal(missingWithPages(rows.recent_activity), rows.recent_activity.state);

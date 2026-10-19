@@ -15,7 +15,7 @@
 
 import {
   CATEGORY_LIGHT_ROWS, COMMON_LIGHT_ROWS, MISSING, NON_US_REGION, NOT_APPLICABLE,
-  NO_PARENT_TOOLTIP, PARENT_LINK_TYPES, RETIRED_CATCH_ALL, THEMATIC_SECTORS,
+  NO_PARENT_TOOLTIP, RETIRED_CATCH_ALL, THEMATIC_SECTORS,
   categoryLabel, categoryOptions, countryOptions, isParentLink, isValidPair,
   linkTypeLabel, normalizeCountry, regionForState, sectorLabel, sectorOptions, setSectors,
   showsRankings, showsTrl, stateOptions, typeLabel, typeOptions,
@@ -652,11 +652,9 @@ export function lightFactRows(candidate) {
     });
 }
 
-/** "Not Stated on the 3 Pages Read" - the missing state, with what was checked. */
+/** The missing state, said plainly ("Not Found"); the pages checked are listed under it. */
 export function missingWithPages(row) {
-  const count = (row?.pagesRead || []).length;
-  if (row?.state !== MISSING.notFound || !count) return row?.state || null;
-  return `Not Stated on the ${count === 1 ? "Page" : `${count} Pages`} Read`;
+  return row?.state || null;
 }
 
 // Common Light Pull keys that are already shown as an editable control in the
@@ -1509,7 +1507,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               : html`<p class="review-complete" title=${parent.tooltip}>
                   <strong>${parent.missing}</strong> — ${parent.tooltip}
                 </p>`}
-            <p class="muted">Parent link types offered: ${PARENT_LINK_TYPES.map(o => o.label).join(" · ")}</p>
             <h4>${FIELDS.otherRelationships} <span class="review-chip">${BADGES.readOnly}</span></h4>
             ${!relationships.length && html`<p class="muted">${MISSING.notFound}</p>`}
             <ul class="review-evidence">
@@ -1756,8 +1753,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <label class=${"review-field " + (pending && !reviewer.trim() ? "invalid" : "")}>
                 <span>${FIELDS.reviewer}</span>
                 <input value=${reviewer} disabled=${!pending || busy} required
-                  onInput=${e => setReviewer(e.target.value)}/>
-                <small class="review-hint">${SENTENCES.reviewerRequired}</small></label>
+                  onInput=${e => setReviewer(e.target.value)}/></label>
               <label class="review-field"><span>${FIELDS.notes}</span>
                 <input value=${notes} disabled=${!pending || busy}
                   onInput=${e => setNotes(e.target.value)}/></label>
