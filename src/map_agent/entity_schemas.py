@@ -102,7 +102,8 @@ _ACTOR_ITEM = {
 _MAP_PERSON_ITEM = {
     "type": "object",
     "properties": {
-        "full_name":         {"type": "string", "description": "Person's full name."},
+        "full_name":         {"type": "string", "description": "Given name and surname, spelled out as the "
+                              "sources give them. Leave the person out if the sources do not give both."},
         "title":             {"type": "string", "description": "Current role."},
         "organization_name": {"type": "string", "description": "Current organization, at the most "
                               "specific level documented (the department rather than the university "
@@ -115,8 +116,9 @@ _MAP_PERSON_ITEM = {
                                       "empty if the source is undated."},
         "expertise":         {"type": "string", "description": "Their expertise relevant to the request, "
                               "in a few words."},
-        "profile_url":       {"type": "string", "description": "A public professional profile, preferring "
-                              "the official organization page."},
+        "profile_url":       {"type": "string", "description": "A page about this person — a staff, faculty or "
+                              "academic profile, preferring the official organization page. Leave empty "
+                              "if none is among the sources; a publication or news story is not a profile."},
         "work_evidence":     {"type": "string", "description": "Brief evidence of relevant work (a project, "
                               "publication, grant or role), supported by the cited sources."},
         **_UM6P_OCP_FIELDS,

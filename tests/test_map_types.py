@@ -57,7 +57,14 @@ class PlannerTests(unittest.TestCase):
 
     def test_asking_which_type_is_a_reply_not_a_plan(self):
         self.assertEqual(self.chat(PLAN_TEXT)["status"], "reply")
-        self.assertIn("ask which single type", planner._SYSTEM)
+        self.assertIn("Ask which single type the map should be about ONLY when",
+                      " ".join(planner._SYSTEM.split()))
+
+    def test_named_types_are_planned_without_asking(self):
+        rule = " ".join(planner._SYSTEM.split())
+        self.assertIn('"Find experts on X in Y" is a people map; plan it immediately.', rule)
+        for word in ("experts", "researchers", "conferences", "workshops", "universities"):
+            self.assertIn(word, rule)
 
 
 class DateAndEvidenceTests(unittest.TestCase):
@@ -86,6 +93,30 @@ class DateAndEvidenceTests(unittest.TestCase):
         event = {"_entity_type": "event", "name": "B", "date_status": "date unconfirmed"}
         self.assertIn("unconfirmed, may have changed", select._render(person, 1))
         self.assertIn("date unconfirmed", select._render(event, 2))
+
+
+class PeopleQualityTests(unittest.TestCase):
+    def test_only_spelled_out_full_names_are_kept(self):
+        from src.map_agent.research import _full_name_ok
+        for name in ("Haijun Liang", "David W. DePaoli", "Sicheng Li", "Timothy Townsend"):
+            self.assertTrue(_full_name_ok(name), name)
+        for name in ("Zhang (given name not specified in source)", "Dr. Zhang", "H. Liang", "Townsend"):
+            self.assertFalse(_full_name_ok(name), name)
+
+    def test_publications_and_news_are_not_profiles(self):
+        from src.map_agent.research import _profile_ok
+        not_profiles = {
+            "Haijun Liang": "https://www.ornl.gov/publications/rare-earths-recovery-and-gypsum-upgrade-from-florida-phosphogypsum/",
+            "Timothy Townsend": "https://techxplore.com/news/2023-07-era-florida-phosphates-rare-earth.html",
+            "Sicheng Li": "https://pubs.acs.org/doi/10.1021/acs.iecr.1c03576"}
+        for name, url in not_profiles.items():
+            self.assertFalse(_profile_ok(url, name), url)
+        profiles = {
+            "Timothy Townsend": "https://www.essie.ufl.edu/people/name/timothy-townsend/",
+            "Haijun Liang": "https://floridapoly.edu/faculty/liang",
+            "Patrick Zhang": "https://orcid.org/0000-0002-1825-0097"}
+        for name, url in profiles.items():
+            self.assertTrue(_profile_ok(url, name), url)
 
 
 class EventFieldTests(unittest.TestCase):
@@ -141,7 +172,9 @@ PEOPLE = [{"full_name": "Sam Example", "title": "Professor", "organization_name"
            "organization_location": "Gainesville, FL", "expertise": "phosphogypsum",
            "sources": [{"url": URL, "supports": "Role"}]},
           {"full_name": "Ana Other", "title": "Director", "organization_name": "Other Lab",
-           "organization_location": "Boston, MA", "sources": [{"url": URL, "supports": "Role"}]}]
+           "organization_location": "Boston, MA", "sources": [{"url": URL, "supports": "Role"}]},
+          {"full_name": "Zhang (given name not specified in source)", "organization_name": "University of Florida",
+           "sources": [{"url": URL, "supports": "Role"}]}]
 
 
 class PeopleMapTests(unittest.TestCase):
@@ -183,6 +216,8 @@ class PeopleMapTests(unittest.TestCase):
         self.assertFalse(people["Ana Other"]["_selected"])
         self.assertEqual(people["Sam Example"]["organization_name"], "Dept. of Chemistry")
         self.assertEqual(result["entities"]["actor"], [])
+        self.assertEqual(len(people), 2)
+        self.assertTrue(any("did not give their full name" in g for g in result["coverage_gaps"]))
         tool = self.extraction["tools"][0]["input_schema"]["properties"]["entities"]["items"]
         self.assertIn("expertise", tool["properties"])
         self.assertIn("map of PEOPLE", self.extraction["system"])

@@ -92,6 +92,37 @@ def _date_status(event, today=None):
     event["date_status"] = "upcoming" if day >= (today or date.today()) else "past"
 
 
+_TITLES = {"dr", "prof", "professor", "mr", "mrs", "ms", "mx", "sir"}
+
+
+def _full_name_ok(name):
+    """A given name and a surname, each spelled out — not "Zhang (given name not
+    specified)", "Dr. Zhang" or "H. Liang"."""
+    if "(" in name or ")" in name:
+        return False
+    words = [w.strip(".,").casefold() for w in name.split()]
+    spelled = [w for w in words if w not in _TITLES and len(w) >= 2 and any(c.isalpha() for c in w)]
+    return len(spelled) >= 2
+
+
+# Pages that are about one person: staff and faculty pages, academic profiles.
+_PROFILE_HINTS = ("/people", "/person", "/faculty", "/staff", "/profile", "/directory",
+                  "/team", "/bio", "/expert", "/researcher", "/member", "/our-people",
+                  "linkedin.com/in/", "orcid.org/", "scholar.google.")
+
+
+def _profile_ok(url, name):
+    """Keep a profile link only when it looks like a page about this person:
+    a profile-style path, or their surname in the address. Publications and news
+    stories mention people but are not profiles."""
+    try:
+        url = canonical_url(url).casefold()
+    except (ValueError, TypeError):
+        return False
+    surname = (name.split() or [""])[-1].strip(".,").casefold()
+    return any(hint in url for hint in _PROFILE_HINTS) or (len(surname) >= 3 and surname in url)
+
+
 AFFILIATION_MAX_AGE = 3   # years; older evidence no longer shows where someone works now
 
 
@@ -185,7 +216,7 @@ def extract(run, request, task, evidence, client=None, target=None):
                 raise ExtractionError("Extraction reached its output limit before completing the person records; raw response saved without retry." if target else
                                       "Extraction reached its output limit before completing the records; raw response saved without retry.") from None
             raise
-        rejected = 0
+        rejected = unnamed = 0
         for original in rows[:10 if et == "actor" else 8]:
             if not isinstance(original, dict):
                 rejected += 1
@@ -196,10 +227,15 @@ def extract(run, request, task, evidence, client=None, target=None):
                 rejected += 1
                 continue
             entity["_entity_type"] = et
+            if people_map and not _full_name_ok(name):
+                unnamed += 1
+                continue
             if people_map or et == "event":
                 _um6p_ocp_check(entity, available)
             if people_map:
                 _affiliation_note(entity)
+                if entity.get("profile_url") and not _profile_ok(entity["profile_url"], name):
+                    entity.pop("profile_url")
             if et == "event":
                 _date_status(entity)
             if et == "person" and target:
@@ -220,6 +256,8 @@ def extract(run, request, task, evidence, client=None, target=None):
             output.append(entity)
         if rejected:
             gap += f" {rejected} records lacked a supplied source or an explicit matching affiliation."
+        if unnamed:
+            gap += f" {unnamed} people were left out because the sources did not give their full name."
         return output, gap.strip()
     raise ExtractionError("No structured extraction returned; raw response saved without retry.")
 
