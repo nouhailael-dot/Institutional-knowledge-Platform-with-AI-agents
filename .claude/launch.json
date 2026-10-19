@@ -2,10 +2,53 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "um6p-api",
-      "runtimeExecutable": "/Users/ghus/Desktop/um6p-rag/.venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "backend.app:app", "--port", "8000", "--reload"],
-      "port": 8000
+      "name": "ghus-review",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "backend.app:app",
+        "--port",
+        "8020"
+      ],
+      "port": 8020
+    },
+    {
+      "name": "ghus-review-demo",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "scripts.run_demo_server",
+        "--port",
+        "8030"
+      ],
+      "port": 8030
+    },
+    {
+      "name": "ghus-hub-demo",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "scripts.run_demo_server",
+        "--port",
+        "8031",
+        "--database",
+        "ghus_v2_hubdemo_test"
+      ],
+      "port": 8031
+    },
+    {
+      "name": "ghus-actor-updates-test",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "scripts.run_demo_server",
+        "--port",
+        "8032",
+        "--database",
+        "ghus_v2_actor_updates_test"
+      ],
+      "port": 8032
     }
   ]
 }

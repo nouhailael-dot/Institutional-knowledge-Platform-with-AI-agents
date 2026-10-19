@@ -88,10 +88,20 @@ def load_actors() -> list[dict]:
     sql = f"""
         SELECT a.actor_id, a.name,
                coalesce(cd.display_name, a.actor_category) AS category,
-               a.status, a.city, coalesce(rs.state_name, a.state_code) AS state,
+               NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
+               -- Migration 500 drops verification_status, estimated_trl and
+               -- renames location_city -> city, state -> state_code, so each is
+               -- read through to_jsonb: legacy name first, V2 name as fallback.
+               COALESCE(NULLIF(to_jsonb(a)->>'verification_status', ''),
+                        NULLIF(to_jsonb(a)->>'status', '')) AS verification_status,
+               COALESCE(NULLIF(to_jsonb(a)->>'location_city', ''),
+                        NULLIF(to_jsonb(a)->>'city', '')) AS location_city,
+               coalesce(rs.state_name,
+                        NULLIF(to_jsonb(a)->>'state', ''),
+                        NULLIF(to_jsonb(a)->>'state_code', '')) AS state,
                a.country,
-               CASE WHEN a.estimated_trl::text ~ '^[0-9]+$'
-                    THEN a.estimated_trl::text::smallint END AS trl,
+               CASE WHEN to_jsonb(a)->>'estimated_trl' ~ '^[0-9]+$'
+                    THEN (to_jsonb(a)->>'estimated_trl')::smallint END AS trl,
                a.website, a.description,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,
@@ -115,10 +125,12 @@ def load_actors() -> list[dict]:
             out.append({
                 "id": str(r["actor_id"]),
                 "name": r["name"],
-                # Keys kept from the pre-V2 shape so the API and page are unchanged.
+                # Category display name under the pre-V2 key, so Browse shows
+                # guide names rather than codes.
                 "actor_type": r["category"],
-                "verification_status": r["status"],
-                "city": r["city"],
+                "category_type": r["category_type"],
+                "verification_status": r["verification_status"],
+                "city": r["location_city"],
                 "state": r["state"],
                 "country_raw": r["country"],
                 "country": normalize_country(r["country"]),
@@ -208,7 +220,10 @@ def filter_actors(actors: list[dict], *, hub: str | None = None,
     if hub:
         result = [a for a in result if hub in a["hubs"]]
     if types:
-        result = [a for a in result if a["actor_type"] in types]
+        result = [
+            a for a in result
+            if (a.get("actor_category") or a.get("actor_type")) in types
+        ]
     if country:
         result = [a for a in result if a["country"] == country]
     if state:
@@ -262,8 +277,9 @@ def actor_filter_options(actors: list[dict]) -> dict:
     countries: set[str] = set()
     states: set[str] = set()
     for a in actors:
-        if a["actor_type"]:
-            type_counts[a["actor_type"]] = type_counts.get(a["actor_type"], 0) + 1
+        category = a.get("actor_category") or a.get("actor_type")
+        if category:
+            type_counts[category] = type_counts.get(category, 0) + 1
         hubs.update(a["hubs"])
         if a["country"]:
             countries.add(a["country"])

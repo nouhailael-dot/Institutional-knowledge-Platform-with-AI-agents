@@ -40,7 +40,14 @@ def assemble_actors() -> list[dict]:
         SELECT
             a.actor_id,
             a.name,
-            coalesce(cd.display_name, a.actor_category) AS category,
+            -- Guide display name first; the raw code, then the legacy alias, as fallbacks.
+            COALESCE(
+                cd.display_name,
+                NULLIF(to_jsonb(a)->>'actor_category', ''),
+                NULLIF(to_jsonb(a)->>'actor_type', '')
+            )
+                AS actor_category,
+            NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
             a.alt_names,
             a.description,
             a.primary_technical_focus,
@@ -85,7 +92,8 @@ def assemble_actors() -> list[dict]:
                 _section("Name", r["name"])
                 # Abbreviations ("NMSU") are what keyword search needs most.
                 + _section("Other names", alt_names)
-                + _section("Type", r["category"])
+                + _section("Actor category", r["actor_category"])
+                + _section("Category type", r["category_type"])
                 + _section("Location", location)
                 + _section("Description", r["description"])
                 + _section("Primary technical focus", r["primary_technical_focus"])

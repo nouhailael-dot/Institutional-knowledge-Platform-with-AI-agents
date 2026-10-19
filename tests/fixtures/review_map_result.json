@@ -1,0 +1,88 @@
+{
+  "entities": {
+    "actor": [
+      {
+        "_entity_type": "actor",
+        "name": "Example Lab",
+        "actor_type": "research institute",
+        "description": "Battery research",
+        "website": "https://example.org",
+        "location_city": "Boston",
+        "state": "Massachusetts",
+        "country": "United States",
+        "people": [
+          {
+            "_entity_type": "person",
+            "full_name": "Sam Example",
+            "organization_name": "Example Lab",
+            "title": "Director",
+            "sources": [
+              {
+                "url": "https://example.org/profile",
+                "supports": "Identity and current work",
+                "evidence_type": "page"
+              }
+            ],
+            "_judge": {
+              "relevance_score": 0.92,
+              "reason": "Current leadership"
+            }
+          }
+        ],
+        "sources": [
+          {
+            "url": "https://example.org/profile",
+            "supports": "Identity and current work",
+            "evidence_type": "page"
+          }
+        ],
+        "_selected": true,
+        "_judge": {
+          "relevance_score": 0.95,
+          "reason": "Direct match"
+        },
+        "uncertainties": ["Funding amount not confirmed"]
+      }
+    ],
+    "person": [
+      {
+        "_entity_type": "person",
+        "full_name": "Sam Example",
+        "organization_name": "Example Lab",
+        "title": "Director",
+        "sources": [
+          {
+            "url": "https://example.org/profile",
+            "supports": "Identity and current work",
+            "evidence_type": "page"
+          }
+        ],
+        "_judge": {
+          "relevance_score": 0.92,
+          "reason": "Current leadership"
+        }
+      }
+    ],
+    "event": [
+      {
+        "_entity_type": "event",
+        "name": "Battery Summit",
+        "event_type": "conference",
+        "website": "https://example.org/summit",
+        "next_date": "2027-05-01",
+        "sources": [
+          {
+            "url": "https://example.org/profile",
+            "supports": "Identity and current work",
+            "evidence_type": "page"
+          }
+        ],
+        "missing_fields": ["expected_attendance"]
+      }
+    ]
+  },
+  "workflow": "controlled-v1",
+  "selection_note": "Ranked against the approved request.",
+  "coverage_gaps": ["One page unavailable"],
+  "partial": false
+}
