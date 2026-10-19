@@ -1331,6 +1331,43 @@ class ReviewStore:
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This candidate has already been decided.")
         metadata = candidate["agent_metadata"]
+        pipeline = metadata.get("pipeline") if isinstance(metadata.get("pipeline"), dict) else {}
+        from_item = str(metadata.get("source_table") or "") == "review_item"
+        review_kind = str(metadata.get("review_kind") or "")
+        if from_item and review_kind == "relationship_review":
+            # A link between two actors: confirm it (with its source) or not.
+            # The edge is written by the backend's approved writer, never here.
+            if decision_kind not in {"new", "reject"}:
+                raise ReviewValidationError(
+                    "Confirm the link or say it is not one; or leave it in the queue.")
+            source_url = str(pipeline.get("source_url") or "").strip()
+            if decision_kind == "new" and not source_url:
+                raise ReviewValidationError(
+                    "This link has no source page on record, so it cannot be confirmed here. "
+                    "Say it is not a link, or leave it in the queue.")
+            return {
+                "decision_kind": "resolve_relationship",
+                "review_item_id": str(metadata.get("review_item_id") or ""),
+                "approve": decision_kind == "new",
+                "source_url": source_url or None,
+                "relationship_type": pipeline.get("proposed_relationship_type"),
+                "reviewer": reviewer,
+                "notes": notes,
+                "idempotency_key": idempotency_key,
+            }
+        if from_item and review_kind == "hub_assignment" and pipeline.get("proposal") == "membership":
+            # A hub an unassigned actor now fits: add it, or keep it out.
+            if decision_kind not in {"new", "reject"}:
+                raise ReviewValidationError(
+                    "Add it to the hub or keep it out; or leave it in the queue.")
+            return {
+                "decision_kind": "resolve_hub_membership",
+                "review_item_id": str(metadata.get("review_item_id") or ""),
+                "accept": decision_kind == "new",
+                "reviewer": reviewer,
+                "notes": notes,
+                "idempotency_key": idempotency_key,
+            }
         if (str(metadata.get("source_table") or "") == "review_item"
                 and str(metadata.get("review_kind") or "") in FACT_REVIEW_KINDS):
             # Two values for one box: the one on the map and one an update

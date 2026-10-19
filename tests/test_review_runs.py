@@ -636,3 +636,62 @@ def test_a_fact_review_is_a_choice_between_two_values(store, kind):
     with pytest.raises(ReviewValidationError):
         store.admission_request("fact-1", decision_kind="same_existing", reviewer="Reviewer",
                                 idempotency_key="k-3", target_id="x", confirmed=True)
+
+
+def _insert_item(store: ReviewStore, candidate_id: str, kind: str, pipeline: dict) -> None:
+    import json as _json
+
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO review_candidate"
+            "(candidate_id,source_run_id,source_description,source_index,entity_type,"
+            " display_name,status,created_at,original_payload,reviewed_payload,evidence,"
+            " agent_metadata,duplicate_state)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (candidate_id, "v2-review:t", f"Architecture V2 {kind} review", candidate_id,
+             "actor", "CPower", "pending_review", CUTOFF_TS + 10, "{}",
+             _json.dumps({"name": "CPower"}), "[]",
+             _json.dumps({"source_table": "review_item", "review_kind": kind,
+                          "review_item_id": "11111111-2222-3333-4444-555555555555",
+                          "pipeline": pipeline}), "new"),
+        )
+
+
+def test_a_proposed_link_is_confirmed_with_its_source_or_refused(store):
+    _insert_item(store, "link-1", "relationship_review", {
+        "proposed_relationship_type": "funded_by", "source_url": "https://co.example/news"})
+    confirm = store.admission_request("link-1", decision_kind="new", reviewer="R",
+                                      idempotency_key="k-1", confirmed=True)
+    assert confirm == {
+        "decision_kind": "resolve_relationship", "approve": True,
+        "review_item_id": "11111111-2222-3333-4444-555555555555",
+        "source_url": "https://co.example/news", "relationship_type": "funded_by",
+        "reviewer": "R", "notes": None, "idempotency_key": "k-1"}
+    refuse = store.admission_request("link-1", decision_kind="reject", reviewer="R",
+                                     idempotency_key="k-2", confirmed=True)
+    assert refuse["approve"] is False
+
+
+def test_a_link_with_no_source_can_be_refused_but_never_confirmed(store):
+    _insert_item(store, "link-2", "relationship_review", {"proposed_relationship_type": "unit_of"})
+    with pytest.raises(ReviewValidationError, match="no source page"):
+        store.admission_request("link-2", decision_kind="new", reviewer="R",
+                                idempotency_key="k-1", confirmed=True)
+    assert store.admission_request("link-2", decision_kind="reject", reviewer="R",
+                                   idempotency_key="k-2", confirmed=True)["approve"] is False
+
+
+def test_a_hub_proposal_is_added_or_kept_out_and_legacy_hub_items_are_untouched(store):
+    _insert_item(store, "hub-1", "hub_assignment", {"proposal": "membership",
+                                                    "proposed_hub_id": "h1"})
+    add = store.admission_request("hub-1", decision_kind="new", reviewer="R",
+                                  idempotency_key="k-1", confirmed=True)
+    assert (add["decision_kind"], add["accept"]) == ("resolve_hub_membership", True)
+    with pytest.raises(ReviewValidationError):
+        store.admission_request("hub-1", decision_kind="same_existing", reviewer="R",
+                                idempotency_key="k-2", target_id="x", confirmed=True)
+    # A legacy hub item (not a membership proposal) is not given this decision.
+    _insert_item(store, "hub-2", "hub_assignment", {"issue": "needs_review_sector"})
+    with pytest.raises(ReviewValidationError):
+        store.admission_request("hub-2", decision_kind="new", reviewer="R",
+                                idempotency_key="k-3", confirmed=True)

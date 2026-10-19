@@ -916,3 +916,32 @@ test('a fact conflict is a choice between the value on the map and the one found
     ['Found by the update', '$2M grant.', '2026-10-18', 'Agent']]);
   assert.ok(labels.fact_conflict && labels.pending_update);
 });
+
+test('a proposed link and a hub proposal are each a choice between two answers', async () => {
+  const {twoWayKind, twoWaySummary, decisionOptions: options, canSubmitReview: canSubmit} =
+    await import('../frontend/review.js');
+  const link = {status: 'pending_review', display_name: 'CPower', agent_metadata: {
+    source_table: 'review_item', review_kind: 'relationship_review', entity_id: 'a1',
+    candidate_name: 'NRG Energy', pipeline: {subject_actor_id: 'a1', object_actor_id: 'a2',
+      proposed_relationship_type: 'unit_of', source_url: 'https://cpower.example/about'}}};
+  const hub = {status: 'pending_review', display_name: 'CPower', agent_metadata: {
+    source_table: 'review_item', review_kind: 'hub_assignment', proposed_hub_name: 'Northeast Energy Hub',
+    pipeline: {proposal: 'membership', deterministic_evidence: {sector_code: 'ENERGY',
+      distance_miles: 12.5, radius_miles: 200}}}};
+  const legacyHub = {agent_metadata: {source_table: 'review_item', review_kind: 'hub_assignment',
+    pipeline: {issue: 'needs_review_sector'}}};
+  assert.deepEqual([twoWayKind(link), twoWayKind(hub), twoWayKind(legacyHub)],
+    ['relationship', 'hub', null]);
+  assert.deepEqual(options('actor', link).slice(0, 2).map(o => o.label), ['Confirm the link', 'Not a link']);
+  assert.deepEqual(options('actor', hub).slice(0, 2).map(o => o.label), ['Add to the hub', 'Keep it out']);
+  assert.equal(twoWaySummary(link).question, 'CPower is a unit of NRG Energy?');
+  assert.equal(twoWaySummary(link).source_url, 'https://cpower.example/about');
+  // The other side is the subject when the proposal says so.
+  const reversed = {...link, agent_metadata: {...link.agent_metadata,
+    pipeline: {...link.agent_metadata.pipeline, subject_actor_id: 'a2'}}};
+  assert.equal(twoWaySummary(reversed).question, 'NRG Energy is a unit of CPower?');
+  assert.equal(twoWaySummary(hub).question, 'Add CPower to Northeast Energy Hub?');
+  assert.match(twoWaySummary(hub).detail, /12.5 miles from the centre/);
+  // Refusing needs no rejection reason.
+  assert.equal(canSubmit({candidate: link, reviewer: 'R', decisionKind: 'reject', admissionConfigured: true}), true);
+});

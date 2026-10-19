@@ -602,6 +602,12 @@ class PostgresReviewSource:
             "   'set_by',to_jsonb(nf)->>'creator_class','source_url',ns.url)"
             "   FROM actor_fact nf LEFT JOIN source ns ON ns.source_id=nf.source_id"
             "   WHERE nf.actor_fact_id::text=ri.payload->>'new_fact_id')) END AS fact_change, "
+            # The other side of a proposed link, and the hub a membership is
+            # proposed for, by name: a reviewer decides between names, not ids.
+            "(SELECT ca.name FROM actor ca WHERE ca.actor_id=ri.candidate_entity_id) "
+            " AS candidate_name, "
+            "(SELECT ph.name FROM hub ph WHERE ph.hub_id::text=ri.payload->>'proposed_hub_id') "
+            " AS proposed_hub_name, "
             "COALESCE(f.facts,'[]'::jsonb) AS facts, " + history_field + ", " + edge_field +
             "FROM review_item ri "
             "JOIN actor a ON ri.entity_type='actor' AND a.actor_id=ri.entity_id "
@@ -1251,6 +1257,8 @@ class PostgresReviewSource:
                 "fact_history": fact_history,
                 "relationships": relationships,
                 "fact_change": _json_object(row.get("fact_change")) or None,
+                "candidate_name": row.get("candidate_name"),
+                "proposed_hub_name": row.get("proposed_hub_name"),
             },
             "duplicate_state": (
                 "possible_duplicate" if row.get("review_kind") == "possible_duplicate"
