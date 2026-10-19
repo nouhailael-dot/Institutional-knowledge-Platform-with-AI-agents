@@ -471,8 +471,8 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261019b"/>
-<link rel="stylesheet" href="/discovery.css?v=20261019b"/>
+<link rel="stylesheet" href="/review.css?v=20261019c"/>
+<link rel="stylesheet" href="/discovery.css?v=20261019c"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -489,8 +489,8 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261019b";
-import {createDiscoveryPage} from "./discovery.js?v=20261019b";
+import {createReviewPage} from "./review.js?v=20261019c";
+import {createDiscoveryPage} from "./discovery.js?v=20261019c";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});

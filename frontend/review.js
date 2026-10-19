@@ -19,7 +19,7 @@ import {
   categoryLabel, categoryOptions, countryOptions, isParentLink, isValidPair,
   linkTypeLabel, normalizeCountry, regionForState, sectorLabel, sectorOptions, setSectors,
   showsRankings, showsTrl, stateOptions, typeLabel, typeOptions,
-} from "./taxonomy.js?v=20261015";
+} from "./taxonomy.js?v=20261019";
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
