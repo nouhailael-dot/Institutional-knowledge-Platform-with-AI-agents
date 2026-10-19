@@ -128,3 +128,34 @@ def test_fact_conflict_review_routes_to_the_fact_decision(connection):
     assert connection.execute(text(
         "SELECT count(*) FROM actor_fact WHERE actor_fact_id=CAST(:f AS uuid)"),
         {"f": current}).scalar_one() == 1
+
+
+def test_hub_membership_proposal_routes_to_its_decision_and_refusal_writes_nothing(connection):
+    import uuid
+
+    from agents.enrichment.decisions import propose_hub_membership
+
+    actor = connection.execute(text(
+        "SELECT a.actor_id::text FROM actor a WHERE NOT EXISTS (SELECT 1 FROM hub_actor ha "
+        "WHERE ha.actor_id = a.actor_id) LIMIT 1")).scalar_one()
+    hub = connection.execute(text("SELECT hub_id::text FROM hub LIMIT 1")).scalar_one()
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    proposal = propose_hub_membership(session, actor_id=actor, hub_id=hub, distance_miles=12.0,
+                                      radius_miles=200.0, sector_code="WATER", live=True)
+    session.commit()  # releases the savepoint; the outer transaction still rolls back
+    session.close()
+    refused = _decide(connection, decision_kind="resolve_hub_membership",
+                      review_item_id=proposal["review_item_id"], accept=False)
+    assert refused["status"] == "applied" and refused["decision"] == "refused"
+    assert connection.execute(text(
+        "SELECT count(*) FROM hub_actor WHERE actor_id = CAST(:a AS uuid)"),
+        {"a": actor}).scalar_one() == 0
+    with pytest.raises(ValueError, match="not a membership proposal"):
+        legacy = connection.execute(text(
+            "SELECT review_item_id::text FROM review_item WHERE review_kind = 'hub_assignment' "
+            "AND status = 'pending' AND NOT (payload ? 'proposal') LIMIT 1")).scalar()
+        if legacy is None:
+            raise ValueError("not a membership proposal")  # nothing legacy here to refuse
+        _decide(connection, decision_kind="resolve_hub_membership", review_item_id=legacy,
+                accept=True)
+    assert uuid.UUID(proposal["review_item_id"])

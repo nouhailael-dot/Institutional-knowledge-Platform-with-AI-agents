@@ -527,6 +527,8 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
         category_fields=CATEGORY_LIGHT_FIELDS.get(actor["actor_category"] or "", ()),
         today=today, limits=limits)
     deep = deep_eligibility(session, actor_id=actor["actor_id"], topic=topic)
+    from agents.collection import hub_reassessment
+
     plan = {
         **base, "ok": True,
         "topic": {"code": topic["code"], "name": topic["name"], "source": topic.get("source")},
@@ -539,6 +541,7 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
         "pages": "Up to 3 pages of the actor's own website (home, About, one topic page); "
                  "no web search.",
         "can_check": bool(to_read) and depth == "light",
+        "hubs": hub_reassessment.assess(session, actor["actor_id"]),
     }
     if depth == "deep":
         plan["can_check"] = False
@@ -763,6 +766,17 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
                          f"compared or written. {read.error or ''}".strip()}
     findings = [classify(f, before.get(f), read.evidence.get(f), read.rejected.get(f),
                          read_at=read_at, topic_name=topic["name"]) for f in plan["fields"]]
+    from agents.collection import related_actors
+
+    related, related_error = [], None
+    client = getattr(reader, "client", None)
+    if client is not None and related_actors.relation_values(findings):
+        try:
+            named = related_actors.extract(client, actor_name=actor["name"], findings=findings)
+            related = related_actors.route(session, actor, named)
+        except Exception as exc:  # noqa: BLE001 - the facts stand without it; say so
+            related_error = f"Related organisations were not listed: {type(exc).__name__}"
+    spent = round(float(meter.spent_usd), 4)
     # Boxes in the schema with nothing recorded and not read now.
     schema = schema_fields(actor["actor_category"])
     others = current_values(session, actor["actor_id"], topic["topic_id"],
@@ -778,6 +792,7 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
         "fields": plan["fields"], "pages_read": read.pages, "cost_usd": spent, "cap_usd": cap,
         "model": model, "summary": plan["summary"], "findings": findings,
         "applied_run_id": None, "written_fields": [],
+        "related": related, "hubs": plan["hubs"], "proposals_written": False,
     }
     Path(runs_dir).mkdir(parents=True, exist_ok=True)
     _check_path(runs_dir, check_id).write_text(json.dumps(record, default=str, indent=1),
@@ -785,6 +800,8 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
     return {**plan, "ok": True, "check_id": check_id, "pages_read": read.pages,
             "findings": [public(f) for f in findings], "unread": [public(f) for f in unread],
             "counts": counts_of(findings), "cost_usd": spent, "model": model,
+            "related": related, "related_error": related_error,
+            "proposals": _proposal_count(related, plan["hubs"]),
             "writes": sum(1 for f in findings if f["outcome"] in WRITTEN
                           and not (f["outcome"] == "not_found" and f.get("reason"))),
             "error": read.error}
@@ -818,6 +835,49 @@ def _finish_run(session, run_id: str, *, status: str, reason: str | None, result
         review_items=sum(1 for r in results
                          if r.get("written") and r["outcome"] in {"conflict", "protected"}),
         outcomes={r["field"]: r.get("actual") or r["outcome"] for r in results})
+
+
+def _proposal_count(related, hubs) -> int:
+    return (sum(1 for r in related or () if r.get("status") == "on_map")
+            + len((hubs or {}).get("proposals") or ()))
+
+
+def _write_proposals(session, record: dict, request_id: str) -> list[dict]:
+    """Relationships and hub memberships the check found, raised to Review.
+
+    Never written as edges or memberships here: decisions.py raises a Review
+    item for each, and only a person's acceptance makes it real.
+    """
+    from agents.enrichment.decisions import propose_actor_relationship, propose_hub_membership
+
+    out = []
+    for item in record.get("related") or ():
+        if item.get("status") != "on_map" or not item.get("source_url"):
+            continue
+        savepoint = session.begin_nested()
+        try:
+            result = propose_actor_relationship(
+                session, topic_id=record["topic_id"], request_id=request_id,
+                source_url=item["source_url"], live=True, **item["proposal"])
+            savepoint.commit()
+        except Exception as exc:  # noqa: BLE001 - one proposal must not stop the others
+            savepoint.rollback()
+            result = {"action": "failed", "error": f"{type(exc).__name__}: {exc}"[:200]}
+        out.append({"kind": "relationship", "name": item["name"],
+                    "relationship_type": item["relationship_type"], **result})
+    for hub in (record.get("hubs") or {}).get("proposals") or ():
+        savepoint = session.begin_nested()
+        try:
+            result = propose_hub_membership(
+                session, actor_id=record["actor_id"], hub_id=hub["hub_id"],
+                distance_miles=hub["distance_miles"], radius_miles=hub["radius_miles"],
+                sector_code=hub["sector"], topic_id=record["topic_id"], live=True)
+            savepoint.commit()
+        except Exception as exc:  # noqa: BLE001
+            savepoint.rollback()
+            result = {"action": "failed", "error": f"{type(exc).__name__}: {exc}"[:200]}
+        out.append({"kind": "hub", "name": hub["name"], **result})
+    return out
 
 
 def _actual(session, fact_id: str, current_id: str | None) -> str:
@@ -862,7 +922,7 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
     pending = [f for f in record["findings"] if f["outcome"] in WRITTEN
                and not (f["outcome"] == "not_found" and f.get("reason"))
                and f["field"] not in done]
-    if not pending:
+    if not pending and record.get("proposals_written", True):
         return {"ok": True, "check_id": check_id, "run_id": record.get("applied_run_id"),
                 "results": [], "note": "Everything in this check was already written."}
     read_at = datetime.fromisoformat(record["read_at"])
@@ -913,6 +973,10 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
             actual = "not_found"
         result.update(written=True, fact_id=fact_id, actual=actual)
         results.append(result)
+    proposals = []
+    if not record.get("proposals_written"):
+        proposals = _write_proposals(session, record, request_id)
+        record["proposals_written"] = True
     failed = [r for r in results if not r.get("written")]
     status = "attention" if failed else "succeeded"
     reason = (f"{len(failed)} box(es) failed; apply the same check again to retry them."
@@ -926,10 +990,13 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
     for r in results:
         if r.get("written"):
             counts[r["actual"]] = counts.get(r["actual"], 0) + 1
+    proposed = sum(1 for p in proposals if p.get("action") == "proposed")
     return {"ok": not failed, "check_id": check_id, "run_id": run_id, "results": results,
             "counts": counts, "failed": len(failed), "error": reason,
-            "review_items": sum(1 for r in results
-                                if r.get("written") and r["actual"] in {"conflict", "protected"})}
+            "proposals": proposals,
+            "review_items": proposed + sum(1 for r in results
+                                           if r.get("written")
+                                           and r["actual"] in {"conflict", "protected"})}
 
 
 # ----------------------------------------------------------------- requests

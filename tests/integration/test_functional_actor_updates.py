@@ -635,3 +635,174 @@ def test_aggregate_placeholders_are_never_updated(session_factory, world, tmp_pa
             members = au.group_actors(session, sector=sector, category=None, state=None)
             categories = {m["actor_category"] for m in members}
             assert "aggregate" not in categories
+
+
+# ------------------------------------------- related organisations and hubs (phase C)
+
+class NamingClient:
+    """Stands in for the model: names organisations it is told to."""
+
+    def __init__(self, organisations):
+        self.organisations = organisations
+
+    def extract_with_tool(self, **kwargs):
+        return {"organisations": self.organisations}
+
+
+class ReaderWithClient(FakeReader):
+    def __init__(self, evidence, organisations):
+        super().__init__(evidence)
+        self.client = NamingClient(organisations)
+
+
+def test_named_organisations_are_routed_mapped_first_and_proposed_to_review(
+        session_factory, world, tmp_path):
+    from agents.enrichment.decisions import record_relationship_review_decision
+
+    with session_factory() as session:
+        other = session.execute(text(
+            "SELECT actor_id::text, name FROM actor WHERE actor_id <> CAST(:a AS uuid) "
+            "AND actor_category = 'research_center' AND name ~ '^[A-Za-z ]+$' "
+            # One no earlier run has linked or proposed, so each run starts clean.
+            "AND NOT EXISTS (SELECT 1 FROM entity_edge e WHERE e.subject_id = CAST(:a AS uuid) "
+            "  AND e.object_id = actor.actor_id) "
+            "AND NOT EXISTS (SELECT 1 FROM review_item r WHERE r.review_kind = "
+            "  'relationship_review' AND r.entity_id = CAST(:a AS uuid) "
+            "  AND r.candidate_entity_id = actor.actor_id) "
+            "ORDER BY actor_id LIMIT 1"), {"a": world["actor"]}).one()
+        evidence = {**EVIDENCE,
+                    "international_connection": f"Joint project with {other.name} and "
+                                                "Nowhere Unmapped Institute."}
+        reader = ReaderWithClient(evidence, [
+            {"name": other.name, "box": "international_connection", "relation": "partner"},
+            {"name": "Nowhere Unmapped Institute", "box": "international_connection",
+             "relation": "partner"},
+            {"name": "Invented Corp", "box": "international_connection", "relation": "partner"},
+        ])
+        check = au.check_update(session, actor_id=world["actor"], topic_code=world["code"],
+                                scope="specific", fields=["international_connection"],
+                                config=CONFIG, runs_dir=tmp_path,
+                                reader_factory=_factory(reader))
+        by_name = {r["name"]: r for r in check["related"]}
+        assert set(by_name) == {other.name, "Nowhere Unmapped Institute"}  # invented one dropped
+        assert by_name[other.name]["status"] == "on_map"
+        assert by_name[other.name]["proposal"] == {
+            "subject_actor_id": world["actor"], "object_actor_id": other.actor_id,
+            "relationship_type": "collaborates_with"}
+        assert by_name["Nowhere Unmapped Institute"]["status"] == "not_on_map"
+        edges_before = _count(session, "SELECT count(*) FROM entity_edge")
+
+        applied = au.apply_check(session, check["check_id"], runs_dir=tmp_path, config=CONFIG)
+        proposal = next(p for p in applied["proposals"] if p["kind"] == "relationship")
+        assert proposal["action"] == "proposed"
+        # Proposed, not written: no edge until a person approves.
+        assert _count(session, "SELECT count(*) FROM entity_edge") == edges_before
+        item = session.execute(text(
+            "SELECT review_kind, payload->>'source_url' AS url, candidate_entity_id::text AS other "
+            "FROM review_item WHERE review_item_id = CAST(:i AS uuid)"),
+            {"i": proposal["review_item_id"]}).mappings().one()
+        assert (item["review_kind"], item["other"]) == ("relationship_review", other.actor_id)
+        assert item["url"] == "https://co.example/about"
+
+        # The same link found again is not proposed twice.
+        again = au.check_update(session, actor_id=world["actor"], topic_code=world["code"],
+                                scope="specific", fields=["international_connection"],
+                                config=CONFIG, runs_dir=tmp_path,
+                                reader_factory=_factory(reader))
+        second = au.apply_check(session, again["check_id"], runs_dir=tmp_path, config=CONFIG)
+        assert [p["action"] for p in second["proposals"] if p["kind"] == "relationship"] == [
+            "already_proposed"]
+
+        # A person approves, with the page as the source: now the edge exists.
+        result = record_relationship_review_decision(
+            session, review_item_id=proposal["review_item_id"], decided_by="Reviewer",
+            approve=True, source_url=item["url"], live=True)
+        session.commit()
+        assert result["action"] == "approved"
+        assert _count(session, "SELECT count(*) FROM entity_edge") == edges_before + 1
+
+
+def _hub(session, world, *, name, lat, lon, radius=50):
+    return session.execute(text(
+        "INSERT INTO hub (hub_id, name, slug, topic_id, center_latitude, center_longitude, "
+        "radius_miles, center_frozen, center_method, center_method_version, center_computed_at) "
+        "VALUES (gen_random_uuid(), :n, :slug, CAST(:t AS uuid), :lat, :lon, :r, false, "
+        "'test', 'test', now()) RETURNING hub_id::text"),
+        {"n": f"{name} {uuid.uuid4().hex[:6]}",
+         "slug": f"{name.lower().replace(' ', '-')}-{uuid.uuid4().hex[:6]}",
+         "t": world["topic"], "lat": lat, "lon": lon, "r": radius}).scalar_one()
+
+
+def test_hub_fit_is_reported_proposed_to_review_and_never_removed(session_factory, world):
+    from agents.collection import hub_reassessment
+    from agents.enrichment.decisions import (
+        propose_hub_membership,
+        record_hub_membership_decision,
+    )
+
+    with session_factory() as session:
+        actor = session.execute(text(
+            "SELECT actor_id::text, CAST(latitude AS float) AS lat, CAST(longitude AS float) AS lon "
+            "FROM actor WHERE latitude IS NOT NULL AND longitude IS NOT NULL "
+            "ORDER BY actor_id LIMIT 1")).one()
+        near = _hub(session, world, name="Near test hub", lat=actor.lat + 0.1, lon=actor.lon)
+        far = _hub(session, world, name="Far test hub", lat=-actor.lat, lon=actor.lon)
+        # A GHUS membership in the far hub, which no longer fits.
+        session.execute(text(
+            "INSERT INTO hub_actor (hub_id, actor_id, relationship_type, is_primary, topic_id, "
+            "assignment_outcome, overlap_flag) VALUES (CAST(:h AS uuid), CAST(:a AS uuid), "
+            "'member', false, CAST(:t AS uuid), 'legacy_membership_preserved', false)"),
+            {"h": far, "a": actor.actor_id, "t": world["topic"]})
+        session.commit()
+
+        report = hub_reassessment.assess(session, actor.actor_id, sector_codes=[world["code"]])
+        far_member = next(m for m in report["memberships"] if m["hub_id"] == far)
+        assert far_member["fit"] == "outside_radius" and far_member["preserved"]
+        assert "never removed" in far_member["action"]
+        # It already has a hub in this sector, so the near one is not proposed.
+        assert report["proposals"] == []
+
+        # Reporting never removed the membership that no longer fits.
+        assert _count(session, "SELECT count(*) FROM hub_actor WHERE hub_id = CAST(:h AS uuid) "
+                               "AND actor_id = CAST(:a AS uuid)", h=far, a=actor.actor_id) == 1
+
+        # A proposal is accepted only by a person, and only then is it a membership.
+        proposal = propose_hub_membership(session, actor_id=actor.actor_id, hub_id=near,
+                                          distance_miles=6.9, radius_miles=50,
+                                          sector_code=world["code"], live=True)
+        session.commit()
+        assert proposal["action"] == "proposed"
+        assert propose_hub_membership(session, actor_id=actor.actor_id, hub_id=near,
+                                      distance_miles=6.9, radius_miles=50,
+                                      sector_code=world["code"])["action"] == "already_proposed"
+        decided = record_hub_membership_decision(session, review_item_id=proposal["review_item_id"],
+                                                 decided_by="Reviewer", accept=True, live=True)
+        session.commit()
+        assert decided["action"] == "decided"
+        membership = session.execute(text(
+            "SELECT relationship_type, assignment_outcome, source_id IS NOT NULL AS sourced "
+            "FROM hub_actor WHERE hub_id = CAST(:h AS uuid) AND actor_id = CAST(:a AS uuid)"),
+            {"h": near, "a": actor.actor_id}).one()
+        assert tuple(membership) == ("reviewed_assignment", "assigned", True)
+
+
+def test_an_unassigned_actor_stays_eligible_for_a_hub_added_later(session_factory, world):
+    from agents.collection import hub_reassessment
+
+    with session_factory() as session:
+        actor = session.execute(text(
+            "SELECT a.actor_id::text, CAST(a.latitude AS float) AS lat, "
+            "CAST(a.longitude AS float) AS lon FROM actor a WHERE a.latitude IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM hub_actor ha WHERE ha.actor_id = a.actor_id) "
+            "ORDER BY a.actor_id LIMIT 1")).one()
+        before = hub_reassessment.assess(session, actor.actor_id, sector_codes=[world["code"]])
+        assert before["unassigned"] and before["proposals"] == []
+        assert "stays eligible" in before["note"]
+        hub = _hub(session, world, name="Later test hub", lat=actor.lat, lon=actor.lon + 0.05)
+        session.commit()
+        after = hub_reassessment.assess(session, actor.actor_id, sector_codes=[world["code"]])
+        assert [p["hub_id"] for p in after["proposals"]] == [hub]
+        assert "Review" in after["proposals"][0]["action"]
+        # Assessing never writes.
+        assert _count(session, "SELECT count(*) FROM hub_actor WHERE actor_id = CAST(:a AS uuid)",
+                      a=actor.actor_id) == 0

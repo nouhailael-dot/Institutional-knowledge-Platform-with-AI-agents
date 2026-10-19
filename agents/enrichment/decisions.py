@@ -649,6 +649,151 @@ def record_fact_review_decision(
     return {**outcome, "action": "decided"}
 
 
+def propose_actor_relationship(
+    session,
+    *,
+    subject_actor_id: str,
+    object_actor_id: str,
+    relationship_type: str,
+    source_url: str,
+    topic_id: str | None = None,
+    request_id: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Ask GHUS to confirm a relationship an actor update read on a page.
+
+    Raises a ``relationship_review`` item; the edge itself is written only when
+    a person approves it (``record_relationship_review_decision``). Not raised
+    twice: an existing edge or a pending proposal for the same pair and type is
+    reported instead.
+    """
+    validate_entity_edge(EntityEdgeRequest(
+        subject_type="actor", subject_id=subject_actor_id, relationship_type=relationship_type,
+        object_type="actor", object_id=object_actor_id,
+        source_id="00000000-0000-0000-0000-000000000000", confidence="medium"))
+    pair = {"subject": subject_actor_id, "object": object_actor_id, "type": relationship_type}
+    linked = session.execute(text(
+        "SELECT count(*) FROM entity_edge WHERE subject_type='actor' AND object_type='actor' "
+        "AND subject_id=CAST(:subject AS uuid) AND object_id=CAST(:object AS uuid) "
+        "AND relationship_type=:type"), pair).scalar()
+    if linked:
+        return {"action": "already_linked"}
+    pending = session.execute(text(
+        "SELECT review_item_id::text FROM review_item WHERE review_kind='relationship_review' "
+        "AND status='pending' AND payload->>'subject_actor_id'=:subject "
+        "AND payload->>'object_actor_id'=:object "
+        "AND payload->>'proposed_relationship_type'=:type LIMIT 1"), pair).scalar()
+    if pending:
+        return {"action": "already_proposed", "review_item_id": pending}
+    if not live:
+        return {"action": "would_propose"}
+    review_id = str(uuid.uuid4())
+    execute_canonical_write(session, text(
+        "INSERT INTO review_item(review_item_id,review_kind,entity_type,entity_id,"
+        "candidate_entity_id,topic_id,priority,payload,status) VALUES(CAST(:id AS uuid),"
+        "'relationship_review','actor',CAST(:subject AS uuid),CAST(:object AS uuid),"
+        "CAST(:topic AS uuid),'normal',CAST(:payload AS jsonb),'pending')"
+    ), {"id": review_id, "subject": subject_actor_id, "object": object_actor_id,
+        "topic": topic_id, "payload": json.dumps({
+            "subject_actor_id": subject_actor_id, "object_actor_id": object_actor_id,
+            "proposed_relationship_type": relationship_type, "source_url": source_url,
+            "origin": "actor_update", "request_id": request_id}, sort_keys=True)})
+    return {"action": "proposed", "review_item_id": review_id}
+
+
+def propose_hub_membership(
+    session,
+    *,
+    actor_id: str,
+    hub_id: str,
+    distance_miles: float | None,
+    radius_miles: float,
+    sector_code: str | None,
+    topic_id: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Ask GHUS to confirm that an unassigned actor now fits a hub.
+
+    A ``hub_assignment`` item marked as a membership proposal; the membership
+    is written only on acceptance (``record_hub_membership_decision``).
+    """
+    member = session.execute(text(
+        "SELECT count(*) FROM hub_actor WHERE hub_id=CAST(:hub AS uuid) "
+        "AND actor_id=CAST(:actor AS uuid)"), {"hub": hub_id, "actor": actor_id}).scalar()
+    if member:
+        return {"action": "already_member"}
+    pending = session.execute(text(
+        "SELECT review_item_id::text FROM review_item WHERE review_kind='hub_assignment' "
+        "AND status='pending' AND entity_id=CAST(:actor AS uuid) "
+        "AND payload->>'proposed_hub_id'=:hub LIMIT 1"), {"hub": hub_id, "actor": actor_id}).scalar()
+    if pending:
+        return {"action": "already_proposed", "review_item_id": pending}
+    if not live:
+        return {"action": "would_propose"}
+    review_id = str(uuid.uuid4())
+    execute_canonical_write(session, text(
+        "INSERT INTO review_item(review_item_id,review_kind,entity_type,entity_id,topic_id,"
+        "priority,payload,status) VALUES(CAST(:id AS uuid),'hub_assignment','actor',"
+        "CAST(:actor AS uuid),CAST(:topic AS uuid),'normal',CAST(:payload AS jsonb),'pending')"
+    ), {"id": review_id, "actor": actor_id, "topic": topic_id, "payload": json.dumps({
+        "proposal": "membership", "proposed_hub_id": hub_id, "hub_ids": [hub_id],
+        "canonical_outcome": "assigned", "issue": "newly_eligible",
+        "deterministic_evidence": {"sector_code": sector_code, "distance_miles": distance_miles,
+                                   "radius_miles": radius_miles},
+        "origin": "actor_update"}, sort_keys=True, default=str)})
+    return {"action": "proposed", "review_item_id": review_id}
+
+
+def record_hub_membership_decision(
+    session,
+    *,
+    review_item_id: str,
+    decided_by: str,
+    accept: bool,
+    notes: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """GHUS accepts or refuses a proposed hub membership. Nothing is ever removed."""
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    item, payload = _pending_review_item(session, review_item_id, ("hub_assignment",))
+    if payload.get("proposal") != "membership" or not payload.get("proposed_hub_id"):
+        raise ValueError("this hub review is not a membership proposal")
+    hub_id = str(payload["proposed_hub_id"])
+    outcome: dict[str, object] = {"review_item_id": review_item_id, "hub_id": hub_id,
+                                  "actor_id": item["entity_id"],
+                                  "decision": "accepted" if accept else "refused"}
+    if item["status"] != "pending":
+        return {**outcome, "action": "already_resolved"}
+    if not live:
+        return {**outcome, "action": "would_decide"}
+    reason = (("membership accepted" if accept else "membership refused")
+              + (f"; {notes}" if notes else ""))
+    if accept:
+        hub_topic = session.execute(text(
+            "SELECT topic_id::text FROM hub WHERE hub_id=CAST(:hub AS uuid)"),
+            {"hub": hub_id}).scalar()
+        source_id = insert_source(session, source_url=None, fetched_at=None,
+                                  description=f"GHUS-accepted hub membership ({reviewer})",
+                                  source_type="ghus_review", trust_tier="verified")
+        evidence = payload.get("deterministic_evidence") or {}
+        distance = evidence.get("distance_miles")
+        execute_canonical_write(session, text(
+            "INSERT INTO hub_actor (hub_id,actor_id,relationship_type,is_primary,topic_id,"
+            "distance_miles,assignment_outcome,outside_radius,overlap_flag,source_id) VALUES "
+            "(CAST(:hub AS uuid),CAST(:actor AS uuid),'reviewed_assignment',FALSE,"
+            "CAST(:topic AS uuid),:distance,'assigned',CAST(:outside AS boolean),FALSE,"
+            "CAST(:source AS uuid)) ON CONFLICT (hub_id,actor_id) DO NOTHING"
+        ), {"hub": hub_id, "actor": item["entity_id"], "topic": hub_topic,
+            "distance": distance, "outside": None if distance is None else False,
+            "source": source_id})
+    _close_review_item(session, review_item_id, decision="approve" if accept else "reject",
+                       status="approved" if accept else "rejected", decided_by=reviewer,
+                       reason=reason)
+    return {**outcome, "action": "decided"}
+
+
 def record_geocode_review_decision(
     session,
     *,
