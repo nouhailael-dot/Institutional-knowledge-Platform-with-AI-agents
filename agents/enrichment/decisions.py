@@ -878,8 +878,14 @@ def fill_actor_location(
         "WHERE a.actor_id=CAST(:id AS uuid)"), {"id": actor_id}).mappings().first()
     if current is None:
         raise ValueError("no actor with that id")
-    if current["city"] or current["state"] or current["latitude"]:
+    from agents.common.geography import normalize_state
+
+    if current["city"] or current["latitude"]:
         return {"action": "already_located"}
+    # A recorded state with no city (often the request's area): the page's
+    # city fills it only when the page's state is that same state.
+    if current["state"] and normalize_state(current["state"]) != normalize_state(state):
+        return {"action": "different_state", "recorded": current["state"], "read": state}
     if (country or "US").strip().upper() not in {"US", "USA", "UNITED STATES"}:
         return {"action": "outside_us"}
     result = default_gazetteer().lookup(city, state, "US")
@@ -897,6 +903,54 @@ def fill_actor_location(
         "updated_at=now() WHERE actor_id=CAST(:actor AS uuid)"
     ), {**outcome, "actor": actor_id})
     return {"action": "located", **outcome}
+
+
+def fill_actor_location_gaps(
+    session,
+    *,
+    actor_id: str,
+    derivation,
+    live: bool = False,
+) -> dict[str, object]:
+    """Write a deterministic location derivation into EMPTY fields only.
+
+    ``derivation`` comes from ``agents.common.location_derivation.derive`` -
+    the state of a city unique in the Census gazetteer, coordinates of a city
+    in the record's own state, the region of a state, or a state named in the
+    actor's name. A field that already holds a value is never changed.
+    """
+    if not derivation.any:
+        return {"action": "nothing_to_derive"}
+    city_column = "city" if _has_column(session, "actor", "city") else "location_city"
+    legacy_state = _has_column(session, "actor", "state")
+    sets, values = [], {"actor": actor_id}
+    if derivation.city:
+        sets.append(f"{city_column}=COALESCE(NULLIF({city_column},''),:city)")
+        values["city"] = derivation.city
+    if derivation.state_code:
+        sets.append("state_code=COALESCE(NULLIF(state_code,''),:state_code)")
+        if legacy_state:
+            sets.append("state=COALESCE(NULLIF(state,''),:state_code)")
+        values["state_code"] = derivation.state_code
+    if derivation.region_code:
+        sets.append("region_code=COALESCE(NULLIF(region_code,''),:region_code)")
+        values["region_code"] = derivation.region_code
+    if derivation.latitude is not None and derivation.longitude is not None:
+        # Both or neither: never half a coordinate pair.
+        sets.append("latitude=CASE WHEN latitude IS NULL AND longitude IS NULL "
+                    "THEN :latitude ELSE latitude END")
+        sets.append("longitude=CASE WHEN latitude IS NULL AND longitude IS NULL "
+                    "THEN :longitude ELSE longitude END")
+        values.update(latitude=derivation.latitude, longitude=derivation.longitude)
+    outcome = {"how": list(derivation.how), "city": derivation.city,
+               "state_code": derivation.state_code, "region_code": derivation.region_code,
+               "latitude": derivation.latitude, "longitude": derivation.longitude}
+    if not live:
+        return {"action": "would_fill", **outcome}
+    execute_canonical_write(session, text(
+        f"UPDATE actor SET {','.join(sets)},updated_at=now() WHERE actor_id=CAST(:actor AS uuid)"
+    ), values)
+    return {"action": "filled", **outcome}
 
 
 def record_relationship_review_decision(

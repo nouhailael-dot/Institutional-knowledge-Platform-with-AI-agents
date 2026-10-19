@@ -337,6 +337,27 @@ def _location_from_light_pull(payload: dict[str, Any]) -> None:
     payload.setdefault("country", country or "US")
 
 
+def _state_from_record(payload: dict[str, Any]) -> None:
+    """A missing state (and a city "... at Austin") derived from the record itself.
+
+    The state of a city that is a place in only one US state, or a state the
+    name states ("University of Texas"); see agents.common.location_derivation.
+    Without a state, promotion cannot place the actor at all.
+    """
+    if payload.get("state_code") or payload.get("state"):
+        return
+    from agents.common.location_derivation import derive
+
+    derivation = derive(name=payload.get("name"),
+                        city=payload.get("location_city") or payload.get("city"),
+                        state=None, country=payload.get("country") or "US",
+                        has_coordinates=True)
+    if derivation.state_code:
+        payload["state"] = derivation.state_code
+    if derivation.city and not (payload.get("location_city") or payload.get("city")):
+        payload["location_city"] = derivation.city
+
+
 def _staged(source: Mapping[str, Any], entity_type: str, edited: Mapping[str, Any]) -> StagedRecord:
     payload = {**dict(source["payload"]), **dict(edited)}
     payload.pop("_discovered_domain", None)
@@ -345,6 +366,7 @@ def _staged(source: Mapping[str, Any], entity_type: str, edited: Mapping[str, An
     sector_codes = _source_sector_codes(source, payload) if entity_type == "actor" else []
     if entity_type == "actor":
         _location_from_light_pull(payload)
+        _state_from_record(payload)
     extracted = source.get("extracted_at") or datetime.now(timezone.utc)
     return StagedRecord(
         run_id=str(source.get("run_id") or uuid.uuid4()),
