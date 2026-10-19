@@ -991,7 +991,14 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
             rejection_reason_other=payload.rejection_reason_other,
             confirmed=payload.confirmed,
         )
-        outcome = review_admission_bridge().apply(decision)
+        if decision.get("local_only"):
+            # An actor update's card: what it wrote is already on the map.
+            # The acknowledgement is kept in Review's own log; nothing is sent.
+            outcome = {"decision_kind": decision["decision_kind"], "status": "applied",
+                       "action": "looks_right" if decision["looks_right"] else "flagged",
+                       "changes_to_map": "none"}
+        else:
+            outcome = review_admission_bridge().apply(decision)
         return store.record_admission_success(
             candidate_id,
             idempotency_key=payload.idempotency_key,

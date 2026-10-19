@@ -945,3 +945,23 @@ test('a proposed link and a hub proposal are each a choice between two answers',
   // Refusing needs no rejection reason.
   assert.equal(canSubmit({candidate: link, reviewer: 'R', decisionKind: 'reject', admissionConfigured: true}), true);
 });
+
+test('an actor update card shows what it wrote and is a two-answer check', async () => {
+  const {twoWayKind, updateRows, decisionOptions: options} = await import('../frontend/review.js');
+  const card = {status: 'pending_review', agent_metadata: {source_table: 'actor_update',
+    review_kind: 'actor_update', written: [
+      {fact_key: 'location', collection_state: 'found', value: {city: 'Montpelier', state: 'VT'},
+        previous_value: {region: 'Not Provided', country: 'US'}, lifecycle_state: 'accepted',
+        source_url: 'https://www.cleanegroup.org/', confidence: 'high'},
+      {fact_key: 'international_connection', collection_state: 'not_found', value: null,
+        previous_value: null, lifecycle_state: 'accepted', source_url: 'https://www.cleanegroup.org/'},
+      {fact_key: 'funding_signal', collection_state: 'found', value: '$3M',
+        previous_value: '$1M', lifecycle_state: 'conflict_flagged', source_url: null}]}};
+  assert.equal(twoWayKind(card), 'update');
+  assert.deepEqual(options('actor', card).slice(0, 2).map(o => o.label),
+    ['Looks right', 'Flag it (the map is not changed)']);
+  const rows = updateRows(card);
+  assert.deepEqual(rows.map(r => r.how), ['Replaced the earlier value (kept in history)',
+    'Recorded as not found', 'Conflict — in this run, for a decision']);
+  assert.equal(rows[1].after, 'Not stated on its pages');
+});

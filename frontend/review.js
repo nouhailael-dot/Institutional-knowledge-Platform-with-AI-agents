@@ -61,6 +61,7 @@ export const REVIEW_REASON_LABELS = {
   same_topic_overlap: "Overlaps Another Hub",
   possible_duplicate: BADGES.possibleDuplicate,
   fact_conflict: "Different Value Found",
+  actor_update: "Update to Check",
   pending_update: "Change to a GHUS Value",
   // The remaining kinds the review_item CHECK constraint allows. Without these
   // a real queue row would show a raw lower-case code.
@@ -112,6 +113,7 @@ export const REVIEW_REASON_HINTS = {
   classification: "Its category or type needs a person to confirm.",
   geocode: "Its location was placed, but needs confirming.",
   fact_conflict: "An update found a different value from weaker or older evidence; the map keeps its value until you choose.",
+  actor_update: "What an actor update wrote, with its sources. Already on the map; say it looks right or flag it.",
   pending_update: "An update found a different value for one GHUS set; GHUS values change only by your decision.",
 };
 
@@ -266,6 +268,7 @@ export function isFactReview(candidate) {
  */
 export function twoWayKind(candidate) {
   const meta = candidate?.agent_metadata || {};
+  if (meta.source_table === "actor_update") return "update";
   if (meta.source_table !== "review_item") return null;
   if (FACT_REVIEW_KINDS.includes(meta.review_kind)) return "fact";
   if (meta.review_kind === "relationship_review") return "relationship";
@@ -277,6 +280,7 @@ const TWO_WAY_ANSWERS = {
   fact: ["Use the new value", "Keep the current value"],
   relationship: ["Confirm the link", "Not a link"],
   hub: ["Add to the hub", "Keep it out"],
+  update: ["Looks right", "Flag it (the map is not changed)"],
 };
 
 const LINK_WORDS = {
@@ -316,6 +320,44 @@ export function twoWaySummary(candidate) {
     };
   }
   return null;
+}
+
+/** What an actor update wrote: one row per box, before and after, with its source. */
+export function updateRows(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  return (meta.written || []).map((fact) => ({
+    field: fact.fact_key,
+    before: fact.previous_value != null ? formatFactValue(fact.previous_value) : "—",
+    after: fact.collection_state === "found" ? formatFactValue(fact.value) : "Not stated on its pages",
+    how: fact.lifecycle_state === "conflict_flagged" ? "Conflict — in this run, for a decision"
+      : fact.lifecycle_state === "pending_update" ? "GHUS value kept — change in this run, for a decision"
+      : fact.collection_state !== "found" ? "Recorded as not found"
+      : fact.previous_value != null ? "Replaced the earlier value (kept in history)" : "New",
+    source_url: fact.source_url || null,
+    confidence: fact.confidence || "—",
+  }));
+}
+
+function updateBlock(html, candidate) {
+  const meta = candidate?.agent_metadata || {};
+  const rows = updateRows(candidate);
+  return html`<section class="review-section">
+    <h3>What this update wrote</h3>
+    <p class="review-hint">Already on the map, written through the GHUS fact writer with its
+      sources; earlier values stay in the history. ${meta.corroborated
+        ? `${meta.corroborated} recorded value(s) were confirmed by its pages. ` : ""}Read
+      ${(meta.pages_read || []).length} page(s) · ${typeof meta.spent_usd === "number"
+        ? `$${meta.spent_usd.toFixed(3)}` : ""}.</p>
+    <table><thead><tr><th>Box</th><th>Before</th><th>Now</th><th>What it did</th><th>Source</th></tr></thead>
+    <tbody>${rows.map(row => html`<tr key=${row.field}>
+      <th scope="row">${reviewFieldLabel(row.field)}</th><td>${row.before}</td><td>${row.after}</td>
+      <td>${row.how}</td>
+      <td>${row.source_url ? html`<a href=${row.source_url} target="_blank" rel="noreferrer">open</a>` : "—"}</td>
+    </tr>`)}</tbody></table>
+    ${(meta.pages_read || []).length > 0 && html`<p class="review-hint">Pages read:
+      ${meta.pages_read.map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank"
+        rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}</p>`}
+  </section>`;
 }
 
 function twoWayBlock(html, candidate) {
@@ -1132,6 +1174,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       }
       if (isFactReview(selected)) {
         if (kind !== "defer") lines.push("", "Both values stay in the history; nothing is deleted.");
+      } else if (twoWayKind(selected) === "update") {
+        if (kind !== "defer") lines.push("", "Recorded in Review only; the map is not changed.");
       } else if (twoWayKind(selected)) {
         if (kind !== "defer") lines.push("", twoWaySummary(selected).question);
       } else if (kind === "new" || kind === "same_existing") {
@@ -1627,7 +1671,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           </section>`}
 
           ${isFactReview(selected) && factChangeBlock(html, selected)}
-          ${twoWayKind(selected) && !isFactReview(selected) && twoWayBlock(html, selected)}
+          ${twoWayKind(selected) === "update" && updateBlock(html, selected)}
+          ${["relationship", "hub"].includes(twoWayKind(selected)) && twoWayBlock(html, selected)}
 
           <!-- 5 POSSIBLE DUPLICATES -->
           ${matches.length > 0 && html`<section class="review-section">

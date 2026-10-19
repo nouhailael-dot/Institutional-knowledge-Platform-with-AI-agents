@@ -307,6 +307,7 @@ def register_sector_codes(codes) -> None:
 # The map's own review items are keyed per topic ("v2-review:<topic>"), which
 # split them into several identically labelled groups. They are one group.
 MAP_CHECKS_PREFIX = "v2-review:"
+ACTOR_UPDATE_PREFIX = "actor-update:"
 # Review items about one box's value (raised by the Phase 11 fact writer).
 FACT_REVIEW_KINDS = ("fact_conflict", "pending_update")
 MAP_CHECKS_KEY = "map-checks"
@@ -346,6 +347,10 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
         parts = [f"{kind.group(1).capitalize()} discovery"]
         if "dry_run" in raw or "dry run" in raw.casefold():
             parts.append("test run")
+    elif run_id.startswith(ACTOR_UPDATE_PREFIX):
+        # "Actor update · CPower Energy · Oct 19, 2026": what an update wrote,
+        # and anything it raised for a person (conflicts, links, hubs).
+        parts = ["Actor update", raw.removeprefix("Actor update:").strip()]
     elif run_id.startswith(MAP_CHECKS_PREFIX) or raw.startswith("Architecture V2"):
         # Review items the map itself raised - a verification, a place that
         # would not geocode, a link or a hub to confirm. No run is behind them,
@@ -1331,6 +1336,18 @@ class ReviewStore:
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This candidate has already been decided.")
         metadata = candidate["agent_metadata"]
+        if str(metadata.get("source_table") or "") == "actor_update":
+            # What an update wrote is already on the map, through the backend's
+            # fact writer, with its sources and history. A reviewer says it
+            # looks right, or flags it with a note; neither changes the map.
+            if decision_kind not in {"new", "reject"}:
+                raise ReviewValidationError("Say it looks right or flag it; or leave it.")
+            return {
+                "decision_kind": "acknowledge_update", "local_only": True,
+                "looks_right": decision_kind == "new", "run_id": metadata.get("run_id"),
+                "actor_id": metadata.get("entity_id"), "reviewer": reviewer, "notes": notes,
+                "idempotency_key": idempotency_key,
+            }
         pipeline = metadata.get("pipeline") if isinstance(metadata.get("pipeline"), dict) else {}
         from_item = str(metadata.get("source_table") or "") == "review_item"
         review_kind = str(metadata.get("review_kind") or "")

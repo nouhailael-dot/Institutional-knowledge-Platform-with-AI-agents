@@ -695,3 +695,31 @@ def test_a_hub_proposal_is_added_or_kept_out_and_legacy_hub_items_are_untouched(
     with pytest.raises(ReviewValidationError):
         store.admission_request("hub-2", decision_kind="new", reviewer="R",
                                 idempotency_key="k-3", confirmed=True)
+
+
+def test_an_actor_update_run_is_labelled_with_its_actor_and_date():
+    from src.review.store import _run_label
+
+    label = _run_label("Actor update: CPower Energy", "actor-update:3f2a", CUTOFF_TS + 5)
+    assert label.startswith("Actor update · CPower Energy · ")
+    request = _run_label("Actor update: Fill missing boxes: California water organizations",
+                         "actor-update:9b1c", CUTOFF_TS + 5)
+    assert request.startswith("Actor update · Fill missing boxes: California water organizations")
+
+
+def test_an_update_card_is_acknowledged_in_review_only(store):
+    _insert_item(store, "upd-1", "actor_update", {})
+    with store.connect() as db:
+        db.execute("UPDATE review_candidate SET agent_metadata=? WHERE candidate_id='upd-1'",
+                   ('{"source_table": "actor_update", "review_kind": "actor_update", '
+                    '"run_id": "run-9", "entity_id": "a1"}',))
+    looks_right = store.admission_request("upd-1", decision_kind="new", reviewer="R",
+                                          idempotency_key="k-1", confirmed=True)
+    assert looks_right["local_only"] is True and looks_right["looks_right"] is True
+    assert looks_right["decision_kind"] == "acknowledge_update"
+    flagged = store.admission_request("upd-1", decision_kind="reject", reviewer="R",
+                                      idempotency_key="k-2", confirmed=True, notes="Wrong city")
+    assert flagged["looks_right"] is False
+    with pytest.raises(ReviewValidationError):
+        store.admission_request("upd-1", decision_kind="same_existing", reviewer="R",
+                                idempotency_key="k-3", target_id="x", confirmed=True)
