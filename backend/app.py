@@ -161,6 +161,11 @@ def _events():
     return browse.load_events()
 
 
+@lru_cache(maxsize=1)
+def _people():
+    return browse.load_people()
+
+
 # ---------------------------------------------------------------- Doc upload
 # The stateless API replaces Streamlit's st.session_state: an uploaded doc is
 # embedded once and its in-memory store is held here, keyed by a returned id.
@@ -349,6 +354,13 @@ def browse_events():
     evts = _events()
     types = sorted({e["event_type"] for e in evts if e.get("event_type")})
     return JSONResponse(jsonable_encoder({"events": evts, "event_types": types}))
+
+
+@app.get("/api/browse/people")
+def browse_people():
+    people = _people()
+    return JSONResponse(jsonable_encoder(
+        {"people": people, "options": browse.people_filter_options(people)}))
 
 
 # ---------------------------------------------------------------- Build the Map

@@ -200,6 +200,86 @@ def load_events() -> list[dict]:
     return out
 
 
+def load_people() -> list[dict]:
+    """Every person in the database who is not rejected, with their current
+    organizations (live actors only), those organizations' locations, and topics.
+
+    Read-only. Email and phone are never selected: Browse is a directory, and the
+    people-privacy rules keep contact details out of general views."""
+    sql = f"""
+        SELECT p.person_id, p.full_name, p.title, p.orcid, p.linkedin_url,
+               COALESCE(NULLIF(p.record_status, ''), p.verification_status) AS status,
+               (SELECT string_agg(DISTINCT a.name, '{_HUB_SEP}')
+                  FROM actor_person ap JOIN actor_read a ON a.actor_id = ap.actor_id
+                 WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
+                   AND a.merged_into_actor_id IS NULL) AS organizations,
+               (SELECT string_agg(DISTINCT coalesce(rs.state_name, a.state_code), '{_HUB_SEP}')
+                  FROM actor_person ap JOIN actor_read a ON a.actor_id = ap.actor_id
+                  LEFT JOIN region_state rs ON rs.state_code = a.state_code
+                 WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
+                   AND a.merged_into_actor_id IS NULL) AS states,
+               (SELECT string_agg(DISTINCT t.name, '{_HUB_SEP}')
+                  FROM person_topic pt JOIN topic t ON t.topic_id = pt.topic_id
+                 WHERE pt.person_id = p.person_id) AS topics,
+               (SELECT string_agg(DISTINCT d.research_area, '{_HUB_SEP}')
+                  FROM person_discovery_profile d
+                 WHERE d.person_id = p.person_id AND d.research_area IS NOT NULL) AS research_areas,
+               (SELECT d.public_profile_url FROM person_discovery_profile d
+                 WHERE d.person_id = p.person_id AND d.public_profile_url IS NOT NULL
+                 ORDER BY d.fetched_at DESC NULLS LAST LIMIT 1) AS profile_url
+        FROM person p
+        WHERE COALESCE(p.record_status, '') <> 'rejected'
+          AND COALESCE(p.verification_status, '') <> 'rejected'
+        ORDER BY p.full_name
+    """
+    split = lambda value: value.split(_HUB_SEP) if value else []
+    out = []
+    with get_readonly_connection() as conn, conn.cursor() as cur:
+        cur.execute(sql)
+        cols = [c.name for c in cur.description]
+        for row in cur.fetchall():
+            r = dict(zip(cols, row))
+            out.append({
+                "id": str(r["person_id"]),
+                "name": r["full_name"],
+                "title": r["title"],
+                "status": r["status"],
+                "organizations": split(r["organizations"]),
+                "states": split(r["states"]),
+                "topics": split(r["topics"]),
+                "research_areas": split(r["research_areas"]),
+                "profile_url": r["profile_url"] or r["linkedin_url"],
+                "orcid": r["orcid"],
+            })
+    return out
+
+
+def people_filter_options(people: list[dict]) -> dict:
+    """Dropdown values for the People filters, each sorted."""
+    pick = lambda key: sorted({v for p in people for v in p[key] if v})
+    return {"organizations": pick("organizations"), "states": pick("states"),
+            "topics": pick("topics")}
+
+
+def filter_people(people: list[dict], *, organization: str | None = None,
+                  state: str | None = None, topic: str | None = None,
+                  text: str | None = None) -> list[dict]:
+    """Organization/state/topic are exact values from the dropdowns; `text` is a
+    case-insensitive match on name, title, topics and research areas."""
+    result = people
+    if organization:
+        result = [p for p in result if organization in p["organizations"]]
+    if state:
+        result = [p for p in result if state in p["states"]]
+    if topic:
+        result = [p for p in result if topic in p["topics"]]
+    if text:
+        needle = text.strip().lower()
+        result = [p for p in result if needle in " ".join(
+            [p["name"] or "", p["title"] or "", *p["topics"], *p["research_areas"]]).lower()]
+    return result
+
+
 # --- filtering (pure, in memory) -------------------------------------------
 
 def filter_actors(actors: list[dict], *, hub: str | None = None,

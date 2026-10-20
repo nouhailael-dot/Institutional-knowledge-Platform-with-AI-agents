@@ -914,6 +914,39 @@ function Events(){
   </div>`;
 }
 
+function People(){
+  const data=useOnce(()=>api("/api/browse/people"));
+  const [org,setOrg]=useState(""); const [state,setState]=useState("");
+  const [topic,setTopic]=useState(""); const [q,setQ]=useState("");
+  if(!data) return html`<${Loading}/>`;
+  if(data.people.length===0) return html`<div class="fade"><div class="empty">
+    No people in the database yet. People found in Build the Map appear here once
+    they are verified into the database.</div></div>`;
+  const needle=q.trim().toLowerCase();
+  const matches=data.people.filter(p=>
+    (!org||p.organizations.includes(org)) && (!state||p.states.includes(state)) &&
+    (!topic||p.topics.includes(topic)) &&
+    (!needle||[p.name,p.title,...p.topics,...p.research_areas].join(" ").toLowerCase().includes(needle)));
+  const list=(xs)=>xs.length?xs.join(", "):html`<span class="dash">—</span>`;
+  return html`<div class="fade">
+    <div class="card pad"><div class="filters">
+      <div><label>Organization</label><${Sel} v=${org} set=${setOrg} opts=${data.options.organizations}/></div>
+      <div><label>State</label><${Sel} v=${state} set=${setState} opts=${data.options.states}/></div>
+      <div><label>Topic</label><${Sel} v=${topic} set=${setTopic} opts=${data.options.topics}/></div>
+      <div><label>Name or expertise</label>
+        <input class="field" placeholder="phosphogypsum, Smith…" value=${q} onInput=${e=>setQ(e.target.value)}/></div>
+    </div></div>
+    <div class="count"><b>${matches.length}</b> ${matches.length===1?"person matches":"people match"}</div>
+    ${matches.length===0? html`<div class="empty">No people match these filters.</div>` : html`
+    <div class="card" style=${{overflow:"hidden"}}>
+      <table class="grid"><thead><tr><th>Name</th><th>Title</th><th>Organization</th><th>State</th><th>Topics</th></tr></thead>
+      <tbody>${matches.map(p=>html`<tr key=${p.id}>
+        <td class="name-cell">${p.profile_url?html`<a href=${p.profile_url} target="_blank" rel="noopener">${p.name}</a>`:p.name}</td>
+        <td>${dash(p.title)}</td><td>${list(p.organizations)}</td><td>${list(p.states)}</td>
+        <td>${list(p.topics.length?p.topics:p.research_areas)}</td></tr>`)}</tbody></table></div>`}
+  </div>`;
+}
+
 function Sel({v,set,opts}){ return html`<select class="field" value=${v} onChange=${e=>set(e.target.value)}>
   <option value="">Any</option>${opts.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`; }
 function Loading(){ return html`<div class="empty"><span class="spin"></span> Loading…</div>`; }
@@ -1818,13 +1851,13 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 /* ------------------------------------------------------------------ App */
 function Browse(){
   const [k,setK]=useState("actors");
-  const V={actors:Actors,hubs:Hubs,events:Events}[k];
+  const V={actors:Actors,hubs:Hubs,events:Events,people:People}[k];
   return html`<div>
     <div class="eyebrow">Ecosystem directory</div>
     <h1 class="hero-h">Explore the knowledge base.</h1>
-    <p class="lead">Browse organizations, ecosystem hubs, and events. Use filters to find what matters to your research.</p>
+    <p class="lead">Browse organizations, ecosystem hubs, events, and people. Use filters to find what matters to your research.</p>
     <div class="subnav">
-      ${["actors","hubs","events"].map(x=>html`<button key=${x} class=${k===x?"active":""}
+      ${["actors","hubs","events","people"].map(x=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${x[0].toUpperCase()+x.slice(1)}</button>`)}
     </div><${V}/></div>`;
 }
