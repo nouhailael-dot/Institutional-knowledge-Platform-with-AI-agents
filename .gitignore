@@ -28,3 +28,14 @@ env/
 
 # Backups of the env file hold the real connection string.
 .env.bak*
+
+# A .venv that is a link, not a folder, and any variant of the env file
+.venv
+.env.*
+!.env.example
+
+# Request files the Review admission bridge writes before calling the backend
+.review-requests/
+
+# Office lock files (~$Book.xlsx) left while a document is open
+~$*
