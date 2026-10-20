@@ -1,0 +1,142 @@
+sheet,row,verdict,name,parent,notes
+un_mapping,3,header_major,UNITED NATIONS GENERAL ASSEMBLY,,
+un_mapping,4,header_sub,Intergovernmental and Expert Bodies,UNITED NATIONS GENERAL ASSEMBLY,
+un_mapping,5,updated,UNGA Second Committee (Economic and Financial),Intergovernmental and Expert Bodies,acronym=None; category=Main Committee of the UNGA
+un_mapping,6,header_sub,Funds and Programmes,UNITED NATIONS GENERAL ASSEMBLY,
+un_mapping,7,updated,United Nations Development Programme,Funds and Programmes,acronym=UNDP; category=Fund & Programme
+un_mapping,8,updated,United Nations Environment Programme,Funds and Programmes,acronym=UNEP; category=Fund & Programme
+un_mapping,9,updated,United Nations Children's Fund,Funds and Programmes,acronym=UNICEF; category=Fund & Programme
+un_mapping,10,updated,World Food Programme,Funds and Programmes,acronym=WFP; category=Fund & Programme
+un_mapping,11,updated,UN Women,Funds and Programmes,acronym=None; category=Fund & Programme
+un_mapping,12,header_sub,Research and Training,UNITED NATIONS GENERAL ASSEMBLY,
+un_mapping,13,updated,United Nations Institute for Training and research,Research and Training,acronym=UNITAR; category=Autonomous UN Institute
+un_mapping,14,header_major,ECONOMIC AND SOCIAL COUNCIL,,
+un_mapping,15,header_sub,Functional Commissions,ECONOMIC AND SOCIAL COUNCIL,
+un_mapping,16,updated,Commission on Population and Development,Functional Commissions,acronym=None; category=Subsidiary body of ECOSOC
+un_mapping,17,updated,Commission on Science and Technology for Development,Functional Commissions,acronym=CSTD; category=Subsidiary body of ECOSOC
+un_mapping,18,updated,Commission for Social Development,Functional Commissions,acronym=None; category=Subsidiary body of ECOSOC
+un_mapping,19,updated,Commission on the Status of Women,Functional Commissions,acronym=CSW; category=Subsidiary body of ECOSOC
+un_mapping,20,header_sub,Regional Commissions,ECONOMIC AND SOCIAL COUNCIL,
+un_mapping,21,updated,Economic Commission for Africa,Regional Commissions,acronym=ECA; category=Regional Commission of ECOSOC
+un_mapping,22,header_sub,Research and Training,ECONOMIC AND SOCIAL COUNCIL,
+un_mapping,23,updated,United Nations Research Institute for Social Development,Research and Training,acronym=UNRISD; category=Autonomous UN Research Institute
+un_mapping,24,header_major,SECRETARIAT,,
+un_mapping,25,header_sub,Departments and Offices,SECRETARIAT,
+un_mapping,26,updated,Department of Economic and Social Affairs,Departments and Offices,acronym=DESA; category=UN Secretariat Department
+un_mapping,27,updated,Development Coordination Office,Departments and Offices,acronym=DCO; category=UN Secretariat Office
+un_mapping,28,updated,Office for Digital and Emerging Technologies,Departments and Offices,acronym=ODET; category=UN Secretariat Office
+un_mapping,29,updated,Office of the Special Adviser on Africa,Departments and Offices,acronym=OSAA; category=UN Secretariat Office
+un_mapping,30,updated,United Nations Youth Office,Departments and Offices,acronym=None; category=UN Secretariat office
+un_mapping,31,updated,United Nations Academic Impact (UNAI) An initiative led by the UN Department of Global Communications,Departments and Offices,acronym=DGC; category=UN Secretariat Initiative
+un_mapping,32,header_major,SPECIALIZED AGENCIES,,
+un_mapping,33,updated,Food and Agriculture Organization,SPECIALIZED AGENCIES,acronym=FAO; category=Specialized agency of the UN
+un_mapping,34,updated,International Fund for Agricultural Development,SPECIALIZED AGENCIES,acronym=IFAD; category=International Financial Institutions
+un_mapping,35,updated,International Telecommunication Union,SPECIALIZED AGENCIES,acronym=ITU; category=Specialized agency of the UN
+un_mapping,36,updated,"United Nations Educational, Scientific and Cultural Organization",SPECIALIZED AGENCIES,acronym=UNESCO; category=Specialized agency of the UN
+un_mapping,37,updated,World Health Organization,SPECIALIZED AGENCIES,acronym=WHO; category=Specialized agency of the UN
+un_mapping,38,updated,UNIDO,SPECIALIZED AGENCIES,acronym=UNIDO; category=Specialized Agency of the UN
+un_mapping,39,updated,International Bank for Reconstruction and development,SPECIALIZED AGENCIES,acronym=IBRD; category=International Financial Institutions
+un_mapping,40,updated,International Development Association,SPECIALIZED AGENCIES,acronym=IDA; category=International Financial Institutions
+un_mapping,41,updated,International Finance corporation,SPECIALIZED AGENCIES,acronym=IFC; category=International Financial Institutions
+un_events,4,event_updated,Session of the Second Committee,UNGA Second Committee (Economic and Financial),
+un_events,6,event_updated,ECOSOC Youth Forum,United Nations Development Programme,
+un_events,7,event_updated,UN High-Level Political Forum (HLPF),United Nations Development Programme,
+un_events,8,event_updated,Global Goals Week,United Nations Development Programme,
+un_events,9,event_updated,Digital Governance UNGA / UNGA High-Level Week,United Nations Development Programme,
+un_events,10,event_updated,Intergovernmental Negotiating Committee on Plastic Pollution (INC-5.3),United Nations Environment Programme,
+un_events,11,event_updated,World Environment Day 2026,United Nations Environment Programme,
+un_events,12,event_updated,UNEP FI Global Roundtable,United Nations Environment Programme,
+un_events,13,event_updated,UN High-Level Political Forum (HLPF),United Nations Environment Programme,
+un_events,14,event_updated,UN General Assembly High-Level Week,United Nations Environment Programme,
+un_events,15,event_updated,Climate Week NYC,United Nations Environment Programme,
+un_events,16,event_updated,First International Conference of the Global Framework on Chemicals,United Nations Environment Programme,
+un_events,17,event_updated,ECOSOC Youth Forum,United Nations Children's Fund,
+un_events,18,event_updated,UN High-Level Political Forum (HLPF),United Nations Children's Fund,
+un_events,19,event_updated,Global Goals Week / SDG Action Weekend,United Nations Children's Fund,
+un_events,20,event_updated,UN General Assembly High-Level Week,United Nations Children's Fund,
+un_events,21,event_updated,UN High-Level Political Forum (HLPF),World Food Programme,
+un_events,22,event_updated,UN General Assembly (UNGA) High-Level Week,World Food Programme,
+un_events,23,event_updated,SDG Action Weekend / Global Goals Week,World Food Programme,
+un_events,24,event_updated,Second Committee Sessions,World Food Programme,
+un_events,25,event_updated,World Food Forum,World Food Programme,
+un_events,27,event_updated,Commission on the Status of Women (CSW70),UN Women,
+un_events,28,event_updated,UN General Assembly High-Level Week,UN Women,
+un_events,31,event_updated,Global Learning Conference in Africa,United Nations Institute for Training and research,
+un_events,32,event_updated,UN High-Level Political Forum (HLPF) Side Events,United Nations Institute for Training and research,
+un_events,35,event_updated,59th Session of the Commission on Population and Development (CPD59),Commission on Population and Development,
+un_events,36,event_updated,29th Session of the Commission on Science and Technology for Development (CSTD29),Commission on Science and Technology for Development,
+un_events,37,org_not_found_null_host,Commission for Social Development (CSocD),,
+un_events,37,event_updated,64th Session of the Commission for Social Development (CSocD64),Commission for Social Development (CSocD),
+un_events,38,event_updated,70th Session of the Commission on the Status of Women (CSW70),Commission on the Status of Women,
+un_events,40,event_updated,Africa Business Forum (ABF2026),Economic Commission for Africa,
+un_events,41,event_updated,"58th Session of the Conference of African Ministers of Finance, Planning and Economic Development (CoM2026)",Economic Commission for Africa,
+un_events,42,event_updated,12th Africa Regional Forum on Sustainable Development (ARFSD-12),Economic Commission for Africa,
+un_events,43,event_updated,"8th African Science, Technology and Innovation Forum (ASTIF)",Economic Commission for Africa,
+un_events,44,event_updated,Commission for Social Development 64th Session (CSocD64) Side Events,United Nations Research Institute for Social Development,
+un_events,45,event_updated,International Panel on Inequality (IPI) Inaugural Meeting,United Nations Research Institute for Social Development,
+un_events,46,event_updated,UN High-Level Political Forum (HLPF) Side Events,United Nations Research Institute for Social Development,
+un_events,49,event_updated,ECOSOC Youth Forum,Department of Economic and Social Affairs,
+un_events,50,event_updated,ECOSOC Forum on Financing for Development (FfD Forum),Department of Economic and Social Affairs,
+un_events,51,event_updated,"Science, Technology and Innovation (STI) Forum",Department of Economic and Social Affairs,
+un_events,52,event_updated,High-Level Political Forum (HLPF),Department of Economic and Social Affairs,
+un_events,53,event_updated,No specific standalone event identified.,Development Coordination Office,
+un_events,54,event_updated,Global Dialogue on AI Governance,Office for Digital and Emerging Technologies,
+un_events,55,event_updated,Africa Dialogue Series (ADS 2026),Office of the Special Adviser on Africa,
+un_events,56,event_updated,High-Level Policy Dialogue (ADS culmination event),Office of the Special Adviser on Africa,
+un_events,57,event_updated,ECOSOC Youth Forum,United Nations Youth Office,
+un_events,58,event_updated,UN General Assembly High-Level Week,United Nations Youth Office,
+un_events,60,org_not_found_null_host,United Nations Academic Impact,,
+un_events,61,event_updated,ECOSOC Partnership Forum Virtual Side Event,United Nations Academic Impact,
+un_events,62,event_updated,SDG Action and Awareness Week,United Nations Academic Impact,
+un_events,63,event_updated,HESI Global Forum (Special Event at HLPF),United Nations Academic Impact,
+un_events,65,event_updated,34th Session of the FAO Regional Conference for Africa (ARC34),Food and Agriculture Organization,
+un_events,66,event_updated,UN High-Level Political Forum (HLPF),Food and Agriculture Organization,
+un_events,67,event_updated,UN General Assembly (UNGA) High-Level Week,Food and Agriculture Organization,
+un_events,68,event_updated,SDG Action Weekend / Global Goals Week,Food and Agriculture Organization,
+un_events,69,event_updated,Second Committee Sessions,Food and Agriculture Organization,
+un_events,70,event_updated,World Food Forum 2026,Food and Agriculture Organization,
+un_events,71,event_updated,Hand-in-Hand Investment Forum 2026,Food and Agriculture Organization,
+un_events,72,event_updated,ECOSOC Partnership Forum,International Fund for Agricultural Development,
+un_events,73,event_updated,49th Session of the IFAD Governing Council,International Fund for Agricultural Development,
+un_events,74,event_updated,IFAD at CSW70,International Fund for Agricultural Development,
+un_events,75,event_updated,ECOSOC Forum on Financing for Development (FfD Forum),International Fund for Agricultural Development,
+un_events,76,event_updated,UN High-Level Political Forum (HLPF),International Fund for Agricultural Development,
+un_events,77,event_updated,UN General Assembly (UNGA) High-Level Week,International Fund for Agricultural Development,
+un_events,78,event_updated,Second Committee Sessions,International Fund for Agricultural Development,
+un_events,79,event_updated,Committee on World Food Security (CFS),International Fund for Agricultural Development,
+un_events,80,event_updated,World Summit on the Information Society (WSIS) Forum 2026,International Telecommunication Union,
+un_events,81,event_updated,ECOSOC Youth Forum,International Telecommunication Union,
+un_events,82,event_updated,AI for Good Global Summit 2026,International Telecommunication Union,
+un_events,83,event_updated,UN High-Level Political Forum (HLPF),International Telecommunication Union,
+un_events,84,event_updated,UN General Assembly (UNGA) High-Level Week,International Telecommunication Union,
+un_events,85,event_updated,Digital@UNGA,International Telecommunication Union,
+un_events,86,event_updated,Second Committee Sessions,International Telecommunication Union,
+un_events,87,event_updated,World Telecommunication Development Conference (WTDC),International Telecommunication Union,
+un_events,88,event_updated,Global Symposium for Regulators (GSR),International Telecommunication Union,
+un_events,89,org_not_found_null_host,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",,
+un_events,89,event_updated,ECOSOC Youth Forum,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,90,event_updated,UN High-Level Political Forum (HLPF),"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,91,event_updated,UN General Assembly (UNGA) High-Level Week,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,92,event_updated,SDG Action Weekend / Global Goals Week,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,93,event_updated,Second Committee Sessions,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,94,event_updated,UNESCO Global Forum on the Ethics of Artificial Intelligence,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,95,event_updated,UNESCO World Higher Education Conference follow-up / Higher Education Forums,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,96,event_updated,UNESCO Global Education Meeting (GEM),"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,97,event_updated,UNESCO Youth Forum,"UNESCO (United Nations Educational, Scientific and Cultural Organization)",
+un_events,98,event_updated,79th World Health Assembly (WHA79),World Health Organization,
+un_events,99,event_updated,UN High-Level Political Forum (HLPF),World Health Organization,
+un_events,100,event_updated,UN General Assembly (UNGA) High-Level Week,World Health Organization,
+un_events,101,org_not_found_null_host,UNIDO (United Nations Industrial Development Organization),,
+un_events,101,event_updated,ECOSOC Forum on Financing for Development (FfD Forum),UNIDO (United Nations Industrial Development Organization),
+un_events,102,event_updated,UN High-Level Political Forum (HLPF),UNIDO (United Nations Industrial Development Organization),
+un_events,103,event_updated,UN General Assembly (UNGA) High-Level Week,UNIDO (United Nations Industrial Development Organization),
+un_events,104,event_updated,SDG Action Weekend / Global Goals Week,UNIDO (United Nations Industrial Development Organization),
+un_events,105,event_updated,Second Committee Sessions,UNIDO (United Nations Industrial Development Organization),
+un_events,106,event_updated,UNIDO General Conference (GC21),UNIDO (United Nations Industrial Development Organization),
+un_events,108,org_not_found_null_host,"World Bank Group (IBRD, IDA, IFC)",,
+un_events,108,event_updated,World Bank–IMF Spring Meetings,"World Bank Group (IBRD, IDA, IFC)",
+un_events,109,event_updated,ECOSOC Forum on Financing for Development (FfD Forum),"World Bank Group (IBRD, IDA, IFC)",
+un_events,110,event_updated,UN High-Level Political Forum (HLPF),"World Bank Group (IBRD, IDA, IFC)",
+un_events,111,event_updated,UN General Assembly (UNGA) High-Level Week,"World Bank Group (IBRD, IDA, IFC)",
+un_events,112,event_updated,World Bank–IMF Annual Meetings,"World Bank Group (IBRD, IDA, IFC)",
+un_events,114,org_not_found_null_host,Note: List not exhaustive — additional events may occur throughout the year and may not yet be advertised.,,

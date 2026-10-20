@@ -1,0 +1,129 @@
+version: 2
+defaults_pending_ghus_confirmation: true
+
+execution:
+  dry_run_default: true
+  require_explicit_live_flag: true
+
+people:
+  discovery_enabled: false
+  contact_collection_enabled: false
+  official_public_contact_only: true
+
+hubs:
+  default_radius_miles: 200
+  core_radius_miles: 50
+  minimum_verified_independent_families: 10
+  minimum_categories: 5
+  same_topic_overlap_assignment: nearest_center
+  center_drift_review_threshold_miles: 25
+  imported_actors_trigger_candidate: false
+  report_verified_plus_imported_comparison: true
+  preserve_phase1_names: true
+  preserve_phase1_memberships: true
+  outside_radius_membership_is_informational: true
+  assignment_method_version: hub_assignment_v1
+  center_method_version: density_center_v1
+  assignment_review_bridge_kind: hub_assignment
+  topic_review_outcome: needs_review_topic
+  location_review_outcome: needs_review_location
+  final_hub_constraints_deferred: true
+  detection:
+    hub_trigger_statuses:
+      - verified
+    hub_min_actors: 10
+    hub_min_categories: 5
+    hub_core_radius_miles: 50
+    hub_radius_miles: 200
+    proposal_method_version: hub_proposal_v1
+    family_fingerprint_version: hub_family_set_v1
+
+classification:
+  catalog: config/actor_categories.yaml
+  physical_network_locations_use_own_main_job: true
+  unknown_type: other
+  unknown_type_requires_note_and_review: true
+  category_doubt_bridge_review_kind: classification
+  category_doubt_target_review_kind: category_doubt
+  final_actor_constraints_deferred: true
+  skip_out_of_scope_organizations: true
+
+light_pull:
+  fetch_budget_pages: 3
+  page_roles:
+    - homepage
+    - topic
+    - topic
+  absent_after_search_state: not_found
+  outside_budget_state: not_yet_collected
+
+deep_pull:
+  authorization_scope: actor_topic
+  default_top_n: 5
+  category_top_n:
+    university_academic: 5
+    research_center: 5
+    national_laboratory: 5
+    applied_facility: 5
+    hospital_clinical: 5
+    company: 5
+    startup: 5
+    innovation_platform: 5
+    investor: 5
+    government: 5
+    foundation_nonprofit: 5
+    association_network: 5
+
+confidence:
+  high:
+    - official_source
+    - government_source
+    - allowed_ranking_publisher
+  medium:
+    - reputable_named_third_party
+  low:
+    - indirect_evidence
+    - single_secondary_source
+    - aggregator
+
+hub_review:
+  topic_fail_priority: low
+
+events:
+  require_approved_need_and_topic: true
+  blanket_sweep_enabled: false
+
+refresh:
+  scheduling_enabled: false
+  stable_identity_days: 30
+  event_date_days: 7
+  funding_activity_days: 14
+
+job2:
+  interface: candidate_actors
+  mapping_fit_fields_enabled: false
+
+# WS6: actor update subscriptions. These replace the default weekly all-sector
+# ACTOR sweep with opt-in, scoped requests. The EVENT schedule is unchanged.
+#
+# Every value here is AWAITING GHUS SIGN-OFF (brief WS6 item 4). They are
+# configuration rather than constants precisely so a decision changes a value
+# and not the code. sector_rank_weight in particular is a proposal, not an
+# approved number.
+actor_update_subscriptions:
+  default_cadence: monthly
+  # biweekly added with the Discovery page (migration 550). No daily: the
+  # organisations being mapped do not change daily.
+  allowed_cadences: [once, weekly, biweekly, monthly, quarterly]
+  # Proposed ~20% weight for sector match in candidate ranking. NOT approved.
+  sector_rank_weight: 0.2
+  # A run is a rehearsal unless someone asks for it to be live.
+  dry_run_default: true
+  # A subscription always ends; an open-ended one is the sweep again.
+  max_duration_days: 365
+  # Who may create one. Until authentication exists this is informational and
+  # requested_by stays null rather than being invented.
+  requested_via_allowed: [map_verification, review_updates, discovery_page]
+  # A Discovery-page request stages at most this many new actors per run
+  # unless the person asks for fewer; the database caps it at 50.
+  default_max_new_actors_per_run: 10

@@ -1,0 +1,21 @@
+actor category concept|965|965|t
+actor legacy status distribution|965|965|t
+actor_capability_fact|5712|5712|t
+actor_profile values|4759|4759|t
+actor.actor_type_raw|164|164|t
+actor.current_activities|965|965|t
+actor.description|957|957|t
+actor.estimated_trl|67|67|t
+actor.funding_summary|952|952|t
+actor.key_constraints|955|955|t
+actor.primary_lifecycle_role|965|965|t
+actor.primary_technical_focus|961|961|t
+actor.state|912|912|t
+actor.technical_approach|960|960|t
+actor.technology_ip_notes|953|953|t
+organization_hierarchy|42|42|t
+record_verification actor decisions|0|0|t
+row count actor|965|965|t
+row count event|356|356|t
+row count hub|49|49|t
+row count hub_actor|821|821|t

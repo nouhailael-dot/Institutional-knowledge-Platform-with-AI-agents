@@ -1,0 +1,14 @@
+[project]
+name = "global-hubs-platform"
+version = "0.1.0"
+description = "AI-enabled digital intelligence platform for Global Hubs U.S."
+requires-python = ">=3.12"
+# Dependencies live in requirements.txt. Install with:
+#   pip install -r requirements.txt
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

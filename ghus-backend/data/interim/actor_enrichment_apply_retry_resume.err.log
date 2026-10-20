@@ -1,0 +1,213 @@
+2026-07-20 19:29:41,037  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-20 19:29:47,359  INFO     src.enrichment.actor_enrichment_candidates  Processing 38 sparse hub-linked actors
+2026-07-20 19:29:47,545  INFO     src.enrichment.actor_enrichment_candidates  [1/38] USC Information Sciences Institute (ISI)
+2026-07-20 19:29:48,473  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USC+Information+Sciences+Institute+%28ISI%29 "HTTP/1.1 200 OK"
+2026-07-20 19:29:50,700  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=USC+Information+Sciences+Institute+%28ISI%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:29:55,441  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-20 19:29:57,604  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ISI "HTTP/1.1 200 OK"
+2026-07-20 19:29:58,495  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=ISI&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:30:02,895  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USC+Information+Sciences+Institute "HTTP/1.1 200 OK"
+2026-07-20 19:30:03,500  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=USC+Information+Sciences+Institute&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:30:11,352  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:30:12,701  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 1 actors
+2026-07-20 19:30:13,336  INFO     src.enrichment.actor_enrichment_candidates  [2/38] USC Viterbi AI Labs
+2026-07-20 19:30:14,570  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 2 actors
+2026-07-20 19:30:15,446  INFO     src.enrichment.actor_enrichment_candidates  [3/38] USC Viterbi School of Engineering
+2026-07-20 19:30:16,234  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USC+Viterbi+School+of+Engineering "HTTP/1.1 200 OK"
+2026-07-20 19:30:17,224  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=USC+Viterbi+School+of+Engineering&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:30:24,995  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:30:26,092  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 3 actors
+2026-07-20 19:30:26,851  INFO     src.enrichment.actor_enrichment_candidates  [4/38] USDA Research Presence (Regional)
+2026-07-20 19:30:27,979  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USDA+Research+Presence+%28Regional%29 "HTTP/1.1 200 OK"
+2026-07-20 19:30:29,539  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=USDA+Research+Presence+%28Regional%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:30:33,739  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Regional "HTTP/1.1 200 OK"
+2026-07-20 19:30:34,962  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Regional&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:30:38,779  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USDA+Research+Presence "HTTP/1.1 200 OK"
+2026-07-20 19:30:39,743  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=USDA+Research+Presence&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:30:50,008  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:30:51,116  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 4 actors
+2026-07-20 19:30:51,734  INFO     src.enrichment.actor_enrichment_candidates  [5/38] USGS Colorado Water Science Center
+2026-07-20 19:30:52,764  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USGS+Colorado+Water+Science+Center "HTTP/1.1 200 OK"
+2026-07-20 19:30:53,764  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=USGS+Colorado+Water+Science+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:31:00,339  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:31:01,938  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 5 actors
+2026-07-20 19:31:02,916  INFO     src.enrichment.actor_enrichment_candidates  [6/38] USGS Geological Research
+2026-07-20 19:31:03,935  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USGS+Geological+Research "HTTP/1.1 200 OK"
+2026-07-20 19:31:05,370  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=USGS+Geological+Research&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:31:17,696  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:31:19,185  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 6 actors
+2026-07-20 19:31:19,914  INFO     src.enrichment.actor_enrichment_candidates  [7/38] UT Austin Water Resources Engineering
+2026-07-20 19:31:20,826  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UT+Austin+Water+Resources+Engineering "HTTP/1.1 200 OK"
+2026-07-20 19:31:22,037  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UT+Austin+Water+Resources+Engineering&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:31:31,573  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:31:32,642  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 7 actors
+2026-07-20 19:31:33,518  INFO     src.enrichment.actor_enrichment_candidates  [8/38] UT Energy Institute
+2026-07-20 19:31:34,381  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UT+Energy+Institute "HTTP/1.1 200 OK"
+2026-07-20 19:31:35,771  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UT+Energy+Institute&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:31:42,334  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:31:44,149  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 8 actors
+2026-07-20 19:31:45,866  INFO     src.enrichment.actor_enrichment_candidates  [9/38] Utah Geological Survey
+2026-07-20 19:31:48,245  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Utah+Geological+Survey "HTTP/1.1 200 OK"
+2026-07-20 19:31:51,008  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Utah+Geological+Survey&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:31:58,214  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:31:59,646  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 9 actors
+2026-07-20 19:32:00,446  INFO     src.enrichment.actor_enrichment_candidates  [10/38] UTHealth Clinical Research Institutes
+2026-07-20 19:32:02,726  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UTHealth+Clinical+Research+Institutes "HTTP/1.1 200 OK"
+2026-07-20 19:32:03,728  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UTHealth+Clinical+Research+Institutes&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:32:12,528  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:32:13,773  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 10 actors
+2026-07-20 19:32:14,387  INFO     src.enrichment.actor_enrichment_candidates  [11/38] UTHealth Institute for Stroke & Cerebrovascular Disease
+2026-07-20 19:32:15,399  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UTHealth+Institute+for+Stroke+%26+Cerebrovascular+Disease "HTTP/1.1 200 OK"
+2026-07-20 19:32:16,747  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UTHealth+Institute+for+Stroke+%26+Cerebrovascular+Disease&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:32:24,081  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:32:25,472  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 11 actors
+2026-07-20 19:32:26,273  INFO     src.enrichment.actor_enrichment_candidates  [12/38] UW AI Centers & Initiatives (AI, robotics, ethical AI, accessibility)
+2026-07-20 19:32:27,177  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+AI+Centers+%26+Initiatives+%28AI%2C+robotics%2C+ethical+AI%2C+accessibility%29 "HTTP/1.1 200 OK"
+2026-07-20 19:32:28,376  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UW+AI+Centers+%26+Initiatives+%28AI%2C+robotics%2C+ethical+AI%2C+accessibility%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:32:33,479  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI%2C+robotics%2C+ethical+AI%2C+accessibility "HTTP/1.1 200 OK"
+2026-07-20 19:32:34,778  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=AI%2C+robotics%2C+ethical+AI%2C+accessibility&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:32:40,407  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+AI+Centers+%26+Initiatives "HTTP/1.1 200 OK"
+2026-07-20 19:32:41,595  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UW+AI+Centers+%26+Initiatives&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:32:49,376  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:32:51,665  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 12 actors
+2026-07-20 19:32:52,693  INFO     src.enrichment.actor_enrichment_candidates  [13/38] UW College of the Environment
+2026-07-20 19:32:54,163  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+College+of+the+Environment "HTTP/1.1 200 OK"
+2026-07-20 19:32:55,175  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UW+College+of+the+Environment&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:33:03,570  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:33:04,849  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 13 actors
+2026-07-20 19:33:05,403  INFO     src.enrichment.actor_enrichment_candidates  [14/38] UW Paul G. Allen School AI Centers & Initiatives
+2026-07-20 19:33:07,330  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+Paul+G.+Allen+School+AI+Centers+%26+Initiatives "HTTP/1.1 200 OK"
+2026-07-20 19:33:08,421  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UW+Paul+G.+Allen+School+AI+Centers+%26+Initiatives&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:33:15,954  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:33:17,221  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 14 actors
+2026-07-20 19:33:17,869  INFO     src.enrichment.actor_enrichment_candidates  [15/38] UW+Amazon Science Hub (robotics & AI research collaboration)
+2026-07-20 19:33:18,919  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW%2BAmazon+Science+Hub+%28robotics+%26+AI+research+collaboration%29 "HTTP/1.1 200 OK"
+2026-07-20 19:33:20,202  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UW%2BAmazon+Science+Hub+%28robotics+%26+AI+research+collaboration%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:33:27,190  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=robotics+%26+AI+research+collaboration "HTTP/1.1 200 OK"
+2026-07-20 19:33:29,688  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=robotics+%26+AI+research+collaboration&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:33:38,985  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW%2BAmazon+Science+Hub "HTTP/1.1 200 OK"
+2026-07-20 19:33:40,705  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UW%2BAmazon+Science+Hub&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:33:50,630  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:33:52,712  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 15 actors
+2026-07-20 19:33:54,076  INFO     src.enrichment.actor_enrichment_candidates  [16/38] UWM School of Freshwater Sciences
+2026-07-20 19:33:58,871  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UWM+School+of+Freshwater+Sciences "HTTP/1.1 200 OK"
+2026-07-20 19:34:01,532  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UWM+School+of+Freshwater+Sciences&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:34:20,909  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:34:22,638  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 16 actors
+2026-07-20 19:34:23,468  INFO     src.enrichment.actor_enrichment_candidates  [17/38] Vaccine Research Center (NIH)
+2026-07-20 19:34:25,333  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Vaccine+Research+Center+%28NIH%29 "HTTP/1.1 200 OK"
+2026-07-20 19:34:27,076  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Vaccine+Research+Center+%28NIH%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:34:32,822  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NIH "HTTP/1.1 200 OK"
+2026-07-20 19:34:34,068  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=NIH&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:34:38,876  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Vaccine+Research+Center "HTTP/1.1 200 OK"
+2026-07-20 19:34:39,726  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Vaccine+Research+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:34:45,728  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Vaccine+%28NIH%29 "HTTP/1.1 200 OK"
+2026-07-20 19:34:47,058  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Vaccine+%28NIH%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:34:56,495  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:34:58,453  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 17 actors
+2026-07-20 19:34:59,236  INFO     src.enrichment.actor_enrichment_candidates  [18/38] Venture Catalyst (commercialization platform)
+2026-07-20 19:35:00,396  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Venture+Catalyst+%28commercialization+platform%29 "HTTP/1.1 200 OK"
+2026-07-20 19:35:01,668  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Venture+Catalyst+%28commercialization+platform%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:35:07,735  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=commercialization+platform "HTTP/1.1 200 OK"
+2026-07-20 19:35:08,484  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=commercialization+platform&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:35:13,850  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Venture+Catalyst "HTTP/1.1 200 OK"
+2026-07-20 19:35:15,006  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Venture+Catalyst&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:35:24,414  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:35:25,539  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 18 actors
+2026-07-20 19:35:26,291  INFO     src.enrichment.actor_enrichment_candidates  [19/38] Venture Catalyst (UC Davis)
+2026-07-20 19:35:27,319  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Venture+Catalyst+%28UC+Davis%29 "HTTP/1.1 200 OK"
+2026-07-20 19:35:28,379  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Venture+Catalyst+%28UC+Davis%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:35:33,629  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Davis "HTTP/1.1 200 OK"
+2026-07-20 19:35:34,724  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=UC+Davis&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:35:40,284  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Venture+Catalyst "HTTP/1.1 200 OK"
+2026-07-20 19:35:41,273  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Venture+Catalyst&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:35:50,955  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:35:52,557  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 19 actors
+2026-07-20 19:35:53,664  INFO     src.enrichment.actor_enrichment_candidates  [20/38] Vertex
+2026-07-20 19:35:54,858  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Vertex "HTTP/1.1 200 OK"
+2026-07-20 19:35:55,671  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Vertex&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:36:06,761  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:36:08,088  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 20 actors
+2026-07-20 19:36:08,092  INFO     src.enrichment.actor_enrichment_candidates  Progress 20/38, Claude cost $0.2256
+2026-07-20 19:36:09,278  INFO     src.enrichment.actor_enrichment_candidates  [21/38] Vineyard Wind
+2026-07-20 19:36:10,171  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Vineyard+Wind "HTTP/1.1 200 OK"
+2026-07-20 19:36:10,996  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Vineyard+Wind&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:36:20,120  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:36:21,272  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 21 actors
+2026-07-20 19:36:21,841  INFO     src.enrichment.actor_enrichment_candidates  [22/38] W.L. Gore
+2026-07-20 19:36:22,775  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=W.L.+Gore "HTTP/1.1 200 OK"
+2026-07-20 19:36:24,143  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=W.L.+Gore&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:36:35,073  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:36:36,722  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 22 actors
+2026-07-20 19:36:37,420  INFO     src.enrichment.actor_enrichment_candidates  [23/38] Walter Reed National Military Medical Center
+2026-07-20 19:36:38,836  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Walter+Reed+National+Military+Medical+Center "HTTP/1.1 200 OK"
+2026-07-20 19:36:39,853  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Walter+Reed+National+Military+Medical+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:36:49,125  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:36:50,314  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 23 actors
+2026-07-20 19:36:51,090  INFO     src.enrichment.actor_enrichment_candidates  [24/38] Washington University in St. Louis
+2026-07-20 19:36:52,261  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Washington+University+in+St.+Louis "HTTP/1.1 200 OK"
+2026-07-20 19:36:54,674  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Washington+University+in+St.+Louis&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:37:04,945  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:37:06,366  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 24 actors
+2026-07-20 19:37:07,029  INFO     src.enrichment.actor_enrichment_candidates  [25/38] Water Analytics Firms (Colorado)
+2026-07-20 19:37:08,967  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 25 actors
+2026-07-20 19:37:09,846  INFO     src.enrichment.actor_enrichment_candidates  [26/38] Water Infrastructure Engineering Firms
+2026-07-20 19:37:11,319  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 26 actors
+2026-07-20 19:37:11,971  INFO     src.enrichment.actor_enrichment_candidates  [27/38] Water Resilience Research Centers
+2026-07-20 19:37:13,488  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 27 actors
+2026-07-20 19:37:14,363  INFO     src.enrichment.actor_enrichment_candidates  [28/38] Water Technology Startups
+2026-07-20 19:37:15,912  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 28 actors
+2026-07-20 19:37:16,496  INFO     src.enrichment.actor_enrichment_candidates  [29/38] Water Treatment Companies
+2026-07-20 19:37:18,247  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 29 actors
+2026-07-20 19:37:19,113  INFO     src.enrichment.actor_enrichment_candidates  [30/38] Water-Energy-Food Nexus Programs
+2026-07-20 19:37:20,648  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 30 actors
+2026-07-20 19:37:21,186  INFO     src.enrichment.actor_enrichment_candidates  [31/38] Water-Tech Startups (Arizona)
+2026-07-20 19:37:22,595  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 31 actors
+2026-07-20 19:37:23,201  INFO     src.enrichment.actor_enrichment_candidates  [32/38] Water-Tech Startups (California)
+2026-07-20 19:37:24,992  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 32 actors
+2026-07-20 19:37:25,653  INFO     src.enrichment.actor_enrichment_candidates  [33/38] Weill Cornell Medicine
+2026-07-20 19:37:26,884  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Weill+Cornell+Medicine "HTTP/1.1 200 OK"
+2026-07-20 19:37:27,793  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Weill+Cornell+Medicine&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:37:35,268  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:37:36,434  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 33 actors
+2026-07-20 19:37:37,291  INFO     src.enrichment.actor_enrichment_candidates  [34/38] Weill Cornell Medicine (Houston campus)
+2026-07-20 19:37:38,390  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Weill+Cornell+Medicine+%28Houston+campus%29 "HTTP/1.1 200 OK"
+2026-07-20 19:37:39,581  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Weill+Cornell+Medicine+%28Houston+campus%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:37:45,792  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Houston+campus "HTTP/1.1 200 OK"
+2026-07-20 19:37:46,604  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Houston+campus&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:37:51,032  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Weill+Cornell+Medicine "HTTP/1.1 200 OK"
+2026-07-20 19:37:51,766  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Weill+Cornell+Medicine&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:38:00,989  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:38:00,995  WARNING  src.ai.client  No JSON object in reply: {
+  "matched": false,
+  "confidence": 0.15,
+  "needs_human_review": true,
+  "description": null,
+  "website": null,
+  "location_city": null,
+  "state": null,
+  "country": null,
+  "source_url": null,
+ 
+2026-07-20 19:38:04,012  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 34 actors
+2026-07-20 19:38:07,422  INFO     src.enrichment.actor_enrichment_candidates  [35/38] Wind Farm Operators (Texas)
+2026-07-20 19:38:08,343  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Wind+Farm+Operators+%28Texas%29 "HTTP/1.1 200 OK"
+2026-07-20 19:38:09,250  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Wind+Farm+Operators+%28Texas%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:38:14,149  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas "HTTP/1.1 200 OK"
+2026-07-20 19:38:15,199  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Texas&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:38:20,008  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Wind+Farm+Operators "HTTP/1.1 200 OK"
+2026-07-20 19:38:20,878  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Wind+Farm+Operators&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:38:28,405  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:38:29,692  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 35 actors
+2026-07-20 19:38:30,229  INFO     src.enrichment.actor_enrichment_candidates  [36/38] Wind Technology Center
+2026-07-20 19:38:31,603  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Wind+Technology+Center "HTTP/1.1 200 OK"
+2026-07-20 19:38:32,812  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Wind+Technology+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:38:39,946  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:38:41,794  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 36 actors
+2026-07-20 19:38:43,225  INFO     src.enrichment.actor_enrichment_candidates  [37/38] Wisconsin Catalysis and Organometallic Chemistry Groups
+2026-07-20 19:38:44,974  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Wisconsin+Catalysis+and+Organometallic+Chemistry+Groups "HTTP/1.1 200 OK"
+2026-07-20 19:38:45,940  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Wisconsin+Catalysis+and+Organometallic+Chemistry+Groups&per-page=5 "HTTP/1.1 200 OK"
+2026-07-20 19:38:52,215  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-20 19:38:53,175  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 37 actors
+2026-07-20 19:38:54,142  INFO     src.enrichment.actor_enrichment_candidates  [38/38] Wisconsin Polymer Research Programs
+2026-07-20 19:38:55,983  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 38 actors

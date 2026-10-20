@@ -1,0 +1,76 @@
+# Architecture V2 detached migration proposals
+
+These files are proposals for the schema owner. They must never be executed on
+shared Supabase by an agent.
+
+The 21 logical migrations are ordered in `manifest.json` and use two ownership
+tracks:
+
+- `versions/v2a*.py` contains canonical-table Alembic proposals. This directory
+  is not listed in `alembic.ini`, every proposal has `down_revision = None`, and
+  `migrations/env.py` does not import V2 metadata. After approval, the schema
+  owner sets the live `down_revision`, moves each revision into
+  `migrations/versions/`, and validates the associated backfill.
+- `agents/sql/190_v2_*.sql` through `370_v2_*.sql` contain platform-owned
+  tables, guards, and compatibility views. Matching rollback scripts live under
+  `agents/sql/rollback/`.
+
+Constraints added to populated canonical tables are `NOT VALID`. They are not
+validated until Phase 12 produces and applies an owner-approved backfill.
+
+Phase 3 adds `350_v2_record_creation.sql`. It extends the unified review-kind
+constraint with `verify_actor` and adds the three actor source-origin codes
+required by the specification. Its check constraint is deliberately `NOT
+VALID`; the matching rollback refuses to discard live `verify_actor` history.
+
+Phase 4 adds the wholly additive `360_v2_city_gazetteer.sql` proposal. It adds
+only the static `us_city_coord` lookup table and its index. It is deliberately
+not folded into the already validated 180–350 production apply package.
+After the schema owner applies proposal 360 in an isolated environment, validate
+the checksummed archive with the dry-run loader before explicitly loading it:
+
+```powershell
+python -m scripts.load_us_city_gazetteer
+python -m scripts.load_us_city_gazetteer --live
+```
+
+The loader refuses non-local or non-test databases. It is never an authorized
+production apply path.
+
+Phase 5 adds `370_v2_actor_classification.sql`, which adds definitions and an
+explicit `is_other` flag to the V2-owned category-type reference table. It does
+not alter a legacy canonical table and is not part of the validated 180–350
+apply package. Breaking actor-table checks remain in
+`deferred/380_v2_actor_classification_cutover.sql`. While the current
+production-compatible review CHECK rejects `category_doubt`, code writes the
+documented `classification` + `issue: category_doubt` bridge. The exact
+owner-run conversion is proposed in
+`deferred/370_v2_category_doubt_review_kind.sql`; neither deferred file is an
+agent execution path.
+
+Phase 6 adds the detached nullable hub center audit columns in
+`v2a05_hub_assignment.py` and the new immutable
+`380_v2_hub_assignment_evidence.sql` table. Neither changes an existing
+membership. The current review-kind CHECK is bridged with marked
+`hub_assignment` / `same_topic_overlap` rows; deferred proposal 390 converts
+only those marked rows. Deferred proposal 400 is the final hub contract and
+depends on the Phase 12 topic, geography, status, source, and membership
+backfill. Neither deferred proposal is an agent execution path.
+
+Phase 7 adds `390_v2_hub_detection.sql`: a run ledger plus nullable proposal
+and member evidence columns. It does not change the frozen 180--350 package,
+legacy memberships, or any canonical hub row. The detector fails closed for
+live persistence until the schema owner approves deferred proposal 410, which
+replaces proposal 310's fixed kind/count/core checks with the configuration-
+backed deterministic-detection contract. Proposal 410 must be deployed with
+the matching Phase 7 code; it is not an agent execution path.
+
+Only the isolated test helper may exercise the detached set:
+
+```powershell
+$env:V2_TEST_DATABASE_URL = 'postgresql+psycopg2://ghus_test@127.0.0.1:55432/ghus_v2_test'
+python scripts/architecture_v2_migrate.py up-down-up
+```
+
+The helper refuses non-local hosts, ports other than 55432, and database names
+that do not end in `_test`. It never reads `DATABASE_URL`.

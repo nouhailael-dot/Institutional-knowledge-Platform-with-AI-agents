@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "actor": {
+      "default_field_set": "profile",
+      "field_sets": {
+        "profile": ["description", "website", "location_city", "state", "country"],
+        "technical": [
+          "primary_technical_focus",
+          "technical_approach",
+          "current_activities",
+          "technology_ip_notes",
+          "key_constraints",
+          "primary_lifecycle_role"
+        ],
+        "funding": ["funding_summary"],
+        "weekly": [
+          "description",
+          "website",
+          "location_city",
+          "state",
+          "country",
+          "primary_technical_focus",
+          "technical_approach",
+          "current_activities",
+          "technology_ip_notes",
+          "key_constraints",
+          "primary_lifecycle_role",
+          "funding_summary"
+        ]
+      },
+      "fields": {
+        "description": {"enrichable": true, "auto_apply_floor": 0.92},
+        "website": {"enrichable": true, "auto_apply_floor": 0.95},
+        "location_city": {"enrichable": true},
+        "state": {"enrichable": true},
+        "country": {"enrichable": true},
+        "primary_technical_focus": {"enrichable": true},
+        "technical_approach": {"enrichable": true},
+        "current_activities": {"enrichable": true},
+        "technology_ip_notes": {"enrichable": true},
+        "key_constraints": {"enrichable": true},
+        "primary_lifecycle_role": {"enrichable": true},
+        "funding_summary": {"enrichable": true},
+        "estimated_trl": {"enrichable": true}
+      }
+    },
+    "hub": {
+      "default_field_set": "profile",
+      "field_sets": {
+        "profile": ["description", "official_websites", "primary_city", "state", "country"],
+        "strategy": ["strategic_value_summary", "core_topic_strengths"],
+        "funding": ["funding_summary"],
+        "weekly": [
+          "description",
+          "official_websites",
+          "primary_city",
+          "state",
+          "country",
+          "strategic_value_summary",
+          "core_topic_strengths",
+          "funding_summary"
+        ]
+      },
+      "fields": {
+        "description": {"enrichable": true, "auto_apply_floor": 0.92},
+        "official_websites": {"enrichable": true, "auto_apply_floor": 0.95},
+        "primary_city": {"enrichable": true},
+        "state": {"enrichable": true},
+        "country": {"enrichable": true},
+        "strategic_value_summary": {"enrichable": true},
+        "core_topic_strengths": {"enrichable": true},
+        "funding_summary": {"enrichable": true}
+      }
+    },
+    "event": {
+      "default_field_set": "profile",
+      "field_sets": {
+        "profile": ["description", "website", "location", "thematic_focus"],
+        "schedule": ["next_date", "recurring_pattern", "access_type"],
+        "attendance": ["expected_attendance"],
+        "weekly": [
+          "description",
+          "website",
+          "location",
+          "thematic_focus",
+          "next_date",
+          "recurring_pattern",
+          "access_type",
+          "expected_attendance"
+        ]
+      },
+      "fields": {
+        "description": {"enrichable": true, "auto_apply_floor": 0.92},
+        "website": {"enrichable": true, "auto_apply_floor": 0.95},
+        "location": {"enrichable": true},
+        "thematic_focus": {"enrichable": true},
+        "next_date": {"enrichable": true},
+        "recurring_pattern": {"enrichable": true},
+        "access_type": {"enrichable": true},
+        "expected_attendance": {"enrichable": true}
+      }
+    },
+    "person": {
+      "default_field_set": "profile",
+      "field_sets": {
+        "profile": ["title", "bio", "country_code", "linkedin_url", "orcid"],
+        "contact": ["email", "tel_num", "linkedin_url"],
+        "weekly": ["title", "bio", "country_code", "linkedin_url", "orcid", "email", "tel_num"]
+      },
+      "fields": {
+        "title": {"enrichable": true},
+        "bio": {"enrichable": true},
+        "country_code": {"enrichable": true},
+        "linkedin_url": {"enrichable": true},
+        "orcid": {"enrichable": true},
+        "email": {"enrichable": true},
+        "tel_num": {"enrichable": true}
+      }
+    }
+  }
+}

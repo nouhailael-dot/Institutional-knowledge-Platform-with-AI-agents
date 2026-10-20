@@ -1,0 +1,51 @@
+# Secrets
+.env
+.env.local
+*.pem
+*.key
+
+# Data — never committed
+data/raw/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.pytest-*/
+.mypy_cache/
+.ruff_cache/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+
+# Node
+node_modules/
+.next/
+
+# Local DB
+*.db
+*.sqlite
+
+# models 
+models/
+.cache/
+huggingface/
+*.joblib
+# Agent generated artifacts
+agents/runs/
+agents/raw_documents/

@@ -1,0 +1,35 @@
+raw_value,canonical_enum,notes
+University Lab,university_lab,Official dropdown value from NutriCrops Lists sheet
+National Research Lab,national_research_lab,Official dropdown value from NutriCrops Lists sheet
+Startup / New Venture,startup,Official dropdown value from NutriCrops Lists sheet
+Corporate R&D / Innovation Lab,corporate_rd_lab,Official dropdown value from NutriCrops Lists sheet
+Federal Science Agency,federal_agency,Free-text — federal-level
+Federal Research System,federal_research_system,Free-text — federal-level research network
+Federal Regulatory Authority – Nuclear & Radioactive Materials Oversight,federal_agency,Free-text — regulator treated as federal agency
+National Regulator / Research System,federal_research_system,Free-text — national-level regulator/research
+National Institute / Research Center,federal_research_system,Free-text — institute-level federal entity
+Regional Nuclear Research Center,national_research_center,Free-text — regional research center
+National Nuclear / Strategic Minerals Research Center,national_research_center,Free-text — national specialized center
+National Nuclear Research Institute / University-Linked Lab,national_research_center,Free-text — hybrid national-academic
+National Mineral Technology Center,national_research_center,Free-text — specialized national center
+Industrial Host / Corporate Partner,industrial_partner,Free-text — corporate operator
+Large corporate industrial business,industrial_partner,Free-text — corporate operator
+New Venture / Project Developer,project_developer,Free-text — early-stage project entity
+Fund and Programme,un_programme,UN funds and programmes (UNDP, UNEP, UNICEF, etc.)
+Main Committee of the UNGA,un_committee,Committees of the UN General Assembly
+Functional Commission,un_committee,ECOSOC functional commissions
+Regional Commission,un_committee,ECOSOC regional commissions
+Department or Office,un_secretariat,UN Secretariat departments and offices
+Specialized Agency,un_agency,UN specialized agencies (FAO, UNESCO, WHO, etc.)
+Multilateral Development Bank,multilateral_development_bank,World Bank Group and similar
+Research and Training Institute,un_programme,UN research and training institutes (UNITAR, UNRISD)
+Intergovernmental Organization,intergovernmental_organization,Generic intergovernmental orgs not in other categories
+Fund & Programme,un_programme,UN funds and programmes (UNDP, UNEP, UNICEF, etc.)
+Main Committee of the UNGA,un_committee,Committees of the UN General Assembly
+Functional Commission of ECOSOC,un_committee,ECOSOC functional commissions
+Regional Commission of ECOSOC,un_committee,ECOSOC regional commissions
+Department of the UN Secretariat,un_secretariat,UN Secretariat departments and offices
+Office of the UN Secretariat,un_secretariat,UN Secretariat offices
+Specialized Agency,un_agency,UN specialized agencies (FAO UNESCO WHO etc.)
+Research & Training Institute,un_programme,UN research and training institutes (UNITAR UNRISD)
+World Bank Group Member,multilateral_development_bank,IBRD IDA IFC and similar

@@ -1,0 +1,4 @@
+pair_id,name_a,name_b,score,notes
+369,Climate Tech Startups (California),Climate-Tech Startups,0.9824093178638844,"Different; same name, distinct scope/region ('California' vs 'unqualified')."
+414,Weill Cornell Medicine,Weill Cornell Medicine (Houston campus),0.9821508591719865,"Different; same name, distinct scope/region ('unqualified' vs 'Houston campus')."
+403,Michigan Energy Institute,Michigan Energy Institute (materials focus),0.9589683356743585,"Different; same name, distinct scope/region ('unqualified' vs 'materials focus')."

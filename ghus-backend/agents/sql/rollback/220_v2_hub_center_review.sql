@@ -1,0 +1,3 @@
+BEGIN;
+DROP TABLE IF EXISTS hub_center_review;
+COMMIT;

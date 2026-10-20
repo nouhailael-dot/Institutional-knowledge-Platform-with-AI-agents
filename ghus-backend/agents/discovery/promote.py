@@ -1,0 +1,2243 @@
+"""Canonical promotion path for agent-staged records.
+
+This module is intentionally one of the only agents modules that inserts or
+updates canonical entity tables. The Phase 1 slice supports event
+create/absorb/review. Event review rows use an agent-owned queue because the
+existing review_queue table is actor-specific.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from dataclasses import dataclass, field
+from datetime import UTC, date, datetime
+from urllib.parse import urlparse
+
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+
+from agents.collection.light_pull import LightPullResult, replace_light_fact, run_light_pull
+from agents.common.actor_classification import (
+    CATEGORY_DOUBT_BRIDGE_KIND,
+    CATEGORY_DOUBT_ISSUE,
+    ActorClassification,
+    classification_from_payload,
+)
+from agents.common.facts import ActorFactWrite
+from agents.common.geography import PreparedActorGeography, prepare_actor_geography
+from agents.common.hub_assignment import (
+    HUB_ASSIGNMENT_METHOD_VERSION,
+    NEEDS_REVIEW_LOCATION,
+    NEEDS_REVIEW_SECTOR,
+    NEEDS_REVIEW_TOPIC,
+    ActorHubContext,
+    HubAssignmentPlan,
+    HubCandidate,
+    build_hub_assignment_plan,
+)
+from agents.common.provenance import insert_source
+from agents.common.relationships import actor_relationship_requests
+from agents.common.resolve_route import RouteDecision
+from agents.discovery.stage import StagedRecord
+from agents.enrichment.decisions import (
+    append_actor_fact,
+    append_entity_edge,
+    record_agent_auto_verification,
+)
+from src.ML.entity_resolution.resolve_or_create import (
+    INHERITABLE_FIELDS as ACTOR_FIELDS,
+)
+
+EVENT_CREATE_FIELDS = [
+    "event_type",
+    "description",
+    "location",
+    "website",
+    "thematic_focus",
+    "expected_attendance",
+    "access_type",
+    "recurring_pattern",
+    "next_date",
+    "sponsoring_orgs",
+]
+
+EVENT_ABSORB_FIELDS = EVENT_CREATE_FIELDS.copy()
+DISCOVERED_DOMAIN_PAYLOAD_KEY = "_discovered_domain"
+# Set by the open-web actor pipeline only for a candidate it ACCEPTED (score
+# and every quality gate). Its value is the agent's stated reasons.
+AUTO_ACCEPT_PAYLOAD_KEY = "_auto_accept_reasons"
+ACTOR_CREATE_FIELDS = [*ACTOR_FIELDS, "funding_summary"]
+ACTOR_ABSORB_FIELDS = list(ACTOR_FIELDS)
+ACTOR_ABSORB_CONNECTOR_RE = re.compile(
+    r"\b(?:in collaboration with|in partnership with|in cooperation with|"
+    r"in association with|together with|co-hosted by|hosted by|supported by|"
+    r"with support from|and)\b",
+    flags=re.IGNORECASE,
+)
+ACTOR_ROLE_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:executive\s+)?office|permanent mission|president|chair|co-chair|"
+    r"minister|secretary-general|director|dean|"
+    r"professor|representative|ambassador|mayor|governor|prime minister|head)\s+"
+    r"(?:of|for|to)\b",
+    flags=re.IGNORECASE,
+)
+ACTOR_LIST_DELIMITER_RE = re.compile(r"\s*(?:;|,|\band\b)\s*", flags=re.IGNORECASE)
+ACTOR_ORG_MARKERS = {
+    "academy",
+    "agency",
+    "alliance",
+    "association",
+    "bank",
+    "center",
+    "centre",
+    "coalition",
+    "commission",
+    "committee",
+    "compact",
+    "council",
+    "department",
+    "foundation",
+    "fund",
+    "group",
+    "institute",
+    "initiative",
+    "lab",
+    "labs",
+    "ministry",
+    "network",
+    "nations",
+    "organization",
+    "organisation",
+    "programme",
+    "program",
+    "project",
+    "university",
+    "union",
+}
+ACTOR_LIST_SUFFIXES = {
+    "corp",
+    "corp.",
+    "gmbh",
+    "inc",
+    "inc.",
+    "llc",
+    "ltd",
+    "ltd.",
+    "plc",
+    "s.a.",
+    "sarl",
+}
+
+
+@dataclass
+class PromotionResult:
+    action: str
+    entity_type: str
+    zone: str
+    entity_id: str | None = None
+    dry_run: bool = True
+    fields_absorbed: list[str] = field(default_factory=list)
+    review_id: str | None = None
+    step_trace: list[str] = field(default_factory=list)
+
+
+def guard_actor_absorb_route(staged: StagedRecord, route: RouteDecision) -> RouteDecision:
+    if staged.entity_type != "actor" or route.zone != "absorb":
+        return route
+    metadata = dict(route.metadata or {})
+    if metadata.get("route_policy") == "v2_exact_only" and metadata.get("match_rule") in {
+        "website_domain",
+        "name_or_alternate_name",
+    }:
+        return route
+    reason = _unsafe_actor_absorb_reason(staged.normalized_payload.get("name"))
+    if not reason:
+        return route
+    if not route.target_entity_id:
+        raise ValueError("actor absorb route requires target_entity_id")
+    metadata["actor_absorb_guard_reason"] = reason
+    return RouteDecision(
+        zone="review",
+        score=route.score,
+        target_entity_id=route.target_entity_id,
+        candidate_ids=route.candidate_ids,
+        metadata=metadata,
+    )
+
+
+def guard_discovered_domain_route(
+    staged: StagedRecord, route: RouteDecision
+) -> RouteDecision:
+    domain = str(staged.normalized_payload.get(DISCOVERED_DOMAIN_PAYLOAD_KEY) or "").strip()
+    if not domain:
+        return route
+    if route.zone == "absorb":
+        metadata = dict(route.metadata or {})
+        if metadata.get("route_policy") == "v2_exact_only" and metadata.get(
+            "match_rule"
+        ) in {"website_domain", "name_or_alternate_name"}:
+            return route
+        raise RuntimeError(
+            "records from discovered domains must not use the absorb route; "
+            f"domain={domain!r}"
+        )
+    if route.zone not in {"create", "review", "skip"}:
+        raise RuntimeError(
+            "records from discovered domains may route only to create, review, or skip; "
+            f"got {route.zone!r}"
+        )
+    return route
+
+
+def promote(
+    staged: StagedRecord,
+    route: RouteDecision,
+    session=None,
+    *,
+    live: bool = False,
+    person_create_preview: bool = False,
+    people_enabled: bool = False,
+    manage_transaction: bool = True,
+) -> PromotionResult:
+    if staged.sector_match == "out_of_sector":
+        raise RuntimeError("out_of_sector staged records must not be promoted")
+    route = guard_discovered_domain_route(staged, route)
+    if staged.entity_type == "actor":
+        return _promote_actor(
+            staged,
+            route,
+            session=session,
+            live=live,
+            manage_transaction=manage_transaction,
+        )
+    if staged.entity_type == "person":
+        if not people_enabled:
+            raise RuntimeError(
+                "person promotion is disabled pending TARGETING_POLICY.md section 6 approval"
+            )
+        return _promote_person(
+            staged,
+            route,
+            session=session,
+            live=live,
+            create_preview=person_create_preview,
+            manage_transaction=manage_transaction,
+        )
+    if staged.entity_type != "event":
+        raise NotImplementedError(
+            "promotion supports only entity_type='event', entity_type='actor', "
+            "or entity_type='person'"
+        )
+
+    if session is None:
+        if live:
+            raise ValueError("live promotion requires a database session")
+        return _dry_run_preview(staged, route)
+
+    transaction = session.begin() if manage_transaction else None
+    try:
+        if route.zone == "create":
+            source_id = insert_source(
+                session,
+                source_url=staged.source_url,
+                fetched_at=staged.extracted_at,
+                description="agent discovery event create",
+            )
+            event_id = _insert_event(session, staged.normalized_payload, source_id)
+            _append_event_topics(session, event_id=event_id, staged=staged, source_id=source_id)
+            _mark_index_dirty(session, entity_type="event", entity_id=event_id)
+            result = PromotionResult(
+                action="created",
+                entity_type="event",
+                zone="create",
+                entity_id=event_id,
+                dry_run=False,
+            )
+        elif route.zone == "absorb":
+            if not route.target_entity_id:
+                raise ValueError("absorb route requires target_entity_id")
+            fields = _absorb_event_fields(session, route.target_entity_id, staged)
+            _append_event_topics(
+                session,
+                event_id=route.target_entity_id,
+                staged=staged,
+                source_id=insert_source(
+                    session,
+                    source_url=staged.source_url,
+                    fetched_at=staged.extracted_at,
+                    description="agent discovery event sighting",
+                ),
+            )
+            if fields:
+                _mark_index_dirty(session, entity_type="event", entity_id=route.target_entity_id)
+            result = PromotionResult(
+                action="absorbed" if fields else "no_op",
+                entity_type="event",
+                zone="absorb",
+                entity_id=route.target_entity_id,
+                dry_run=False,
+                fields_absorbed=fields,
+            )
+        elif route.zone == "review":
+            review_kind = str(dict(route.metadata or {}).get("review_kind") or "fuzzy_match")
+            if review_kind != "rubric_band" and not route.target_entity_id:
+                raise ValueError("event review route requires target_entity_id")
+            review_id = _insert_event_review(session, staged, route)
+            result = PromotionResult(
+                action="queued_for_review",
+                entity_type="event",
+                zone="review",
+                entity_id=route.target_entity_id,
+                dry_run=False,
+                review_id=review_id,
+            )
+        else:
+            raise ValueError(f"unknown route zone {route.zone!r}")
+    except Exception:
+        if transaction is not None:
+            transaction.rollback()
+        raise
+
+    if live and transaction is not None:
+        transaction.commit()
+        return result
+    if live:
+        return result
+    if transaction is not None:
+        transaction.rollback()
+    return _dry_run_result(result, route)
+
+
+def _dry_run_preview(staged: StagedRecord, route: RouteDecision) -> PromotionResult:
+    return PromotionResult(
+        action=f"would_{route.zone}",
+        entity_type=staged.entity_type,
+        zone=route.zone,
+        entity_id=route.target_entity_id,
+        dry_run=True,
+    )
+
+
+def _dry_run_result(result: PromotionResult, route: RouteDecision) -> PromotionResult:
+    result.action = f"would_{route.zone}"
+    result.dry_run = True
+    return result
+
+
+def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
+    name = payload.get("name") or payload.get("title")
+    if not name:
+        raise ValueError("cannot create event without name")
+    event_id = str(uuid.uuid4())
+    cols: dict[str, object] = {"event_id": event_id, "name": name, "source_id": source_id}
+    for field_name in EVENT_CREATE_FIELDS:
+        value = payload.get(field_name)
+        if _has_value(value):
+            cols[field_name] = value
+    # Architecture V2: a newly discovered event is parked until GHUS reviews it.
+    columns = _table_columns(session, "event")
+    if "record_status" in columns:
+        cols["record_status"] = "parked"
+    if "source_origin" in columns:
+        cols["source_origin"] = "claude_discovered"
+    if "date_status" in columns:
+        cols["date_status"] = _event_date_status(cols.get("next_date"))
+    names = ", ".join(cols)
+    binds = ", ".join(
+        f"CAST(:{name} AS uuid)" if name in {"event_id", "source_id"} else f":{name}"
+        for name in cols
+    )
+    session.execute(text(f"INSERT INTO event ({names}) VALUES ({binds})"), cols)
+    return event_id
+
+
+def _discovery_collection_request(session, staged: StagedRecord) -> str:
+    """One Layer 1 'events' collection request per discovery run (reused within the run)."""
+    need = f"Open-web event discovery run {staged.run_id}"
+    existing = session.execute(text(
+        "SELECT collection_request_id::text FROM collection_request "
+        "WHERE request_kind='events' AND need_text=:need LIMIT 1"
+    ), {"need": need}).scalar()
+    if existing:
+        return str(existing)
+    return str(session.execute(text(
+        "INSERT INTO collection_request (requested_by,request_kind,need_text,layer,approved) "
+        "VALUES ('open_web_discovery','events',:need,1,false) RETURNING collection_request_id::text"
+    ), {"need": need}).scalar_one())
+
+
+def _append_actor_sectors(session, *, actor_id: str, staged: StagedRecord, source_id: str) -> int:
+    """Persist the sectors the page's own evidence supports.
+
+    Until now these codes were used to match hubs and then discarded, so no
+    actor carried a sector at all. That emptied the Review sector field and left
+    sector-grouped Phase 7 detection with nothing to cluster, because
+    `actor_sector` stayed empty no matter how many actors were discovered.
+
+    `is_primary` is set only when the evidence names exactly one sector. With
+    several, the agent has not ranked them and neither will this: a reviewer
+    chooses. `ux_actor_sector_primary` allows at most one primary per actor, and
+    an unranked set simply has none.
+    """
+
+    if not _table_columns(session, "actor_sector"):
+        return 0
+    codes = sorted({str(code).strip().upper() for code in staged.sector_codes if str(code).strip()})
+    if not codes:
+        return 0
+    sectors = session.execute(text(
+        "SELECT sector_id::text AS sector_id, code FROM sector "
+        "WHERE active AND code = ANY(CAST(:codes AS text[]))"
+    ), {"codes": codes}).mappings().all()
+    if not sectors:
+        return 0
+    sole = len(sectors) == 1
+    # A reviewer's choice at admission is the primary sector; otherwise only a
+    # sole evidenced sector is.
+    chosen = str(staged.normalized_payload.get("primary_sector") or "").strip().upper()
+    written = 0
+    for sector in sectors:
+        by_reviewer = bool(chosen) and sector["code"] == chosen
+        session.execute(
+            text(
+                "INSERT INTO actor_sector (actor_id,sector_id,source_id,match_strength,"
+                "match_reason,is_primary) VALUES (CAST(:actor AS uuid),CAST(:sector AS uuid),"
+                "CAST(:source AS uuid),'moderate',:reason,:primary) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "actor": actor_id,
+                "sector": sector["sector_id"],
+                "source": source_id,
+                "primary": by_reviewer or (sole and not chosen),
+                "reason": (
+                    "Chosen as the primary sector by the GHUS reviewer at admission."
+                    if by_reviewer else
+                    f"Open-web discovery: the source page's own sector evidence matches "
+                    f"{sector['code']}. Agent-assigned and awaiting GHUS review."
+                ),
+            },
+        )
+        written += 1
+    return written
+
+
+def _append_event_topics(session, *, event_id: str, staged: StagedRecord, source_id: str) -> int:
+    """Architecture V2: link the event to every active topic its own page evidences."""
+    if not _table_columns(session, "event_topic"):
+        return 0
+    codes = sorted({str(code).strip().upper() for code in staged.sector_codes if str(code).strip()})
+    if not codes:
+        return 0
+    topics = session.execute(text(
+        "SELECT topic_id::text AS topic_id, code FROM topic "
+        "WHERE active AND code = ANY(CAST(:codes AS text[]))"
+    ), {"codes": codes}).mappings().all()
+    if not topics:
+        return 0
+    request_id = _discovery_collection_request(session, staged)
+    for topic in topics:
+        session.execute(text(
+            "INSERT INTO event_topic (event_id,topic_id,why_matched,source_id,collection_request_id) "
+            "VALUES (CAST(:event AS uuid),CAST(:topic AS uuid),:why,CAST(:source AS uuid),"
+            "CAST(:request AS uuid)) ON CONFLICT DO NOTHING"
+        ), {
+            "event": event_id, "topic": topic["topic_id"], "source": source_id,
+            "request": request_id,
+            "why": f"The event page evidences the {topic['code']} sector (open-web discovery "
+                   f"run {staged.run_id}).",
+        })
+    return len(topics)
+
+
+def _absorb_event_fields(session, event_id: str, staged: StagedRecord) -> list[str]:
+    row = (
+        session.execute(
+            text(
+                "SELECT event_type, description, location, website, thematic_focus, "
+                "expected_attendance, access_type, recurring_pattern, next_date, "
+                "sponsoring_orgs, source_id FROM event WHERE event_id = CAST(:event_id AS uuid)"
+            ),
+            {"event_id": event_id},
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:
+        raise RuntimeError(f"event {event_id} no longer exists")
+
+    updates: dict[str, object] = {}
+    for field_name in EVENT_ABSORB_FIELDS:
+        incoming = staged.normalized_payload.get(field_name)
+        if _is_empty(row.get(field_name)) and _has_value(incoming):
+            updates[field_name] = incoming
+    if not updates:
+        return []
+
+    source_id = insert_source(
+        session,
+        source_url=staged.source_url,
+        fetched_at=staged.extracted_at,
+        description="agent discovery event absorb",
+    )
+    if _is_empty(row.get("source_id")):
+        updates["source_id"] = source_id
+    updates["event_id"] = event_id
+    set_clause = ", ".join(
+        f"{field_name} = :{field_name}" for field_name in updates if field_name != "event_id"
+    )
+    session.execute(
+        text(f"UPDATE event SET {set_clause} WHERE event_id = CAST(:event_id AS uuid)"), updates
+    )
+    return [field_name for field_name in updates if field_name not in {"event_id", "source_id"}]
+
+
+def _mark_index_dirty(session, *, entity_type: str, entity_id: str) -> None:
+    session.execute(
+        text(
+            "INSERT INTO index_dirty (entity_type, entity_id, marked_at) "
+            "VALUES (:entity_type, CAST(:entity_id AS uuid), CURRENT_TIMESTAMP) "
+            "ON CONFLICT (entity_type, entity_id) DO UPDATE SET "
+            "marked_at = EXCLUDED.marked_at"
+        ),
+        {"entity_type": entity_type, "entity_id": entity_id},
+    )
+
+
+def _insert_event_review(session, staged: StagedRecord, route: RouteDecision) -> str:
+    metadata = dict(route.metadata or {})
+    if metadata.get("review_kind") == "rubric_band":
+        return _insert_event_rubric_review(session, staged, route, metadata)
+    staged_title = str(metadata.get("staged_title") or staged.normalized_payload.get("name") or "")
+    candidate_title = str(metadata.get("candidate_title") or "")
+    shared_start_date = (
+        metadata.get("shared_start_date")
+        or staged.normalized_payload.get("start_date")
+        or staged.normalized_payload.get("next_date")
+    )
+    if not candidate_title:
+        raise ValueError("event review route metadata must include candidate_title")
+    if not shared_start_date:
+        raise ValueError("event review route metadata must include shared_start_date")
+
+    event_review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO event_review_queue (event_review_id, staged_record_id, candidate_event_id, "
+            "similarity_score, staged_title, candidate_title, shared_start_date, status, reviewer) "
+            "VALUES (CAST(:event_review_id AS uuid), CAST(:staged_record_id AS uuid), "
+            "CAST(:candidate_event_id AS uuid), :similarity_score, :staged_title, :candidate_title, "
+            "CAST(:shared_start_date AS date), 'pending', NULL) "
+            "ON CONFLICT (staged_record_id, candidate_event_id) DO UPDATE SET "
+            "similarity_score = EXCLUDED.similarity_score, staged_title = EXCLUDED.staged_title, "
+            "candidate_title = EXCLUDED.candidate_title, shared_start_date = EXCLUDED.shared_start_date, "
+            "updated_at = now()"
+        ),
+        {
+            "event_review_id": event_review_id,
+            "staged_record_id": staged.staged_record_id,
+            "candidate_event_id": route.target_entity_id,
+            "similarity_score": route.score,
+            "staged_title": staged_title,
+            "candidate_title": candidate_title,
+            "shared_start_date": shared_start_date,
+        },
+    )
+    return event_review_id
+
+
+def _insert_event_rubric_review(
+    session,
+    staged: StagedRecord,
+    route: RouteDecision,
+    metadata: dict[str, object],
+) -> str:
+    staged_title = str(
+        metadata.get("staged_title") or staged.normalized_payload.get("name") or ""
+    ).strip()
+    if not staged_title:
+        raise ValueError("event rubric review requires a staged title")
+    rubric = metadata.get("rubric")
+    if not isinstance(rubric, dict):
+        raise TypeError("event rubric review requires rubric evidence")
+    event_review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO event_review_queue (event_review_id, staged_record_id, "
+            "candidate_event_id, similarity_score, staged_title, candidate_title, "
+            "shared_start_date, status, reviewer, review_kind, search_candidate_id, rubric, "
+            "score_breakdown, qualification_paths, rerank_position, rerank_reason) "
+            "VALUES (CAST(:event_review_id AS uuid), CAST(:staged_record_id AS uuid), "
+            "CAST(:candidate_event_id AS uuid), :similarity_score, :staged_title, "
+            ":candidate_title, CAST(:shared_start_date AS date), 'pending', NULL, "
+            "'rubric_band', CAST(:search_candidate_id AS uuid), CAST(:rubric AS jsonb), "
+            "CAST(:score_breakdown AS jsonb), CAST(:qualification_paths AS jsonb), "
+            ":rerank_position, :rerank_reason)"
+        ),
+        {
+            "event_review_id": event_review_id,
+            "staged_record_id": staged.staged_record_id,
+            "candidate_event_id": route.target_entity_id,
+            "similarity_score": route.score,
+            "staged_title": staged_title,
+            "candidate_title": metadata.get("candidate_title"),
+            "shared_start_date": metadata.get("shared_start_date"),
+            "search_candidate_id": metadata.get("search_candidate_id"),
+            "rubric": json.dumps(rubric, sort_keys=True),
+            "score_breakdown": json.dumps(
+                metadata.get("score_breakdown") or {}, sort_keys=True
+            ),
+            "qualification_paths": json.dumps(
+                metadata.get("qualification_paths") or [], sort_keys=True
+            ),
+            "rerank_position": metadata.get("rerank_position"),
+            "rerank_reason": metadata.get("rerank_reason"),
+        },
+    )
+    return event_review_id
+
+
+def _promote_actor(
+    staged: StagedRecord,
+    route: RouteDecision,
+    session=None,
+    *,
+    live: bool = False,
+    manage_transaction: bool = True,
+) -> PromotionResult:
+    route = guard_actor_absorb_route(staged, route)
+    return map_new_actor(
+        staged,
+        route,
+        session=session,
+        live=live,
+        manage_transaction=manage_transaction,
+    )
+
+
+ACTOR_MAPPING_STEPS = (
+    "mapped_first",
+    "category",
+    "category_type",
+    "geocode",
+    "parent_connection",
+    "hub_fit",
+    "light_pull",
+    "parked",
+    "verify_actor",
+)
+# The last step is one of two outcomes: queued for a person to verify, or -
+# for a candidate the discovery agent accepted (decision 2026-10-14) - verified
+# by the agent through a labelled verification event.
+ACTOR_FINAL_STEPS = ("verify_actor", "verified_by_agent")
+
+
+def map_new_actor(
+    staged: StagedRecord,
+    route: RouteDecision,
+    *,
+    session=None,
+    live: bool = False,
+    manage_transaction: bool = True,
+    light_pull_fetcher=None,
+    light_pull_extractor=None,
+) -> PromotionResult:
+    """Create or append an actor through the Architecture V2 ordered pipeline.
+
+    The route is already mapped-first. Exact matches append immutable evidence;
+    close matches create only a possible-duplicate review item. A genuinely new
+    record passes the remaining steps in order and ends Parked with a
+    ``verify_actor`` review item. Dry-run executes the same SQL path and rolls
+    the transaction back.
+    """
+    if staged.entity_type != "actor":
+        raise ValueError("map_new_actor accepts only actor staged records")
+    trace: list[str] = []
+    _mapping_step(route, trace, "mapped_first")
+    geography: PreparedActorGeography | None = None
+    classification: ActorClassification | None = None
+    light_pull: LightPullResult | None = None
+    if route.zone == "create":
+        _mapping_step(route, trace, "category")
+        classification = classification_from_payload(staged.normalized_payload)
+        _mapping_step(route, trace, "category_type")
+        _mapping_step(route, trace, "geocode")
+        prepared_payload = dict(staged.normalized_payload)
+        if classification is not None:
+            prepared_payload.update(classification.as_payload())
+        geography = prepare_actor_geography(prepared_payload)
+        # Validate the explicit relationship contract before either dry-run or
+        # live execution.  Placeholder UUIDs represent the not-yet-created
+        # actor and its not-yet-inserted source; no relationship is inferred.
+        planned_relationships = actor_relationship_requests(
+            actor_id="00000000-0000-0000-0000-000000000001",
+            payload=staged.normalized_payload,
+            source_id="00000000-0000-0000-0000-000000000002",
+            topic_id=_route_topic_id(staged, route),
+        )
+        prepared_payload.update(geography.actor_values)
+        prepared_payload["multi_location"] = len(geography.locations) > 1
+        prepared_payload["parent_connection"] = (
+            [{
+                "relationship_type": request.relationship_type,
+                "object_type": request.object_type,
+                "object_id": request.object_id,
+                "confidence": request.confidence,
+                "topic_id": request.topic_id,
+            } for request in planned_relationships]
+            if planned_relationships
+            else {"state": "standalone", "parent": None}
+        )
+        # Layer 1 facts are always topic-scoped. Legacy bridge inputs without a
+        # topic remain creatable but do not receive a misleading Light Pull.
+        if classification is not None and _route_topic_id(staged, route):
+            light_pull = run_light_pull(
+                payload=prepared_payload,
+                actor_category=classification.actor_category,
+                topic_id=_route_topic_id(staged, route),
+                source_url=staged.source_url,
+                date_read=staged.extracted_at,
+                fetcher=light_pull_fetcher,
+                extractor=light_pull_extractor,
+            )
+    if session is None:
+        if live:
+            raise ValueError("live promotion requires a database session")
+        if route.zone == "create":
+            for step in ACTOR_MAPPING_STEPS[4:]:
+                _mapping_step(route, trace, step)
+        return PromotionResult(
+            action=f"would_{route.zone}",
+            entity_type="actor",
+            zone=route.zone,
+            entity_id=route.target_entity_id,
+            dry_run=True,
+            step_trace=trace,
+        )
+
+    transaction = session.begin() if manage_transaction else None
+    try:
+        source_id = insert_source(
+            session,
+            source_url=staged.source_url,
+            fetched_at=staged.extracted_at,
+            description=f"architecture v2 actor {route.zone}",
+        )
+        topic_id = _route_topic_id(staged, route)
+        if route.zone == "absorb":
+            if not route.target_entity_id:
+                raise ValueError("exact actor route requires target_entity_id")
+            fields = _append_actor_sighting(
+                session,
+                actor_id=route.target_entity_id,
+                staged=staged,
+                route=route,
+                source_id=source_id,
+                topic_id=topic_id,
+            )
+            _append_actor_topic(
+                session,
+                actor_id=route.target_entity_id,
+                topic_id=topic_id,
+                source_id=source_id,
+                payload=staged.normalized_payload,
+                run_id=staged.run_id,
+            )
+            result = PromotionResult(
+                action="appended_to_existing",
+                entity_type="actor",
+                zone="absorb",
+                entity_id=route.target_entity_id,
+                dry_run=False,
+                fields_absorbed=fields,
+                step_trace=trace,
+            )
+        elif route.zone == "review":
+            review_id = _insert_v2_actor_review(session, staged, route, topic_id=topic_id)
+            result = PromotionResult(
+                action="queued_for_review",
+                entity_type="actor",
+                zone="review",
+                entity_id=route.target_entity_id,
+                review_id=review_id,
+                dry_run=False,
+                step_trace=trace,
+            )
+        elif route.zone == "create":
+            if geography is None:
+                raise RuntimeError("actor geography was not prepared")
+            _mapping_step(route, trace, "parent_connection")
+            _mapping_step(route, trace, "hub_fit")
+            hub_plan = _plan_actor_hubs(
+                session,
+                topic_id=topic_id,
+                geography=geography,
+                explicit_hub_ids=route.metadata.get("hub_ids") or [],
+                sector_codes=tuple(staged.sector_codes or ()),
+            )
+            if light_pull is not None:
+                light_pull = replace_light_fact(
+                    light_pull,
+                    "hub_assignment",
+                    {
+                        "assigned_hub_ids": list(hub_plan.assigned_hub_ids),
+                        "evaluations": [evaluation.__dict__ for evaluation in hub_plan.evaluations],
+                        "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+                    },
+                )
+            _mapping_step(route, trace, "light_pull")
+            actor_id = _insert_actor_v2(session, geography.actor_values, source_id)
+            _append_actor_sectors(
+                session, actor_id=actor_id, staged=staged, source_id=source_id
+            )
+            relationships = actor_relationship_requests(
+                actor_id=actor_id,
+                payload=staged.normalized_payload,
+                source_id=source_id,
+                topic_id=topic_id,
+            )
+            for relationship in relationships:
+                append_entity_edge(session, relationship, live=True)
+            _insert_actor_locations(
+                session,
+                actor_id=actor_id,
+                geography=geography,
+                source_id=source_id,
+            )
+            _record_geocode_failures(
+                session,
+                actor_id=actor_id,
+                staged=staged,
+                geography=geography,
+                source_id=source_id,
+                topic_id=topic_id,
+            )
+            _append_actor_light_facts(
+                session,
+                actor_id=actor_id,
+                staged=staged,
+                topic_id=topic_id,
+                light_pull=light_pull,
+            )
+            if classification is not None:
+                _append_actor_classification(
+                    session,
+                    actor_id=actor_id,
+                    staged=staged,
+                    classification=classification,
+                    source_id=source_id,
+                    topic_id=topic_id,
+                )
+            _append_actor_topic(
+                session,
+                actor_id=actor_id,
+                topic_id=topic_id,
+                source_id=source_id,
+                payload=staged.normalized_payload,
+                run_id=staged.run_id,
+            )
+            _persist_hub_assignment_plan(
+                session,
+                actor_id=actor_id,
+                topic_id=topic_id,
+                source_id=source_id,
+                plan=hub_plan,
+            )
+            auto_accept = str(
+                staged.normalized_payload.get(AUTO_ACCEPT_PAYLOAD_KEY) or ""
+            ).strip()
+            _mapping_step(route, trace, "parked")
+            if auto_accept:
+                # Accepted on score and every quality gate: verified through a
+                # labelled agent verification event instead of being queued.
+                record_agent_auto_verification(
+                    session, actor_id=actor_id, topic_id=topic_id, reason=auto_accept
+                )
+                review_id = None
+                _mapping_step(route, trace, "verified_by_agent")
+            else:
+                review_id = _insert_verify_actor_review(
+                    session, staged, actor_id=actor_id, topic_id=topic_id, trace=trace
+                )
+                _mapping_step(route, trace, "verify_actor")
+            _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
+            result = PromotionResult(
+                action="created",
+                entity_type="actor",
+                zone="create",
+                entity_id=actor_id,
+                review_id=review_id,
+                dry_run=False,
+                step_trace=trace,
+            )
+        else:
+            raise ValueError(f"unknown actor route zone {route.zone!r}")
+    except Exception:
+        if transaction is not None:
+            transaction.rollback()
+        raise
+
+    if live and transaction is not None:
+        transaction.commit()
+        return result
+    if live:
+        return result
+    if transaction is not None:
+        transaction.rollback()
+    result.action = f"would_{route.zone}"
+    result.dry_run = True
+    return result
+
+
+def _mapping_step(route: RouteDecision, trace: list[str], step: str) -> None:
+    expected = ACTOR_MAPPING_STEPS[len(trace)]
+    if expected == ACTOR_MAPPING_STEPS[-1] and step in ACTOR_FINAL_STEPS:
+        expected = step
+    if step != expected:
+        raise RuntimeError(f"actor mapping order violation: expected {expected}, got {step}")
+    trace.append(step)
+    observer = dict(route.metadata or {}).get("step_observer")
+    if callable(observer):
+        observer(step)
+
+
+def _route_topic_id(staged: StagedRecord, route: RouteDecision) -> str | None:
+    value = route.metadata.get("topic_id") or staged.normalized_payload.get("topic_id")
+    return str(value).strip() if value else None
+
+
+def _table_columns(session, table: str) -> frozenset[str]:
+    """Physical columns of a table, cached per session (pre- and post-cutover schemas).
+
+    An empty set means the columns are unknown; callers then keep the legacy names.
+    """
+    info = getattr(session, "info", None)
+    key = f"ghus_{table}_columns"
+    cached = info.get(key) if isinstance(info, dict) else None
+    if cached is None:
+        try:
+            cached = frozenset(session.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=:table"
+            ), {"table": table}).scalars())
+        except (AttributeError, TypeError, DBAPIError):
+            cached = frozenset()
+        if isinstance(info, dict):
+            info[key] = cached
+    return cached
+
+
+def _actor_columns(session) -> frozenset[str]:
+    return _table_columns(session, "actor")
+
+
+def _event_date_status(next_date: object) -> str:
+    """upcoming / past from the event date; unconfirmed when there is none."""
+    if not _has_value(next_date):
+        return "unconfirmed"
+    try:
+        day = next_date if isinstance(next_date, date) else date.fromisoformat(str(next_date)[:10])
+    except ValueError:
+        return "unconfirmed"
+    return "upcoming" if day >= datetime.now(UTC).date() else "past"
+
+
+def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str:
+    name = str(payload.get("name") or "").strip()
+    if not name:
+        raise ValueError("cannot create actor without name")
+    actor_id = str(uuid.uuid4())
+    columns = _actor_columns(session)
+    cols: dict[str, object] = {
+        "actor_id": actor_id,
+        "name": name,
+        "slug": _actor_slug(name, actor_id),
+        "source_origin": "claude_discovered",
+        "source_id": source_id,
+    }
+    # Final V2 names win; legacy names are written only while they still exist.
+    for status_column in ("status", "record_status"):
+        if status_column in columns or (not columns and status_column == "record_status"):
+            cols[status_column] = "parked"
+    mapping = {
+        "actor_category": ("actor_category",),
+        "category_type": ("category_type",),
+        "category_note": ("category_note",),
+        "category_needs_review": ("category_needs_review",),
+        "website": ("website",),
+        "website_domain": ("website_domain",),
+        "description": ("description",),
+        "country": ("country",),
+        "city" if "city" in columns else "location_city": ("location_city", "city"),
+        "state_code": ("state_code",),
+        "region_code": ("region_code",),
+        "latitude": ("latitude",),
+        "longitude": ("longitude",),
+        "is_multi_location": ("is_multi_location",),
+        "alt_names" if "alt_names" in columns else "alternate_names": (
+            "alternate_names", "alt_names",
+        ),
+    }
+    for column, keys in mapping.items():
+        value = next((payload.get(key) for key in keys if _has_value(payload.get(key))), None)
+        if _has_value(value):
+            cols[column] = value
+    names = ", ".join(cols)
+    binds = ", ".join(
+        f"CAST(:{key} AS uuid)" if key in {"actor_id", "source_id"} else f":{key}"
+        for key in cols
+    )
+    session.execute(text(f"INSERT INTO actor ({names}) VALUES ({binds})"), cols)
+    return actor_id
+
+
+def _insert_actor_locations(
+    session,
+    *,
+    actor_id: str,
+    geography: PreparedActorGeography,
+    source_id: str,
+) -> None:
+    for location in geography.locations:
+        result = location.result
+        if not result.city:
+            continue
+        session.execute(
+            text(
+                "INSERT INTO actor_location (actor_location_id,actor_id,location_name,country,"
+                "state_code,city,region_code,latitude,longitude,is_primary,source_id) VALUES ("
+                "CAST(:location_id AS uuid),CAST(:actor_id AS uuid),:location_name,:country,"
+                ":state_code,:city,:region_code,:latitude,:longitude,:is_primary,"
+                "CAST(:source_id AS uuid)) ON CONFLICT DO NOTHING"
+            ),
+            {
+                "location_id": str(uuid.uuid4()),
+                "actor_id": actor_id,
+                "location_name": location.location_name,
+                "country": result.country,
+                "state_code": result.state_code,
+                "city": result.city,
+                "region_code": result.region_code,
+                "latitude": result.latitude,
+                "longitude": result.longitude,
+                "is_primary": location.is_primary,
+                "source_id": source_id,
+            },
+        )
+
+
+def _record_geocode_failures(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    geography: PreparedActorGeography,
+    source_id: str,
+    topic_id: str | None,
+) -> None:
+    for location in geography.failures:
+        result = location.result
+        failure = {
+            "state": "not_found",
+            "reason": result.reason,
+            "country": result.country,
+            "state_code": result.state_code,
+            "city": result.city,
+            "normalized_city": result.normalized_city,
+            "source_url": staged.source_url,
+        }
+        _insert_actor_fact(
+            session,
+            actor_id=actor_id,
+            topic_id=topic_id,
+            fact_type="geography",
+            fact_key="location_geocode",
+            value=failure,
+            source_id=source_id,
+            retrieved_at=staged.extracted_at,
+            run_id=staged.run_id,
+            collection_state="not_found",
+        )
+        session.execute(
+            text(
+                "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+                "topic_id,priority,payload,status) VALUES (CAST(:review_id AS uuid),'geocode',"
+                "'actor',CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),'normal',"
+                "CAST(:payload AS jsonb),'pending')"
+            ),
+            {
+                "review_id": str(uuid.uuid4()),
+                "actor_id": actor_id,
+                "topic_id": topic_id,
+                "payload": json.dumps(
+                    {"issue": "geocode_failed", "location_name": location.location_name, **failure},
+                    sort_keys=True,
+                    default=str,
+                ),
+            },
+        )
+
+
+def _append_actor_sighting(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    route: RouteDecision,
+    source_id: str,
+    topic_id: str | None,
+) -> list[str]:
+    value = {
+        "name": staged.normalized_payload.get("name"),
+        "source_url": staged.source_url,
+        "matched_by": route.metadata.get("match_rule"),
+        "staged_record_id": staged.staged_record_id,
+    }
+    _insert_actor_fact(
+        session,
+        actor_id=actor_id,
+        topic_id=topic_id,
+        fact_type="sighting",
+        fact_key="discovery_sighting",
+        value=value,
+        source_id=source_id,
+        retrieved_at=staged.extracted_at,
+        run_id=staged.run_id,
+    )
+    return ["discovery_sighting"]
+
+
+def _append_actor_light_facts(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    topic_id: str | None,
+    light_pull: LightPullResult | None,
+) -> None:
+    # Legacy unscoped inputs remain creatable but cannot satisfy the V2
+    # topic-scoped fact contract. Do not mislabel their arbitrary payload as a
+    # Light Pull. Every classified, topic-scoped V2 actor gets the full schema.
+    if light_pull is None or not topic_id:
+        return
+    for fact in light_pull.facts:
+        append_actor_fact(
+            session,
+            ActorFactWrite(
+                actor_id=actor_id,
+                topic_id=topic_id,
+                field_key=fact.field_key,
+                fact_type="light_pull",
+                layer=1,
+                value=fact.value,
+                collection_state=fact.collection_state,
+                source_url=fact.source_url,
+                source_origin=fact.source_origin,
+                date_read=fact.date_read,
+                confidence=fact.confidence,
+                created_by="agent.light_pull",
+                request_id=staged.run_id,
+            ),
+            live=True,
+        )
+
+
+def _append_actor_classification(
+    session,
+    *,
+    actor_id: str,
+    staged: StagedRecord,
+    classification: ActorClassification,
+    source_id: str,
+    topic_id: str | None,
+) -> None:
+    payload = classification.as_payload()
+    _insert_actor_fact(
+        session,
+        actor_id=actor_id,
+        topic_id=topic_id,
+        fact_type="classification",
+        fact_key="actor_category_type",
+        value=payload,
+        source_id=source_id,
+        retrieved_at=staged.extracted_at,
+        run_id=staged.run_id,
+    )
+    if not classification.category_needs_review:
+        return
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+            "topic_id,priority,payload,status) VALUES (CAST(:review_id AS uuid),"
+            ":review_kind,'actor',CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),"
+            "'normal',CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": str(uuid.uuid4()),
+            "review_kind": CATEGORY_DOUBT_BRIDGE_KIND,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "payload": json.dumps(
+                {
+                    "issue": CATEGORY_DOUBT_ISSUE,
+                    "compatibility_bridge": True,
+                    "canonical_review_kind": CATEGORY_DOUBT_ISSUE,
+                    "staged_record_id": staged.staged_record_id,
+                    "source_url": staged.source_url,
+                    **payload,
+                },
+                sort_keys=True,
+                default=str,
+            ),
+        },
+    )
+
+
+def _insert_actor_fact(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    fact_type: str,
+    fact_key: str,
+    value: object,
+    source_id: str,
+    retrieved_at: object,
+    run_id: str,
+    collection_state: str = "found",
+) -> str:
+    fact_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO actor_fact (actor_fact_id,actor_id,topic_id,fact_type,fact_key,"
+            "fact_value,collection_state,layer,source_id,source_origin,confidence,"
+            "retrieved_at,generated_by,request_id) VALUES (CAST(:fact_id AS uuid),"
+            "CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:fact_type,:fact_key,"
+            "CAST(:fact_value AS jsonb),:collection_state,1,CAST(:source_id AS uuid),'newly_found',"
+            "'medium',:retrieved_at,'agent',CAST(:request_id AS uuid))"
+        ),
+        {
+            "fact_id": fact_id,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "fact_type": fact_type,
+            "fact_key": fact_key,
+            "fact_value": (
+                json.dumps(value, sort_keys=True, default=str)
+                if collection_state == "found"
+                else None
+            ),
+            "collection_state": collection_state,
+            "source_id": source_id,
+            "retrieved_at": retrieved_at,
+            "request_id": run_id,
+        },
+    )
+    return fact_id
+
+
+def _append_actor_topic(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    source_id: str,
+    payload: dict[str, object],
+    run_id: str,
+) -> None:
+    if not topic_id:
+        return
+    session.execute(
+        text(
+            "INSERT INTO actor_topic (actor_id,topic_id,match_strength,match_reason,source_id) "
+            "VALUES (CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:match_strength,"
+            ":match_reason,CAST(:source_id AS uuid)) ON CONFLICT DO NOTHING"
+        ),
+        {
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "match_strength": str(payload.get("match_strength") or "moderate"),
+            "match_reason": str(payload.get("match_reason") or "not_found"),
+            "source_id": source_id,
+            "run_id": run_id,
+        },
+    )
+
+
+def _insert_v2_actor_review(
+    session, staged: StagedRecord, route: RouteDecision, *, topic_id: str | None
+) -> str:
+    metadata = dict(route.metadata or {})
+    review_kind = str(metadata.get("review_kind") or "possible_duplicate")
+    if review_kind not in {"possible_duplicate", CATEGORY_DOUBT_BRIDGE_KIND}:
+        raise ValueError(f"unsupported actor review kind {review_kind!r}")
+    review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+            "candidate_entity_id,topic_id,priority,payload,status) VALUES "
+            "(CAST(:review_id AS uuid),:review_kind,'actor',NULL,"
+            "CAST(:candidate_id AS uuid),CAST(:topic_id AS uuid),'normal',"
+            "CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": review_id,
+            "review_kind": review_kind,
+            "candidate_id": route.target_entity_id,
+            "topic_id": topic_id,
+            "payload": json.dumps(
+                {
+                    "staged_record_id": staged.staged_record_id,
+                    "candidate_ids": route.candidate_ids,
+                    "score": route.score,
+                    "source_url": staged.source_url,
+                    "record": staged.normalized_payload,
+                    "issue": metadata.get("issue"),
+                    "compatibility_bridge": bool(metadata.get("compatibility_bridge", False)),
+                    "canonical_review_kind": (
+                        CATEGORY_DOUBT_ISSUE
+                        if metadata.get("issue") == CATEGORY_DOUBT_ISSUE
+                        else None
+                    ),
+                    "reason": metadata.get("reason"),
+                },
+                sort_keys=True,
+                default=str,
+            ),
+        },
+    )
+    return review_id
+
+
+def _insert_verify_actor_review(
+    session,
+    staged: StagedRecord,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    trace: list[str],
+) -> str:
+    review_id = str(uuid.uuid4())
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,"
+            "topic_id,priority,payload,status) VALUES (CAST(:review_id AS uuid),"
+            "'verify_actor','actor',CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),"
+            "'normal',CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": review_id,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "payload": json.dumps(
+                {
+                    "staged_record_id": staged.staged_record_id,
+                    "source_url": staged.source_url,
+                    "pipeline_steps": [*trace, "verify_actor"],
+                },
+                sort_keys=True,
+            ),
+        },
+    )
+    return review_id
+
+
+def _insert_actor(session, payload: dict[str, object], source_id: str) -> str:
+    name = payload.get("name")
+    if not name:
+        raise ValueError("cannot create actor without name")
+    if "status" in _actor_columns(session):
+        # Architecture V2: an actor needs a validated category, so an unclassified
+        # affiliation stub cannot be created; route it through the V2 actor writer.
+        if not _has_value(payload.get("actor_category")):
+            raise ValueError(
+                "affiliation organization is not a classified actor; link an existing "
+                "actor or discover the organization first (V2 requires an actor category)"
+            )
+        return _insert_actor_v2(session, payload, source_id)
+    actor_id = str(uuid.uuid4())
+    cols: dict[str, object] = {
+        "actor_id": actor_id,
+        "name": name,
+        "slug": _actor_slug(str(name), actor_id),
+        "verification_status": "needs_review",
+        "source_id": source_id,
+    }
+    for field_name in ACTOR_CREATE_FIELDS:
+        value = payload.get(field_name)
+        if _has_value(value):
+            cols[field_name] = value
+    names = ", ".join(cols)
+    binds = ", ".join(
+        f"CAST(:{name} AS uuid)" if name in {"actor_id", "source_id"} else f":{name}"
+        for name in cols
+    )
+    session.execute(text(f"INSERT INTO actor ({names}) VALUES ({binds})"), cols)
+    return actor_id
+
+
+def _primary_actor_coordinates(geography: PreparedActorGeography) -> tuple[float | None, float | None]:
+    latitude = geography.actor_values.get("latitude")
+    longitude = geography.actor_values.get("longitude")
+    if latitude is not None and longitude is not None:
+        return float(latitude), float(longitude)
+    primary = next((item for item in geography.locations if item.is_primary), None)
+    if primary and primary.result.found:
+        return primary.result.latitude, primary.result.longitude
+    return None, None
+
+
+def _plan_actor_hubs(
+    session,
+    *,
+    topic_id: str | None,
+    geography: PreparedActorGeography,
+    explicit_hub_ids: object,
+    sector_codes: tuple[str, ...] = (),
+) -> HubAssignmentPlan:
+    """Plan hub membership. Test 1 is the SECTOR (GHUS decision, 2026-10-08).
+
+    Candidate hubs are gathered by sector, and still by topic and by explicit
+    id, so a hub a reviewer named by hand is always evaluated. The decision
+    itself is made by build_hub_assignment_plan, which gates on sector.
+    """
+
+    if not isinstance(explicit_hub_ids, (list, tuple, set)):
+        raise TypeError("hub_ids must be a list")
+    explicit = tuple(sorted({str(value).strip() for value in explicit_hub_ids if str(value).strip()}))
+    sectors = tuple(sorted({str(code).strip().upper() for code in sector_codes if str(code).strip()}))
+    if not topic_id and not explicit and not sectors:
+        return HubAssignmentPlan((), (), ())
+    # hub_sector arrives with migration 520. Without it a hub has no sector,
+    # matches nothing by sector, and the plan says so rather than guessing.
+    has_hub_sector = bool(
+        session.execute(text("SELECT to_regclass('public.hub_sector') IS NOT NULL")).scalar()
+    )
+    sector_select = (
+        ",(SELECT s.code FROM hub_sector hs JOIN sector s ON s.sector_id=hs.sector_id "
+        "WHERE hs.hub_id=h.hub_id AND hs.is_primary LIMIT 1) AS sector_code "
+        if has_hub_sector else ",NULL AS sector_code "
+    )
+    sector_clause = (
+        " OR EXISTS (SELECT 1 FROM hub_sector hs2 JOIN sector s2 ON s2.sector_id=hs2.sector_id "
+        "WHERE hs2.hub_id=h.hub_id AND s2.code = ANY(CAST(:sector_codes AS text[])))"
+        if has_hub_sector else ""
+    )
+    rows = session.execute(
+        text(
+            "SELECT h.hub_id::text AS hub_id,h.name,h.topic_id::text AS topic_id,"
+            "h.center_latitude,h.center_longitude,COALESCE(h.radius_miles,200) AS radius_miles"
+            + sector_select +
+            "FROM hub h WHERE (CAST(:topic_id AS uuid) IS NOT NULL AND h.topic_id=CAST(:topic_id AS uuid)) "
+            "OR h.hub_id::text = ANY(CAST(:hub_ids AS text[]))" + sector_clause +
+            " ORDER BY h.hub_id"
+        ),
+        {"topic_id": topic_id, "hub_ids": list(explicit), "sector_codes": list(sectors)},
+    ).mappings().all()
+    found = {str(row["hub_id"]) for row in rows}
+    missing = sorted(set(explicit) - found)
+    if missing:
+        raise ValueError(f"unknown hub_id(s): {', '.join(missing)}")
+    latitude, longitude = _primary_actor_coordinates(geography)
+    actor = ActorHubContext(None, topic_id, latitude, longitude, frozenset(sectors))
+    hubs = [
+        HubCandidate(
+            hub_id=str(row["hub_id"]),
+            name=str(row["name"]),
+            topic_id=str(row["topic_id"]) if row["topic_id"] else None,
+            center_latitude=float(row["center_latitude"]) if row["center_latitude"] is not None else None,
+            center_longitude=float(row["center_longitude"]) if row["center_longitude"] is not None else None,
+            radius_miles=float(row["radius_miles"]),
+            sector_code=str(row["sector_code"]) if row.get("sector_code") else None,
+        )
+        for row in rows
+    ]
+    return build_hub_assignment_plan(actor, hubs)
+
+
+def _persist_hub_assignment_plan(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    source_id: str,
+    plan: HubAssignmentPlan,
+) -> None:
+    """Persist audit evidence and canonical memberships from one deterministic plan."""
+    location_misses: list[dict[str, object]] = []
+    for evaluation in plan.evaluations:
+        evidence = {
+            "outcome": evaluation.outcome,
+            "topic_matched": evaluation.topic_matched,
+            "sector_matched": evaluation.sector_matched,
+            "dimension": evaluation.dimension,
+            "location_evaluated": evaluation.location_evaluated,
+            "distance_miles": evaluation.distance_miles,
+            "radius_miles": evaluation.radius_miles,
+            "outside_radius": evaluation.outside_radius,
+            "selected": evaluation.selected,
+            "method_version": evaluation.method_version,
+        }
+        # sector_matched and dimension arrive with migration 530. Written as
+        # real columns when they exist, so the gate is queryable and not only
+        # readable inside the JSON payload.
+        gate_columns = _table_columns(session, "hub_assignment_evidence")
+        has_gate = {"sector_matched", "dimension"} <= set(gate_columns)
+        gate_names = ",sector_matched,dimension" if has_gate else ""
+        gate_values = ",:sector_matched,:dimension" if has_gate else ""
+        session.execute(
+            text(
+                "INSERT INTO hub_assignment_evidence (actor_id,hub_id,topic_id,outcome,"
+                "topic_matched,location_evaluated,distance_miles,radius_miles,outside_radius,"
+                "selected,method_version,evidence,source_id" + gate_names + ") "
+                "VALUES (CAST(:actor_id AS uuid),"
+                "CAST(:hub_id AS uuid),CAST(:topic_id AS uuid),:outcome,:topic_matched,"
+                ":location_evaluated,:distance_miles,:radius_miles,:outside_radius,:selected,"
+                ":method_version,CAST(:evidence AS jsonb),CAST(:source_id AS uuid)"
+                + gate_values + ")"
+            ),
+            {
+                **({"sector_matched": evaluation.sector_matched,
+                    "dimension": evaluation.dimension} if has_gate else {}),
+                "actor_id": actor_id,
+                "hub_id": evaluation.hub_id,
+                "topic_id": topic_id,
+                "outcome": evaluation.outcome,
+                "topic_matched": evaluation.topic_matched,
+                "location_evaluated": evaluation.location_evaluated,
+                "distance_miles": evaluation.distance_miles,
+                "radius_miles": evaluation.radius_miles,
+                "outside_radius": evaluation.outside_radius,
+                "selected": evaluation.selected,
+                "method_version": evaluation.method_version,
+                "evidence": json.dumps(evidence, sort_keys=True),
+                "source_id": source_id,
+            },
+        )
+        if evaluation.outcome == NEEDS_REVIEW_LOCATION:
+            location_misses.append({"hub_id": evaluation.hub_id, "priority": evaluation.priority,
+                                    **evidence})
+        elif evaluation.outcome in (NEEDS_REVIEW_SECTOR, NEEDS_REVIEW_TOPIC):
+            _insert_hub_review_bridge(
+                session,
+                actor_id=actor_id,
+                topic_id=topic_id,
+                hub_ids=[evaluation.hub_id],
+                current_kind="hub_assignment",
+                canonical_kind="hub_needs_review",
+                canonical_outcome=evaluation.outcome,
+                priority=evaluation.priority,
+                evidence=evidence,
+            )
+        if evaluation.selected:
+            # hub_actor.topic_id is the HUB's controlled topic, not the actor's.
+            # Approved migration 486 fills it as coalesce(ha.topic_id, h.topic_id)
+            # and contract 405 constrains (hub_id, topic_id) against hub itself,
+            # so the only value that satisfies both is the hub's own topic.
+            #
+            # Writing the actor's topic here was invisible while membership was
+            # decided BY topic, because the two were equal by construction. Since
+            # the 2026-10-08 amendment made sector Test 1 they can differ, and a
+            # topicless actor - which is most of them, because GHUS decision 3
+            # leaves actor topics to Light Pull - wrote NULL into a NOT NULL
+            # column and failed promotion outright.
+            membership_topic_id = evaluation.hub_topic_id
+            session.execute(
+                text(
+                    "INSERT INTO hub_actor (hub_id,actor_id,relationship_type,is_primary,"
+                    "topic_id,distance_miles,assignment_outcome,outside_radius,overlap_flag,source_id) "
+                    "VALUES (CAST(:hub_id AS uuid),CAST(:actor_id AS uuid),'deterministic_assignment',"
+                    "FALSE,CAST(:topic_id AS uuid),:distance_miles,'assigned',FALSE,:overlap_flag,"
+                    "CAST(:source_id AS uuid)) ON CONFLICT (hub_id,actor_id) DO NOTHING"
+                ),
+                {
+                    "hub_id": evaluation.hub_id,
+                    "actor_id": actor_id,
+                    "topic_id": membership_topic_id,
+                    "distance_miles": evaluation.distance_miles,
+                    "overlap_flag": bool(plan.same_topic_overlap_hub_ids),
+                    "source_id": source_id,
+                },
+            )
+    # Architecture V2 2.2: "topic passes, location doesn't" leaves the actor
+    # unassigned. One review per unassigned actor, listing every same-topic hub by
+    # distance; an actor already assigned to a nearer hub needs no location review.
+    if location_misses and not plan.assigned_hub_ids:
+        location_misses.sort(key=lambda item: float(item.get("distance_miles") or 0.0))
+        _insert_hub_review_bridge(
+            session,
+            actor_id=actor_id,
+            topic_id=topic_id,
+            hub_ids=[str(item["hub_id"]) for item in location_misses],
+            current_kind="hub_assignment",
+            canonical_kind="hub_needs_review",
+            canonical_outcome=NEEDS_REVIEW_LOCATION,
+            priority=str(location_misses[0]["priority"]),
+            evidence={
+                "outcome": NEEDS_REVIEW_LOCATION,
+                "nearest_hub_id": location_misses[0]["hub_id"],
+                "nearest_distance_miles": location_misses[0].get("distance_miles"),
+                "candidates": [
+                    {key: item.get(key) for key in ("hub_id", "distance_miles", "radius_miles")}
+                    for item in location_misses
+                ],
+                "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+            },
+        )
+    if plan.same_topic_overlap_hub_ids:
+        _insert_hub_review_bridge(
+            session,
+            actor_id=actor_id,
+            topic_id=topic_id,
+            hub_ids=list(plan.same_topic_overlap_hub_ids),
+            current_kind="same_topic_overlap",
+            canonical_kind="hub_radius_overlap",
+            canonical_outcome="assigned_nearest_center",
+            priority="normal",
+            evidence={
+                "eligible_hub_ids": list(plan.same_topic_overlap_hub_ids),
+                "selected_hub_id": plan.assigned_hub_ids[0],
+                "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+            },
+        )
+
+
+def persist_hub_assignment_plan(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    source_id: str,
+    plan: HubAssignmentPlan,
+) -> None:
+    """Public canonical-writer boundary for deterministic hub assignments."""
+    _persist_hub_assignment_plan(
+        session,
+        actor_id=actor_id,
+        topic_id=topic_id,
+        source_id=source_id,
+        plan=plan,
+    )
+
+
+def _insert_hub_review_bridge(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    hub_ids: list[str],
+    current_kind: str,
+    canonical_kind: str,
+    canonical_outcome: str,
+    priority: str,
+    evidence: dict[str, object],
+) -> str:
+    review_id = str(uuid.uuid4())
+    payload = {
+        "compatibility_bridge": True,
+        "canonical_review_kind": canonical_kind,
+        "canonical_outcome": canonical_outcome,
+        "issue": canonical_outcome,
+        "hub_ids": hub_ids,
+        "deterministic_evidence": evidence,
+        "method_version": HUB_ASSIGNMENT_METHOD_VERSION,
+    }
+    session.execute(
+        text(
+            "INSERT INTO review_item (review_item_id,review_kind,entity_type,entity_id,topic_id,"
+            "priority,payload,status) VALUES (CAST(:review_id AS uuid),:review_kind,'actor',"
+            "CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:priority,CAST(:payload AS jsonb),'pending')"
+        ),
+        {
+            "review_id": review_id,
+            "review_kind": current_kind,
+            "actor_id": actor_id,
+            "topic_id": topic_id,
+            "priority": priority,
+            "payload": json.dumps(payload, sort_keys=True, default=str),
+        },
+    )
+    return review_id
+
+
+def _promote_person(
+    staged: StagedRecord,
+    route: RouteDecision,
+    session=None,
+    *,
+    live: bool = False,
+    create_preview: bool = False,
+    manage_transaction: bool = True,
+) -> PromotionResult:
+    metadata = dict(route.metadata or {})
+    if route.zone == "skip":
+        if (
+            route.target_entity_id is None
+            or metadata.get("identity_outcome") != "already_held"
+            or metadata.get("clean_identity_key") is not True
+        ):
+            raise RuntimeError(
+                "person skip requires an already-held clean deterministic identity"
+            )
+        return PromotionResult(
+            action="already_held",
+            entity_type="person",
+            zone="skip",
+            entity_id=route.target_entity_id,
+            dry_run=True,
+        )
+    if route.zone == "create":
+        if live and create_preview:
+            raise RuntimeError("person create preview cannot be used with live writes")
+        _guard_person_create(staged, route)
+    if route.zone not in {"create", "review", "link_existing"}:
+        raise RuntimeError(f"unknown person route zone {route.zone!r}")
+    if session is None:
+        if live:
+            raise ValueError("live promotion requires a database session")
+        return _dry_run_preview(staged, route)
+
+    transaction = session.begin() if manage_transaction else None
+    try:
+        if route.zone == "create":
+            source_id = insert_source(
+                session,
+                source_url=staged.source_url,
+                fetched_at=staged.extracted_at,
+                description="agent discovery person create",
+            )
+            actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+            created_affiliation_stub = metadata.get("create_affiliation_stub") is True
+            if created_affiliation_stub:
+                actor_id = _insert_actor(
+                    session,
+                    {"name": str(metadata["affiliation_stub_name"]).strip()},
+                    source_id,
+                )
+                _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
+            person_id = _insert_person(
+                session,
+                staged.normalized_payload,
+                source_id,
+                confidence=float(route.score),
+            )
+            role = str(staged.normalized_payload["role"]).strip()
+            _insert_person_affiliation(
+                session,
+                person_id=person_id,
+                actor_id=actor_id,
+                role=role,
+            )
+            _insert_person_discovery_profile(
+                session,
+                staged=staged,
+                person_id=person_id,
+                actor_id=actor_id,
+                source_id=source_id,
+                needs_actor_enrichment=created_affiliation_stub,
+            )
+            _mark_index_dirty(session, entity_type="person", entity_id=person_id)
+            result = PromotionResult(
+                action="created",
+                entity_type="person",
+                zone="create",
+                entity_id=person_id,
+                dry_run=False,
+            )
+        elif route.zone == "review":
+            source_id = insert_source(
+                session,
+                source_url=staged.source_url,
+                fetched_at=staged.extracted_at,
+                description="agent discovery person review",
+            )
+            review_id = _insert_person_review(session, staged, route, source_id)
+            result = PromotionResult(
+                action="queued_for_review",
+                entity_type="person",
+                zone="review",
+                entity_id=route.target_entity_id,
+                dry_run=False,
+                review_id=review_id,
+            )
+        else:
+            result = _link_existing_person(session, staged, route)
+    except Exception:
+        if transaction is not None:
+            transaction.rollback()
+        raise
+
+    if live and transaction is not None:
+        transaction.commit()
+        return result
+    if live:
+        return result
+    if transaction is not None:
+        transaction.rollback()
+    return _dry_run_result(result, route)
+
+
+def _link_existing_person(
+    session, staged: StagedRecord, route: RouteDecision
+) -> PromotionResult:
+    """Link a reviewed person to a resolved institution and log affiliation changes."""
+    if not route.target_entity_id:
+        raise ValueError("person link_existing route requires target_entity_id")
+    metadata = dict(route.metadata or {})
+    actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+    source_id = insert_source(
+        session,
+        source_url=staged.source_url,
+        fetched_at=staged.extracted_at,
+        description="human-reviewed person affiliation",
+    )
+    if metadata.get("create_affiliation_stub") is True:
+        actor_id = _insert_actor(
+            session,
+            {"name": str(metadata.get("affiliation_stub_name") or "").strip()},
+            source_id,
+        )
+        _mark_index_dirty(session, entity_type="actor", entity_id=actor_id)
+    if not actor_id:
+        raise ValueError("person link_existing route requires an affiliation actor")
+    role = str(staged.normalized_payload.get("role") or "").strip()
+    if not role or len(role) > 120:
+        raise ValueError("person role is required and must not exceed 120 characters")
+    current = (
+        session.execute(
+            text(
+                "SELECT ap.actor_id::text AS actor_id, a.name AS affiliation, ap.role "
+                "FROM actor_person ap JOIN actor a ON a.actor_id = ap.actor_id "
+                "WHERE ap.person_id = CAST(:person_id AS uuid) "
+                "AND ap.is_current IS NOT FALSE "
+                "ORDER BY ap.start_date DESC NULLS LAST LIMIT 1"
+            ),
+            {"person_id": route.target_entity_id},
+        ).mappings().first()
+    )
+    if (
+        current
+        and str(current["actor_id"]) == actor_id
+        and str(current.get("role") or "") == role
+    ):
+        return PromotionResult(
+            action="no_op",
+            entity_type="person",
+            zone="link_existing",
+            entity_id=route.target_entity_id,
+            dry_run=False,
+        )
+    if current:
+        session.execute(
+            text(
+                "UPDATE actor_person SET is_current = FALSE, "
+                "end_date = CAST(:changed_at AS date) "
+                "WHERE person_id = CAST(:person_id AS uuid) "
+                "AND actor_id = CAST(:actor_id AS uuid) AND is_current IS NOT FALSE"
+            ),
+            {
+                "person_id": route.target_entity_id,
+                "actor_id": current["actor_id"],
+                "changed_at": staged.extracted_at,
+            },
+        )
+    session.execute(
+        text(
+            "INSERT INTO actor_person (actor_id, person_id, role, is_current, start_date) "
+            "VALUES (CAST(:actor_id AS uuid), CAST(:person_id AS uuid), :role, TRUE, "
+            "CAST(:changed_at AS date)) ON CONFLICT (actor_id, person_id, role) "
+            "DO UPDATE SET is_current = TRUE, end_date = NULL"
+        ),
+        {
+            "actor_id": actor_id,
+            "person_id": route.target_entity_id,
+            "role": role,
+            "changed_at": staged.extracted_at,
+        },
+    )
+    if current and str(current["actor_id"]) != actor_id:
+        session.execute(
+            text(
+                "INSERT INTO person_change_log (person_change_id, person_id, field_name, "
+                "previous_value, new_value, source_url, changed_at) VALUES "
+                "(CAST(:change_id AS uuid), CAST(:person_id AS uuid), 'affiliation', "
+                ":previous_value, :new_value, :source_url, "
+                "CAST(:changed_at AS timestamptz))"
+            ),
+            {
+                "change_id": str(uuid.uuid4()),
+                "person_id": route.target_entity_id,
+                "previous_value": str(current.get("affiliation") or ""),
+                "new_value": str(staged.normalized_payload.get("affiliation") or ""),
+                "source_url": staged.source_url,
+                "changed_at": staged.extracted_at,
+            },
+        )
+    _mark_index_dirty(session, entity_type="person", entity_id=route.target_entity_id)
+    return PromotionResult(
+        action="linked_existing",
+        entity_type="person",
+        zone="link_existing",
+        entity_id=route.target_entity_id,
+        dry_run=False,
+    )
+
+
+def _guard_person_create(staged: StagedRecord, route: RouteDecision) -> None:
+    metadata = dict(route.metadata or {})
+    payload = staged.normalized_payload
+    failures: list[str] = []
+    if metadata.get("score_band") != "auto_high":
+        failures.append("score_band must be auto_high")
+    if metadata.get("identity_outcome") != "create":
+        failures.append("identity_outcome must be create")
+    if metadata.get("clean_identity_key") is not True:
+        failures.append("clean_identity_key must be true")
+    actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
+    creates_stub = metadata.get("create_affiliation_stub") is True
+    if not actor_id and not creates_stub:
+        failures.append("affiliation_actor_id or create_affiliation_stub is required")
+    if creates_stub:
+        stub_name = str(metadata.get("affiliation_stub_name") or "").strip()
+        from agents.discovery.normalize import is_institution_affiliation
+
+        if not is_institution_affiliation(stub_name):
+            failures.append("affiliation stub must be an institution, never a department or role")
+    name = str(payload.get("name") or "").strip()
+    role = str(payload.get("role") or "").strip()
+    affiliation = str(payload.get("affiliation") or "").strip()
+    if not name:
+        failures.append("name is required")
+    elif len(name) > 255:
+        failures.append("name exceeds the canonical 255-character limit")
+    if not affiliation:
+        failures.append("affiliation is required")
+    if not role:
+        failures.append("role is required")
+    elif len(role) > 120:
+        failures.append("role exceeds the actor_person 120-character limit")
+    if not 0.0 <= float(route.score) <= 1.0:
+        failures.append("score must be between 0 and 1")
+    if failures:
+        raise RuntimeError("person create guard failed: " + "; ".join(failures))
+
+
+def _insert_person(
+    session,
+    payload: dict[str, object],
+    source_id: str,
+    *,
+    confidence: float,
+) -> str:
+    person_id = str(uuid.uuid4())
+    cols: dict[str, object] = {
+        "person_id": person_id,
+        "full_name": str(payload["name"]).strip(),
+        "title": str(payload["role"]).strip(),
+        "source_id": source_id,
+        "verification_status": "needs_review",
+        "confidence": confidence,
+    }
+    # Architecture V2: a discovered person is parked until GHUS reviews them.
+    columns = _table_columns(session, "person")
+    if "record_status" in columns:
+        cols["record_status"] = "parked"
+    if "source_origin" in columns:
+        cols["source_origin"] = "claude_discovered"
+    if columns and "verification_status" not in columns:
+        cols.pop("verification_status")
+    profile_url = str(payload.get("public_profile_url") or "").strip()
+    if _is_linkedin_profile(profile_url):
+        cols["linkedin_url"] = profile_url
+    names = ", ".join(cols)
+    binds = ", ".join(
+        f"CAST(:{name} AS uuid)" if name in {"person_id", "source_id"} else f":{name}"
+        for name in cols
+    )
+    session.execute(text(f"INSERT INTO person ({names}) VALUES ({binds})"), cols)
+    return person_id
+
+
+def _insert_person_affiliation(
+    session,
+    *,
+    person_id: str,
+    actor_id: str,
+    role: str,
+) -> None:
+    session.execute(
+        text(
+            "INSERT INTO actor_person (actor_id, person_id, role, is_current) "
+            "VALUES (CAST(:actor_id AS uuid), CAST(:person_id AS uuid), :role, TRUE)"
+        ),
+        {"actor_id": actor_id, "person_id": person_id, "role": role},
+    )
+
+
+def _insert_person_discovery_profile(
+    session,
+    *,
+    staged: StagedRecord,
+    person_id: str,
+    actor_id: str,
+    source_id: str,
+    needs_actor_enrichment: bool = False,
+) -> str:
+    profile_id = str(uuid.uuid4())
+    payload = staged.normalized_payload
+    session.execute(
+        text(
+            "INSERT INTO person_discovery_profile (person_discovery_profile_id, "
+            "person_id, actor_id, role, affiliation_raw, research_area, public_profile_url, "
+            "needs_actor_enrichment, source_id, "
+            "source_url, fetched_at) VALUES (CAST(:person_discovery_profile_id AS uuid), "
+            "CAST(:person_id AS uuid), CAST(:actor_id AS uuid), :role, :affiliation_raw, "
+            ":research_area, :public_profile_url, :needs_actor_enrichment, "
+            "CAST(:source_id AS uuid), :source_url, :fetched_at)"
+        ),
+        {
+            "person_discovery_profile_id": profile_id,
+            "person_id": person_id,
+            "actor_id": actor_id,
+            "role": payload.get("role"),
+            "affiliation_raw": payload.get("affiliation_raw") or payload.get("affiliation"),
+            "research_area": payload.get("research_area"),
+            "public_profile_url": payload.get("public_profile_url"),
+            "needs_actor_enrichment": needs_actor_enrichment,
+            "source_id": source_id,
+            "source_url": staged.source_url,
+            "fetched_at": staged.extracted_at,
+        },
+    )
+    return profile_id
+
+
+def _is_linkedin_profile(value: str) -> bool:
+    if not value:
+        return False
+    hostname = (urlparse(value).hostname or "").casefold()
+    return hostname == "linkedin.com" or hostname.endswith(".linkedin.com")
+
+
+def _insert_person_review(
+    session,
+    staged: StagedRecord,
+    route: RouteDecision,
+    source_id: str,
+) -> str:
+    payload = staged.normalized_payload
+    staged_name = str(payload.get("name") or "").strip()
+    if not staged_name:
+        raise ValueError("cannot queue person review without name")
+
+    metadata = dict(route.metadata or {})
+    person_review_id = str(uuid.uuid4())
+    conflict_clause = (
+        "ON CONFLICT (staged_record_id, candidate_person_id) "
+        "WHERE candidate_person_id IS NOT NULL DO UPDATE SET "
+        if route.target_entity_id
+        else "ON CONFLICT (staged_record_id) WHERE candidate_person_id IS NULL DO UPDATE SET "
+    )
+    session.execute(
+        text(
+            "INSERT INTO person_review_queue (person_review_id, staged_record_id, source_id, "
+            "candidate_person_id, score, staged_name, affiliation, role, public_profile_url, "
+            "affiliation_raw, research_area, candidate_name, source_url, status, reviewer, review_kind, "
+            "rubric, score_breakdown, rerank_position, rerank_reason, identity_outcome) "
+            "VALUES (CAST(:person_review_id AS uuid), CAST(:staged_record_id AS uuid), "
+            "CAST(:source_id AS uuid), CAST(:candidate_person_id AS uuid), :score, "
+            ":staged_name, :affiliation, :role, :public_profile_url, :affiliation_raw, :research_area, "
+            ":candidate_name, :source_url, 'pending', NULL, :review_kind, "
+            "CAST(:rubric AS jsonb), CAST(:score_breakdown AS jsonb), :rerank_position, "
+            ":rerank_reason, :identity_outcome) "
+            f"{conflict_clause}"
+            "source_id = EXCLUDED.source_id, score = EXCLUDED.score, "
+            "staged_name = EXCLUDED.staged_name, affiliation = EXCLUDED.affiliation, "
+            "role = EXCLUDED.role, public_profile_url = EXCLUDED.public_profile_url, "
+            "affiliation_raw = EXCLUDED.affiliation_raw, research_area = EXCLUDED.research_area, "
+            "candidate_name = EXCLUDED.candidate_name, "
+            "source_url = EXCLUDED.source_url, review_kind = EXCLUDED.review_kind, "
+            "rubric = EXCLUDED.rubric, score_breakdown = EXCLUDED.score_breakdown, "
+            "rerank_position = EXCLUDED.rerank_position, "
+            "rerank_reason = EXCLUDED.rerank_reason, "
+            "identity_outcome = EXCLUDED.identity_outcome, updated_at = now()"
+        ),
+        {
+            "person_review_id": person_review_id,
+            "staged_record_id": staged.staged_record_id,
+            "source_id": source_id,
+            "candidate_person_id": route.target_entity_id,
+            "score": float(route.score),
+            "staged_name": staged_name,
+            "affiliation": payload.get("affiliation"),
+            "affiliation_raw": payload.get("affiliation_raw") or payload.get("affiliation"),
+            "role": payload.get("role"),
+            "public_profile_url": payload.get("public_profile_url"),
+            "research_area": payload.get("research_area"),
+            "candidate_name": metadata.get("candidate_name"),
+            "source_url": staged.source_url,
+            "review_kind": metadata.get("review_kind") or "identity",
+            "rubric": json.dumps(metadata.get("rubric"), sort_keys=True)
+            if metadata.get("rubric") is not None
+            else None,
+            "score_breakdown": json.dumps(
+                metadata.get("score_breakdown"), sort_keys=True
+            )
+            if metadata.get("score_breakdown") is not None
+            else None,
+            "rerank_position": metadata.get("rerank_position"),
+            "rerank_reason": metadata.get("rerank_reason"),
+            "identity_outcome": metadata.get("identity_outcome"),
+        },
+    )
+    return person_review_id
+
+
+def apply_approved_person_affiliation_change(
+    session,
+    *,
+    person_id: str,
+    previous_actor_id: str,
+    new_actor_id: str,
+    previous_affiliation: str,
+    new_affiliation: str,
+    role: str,
+    source_url: str,
+    changed_at: str,
+    live: bool = False,
+) -> str:
+    """Apply a reviewer-approved current-affiliation change and log its history."""
+    required = {
+        "person_id": person_id,
+        "previous_actor_id": previous_actor_id,
+        "new_actor_id": new_actor_id,
+        "previous_affiliation": previous_affiliation,
+        "new_affiliation": new_affiliation,
+        "role": role,
+        "source_url": source_url,
+        "changed_at": changed_at,
+    }
+    missing = [name for name, value in required.items() if not str(value or "").strip()]
+    if missing:
+        raise ValueError(f"person affiliation change is missing: {', '.join(missing)}")
+    if previous_actor_id == new_actor_id or previous_affiliation == new_affiliation:
+        raise ValueError("person affiliation change requires distinct previous and new values")
+
+    change_id = str(uuid.uuid4())
+    transaction = session.begin()
+    try:
+        result = session.execute(
+            text(
+                "UPDATE actor_person SET actor_id = CAST(:new_actor_id AS uuid), "
+                "role = :role, is_current = TRUE, start_date = CAST(:changed_at AS date), "
+                "end_date = NULL "
+                "WHERE person_id = CAST(:person_id AS uuid) "
+                "AND actor_id = CAST(:previous_actor_id AS uuid) "
+                "AND is_current IS NOT FALSE"
+            ),
+            {
+                "person_id": person_id,
+                "previous_actor_id": previous_actor_id,
+                "new_actor_id": new_actor_id,
+                "role": role,
+                "changed_at": changed_at,
+            },
+        )
+        if result.rowcount != 1:
+            raise RuntimeError(
+                "person affiliation change guard matched zero or multiple current relationships"
+            )
+        session.execute(
+            text(
+                "INSERT INTO person_change_log (person_change_id, person_id, field_name, "
+                "previous_value, new_value, source_url, changed_at) "
+                "VALUES (CAST(:person_change_id AS uuid), CAST(:person_id AS uuid), "
+                "'affiliation', :previous_value, :new_value, :source_url, "
+                "CAST(:changed_at AS timestamptz))"
+            ),
+            {
+                "person_change_id": change_id,
+                "person_id": person_id,
+                "previous_value": previous_affiliation,
+                "new_value": new_affiliation,
+                "source_url": source_url,
+                "changed_at": changed_at,
+            },
+        )
+    except Exception:
+        transaction.rollback()
+        raise
+
+    if live:
+        transaction.commit()
+    else:
+        transaction.rollback()
+    return change_id
+
+
+def _gap_sql(field_name: str) -> str:
+    if field_name == "estimated_trl":
+        return f"{field_name} IS NULL"
+    return f"({field_name} IS NULL OR btrim({field_name}::text) = '')"
+
+
+def _slugify(value: str) -> str:
+    try:
+        from src.etl.common.text_cleaning import slugify
+
+        return slugify(value)
+    except ImportError:
+        import re
+
+        return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+
+def _actor_slug(name: str, actor_id: str) -> str:
+    suffix = f"-{actor_id[:8]}"
+    max_base_length = 160 - len(suffix)
+    base = _slugify(name)[:max_base_length].strip("-") or "actor"
+    return f"{base}{suffix}"
+
+
+def _unsafe_actor_absorb_reason(value: object) -> str | None:
+    name = str(value or "").strip()
+    if not name:
+        return None
+    if ACTOR_ABSORB_CONNECTOR_RE.search(name):
+        return "connector phrase remains in actor name"
+    if ACTOR_ROLE_PREFIX_RE.search(name):
+        return "actor name reads as a role rather than an organization"
+    if _looks_like_combined_actor_name(name):
+        return "actor name looks like a combined organization list"
+    return None
+
+
+def _looks_like_combined_actor_name(name: str) -> bool:
+    if not re.search(r"[;,]|\band\b", name, flags=re.IGNORECASE):
+        return False
+    parts = [
+        part.strip()
+        for part in ACTOR_LIST_DELIMITER_RE.split(name)
+        if part and part.strip().lower() not in ACTOR_LIST_SUFFIXES
+    ]
+    return sum(1 for part in parts if _looks_like_actor_name_part(part)) >= 2
+
+
+def _looks_like_actor_name_part(value: str) -> bool:
+    stripped = value.strip()
+    if re.fullmatch(r"[A-Z0-9][A-Z0-9&./-]+(?:\s+[A-Z0-9][A-Z0-9&./-]+)*", stripped):
+        return True
+    tokens = re.findall(r"[A-Za-z][A-Za-z&.'-]*", stripped)
+    if {token.lower().strip(".") for token in tokens}.intersection(ACTOR_ORG_MARKERS):
+        return True
+    title_tokens = [token for token in tokens if token[:1].isupper()]
+    return len(tokens) >= 2 and len(title_tokens) >= 2
+
+
+def _is_empty(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _has_value(value: object) -> bool:
+    return not _is_empty(value)

@@ -1,0 +1,191 @@
+{
+  "started_at": "2026-10-06T22:47:38.485206+00:00",
+  "finished_at": "2026-10-06T22:48:29.874348+00:00",
+  "database": "ghus_v2_phase12_rehearsal_test",
+  "production_contacted": false,
+  "dump_sha256": "08d9ce68efae470f553cb4d8b0324c0c570f7037450d8af38b5a43da07bf424b",
+  "restore_skipped": "search_doc (pgvector not installed locally; derived index)",
+  "row_counts": {
+    "restored": {
+      "actor": 965,
+      "hub": 49,
+      "hub_actor": 821,
+      "event": 356
+    },
+    "before_500": {
+      "actor": 965,
+      "hub": 48,
+      "hub_actor": 641,
+      "event": 356
+    },
+    "after_500": {
+      "actor": 965,
+      "hub": 48,
+      "hub_actor": 641,
+      "event": 356
+    }
+  },
+  "invariants_hold": true,
+  "archived_by_ghus_decision": {
+    "hub": 1,
+    "hub_actor": 180
+  },
+  "actor_status": {
+    "verified": 809,
+    "rejected": 156
+  },
+  "data_loss_audit_passed_before_500": true,
+  "sql_audit_function_before_500": [
+    {
+      "check_name": "actor category concept",
+      "source_rows": 965,
+      "destination_rows": 965,
+      "passed": true
+    },
+    {
+      "check_name": "actor.actor_type_raw",
+      "source_rows": 164,
+      "destination_rows": 164,
+      "passed": true
+    },
+    {
+      "check_name": "actor legacy status distribution",
+      "source_rows": 965,
+      "destination_rows": 965,
+      "passed": true
+    },
+    {
+      "check_name": "actor.state",
+      "source_rows": 912,
+      "destination_rows": 912,
+      "passed": true
+    },
+    {
+      "check_name": "actor.description",
+      "source_rows": 957,
+      "destination_rows": 957,
+      "passed": true
+    },
+    {
+      "check_name": "actor.primary_technical_focus",
+      "source_rows": 961,
+      "destination_rows": 961,
+      "passed": true
+    },
+    {
+      "check_name": "actor.technical_approach",
+      "source_rows": 960,
+      "destination_rows": 960,
+      "passed": true
+    },
+    {
+      "check_name": "actor.current_activities",
+      "source_rows": 965,
+      "destination_rows": 965,
+      "passed": true
+    },
+    {
+      "check_name": "actor.technology_ip_notes",
+      "source_rows": 953,
+      "destination_rows": 953,
+      "passed": true
+    },
+    {
+      "check_name": "actor.key_constraints",
+      "source_rows": 955,
+      "destination_rows": 955,
+      "passed": true
+    },
+    {
+      "check_name": "actor.funding_summary",
+      "source_rows": 952,
+      "destination_rows": 952,
+      "passed": true
+    },
+    {
+      "check_name": "actor.estimated_trl",
+      "source_rows": 67,
+      "destination_rows": 67,
+      "passed": true
+    },
+    {
+      "check_name": "actor.primary_lifecycle_role",
+      "source_rows": 965,
+      "destination_rows": 965,
+      "passed": true
+    },
+    {
+      "check_name": "record_verification actor decisions",
+      "source_rows": 0,
+      "destination_rows": 0,
+      "passed": true
+    },
+    {
+      "check_name": "organization_hierarchy",
+      "source_rows": 42,
+      "destination_rows": 42,
+      "passed": true
+    },
+    {
+      "check_name": "actor_profile values",
+      "source_rows": 4759,
+      "destination_rows": 4759,
+      "passed": true
+    },
+    {
+      "check_name": "actor_capability_fact",
+      "source_rows": 5712,
+      "destination_rows": 5712,
+      "passed": true
+    },
+    {
+      "check_name": "row count actor",
+      "source_rows": 965,
+      "destination_rows": 965,
+      "passed": true
+    },
+    {
+      "check_name": "row count hub",
+      "source_rows": 49,
+      "destination_rows": 49,
+      "passed": true
+    },
+    {
+      "check_name": "row count hub_actor",
+      "source_rows": 821,
+      "destination_rows": 821,
+      "passed": true
+    },
+    {
+      "check_name": "row count event",
+      "source_rows": 356,
+      "destination_rows": 356,
+      "passed": true
+    }
+  ],
+  "data_loss_audit_sha256": "e813a1e1d756c4b33ca6ab43dbf7aadab4d3370ec89f560081116948f0c4179b",
+  "ghus_decisions": "491 (2026-10-06) and topic approval docs/evidence/phase12_topic_approval.json",
+  "attestation": "TEST-ONLY local rehearsal attestation (not a GHUS approval)",
+  "migration_500_applied": true,
+  "manifest_rerun_noop": true,
+  "manifest_rerun_lines": 45,
+  "log": [
+    "$ python.exe -m scripts.architecture_v2_release apply baseline --database-url-env GHUS_REHEARSAL_DATABASE_URL\nrecorded baseline row counts",
+    "$ python.exe -m scripts.architecture_v2_release apply expand --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 190\napplied 200-canonical\napplied 200-location\napplied 210\napplied 220-canonical\napplied 230\napplied 240\napplied 320\napplied 350-origin\napplied phase6-canonical\napplied 380\napplied review-kinds\napplied 250\napplied 300\napplied 420\napplied 180\napplied 220\napplied 260\napplied 270\napplied 280-identity\napplied 280\napplied 290-identity\napplied 290\napplied 310\napplied 330\napplied 340\napplied 360\napplied 370\napplied 390\napplied 430\napplied 440\napplied 470",
+    "$ python.exe -m scripts.architecture_v2_release apply gazetteer --database-url-env GHUS_REHEARSAL_DATABASE_URL\nloaded 32058 gazetteer places",
+    "$ python.exe -m scripts.architecture_v2_release apply backfill --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 480\napplied 482\napplied 484\napplied 485\napplied 488\napplied 489",
+    "$ python.exe -m scripts.architecture_v2_release apply validate --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 490",
+    "$ python.exe -m scripts.architecture_v2_release apply decisions --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 491",
+    "$ python.exe scripts/phase12_policy_proof.py\nwrote docs\\evidence\\phase12_policy_backfill_proof_rehearsal_2026-10-06.json; passed=True\nwrote docs\\evidence\\pre_cutover_data_loss_audit_rehearsal_2026-10-06.json; passed=True",
+    "$ python.exe -m scripts.architecture_v2_release apply topic --database-url-env GHUS_REHEARSAL_DATABASE_URL --topic-approval C:\\Users\\Ismail\\Projects\\GHUS-Platform\\docs\\evidence\\phase12_topic_approval.json\napplied 486",
+    "$ python.exe -m scripts.architecture_v2_release apply contract --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 405\napplied 410\napplied 495",
+    "$ python.exe -m scripts.architecture_v2_release apply cutover --database-url-env GHUS_REHEARSAL_DATABASE_URL\napplied 500",
+    "$ python.exe -m scripts.architecture_v2_release apply expand --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 190: checksum already applied\nskipped 200-canonical: checksum already applied\nskipped 200-location: checksum already applied\nskipped 210: checksum already applied\nskipped 220-canonical: checksum already applied\nskipped 230: checksum already applied\nskipped 240: checksum already applied\nskipped 320: checksum already applied\nskipped 350-origin: checksum already applied\nskipped phase6-canonical: checksum already applied\nskipped 380: checksum already applied\nskipped review-kinds: checksum already applied\nskipped 250: checksum already applied\nskipped 300: checksum already applied\nskipped 420: checksum already applied\nskipped 180: checksum already applied\nskipped 220: checksum already applied\nskipped 260: checksum already applied\nskipped 270: checksum already applied\nskipped 280-identity: checksum already applied\nskipped 280: checksum already applied\nskipped 290-identity: checksum already applied\nskipped 290: checksum already applied\nskipped 310: checksum already applied\nskipped 330: checksum already applied\nskipped 340: checksum already applied\nskipped 360: checksum already applied\nskipped 370: checksum already applied\nskipped 390: checksum already applied\nskipped 430: checksum already applied\nskipped 440: checksum already applied\nskipped 470: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply backfill --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 480: checksum already applied\nskipped 482: checksum already applied\nskipped 484: checksum already applied\nskipped 485: checksum already applied\nskipped 488: checksum already applied\nskipped 489: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply validate --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 490: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply decisions --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 491: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply topic --database-url-env GHUS_REHEARSAL_DATABASE_URL --topic-approval C:\\Users\\Ismail\\Projects\\GHUS-Platform\\docs\\evidence\\phase12_topic_approval.json\nskipped 486: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply contract --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 405: checksum already applied\nskipped 410: checksum already applied\nskipped 495: checksum already applied",
+    "$ python.exe -m scripts.architecture_v2_release apply cutover --database-url-env GHUS_REHEARSAL_DATABASE_URL\nskipped 500: checksum already applied"
+  ]
+}

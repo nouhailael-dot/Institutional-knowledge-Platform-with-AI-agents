@@ -1,0 +1,25 @@
+{
+  "logical_migrations": [
+    {"id": "001", "name": "reference data", "actions": [{"type": "sql", "up": "agents/sql/190_v2_reference_data.sql", "down": "agents/sql/rollback/190_v2_reference_data.sql"}]},
+    {"id": "002", "name": "actor identity and locations", "actions": [{"type": "alembic", "path": "migrations/proposed/versions/v2a01_actor_identity.py"}, {"type": "sql", "up": "agents/sql/200_v2_actor_location.sql", "down": "agents/sql/rollback/200_v2_actor_location.sql"}]},
+    {"id": "003", "name": "topics", "actions": [{"type": "sql", "up": "agents/sql/210_v2_topics.sql", "down": "agents/sql/rollback/210_v2_topics.sql"}]},
+    {"id": "004", "name": "hubs", "actions": [{"type": "alembic", "path": "migrations/proposed/versions/v2a02_hubs.py"}, {"type": "sql", "up": "agents/sql/220_v2_hub_center_review.sql", "down": "agents/sql/rollback/220_v2_hub_center_review.sql"}]},
+    {"id": "005", "name": "verification history", "actions": [{"type": "sql", "up": "agents/sql/230_v2_verification_history.sql", "down": "agents/sql/rollback/230_v2_verification_history.sql"}]},
+    {"id": "006", "name": "fact ledger", "actions": [{"type": "sql", "up": "agents/sql/240_v2_fact_ledger.sql", "down": "agents/sql/rollback/240_v2_fact_ledger.sql"}]},
+    {"id": "007", "name": "sourced edges", "actions": [{"type": "sql", "up": "agents/sql/250_v2_edges.sql", "down": "agents/sql/rollback/250_v2_edges.sql"}]},
+    {"id": "008", "name": "collection runs", "actions": [{"type": "sql", "up": "agents/sql/260_v2_collection_runs.sql", "down": "agents/sql/rollback/260_v2_collection_runs.sql"}]},
+    {"id": "009", "name": "rankings", "actions": [{"type": "sql", "up": "agents/sql/270_v2_rankings.sql", "down": "agents/sql/rollback/270_v2_rankings.sql"}]},
+    {"id": "010", "name": "people and privacy", "actions": [{"type": "alembic", "path": "migrations/proposed/versions/v2a03_people.py"}, {"type": "sql", "up": "agents/sql/280_v2_people_privacy.sql", "down": "agents/sql/rollback/280_v2_people_privacy.sql"}]},
+    {"id": "011", "name": "events", "actions": [{"type": "alembic", "path": "migrations/proposed/versions/v2a04_events.py"}, {"type": "sql", "up": "agents/sql/290_v2_event_evidence.sql", "down": "agents/sql/rollback/290_v2_event_evidence.sql"}]},
+    {"id": "012", "name": "strategic connection checks", "actions": [{"type": "sql", "up": "agents/sql/300_v2_strategic_connections.sql", "down": "agents/sql/rollback/300_v2_strategic_connections.sql"}]},
+    {"id": "013", "name": "hub proposals", "actions": [{"type": "sql", "up": "agents/sql/310_v2_hub_proposals.sql", "down": "agents/sql/rollback/310_v2_hub_proposals.sql"}]},
+    {"id": "014", "name": "review items", "actions": [{"type": "sql", "up": "agents/sql/320_v2_review_items.sql", "down": "agents/sql/rollback/320_v2_review_items.sql"}]},
+    {"id": "015", "name": "guards and write audit", "actions": [{"type": "sql", "up": "agents/sql/330_v2_guards_and_audit.sql", "down": "agents/sql/rollback/330_v2_guards_and_audit.sql"}]},
+    {"id": "016", "name": "compatibility views", "actions": [{"type": "sql", "up": "agents/sql/340_v2_compatibility_views.sql", "down": "agents/sql/rollback/340_v2_compatibility_views.sql"}]},
+    {"id": "017", "name": "record creation", "actions": [{"type": "sql", "up": "agents/sql/350_v2_record_creation.sql", "down": "agents/sql/rollback/350_v2_record_creation.sql"}]},
+    {"id": "018", "name": "city gazetteer", "actions": [{"type": "sql", "up": "agents/sql/360_v2_city_gazetteer.sql", "down": "agents/sql/rollback/360_v2_city_gazetteer.sql"}]},
+    {"id": "019", "name": "actor category classification metadata", "actions": [{"type": "sql", "up": "agents/sql/370_v2_actor_classification.sql", "down": "agents/sql/rollback/370_v2_actor_classification.sql"}]},
+    {"id": "020", "name": "hub assignment evidence", "actions": [{"type": "alembic", "path": "migrations/proposed/versions/v2a05_hub_assignment.py"}, {"type": "sql", "up": "agents/sql/380_v2_hub_assignment_evidence.sql", "down": "agents/sql/rollback/380_v2_hub_assignment_evidence.sql"}]},
+    {"id": "021", "name": "new-hub detection evidence", "actions": [{"type": "sql", "up": "agents/sql/390_v2_hub_detection.sql", "down": "agents/sql/rollback/390_v2_hub_detection.sql"}]}
+  ]
+}

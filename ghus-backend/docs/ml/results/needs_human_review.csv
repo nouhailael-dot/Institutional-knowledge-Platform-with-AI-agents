@@ -1,0 +1,36 @@
+actor_id_a,actor_id_b,name_a,name_b,pair_id
+9e7dda83-fd83-4c11-ae54-b4a713b6eeda,726d98c0-f16c-4591-bfc1-1e9669dd9e0e,Novartis Institutes,Novartis Institutes for BioMedical Research,181
+2123801c-750c-4785-891c-4451c94fbc4d,567ffffa-92c1-4a78-892a-fad1b2c1a9c3,Colorado School of Mines Mining Engineering Department,Mines Mining Engineering Department,314
+4904b67a-e18e-4888-b108-5f3b0ea50ded,49aaadb1-2b03-4162-9897-fff046402d13,"AI House (Seattle AI hub space for community, startups, events)",AI House (Seattle AI Hub space),320
+7bc8e728-adbd-40cc-a14c-da0d7d86c1d1,bfc75360-00b8-4e95-b268-22fcda669669,Cardiovascular research institutes,Cardiovascular Research Institutes Digital Health & Innovation,325
+cdd7e43f-e72d-4d3e-bc7e-30a0f3f75836,841d0acf-7891-4ff0-a3d7-3bb10bae2955,CMU CyLab,CMU CyLab (AI + cybersecurity),338
+dd476bf1-f508-42a6-8822-bd74a9c8995e,366e2d54-7011-4eb7-a1aa-3903d9484383,CU Boulder INSTAAR,INSTAAR (Institute of Arctic and Alpine Research),358
+f1075ee6-d4bd-49ab-9207-edd2e6d27d9b,8402b82f-9fcb-4453-b5d2-bf5c9a65e8ae,National Center for Supercomputing Applications (NCSA),NCSA (AI & modeling),361
+75034186-c4c7-4193-8461-db1300c59cd2,efccca07-4811-4544-a4fd-66cb8a4974a8,Chevron Phillips Chemical,Chevron Phillips Chemical – Cedar Bayou Plant,363
+2e2557c6-c88e-4f9d-bbdd-c74695e960d8,f9e3bae2-0f25-43f0-b749-cf7fe52b5b58,Energy & Resources Group (ERG),UC Berkeley Energy & Resources Group,364
+2a5007c0-0f02-4ef1-b49b-bbe26e7c3f23,eeca0dba-12fe-40ec-9577-88228ca72dba,UC Berkeley,UC Berkeley Materials Science,390
+70d44699-de94-4d85-9a68-adeb8137b10e,68787ab7-1da5-412d-aac3-88f60f9f7d2c,Rio Tinto (U.S. operations),Rio Tinto Kennecott,413
+a74b1cf9-472f-4ccb-86cc-60108abd4bbe,bfc97a22-39db-4257-bd67-dcab250b5684,National Renewable Energy Laboratory (energy-mineral link),NREL,420
+b8c132b7-7d96-40c4-b6b1-14217eeaa2ca,f447637d-d515-481a-acd9-30b5399cda30,Amazon,Amazon (AI & AWS),429
+3ac81d89-bbcc-4eea-8c6c-9fa66f834dce,9dc13aad-6ffc-408e-9a4e-5c1cf9178351,Corteva,Corteva Agriscience,439
+1cec9180-ce76-40e1-9129-a9b9e8bbe0c6,576b65be-b073-406f-aac5-b86576d56083,Stanford Medicine,Stanford School of Medicine,454
+a5f4bae6-30d3-42bc-b950-117f33555816,32509414-27b6-4e31-9d87-699729e84b6a,NYU Langone Health,NYU Langone Research,456
+365333cb-1073-4380-a4dc-84ef124854d7,b40d1d16-daff-4449-9261-9bc562617e20,MD Anderson Cancer Center,MD Anderson Research Programs,457
+9e378f6a-386f-4480-92cc-d41e54c73ebe,a5cadd77-283b-438f-aaa8-c8bbbcab3c76,Missouri Plant Science Consortium,University of Missouri Plant Science Programs,461
+8637c318-8d83-4fb0-9252-23ff6b90af8e,a67225f1-e808-4374-82d5-5ae91fc9915c,Rice University – Department of Chemical & Biomolecular Engineering,Rice University Chemical and Biomolecular Engineering Research Groups,468
+9eaf09a9-671b-47c4-817e-4d2127a3bb5f,abe34d4a-967f-4b76-9eee-3a6f62ae9d1a,RELLIS Applied Research Campus,RELLIS Campus,474
+aa31ec89-6fd6-465d-8ebc-99937eea2df8,27f822ab-1781-4537-9920-7144ffb5805a,Minnesota Materials Chemistry Programs,University of Minnesota Department of Chemistry,485
+7bbe145a-8e71-49f1-8a3f-73163fc7c50d,7cf64e7c-cb3f-40ef-ac6c-dc4dae7909f9,University of Houston – William A. Brookshire Department of Chemical & Biomolecular Engineering,University of Houston Chemical and Biomolecular Engineering Research Laboratories,487
+89641293-7745-4bb1-9902-bb697a65c802,815b3ba4-b0ec-4840-a189-c6248a4e47cd,Catalysis Research Centers,Catalysis Research Labs,493
+25d48518-d8d7-4602-a06c-96d0f748d132,23ecfefc-1785-419b-9b42-44226b08f72c,Carbon Capture Projects,Carbon Capture Research Programs,494
+32de8355-4abf-4e93-ac69-cab0e819d443,64f84840-8625-4938-9495-925a6707c279,Industrial Carbon Capture Pilot Facilities,Industrial Carbon Capture Programs,503
+9ff88133-1f28-450a-9e81-59a385c6e319,d329a72d-09f1-4316-ab81-5286219039c9,Illinois Energy Initiative,University of Illinois Energy Programs,508
+375f01e5-ee1d-408a-95c0-bdd66f8652a3,71b159e9-5a4e-4198-b031-695daabaee4d,Hydrogen development initiatives,Hydrogen Research Initiatives,525
+a710ea48-a6f0-43d7-96fc-ec34c49751bd,c6283c72-2fe0-49c4-99e8-afa0776c461f,Advanced Manufacturing Labs,Advanced Manufacturing Research Centers,541
+2502fad8-d574-4116-8359-f965f46d6bc8,7aed3e87-8279-4bf1-b874-419f05a6b35d,Digital health innovation programs,Digital Health Labs,543
+6b30cd8a-4105-4073-99d2-92f1842be87a,d44e8784-c2c8-4e13-a8e8-29fe81515d92,Mining Automation Programs,Mining Automation Research Initiatives,548
+23420c9f-b457-447c-a842-1381cad07478,aae01bba-5be9-46d2-bf69-682406a13bf5,Mineral Processing Facilities,Mineral Processing Research Labs,557
+23420c9f-b457-447c-a842-1381cad07478,2ea2fc43-8c89-4e28-a4b8-751b9dafd2a8,Mineral Processing Facilities,Mineral Processing Labs,567
+d90e7bb9-8173-4c9d-ac11-1d8d10f6b160,4b5258dc-d3b3-4161-a13e-55c46d4b3d62,BASF (Gulf Coast),BASF (Regional Operations),581
+7126fce5-9060-4e66-adf1-0cd92a38b948,0608d9cf-fab6-4bb9-bd2a-2ac13fd2e871,Materials Research Science and Engineering Centers,Materials Science Research Labs,583
+7126fce5-9060-4e66-adf1-0cd92a38b948,a8527a36-bb2a-4fbf-be06-ae6469ff6853,Materials Research Science and Engineering Centers,Materials Science Labs,584

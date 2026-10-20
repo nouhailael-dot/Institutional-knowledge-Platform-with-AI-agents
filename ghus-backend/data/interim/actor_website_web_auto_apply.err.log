@@ -1,0 +1,1113 @@
+2026-07-29 15:56:01,979  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-29 15:56:07,451  INFO     src.enrichment.actor_enrichment_candidates  Processing 505 sparse actors
+2026-07-29 15:56:07,633  INFO     src.enrichment.actor_enrichment_candidates  [1/505] Academic & Medical Anchors
+2026-07-29 15:56:08,004  INFO     src.enrichment.actor_enrichment_candidates  [2/505] Academic Anchors
+2026-07-29 15:56:08,359  INFO     src.enrichment.actor_enrichment_candidates  [3/505] Advanced Manufacturing AI Firms (Pittsburgh Region)
+2026-07-29 15:56:08,708  INFO     src.enrichment.actor_enrichment_candidates  [4/505] Advanced Manufacturing Labs
+2026-07-29 15:56:09,068  INFO     src.enrichment.actor_enrichment_candidates  [5/505] Advanced Manufacturing Research Centers
+2026-07-29 15:56:09,421  INFO     src.enrichment.actor_enrichment_candidates  [6/505] Advanced Materials Startups
+2026-07-29 15:56:09,786  INFO     src.enrichment.actor_enrichment_candidates  [7/505] Advanced Polymer Companies
+2026-07-29 15:56:10,138  INFO     src.enrichment.actor_enrichment_candidates  [8/505] Ag-Biotech Startups (St. Louis Region)
+2026-07-29 15:56:10,497  INFO     src.enrichment.actor_enrichment_candidates  [9/505] Agricultural Field Stations
+2026-07-29 15:56:10,851  INFO     src.enrichment.actor_enrichment_candidates  [10/505] Agricultural Field Testing Programs
+2026-07-29 15:56:11,203  INFO     src.enrichment.actor_enrichment_candidates  [11/505] Agricultural Sustainability Institute
+2026-07-29 15:56:11,577  INFO     src.enrichment.actor_enrichment_candidates  [12/505] Agricultural Water Management Programs
+2026-07-29 15:56:11,931  INFO     src.enrichment.actor_enrichment_candidates  [13/505] Agrochemical Formulation Labs
+2026-07-29 15:56:12,286  INFO     src.enrichment.actor_enrichment_candidates  [14/505] Agrochemical R&D Labs
+2026-07-29 15:56:12,751  INFO     src.enrichment.actor_enrichment_candidates  [15/505] Agrochemical Research Labs
+2026-07-29 15:56:15,382  INFO     src.enrichment.actor_enrichment_candidates  [16/505] AI Health Startups
+2026-07-29 15:56:15,775  INFO     src.enrichment.actor_enrichment_candidates  [17/505] AI House (Seattle AI hub space for community, startups, events)
+2026-07-29 15:56:16,153  INFO     src.enrichment.actor_enrichment_candidates  [18/505] AI House (Seattle AI Hub space)
+2026-07-29 15:56:17,814  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+House+%28Seattle+AI+Hub+space%29 "HTTP/1.1 200 OK"
+2026-07-29 15:56:18,352  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-29 15:56:20,635  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Seattle+AI+Hub+space "HTTP/1.1 200 OK"
+2026-07-29 15:56:21,665  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+House "HTTP/1.1 200 OK"
+2026-07-29 15:56:23,492  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=AI+House+%28Seattle+AI+Hub+space%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:56:24,433  INFO     src.enrichment.actor_enrichment_candidates  [19/505] AI startups cluster (Seattle & Bellevue) across enterprise SaaS, robotics, and mission tech
+2026-07-29 15:56:24,918  INFO     src.enrichment.actor_enrichment_candidates  [20/505] AI-focused accelerators (e.g., Berkeley SkyDeck)
+2026-07-29 15:56:25,116  INFO     src.enrichment.actor_enrichment_candidates  Progress 20/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 15:56:25,291  INFO     src.enrichment.actor_enrichment_candidates  [21/505] AI-Health Startups (Boston Region)
+2026-07-29 15:56:25,688  INFO     src.enrichment.actor_enrichment_candidates  [22/505] AI-in-health research labs
+2026-07-29 15:56:26,302  INFO     src.enrichment.actor_enrichment_candidates  [23/505] AI-in-medicine research labs
+2026-07-29 15:56:26,917  INFO     src.enrichment.actor_enrichment_candidates  [24/505] Air Products (hydrogen systems)
+2026-07-29 15:56:28,184  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Air+Products+%28hydrogen+systems%29 "HTTP/1.1 200 OK"
+2026-07-29 15:56:29,347  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=hydrogen+systems "HTTP/1.1 200 OK"
+2026-07-29 15:56:31,515  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Air+Products "HTTP/1.1 200 OK"
+2026-07-29 15:56:33,265  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Air+Products+%28hydrogen+systems%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:56:33,962  INFO     src.enrichment.actor_enrichment_candidates  [25/505] Amazon (AI & AWS)
+2026-07-29 15:56:34,771  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Amazon+%28AI+%26+AWS%29 "HTTP/1.1 200 OK"
+2026-07-29 15:56:35,782  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+%26+AWS "HTTP/1.1 200 OK"
+2026-07-29 15:56:36,690  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Amazon "HTTP/1.1 200 OK"
+2026-07-29 15:56:38,189  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Amazon+%28AI+%26+AWS%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:56:38,877  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 25 actors
+2026-07-29 15:56:39,399  INFO     src.enrichment.actor_enrichment_candidates  [26/505] Ammonia Production Plants
+2026-07-29 15:56:39,933  INFO     src.enrichment.actor_enrichment_candidates  [27/505] Apple AI
+2026-07-29 15:56:40,696  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Apple+AI "HTTP/1.1 200 OK"
+2026-07-29 15:56:42,192  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Apple+AI+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:56:43,697  INFO     src.enrichment.actor_enrichment_candidates  [28/505] ArcelorMittal USA
+2026-07-29 15:56:44,120  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ArcelorMittal+USA "HTTP/1.1 200 OK"
+2026-07-29 15:56:45,691  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=ArcelorMittal+USA+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:56:46,461  INFO     src.enrichment.actor_enrichment_candidates  [29/505] Atmospheric Research Labs
+2026-07-29 15:56:46,900  INFO     src.enrichment.actor_enrichment_candidates  [30/505] Automotive Manufacturers
+2026-07-29 15:56:47,259  INFO     src.enrichment.actor_enrichment_candidates  [31/505] BASF (Gulf Coast)
+2026-07-29 15:56:47,790  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF+%28Gulf+Coast%29 "HTTP/1.1 200 OK"
+2026-07-29 15:56:49,019  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Gulf+Coast "HTTP/1.1 200 OK"
+2026-07-29 15:56:50,045  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF "HTTP/1.1 200 OK"
+2026-07-29 15:56:52,040  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=BASF+%28Gulf+Coast%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:56:52,973  INFO     src.enrichment.actor_enrichment_candidates  [32/505] BASF (Regional Operations)
+2026-07-29 15:56:53,655  INFO     src.enrichment.actor_enrichment_candidates  [33/505] BASF Agricultural Solutions
+2026-07-29 15:56:54,126  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF+Agricultural+Solutions "HTTP/1.1 200 OK"
+2026-07-29 15:56:55,741  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=BASF+Agricultural+Solutions+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:56:57,093  INFO     src.enrichment.actor_enrichment_candidates  [34/505] BASF Freeport
+2026-07-29 15:56:57,540  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BASF+Freeport "HTTP/1.1 200 OK"
+2026-07-29 15:56:58,976  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=BASF+Freeport+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:00,502  INFO     src.enrichment.actor_enrichment_candidates  [35/505] BASF Midwest Research Operations
+2026-07-29 15:57:00,913  INFO     src.enrichment.actor_enrichment_candidates  [36/505] Battery Innovation Programs
+2026-07-29 15:57:01,335  INFO     src.enrichment.actor_enrichment_candidates  [37/505] Battery Material Startups
+2026-07-29 15:57:01,731  INFO     src.enrichment.actor_enrichment_candidates  [38/505] Battery Materials Startups
+2026-07-29 15:57:02,345  INFO     src.enrichment.actor_enrichment_candidates  [39/505] Battery Storage Companies
+2026-07-29 15:57:02,755  INFO     src.enrichment.actor_enrichment_candidates  [40/505] Bayer Crop Science
+2026-07-29 15:57:03,679  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science "HTTP/1.1 200 OK"
+2026-07-29 15:57:05,737  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Bayer+Crop+Science+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:07,055  INFO     src.enrichment.actor_enrichment_candidates  Progress 40/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 15:57:07,468  INFO     src.enrichment.actor_enrichment_candidates  [41/505] Bayer Crop Science (Midwest Presence)
+2026-07-29 15:57:08,092  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+%28Midwest+Presence%29 "HTTP/1.1 200 OK"
+2026-07-29 15:57:09,212  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Midwest+Presence "HTTP/1.1 200 OK"
+2026-07-29 15:57:10,385  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science "HTTP/1.1 200 OK"
+2026-07-29 15:57:12,495  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Bayer+Crop+Science+%28Midwest+Presence%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:13,171  INFO     src.enrichment.actor_enrichment_candidates  [42/505] Bayer Crop Science (regional presence)
+2026-07-29 15:57:13,589  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+%28regional+presence%29 "HTTP/1.1 200 OK"
+2026-07-29 15:57:14,527  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=regional+presence "HTTP/1.1 200 OK"
+2026-07-29 15:57:15,352  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science "HTTP/1.1 200 OK"
+2026-07-29 15:57:16,768  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Bayer+Crop+Science+%28regional+presence%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:18,113  INFO     src.enrichment.actor_enrichment_candidates  [43/505] Bayer Crop Science R&D Facilities
+2026-07-29 15:57:18,699  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+R%26D+Facilities "HTTP/1.1 200 OK"
+2026-07-29 15:57:19,608  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bayer+Crop+Science+Facilities "HTTP/1.1 200 OK"
+2026-07-29 15:57:21,037  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Bayer+Crop+Science+R%26D+Facilities+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:21,720  INFO     src.enrichment.actor_enrichment_candidates  [44/505] Baylor College of Medicine Research Centers
+2026-07-29 15:57:22,095  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Baylor+College+of+Medicine+Research+Centers "HTTP/1.1 200 OK"
+2026-07-29 15:57:23,668  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Baylor+College+of+Medicine+Research+Centers+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:25,021  INFO     src.enrichment.actor_enrichment_candidates  [45/505] Baylor Translational Research Programs
+2026-07-29 15:57:25,432  INFO     src.enrichment.actor_enrichment_candidates  [46/505] Berkeley Center for Green Chemistry
+2026-07-29 15:57:26,255  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Center+for+Green+Chemistry "HTTP/1.1 200 OK"
+2026-07-29 15:57:27,856  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Berkeley+Center+for+Green+Chemistry+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:29,213  INFO     src.enrichment.actor_enrichment_candidates  [47/505] Berkeley Climate Initiative
+2026-07-29 15:57:29,689  INFO     src.enrichment.actor_enrichment_candidates  [48/505] Berkeley Energy & Climate Institute
+2026-07-29 15:57:30,303  INFO     src.enrichment.actor_enrichment_candidates  [49/505] Berkeley SkyDeck
+2026-07-29 15:57:31,132  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+SkyDeck "HTTP/1.1 200 OK"
+2026-07-29 15:57:32,556  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Berkeley+SkyDeck+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:33,925  INFO     src.enrichment.actor_enrichment_candidates  [50/505] Bingham Canyon Mine
+2026-07-29 15:57:34,283  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Bingham+Canyon+Mine "HTTP/1.1 200 OK"
+2026-07-29 15:57:35,698  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Bingham+Canyon+Mine+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:36,885  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 50 actors
+2026-07-29 15:57:37,708  INFO     src.enrichment.actor_enrichment_candidates  [51/505] BioHealth Capital Region ecosystem
+2026-07-29 15:57:38,381  INFO     src.enrichment.actor_enrichment_candidates  [52/505] BioSTL
+2026-07-29 15:57:39,102  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=BioSTL "HTTP/1.1 200 OK"
+2026-07-29 15:57:40,888  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=BioSTL+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:42,063  INFO     src.enrichment.actor_enrichment_candidates  [53/505] BioSTL Innovation Programs
+2026-07-29 15:57:42,772  INFO     src.enrichment.actor_enrichment_candidates  [54/505] Biotech Venture Funds
+2026-07-29 15:57:43,704  INFO     src.enrichment.actor_enrichment_candidates  [55/505] Blue Diamond Growers
+2026-07-29 15:57:44,312  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Blue+Diamond+Growers "HTTP/1.1 200 OK"
+2026-07-29 15:57:46,026  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Blue+Diamond+Growers+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:47,483  INFO     src.enrichment.actor_enrichment_candidates  [56/505] Boston Robotics Cluster
+2026-07-29 15:57:47,872  INFO     src.enrichment.actor_enrichment_candidates  [57/505] Brackish Groundwater Desalination Plants
+2026-07-29 15:57:48,589  INFO     src.enrichment.actor_enrichment_candidates  [58/505] Brazil Ecosystem Mapping
+2026-07-29 15:57:49,499  INFO     src.enrichment.actor_enrichment_candidates  [59/505] Breakthrough Energy Ventures
+2026-07-29 15:57:50,964  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Breakthrough+Energy+Ventures "HTTP/1.1 200 OK"
+2026-07-29 15:57:53,472  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Breakthrough+Energy+Ventures+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:57:55,016  INFO     src.enrichment.actor_enrichment_candidates  [60/505] Broad Institute AI programs
+2026-07-29 15:57:55,882  INFO     src.enrichment.actor_enrichment_candidates  Progress 60/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 15:57:56,348  INFO     src.enrichment.actor_enrichment_candidates  [61/505] CAISO (grid operator)
+2026-07-29 15:57:56,945  INFO     src.enrichment.actor_enrichment_candidates  [62/505] California Green Chemistry Initiative Programs
+2026-07-29 15:57:57,861  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Green+Chemistry+Initiative+Programs "HTTP/1.1 200 OK"
+2026-07-29 15:57:59,728  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=California+Green+Chemistry+Initiative+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:00,416  INFO     src.enrichment.actor_enrichment_candidates  [63/505] California Independent System Operator (CAISO)
+2026-07-29 15:58:00,835  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Independent+System+Operator+%28CAISO%29 "HTTP/1.1 200 OK"
+2026-07-29 15:58:01,865  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CAISO "HTTP/1.1 200 OK"
+2026-07-29 15:58:02,763  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Independent+System+Operator "HTTP/1.1 200 OK"
+2026-07-29 15:58:04,388  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=California+Independent+System+Operator+%28CAISO%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:05,106  INFO     src.enrichment.actor_enrichment_candidates  [64/505] California Specialty Crop Commodity Boards
+2026-07-29 15:58:05,473  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+Specialty+Crop+Commodity+Boards "HTTP/1.1 200 OK"
+2026-07-29 15:58:06,969  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=California+Specialty+Crop+Commodity+Boards+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:07,649  INFO     src.enrichment.actor_enrichment_candidates  [65/505] California State Water Project
+2026-07-29 15:58:08,160  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+State+Water+Project "HTTP/1.1 200 OK"
+2026-07-29 15:58:10,071  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=California+State+Water+Project+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:11,410  INFO     src.enrichment.actor_enrichment_candidates  [66/505] California State Water Resources Control Board
+2026-07-29 15:58:11,784  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=California+State+Water+Resources+Control+Board "HTTP/1.1 200 OK"
+2026-07-29 15:58:13,556  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=California+State+Water+Resources+Control+Board+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:14,890  INFO     src.enrichment.actor_enrichment_candidates  [67/505] Caltech AI & Computational Science
+2026-07-29 15:58:15,260  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Caltech+AI+%26+Computational+Science "HTTP/1.1 200 OK"
+2026-07-29 15:58:16,725  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Caltech+AI+%26+Computational+Science+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:17,405  INFO     src.enrichment.actor_enrichment_candidates  [68/505] Cancer research centers
+2026-07-29 15:58:17,763  INFO     src.enrichment.actor_enrichment_candidates  [69/505] Carbon Capture Companies
+2026-07-29 15:58:18,281  INFO     src.enrichment.actor_enrichment_candidates  [70/505] Carbon capture material research labs
+2026-07-29 15:58:18,654  INFO     src.enrichment.actor_enrichment_candidates  [71/505] Carbon capture pilot projects
+2026-07-29 15:58:19,046  INFO     src.enrichment.actor_enrichment_candidates  [72/505] Carbon Capture Projects
+2026-07-29 15:58:19,761  INFO     src.enrichment.actor_enrichment_candidates  [73/505] Carbon Capture Research Labs
+2026-07-29 15:58:20,323  INFO     src.enrichment.actor_enrichment_candidates  [74/505] Carbon Capture Research Programs
+2026-07-29 15:58:20,681  INFO     src.enrichment.actor_enrichment_candidates  [75/505] Carbon Capture Startups
+2026-07-29 15:58:21,192  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 75 actors
+2026-07-29 15:58:21,686  INFO     src.enrichment.actor_enrichment_candidates  [76/505] Carbon Market Platforms
+2026-07-29 15:58:22,053  INFO     src.enrichment.actor_enrichment_candidates  [77/505] Carbon Market Research Centers
+2026-07-29 15:58:22,407  INFO     src.enrichment.actor_enrichment_candidates  [78/505] Carbon Mineralization Companies
+2026-07-29 15:58:22,767  INFO     src.enrichment.actor_enrichment_candidates  [79/505] Carbon Mineralization Research Initiatives
+2026-07-29 15:58:23,122  INFO     src.enrichment.actor_enrichment_candidates  [80/505] Carbon Removal Startups
+2026-07-29 15:58:23,480  INFO     src.enrichment.actor_enrichment_candidates  Progress 80/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 15:58:23,671  INFO     src.enrichment.actor_enrichment_candidates  [81/505] Carbon Sequestration Startups
+2026-07-29 15:58:24,020  INFO     src.enrichment.actor_enrichment_candidates  [82/505] Cardiovascular research institutes
+2026-07-29 15:58:24,388  INFO     src.enrichment.actor_enrichment_candidates  [83/505] Cardiovascular Research Institutes Digital Health & Innovation
+2026-07-29 15:58:25,125  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cardiovascular+Research+Institutes+Digital+Health+%26+Innovation "HTTP/1.1 200 OK"
+2026-07-29 15:58:26,966  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Cardiovascular+Research+Institutes+Digital+Health+%26+Innovation+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:27,645  INFO     src.enrichment.actor_enrichment_candidates  [84/505] Carnegie Mellon University Energy Programs
+2026-07-29 15:58:28,027  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Carnegie+Mellon+University+Energy+Programs "HTTP/1.1 200 OK"
+2026-07-29 15:58:29,607  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Carnegie+Mellon+University+Energy+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:30,307  INFO     src.enrichment.actor_enrichment_candidates  [85/505] Catalysis Center for Energy Innovation (CCEI)
+2026-07-29 15:58:30,729  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Catalysis+Center+for+Energy+Innovation+%28CCEI%29 "HTTP/1.1 200 OK"
+2026-07-29 15:58:31,640  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CCEI "HTTP/1.1 200 OK"
+2026-07-29 15:58:32,612  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Catalysis+Center+for+Energy+Innovation "HTTP/1.1 200 OK"
+2026-07-29 15:58:34,102  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Catalysis+Center+for+Energy+Innovation+%28CCEI%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:35,301  INFO     src.enrichment.actor_enrichment_candidates  [86/505] Catalysis Research Centers
+2026-07-29 15:58:35,672  INFO     src.enrichment.actor_enrichment_candidates  [87/505] Catalysis Research Labs
+2026-07-29 15:58:36,026  INFO     src.enrichment.actor_enrichment_candidates  [88/505] Cement Manufacturers
+2026-07-29 15:58:36,391  INFO     src.enrichment.actor_enrichment_candidates  [89/505] Center for Catalytic Science & Technology (CCST)
+2026-07-29 15:58:36,763  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Center+for+Catalytic+Science+%26+Technology+%28CCST%29 "HTTP/1.1 200 OK"
+2026-07-29 15:58:37,680  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CCST "HTTP/1.1 200 OK"
+2026-07-29 15:58:38,515  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Center+for+Catalytic+Science+%26+Technology "HTTP/1.1 200 OK"
+2026-07-29 15:58:40,290  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Center+for+Catalytic+Science+%26+Technology+%28CCST%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:41,643  INFO     src.enrichment.actor_enrichment_candidates  [90/505] Central Arizona Project
+2026-07-29 15:58:43,322  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Central+Arizona+Project "HTTP/1.1 200 OK"
+2026-07-29 15:58:44,785  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Central+Arizona+Project+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:46,155  INFO     src.enrichment.actor_enrichment_candidates  [91/505] Central Arizona Project governance bodies
+2026-07-29 15:58:46,502  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Central+Arizona+Project+governance+bodies "HTTP/1.1 200 OK"
+2026-07-29 15:58:48,016  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Central+Arizona+Project+governance+bodies+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:49,914  INFO     src.enrichment.actor_enrichment_candidates  [92/505] Chemical Pilot Facilities
+2026-07-29 15:58:52,027  INFO     src.enrichment.actor_enrichment_candidates  [93/505] Chemours Research Facilities
+2026-07-29 15:58:52,375  INFO     src.enrichment.actor_enrichment_candidates  [94/505] Chevron Phillips Chemical – Cedar Bayou Plant
+2026-07-29 15:58:53,079  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chevron+Phillips+Chemical+%E2%80%93+Cedar+Bayou+Plant "HTTP/1.1 200 OK"
+2026-07-29 15:58:54,820  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Chevron+Phillips+Chemical+%E2%80%93+Cedar+Bayou+Plant+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:58:56,186  INFO     src.enrichment.actor_enrichment_candidates  [95/505] Chicago Biomedical Engineering Programs
+2026-07-29 15:58:56,545  INFO     src.enrichment.actor_enrichment_candidates  [96/505] Chicago Board of Trade (CBOT)
+2026-07-29 15:58:57,078  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chicago+Board+of+Trade+%28CBOT%29 "HTTP/1.1 200 OK"
+2026-07-29 15:58:58,100  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CBOT "HTTP/1.1 200 OK"
+2026-07-29 15:58:59,223  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Chicago+Board+of+Trade "HTTP/1.1 200 OK"
+2026-07-29 15:59:00,871  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Chicago+Board+of+Trade+%28CBOT%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:02,200  INFO     src.enrichment.actor_enrichment_candidates  [97/505] City of Seattle Office of Economic Development AI initiatives
+2026-07-29 15:59:02,966  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=City+of+Seattle+Office+of+Economic+Development+AI+initiatives "HTTP/1.1 200 OK"
+2026-07-29 15:59:04,631  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=City+of+Seattle+Office+of+Economic+Development+AI+initiatives+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:05,330  INFO     src.enrichment.actor_enrichment_candidates  [98/505] Clayton Valley Lithium Operations
+2026-07-29 15:59:05,739  INFO     src.enrichment.actor_enrichment_candidates  [99/505] Clean Fraction /Hot Fraction Separations at Scale
+2026-07-29 15:59:06,894  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-29 15:59:06,896  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 3.0s before retry
+2026-07-29 15:59:10,575  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-29 15:59:10,576  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 6.0s before retry
+2026-07-29 15:59:17,013  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale "HTTP/1.1 500 Internal Server Error"
+2026-07-29 15:59:17,023  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Clean Fraction /Hot Fraction Separations at Scale via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-29 15:59:18,744  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Clean+Fraction+%2FHot+Fraction+Separations+at+Scale+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:19,431  INFO     src.enrichment.actor_enrichment_candidates  [100/505] Climate Adaptation Research Initiatives
+2026-07-29 15:59:19,960  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 100 actors
+2026-07-29 15:59:19,960  INFO     src.enrichment.actor_enrichment_candidates  Progress 100/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 15:59:20,450  INFO     src.enrichment.actor_enrichment_candidates  [101/505] Climate Data and Modeling Platforms
+2026-07-29 15:59:21,083  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Climate+Data+and+Modeling+Platforms "HTTP/1.1 200 OK"
+2026-07-29 15:59:22,635  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Climate+Data+and+Modeling+Platforms+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:23,353  INFO     src.enrichment.actor_enrichment_candidates  [102/505] Climate Data Centers
+2026-07-29 15:59:23,862  INFO     src.enrichment.actor_enrichment_candidates  [103/505] Climate Fintech Startups
+2026-07-29 15:59:24,273  INFO     src.enrichment.actor_enrichment_candidates  [104/505] Climate Modeling Startups
+2026-07-29 15:59:24,764  INFO     src.enrichment.actor_enrichment_candidates  [105/505] Climate Risk Analytics Firms
+2026-07-29 15:59:25,267  INFO     src.enrichment.actor_enrichment_candidates  [106/505] Climate Risk Research Centers
+2026-07-29 15:59:25,611  INFO     src.enrichment.actor_enrichment_candidates  [107/505] Climate Tech Startups (Boston Region)
+2026-07-29 15:59:25,957  INFO     src.enrichment.actor_enrichment_candidates  [108/505] Climate Tech Startups (California)
+2026-07-29 15:59:26,306  INFO     src.enrichment.actor_enrichment_candidates  [109/505] Climate Tech Venture Capital Firms
+2026-07-29 15:59:26,677  INFO     src.enrichment.actor_enrichment_candidates  [110/505] Climate Venture Capital Firms
+2026-07-29 15:59:27,199  INFO     src.enrichment.actor_enrichment_candidates  [111/505] Climate-Tech Startups
+2026-07-29 15:59:27,556  INFO     src.enrichment.actor_enrichment_candidates  [112/505] Clinical & Translational Science Centers
+2026-07-29 15:59:27,901  INFO     src.enrichment.actor_enrichment_candidates  [113/505] Clinical Trials Networks
+2026-07-29 15:59:28,253  INFO     src.enrichment.actor_enrichment_candidates  [114/505] CMU AI Engineering Institute
+2026-07-29 15:59:28,618  INFO     src.enrichment.actor_enrichment_candidates  [115/505] CMU CyLab
+2026-07-29 15:59:29,507  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CMU+CyLab "HTTP/1.1 200 OK"
+2026-07-29 15:59:31,206  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=CMU+CyLab+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:31,888  INFO     src.enrichment.actor_enrichment_candidates  [116/505] CMU CyLab (AI + cybersecurity)
+2026-07-29 15:59:32,505  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CMU+CyLab+%28AI+%2B+cybersecurity%29 "HTTP/1.1 200 OK"
+2026-07-29 15:59:33,617  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+%2B+cybersecurity "HTTP/1.1 200 OK"
+2026-07-29 15:59:34,413  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CMU+CyLab "HTTP/1.1 200 OK"
+2026-07-29 15:59:35,853  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=CMU+CyLab+%28AI+%2B+cybersecurity%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:36,532  INFO     src.enrichment.actor_enrichment_candidates  [117/505] CMU Energy Systems Programs
+2026-07-29 15:59:36,884  INFO     src.enrichment.actor_enrichment_candidates  [118/505] CMU Machine Learning Department
+2026-07-29 15:59:37,228  INFO     src.enrichment.actor_enrichment_candidates  [119/505] Coastal Desalination Initiatives
+2026-07-29 15:59:37,757  INFO     src.enrichment.actor_enrichment_candidates  [120/505] Coastal desalination planning bodies
+2026-07-29 15:59:37,931  INFO     src.enrichment.actor_enrichment_candidates  Progress 120/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 15:59:38,102  INFO     src.enrichment.actor_enrichment_candidates  [121/505] Coastal Resilience Programs
+2026-07-29 15:59:38,451  INFO     src.enrichment.actor_enrichment_candidates  [122/505] College of ACES research programs
+2026-07-29 15:59:39,386  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=College+of+ACES+research+programs "HTTP/1.1 200 OK"
+2026-07-29 15:59:40,936  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=College+of+ACES+research+programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:41,618  INFO     src.enrichment.actor_enrichment_candidates  [123/505] College of Agricultural & Environmental Sciences (CAES)
+2026-07-29 15:59:42,002  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=College+of+Agricultural+%26+Environmental+Sciences+%28CAES%29 "HTTP/1.1 200 OK"
+2026-07-29 15:59:42,907  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CAES "HTTP/1.1 200 OK"
+2026-07-29 15:59:44,112  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=College+of+Agricultural+%26+Environmental+Sciences "HTTP/1.1 200 OK"
+2026-07-29 15:59:45,732  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=College+of+Agricultural+%26+Environmental+Sciences+%28CAES%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:46,409  INFO     src.enrichment.actor_enrichment_candidates  [124/505] College of Agriculture & Life Sciences (Texas A&M)
+2026-07-29 15:59:46,801  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=College+of+Agriculture+%26+Life+Sciences+%28Texas+A%26M%29 "HTTP/1.1 200 OK"
+2026-07-29 15:59:47,857  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M "HTTP/1.1 200 OK"
+2026-07-29 15:59:49,104  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=College+of+Agriculture+%26+Life+Sciences "HTTP/1.1 200 OK"
+2026-07-29 15:59:50,849  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=College+of+Agriculture+%26+Life+Sciences+%28Texas+A%26M%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:52,083  INFO     src.enrichment.actor_enrichment_candidates  [125/505] Colorado River Basin Agencies
+2026-07-29 15:59:52,469  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 125 actors
+2026-07-29 15:59:52,956  INFO     src.enrichment.actor_enrichment_candidates  [126/505] Columbia University Vagelos College of Physicians & Surgeons
+2026-07-29 15:59:53,369  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Columbia+University+Vagelos+College+of+Physicians+%26+Surgeons "HTTP/1.1 200 OK"
+2026-07-29 15:59:55,000  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Columbia+University+Vagelos+College+of+Physicians+%26+Surgeons+official+website "HTTP/1.1 200 OK"
+2026-07-29 15:59:56,194  INFO     src.enrichment.actor_enrichment_candidates  [127/505] Complementary Academic Institutions
+2026-07-29 15:59:56,539  INFO     src.enrichment.actor_enrichment_candidates  [128/505] Copper Processing Facilities
+2026-07-29 15:59:56,891  INFO     src.enrichment.actor_enrichment_candidates  [129/505] Copper Smelter & Refinery
+2026-07-29 15:59:57,238  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Copper+Smelter+%26+Refinery "HTTP/1.1 200 OK"
+2026-07-29 15:59:58,743  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Copper+Smelter+%26+Refinery+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:00,079  INFO     src.enrichment.actor_enrichment_candidates  [130/505] Cornell AI Initiative (university-wide AI effort; useful linkage between Cornell Tech + Ithaca + Weill Cornell)
+2026-07-29 16:00:00,464  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+AI+Initiative+%28university-wide+AI+effort%3B+useful+linkage+between+Cornell+Tech+%2B+Ithaca+%2B+Weill+Cornell%29 "HTTP/1.1 200 OK"
+2026-07-29 16:00:01,881  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=university-wide+AI+effort%3B+useful+linkage+between+Cornell+Tech+%2B+Ithaca+%2B+Weill+Cornell "HTTP/1.1 200 OK"
+2026-07-29 16:00:03,492  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+AI+Initiative "HTTP/1.1 200 OK"
+2026-07-29 16:00:05,257  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Cornell+AI+Initiative+%28university-wide+AI+effort%3B+useful+linkage+between+Cornell+Tech+%2B+Ithaca+%2B+Weill+Cornell%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:05,936  INFO     src.enrichment.actor_enrichment_candidates  [131/505] Cornell Center for Technology Licensing
+2026-07-29 16:00:06,362  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Center+for+Technology+Licensing "HTTP/1.1 200 OK"
+2026-07-29 16:00:07,967  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Cornell+Center+for+Technology+Licensing+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:08,649  INFO     src.enrichment.actor_enrichment_candidates  [132/505] Cornell Dairy Research Center
+2026-07-29 16:00:09,059  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Dairy+Research+Center "HTTP/1.1 200 OK"
+2026-07-29 16:00:10,000  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Dairy "HTTP/1.1 200 OK"
+2026-07-29 16:00:11,483  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Cornell+Dairy+Research+Center+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:12,801  INFO     src.enrichment.actor_enrichment_candidates  [133/505] Cornell Food Science Pilot Plant
+2026-07-29 16:00:13,171  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Food+Science+Pilot+Plant "HTTP/1.1 200 OK"
+2026-07-29 16:00:14,690  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Cornell+Food+Science+Pilot+Plant+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:15,367  INFO     src.enrichment.actor_enrichment_candidates  [134/505] Cornell Horticulture Section
+2026-07-29 16:00:15,724  INFO     src.enrichment.actor_enrichment_candidates  [135/505] Cornell Soil Health Laboratory
+2026-07-29 16:00:16,092  INFO     src.enrichment.actor_enrichment_candidates  [136/505] Cornell Tech AI Research Group
+2026-07-29 16:00:16,500  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Tech+AI+Research+Group "HTTP/1.1 200 OK"
+2026-07-29 16:00:18,042  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Cornell+Tech+AI+Research+Group+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:19,366  INFO     src.enrichment.actor_enrichment_candidates  [137/505] Cornell Tech Urban Systems Programs
+2026-07-29 16:00:19,744  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Tech+Urban+Systems+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:00:21,315  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Cornell+Tech+Urban+Systems+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:21,993  INFO     src.enrichment.actor_enrichment_candidates  [138/505] Corporate Partners
+2026-07-29 16:00:22,744  INFO     src.enrichment.actor_enrichment_candidates  [139/505] Corporate R&D partnerships
+2026-07-29 16:00:23,155  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Corporate+R%26D+partnerships "HTTP/1.1 200 OK"
+2026-07-29 16:00:24,077  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Corporate+partnerships "HTTP/1.1 200 OK"
+2026-07-29 16:00:25,804  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Corporate+R%26D+partnerships+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:26,539  INFO     src.enrichment.actor_enrichment_candidates  [140/505] Corporate Sustainability Offices
+2026-07-29 16:00:26,787  INFO     src.enrichment.actor_enrichment_candidates  Progress 140/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:00:26,990  INFO     src.enrichment.actor_enrichment_candidates  [141/505] Cortex Startup Incubation Programs
+2026-07-29 16:00:27,461  INFO     src.enrichment.actor_enrichment_candidates  [142/505] Critical Minerals Research Programs
+2026-07-29 16:00:27,871  INFO     src.enrichment.actor_enrichment_candidates  [143/505] Crop Science Research Programs
+2026-07-29 16:00:28,272  INFO     src.enrichment.actor_enrichment_candidates  [144/505] CU Boulder Environmental Studies Program
+2026-07-29 16:00:28,684  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CU+Boulder+Environmental+Studies+Program "HTTP/1.1 200 OK"
+2026-07-29 16:00:30,347  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=CU+Boulder+Environmental+Studies+Program+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:31,028  INFO     src.enrichment.actor_enrichment_candidates  [145/505] CU Boulder Renewable Energy Research
+2026-07-29 16:00:31,403  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CU+Boulder+Renewable+Energy+Research "HTTP/1.1 200 OK"
+2026-07-29 16:00:32,890  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=CU+Boulder+Renewable+Energy+Research+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:33,567  INFO     src.enrichment.actor_enrichment_candidates  [146/505] Dairy Research Center
+2026-07-29 16:00:34,110  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dairy+Research+Center "HTTP/1.1 200 OK"
+2026-07-29 16:00:34,975  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dairy "HTTP/1.1 200 OK"
+2026-07-29 16:00:36,382  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Dairy+Research+Center+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:37,796  INFO     src.enrichment.actor_enrichment_candidates  [147/505] DARPA-Funded AI Programs (CMU)
+2026-07-29 16:00:38,209  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=DARPA-Funded+AI+Programs+%28CMU%29 "HTTP/1.1 200 OK"
+2026-07-29 16:00:39,137  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=CMU "HTTP/1.1 200 OK"
+2026-07-29 16:00:40,026  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=DARPA-Funded+AI+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:00:41,495  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=DARPA-Funded+AI+Programs+%28CMU%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:42,171  INFO     src.enrichment.actor_enrichment_candidates  [148/505] Department of Agricultural & Biological Engineering (UIUC)
+2026-07-29 16:00:42,555  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Department+of+Agricultural+%26+Biological+Engineering+%28UIUC%29 "HTTP/1.1 200 OK"
+2026-07-29 16:00:43,453  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UIUC "HTTP/1.1 200 OK"
+2026-07-29 16:00:44,333  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Department+of+Agricultural+%26+Biological+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:00:45,869  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Department+of+Agricultural+%26+Biological+Engineering+%28UIUC%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:46,544  INFO     src.enrichment.actor_enrichment_candidates  [149/505] Department of Biological & Agricultural Engineering
+2026-07-29 16:00:46,932  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Department+of+Biological+%26+Agricultural+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:00:48,460  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Department+of+Biological+%26+Agricultural+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:51,145  INFO     src.enrichment.actor_enrichment_candidates  [150/505] Department of Crop Sciences (UIUC)
+2026-07-29 16:00:51,539  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Department+of+Crop+Sciences+%28UIUC%29 "HTTP/1.1 200 OK"
+2026-07-29 16:00:52,385  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UIUC "HTTP/1.1 200 OK"
+2026-07-29 16:00:53,216  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Department+of+Crop+Sciences "HTTP/1.1 200 OK"
+2026-07-29 16:00:54,977  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Department+of+Crop+Sciences+%28UIUC%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:55,800  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 150 actors
+2026-07-29 16:00:56,301  INFO     src.enrichment.actor_enrichment_candidates  [151/505] Department of Soil & Crop Sciences
+2026-07-29 16:00:56,688  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Department+of+Soil+%26+Crop+Sciences "HTTP/1.1 200 OK"
+2026-07-29 16:00:58,273  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Department+of+Soil+%26+Crop+Sciences+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:00:59,454  INFO     src.enrichment.actor_enrichment_candidates  [152/505] Departments and Offices
+2026-07-29 16:01:00,023  INFO     src.enrichment.actor_enrichment_candidates  [153/505] Desalination Plants (California)
+2026-07-29 16:01:00,402  INFO     src.enrichment.actor_enrichment_candidates  [154/505] Desert Agriculture Research Programs
+2026-07-29 16:01:00,837  INFO     src.enrichment.actor_enrichment_candidates  [155/505] Desert hydrology research labs
+2026-07-29 16:01:01,245  INFO     src.enrichment.actor_enrichment_candidates  [156/505] Digital Health Companies
+2026-07-29 16:01:01,624  INFO     src.enrichment.actor_enrichment_candidates  [157/505] Digital Health Innovation Labs
+2026-07-29 16:01:01,982  INFO     src.enrichment.actor_enrichment_candidates  [158/505] Digital health innovation programs
+2026-07-29 16:01:02,333  INFO     src.enrichment.actor_enrichment_candidates  [159/505] Digital Health Labs
+2026-07-29 16:01:02,856  INFO     src.enrichment.actor_enrichment_candidates  [160/505] Digital health startups across NYC
+2026-07-29 16:01:03,033  INFO     src.enrichment.actor_enrichment_candidates  Progress 160/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:01:03,203  INFO     src.enrichment.actor_enrichment_candidates  [161/505] Direct Air Capture Companies
+2026-07-29 16:01:03,556  INFO     src.enrichment.actor_enrichment_candidates  [162/505] Direct Lithium Extraction Companies
+2026-07-29 16:01:04,088  INFO     src.enrichment.actor_enrichment_candidates  [163/505] Doe Run Company
+2026-07-29 16:01:04,963  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Doe+Run+Company "HTTP/1.1 200 OK"
+2026-07-29 16:01:06,820  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Doe+Run+Company+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:08,144  INFO     src.enrichment.actor_enrichment_candidates  [164/505] Dow (Midwest Operations)
+2026-07-29 16:01:08,658  INFO     src.enrichment.actor_enrichment_candidates  [165/505] Dow Chemical
+2026-07-29 16:01:09,179  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dow+Chemical "HTTP/1.1 200 OK"
+2026-07-29 16:01:10,677  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Dow+Chemical+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:12,009  INFO     src.enrichment.actor_enrichment_candidates  [166/505] Dow Midwest R&D Operations
+2026-07-29 16:01:12,363  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dow+Midwest+R%26D+Operations "HTTP/1.1 200 OK"
+2026-07-29 16:01:13,316  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Dow+Midwest+Operations "HTTP/1.1 200 OK"
+2026-07-29 16:01:14,803  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Dow+Midwest+R%26D+Operations+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:15,696  INFO     src.enrichment.actor_enrichment_candidates  [167/505] Dow Texas Operations (Freeport)
+2026-07-29 16:01:16,402  INFO     src.enrichment.actor_enrichment_candidates  [168/505] Driscoll’s
+2026-07-29 16:01:16,707  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Driscoll%E2%80%99s "HTTP/1.1 200 OK"
+2026-07-29 16:01:18,111  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Driscoll%E2%80%99s+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:19,452  INFO     src.enrichment.actor_enrichment_candidates  [169/505] DuPont
+2026-07-29 16:01:19,957  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=DuPont "HTTP/1.1 200 OK"
+2026-07-29 16:01:21,354  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=DuPont+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:22,683  INFO     src.enrichment.actor_enrichment_candidates  [170/505] DuPont R&D Centers
+2026-07-29 16:01:23,028  INFO     src.enrichment.actor_enrichment_candidates  [171/505] Energy & Resources Group (ERG)
+2026-07-29 16:01:23,393  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Energy+%26+Resources+Group+%28ERG%29 "HTTP/1.1 200 OK"
+2026-07-29 16:01:24,237  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ERG "HTTP/1.1 200 OK"
+2026-07-29 16:01:25,090  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Energy+%26+Resources+Group "HTTP/1.1 200 OK"
+2026-07-29 16:01:26,697  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Energy+%26+Resources+Group+%28ERG%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:27,379  INFO     src.enrichment.actor_enrichment_candidates  [172/505] Energy Analytics Firms
+2026-07-29 16:01:27,728  INFO     src.enrichment.actor_enrichment_candidates  [173/505] Energy Companies (Water-Energy Nexus)
+2026-07-29 16:01:28,389  INFO     src.enrichment.actor_enrichment_candidates  [174/505] Energy Storage Companies
+2026-07-29 16:01:28,861  INFO     src.enrichment.actor_enrichment_candidates  [175/505] Energy storage research labs
+2026-07-29 16:01:29,518  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 175 actors
+2026-07-29 16:01:30,195  INFO     src.enrichment.actor_enrichment_candidates  [176/505] Energy storage research programs
+2026-07-29 16:01:30,538  INFO     src.enrichment.actor_enrichment_candidates  [177/505] Energy Systems Integration Facility (ESIF)
+2026-07-29 16:01:31,210  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Energy+Systems+Integration+Facility+%28ESIF%29 "HTTP/1.1 200 OK"
+2026-07-29 16:01:32,081  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ESIF "HTTP/1.1 200 OK"
+2026-07-29 16:01:32,929  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Energy+Systems+Integration+Facility "HTTP/1.1 200 OK"
+2026-07-29 16:01:34,619  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Energy+Systems+Integration+Facility+%28ESIF%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:35,796  INFO     src.enrichment.actor_enrichment_candidates  [178/505] Entertainment & Media AI Studios
+2026-07-29 16:01:36,169  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Entertainment+%26+Media+AI+Studios "HTTP/1.1 200 OK"
+2026-07-29 16:01:37,702  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Entertainment+%26+Media+AI+Studios+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:39,046  INFO     src.enrichment.actor_enrichment_candidates  [179/505] Environmental Consulting Firms
+2026-07-29 16:01:39,411  INFO     src.enrichment.actor_enrichment_candidates  [180/505] Environmental Justice Programs
+2026-07-29 16:01:39,762  INFO     src.enrichment.actor_enrichment_candidates  Progress 180/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:01:39,936  INFO     src.enrichment.actor_enrichment_candidates  [181/505] Environmental Justice Research Programs
+2026-07-29 16:01:40,285  INFO     src.enrichment.actor_enrichment_candidates  [182/505] Environmental Monitoring Firms
+2026-07-29 16:01:40,640  INFO     src.enrichment.actor_enrichment_candidates  [183/505] Environmental Reclamation Firms
+2026-07-29 16:01:40,992  INFO     src.enrichment.actor_enrichment_candidates  [184/505] Environmental Reclamation Research
+2026-07-29 16:01:41,651  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Environmental+Reclamation+Research "HTTP/1.1 200 OK"
+2026-07-29 16:01:43,087  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Environmental+Reclamation+Research+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:44,427  INFO     src.enrichment.actor_enrichment_candidates  [185/505] Environmental Remediation Firms
+2026-07-29 16:01:44,776  INFO     src.enrichment.actor_enrichment_candidates  [186/505] Environmental Remediation Programs
+2026-07-29 16:01:45,295  INFO     src.enrichment.actor_enrichment_candidates  [187/505] Environmental Remediation Research Programs
+2026-07-29 16:01:45,688  INFO     src.enrichment.actor_enrichment_candidates  [188/505] EPA Great Lakes Program
+2026-07-29 16:01:46,056  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=EPA+Great+Lakes+Program "HTTP/1.1 200 OK"
+2026-07-29 16:01:47,468  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=EPA+Great+Lakes+Program+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:51,933  INFO     src.enrichment.actor_enrichment_candidates  [189/505] ERCOT
+2026-07-29 16:01:52,457  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ERCOT "HTTP/1.1 200 OK"
+2026-07-29 16:01:54,023  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=ERCOT+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:55,366  INFO     src.enrichment.actor_enrichment_candidates  [190/505] ERCOT grid research programs
+2026-07-29 16:01:55,711  INFO     src.enrichment.actor_enrichment_candidates  [191/505] ESG Investment Firms
+2026-07-29 16:01:56,077  INFO     src.enrichment.actor_enrichment_candidates  [192/505] ExxonMobil
+2026-07-29 16:01:56,428  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ExxonMobil "HTTP/1.1 200 OK"
+2026-07-29 16:01:57,773  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=ExxonMobil+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:01:59,093  INFO     src.enrichment.actor_enrichment_candidates  [193/505] ExxonMobil Midwest Technology Collaborations
+2026-07-29 16:01:59,479  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=ExxonMobil+Midwest+Technology+Collaborations "HTTP/1.1 200 OK"
+2026-07-29 16:02:01,004  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=ExxonMobil+Midwest+Technology+Collaborations+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:02,326  INFO     src.enrichment.actor_enrichment_candidates  [194/505] Federal Anchors
+2026-07-29 16:02:02,672  INFO     src.enrichment.actor_enrichment_candidates  [195/505] Florida Phosphate & Phosphogypsum Hub (Central Florida – Tampa Bay Corridor)
+2026-07-29 16:02:03,232  INFO     src.enrichment.actor_enrichment_candidates  [196/505] FMC (agrochemicals)
+2026-07-29 16:02:03,656  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=FMC+%28agrochemicals%29 "HTTP/1.1 200 OK"
+2026-07-29 16:02:04,516  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=agrochemicals "HTTP/1.1 200 OK"
+2026-07-29 16:02:05,321  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=FMC "HTTP/1.1 200 OK"
+2026-07-29 16:02:06,679  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=FMC+%28agrochemicals%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:07,356  INFO     src.enrichment.actor_enrichment_candidates  [197/505] Food Science Pilot Plant
+2026-07-29 16:02:07,877  INFO     src.enrichment.actor_enrichment_candidates  [198/505] Formosa Plastics Point Comfort
+2026-07-29 16:02:08,218  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Formosa+Plastics+Point+Comfort "HTTP/1.1 200 OK"
+2026-07-29 16:02:09,746  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Formosa+Plastics+Point+Comfort+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:10,438  INFO     src.enrichment.actor_enrichment_candidates  [199/505] Freshwater Monitoring Technology Firms
+2026-07-29 16:02:10,783  INFO     src.enrichment.actor_enrichment_candidates  [200/505] Functional Commissions
+2026-07-29 16:02:11,449  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 200 actors
+2026-07-29 16:02:11,468  INFO     src.enrichment.actor_enrichment_candidates  Progress 200/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:02:11,960  INFO     src.enrichment.actor_enrichment_candidates  [201/505] Funds and Programmes
+2026-07-29 16:02:12,484  INFO     src.enrichment.actor_enrichment_candidates  [202/505] General Catalyst
+2026-07-29 16:02:12,821  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=General+Catalyst "HTTP/1.1 200 OK"
+2026-07-29 16:02:14,296  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=General+Catalyst+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:15,505  INFO     src.enrichment.actor_enrichment_candidates  [203/505] Genomics Research Centers
+2026-07-29 16:02:15,847  INFO     src.enrichment.actor_enrichment_candidates  [204/505] Geological Survey Programs
+2026-07-29 16:02:16,364  INFO     src.enrichment.actor_enrichment_candidates  [205/505] Ginkgo Bioworks West Coast Operations
+2026-07-29 16:02:16,732  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Ginkgo+Bioworks+West+Coast+Operations "HTTP/1.1 200 OK"
+2026-07-29 16:02:18,366  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Ginkgo+Bioworks+West+Coast+Operations+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:19,043  INFO     src.enrichment.actor_enrichment_candidates  [206/505] Global health research centers
+2026-07-29 16:02:19,388  INFO     src.enrichment.actor_enrichment_candidates  [207/505] Google AI (Pittsburgh Presence)
+2026-07-29 16:02:19,723  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Google+AI+%28Pittsburgh+Presence%29 "HTTP/1.1 200 OK"
+2026-07-29 16:02:20,579  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Pittsburgh+Presence "HTTP/1.1 200 OK"
+2026-07-29 16:02:21,421  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Google+AI "HTTP/1.1 200 OK"
+2026-07-29 16:02:22,881  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Google+AI+%28Pittsburgh+Presence%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:23,578  INFO     src.enrichment.actor_enrichment_candidates  [208/505] Great Lakes Restoration Initiative
+2026-07-29 16:02:23,932  INFO     src.enrichment.actor_enrichment_candidates  [209/505] Green Bond Issuers
+2026-07-29 16:02:24,271  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Green+Bond+Issuers "HTTP/1.1 200 OK"
+2026-07-29 16:02:25,728  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Green+Bond+Issuers+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:26,443  INFO     src.enrichment.actor_enrichment_candidates  [210/505] Green Chemistry Initiatives
+2026-07-29 16:02:26,852  INFO     src.enrichment.actor_enrichment_candidates  [211/505] Green Chemistry Research Programs
+2026-07-29 16:02:27,462  INFO     src.enrichment.actor_enrichment_candidates  [212/505] Green Finance Research Initiatives
+2026-07-29 16:02:27,876  INFO     src.enrichment.actor_enrichment_candidates  [213/505] Green Hydrogen Startups
+2026-07-29 16:02:28,406  INFO     src.enrichment.actor_enrichment_candidates  [214/505] Greentown Labs Bay Area
+2026-07-29 16:02:28,771  INFO     src.enrichment.actor_enrichment_candidates  [215/505] Greentown Labs Houston
+2026-07-29 16:02:29,139  INFO     src.enrichment.actor_enrichment_candidates  [216/505] Greentown Labs Houston Energy and Materials Innovation Programs
+2026-07-29 16:02:29,899  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Greentown+Labs+Houston+Energy+and+Materials+Innovation+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:02:30,938  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Greentown+Houston+Energy+and+Materials+Innovation+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:02:32,890  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Greentown+Labs+Houston+Energy+and+Materials+Innovation+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:34,199  INFO     src.enrichment.actor_enrichment_candidates  [217/505] Grid Analytics Firms
+2026-07-29 16:02:34,691  INFO     src.enrichment.actor_enrichment_candidates  [218/505] Grid-Scale Battery Storage Projects
+2026-07-29 16:02:35,048  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Grid-Scale+Battery+Storage+Projects "HTTP/1.1 200 OK"
+2026-07-29 16:02:36,568  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Grid-Scale+Battery+Storage+Projects+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:37,245  INFO     src.enrichment.actor_enrichment_candidates  [219/505] Groundwater Active Management Areas
+2026-07-29 16:02:37,636  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Groundwater+Active+Management+Areas "HTTP/1.1 200 OK"
+2026-07-29 16:02:39,170  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Groundwater+Active+Management+Areas+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:39,848  INFO     src.enrichment.actor_enrichment_candidates  [220/505] Groundwater Sustainability Agencies
+2026-07-29 16:02:40,026  INFO     src.enrichment.actor_enrichment_candidates  Progress 220/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:02:40,198  INFO     src.enrichment.actor_enrichment_candidates  [221/505] Harvard SEAS AI Labs
+2026-07-29 16:02:40,551  INFO     src.enrichment.actor_enrichment_candidates  [222/505] Helix Park (life sciences commercialization district)
+2026-07-29 16:02:40,935  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Helix+Park+%28life+sciences+commercialization+district%29 "HTTP/1.1 200 OK"
+2026-07-29 16:02:42,005  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=life+sciences+commercialization+district "HTTP/1.1 200 OK"
+2026-07-29 16:02:42,980  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Helix+Park "HTTP/1.1 200 OK"
+2026-07-29 16:02:44,465  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Helix+Park+%28life+sciences+commercialization+district%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:02:45,284  INFO     src.enrichment.actor_enrichment_candidates  [223/505] Horticulture Section
+2026-07-29 16:02:46,004  INFO     src.enrichment.actor_enrichment_candidates  [224/505] Hospital Systems Research Centers
+2026-07-29 16:02:46,481  INFO     src.enrichment.actor_enrichment_candidates  [225/505] Hospital Systems Research Labs
+2026-07-29 16:02:47,740  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 225 actors
+2026-07-29 16:02:48,931  INFO     src.enrichment.actor_enrichment_candidates  [226/505] Hot-fraction stabilization / immobilization (where the “concentrate” goes)
+2026-07-29 16:02:51,045  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization+%28where+the+%E2%80%9Cconcentrate%E2%80%9D+goes%29 "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:02:51,046  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 3.0s before retry
+2026-07-29 16:02:54,223  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization+%28where+the+%E2%80%9Cconcentrate%E2%80%9D+goes%29 "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:02:54,225  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 6.0s before retry
+2026-07-29 16:03:00,589  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization+%28where+the+%E2%80%9Cconcentrate%E2%80%9D+goes%29 "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:03:00,592  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Hot-fraction stabilization / immobilization (where the “concentrate” goes) via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization+%28where+the+%E2%80%9Cconcentrate%E2%80%9D+goes%29'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-29 16:03:01,721  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=where+the+%E2%80%9Cconcentrate%E2%80%9D+goes "HTTP/1.1 200 OK"
+2026-07-29 16:03:02,639  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:03:02,640  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 3.0s before retry
+2026-07-29 16:03:05,866  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:03:05,867  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 6.0s before retry
+2026-07-29 16:03:12,420  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:03:12,421  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Hot-fraction stabilization / immobilization via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=Hot-fraction+stabilization+%2F+immobilization'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-29 16:03:14,783  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Hot-fraction+stabilization+%2F+immobilization+%28where+the+%E2%80%9Cconcentrate%E2%80%9D+goes%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:15,772  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Hot-fraction+stabilization+%2F+immobilization+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:16,448  INFO     src.enrichment.actor_enrichment_candidates  [227/505] Houston Climate & Energy Investment Ecosystem
+2026-07-29 16:03:16,802  INFO     src.enrichment.actor_enrichment_candidates  [228/505] Houston Flood Control District
+2026-07-29 16:03:17,229  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Houston+Flood+Control+District "HTTP/1.1 200 OK"
+2026-07-29 16:03:18,754  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Houston+Flood+Control+District+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:19,491  INFO     src.enrichment.actor_enrichment_candidates  [229/505] Houston Ship Channel Authority
+2026-07-29 16:03:19,846  INFO     src.enrichment.actor_enrichment_candidates  [230/505] Hydrogen and Fuel Cell Research Programs
+2026-07-29 16:03:20,430  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Hydrogen+and+Fuel+Cell+Research+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:03:22,124  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Hydrogen+and+Fuel+Cell+Research+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:22,805  INFO     src.enrichment.actor_enrichment_candidates  [231/505] Hydrogen Developers
+2026-07-29 16:03:23,159  INFO     src.enrichment.actor_enrichment_candidates  [232/505] Hydrogen development initiatives
+2026-07-29 16:03:23,681  INFO     src.enrichment.actor_enrichment_candidates  [233/505] Hydrogen Development Projects
+2026-07-29 16:03:24,040  INFO     src.enrichment.actor_enrichment_candidates  [234/505] Hydrogen Production Facilities
+2026-07-29 16:03:24,399  INFO     src.enrichment.actor_enrichment_candidates  [235/505] Hydrogen Research Initiatives
+2026-07-29 16:03:24,919  INFO     src.enrichment.actor_enrichment_candidates  [236/505] Hydrogen Research Programs
+2026-07-29 16:03:25,281  INFO     src.enrichment.actor_enrichment_candidates  [237/505] Hydrogen Technology Firms
+2026-07-29 16:03:25,647  INFO     src.enrichment.actor_enrichment_candidates  [238/505] Hydropower Operators
+2026-07-29 16:03:25,992  INFO     src.enrichment.actor_enrichment_candidates  [239/505] Hydropower Research Programs
+2026-07-29 16:03:26,335  INFO     src.enrichment.actor_enrichment_candidates  [240/505] Idaho Phosphate & Geochemistry Hub (Pocatello – Idaho Falls)
+2026-07-29 16:03:26,696  INFO     src.enrichment.actor_enrichment_candidates  Progress 240/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:03:26,870  INFO     src.enrichment.actor_enrichment_candidates  [241/505] Illinois Digital Agriculture Initiative
+2026-07-29 16:03:27,220  INFO     src.enrichment.actor_enrichment_candidates  [242/505] Illinois Energy Initiative
+2026-07-29 16:03:27,567  INFO     src.enrichment.actor_enrichment_candidates  [243/505] Illinois Materials Research Laboratory
+2026-07-29 16:03:27,940  INFO     src.enrichment.actor_enrichment_candidates  [244/505] Illinois Research Park (UIUC)
+2026-07-29 16:03:28,646  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Illinois+Research+Park+%28UIUC%29 "HTTP/1.1 200 OK"
+2026-07-29 16:03:29,682  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UIUC "HTTP/1.1 200 OK"
+2026-07-29 16:03:30,605  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Illinois+Research+Park "HTTP/1.1 200 OK"
+2026-07-29 16:03:32,646  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Illinois+Research+Park+%28UIUC%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:33,368  INFO     src.enrichment.actor_enrichment_candidates  [245/505] Impact Investment Funds
+2026-07-29 16:03:33,767  INFO     src.enrichment.actor_enrichment_candidates  [246/505] India Ecosystem Mapping
+2026-07-29 16:03:34,356  INFO     src.enrichment.actor_enrichment_candidates  [247/505] Industrial Actors
+2026-07-29 16:03:34,722  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Industrial+Actors "HTTP/1.1 200 OK"
+2026-07-29 16:03:36,291  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Industrial+Actors+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:36,981  INFO     src.enrichment.actor_enrichment_candidates  [248/505] Industrial Carbon Capture Pilot Facilities
+2026-07-29 16:03:37,335  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Industrial+Carbon+Capture+Pilot+Facilities "HTTP/1.1 200 OK"
+2026-07-29 16:03:38,843  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Industrial+Carbon+Capture+Pilot+Facilities+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:39,527  INFO     src.enrichment.actor_enrichment_candidates  [249/505] Industrial Carbon Capture Programs
+2026-07-29 16:03:40,076  INFO     src.enrichment.actor_enrichment_candidates  [250/505] Industrial Catalysis Labs
+2026-07-29 16:03:40,423  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 250 actors
+2026-07-29 16:03:40,909  INFO     src.enrichment.actor_enrichment_candidates  [251/505] Industrial Steel & Manufacturing Plants
+2026-07-29 16:03:41,258  INFO     src.enrichment.actor_enrichment_candidates  [252/505] Industrial Water Management Firms
+2026-07-29 16:03:41,629  INFO     src.enrichment.actor_enrichment_candidates  [253/505] Industry-sponsored catalytic research programs
+2026-07-29 16:03:42,019  INFO     src.enrichment.actor_enrichment_candidates  [254/505] INEOS Olefins & Polymers USA
+2026-07-29 16:03:42,404  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=INEOS+Olefins+%26+Polymers+USA "HTTP/1.1 200 OK"
+2026-07-29 16:03:43,999  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=INEOS+Olefins+%26+Polymers+USA+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:45,176  INFO     src.enrichment.actor_enrichment_candidates  [255/505] Innovation Institute for Food & Health
+2026-07-29 16:03:45,576  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Innovation+Institute+for+Food+%26+Health "HTTP/1.1 200 OK"
+2026-07-29 16:03:47,185  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Innovation+Institute+for+Food+%26+Health+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:50,782  INFO     src.enrichment.actor_enrichment_candidates  [256/505] Innovation Platforms
+2026-07-29 16:03:51,134  INFO     src.enrichment.actor_enrichment_candidates  [257/505] Institute for Advancing Health Through Agriculture (IHA)
+2026-07-29 16:03:51,916  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Institute+for+Advancing+Health+Through+Agriculture+%28IHA%29 "HTTP/1.1 200 OK"
+2026-07-29 16:03:52,877  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=IHA "HTTP/1.1 200 OK"
+2026-07-29 16:03:53,729  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Institute+for+Advancing+Health+Through+Agriculture "HTTP/1.1 200 OK"
+2026-07-29 16:03:55,540  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Institute+for+Advancing+Health+Through+Agriculture+%28IHA%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:03:56,874  INFO     src.enrichment.actor_enrichment_candidates  [258/505] Institute for Energy Conversion
+2026-07-29 16:03:57,268  INFO     src.enrichment.actor_enrichment_candidates  [259/505] Intergovernmental and Expert Bodies
+2026-07-29 16:03:57,802  INFO     src.enrichment.actor_enrichment_candidates  [260/505] Interstate Compact Commission
+2026-07-29 16:03:58,172  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Interstate+Compact+Commission "HTTP/1.1 200 OK"
+2026-07-29 16:03:59,624  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Interstate+Compact+Commission+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:00,777  INFO     src.enrichment.actor_enrichment_candidates  Progress 260/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:04:00,954  INFO     src.enrichment.actor_enrichment_candidates  [261/505] Irrigation Technology Firms
+2026-07-29 16:04:01,479  INFO     src.enrichment.actor_enrichment_candidates  [262/505] John Deere (Midwest Operations)
+2026-07-29 16:04:02,086  INFO     src.enrichment.actor_enrichment_candidates  [263/505] Johns Hopkins Applied Physics Laboratory (health security interface)
+2026-07-29 16:04:02,601  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Johns+Hopkins+Applied+Physics+Laboratory+%28health+security+interface%29 "HTTP/1.1 200 OK"
+2026-07-29 16:04:03,905  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=health+security+interface "HTTP/1.1 200 OK"
+2026-07-29 16:04:04,892  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Johns+Hopkins+Applied+Physics+Laboratory "HTTP/1.1 200 OK"
+2026-07-29 16:04:05,939  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Johns+Hopkins+Applied+Physics+%28health+security+interface%29 "HTTP/1.1 200 OK"
+2026-07-29 16:04:07,722  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Johns+Hopkins+Applied+Physics+Laboratory+%28health+security+interface%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:08,408  INFO     src.enrichment.actor_enrichment_candidates  [264/505] Johns Hopkins Bloomberg School of Public Health
+2026-07-29 16:04:08,798  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Johns+Hopkins+Bloomberg+School+of+Public+Health "HTTP/1.1 200 OK"
+2026-07-29 16:04:10,480  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Johns+Hopkins+Bloomberg+School+of+Public+Health+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:12,005  INFO     src.enrichment.actor_enrichment_candidates  [265/505] Johnson & Johnson JLABS (Houston presence)
+2026-07-29 16:04:12,365  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Johnson+%26+Johnson+JLABS+%28Houston+presence%29 "HTTP/1.1 200 OK"
+2026-07-29 16:04:13,303  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Houston+presence "HTTP/1.1 200 OK"
+2026-07-29 16:04:14,214  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Johnson+%26+Johnson+JLABS "HTTP/1.1 200 OK"
+2026-07-29 16:04:15,704  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Johnson+%26+Johnson+JLABS+%28Houston+presence%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:16,381  INFO     src.enrichment.actor_enrichment_candidates  [266/505] Kennecott Smelter Operations
+2026-07-29 16:04:16,730  INFO     src.enrichment.actor_enrichment_candidates  [267/505] Kleiner Perkins
+2026-07-29 16:04:17,078  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Kleiner+Perkins "HTTP/1.1 200 OK"
+2026-07-29 16:04:18,470  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Kleiner+Perkins+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:19,791  INFO     src.enrichment.actor_enrichment_candidates  [268/505] LA AI startup incubators
+2026-07-29 16:04:20,231  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=LA+AI+startup+incubators "HTTP/1.1 200 OK"
+2026-07-29 16:04:21,756  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=LA+AI+startup+incubators+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:22,435  INFO     src.enrichment.actor_enrichment_candidates  [269/505] LA AI Startups
+2026-07-29 16:04:22,780  INFO     src.enrichment.actor_enrichment_candidates  [270/505] LA Tech Venture Capital Firms
+2026-07-29 16:04:23,128  INFO     src.enrichment.actor_enrichment_candidates  [271/505] LabCentral
+2026-07-29 16:04:23,534  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=LabCentral "HTTP/1.1 200 OK"
+2026-07-29 16:04:25,003  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=LabCentral+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:26,336  INFO     src.enrichment.actor_enrichment_candidates  [272/505] LBNL Energy Technologies Area
+2026-07-29 16:04:26,687  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=LBNL+Energy+Technologies+Area "HTTP/1.1 200 OK"
+2026-07-29 16:04:28,097  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=LBNL+Energy+Technologies+Area+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:29,442  INFO     src.enrichment.actor_enrichment_candidates  [273/505] Lithium Extraction Firms
+2026-07-29 16:04:29,947  INFO     src.enrichment.actor_enrichment_candidates  [274/505] Lithium Extraction Research Initiatives
+2026-07-29 16:04:30,552  INFO     src.enrichment.actor_enrichment_candidates  [275/505] LNG Export Terminals (Gulf Coast)
+2026-07-29 16:04:30,966  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=LNG+Export+Terminals+%28Gulf+Coast%29 "HTTP/1.1 200 OK"
+2026-07-29 16:04:31,907  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Gulf+Coast "HTTP/1.1 200 OK"
+2026-07-29 16:04:33,126  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=LNG+Export+Terminals "HTTP/1.1 200 OK"
+2026-07-29 16:04:34,835  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=LNG+Export+Terminals+%28Gulf+Coast%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:35,667  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 275 actors
+2026-07-29 16:04:36,168  INFO     src.enrichment.actor_enrichment_candidates  [276/505] LyondellBasell – Channelview Complex
+2026-07-29 16:04:36,516  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=LyondellBasell+%E2%80%93+Channelview+Complex "HTTP/1.1 200 OK"
+2026-07-29 16:04:37,979  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=LyondellBasell+%E2%80%93+Channelview+Complex+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:39,257  INFO     src.enrichment.actor_enrichment_candidates  [277/505] Major Health Systems
+2026-07-29 16:04:39,658  INFO     src.enrichment.actor_enrichment_candidates  [278/505] Major Texas Livestock & Row-Crop Producers
+2026-07-29 16:04:40,280  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Major+Texas+Livestock+%26+Row-Crop+Producers "HTTP/1.1 200 OK"
+2026-07-29 16:04:41,876  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Major+Texas+Livestock+%26+Row-Crop+Producers+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:43,231  INFO     src.enrichment.actor_enrichment_candidates  [279/505] Managed Aquifer Recharge Facilities
+2026-07-29 16:04:43,621  INFO     src.enrichment.actor_enrichment_candidates  [280/505] Marcellus Shale Operators
+2026-07-29 16:04:43,797  INFO     src.enrichment.actor_enrichment_candidates  Progress 280/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:04:43,974  INFO     src.enrichment.actor_enrichment_candidates  [281/505] Mass General Brigham AI initiatives
+2026-07-29 16:04:44,350  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Mass+General+Brigham+AI+initiatives "HTTP/1.1 200 OK"
+2026-07-29 16:04:45,826  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Mass+General+Brigham+AI+initiatives+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:46,514  INFO     src.enrichment.actor_enrichment_candidates  [282/505] Materials Science Labs
+2026-07-29 16:04:47,057  INFO     src.enrichment.actor_enrichment_candidates  [283/505] Materials Science Research Labs
+2026-07-29 16:04:47,403  INFO     src.enrichment.actor_enrichment_candidates  [284/505] McGovern Medical School (UTHealth Houston)
+2026-07-29 16:04:47,769  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=McGovern+Medical+School+%28UTHealth+Houston%29 "HTTP/1.1 200 OK"
+2026-07-29 16:04:48,885  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UTHealth+Houston "HTTP/1.1 200 OK"
+2026-07-29 16:04:49,901  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=McGovern+Medical+School "HTTP/1.1 200 OK"
+2026-07-29 16:04:51,506  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=McGovern+Medical+School+%28UTHealth+Houston%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:52,193  INFO     src.enrichment.actor_enrichment_candidates  [285/505] MD Anderson Cancer Center
+2026-07-29 16:04:52,553  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=MD+Anderson+Cancer+Center "HTTP/1.1 200 OK"
+2026-07-29 16:04:54,214  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=MD+Anderson+Cancer+Center+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:55,542  INFO     src.enrichment.actor_enrichment_candidates  [286/505] MD Anderson Cancer Research Programs
+2026-07-29 16:04:55,898  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=MD+Anderson+Cancer+Research+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:04:57,478  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=MD+Anderson+Cancer+Research+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:04:58,161  INFO     src.enrichment.actor_enrichment_candidates  [287/505] MD Anderson Research Programs
+2026-07-29 16:04:58,709  INFO     src.enrichment.actor_enrichment_candidates  [288/505] Medical Device Innovation Labs
+2026-07-29 16:04:59,066  INFO     src.enrichment.actor_enrichment_candidates  [289/505] Medtronic
+2026-07-29 16:04:59,426  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Medtronic "HTTP/1.1 200 OK"
+2026-07-29 16:05:00,802  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Medtronic+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:02,184  INFO     src.enrichment.actor_enrichment_candidates  [290/505] Meta AI
+2026-07-29 16:05:02,695  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Meta+AI "HTTP/1.1 200 OK"
+2026-07-29 16:05:04,215  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Meta+AI+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:05,543  INFO     src.enrichment.actor_enrichment_candidates  [291/505] Metallurgical Engineering Programs
+2026-07-29 16:05:05,923  INFO     src.enrichment.actor_enrichment_candidates  [292/505] Methane Monitoring Firms
+2026-07-29 16:05:06,397  INFO     src.enrichment.actor_enrichment_candidates  [293/505] Meyer Cancer Center
+2026-07-29 16:05:06,812  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Meyer+Cancer+Center "HTTP/1.1 200 OK"
+2026-07-29 16:05:08,431  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Meyer+Cancer+Center+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:09,917  INFO     src.enrichment.actor_enrichment_candidates  [294/505] Michigan Energy Institute (materials focus)
+2026-07-29 16:05:10,331  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Michigan+Energy+Institute+%28materials+focus%29 "HTTP/1.1 200 OK"
+2026-07-29 16:05:11,429  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=materials+focus "HTTP/1.1 200 OK"
+2026-07-29 16:05:12,397  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Michigan+Energy+Institute "HTTP/1.1 200 OK"
+2026-07-29 16:05:13,860  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Michigan+Energy+Institute+%28materials+focus%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:14,584  INFO     src.enrichment.actor_enrichment_candidates  [295/505] Michigan Translational Research Institute
+2026-07-29 16:05:14,965  INFO     src.enrichment.actor_enrichment_candidates  [296/505] Microsoft
+2026-07-29 16:05:15,411  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Microsoft "HTTP/1.1 200 OK"
+2026-07-29 16:05:16,752  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Microsoft+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:18,163  INFO     src.enrichment.actor_enrichment_candidates  [297/505] Microsoft (AI engineering & Azure)
+2026-07-29 16:05:18,699  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Microsoft+%28AI+engineering+%26+Azure%29 "HTTP/1.1 200 OK"
+2026-07-29 16:05:19,604  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI+engineering+%26+Azure "HTTP/1.1 200 OK"
+2026-07-29 16:05:20,441  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Microsoft "HTTP/1.1 200 OK"
+2026-07-29 16:05:21,858  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Microsoft+%28AI+engineering+%26+Azure%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:22,555  INFO     src.enrichment.actor_enrichment_candidates  [298/505] Microsoft AI
+2026-07-29 16:05:22,906  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Microsoft+AI "HTTP/1.1 200 OK"
+2026-07-29 16:05:24,620  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Microsoft+AI+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:26,359  INFO     src.enrichment.actor_enrichment_candidates  [299/505] Midwest Alliance for Clean Hydrogen
+2026-07-29 16:05:26,973  INFO     src.enrichment.actor_enrichment_candidates  [300/505] Midwest Hydrogen Hub
+2026-07-29 16:05:27,392  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Midwest+Hydrogen+Hub "HTTP/1.1 200 OK"
+2026-07-29 16:05:28,912  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Midwest+Hydrogen+Hub+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:29,737  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 300 actors
+2026-07-29 16:05:29,756  INFO     src.enrichment.actor_enrichment_candidates  Progress 300/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:05:30,239  INFO     src.enrichment.actor_enrichment_candidates  [301/505] Midwest Row-Crop Producers (Corn & Soy Systems)
+2026-07-29 16:05:30,599  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Midwest+Row-Crop+Producers+%28Corn+%26+Soy+Systems%29 "HTTP/1.1 200 OK"
+2026-07-29 16:05:31,508  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Corn+%26+Soy+Systems "HTTP/1.1 200 OK"
+2026-07-29 16:05:32,347  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Midwest+Row-Crop+Producers "HTTP/1.1 200 OK"
+2026-07-29 16:05:33,784  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Midwest+Row-Crop+Producers+%28Corn+%26+Soy+Systems%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:34,483  INFO     src.enrichment.actor_enrichment_candidates  [302/505] Mine Reclamation Programs
+2026-07-29 16:05:35,009  INFO     src.enrichment.actor_enrichment_candidates  [303/505] Mine Reclamation Research Programs
+2026-07-29 16:05:35,374  INFO     src.enrichment.actor_enrichment_candidates  [304/505] Mineral Processing Facilities
+2026-07-29 16:05:35,918  INFO     src.enrichment.actor_enrichment_candidates  [305/505] Mineral Processing Labs
+2026-07-29 16:05:36,442  INFO     src.enrichment.actor_enrichment_candidates  [306/505] Mineral Processing Pilot Facilities
+2026-07-29 16:05:36,788  INFO     src.enrichment.actor_enrichment_candidates  [307/505] Mineral Processing Research Labs
+2026-07-29 16:05:37,290  INFO     src.enrichment.actor_enrichment_candidates  [308/505] Mines Mining Engineering Department
+2026-07-29 16:05:37,640  INFO     src.enrichment.actor_enrichment_candidates  [309/505] Mining Automation Firms
+2026-07-29 16:05:38,009  INFO     src.enrichment.actor_enrichment_candidates  [310/505] Mining Automation Programs
+2026-07-29 16:05:38,353  INFO     src.enrichment.actor_enrichment_candidates  [311/505] Mining Automation Research Initiatives
+2026-07-29 16:05:38,719  INFO     src.enrichment.actor_enrichment_candidates  [312/505] Mining Automation Technology Firms
+2026-07-29 16:05:39,236  INFO     src.enrichment.actor_enrichment_candidates  [313/505] Mining Technology Startups
+2026-07-29 16:05:39,605  INFO     src.enrichment.actor_enrichment_candidates  [314/505] Minnesota Materials Chemistry Programs
+2026-07-29 16:05:39,951  INFO     src.enrichment.actor_enrichment_candidates  [315/505] Missouri Plant Science Consortium
+2026-07-29 16:05:40,297  INFO     src.enrichment.actor_enrichment_candidates  [316/505] Missouri S&T Metallurgical Engineering
+2026-07-29 16:05:40,993  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Missouri+S%26T+Metallurgical+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:05:42,820  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Missouri+S%26T+Metallurgical+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:43,978  INFO     src.enrichment.actor_enrichment_candidates  [317/505] MIT Department of Chemistry
+2026-07-29 16:05:44,354  INFO     src.enrichment.actor_enrichment_candidates  [318/505] MIT Energy Initiative (materials interface)
+2026-07-29 16:05:44,730  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=MIT+Energy+Initiative+%28materials+interface%29 "HTTP/1.1 200 OK"
+2026-07-29 16:05:45,660  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=materials+interface "HTTP/1.1 200 OK"
+2026-07-29 16:05:46,502  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=MIT+Energy+Initiative "HTTP/1.1 200 OK"
+2026-07-29 16:05:48,082  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=MIT+Energy+Initiative+%28materials+interface%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:48,758  INFO     src.enrichment.actor_enrichment_candidates  [319/505] Molybdenum Production Facilities
+2026-07-29 16:05:49,106  INFO     src.enrichment.actor_enrichment_candidates  [320/505] Morenci Mine
+2026-07-29 16:05:49,433  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Morenci+Mine "HTTP/1.1 200 OK"
+2026-07-29 16:05:50,804  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Morenci+Mine+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:51,310  INFO     src.enrichment.actor_enrichment_candidates  Progress 320/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:05:51,487  INFO     src.enrichment.actor_enrichment_candidates  [321/505] Mount Sinai Biomedical Research Institutes
+2026-07-29 16:05:51,835  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Mount+Sinai+Biomedical+Research+Institutes "HTTP/1.1 200 OK"
+2026-07-29 16:05:53,342  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Mount+Sinai+Biomedical+Research+Institutes+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:54,018  INFO     src.enrichment.actor_enrichment_candidates  [322/505] National Research Labs
+2026-07-29 16:05:54,532  INFO     src.enrichment.actor_enrichment_candidates  [323/505] NC State Chemistry Department
+2026-07-29 16:05:54,881  INFO     src.enrichment.actor_enrichment_candidates  [324/505] NC State Soil Science Programs
+2026-07-29 16:05:55,234  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NC+State+Soil+Science+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:05:56,711  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NC+State+Soil+Science+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:05:57,387  INFO     src.enrichment.actor_enrichment_candidates  [325/505] NCAR Climate Modeling Programs
+2026-07-29 16:05:57,896  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 325 actors
+2026-07-29 16:05:58,384  INFO     src.enrichment.actor_enrichment_candidates  [326/505] Neuroscience institutes
+2026-07-29 16:05:58,733  INFO     src.enrichment.actor_enrichment_candidates  [327/505] New York Apple Growers Association
+2026-07-29 16:05:59,074  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=New+York+Apple+Growers+Association "HTTP/1.1 200 OK"
+2026-07-29 16:06:00,502  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=New+York+Apple+Growers+Association+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:01,688  INFO     src.enrichment.actor_enrichment_candidates  [328/505] New York Climate-Smart Agriculture Program
+2026-07-29 16:06:02,139  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=New+York+Climate-Smart+Agriculture+Program "HTTP/1.1 200 OK"
+2026-07-29 16:06:03,649  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=New+York+Climate-Smart+Agriculture+Program+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:04,323  INFO     src.enrichment.actor_enrichment_candidates  [329/505] New York Dairy Cooperatives
+2026-07-29 16:06:04,670  INFO     src.enrichment.actor_enrichment_candidates  [330/505] New York Wine & Grape Foundation
+2026-07-29 16:06:05,058  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=New+York+Wine+%26+Grape+Foundation "HTTP/1.1 200 OK"
+2026-07-29 16:06:06,575  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=New+York+Wine+%26+Grape+Foundation+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:07,250  INFO     src.enrichment.actor_enrichment_candidates  [331/505] NIH Intramural Research Program
+2026-07-29 16:06:07,601  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NIH+Intramural+Research+Program "HTTP/1.1 200 OK"
+2026-07-29 16:06:09,051  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NIH+Intramural+Research+Program+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:10,399  INFO     src.enrichment.actor_enrichment_candidates  [332/505] Northwestern Catalysis and Surface Science Groups
+2026-07-29 16:06:10,784  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Northwestern+Catalysis+and+Surface+Science+Groups "HTTP/1.1 200 OK"
+2026-07-29 16:06:12,412  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Northwestern+Catalysis+and+Surface+Science+Groups+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:13,087  INFO     src.enrichment.actor_enrichment_candidates  [333/505] Northwestern Clinical Research Programs
+2026-07-29 16:06:14,741  INFO     src.enrichment.actor_enrichment_candidates  [334/505] Northwestern Environmental Engineering Programs
+2026-07-29 16:06:15,266  INFO     src.enrichment.actor_enrichment_candidates  [335/505] Northwestern ISEN
+2026-07-29 16:06:15,612  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Northwestern+ISEN "HTTP/1.1 200 OK"
+2026-07-29 16:06:16,992  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Northwestern+ISEN+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:17,672  INFO     src.enrichment.actor_enrichment_candidates  [336/505] Northwestern Materials Research Center
+2026-07-29 16:06:18,076  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Northwestern+Materials+Research+Center "HTTP/1.1 200 OK"
+2026-07-29 16:06:19,121  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Northwestern+Materials "HTTP/1.1 200 OK"
+2026-07-29 16:06:20,543  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Northwestern+Materials+Research+Center+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:21,871  INFO     src.enrichment.actor_enrichment_candidates  [337/505] Northwestern University Environmental Engineering
+2026-07-29 16:06:22,224  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Northwestern+University+Environmental+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:06:23,893  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Northwestern+University+Environmental+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:24,801  INFO     src.enrichment.actor_enrichment_candidates  [338/505] Novartis Institutes
+2026-07-29 16:06:25,252  INFO     src.enrichment.actor_enrichment_candidates  [339/505] Novozymes North America
+2026-07-29 16:06:25,620  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Novozymes+North+America "HTTP/1.1 200 OK"
+2026-07-29 16:06:27,085  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Novozymes+North+America+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:27,759  INFO     src.enrichment.actor_enrichment_candidates  [340/505] NSF AI Institutes (Boston-based)
+2026-07-29 16:06:28,369  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NSF+AI+Institutes+%28Boston-based%29 "HTTP/1.1 200 OK"
+2026-07-29 16:06:29,297  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Boston-based "HTTP/1.1 200 OK"
+2026-07-29 16:06:30,172  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NSF+AI+Institutes "HTTP/1.1 200 OK"
+2026-07-29 16:06:31,680  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NSF+AI+Institutes+%28Boston-based%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:32,188  INFO     src.enrichment.actor_enrichment_candidates  Progress 340/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:06:32,364  INFO     src.enrichment.actor_enrichment_candidates  [341/505] Nuclear Power Operators (Midwest)
+2026-07-29 16:06:32,705  INFO     src.enrichment.actor_enrichment_candidates  [342/505] Nutrien (Regional Operations)
+2026-07-29 16:06:33,059  INFO     src.enrichment.actor_enrichment_candidates  [343/505] NVIDIA AI Research
+2026-07-29 16:06:35,574  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NVIDIA+AI+Research "HTTP/1.1 200 OK"
+2026-07-29 16:06:39,605  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NVIDIA+AI+Research+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:41,059  INFO     src.enrichment.actor_enrichment_candidates  [344/505] NYC Economic Development Corporation (NYCEDC) – AI in NYC
+2026-07-29 16:06:41,819  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYC+Economic+Development+Corporation+%28NYCEDC%29+%E2%80%93+AI+in+NYC "HTTP/1.1 200 OK"
+2026-07-29 16:06:42,850  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYCEDC "HTTP/1.1 200 OK"
+2026-07-29 16:06:43,888  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYC+Economic+Development+Corporation+%E2%80%93+AI+in+NYC "HTTP/1.1 200 OK"
+2026-07-29 16:06:45,998  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NYC+Economic+Development+Corporation+%28NYCEDC%29+%E2%80%93+AI+in+NYC+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:47,331  INFO     src.enrichment.actor_enrichment_candidates  [345/505] NYC Health + Hospitals
+2026-07-29 16:06:48,580  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYC+Health+%2B+Hospitals "HTTP/1.1 200 OK"
+2026-07-29 16:06:50,747  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NYC+Health+%2B+Hospitals+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:06:52,475  INFO     src.enrichment.actor_enrichment_candidates  [346/505] NYC Mayor’s Office AI strategy/report effort
+2026-07-29 16:06:52,792  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYC+Mayor%E2%80%99s+Office+AI+strategy%2Freport+effort "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:06:52,793  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 3.0s before retry
+2026-07-29 16:06:55,939  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYC+Mayor%E2%80%99s+Office+AI+strategy%2Freport+effort "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:06:55,941  WARNING  src.enrichment.actor_enrichment_candidates  ROR returned 500; sleeping 6.0s before retry
+2026-07-29 16:07:02,516  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYC+Mayor%E2%80%99s+Office+AI+strategy%2Freport+effort "HTTP/1.1 500 Internal Server Error"
+2026-07-29 16:07:02,518  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for NYC Mayor’s Office AI strategy/report effort via _search_ror: Server error '500 Internal Server Error' for url 'https://api.ror.org/organizations?query=NYC+Mayor%E2%80%99s+Office+AI+strategy%2Freport+effort'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500
+2026-07-29 16:07:04,665  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NYC+Mayor%E2%80%99s+Office+AI+strategy%2Freport+effort+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:05,494  INFO     src.enrichment.actor_enrichment_candidates  [347/505] NYU Stern Center for Sustainable Business
+2026-07-29 16:07:06,200  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=NYU+Stern+Center+for+Sustainable+Business "HTTP/1.1 200 OK"
+2026-07-29 16:07:07,807  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=NYU+Stern+Center+for+Sustainable+Business+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:09,376  INFO     src.enrichment.actor_enrichment_candidates  [348/505] Oceanographic Research Centers
+2026-07-29 16:07:09,784  INFO     src.enrichment.actor_enrichment_candidates  [349/505] Offshore wind planning authorities
+2026-07-29 16:07:10,502  INFO     src.enrichment.actor_enrichment_candidates  [350/505] Offshore Wind Planning Bodies
+2026-07-29 16:07:11,271  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 350 actors
+2026-07-29 16:07:11,773  INFO     src.enrichment.actor_enrichment_candidates  [351/505] Ore-Sorting Technology Providers
+2026-07-29 16:07:12,119  INFO     src.enrichment.actor_enrichment_candidates  [352/505] Ørsted (Massachusetts Projects)
+2026-07-29 16:07:12,484  INFO     src.enrichment.actor_enrichment_candidates  [353/505] Penn State Mining Engineering
+2026-07-29 16:07:13,123  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Penn+State+Mining+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:07:14,836  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Penn+State+Mining+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:15,994  INFO     src.enrichment.actor_enrichment_candidates  [354/505] Petrochemical Complexes
+2026-07-29 16:07:16,342  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Petrochemical+Complexes "HTTP/1.1 200 OK"
+2026-07-29 16:07:17,769  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Petrochemical+Complexes+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:18,489  INFO     src.enrichment.actor_enrichment_candidates  [355/505] Pfizer (Cambridge)
+2026-07-29 16:07:19,104  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Pfizer+%28Cambridge%29 "HTTP/1.1 200 OK"
+2026-07-29 16:07:20,647  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cambridge "HTTP/1.1 200 OK"
+2026-07-29 16:07:21,793  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Pfizer "HTTP/1.1 200 OK"
+2026-07-29 16:07:23,354  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Pfizer+%28Cambridge%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:24,054  INFO     src.enrichment.actor_enrichment_candidates  [356/505] PG System Knowledge and Radiochemistry
+2026-07-29 16:07:24,602  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=PG+System+Knowledge+and+Radiochemistry "HTTP/1.1 200 OK"
+2026-07-29 16:07:26,215  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=PG+System+Knowledge+and+Radiochemistry+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:26,904  INFO     src.enrichment.actor_enrichment_candidates  [357/505] Phosphogypsum Ecosystem Hubs
+2026-07-29 16:07:27,420  INFO     src.enrichment.actor_enrichment_candidates  [358/505] Plant Sciences Department
+2026-07-29 16:07:27,952  INFO     src.enrichment.actor_enrichment_candidates  [359/505] Polymer Manufacturing Firms
+2026-07-29 16:07:28,303  INFO     src.enrichment.actor_enrichment_candidates  [360/505] Polymer Reaction Engineering Program
+2026-07-29 16:07:28,671  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Polymer+Reaction+Engineering+Program "HTTP/1.1 200 OK"
+2026-07-29 16:07:30,171  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Polymer+Reaction+Engineering+Program+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:30,676  INFO     src.enrichment.actor_enrichment_candidates  Progress 360/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:07:30,865  INFO     src.enrichment.actor_enrichment_candidates  [361/505] Polymer Research Institutes
+2026-07-29 16:07:31,213  INFO     src.enrichment.actor_enrichment_candidates  [362/505] Polymer Science Programs
+2026-07-29 16:07:31,567  INFO     src.enrichment.actor_enrichment_candidates  [363/505] Population health centers
+2026-07-29 16:07:32,006  INFO     src.enrichment.actor_enrichment_candidates  [364/505] Population Health Institutes
+2026-07-29 16:07:32,414  INFO     src.enrichment.actor_enrichment_candidates  [365/505] Port Houston
+2026-07-29 16:07:32,826  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Port+Houston "HTTP/1.1 200 OK"
+2026-07-29 16:07:34,261  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Port+Houston+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:35,598  INFO     src.enrichment.actor_enrichment_candidates  [366/505] Precision medicine initiatives
+2026-07-29 16:07:36,135  INFO     src.enrichment.actor_enrichment_candidates  [367/505] Precision Medicine Labs
+2026-07-29 16:07:36,489  INFO     src.enrichment.actor_enrichment_candidates  [368/505] Process Systems Engineering Labs
+2026-07-29 16:07:36,834  INFO     src.enrichment.actor_enrichment_candidates  [369/505] Rare Earth Startups
+2026-07-29 16:07:37,186  INFO     src.enrichment.actor_enrichment_candidates  [370/505] Regional Ag-Tech Startups
+2026-07-29 16:07:37,708  INFO     src.enrichment.actor_enrichment_candidates  [371/505] Regional AgriTech Startups
+2026-07-29 16:07:38,061  INFO     src.enrichment.actor_enrichment_candidates  [372/505] Regional Commissions
+2026-07-29 16:07:38,581  INFO     src.enrichment.actor_enrichment_candidates  [373/505] Regional Irrigation & Precision Agriculture Firms
+2026-07-29 16:07:38,952  INFO     src.enrichment.actor_enrichment_candidates  [374/505] Regional Precision Agriculture & Ag-Tech Startups
+2026-07-29 16:07:39,495  INFO     src.enrichment.actor_enrichment_candidates  [375/505] Regional specialty polymer and advanced material manufacturers
+2026-07-29 16:07:39,990  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 375 actors
+2026-07-29 16:07:40,474  INFO     src.enrichment.actor_enrichment_candidates  [376/505] Regional venture capital firms investing in AI
+2026-07-29 16:07:40,829  INFO     src.enrichment.actor_enrichment_candidates  [377/505] Regional Zinc Producers
+2026-07-29 16:07:41,266  INFO     src.enrichment.actor_enrichment_candidates  [378/505] RELLIS Applied Research Campus
+2026-07-29 16:07:41,969  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=RELLIS+Applied+Research+Campus "HTTP/1.1 200 OK"
+2026-07-29 16:07:43,683  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=RELLIS+Applied+Research+Campus+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:44,368  INFO     src.enrichment.actor_enrichment_candidates  [379/505] RELLIS Campus
+2026-07-29 16:07:44,713  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=RELLIS+Campus "HTTP/1.1 200 OK"
+2026-07-29 16:07:46,917  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=RELLIS+Campus+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:48,194  INFO     src.enrichment.actor_enrichment_candidates  [380/505] Renewable Energy Firms
+2026-07-29 16:07:48,458  INFO     src.enrichment.actor_enrichment_candidates  Progress 380/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:07:48,697  INFO     src.enrichment.actor_enrichment_candidates  [381/505] Renewable Energy Startups (Colorado)
+2026-07-29 16:07:49,209  INFO     src.enrichment.actor_enrichment_candidates  [382/505] Research & Innovation Platforms
+2026-07-29 16:07:49,619  INFO     src.enrichment.actor_enrichment_candidates  [383/505] Research and Training
+2026-07-29 16:07:50,351  INFO     src.enrichment.actor_enrichment_candidates  [384/505] Research Institutes
+2026-07-29 16:07:50,858  INFO     src.enrichment.actor_enrichment_candidates  [385/505] Research Park at UIUC
+2026-07-29 16:07:51,677  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Research+Park+at+UIUC "HTTP/1.1 200 OK"
+2026-07-29 16:07:53,353  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Research+Park+at+UIUC+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:54,240  INFO     src.enrichment.actor_enrichment_candidates  [386/505] Rice Materials Science
+2026-07-29 16:07:54,785  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Rice+Materials+Science "HTTP/1.1 200 OK"
+2026-07-29 16:07:56,894  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Rice+Materials+Science+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:07:58,214  INFO     src.enrichment.actor_enrichment_candidates  [387/505] Rice University – Carbon Hub
+2026-07-29 16:07:58,579  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Rice+University+%E2%80%93+Carbon+Hub "HTTP/1.1 200 OK"
+2026-07-29 16:08:00,197  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Rice+University+%E2%80%93+Carbon+Hub+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:01,945  INFO     src.enrichment.actor_enrichment_candidates  [388/505] Robotics Startups (Boston Region)
+2026-07-29 16:08:02,294  INFO     src.enrichment.actor_enrichment_candidates  [389/505] Robotics Startups (LA Region)
+2026-07-29 16:08:02,650  INFO     src.enrichment.actor_enrichment_candidates  [390/505] Robotics Startups (Pittsburgh Region)
+2026-07-29 16:08:03,022  INFO     src.enrichment.actor_enrichment_candidates  [391/505] Rock Mechanics Labs
+2026-07-29 16:08:03,396  INFO     src.enrichment.actor_enrichment_candidates  [392/505] Russell Ranch Long-Term Farming Systems Trial
+2026-07-29 16:08:04,394  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Russell+Ranch+Long-Term+Farming+Systems+Trial "HTTP/1.1 200 OK"
+2026-07-29 16:08:06,417  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Russell+Ranch+Long-Term+Farming+Systems+Trial+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:07,099  INFO     src.enrichment.actor_enrichment_candidates  [393/505] Russell Ranch Sustainable Agriculture Facility
+2026-07-29 16:08:07,463  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Russell+Ranch+Sustainable+Agriculture+Facility "HTTP/1.1 200 OK"
+2026-07-29 16:08:09,065  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Russell+Ranch+Sustainable+Agriculture+Facility+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:10,517  INFO     src.enrichment.actor_enrichment_candidates  [394/505] Sacramento & Central Valley Specialty Crop Producers
+2026-07-29 16:08:10,929  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Sacramento+%26+Central+Valley+Specialty+Crop+Producers "HTTP/1.1 200 OK"
+2026-07-29 16:08:13,097  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Sacramento+%26+Central+Valley+Specialty+Crop+Producers+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:13,789  INFO     src.enrichment.actor_enrichment_candidates  [395/505] San Antonio Water System
+2026-07-29 16:08:14,143  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=San+Antonio+Water+System "HTTP/1.1 200 OK"
+2026-07-29 16:08:15,632  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=San+Antonio+Water+System+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:16,954  INFO     src.enrichment.actor_enrichment_candidates  [396/505] Seattle AI startups (Bellevue & Seattle clusters)
+2026-07-29 16:08:17,316  INFO     src.enrichment.actor_enrichment_candidates  [397/505] Sequoia Capital
+2026-07-29 16:08:17,682  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Sequoia+Capital "HTTP/1.1 200 OK"
+2026-07-29 16:08:19,212  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Sequoia+Capital+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:20,751  INFO     src.enrichment.actor_enrichment_candidates  [398/505] Shell
+2026-07-29 16:08:21,136  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Shell "HTTP/1.1 200 OK"
+2026-07-29 16:08:22,475  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Shell+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:24,025  INFO     src.enrichment.actor_enrichment_candidates  [399/505] Shell Chemical Deer Park
+2026-07-29 16:08:24,451  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Shell+Chemical+Deer+Park "HTTP/1.1 200 OK"
+2026-07-29 16:08:25,896  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Shell+Chemical+Deer+Park+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:26,572  INFO     src.enrichment.actor_enrichment_candidates  [400/505] Silicon Valley Ag-Tech & Climate-Tech Venture Capital Ecosystem
+2026-07-29 16:08:27,092  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 400 actors
+2026-07-29 16:08:27,096  INFO     src.enrichment.actor_enrichment_candidates  Progress 400/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:08:27,584  INFO     src.enrichment.actor_enrichment_candidates  [401/505] Sky Computing Lab
+2026-07-29 16:08:27,944  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Sky+Computing+Lab "HTTP/1.1 200 OK"
+2026-07-29 16:08:28,850  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Sky+Computing "HTTP/1.1 200 OK"
+2026-07-29 16:08:30,250  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Sky+Computing+Lab+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:31,436  INFO     src.enrichment.actor_enrichment_candidates  [402/505] Smart Water Technology Firms
+2026-07-29 16:08:31,792  INFO     src.enrichment.actor_enrichment_candidates  [403/505] Smelting Operations
+2026-07-29 16:08:32,158  INFO     src.enrichment.actor_enrichment_candidates  [404/505] Soil Health Laboratory
+2026-07-29 16:08:32,830  INFO     src.enrichment.actor_enrichment_candidates  [405/505] Soil Science Research Labs
+2026-07-29 16:08:33,240  INFO     src.enrichment.actor_enrichment_candidates  [406/505] Solar Energy Research Programs
+2026-07-29 16:08:33,649  INFO     src.enrichment.actor_enrichment_candidates  [407/505] Solar Research Facilities
+2026-07-29 16:08:34,062  INFO     src.enrichment.actor_enrichment_candidates  [408/505] Solar Utility Developers
+2026-07-29 16:08:34,772  INFO     src.enrichment.actor_enrichment_candidates  [409/505] SPECIALIZED AGENCIES
+2026-07-29 16:08:35,390  INFO     src.enrichment.actor_enrichment_candidates  [410/505] Specialty Chemical Manufacturers
+2026-07-29 16:08:35,801  INFO     src.enrichment.actor_enrichment_candidates  [411/505] St. Louis Bioscience Venture Capital Network
+2026-07-29 16:08:36,830  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=St.+Louis+Bioscience+Venture+Capital+Network "HTTP/1.1 200 OK"
+2026-07-29 16:08:38,819  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=St.+Louis+Bioscience+Venture+Capital+Network+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:39,560  INFO     src.enrichment.actor_enrichment_candidates  [412/505] Stanford AI Lab (SAIL)
+2026-07-29 16:08:40,022  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+AI+Lab+%28SAIL%29 "HTTP/1.1 200 OK"
+2026-07-29 16:08:40,883  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=SAIL "HTTP/1.1 200 OK"
+2026-07-29 16:08:41,723  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+AI+Lab "HTTP/1.1 200 OK"
+2026-07-29 16:08:42,644  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+AI+%28SAIL%29 "HTTP/1.1 200 OK"
+2026-07-29 16:08:44,305  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Stanford+AI+Lab+%28SAIL%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:44,986  INFO     src.enrichment.actor_enrichment_candidates  [413/505] Stanford HAI
+2026-07-29 16:08:45,400  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+HAI "HTTP/1.1 200 OK"
+2026-07-29 16:08:46,861  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Stanford+HAI+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:48,185  INFO     src.enrichment.actor_enrichment_candidates  [414/505] Stanford Sustainable Chemical Engineering Labs
+2026-07-29 16:08:49,816  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+Sustainable+Chemical+Engineering+Labs "HTTP/1.1 200 OK"
+2026-07-29 16:08:50,810  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+Sustainable+Chemical+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:08:52,294  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Stanford+Sustainable+Chemical+Engineering+Labs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:52,989  INFO     src.enrichment.actor_enrichment_candidates  [415/505] Stanford University Department of Chemistry
+2026-07-29 16:08:53,781  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+University+Department+of+Chemistry "HTTP/1.1 200 OK"
+2026-07-29 16:08:55,276  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Stanford+University+Department+of+Chemistry+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:08:56,928  INFO     src.enrichment.actor_enrichment_candidates  [416/505] Stanford Woods Institute for the Environment
+2026-07-29 16:08:57,619  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Stanford+Woods+Institute+for+the+Environment "HTTP/1.1 200 OK"
+2026-07-29 16:08:59,155  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Stanford+Woods+Institute+for+the+Environment+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:00,526  INFO     src.enrichment.actor_enrichment_candidates  [417/505] State Environmental Agencies (Michigan, Wisconsin, Illinois)
+2026-07-29 16:09:01,102  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=State+Environmental+Agencies+%28Michigan%2C+Wisconsin%2C+Illinois%29 "HTTP/1.1 200 OK"
+2026-07-29 16:09:02,120  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Michigan%2C+Wisconsin%2C+Illinois "HTTP/1.1 200 OK"
+2026-07-29 16:09:03,043  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=State+Environmental+Agencies "HTTP/1.1 200 OK"
+2026-07-29 16:09:04,550  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=State+Environmental+Agencies+%28Michigan%2C+Wisconsin%2C+Illinois%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:05,225  INFO     src.enrichment.actor_enrichment_candidates  [418/505] Subsurface Geology Research
+2026-07-29 16:09:05,698  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Subsurface+Geology+Research "HTTP/1.1 200 OK"
+2026-07-29 16:09:07,230  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Subsurface+Geology+Research+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:08,590  INFO     src.enrichment.actor_enrichment_candidates  [419/505] Subsurface Imaging Labs
+2026-07-29 16:09:08,938  INFO     src.enrichment.actor_enrichment_candidates  [420/505] Subsurface Modeling Labs
+2026-07-29 16:09:09,117  INFO     src.enrichment.actor_enrichment_candidates  Progress 420/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:09:09,363  INFO     src.enrichment.actor_enrichment_candidates  [421/505] Sunrun
+2026-07-29 16:09:09,797  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Sunrun "HTTP/1.1 200 OK"
+2026-07-29 16:09:11,339  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Sunrun+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:12,971  INFO     src.enrichment.actor_enrichment_candidates  [422/505] Sustainable Finance Initiatives
+2026-07-29 16:09:13,586  INFO     src.enrichment.actor_enrichment_candidates  [423/505] Sustainable Finance Labs
+2026-07-29 16:09:14,073  INFO     src.enrichment.actor_enrichment_candidates  [424/505] Syngenta
+2026-07-29 16:09:14,515  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Syngenta "HTTP/1.1 200 OK"
+2026-07-29 16:09:15,918  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Syngenta+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:17,860  INFO     src.enrichment.actor_enrichment_candidates  [425/505] Synthetic Biology Labs
+2026-07-29 16:09:18,535  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 425 actors
+2026-07-29 16:09:19,198  INFO     src.enrichment.actor_enrichment_candidates  [426/505] Synthetic Biology Startups
+2026-07-29 16:09:19,603  INFO     src.enrichment.actor_enrichment_candidates  [427/505] Tailings Storage Facilities
+2026-07-29 16:09:20,103  INFO     src.enrichment.actor_enrichment_candidates  [428/505] Texas A&M AgriLife Extension Service
+2026-07-29 16:09:20,904  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+AgriLife+Extension+Service "HTTP/1.1 200 OK"
+2026-07-29 16:09:22,686  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+A%26M+AgriLife+Extension+Service+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:23,917  INFO     src.enrichment.actor_enrichment_candidates  [429/505] Texas A&M AgriLife Research & Extension Centers
+2026-07-29 16:09:24,316  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+AgriLife+Research+%26+Extension+Centers "HTTP/1.1 200 OK"
+2026-07-29 16:09:25,924  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+A%26M+AgriLife+Research+%26+Extension+Centers+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:27,249  INFO     src.enrichment.actor_enrichment_candidates  [430/505] Texas A&M Department of Biological & Agricultural Engineering
+2026-07-29 16:09:27,637  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+Department+of+Biological+%26+Agricultural+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:09:29,261  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+A%26M+Department+of+Biological+%26+Agricultural+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:30,605  INFO     src.enrichment.actor_enrichment_candidates  [431/505] Texas A&M Department of Soil & Crop Sciences
+2026-07-29 16:09:31,005  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+Department+of+Soil+%26+Crop+Sciences "HTTP/1.1 200 OK"
+2026-07-29 16:09:32,756  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+A%26M+Department+of+Soil+%26+Crop+Sciences+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:33,451  INFO     src.enrichment.actor_enrichment_candidates  [432/505] Texas A&M Engineering Extension Service (TEEX) – Gulf Coast
+2026-07-29 16:09:33,814  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+Engineering+Extension+Service+%28TEEX%29+%E2%80%93+Gulf+Coast "HTTP/1.1 200 OK"
+2026-07-29 16:09:34,884  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=TEEX "HTTP/1.1 200 OK"
+2026-07-29 16:09:35,883  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+Engineering+Extension+Service+%E2%80%93+Gulf+Coast "HTTP/1.1 200 OK"
+2026-07-29 16:09:37,601  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+A%26M+Engineering+Extension+Service+%28TEEX%29+%E2%80%93+Gulf+Coast+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:38,277  INFO     src.enrichment.actor_enrichment_candidates  [433/505] Texas A&M Engineering Extension Service Industrial Chemical Safety and Process Programs
+2026-07-29 16:09:38,829  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+Engineering+Extension+Service+Industrial+Chemical+Safety+and+Process+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:09:40,743  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+A%26M+Engineering+Extension+Service+Industrial+Chemical+Safety+and+Process+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:41,450  INFO     src.enrichment.actor_enrichment_candidates  [434/505] Texas A&M Water Programs
+2026-07-29 16:09:41,845  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+A%26M+Water+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:09:43,640  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+A%26M+Water+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:44,457  INFO     src.enrichment.actor_enrichment_candidates  [435/505] Texas Cattle Feeders Association
+2026-07-29 16:09:44,840  INFO     src.enrichment.actor_enrichment_candidates  [436/505] Texas Corn Producers Board
+2026-07-29 16:09:45,277  INFO     src.enrichment.actor_enrichment_candidates  [437/505] Texas Cotton Association
+2026-07-29 16:09:45,635  INFO     src.enrichment.actor_enrichment_candidates  [438/505] Texas Farm Bureau
+2026-07-29 16:09:46,026  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Texas+Farm+Bureau "HTTP/1.1 200 OK"
+2026-07-29 16:09:47,569  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Texas+Farm+Bureau+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:50,143  INFO     src.enrichment.actor_enrichment_candidates  [439/505] Texas Gulf Coast Materials & Industrial Waste Innovation Hub
+2026-07-29 16:09:51,621  INFO     src.enrichment.actor_enrichment_candidates  [440/505] Texas Heart Institute Programs
+2026-07-29 16:09:51,968  INFO     src.enrichment.actor_enrichment_candidates  Progress 440/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:09:52,150  INFO     src.enrichment.actor_enrichment_candidates  [441/505] Texas International Educational Consortium
+2026-07-29 16:09:52,704  INFO     src.enrichment.actor_enrichment_candidates  [442/505] Texas-Based AgTech Startups
+2026-07-29 16:09:53,051  INFO     src.enrichment.actor_enrichment_candidates  [443/505] Thacker Pass Project
+2026-07-29 16:09:53,768  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Thacker+Pass+Project "HTTP/1.1 200 OK"
+2026-07-29 16:09:55,424  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Thacker+Pass+Project+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:09:56,748  INFO     src.enrichment.actor_enrichment_candidates  [444/505] The Engine (MIT)
+2026-07-29 16:09:57,106  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=The+Engine+%28MIT%29 "HTTP/1.1 200 OK"
+2026-07-29 16:09:57,991  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=MIT "HTTP/1.1 200 OK"
+2026-07-29 16:09:58,837  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=The+Engine "HTTP/1.1 200 OK"
+2026-07-29 16:10:00,396  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=The+Engine+%28MIT%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:01,114  INFO     src.enrichment.actor_enrichment_candidates  [445/505] Third Rock Ventures
+2026-07-29 16:10:01,493  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Third+Rock+Ventures "HTTP/1.1 200 OK"
+2026-07-29 16:10:02,885  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Third+Rock+Ventures+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:03,565  INFO     src.enrichment.actor_enrichment_candidates  [446/505] TMC Biodesign
+2026-07-29 16:10:03,932  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=TMC+Biodesign "HTTP/1.1 200 OK"
+2026-07-29 16:10:05,299  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=TMC+Biodesign+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:06,713  INFO     src.enrichment.actor_enrichment_candidates  [447/505] TMC Biodesign Program
+2026-07-29 16:10:07,513  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=TMC+Biodesign+Program "HTTP/1.1 200 OK"
+2026-07-29 16:10:09,087  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=TMC+Biodesign+Program+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:09,764  INFO     src.enrichment.actor_enrichment_candidates  [448/505] TMC Innovation Accelerator
+2026-07-29 16:10:10,138  INFO     src.enrichment.actor_enrichment_candidates  [449/505] TMC Innovation Factory (health startup accelerator)
+2026-07-29 16:10:10,496  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=TMC+Innovation+Factory+%28health+startup+accelerator%29 "HTTP/1.1 200 OK"
+2026-07-29 16:10:11,480  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=health+startup+accelerator "HTTP/1.1 200 OK"
+2026-07-29 16:10:12,365  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=TMC+Innovation+Factory "HTTP/1.1 200 OK"
+2026-07-29 16:10:14,052  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=TMC+Innovation+Factory+%28health+startup+accelerator%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:14,922  INFO     src.enrichment.actor_enrichment_candidates  [450/505] U.S. Department of Energy (Regional Presence)
+2026-07-29 16:10:15,702  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=U.S.+Department+of+Energy+%28Regional+Presence%29 "HTTP/1.1 200 OK"
+2026-07-29 16:10:16,658  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Regional+Presence "HTTP/1.1 200 OK"
+2026-07-29 16:10:17,515  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=U.S.+Department+of+Energy "HTTP/1.1 200 OK"
+2026-07-29 16:10:19,087  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=U.S.+Department+of+Energy+%28Regional+Presence%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:21,067  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 450 actors
+2026-07-29 16:10:21,784  INFO     src.enrichment.actor_enrichment_candidates  [451/505] U.S. Steel
+2026-07-29 16:10:22,253  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=U.S.+Steel "HTTP/1.1 200 OK"
+2026-07-29 16:10:23,726  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=U.S.+Steel+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:24,884  INFO     src.enrichment.actor_enrichment_candidates  [452/505] UC ANR Research & Extension Centers
+2026-07-29 16:10:25,883  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+ANR+Research+%26+Extension+Centers "HTTP/1.1 200 OK"
+2026-07-29 16:10:27,424  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UC+ANR+Research+%26+Extension+Centers+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:28,759  INFO     src.enrichment.actor_enrichment_candidates  [453/505] UC Berkeley Bioengineering
+2026-07-29 16:10:29,108  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Berkeley+Bioengineering "HTTP/1.1 200 OK"
+2026-07-29 16:10:30,585  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UC+Berkeley+Bioengineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:31,931  INFO     src.enrichment.actor_enrichment_candidates  [454/505] UC Berkeley ERG
+2026-07-29 16:10:32,471  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Berkeley+ERG "HTTP/1.1 200 OK"
+2026-07-29 16:10:33,879  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UC+Berkeley+ERG+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:34,556  INFO     src.enrichment.actor_enrichment_candidates  [455/505] UC Davis Biomass Conversion Labs
+2026-07-29 16:10:34,974  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Davis+Biomass+Conversion+Labs "HTTP/1.1 200 OK"
+2026-07-29 16:10:35,941  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Davis+Biomass+Conversion "HTTP/1.1 200 OK"
+2026-07-29 16:10:37,346  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UC+Davis+Biomass+Conversion+Labs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:38,023  INFO     src.enrichment.actor_enrichment_candidates  [456/505] UC Davis Plant Sciences Department
+2026-07-29 16:10:38,385  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Davis+Plant+Sciences+Department "HTTP/1.1 200 OK"
+2026-07-29 16:10:39,997  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UC+Davis+Plant+Sciences+Department+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:40,693  INFO     src.enrichment.actor_enrichment_candidates  [457/505] UC Davis Water Chemistry and Membrane Labs
+2026-07-29 16:10:41,113  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Davis+Water+Chemistry+and+Membrane+Labs "HTTP/1.1 200 OK"
+2026-07-29 16:10:42,061  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Davis+Water+Chemistry+and+Membrane "HTTP/1.1 200 OK"
+2026-07-29 16:10:43,657  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UC+Davis+Water+Chemistry+and+Membrane+Labs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:44,978  INFO     src.enrichment.actor_enrichment_candidates  [458/505] UCLA AI & Data Science programs
+2026-07-29 16:10:45,351  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UCLA+AI+%26+Data+Science+programs "HTTP/1.1 200 OK"
+2026-07-29 16:10:46,877  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UCLA+AI+%26+Data+Science+programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:47,552  INFO     src.enrichment.actor_enrichment_candidates  [459/505] UCLA Robotics & Intelligent Systems
+2026-07-29 16:10:48,212  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UCLA+Robotics+%26+Intelligent+Systems "HTTP/1.1 200 OK"
+2026-07-29 16:10:49,823  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UCLA+Robotics+%26+Intelligent+Systems+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:50,953  INFO     src.enrichment.actor_enrichment_candidates  [460/505] UCLA Sustainability Programs
+2026-07-29 16:10:51,127  INFO     src.enrichment.actor_enrichment_candidates  Progress 460/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:10:51,302  INFO     src.enrichment.actor_enrichment_candidates  [461/505] UCSF School of Medicine
+2026-07-29 16:10:51,694  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UCSF+School+of+Medicine "HTTP/1.1 200 OK"
+2026-07-29 16:10:53,304  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UCSF+School+of+Medicine+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:54,655  INFO     src.enrichment.actor_enrichment_candidates  [462/505] UIUC Catalysis Research Groups
+2026-07-29 16:10:55,017  INFO     src.enrichment.actor_enrichment_candidates  [463/505] UNC Chemistry
+2026-07-29 16:10:55,388  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UNC+Chemistry "HTTP/1.1 200 OK"
+2026-07-29 16:10:56,922  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UNC+Chemistry+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:10:58,445  INFO     src.enrichment.actor_enrichment_candidates  [464/505] University Labs
+2026-07-29 16:10:59,059  INFO     src.enrichment.actor_enrichment_candidates  [465/505] University of California Davis Department of Chemistry
+2026-07-29 16:10:59,676  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+California+Davis+Department+of+Chemistry "HTTP/1.1 200 OK"
+2026-07-29 16:11:01,526  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+California+Davis+Department+of+Chemistry+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:02,232  INFO     src.enrichment.actor_enrichment_candidates  [466/505] University of Delaware Chemical Engineering
+2026-07-29 16:11:02,752  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Delaware+Chemical+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:11:04,352  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Delaware+Chemical+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:05,675  INFO     src.enrichment.actor_enrichment_candidates  [467/505] University of Illinois Energy Programs
+2026-07-29 16:11:06,122  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Illinois+Energy+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:11:07,621  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Illinois+Energy+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:08,376  INFO     src.enrichment.actor_enrichment_candidates  [468/505] University of Minnesota Department of Chemical Engineering and Materials Science
+2026-07-29 16:11:08,813  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Minnesota+Department+of+Chemical+Engineering+and+Materials+Science "HTTP/1.1 200 OK"
+2026-07-29 16:11:10,886  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Minnesota+Department+of+Chemical+Engineering+and+Materials+Science+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:12,244  INFO     src.enrichment.actor_enrichment_candidates  [469/505] University of Minnesota Department of Chemistry
+2026-07-29 16:11:12,816  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Minnesota+Department+of+Chemistry "HTTP/1.1 200 OK"
+2026-07-29 16:11:14,408  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Minnesota+Department+of+Chemistry+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:15,747  INFO     src.enrichment.actor_enrichment_candidates  [470/505] University of Missouri Plant Science Programs
+2026-07-29 16:11:16,161  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Missouri+Plant+Science+Programs "HTTP/1.1 200 OK"
+2026-07-29 16:11:17,914  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Missouri+Plant+Science+Programs+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:18,594  INFO     src.enrichment.actor_enrichment_candidates  [471/505] University of Missouri Plant Sciences
+2026-07-29 16:11:19,338  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Missouri+Plant+Sciences "HTTP/1.1 200 OK"
+2026-07-29 16:11:20,962  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Missouri+Plant+Sciences+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:21,650  INFO     src.enrichment.actor_enrichment_candidates  [472/505] University of Pennsylvania – Materials Science & Electrochemical Systems
+2026-07-29 16:11:22,194  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Pennsylvania+%E2%80%93+Materials+Science+%26+Electrochemical+Systems "HTTP/1.1 200 OK"
+2026-07-29 16:11:24,107  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Pennsylvania+%E2%80%93+Materials+Science+%26+Electrochemical+Systems+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:25,001  INFO     src.enrichment.actor_enrichment_candidates  [473/505] University of Utah Mining Engineering
+2026-07-29 16:11:25,465  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=University+of+Utah+Mining+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:11:27,155  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=University+of+Utah+Mining+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:28,676  INFO     src.enrichment.actor_enrichment_candidates  [474/505] Upstate NY Specialty Crop Producers
+2026-07-29 16:11:29,184  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Upstate+NY+Specialty+Crop+Producers "HTTP/1.1 200 OK"
+2026-07-29 16:11:30,756  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Upstate+NY+Specialty+Crop+Producers+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:31,442  INFO     src.enrichment.actor_enrichment_candidates  [475/505] Urban Sustainability Labs
+2026-07-29 16:11:31,942  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 475 actors
+2026-07-29 16:11:32,428  INFO     src.enrichment.actor_enrichment_candidates  [476/505] Urban Water Reuse Facilities
+2026-07-29 16:11:32,796  INFO     src.enrichment.actor_enrichment_candidates  [477/505] USC Viterbi AI Labs
+2026-07-29 16:11:33,173  INFO     src.enrichment.actor_enrichment_candidates  [478/505] USC Viterbi School of Engineering
+2026-07-29 16:11:33,576  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USC+Viterbi+School+of+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:11:35,089  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=USC+Viterbi+School+of+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:36,317  INFO     src.enrichment.actor_enrichment_candidates  [479/505] USDA Research Presence (Regional)
+2026-07-29 16:11:36,700  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USDA+Research+Presence+%28Regional%29 "HTTP/1.1 200 OK"
+2026-07-29 16:11:37,623  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Regional "HTTP/1.1 200 OK"
+2026-07-29 16:11:38,507  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USDA+Research+Presence "HTTP/1.1 200 OK"
+2026-07-29 16:11:39,899  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=USDA+Research+Presence+%28Regional%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:40,751  INFO     src.enrichment.actor_enrichment_candidates  [480/505] USGS Geological Research
+2026-07-29 16:11:41,117  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=USGS+Geological+Research "HTTP/1.1 200 OK"
+2026-07-29 16:11:42,580  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=USGS+Geological+Research+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:45,476  INFO     src.enrichment.actor_enrichment_candidates  Progress 480/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:11:45,715  INFO     src.enrichment.actor_enrichment_candidates  [481/505] UT Austin Water Resources Engineering
+2026-07-29 16:11:46,083  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UT+Austin+Water+Resources+Engineering "HTTP/1.1 200 OK"
+2026-07-29 16:11:47,744  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UT+Austin+Water+Resources+Engineering+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:48,418  INFO     src.enrichment.actor_enrichment_candidates  [482/505] UT Energy Institute
+2026-07-29 16:11:48,769  INFO     src.enrichment.actor_enrichment_candidates  [483/505] UTHealth Clinical Research Institutes
+2026-07-29 16:11:49,699  INFO     src.enrichment.actor_enrichment_candidates  [484/505] UTHealth Institute for Stroke & Cerebrovascular Disease
+2026-07-29 16:11:50,215  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UTHealth+Institute+for+Stroke+%26+Cerebrovascular+Disease "HTTP/1.1 200 OK"
+2026-07-29 16:11:51,926  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UTHealth+Institute+for+Stroke+%26+Cerebrovascular+Disease+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:53,283  INFO     src.enrichment.actor_enrichment_candidates  [485/505] UW AI Centers & Initiatives (AI, robotics, ethical AI, accessibility)
+2026-07-29 16:11:53,654  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+AI+Centers+%26+Initiatives+%28AI%2C+robotics%2C+ethical+AI%2C+accessibility%29 "HTTP/1.1 200 OK"
+2026-07-29 16:11:55,044  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=AI%2C+robotics%2C+ethical+AI%2C+accessibility "HTTP/1.1 200 OK"
+2026-07-29 16:11:56,109  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+AI+Centers+%26+Initiatives "HTTP/1.1 200 OK"
+2026-07-29 16:11:58,046  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UW+AI+Centers+%26+Initiatives+%28AI%2C+robotics%2C+ethical+AI%2C+accessibility%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:11:58,723  INFO     src.enrichment.actor_enrichment_candidates  [486/505] UW College of the Environment
+2026-07-29 16:11:59,121  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+College+of+the+Environment "HTTP/1.1 200 OK"
+2026-07-29 16:12:00,768  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UW+College+of+the+Environment+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:02,095  INFO     src.enrichment.actor_enrichment_candidates  [487/505] UW Paul G. Allen School AI Centers & Initiatives
+2026-07-29 16:12:02,507  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW+Paul+G.+Allen+School+AI+Centers+%26+Initiatives "HTTP/1.1 200 OK"
+2026-07-29 16:12:04,123  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UW+Paul+G.+Allen+School+AI+Centers+%26+Initiatives+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:04,872  INFO     src.enrichment.actor_enrichment_candidates  [488/505] UW+Amazon Science Hub (robotics & AI research collaboration)
+2026-07-29 16:12:05,332  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW%2BAmazon+Science+Hub+%28robotics+%26+AI+research+collaboration%29 "HTTP/1.1 200 OK"
+2026-07-29 16:12:06,744  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=robotics+%26+AI+research+collaboration "HTTP/1.1 200 OK"
+2026-07-29 16:12:08,601  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UW%2BAmazon+Science+Hub "HTTP/1.1 200 OK"
+2026-07-29 16:12:10,486  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=UW%2BAmazon+Science+Hub+%28robotics+%26+AI+research+collaboration%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:11,175  INFO     src.enrichment.actor_enrichment_candidates  [489/505] Venture Catalyst (commercialization platform)
+2026-07-29 16:12:11,531  INFO     src.enrichment.actor_enrichment_candidates  [490/505] Venture Catalyst (UC Davis)
+2026-07-29 16:12:12,069  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Venture+Catalyst+%28UC+Davis%29 "HTTP/1.1 200 OK"
+2026-07-29 16:12:13,047  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=UC+Davis "HTTP/1.1 200 OK"
+2026-07-29 16:12:13,991  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Venture+Catalyst "HTTP/1.1 200 OK"
+2026-07-29 16:12:15,470  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Venture+Catalyst+%28UC+Davis%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:16,821  INFO     src.enrichment.actor_enrichment_candidates  [491/505] Vineyard Wind
+2026-07-29 16:12:17,236  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Vineyard+Wind "HTTP/1.1 200 OK"
+2026-07-29 16:12:18,732  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Vineyard+Wind+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:20,059  INFO     src.enrichment.actor_enrichment_candidates  [492/505] W.L. Gore
+2026-07-29 16:12:21,092  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=W.L.+Gore "HTTP/1.1 200 OK"
+2026-07-29 16:12:22,638  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=W.L.+Gore+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:23,968  INFO     src.enrichment.actor_enrichment_candidates  [493/505] Water Analytics Firms (Colorado)
+2026-07-29 16:12:24,321  INFO     src.enrichment.actor_enrichment_candidates  [494/505] Water Infrastructure Engineering Firms
+2026-07-29 16:12:24,678  INFO     src.enrichment.actor_enrichment_candidates  [495/505] Water Resilience Research Centers
+2026-07-29 16:12:25,032  INFO     src.enrichment.actor_enrichment_candidates  [496/505] Water Technology Startups
+2026-07-29 16:12:25,394  INFO     src.enrichment.actor_enrichment_candidates  [497/505] Water Treatment Companies
+2026-07-29 16:12:25,850  INFO     src.enrichment.actor_enrichment_candidates  [498/505] Water-Energy-Food Nexus Programs
+2026-07-29 16:12:26,304  INFO     src.enrichment.actor_enrichment_candidates  [499/505] Water-Tech Startups (Arizona)
+2026-07-29 16:12:26,710  INFO     src.enrichment.actor_enrichment_candidates  [500/505] Water-Tech Startups (California)
+2026-07-29 16:12:27,386  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 500 actors
+2026-07-29 16:12:27,387  INFO     src.enrichment.actor_enrichment_candidates  Progress 500/505, Claude calls 0, Claude cost $0.0000
+2026-07-29 16:12:27,879  INFO     src.enrichment.actor_enrichment_candidates  [501/505] Weill Cornell Medicine (Houston campus)
+2026-07-29 16:12:29,068  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Weill+Cornell+Medicine+%28Houston+campus%29 "HTTP/1.1 200 OK"
+2026-07-29 16:12:30,307  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Houston+campus "HTTP/1.1 200 OK"
+2026-07-29 16:12:31,282  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Weill+Cornell+Medicine "HTTP/1.1 200 OK"
+2026-07-29 16:12:33,068  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Weill+Cornell+Medicine+%28Houston+campus%29+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:33,751  INFO     src.enrichment.actor_enrichment_candidates  [502/505] Wind Farm Operators (Texas)
+2026-07-29 16:12:34,273  INFO     src.enrichment.actor_enrichment_candidates  [503/505] Wind Technology Center
+2026-07-29 16:12:34,803  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Wind+Technology+Center "HTTP/1.1 200 OK"
+2026-07-29 16:12:36,347  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Wind+Technology+Center+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:37,506  INFO     src.enrichment.actor_enrichment_candidates  [504/505] Wisconsin Catalysis and Organometallic Chemistry Groups
+2026-07-29 16:12:38,029  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Wisconsin+Catalysis+and+Organometallic+Chemistry+Groups "HTTP/1.1 200 OK"
+2026-07-29 16:12:39,663  INFO     httpx  HTTP Request: GET https://html.duckduckgo.com/html/?q=Wisconsin+Catalysis+and+Organometallic+Chemistry+Groups+official+website "HTTP/1.1 200 OK"
+2026-07-29 16:12:40,345  INFO     src.enrichment.actor_enrichment_candidates  [505/505] Wisconsin Polymer Research Programs

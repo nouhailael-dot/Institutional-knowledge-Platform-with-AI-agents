@@ -1,0 +1,59 @@
+record_type,topic_code,topic_name,basis,needs_ghus_review,hub_id,hub_name,primary_sectors,members,members_with_coordinates,center_city,center_state_code,center_latitude,center_longitude,core_members_within_50mi,members_outside_radius,note
+topic,AGRI,Agriculture,legacy sector of the same code (1:1),False,,,,,,,,,,,,5 hubs
+topic,AI,Artificial Intelligence,legacy sector of the same code (1:1),False,,,,,,,,,,,,6 hubs
+topic,CHEM,Specialty Chemicals,legacy sector of the same code (1:1),False,,,,,,,,,,,,10 hubs
+topic,CROSS,Cross-Thematic,legacy sector of the same code (1:1),True,,,,,,,,,,,,no hub uses this sector; GHUS decides whether it is a controlled topic
+topic,DIASPORA,African Diaspora,legacy sector of the same code (1:1),True,,,,,,,,,,,,no hub uses this sector; GHUS decides whether it is a controlled topic
+topic,ENERGY,Energy Transition,legacy sector of the same code (1:1),False,,,,,,,,,,,,7 hubs
+topic,HEALTH,Healthcare,legacy sector of the same code (1:1),False,,,,,,,,,,,,6 hubs
+topic,MINING,Mining,legacy sector of the same code (1:1),False,,,,,,,,,,,,5 hubs
+topic,SUSTAIN,Sustainability,legacy sector of the same code (1:1),False,,,,,,,,,,,,4 hubs
+topic,WATER,Water,legacy sector of the same code (1:1),False,,,,,,,,,,,,5 hubs
+hub,MINING,,single legacy primary sector tag,False,dfb839f8-9da4-4540-bd81-169b710eda0e,Arizona Mining & Mineral Resources Hub (Phoenix – Tucson – Southern Arizona),MINING,10,10,Tucson,AZ,32.153036,-110.870773,5,1,
+hub,WATER,,single legacy primary sector tag,False,80d22ec3-87b8-4022-b010-ed02bb1b168c,Arizona Water Innovation Hub (Phoenix- Tueson),WATER,10,10,Tempe,AZ,33.388414,-111.931782,8,0,
+hub,HEALTH,,single legacy primary sector tag,False,20889298-91d2-48f8-a31d-af666bb2ed3a,Baltimore-Washington NIC Corridor (Baltimore – Bethesda – Washington D.C. – Rockville),HEALTH,17,15,Bethesda,MD,38.987292,-77.118612,15,0,
+hub,AI,,single legacy primary sector tag,False,9d1e2024-c411-457e-9c54-118d19bf1f11,Bay Area AI Hub (Stanford – UC Berkeley – Silicon Valley – San Francisco),AI,21,20,Berkeley,CA,37.865673,-122.298725,19,1,
+hub,CHEM,,single legacy primary sector tag,False,3570661b-de92-4573-ac88-3c0ad4590b55,Bay Area Chemistry & Materials Innovation Hub,CHEM,10,10,Berkeley,CA,37.865673,-122.298725,10,0,
+hub,HEALTH,,single legacy primary sector tag,False,2a06b81d-2f97-4c66-be65-4156fa42f7fc,Boston- Cambridge Academic Medical Hub,HEALTH,16,16,Cambridge,MA,42.376043,-71.11868,16,0,
+hub,AI,,single legacy primary sector tag,False,76f66ea4-d3b8-4408-858f-de2779455d88,Boston–Cambridge AI Hub (MIT – Harvard – Greater Boston),AI,16,16,Cambridge,MA,42.376043,-71.11868,16,0,
+hub,CHEM,,single legacy primary sector tag,False,99aafc44-4ae4-4344-a68a-5dacce4d559d,Boston–Cambridge Chemistry & Chemical Biology Hub,CHEM,12,11,Cambridge,MA,42.376043,-71.11868,11,0,
+hub,CHEM,,single legacy primary sector tag,False,58697dbc-c429-4928-8516-cb79279aa758,California Central Valley + Bay Area Industrial Green Chemistry Corridor (San Francisco Bay Area – Sacramento – Fresno Corridor),CHEM,22,22,Berkeley,CA,37.865673,-122.298725,13,4,
+hub,ENERGY,,single legacy primary sector tag,False,c85f4efa-24c8-4ae5-a06a-04aa4d9f63fa,California Clean Energy Hub,ENERGY,18,17,Berkeley,CA,37.865673,-122.298725,10,3,
+hub,ENERGY,,single legacy primary sector tag,False,84b878fd-3487-447f-a0a1-68e047c159ea,California Sustainability & Climate Systems Hub (Stanford – UC Berkeley – UCLA – LBNL – State of California),ENERGY,12,12,Berkeley,CA,37.865673,-122.298725,7,3,
+hub,WATER,,single legacy primary sector tag,False,5aa4ee5a-c74b-4071-95ff-44086d1398ec,California Water Hub (UC Davis - Berkeley- Stanford),WATER,8,8,Sacramento,CA,38.567694,-121.468161,5,0,
+hub,ENERGY,,single legacy primary sector tag,False,4792f4a1-1ee7-4211-8131-e119bbfbb17a,Colorado Energy & Climate Hub (Denver – Boulder – Golden – Front Range),ENERGY,10,10,Golden,CO,39.742483,-105.210561,10,0,
+hub,MINING,,single legacy primary sector tag,False,e31c5abb-30a6-4b11-b4e6-67b3bb2dafea,Colorado Mining & Earth Systems Hub (Golden – Denver – Boulder)+A29,MINING,13,13,Golden,CO,39.742483,-105.210561,10,3,
+hub,SUSTAIN,,single legacy primary sector tag,False,442fd439-0a70-4091-ae6b-c392442867a6,Colorado Sustainability & Earth Systems Hub (Boulder – Denver – Fort Collins),SUSTAIN,11,11,Boulder,CO,40.024431,-105.251251,11,0,
+hub,WATER,,single legacy primary sector tag,False,3372408d-b1a8-43cc-a17c-85bff9ba9400,Colorado Water Hub (Boulder- Denver- Front Range)+A18,WATER,9,9,Boulder,CO,40.024431,-105.251251,9,0,
+hub,AGRI,,single legacy primary sector tag,False,643e2b39-6f5e-4483-97dc-2a455497de31,Cornell / Upstate New York – Agriculture & AgriTech Hub,AGRI,16,15,Geneva,NY,42.863488,-76.982722,13,0,
+hub,CHEM,,single legacy primary sector tag,False,3e867345-c983-471f-a187-7f64d44b8f92,Delaware–Pennsylvania Catalysis & Reaction Engineering Hub,CHEM,15,14,King of Prussia,PA,40.096029,-75.379074,14,0,
+hub,CHEM,,single legacy primary sector tag,False,904cde64-c854-465a-9dba-17d3e6e401cd,Delaware–Philadelphia Chemistry Hub (Wilmington – Philadelphia – Newark),CHEM,9,9,Wilmington,DE,39.735651,-75.532104,9,0,
+hub,WATER,,single legacy primary sector tag,False,a05bbb19-bdcd-4f57-8b0d-4156f73a036a,Great Lakes Water Hub,WATER,11,10,Chicago,IL,41.837045,-87.684939,5,3,
+hub,AGRI,,single legacy primary sector tag,False,16a7f476-6c28-40fb-8af2-8b4df813f1b7,Illinois Midwest Ag Corridor (Urbana-Champaign + Chicago),AGRI,20,10,Urbana,IL,40.110126,-88.197323,5,1,
+hub,ENERGY,,single legacy primary sector tag,False,b9a2b171-2771-46e1-b1d4-f7868dca1609,Massachusetts Energy Innovation Hub (Boston – Cambridge),ENERGY,9,8,Boston,MA,42.338551,-71.018253,8,0,
+hub,CHEM,,single legacy primary sector tag,False,c147800b-6ee5-4b40-9243-c5b228776142,Midwest Advanced Materials and Catalysis Hub (Illinois – Wisconsin – Minnesota Corridor),CHEM,16,15,Lemont,IL,41.667328,-87.984411,7,5,
+hub,CHEM,,single legacy primary sector tag,False,f70d07ca-335c-4cd9-9f62-2278951c8e12,Midwest Chemistry & Advanced Materials Hub (Chicago – Urbana-Champaign – Ann Arbor – Madison),CHEM,12,9,Evanston,IL,42.046391,-87.694352,3,4,
+hub,HEALTH,,single legacy primary sector tag,False,850475f4-45fb-4d46-bc0d-48dcab1c9522,Midwest Clinical & Translational Health Hub (Great Lakes Medical Corridor),HEALTH,12,11,Chicago,IL,41.837045,-87.684939,4,7,
+hub,ENERGY,,single legacy primary sector tag,False,a313658e-6414-42f4-bdba-45ac4f410337,Midwest Energy & Industrial Transition Hub (Chicago – Detroit – Ohio – Indiana – Illinois),ENERGY,14,12,Chicago,IL,41.837045,-87.684939,5,6,
+hub,SUSTAIN,,single legacy primary sector tag,False,a3187977-eaa9-4963-981f-187605a5a510,Midwest Sustainability & Industrial Transition Hub (Great Lakes Industrial Corridor),SUSTAIN,14,12,Chicago,IL,41.837045,-87.684939,4,7,
+hub,MINING,,single legacy primary sector tag,False,bb90c7f2-4aec-40f8-8b4d-0321ca281f10,Missouri Critical Minerals & Processing Hub (St. Louis – Rolla – Lead Belt),MINING,8,8,Rolla,MO,37.94594,-91.761202,4,1,
+hub,AGRI,,single legacy primary sector tag,False,f8e760df-15cc-469b-9fed-011c12275f86,Missouri – St. Louis Plant Science & Ag-Biotech Hub,AGRI,13,13,St Louis,MO,38.635699,-90.244582,10,1,
+hub,MINING,,single legacy primary sector tag,False,f16846a4-3dd1-4495-9405-d527d10c58d7,Nevada Mining & Critical Minerals Hub (Reno – Elko – Northern Nevada),MINING,12,8,Reno,NV,39.549097,-119.849907,6,2,
+hub,AI,,single legacy primary sector tag,False,a78950d9-5c3a-466a-89a1-7fe9d794fc8e,New York City AI Hub (Columbia - NYC - Cornell Tech),AI,9,9,New York,NY,40.662712,-73.938677,8,0,
+hub,HEALTH,,single legacy primary sector tag,False,1677aaa0-c8e4-4c0a-870b-0009fbd34214,New York City Academic Medicine Hub (Columbia – NYU – Mount Sinai – Cornell – Greater NYC),HEALTH,19,17,New York,NY,40.662712,-73.938677,17,0,
+hub,SUSTAIN,,single legacy primary sector tag,False,7abe9bd6-4f12-4f1c-98d4-6b10cc7e1c03,New York City Sustainability & Urban Systems Hub (Columbia – NYU – Cornell Tech),SUSTAIN,9,8,New York,NY,40.662712,-73.938677,8,0,
+hub,SUSTAIN,,single legacy primary sector tag,False,f644dd35-5a26-474c-86c1-dbec4e52a66f,Pacific Northwest Sustainability Hub (Seattle – Portland – Corvallis),SUSTAIN,12,12,Seattle,WA,47.619335,-122.351538,6,3,
+hub,ENERGY,,single legacy primary sector tag,False,a3366fb2-579d-4195-b1ad-418d44b26640,Pennsylvania Mining & Energy Transition Hub (Pittsburgh – State College – Appalachian Basin),ENERGY,10,7,Pittsburgh,PA,40.439936,-79.975676,6,0,
+hub,AI,,single legacy primary sector tag,False,e834c041-4204-4246-b6dd-310e759f9b79,Pittsburgh AI & Robotics Hub (Carnegie Mellon Ecosystem),AI,13,13,Pittsburgh,PA,40.439936,-79.975676,13,0,
+hub,CHEM,,single legacy primary sector tag,False,9d37b682-8ad8-422a-930f-0c97353f8e09,Research Triangle Chemistry Hub (Raleigh – Durham – Chapel Hill),CHEM,14,10,Raleigh,NC,35.831868,-78.641042,8,2,
+hub,HEALTH,,single legacy primary sector tag,False,8564dda2-c93d-4f3f-92e4-3de4cc7ebc8c,San Francisco Bay Area Health & Biomedical Innovation Hub (UCSF – Stanford – Berkeley – Silicon Valley),HEALTH,12,11,Foster City,CA,37.56482,-122.250782,11,0,
+hub,AI,,single legacy primary sector tag,False,4884c9a8-662d-4ad3-9d23-03deb98feeff,Seattle AI Hub (University of Washington – Big Tech AI – Greater Seattle),AI,9,9,Seattle,WA,47.619335,-122.351538,9,0,
+hub,AI,,single legacy primary sector tag,False,bdbe6169-ec11-499c-972d-9d32ee3a9c28,Southern California (Los Angeles) AI Hub (USC – UCLA – Caltech – Greater LA),AI,15,15,Los Angeles,CA,34.019394,-118.410825,14,1,
+hub,AGRI,,single legacy primary sector tag,False,c79e0e5d-fb62-45a9-9bdc-010995144f95,Texas A&M / College Station – Texas Ag Corridor,AGRI,18,18,College Station,TX,30.58516,-96.29636,17,0,
+hub,ENERGY,,single legacy primary sector tag,False,df39710e-0cec-41c2-bd9f-8e9c2fdd486d,Texas Energy Transition Hub,ENERGY,16,16,Houston,TX,29.785743,-95.388806,9,0,
+hub,CHEM,,single legacy primary sector tag,False,90e71949-31e0-4e04-a20a-06c34f90f405,Texas Gulf Coast Chemistry Hub (Houston – Baytown – Galveston – Beaumont),CHEM,14,14,Houston,TX,29.785743,-95.388806,9,3,
+hub,CHEM,,single legacy primary sector tag,False,6938e672-f622-409f-9c3a-e836b20e6fb6,Texas Gulf Coast Specialty Chemicals Hub (Houston–Galveston–Baytown–Freeport corridor),CHEM,20,19,League City,TX,29.490064,-95.109093,15,1,
+hub,HEALTH,,single legacy primary sector tag,False,cbe02432-4995-4c95-aa16-2b22100ee5d9,Texas Medical Center Health Hub (Houston – Texas Medical Center Campus – Helix Park – TMC Innovation Factory),HEALTH,20,19,Houston,TX,29.785743,-95.388806,18,1,
+hub,WATER,,single legacy primary sector tag,False,200f7bd6-ca4b-4ab6-98f2-23337c335aa3,Texas Water Systems Hub,WATER,9,9,College Station,TX,30.58516,-96.29636,3,0,
+hub,AGRI,,single legacy primary sector tag,False,85cb176f-d54b-4e77-8391-31758ef48e39,UC Davis / Sacramento Valley Agriculture Ecosystem,AGRI,18,16,Davis,CA,38.556147,-121.737793,14,0,
+hub,MINING,,single legacy primary sector tag,False,d6b0bc7f-dc9c-4579-82af-392ff053c294,Utah Mining & Mettallurgy Hub,MINING,8,6,Salt Lake City,UT,40.776928,-111.930991,6,0,

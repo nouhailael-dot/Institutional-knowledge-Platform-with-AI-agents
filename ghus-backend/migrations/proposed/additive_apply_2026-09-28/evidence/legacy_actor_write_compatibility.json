@@ -1,0 +1,292 @@
+{
+  "actor_count_after": 965,
+  "actor_count_before": 965,
+  "existing_actor_type_count": 30,
+  "insert_results": [
+    {
+      "actor_category": null,
+      "actor_type": null
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government Agency"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "Organization"
+    },
+    {
+      "actor_category": "innovation_platform",
+      "actor_type": "accelerator"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "aggregate"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "company"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "consortium"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "corporate_rd_lab"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "federal_agency"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "federal_research_system"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "government_agency"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "industrial_partner"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "industry_association"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "intergovernmental_organization"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "national_research_center"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "national_research_lab"
+    },
+    {
+      "actor_category": "foundation_nonprofit",
+      "actor_type": "nonprofit"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "other"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "project_developer"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "research_organization"
+    },
+    {
+      "actor_category": "startup",
+      "actor_type": "startup"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "state_agency"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_agency"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_committee"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_programme"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_secretariat"
+    },
+    {
+      "actor_category": "university_academic",
+      "actor_type": "university"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "university_lab"
+    },
+    {
+      "actor_category": "investor",
+      "actor_type": "venture_capital"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "__ghus_unknown_legacy_actor_type__"
+    }
+  ],
+  "tested_actor_types": [
+    null,
+    "Government",
+    "Government Agency",
+    "Organization",
+    "accelerator",
+    "aggregate",
+    "company",
+    "consortium",
+    "corporate_rd_lab",
+    "federal_agency",
+    "federal_research_system",
+    "government_agency",
+    "industrial_partner",
+    "industry_association",
+    "intergovernmental_organization",
+    "national_research_center",
+    "national_research_lab",
+    "nonprofit",
+    "other",
+    "project_developer",
+    "research_organization",
+    "startup",
+    "state_agency",
+    "un_agency",
+    "un_committee",
+    "un_programme",
+    "un_secretariat",
+    "university",
+    "university_lab",
+    "venture_capital",
+    "__ghus_unknown_legacy_actor_type__"
+  ],
+  "transaction_rolled_back": true,
+  "unknown_category_is_null": true,
+  "update_results": [
+    {
+      "actor_category": null,
+      "actor_type": null
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "Government Agency"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "Organization"
+    },
+    {
+      "actor_category": "innovation_platform",
+      "actor_type": "accelerator"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "aggregate"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "company"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "consortium"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "corporate_rd_lab"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "federal_agency"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "federal_research_system"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "government_agency"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "industrial_partner"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "industry_association"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "intergovernmental_organization"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "national_research_center"
+    },
+    {
+      "actor_category": "national_laboratory",
+      "actor_type": "national_research_lab"
+    },
+    {
+      "actor_category": "foundation_nonprofit",
+      "actor_type": "nonprofit"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "other"
+    },
+    {
+      "actor_category": "company",
+      "actor_type": "project_developer"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "research_organization"
+    },
+    {
+      "actor_category": "startup",
+      "actor_type": "startup"
+    },
+    {
+      "actor_category": "government",
+      "actor_type": "state_agency"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_agency"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_committee"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_programme"
+    },
+    {
+      "actor_category": "association_network",
+      "actor_type": "un_secretariat"
+    },
+    {
+      "actor_category": "university_academic",
+      "actor_type": "university"
+    },
+    {
+      "actor_category": "research_center",
+      "actor_type": "university_lab"
+    },
+    {
+      "actor_category": "investor",
+      "actor_type": "venture_capital"
+    },
+    {
+      "actor_category": null,
+      "actor_type": "__ghus_unknown_legacy_actor_type__"
+    }
+  ]
+}

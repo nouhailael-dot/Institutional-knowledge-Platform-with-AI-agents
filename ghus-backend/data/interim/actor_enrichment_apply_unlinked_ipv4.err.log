@@ -1,0 +1,50 @@
+2026-07-21 11:31:28,899  INFO     run_actor_enrichment_candidates  Starting actor enrichment candidate pipeline [APPLY]
+2026-07-21 11:31:36,300  INFO     src.enrichment.actor_enrichment_candidates  Processing 107 sparse actors
+2026-07-21 11:31:36,623  INFO     src.enrichment.actor_enrichment_candidates  [1/107] Arianne Phosphate
+2026-07-21 11:31:37,741  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Arianne+Phosphate "HTTP/1.1 200 OK"
+2026-07-21 11:31:39,025  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Arianne+Phosphate&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:31:47,115  INFO     httpx  HTTP Request: GET https://www.sec.gov/files/company_tickers.json "HTTP/1.1 200 OK"
+2026-07-21 11:31:52,221  INFO     httpx  HTTP Request: GET https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Arianne+Phosphate&limit=5 "HTTP/1.1 403 Forbidden"
+2026-07-21 11:31:52,223  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Arianne Phosphate via _search_wikidata: Client error '403 Forbidden' for url 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Arianne+Phosphate&limit=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+2026-07-21 11:31:57,378  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:31:57,751  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 1 actors
+2026-07-21 11:31:59,029  INFO     src.enrichment.actor_enrichment_candidates  [2/107] Berkeley Energy Institute
+2026-07-21 11:31:59,798  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Energy+Institute "HTTP/1.1 200 OK"
+2026-07-21 11:32:01,203  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Berkeley+Energy+Institute&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:32:05,654  INFO     httpx  HTTP Request: GET https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Berkeley+Energy+Institute&limit=5 "HTTP/1.1 403 Forbidden"
+2026-07-21 11:32:05,656  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Berkeley Energy Institute via _search_wikidata: Client error '403 Forbidden' for url 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Berkeley+Energy+Institute&limit=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+2026-07-21 11:32:09,150  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:32:09,338  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 2 actors
+2026-07-21 11:32:10,368  INFO     src.enrichment.actor_enrichment_candidates  [3/107] Berkeley Water Center
+2026-07-21 11:32:11,490  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Berkeley+Water+Center "HTTP/1.1 200 OK"
+2026-07-21 11:32:12,801  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Berkeley+Water+Center&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:32:17,303  INFO     httpx  HTTP Request: GET https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Berkeley+Water+Center&limit=5 "HTTP/1.1 403 Forbidden"
+2026-07-21 11:32:17,304  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Berkeley Water Center via _search_wikidata: Client error '403 Forbidden' for url 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Berkeley+Water+Center&limit=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+2026-07-21 11:32:21,308  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:32:21,615  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 3 actors
+2026-07-21 11:32:22,939  INFO     src.enrichment.actor_enrichment_candidates  [4/107] Brazil Ecosystem Mapping
+2026-07-21 11:32:23,499  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 4 actors
+2026-07-21 11:32:24,595  INFO     src.enrichment.actor_enrichment_candidates  [5/107] Break Through Tech AI Program (Cornell Tech)
+2026-07-21 11:32:26,277  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program+%28Cornell+Tech%29 "HTTP/1.1 200 OK"
+2026-07-21 11:32:27,070  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Break+Through+Tech+AI+Program+%28Cornell+Tech%29&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:32:31,926  INFO     httpx  HTTP Request: GET https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Break+Through+Tech+AI+Program+%28Cornell+Tech%29&limit=5 "HTTP/1.1 403 Forbidden"
+2026-07-21 11:32:31,929  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Break Through Tech AI Program (Cornell Tech) via _search_wikidata: Client error '403 Forbidden' for url 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Break+Through+Tech+AI+Program+%28Cornell+Tech%29&limit=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+2026-07-21 11:32:32,804  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Cornell+Tech "HTTP/1.1 200 OK"
+2026-07-21 11:32:34,211  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Cornell+Tech&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:32:38,210  INFO     httpx  HTTP Request: GET https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Cornell+Tech&limit=5 "HTTP/1.1 403 Forbidden"
+2026-07-21 11:32:38,221  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Cornell Tech via _search_wikidata: Client error '403 Forbidden' for url 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Cornell+Tech&limit=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+2026-07-21 11:32:39,167  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Break+Through+Tech+AI+Program "HTTP/1.1 200 OK"
+2026-07-21 11:32:40,083  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Break+Through+Tech+AI+Program&per-page=5 "HTTP/1.1 200 OK"
+2026-07-21 11:32:45,652  INFO     httpx  HTTP Request: GET https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Break+Through+Tech+AI+Program&limit=5 "HTTP/1.1 403 Forbidden"
+2026-07-21 11:32:45,653  WARNING  src.enrichment.actor_enrichment_candidates  API search failed for Break Through Tech AI Program via _search_wikidata: Client error '403 Forbidden' for url 'https://www.wikidata.org/w/api.php?action=wbsearchentities&format=json&language=en&type=item&search=Break+Through+Tech+AI+Program&limit=5'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403
+2026-07-21 11:32:50,122  INFO     httpx  HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK"
+2026-07-21 11:32:50,293  INFO     src.enrichment.actor_enrichment_candidates  Committed checkpoint after 5 actors
+2026-07-21 11:32:51,489  INFO     src.enrichment.actor_enrichment_candidates  [6/107] Center for Watershed Sciences
+2026-07-21 11:32:53,305  INFO     httpx  HTTP Request: GET https://api.ror.org/organizations?query=Center+for+Watershed+Sciences "HTTP/1.1 200 OK"
+2026-07-21 11:32:54,084  INFO     httpx  HTTP Request: GET https://api.openalex.org/institutions?search=Center+for+Watershed+Sciences&per-page=5 "HTTP/1.1 200 OK"

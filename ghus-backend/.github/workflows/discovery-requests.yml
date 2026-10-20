@@ -1,0 +1,66 @@
+name: Discovery Requests
+
+# Actor discovery runs only for requests made on the platform's Discovery page.
+# This job checks each day which requests are due (by their own frequency and
+# period) and runs those - nothing else.
+#
+# Live execution (Architecture V2 rule 3; decision 2026-10-14):
+#   * a scheduled run is a PLAN ONLY - it reports which requests are due and
+#     what they would search; nothing is searched, nothing is written;
+#   * live runs happen only when asked: a manual dispatch with "live" ticked,
+#     "Run now" on the Discovery page, or the runner started on request.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      live:
+        description: "Run due requests live and write to the configured database"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: discovery-requests
+  cancel-in-progress: false
+
+jobs:
+  discovery-requests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GHUS_AGENT_CONTACT_EMAIL: ${{ secrets.GHUS_AGENT_CONTACT_EMAIL }}
+      LIVE_INPUT: ${{ github.event.inputs.live || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run due discovery requests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] && [ "$LIVE_INPUT" = "true" ]; then
+            python -m agents.collection.subscription_runner --live
+          else
+            python -m agents.collection.subscription_runner
+          fi
+
+      - name: Upload discovery request reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: discovery-request-reports
+          path: |
+            agents/runs/discovery-requests-report.md
+            agents/runs/discovery-request-*-report.md
+            agents/runs/discovery-request-*-audit.csv
+          if-no-files-found: warn

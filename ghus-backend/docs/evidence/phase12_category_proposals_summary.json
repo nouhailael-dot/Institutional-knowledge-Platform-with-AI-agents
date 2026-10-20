@@ -1,0 +1,45 @@
+{
+  "generated_at": "2026-10-06T20:50:23.097465+00:00",
+  "database": "ghus_v2_phase12_full_test",
+  "mode": "dry_run_proposals_only",
+  "database_mutated": false,
+  "web_fetch": false,
+  "model": "claude-haiku-4-5",
+  "evidence_policy": "name, website, legacy source URL, and text fields with template sentences removed and shared by fewer than 3 actors",
+  "actors": 214,
+  "true_aggregates": 156,
+  "with_proposed_category": 58,
+  "by_legacy_value": {
+    "aggregate": 187,
+    "other": 13,
+    "<null>": 12,
+    "Organization": 2
+  },
+  "by_proposed_category": {
+    "": 156,
+    "national_laboratory": 12,
+    "company": 11,
+    "university_academic": 8,
+    "research_center": 8,
+    "association_network": 7,
+    "innovation_platform": 5,
+    "government": 3,
+    "hospital_clinical": 2,
+    "startup": 1,
+    "foundation_nonprofit": 1
+  },
+  "by_confidence": {
+    "low": 174,
+    "medium": 34,
+    "high": 6
+  },
+  "llm_usage": {
+    "calls": 388,
+    "input_tokens": 370900,
+    "output_tokens": 53616,
+    "cache_write_tokens": 0,
+    "cache_read_tokens": 0,
+    "cache_hit_rate": 0.0,
+    "cost_usd": 0.63898
+  }
+}

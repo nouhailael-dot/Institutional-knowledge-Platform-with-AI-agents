@@ -1,0 +1,25 @@
+{
+  "executable": false,
+  "reason": "Deferred breaking statements require matching code, backfills, validation, and schema-owner approval.",
+  "files": [
+    {"file":"170_person_affiliation_resolution.sql","breaking":true,"dependency":"Phase 14 people workflow, then Phase 12 backfill/validation"},
+    {"file":"180_review_admission_workflow.sql","breaking":true,"dependency":"Phase 3/15 review callers accept deferred status; backfill review_status first"},
+    {"file":"190_v2_reference_data.sql","breaking":false,"dependency":null},
+    {"file":"200_v2_actor_location.sql + v2a01_actor_identity.py","breaking":true,"dependency":"Phase 5 classifier, Phase 12 backfill/validation, Phase 16 legacy-column cutover"},
+    {"file":"210_v2_topics.sql","breaking":false,"dependency":null},
+    {"file":"220_v2_hub_center_review.sql + v2a02_hubs.py","breaking":true,"dependency":"Phase 6 hub code, then Phase 12 backfill/validation"},
+    {"file":"230_v2_verification_history.sql","breaking":false,"dependency":null},
+    {"file":"240_v2_fact_ledger.sql","breaking":false,"dependency":null},
+    {"file":"250_v2_edges.sql","breaking":false,"dependency":null},
+    {"file":"260_v2_collection_runs.sql","breaking":false,"dependency":null},
+    {"file":"270_v2_rankings.sql","breaking":false,"dependency":null},
+    {"file":"280_v2_people_privacy.sql + v2a03_people.py","breaking":true,"dependency":"Phase 14 people policy/code, Phase 12 backfill, Phase 16 status cutover"},
+    {"file":"290_v2_event_evidence.sql + v2a04_events.py","breaking":true,"dependency":"Phase 14 event code, then Phase 12 backfill/validation"},
+    {"file":"300_v2_strategic_connections.sql","breaking":false,"dependency":null},
+    {"file":"310_v2_hub_proposals.sql","breaking":true,"dependency":"Phase 7 detector and Phase 15 review UI, then Phase 12 validation"},
+    {"file":"320_v2_review_items.sql","breaking":false,"dependency":null},
+    {"file":"330_v2_guards_and_audit.sql","breaking":true,"dependency":"Phase 15 service/UI cutover and role audit"},
+    {"file":"340_v2_compatibility_views.sql","breaking":true,"dependency":"Phase 16 reader cutover and actor_type/verification_status retirement"},
+    {"file":"350_v2_record_creation.sql","breaking":true,"dependency":"Phase 3 runtime deployment with verify_actor support"}
+  ]
+}
