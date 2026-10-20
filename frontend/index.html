@@ -499,7 +499,7 @@ import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261019c";
-import {createDiscoveryPage} from "./discovery.js?v=20261019c";
+import {createDiscoveryPage} from "./discovery.js?v=20261019f";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -1278,8 +1278,11 @@ function CarriedRows({rows,onChange,onDismiss}){
   </div>`;
 }
 
-function BuildMap({carried,onCarriedChange}){
+function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [jobId,setJobId]=useState(null);
+  const [discovery,setDiscovery]=useState(null);   // proposed Discovery request, unsaved
+  const [proposing,setProposing]=useState(false);
+  useEffect(()=>setDiscovery(null),[jobId]);        // a proposal belongs to one map
   const [cost,setCost]=useState(null);
   const [recent,setRecent]=useState([]);
   const [researchAvailable,setResearchAvailable]=useState(false);
@@ -1493,6 +1496,21 @@ function BuildMap({carried,onCarriedChange}){
       throw new Error(d.message||"The planner could not continue.");
     }catch(e){ if(version===generation.current){setErr(e.message); setBusy(false); setPhase("");
       if(activeJob.current) poll(activeJob.current);}}
+  }
+
+  // One small paid call on this map's budget; nothing is saved until the user
+  // creates the request on the Discovery page.
+  async function proposeDiscovery(){
+    if(proposing||!jobId) return;
+    setProposing(true); setErr(null);
+    try{
+      const r=await post("/api/map/"+jobId+"/discovery-brief",{});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Could not propose a Discovery request.");
+      if(d.cost) setCost(d.cost);
+      setDiscovery({...d,edited:false,firstLine:d.brief.split("\n")[0].trim()});
+    }catch(e){ setErr(e.message); }
+    setProposing(false);
   }
 
   function reset(){
@@ -1764,7 +1782,35 @@ function BuildMap({carried,onCarriedChange}){
             <summary>What the agent searched for</summary>
             ${res.tasks.map((t,i)=>html`<div key=${i} style=${{marginTop:"5px"}}>
               <span class="dash">${t.entity_type}</span> ${t.query}</div>`)}
-          </details>`}`}
+          </details>`}
+          ${(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>
+            <strong>Keep finding organizations like these</strong>
+            ${!discovery
+              ? html`<div>Discovery can keep searching for more of them, every month for as long as
+                  you choose. One short call (under $0.01, on this map's budget) proposes the request
+                  from what you asked. You edit it there before anything is saved.</div>
+                <button class="example" type="button" style=${{marginTop:"8px"}}
+                  disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
+                  onClick=${proposeDiscovery}>
+                  ${proposing?html`<span class="spin"></span> Proposing…`:"Continue discovery"}</button>`
+              : html`<textarea class="discovery-brief" rows="5" style=${{marginTop:"8px"}}
+                  aria-label="Proposed Discovery request" value=${discovery.brief}
+                  onInput=${e=>setDiscovery({...discovery,brief:e.target.value,
+                    // Only a changed first line (sector and area) hands those back to Discovery's own reading.
+                    edited:e.target.value.split("\n")[0].trim()!==discovery.firstLine})}></textarea>
+                <div class="hint" style=${{marginTop:"6px"}}>First line: the sector and the area. Each line
+                  after: one short sub-topic, from your own words — every word of it has to appear on an
+                  organization's own page, so keep them short.</div>
+                ${!discovery.sector_code&&!discovery.edited&&html`<div class="hint" style=${{marginTop:"4px"}}>
+                  None of the sectors clearly fitted your request. Choose one on the Discovery page.</div>`}
+                <div class="hint" style=${{marginTop:"4px"}}>Discovery doesn't know this map's results, so its
+                  first run may send some of the same organizations to Review again.</div>
+                <div class="attach-row" style=${{marginTop:"8px"}}>
+                  <button class="example" type="button" disabled=${!discovery.brief.trim()}
+                    onClick=${()=>onDiscovery&&onDiscovery({...discovery})}>Open in Discovery</button>
+                  <button class="example" type="button" onClick=${()=>setDiscovery(null)}>Discard</button>
+                </div>`}
+          </div>`}`}
     </div>`}
   </div>`;
 }
@@ -1791,6 +1837,8 @@ function App(){
   // Ask -> Build the Map handoff. Client-side only: every page stays mounted, so
   // there is no session to plumb through the backend.
   const [carried,setCarried]=useState(null);
+  // A Discovery request proposed from a map, waiting for the Discovery page to open it.
+  const [discoveryHandoff,setDiscoveryHandoff]=useState(null);
   // Keep every page mounted when switching tabs. BuildMap owns the active job
   // poll and its result state, so unmounting it makes a running map appear to
   // stop even though the backend worker continues.
@@ -1810,10 +1858,12 @@ function App(){
     <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}
       onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/></div>
     <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
-    <div style=${{display:tab==="discovery"?"block":"none"}}><${Discovery}/></div>
+    <div style=${{display:tab==="discovery"?"block":"none"}}><${Discovery}
+      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/></div>
     <div style=${{display:tab==="review"?"block":"none"}}><${Review}/></div>
     <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
-      carried=${carried} onCarriedChange=${setCarried}/></div>
+      carried=${carried} onCarriedChange=${setCarried}
+      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/></div>
   </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);

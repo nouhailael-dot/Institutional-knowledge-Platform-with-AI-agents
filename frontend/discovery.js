@@ -605,6 +605,23 @@ function blankForm(today) {
   };
 }
 
+/**
+ * The form a Build the Map hand-off opens with: the proposed brief, monthly.
+ * Unless the brief was edited, the sector and area the map resolved are set
+ * explicitly, so a sub-topic that happens to name another sector or a place
+ * cannot change them.
+ */
+export function handoffForm(handoff, today) {
+  const form = {...blankForm(today), brief: handoff.brief || "", cadence: "monthly"};
+  if (handoff.edited) return form;
+  form.sector = handoff.sector_code || "";
+  form.areaTouched = true;
+  form.areaKind = handoff.state_code ? "state" : handoff.region_code ? "region" : "us";
+  form.state = handoff.state_code || "";
+  form.region = handoff.region_code || "";
+  return form;
+}
+
 export function createDiscoveryPage({html, useState, useEffect}) {
   async function api(path, options = {}) {
     const response = await fetch(path, {
@@ -1242,7 +1259,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     </article>`;
   }
 
-  return function Discovery() {
+  return function Discovery({handoff = null, onHandoffUsed = () => {}} = {}) {
     const today = isoDate(new Date());
     const [status, setStatus] = useState({loaded: false, configured: false});
     const [options, setOptions] = useState(null);
@@ -1275,6 +1292,16 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     }
     useEffect(() => { load(); }, []);
 
+    // A request proposed from a Build the Map result: open it, unsaved, for editing.
+    useEffect(() => {
+      if (!handoff) return;
+      setForm(handoffForm(handoff, today));
+      setView("new"); setShowDetails(true); setTouched(false); setPreview(null);
+      if (status.configured) setMessage({kind: "running", text: "Proposed from your map. Check the "
+        + "sector, area and sub-topics, then preview the searches before creating the request."});
+      onHandoffUsed();
+    }, [handoff]);
+
     function setDuration(id) {
       const preset = DURATION_PRESETS.find((p) => p.id === id);
       set({duration: id, endDate: preset?.months ? addMonths(form.startDate, preset.months) : form.endDate});
@@ -1297,7 +1324,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     // Everything that is sent, summarised or validated runs on the RESOLVED
     // draft, so the brief and the panel can never disagree about what will run.
     const draft = resolveDraft(form, options || {});
-    const problems = draftProblems(form, options);
+    const problems = draftProblems(form, options || {});
     const valid = Object.keys(problems).length === 0;
     const shown = touched ? problems : {};
 
@@ -1373,6 +1400,10 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
       ${status.loaded && !status.configured && html`<p class="discovery-message error">Discovery requests are not available on this instance.</p>`}
+      ${status.loaded && !status.configured && form.brief && html`<section class="discovery-card">
+        <p class="muted">The request proposed from your map, kept here until Discovery is set up:</p>
+        <pre class="discovery-brief">${form.brief}</pre>
+      </section>`}
 
       ${status.configured && options && html`
       <div class="subnav">

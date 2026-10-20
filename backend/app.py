@@ -42,6 +42,7 @@ from src.generate import ask_handoff, condense_question, stream_answer
 from src.map_agent.actor_profile import LEGACY_CATEGORIES, NOT_CLASSIFIED
 from src.map_agent import parked, review
 from src.map_agent.dedup import mark_possible_duplicates
+from src.map_agent.discovery_brief import propose_discovery
 from src.map_agent.export import to_pptx, to_xlsx
 from src.map_agent.pipeline import build_map
 from src.map_agent.people_research import research_people
@@ -615,6 +616,34 @@ def map_reopen(job_id: str):
     except MapStopped as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return public_map(job_id)
+
+
+@app.post("/api/map/{job_id}/discovery-brief")
+def map_discovery_brief(job_id: str):
+    """Propose a Discovery request from a finished organization map.
+
+    One small paid call on the map's own budget. Nothing is saved: the proposal
+    goes to the Discovery page, where the user edits it before creating anything."""
+    require_research()
+    record = map_record(job_id)
+    result = record["result"] or {}
+    if (result.get("map_type") or "organizations") != "organizations":
+        raise HTTPException(status_code=400, detail="Discovery looks for organizations only.")
+    if not (result.get("entities") or {}).get("actor"):
+        raise HTTPException(status_code=400, detail="This map has no organizations yet.")
+    status, error = record["status"], record["error"]
+    try:
+        map_store().claim(job_id, "planning", "Discovery proposal", ("done", "error"))
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    try:
+        proposal = propose_discovery(record["messages"], record["description"],
+                                     run=RunContext(map_store(), job_id))
+    except Exception as exc:
+        map_store().finish(job_id, status, error)
+        raise HTTPException(status_code=502, detail=f"Could not propose a Discovery request: {exc}")
+    map_store().finish(job_id, status, error)
+    return {**proposal, "cost": map_record(job_id)["cost"]}
 
 
 class ReviewRequest(BaseModel):
