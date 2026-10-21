@@ -677,6 +677,8 @@ class PostgresReviewSource:
             "SELECT ri.review_item_id::text AS review_item_id, ri.review_kind, "
             "ri.entity_type, ri.entity_id::text AS entity_id, "
             "ri.topic_id::text AS topic_id, ri.priority, ri.payload, ri.created_at, "
+            "(SELECT rel.name FROM actor rel WHERE rel.actor_id=ri.candidate_entity_id) "
+            "AS related_actor_name, "
             "a.name, NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
             "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
             "NULLIF(to_jsonb(a)->>'category_note','') AS category_note, "
@@ -762,6 +764,8 @@ class PostgresReviewSource:
             "   AND af.topic_id IS NOT DISTINCT FROM ri.topic_id"
             ") f ON true " + history_join + edge_join +
             "WHERE ri.status='pending' "
+            # Rejected actors must not re-enter the pending review feed.
+            "AND COALESCE(to_jsonb(a)->>'status', '') <> 'rejected' "
             # Every actor review kind the database allows. The earlier list
             # named seven and left out geocode_failed, possible_duplicate,
             # fact_conflict and pending_update, so those items were pending in
@@ -1390,6 +1394,7 @@ class PostgresReviewSource:
                 "review_item_id": review_id,
                 "review_kind": row.get("review_kind"),
                 "entity_id": row.get("entity_id"),
+                "related_actor_name": row.get("related_actor_name"),
                 "topic_id": row.get("topic_id"),
                 "record_status": row.get("record_status"),
                 "priority": row.get("priority"),

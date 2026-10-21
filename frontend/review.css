@@ -163,3 +163,5 @@
 
 .review-new-sector{margin-top:12px;padding:12px;border:1px dashed var(--line-strong);border-radius:8px;display:grid;gap:10px}
 .review-new-sector-actions{display:flex;gap:8px}
+
+.review-category-bulk{margin:1rem 0}.review-category-list{list-style:none;padding:0;margin:.5rem 0;max-height:18rem;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px}.review-category-list li{padding:.35rem .6rem;border-bottom:1px solid var(--line,#eee)}.review-category-list li:last-child{border-bottom:0}
