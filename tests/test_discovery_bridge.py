@@ -127,7 +127,8 @@ def test_routes_fail_closed_and_validate(monkeypatch):
     assert too_many.status_code == 422
 
 
-def test_run_now_starts_a_live_run_of_that_request_only(tmp_path):
+def test_run_now_starts_a_live_run_of_that_request_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")  # live runs need it
     started = []
     bridge = DiscoveryBridge(
         project_root=_backend(tmp_path), python_executable="py",
@@ -161,8 +162,9 @@ def _update_bridge(tmp_path, calls, answer=None):
                            run_command=fake_run)
 
 
-def test_plan_and_check_never_set_the_write_switch_and_only_apply_does(tmp_path):
+def test_plan_and_check_never_set_the_write_switch_and_only_apply_does(tmp_path, monkeypatch):
     """Plan is free, check reads and writes nothing; only "Write" may write."""
+    monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")  # a check reads pages
     import sys as _sys
 
     calls = []

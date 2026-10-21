@@ -10,6 +10,7 @@ not "dead". Only real "not found" (404/410), server errors, and connection
 failures count against a link.
 """
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
@@ -17,6 +18,12 @@ from urllib.error import HTTPError, URLError
 TIMEOUT = 6          # seconds per request
 MAX_WORKERS = 8
 _UA = "Mozilla/5.0 (compatible; UM6P-MapBot/1.0; +research)"
+
+
+def _user_agent():
+    """The link checker's identity, with the shared contact address when set."""
+    contact = os.environ.get("GHUS_AGENT_CONTACT_EMAIL", "").strip()
+    return _UA.replace("+research", "+" + contact) if contact else _UA
 
 # HTTP status -> our verdict. ok=True means "the link is usable".
 _BLOCKED = {401, 403, 405, 429}   # server answered but refused the bot
@@ -31,7 +38,7 @@ def _check_one(url: str) -> dict:
     if not target.startswith(("http://", "https://")):
         target = "https://" + target
 
-    req = Request(target, method="GET", headers={"User-Agent": _UA})
+    req = Request(target, method="GET", headers={"User-Agent": _user_agent()})
     try:
         with urlopen(req, timeout=TIMEOUT) as resp:
             code = resp.status
