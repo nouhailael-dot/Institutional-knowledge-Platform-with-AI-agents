@@ -36,3 +36,4 @@ def downgrade() -> None:
     op.drop_column("event", "expected_attendance")
     op.drop_column("event", "thematic_focus")
     op.drop_column("event", "description")
+    

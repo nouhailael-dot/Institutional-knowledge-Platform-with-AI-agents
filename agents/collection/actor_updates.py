@@ -341,6 +341,17 @@ def plan_fields(scope: str, schema: list[str], current: dict[str, dict], *, fiel
     quick_days = int(limits["time_sensitive_stale_after_days"])
     recheck_days = int(limits["recheck_not_found_after_days"])
     asked = [f for f in (fields or ()) if f]
+    if scope == "specific" and not asked and categories:
+        # Specific changes by type of information: the boxes of the chosen
+        # types that this category's schema has - never a box outside it.
+        wanted = {f for c in categories if c in CHANGE_CATEGORIES
+                  for f in CHANGE_CATEGORIES[c]["fields"]}
+        if "_own" in categories:
+            wanted |= set(category_fields or ())
+        asked = [f for f in schema if f in wanted]
+        if not asked:
+            raise ActorUpdateError("None of the chosen types of information applies to "
+                                   "this actor's category.")
     for key in asked:
         if key not in schema:
             skipped.append({"field": key, "reason": "Not in this actor's category schema, "
@@ -1055,7 +1066,9 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
 # boxes first, stops at the request's actor cap or spend ceiling, and writes
 # through the same check -> Phase 11 writer path as a single update.
 
-SCOPE_NAMES = {"general": "General profile", "topic": "Specific topic",
+# The Discovery page offers two choices: General Update, and Specific Changes
+# (by type of information, or by a question - the "topic" scope).
+SCOPE_NAMES = {"general": "General update", "topic": "Specific changes",
                "missing": "Missing information", "outdated": "Outdated information",
                "specific": "Specific changes"}
 REQUEST_KEYS = frozenset({
@@ -1114,8 +1127,8 @@ def request_options(payload: dict, *, config: dict | None = None,
     if any(c not in CATEGORY_CHOICES for c in categories):
         raise ActorUpdateError("Unknown change category.")
     fields = [str(f) for f in payload.get("fields") or []]
-    if scope == "specific" and not fields:
-        raise ActorUpdateError("Choose at least one box to update.")
+    if scope == "specific" and not fields and not categories:
+        raise ActorUpdateError("Choose at least one box, or a type of information, to update.")
     cadence = str(payload.get("cadence") or "once")
     if cadence not in CADENCE_DAYS:
         raise ActorUpdateError(f"Unknown frequency {cadence!r}.")
@@ -1235,22 +1248,29 @@ def choose_actors(session, prepared: dict, *, config: dict | None = None,
             continue
         schema = schema_fields(actor.get("actor_category"))
         current = current_values(session, actor["actor_id"], topic["topic_id"], schema)
+        own_fields = CATEGORY_LIGHT_FIELDS.get(actor.get("actor_category") or "", ())
         try:
             fields, _ = plan_fields(
                 options["scope"], schema, current, fields=options["fields"],
-                categories=options["categories"],
-                category_fields=CATEGORY_LIGHT_FIELDS.get(actor.get("actor_category") or "", ()),
+                categories=options["categories"], category_fields=own_fields,
                 today=today, limits=limits)
-        except ActorUpdateError:
-            fields = []
+        except ActorUpdateError as exc:
+            waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                            "reason": str(exc)})
+            continue
         if not fields:
             waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
                             "reason": "Nothing to read: every box in scope is filled and fresh."})
             continue
+        # Gaps = boxes in scope that are empty or out of date: the order in
+        # which a capped run reaches actors, whatever the scope.
+        gaps = {f for gap_scope in ("missing", "outdated")
+                for f in plan_fields(gap_scope, schema, current, today=today, limits=limits)[0]}
         ready.append({"actor_id": actor["actor_id"], "name": actor["name"],
                       "actor_category": actor.get("actor_category"),
-                      "topic": topic["code"], "boxes": len(fields), "fields": fields})
-    ready.sort(key=lambda a: (-a["boxes"], a["name"]))
+                      "topic": topic["code"], "boxes": len(fields), "fields": fields,
+                      "gaps": len(gaps & set(fields))})
+    ready.sort(key=lambda a: (-a["gaps"], -a["boxes"], a["name"]))
     cap = int(options["max_actors_per_run"])
     for actor in ready[cap:]:
         waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
@@ -1441,6 +1461,11 @@ def list_requests(session) -> dict:
 
     today = datetime.now(UTC).date()
     requests = []
+    # A request on an inactive sector is a test fixture (the integration tests
+    # create inactive topics); the page says how many and does not list them.
+    inactive = set(session.execute(text(
+        "SELECT upper(code) FROM topic WHERE NOT COALESCE((to_jsonb(topic)->>'active')::boolean, true)"
+    )).scalars()) if _has_table(session, "topic") else set()
     for row in store.load_actor_update_requests(session):
         item = dict(row)
         try:
@@ -1454,8 +1479,42 @@ def list_requests(session) -> dict:
             "SELECT name FROM actor WHERE actor_id = ANY(CAST(:ids AS uuid[])) ORDER BY name"
         ), {"ids": ids})] if ids else []
         item["runs"] = store.load_request_runs(session, str(row["subscription_id"]))
+        options = row.get("update_options") or {}
+        codes = {str(c).upper() for c in [options.get("topic"), *(row.get("sector_codes") or [])]
+                 if c}
+        item["test_sector"] = bool(codes) and codes <= inactive
         requests.append(item)
-    return {"requests": requests, "ready": store.has_update_requests(session)}
+    return {"requests": requests, "ready": store.has_update_requests(session),
+            "one_time": one_time_updates(session, inactive=inactive)}
+
+
+def one_time_updates(session, *, inactive=frozenset(), limit: int = 30) -> list[dict]:
+    """The one-actor updates written from the page (Check, then Write), newest first."""
+    if not (_has_table(session, "collection_run") and _has_table(session, "collection_request")):
+        return []
+    rows = session.execute(text(
+        "SELECT r.collection_run_id::text AS run_id, r.started_at, r.status, r.spent_usd, "
+        "r.config_snapshot, a.actor_id::text AS actor_id, a.name, upper(t.code) AS topic, "
+        "t.name AS topic_name FROM collection_run r "
+        "JOIN collection_request q ON q.collection_request_id = r.collection_request_id "
+        "JOIN actor a ON a.actor_id = q.actor_id LEFT JOIN topic t ON t.topic_id = q.topic_id "
+        "WHERE r.job_name = :job ORDER BY r.started_at DESC LIMIT :limit"
+    ), {"job": JOB_NAME, "limit": limit}).mappings()
+    out = []
+    for row in rows:
+        if row["topic"] in inactive:
+            continue
+        snapshot = row["config_snapshot"] or {}
+        counts: dict[str, int] = {}
+        for outcome in (snapshot.get("outcomes") or {}).values():
+            group = GROUPS.get(str(outcome), str(outcome))
+            counts[group] = counts.get(group, 0) + 1
+        out.append({"run_id": row["run_id"], "started_at": str(row["started_at"] or "")[:19],
+                    "status": row["status"], "spent_usd": float(row["spent_usd"] or 0),
+                    "actor_id": row["actor_id"], "name": row["name"],
+                    "topic_name": row["topic_name"], "scope": snapshot.get("scope"),
+                    "counts": counts})
+    return out
 
 
 # --------------------------------------------------------------------- CLI

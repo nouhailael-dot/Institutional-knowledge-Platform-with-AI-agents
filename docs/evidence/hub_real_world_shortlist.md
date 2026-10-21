@@ -76,14 +76,56 @@ organisation's **main job**, not by its sector or its funder.
 | 1 | UC Davis Seed Biotechnology Center | University / Academic Institution → Research Lab / Center | Davis, CA | 0.00 | core | `sbc.ucdavis.edu/about-sbc` |
 | 2 | Seed Central | Association / Consortium / Network → Innovation Consortium | Davis, CA | 0.00 | core | `seedcentral.plantsciences.ucdavis.edu` |
 | 3 | AgStart (Lab@AgStart) | Innovation & Entrepreneurship (E&I) Platform → Incubator | Woodland, CA | 7.98 | core | `cityofwoodland.gov/CivicSend/ViewMessage/message/144371` |
-| 4 | Bayer Crop Science — West Sacramento (LifeHub California) | Company / Corporate Actor → Subsidiary / Business Unit | West Sacramento, CA | 10.22 | core | `agfundernews.com/sacramento-making-moves-become-agtech-hub` |
+| 4 ⚠ | Bayer Crop Science — West Sacramento (LifeHub California) — **4 Bayer records already exist, see §3.1** | Company / Corporate Actor → Subsidiary / Business Unit | West Sacramento, CA | 10.22 | core | `agfundernews.com/sacramento-making-moves-become-agtech-hub` |
 | 5 | TOMRA Food — West Sacramento | Company / Corporate Actor → Subsidiary / Business Unit | West Sacramento, CA | 10.22 | core | `greatersacramento.com/business-climate/industries/agtech` |
 | 6 | TurtleTree — West Sacramento R&D | Startup / Emerging Technology Company → Independent | West Sacramento, CA | 10.22 | core | `greatersacramento.com/business-climate/industries/agtech` |
-| 7 | California Department of Food and Agriculture | Government Agency / Public Authority → State | Sacramento, CA | 14.59 | core | `cdfa.ca.gov` |
+| 7 ⛔ | California Department of Food and Agriculture — **already a member of this hub, see §3.1** | Government Agency / Public Authority → State | Sacramento, CA | 14.59 | core | `cdfa.ca.gov` |
 | 8 | Greater Sacramento Economic Council | **needs a reviewer decision — see below** | Sacramento, CA | 14.59 | core | `greatersacramento.com` |
 | 9 | The March Fund | Investor / Funding Platform → Venture Capital Firm | Sacramento, CA *(unconfirmed)* | 14.59 | core | `agfundernews.com/sacramento-making-moves-become-agtech-hub` |
 | 10 | USDA ARS Western Human Nutrition Research Center | Research Center / Institute / Laboratory → Government-Affiliated | Davis, CA | 0.00 | core | `ars.usda.gov` |
 | 11 | Almond Board of California | Association / Consortium / Network → Trade Association | Modesto, CA | 75.00 | cluster | `almonds.com` |
+
+### 3.1 Checked against the map first — and two candidates fail that check
+
+Architecture V2 rule 1 is to check what is already mapped before searching. Run
+against `ghus_v2_review_redesign_test` on 9 Oct 2026, matching each candidate
+name against `actor` (live rows only) and against this hub's `hub_actor` rows.
+The hub has 18 members, which matches §2.
+
+**#7 California Department of Food and Agriculture is already a member of this
+hub**, stored as `California Department of Food & Agriculture (CDFA)`. The name
+differs only by `&` versus `and` and a trailing acronym, which is why a
+name-equality check would have missed it. Proposing it would have created a
+duplicate inside the very hub it belongs to. **Remove it from the shortlist**,
+or keep it marked as an existing member for comparison, but it is not a
+candidate.
+
+**#4 Bayer Crop Science already exists four times in the actor table**, none of
+them in this hub:
+
+- `Bayer Crop Science`
+- `Bayer Crop Science (Midwest Presence)`
+- `Bayer Crop Science (regional presence)`
+- `Bayer Crop Science R&D Facilities`
+
+Proposing `Bayer Crop Science — West Sacramento` would make it five. This is a
+pre-existing entity-resolution problem in the migrated data, not something this
+shortlist created, but the shortlist must not add to it. **#4 is an ER
+question before it is a hub question**: the four existing records need to be
+resolved against each other first, and the West Sacramento site is then either
+one of them or a `unit_of` child of the resolved parent.
+
+**The remaining nine candidates are genuinely absent** from the actor table —
+no match for Seed Biotechnology, Seed Central, AgStart, TOMRA, TurtleTree,
+Greater Sacramento, March Fund, Western Human Nutrition or Almond. They are new
+records if GHUS wants them.
+
+One near-miss worth naming so nobody re-finds it: `Food and Agriculture
+Organization` exists as an actor. It is the UN FAO and has nothing to do with
+CDFA; the substring match is a coincidence, not a duplicate.
+
+This row of the verification table is now closed. The other two rows below
+remain open and are blocked on the VPN, not on the database.
 
 ### Classification notes — the ones a reviewer has to decide
 
@@ -120,7 +162,7 @@ parent — which is a separate actor record, probably outside the mapped geograp
 | Hub centre, topic, member counts | **VERIFIED** — from committed GHUS-approved evidence |
 | Organisation names, cities, and that each is a real organisation | **UNVERIFIED** — see below |
 | Source URLs resolve and say what is claimed | **UNVERIFIED** — see below |
-| Whether a candidate is already one of the hub's 18 members | **UNVERIFIED** — needs the database |
+| Whether a candidate is already one of the hub's 18 members | **VERIFIED** 9 Oct 2026 — checked against the database. **Two candidates must not be proposed as they stand: see §3.1** |
 
 **Why.** Direct page fetches fail in this environment: every request resolves to
 a `198.18.x.x` address and is refused. That is the McAfee VPN the brief names in

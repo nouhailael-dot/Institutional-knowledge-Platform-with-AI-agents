@@ -1,10 +1,7 @@
 """
 er_description_features.py — description-based ER features.
 
-WHY NOW
-Descriptions were dropped from the ER model when gold-pair coverage was 1%
-(0 of 70 positives had a description on both sides). Enrichment has since raised
-actor description coverage to ~44%, so the signal is finally testable.
+
 
 WHY IT MIGHT MATTER
 Every current feature reads the NAME. "Michigan State University" and

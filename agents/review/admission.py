@@ -652,9 +652,11 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
         elif kind == "resolve_fact":
             # A fact conflict or pending update: use the proposed value or keep
             # the current one. Both facts stay in the ledger either way.
+            # Keep both only where the model holds several values (locations).
             result = record_fact_review_decision(
                 session, review_item_id=item_id, decided_by=reviewer,
-                accept=bool(decision.get("accept")), notes=notes, live=True,
+                accept=bool(decision.get("accept")), keep_both=bool(decision.get("keep_both")),
+                notes=notes, live=True,
             )
         elif kind == "resolve_hub_membership":
             # A hub an unassigned actor now fits: accept adds the membership,

@@ -1,0 +1,16 @@
+{"actor_name": "National Renewable Energy Laboratory (NREL)", "description": "U.S. Department of Energy national laboratory focused on renewable energy and energy efficiency research.", "expected_type": "National Research Lab"}
+{"actor_name": "Oak Ridge National Laboratory", "description": "DOE national laboratory conducting research in energy, materials, and computing.", "expected_type": "National Research Lab"}
+{"actor_name": "Ford Motor Company", "description": "Global automaker operating corporate research and innovation centers.", "expected_type": "Corporate R&D / Innovation Lab"}
+{"actor_name": "Bayer Crop Science", "description": "Agricultural division of Bayer developing seeds and crop protection products.", "expected_type": "Corporate R&D / Innovation Lab"}
+{"actor_name": "Syngenta", "description": "Global agrochemical and seed company with corporate R&D operations.", "expected_type": "Corporate R&D / Innovation Lab"}
+{"actor_name": "Pivot Bio", "description": "Venture-backed startup developing nitrogen-fixing microbes for crops.", "expected_type": "Startup / New Venture"}
+{"actor_name": "Inari Agriculture", "description": "Seed-technology startup using gene editing to improve crop performance.", "expected_type": "Startup / New Venture"}
+{"actor_name": "MIT Media Lab", "description": "Interdisciplinary research laboratory at the Massachusetts Institute of Technology.", "expected_type": "University Lab"}
+{"actor_name": "UC Davis Department of Plant Sciences", "description": "Academic department conducting plant and agricultural research at UC Davis.", "expected_type": "University Lab"}
+{"actor_name": "Stanford Woods Institute for the Environment", "description": "Environmental research institute housed within Stanford University.", "expected_type": "University Lab"}
+{"actor_name": "USDA Agricultural Research Service", "description": "In-house research agency of the United States Department of Agriculture.", "expected_type": "Federal Agency"}
+{"actor_name": "National Science Foundation (NSF)", "description": "U.S. federal agency that funds research and education in science and engineering.", "expected_type": "Federal Agency"}
+{"actor_name": "The Nature Conservancy", "description": "Global environmental nonprofit working on land and water conservation.", "expected_type": "Nonprofit / NGO"}
+{"actor_name": "World Wildlife Fund", "description": "International nonprofit organization focused on wilderness preservation.", "expected_type": "Nonprofit / NGO"}
+{"actor_name": "The Fertilizer Institute", "description": "U.S. trade association representing the fertilizer industry.", "expected_type": "Industry Association"}
+{"actor_name": "American Chemistry Council", "description": "Industry trade association representing American chemistry companies.", "expected_type": "Industry Association"}

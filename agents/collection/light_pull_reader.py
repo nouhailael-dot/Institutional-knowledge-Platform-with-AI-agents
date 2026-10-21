@@ -213,12 +213,26 @@ def _stems(text: str) -> set[str]:
     return {w[:4] for w in re.findall(r"[a-z]{4,}", (text or "").casefold())}
 
 
+# A street address on a page: a ZIP code, or "City, ST".
+_ADDRESS = re.compile(r"(?<!\d)\d{5}(?:-\d{4})?(?!\d)|\b[A-Z][a-z]+(?: [A-Z][a-z]+)*, [A-Z]{2}\b")
+_CONTACT_HINTS = ("contact", "locations", "offices", "headquarters", "find-us", "visit")
+
+
+def _states_an_address(docs) -> bool:
+    return any(_ADDRESS.search(_page_text(d.content or "")) for d in docs)
+
+
 def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
-                 actor_category: str | None = None) -> list:
+                 actor_category: str | None = None, want_location: bool = False) -> list:
     """Homepage, About page, one topic or category page: at most three, same site.
 
     ``fetch(url)`` returns a FetchedDoc (url, content). A page that cannot be
     fetched is skipped; the homepage failing means nothing can be read.
+
+    When the location is asked for and no page read so far states an address,
+    a page still free within the three (often no About page was found) goes to
+    the organisation's contact page: Chevron, ExxonMobil and Shell were read on
+    two pages each, with the headquarters on neither.
     """
     home = fetch(homepage(website) or website)
     docs = [home]
@@ -248,6 +262,19 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
             docs.append(fetch(best[1]))
         except Exception as exc:  # noqa: BLE001
             logger.info("topic page unavailable for %s: %s", website, exc)
+    if want_location and len(docs) < MAX_LIGHT_PULL_FETCHES and not _states_an_address(docs):
+        seen = {d.url.rstrip("/") for d in docs}
+        for href, label in _HREF.findall(home.content or ""):
+            target = urljoin(home.url, href.strip())
+            if registrable_domain(target) != site or target.rstrip("/") in seen:
+                continue
+            words = f"{urlsplit(target).path} {re.sub(r'<[^>]+>', ' ', label)}".casefold()
+            if any(hint in words for hint in _CONTACT_HINTS):
+                try:
+                    docs.append(fetch(target))
+                except Exception as exc:  # noqa: BLE001
+                    logger.info("contact page unavailable for %s: %s", website, exc)
+                break
     return docs[:MAX_LIGHT_PULL_FETCHES]
 
 
@@ -382,6 +409,18 @@ _SYSTEM = (
 
 
 RECENT_YEARS = 2
+_MONTHS = {name: number for number, names in enumerate((
+    ("january", "jan"), ("february", "feb"), ("march", "mar"), ("april", "apr"),
+    ("may",), ("june", "jun"), ("july", "jul"), ("august", "aug"),
+    ("september", "sep", "sept"), ("october", "oct"), ("november", "nov"),
+    ("december", "dec")), start=1) for name in names}
+_UNDATED = re.compile(r"\b(not specified|unspecified|undated|unknown|no date|not stated|n/a)\b",
+                      re.IGNORECASE)
+# What the organisation's website did, not what the organisation did.
+_NOT_AN_ACTIVITY = re.compile(
+    r"\b(published|posted|updated|shared|added)\s+(new\s+)?(content|information|"
+    r"(a |an )?(web ?page|page|post|blog post))\b|\bits (web ?site|newsroom)\b",
+    re.IGNORECASE)
 
 
 def _not_recent(key: str, value: object, read_at: datetime) -> str | None:
@@ -389,17 +428,53 @@ def _not_recent(key: str, value: object, read_at: datetime) -> str | None:
 
     The first live read accepted a programme launch dated October 2021 as
     NEW Water's "recent activity". The date must name a year no more than
-    RECENT_YEARS before the read.
+    RECENT_YEARS before the read; with a month, no more than RECENT_YEARS*12
+    months (a year alone let "July 5, 2024" pass in October 2026). A date that
+    says it is not given ("not specified, listed under October 2026 newsroom
+    items") is no date, and the website publishing content is not something
+    the organisation did.
     """
     if key != "recent_activity" or not isinstance(value, Mapping):
         return None
-    years = [int(y) for y in re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", str(value.get("date") or ""))]
+    date = str(value.get("date") or "")
+    if _UNDATED.search(date):
+        return "the page gives no date for it, so it cannot be shown to be recent"
+    years = [int(y) for y in re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", date)]
     if not years:
         return "the date given names no year, so it cannot be shown to be recent"
     if max(years) < read_at.year - RECENT_YEARS:
         return (f"dated {max(years)}: more than {RECENT_YEARS} years before the read, "
                 "so not recent activity")
+    month = next((_MONTHS[word] for word in re.findall(r"[a-z]+", date.casefold())
+                  if word in _MONTHS), None)
+    if month and len(set(years)) == 1:
+        months_ago = (read_at.year - years[0]) * 12 + read_at.month - month
+        if months_ago > RECENT_YEARS * 12:
+            return (f"dated {date.strip()}: more than {RECENT_YEARS} years before the read, "
+                    "so not recent activity")
+    if _NOT_AN_ACTIVITY.search(str(value.get("description") or "")):
+        return "it describes the website's content, not something the organisation did"
     return None
+
+
+def _normal_location(value: Mapping) -> dict:
+    """The page's city and state, with the state as its USPS code and the US named.
+
+    "Stanford, California" and "Montpelier, VT" were stored in two shapes, and
+    with no country. Only the page's own words are used: a state is coded when
+    it is one, and the country is the US only when the state is a US state.
+    """
+    from agents.common.geography import normalize_state
+
+    city = " ".join(str(value.get("city") or "").split()) or None
+    state_text = " ".join(str(value.get("state") or "").split()) or None
+    country = " ".join(str(value.get("country") or "").split()) or None
+    code = normalize_state(state_text) if state_text else None
+    us_country = (country or "").casefold() in {"", "us", "usa", "united states",
+                                                "united states of america"}
+    out = {"city": city, "state": code if code and us_country else state_text,
+           "country": "US" if code and us_country else country}
+    return {key: item for key, item in out.items() if item}
 
 
 class LightPullReader:
@@ -420,7 +495,8 @@ class LightPullReader:
         spent = float(getattr(getattr(self.client, "cost_meter", None), "spent_usd", 0.0) or 0.0)
         try:
             docs = choose_pages(self.fetch, website, topic_terms=topic_terms,
-                                actor_category=actor_category)
+                                actor_category=actor_category,
+                                want_location="location" in wanted)
         except Exception as exc:  # noqa: BLE001 - an unreachable site is a stated outcome
             result.error = f"site could not be read: {type(exc).__name__}: {exc}"[:300]
             return result
@@ -476,5 +552,7 @@ class LightPullReader:
                 result.rejected[key] = stale
                 result.evidence[key] = not_found
                 continue
+            if key == "location" and isinstance(value, Mapping):
+                candidate["value"] = _normal_location(value)
             result.evidence[key] = candidate
         return result
