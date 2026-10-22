@@ -942,6 +942,7 @@ class ReviewItemDecisionRequest(BaseModel):
 
 class ReviewAdmissionRequest(ReviewDecisionRequest):
     decision_kind: str
+    keep_both: bool = False
     target_id: str | None = None
     hub_ids: list[str] = Field(default_factory=list)
     proposed_hub: dict | None = None
@@ -1117,6 +1118,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
             reviewer=payload.reviewer,
             idempotency_key=payload.idempotency_key,
             target_id=payload.target_id,
+            keep_both=payload.keep_both,
             notes=payload.notes,
             edited_payload=payload.edited_payload,
             hub_ids=payload.hub_ids,

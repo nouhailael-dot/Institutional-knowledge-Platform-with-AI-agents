@@ -723,3 +723,50 @@ def test_an_update_card_is_acknowledged_in_review_only(store):
     with pytest.raises(ReviewValidationError):
         store.admission_request("upd-1", decision_kind="same_existing", reviewer="R",
                                 idempotency_key="k-3", target_id="x", confirmed=True)
+
+
+@pytest.mark.parametrize("kind", ["fact_conflict", "pending_update"])
+def test_keep_both_locations_uses_existing_admission_contract(store, kind):
+    _insert_item(store, "locations", kind, {"field_key": "location"})
+    decision = store.admission_request(
+        "locations", decision_kind="new", keep_both=True, reviewer="Reviewer",
+        idempotency_key="both-1", confirmed=True)
+    assert decision["decision_kind"] == "resolve_fact"
+    assert decision["accept"] is False and decision["keep_both"] is True
+
+
+@pytest.mark.parametrize("kind,field,decision", [
+    ("fact_conflict", "funding_signal", "new"),
+    ("relationship_review", "location", "new"),
+    ("fact_conflict", "location", "reject"),
+])
+def test_keep_both_cannot_change_other_review_decisions(store, kind, field, decision):
+    _insert_item(store, "invalid-both", kind, {"field_key": field})
+    with pytest.raises(ReviewValidationError, match="only for a location"):
+        store.admission_request(
+            "invalid-both", decision_kind=decision, keep_both=True,
+            reviewer="Reviewer", idempotency_key="both-2", confirmed=True)
+
+
+def test_keep_both_api_delegates_and_records_success(store, monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend import app as api
+    from unittest.mock import Mock
+
+    _insert_item(store, "api-locations", "fact_conflict", {"field_key": "location"})
+    bridge = Mock()
+    bridge.apply.return_value = {"decision_kind": "resolve_fact", "status": "applied",
+                                 "decision": "keep_both", "action": "decided"}
+    monkeypatch.setattr(api, "review_store", lambda: store)
+    monkeypatch.setattr(api, "review_admission_bridge", lambda: bridge)
+    response = TestClient(api.app).post("/api/review/candidates/api-locations/decision", json={
+        "decision_kind": "new", "keep_both": True, "reviewer": "Reviewer",
+        "idempotency_key": "both-api", "confirmed": True,
+    })
+    assert response.status_code == 200, response.text
+    decision = bridge.apply.call_args.args[0]
+    assert decision["decision_kind"] == "resolve_fact"
+    assert decision["keep_both"] is True and decision["accept"] is False
+    with store.connect() as db:
+        assert db.execute("SELECT status FROM review_candidate WHERE candidate_id=?",
+                          ("api-locations",)).fetchone()[0] == "approved"

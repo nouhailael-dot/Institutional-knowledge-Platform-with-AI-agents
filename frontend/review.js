@@ -404,6 +404,12 @@ function factChangeBlock(html, candidate) {
   </section>`;
 }
 
+export function canKeepBothLocations(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  return isFactReview(candidate)
+    && (meta.fact_change?.field_key || meta.pipeline?.field_key) === "location";
+}
+
 export function decisionOptions(entityType, candidate = null) {
   const twoWay = twoWayKind(candidate);
   if (twoWay) {
@@ -411,6 +417,7 @@ export function decisionOptions(entityType, candidate = null) {
     return [
       {value: "new", label: yes},
       {value: "reject", label: no},
+      ...(canKeepBothLocations(candidate) ? [{value: "keep_both", label: "Keep both locations"}] : []),
       {value: "defer", label: BUTTONS.park},
     ];
   }
@@ -491,6 +498,7 @@ export function canSubmitReview({
   const kind = decisionKind || decision;
   if (!candidate || candidate.status !== "pending_review" || busy || !admissionConfigured
       || !String(reviewer || "").trim() || Object.keys(draftErrors).length) return false;
+  if (kind === "keep_both") return canKeepBothLocations(candidate);
   if (twoWayKind(candidate)) return ["new", "reject", "defer"].includes(kind);
   if (kind === "same_existing" && !String(targetId || "").trim()) return false;
   if (kind === "reject") {
@@ -1215,6 +1223,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           lines.push(`  ${reviewFieldLabel(item.field)}: ${item.before ?? "—"} → ${item.after ?? "—"}`);
         }
       }
+      if (kind === "keep_both") lines.push("", "Keep the current location and add the proposed place as an additional sourced location.");
       if (isFactReview(selected)) {
         if (kind !== "defer") lines.push("", "Both values stay in the history; nothing is deleted.");
       } else if (twoWayKind(selected) === "update") {
@@ -1244,7 +1253,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       setBusy(true); setError(""); setFeedback("");
       try {
         const body = {
-          decision_kind: decisionKind,
+          decision_kind: decisionKind === "keep_both" ? "new" : decisionKind,
+          keep_both: decisionKind === "keep_both",
           reviewer: reviewer.trim(),
           idempotency_key: keys.current.get(mapKey),
           confirmed: true,

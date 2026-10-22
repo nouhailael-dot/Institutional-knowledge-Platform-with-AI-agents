@@ -1316,6 +1316,7 @@ class ReviewStore:
         reviewer: str,
         idempotency_key: str,
         target_id: str | None = None,
+        keep_both: bool = False,
         notes: str | None = None,
         edited_payload: dict[str, Any] | None = None,
         hub_ids: list[str] | None = None,
@@ -1336,6 +1337,14 @@ class ReviewStore:
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This candidate has already been decided.")
         metadata = candidate["agent_metadata"]
+        if keep_both:
+            field_key = (metadata.get("fact_change") or {}).get("field_key") or (
+                metadata.get("pipeline") or {}).get("field_key")
+            if (decision_kind != "new" or metadata.get("source_table") != "review_item"
+                    or metadata.get("review_kind") not in FACT_REVIEW_KINDS
+                    or field_key != "location"):
+                raise ReviewValidationError("Keep both is available only for a location fact review.")
+
         if str(metadata.get("source_table") or "") == "actor_update":
             # What an update wrote is already on the map, through the backend's
             # fact writer, with its sources and history. A reviewer says it
@@ -1396,7 +1405,8 @@ class ReviewStore:
             return {
                 "decision_kind": "resolve_fact",
                 "review_item_id": str(metadata.get("review_item_id") or ""),
-                "accept": decision_kind == "new",
+                "accept": decision_kind == "new" and not keep_both,
+                **({"keep_both": True} if keep_both else {}),
                 "reviewer": reviewer,
                 "notes": notes,
                 "idempotency_key": idempotency_key,

@@ -138,7 +138,7 @@ TIME_SENSITIVE = frozenset({
 })
 
 GROUPS = {
-    "new": "new", "changed": "changed", "corroborated": "confirmed",
+    "new": "new", "changed": "changed", "additional": "additional", "corroborated": "confirmed",
     "conflict": "conflicts", "protected": "conflicts", "unchanged": "no_change",
     "not_found": "missing", "not_yet_collected": "missing",
 }
@@ -146,6 +146,8 @@ GROUPS = {
 RESOLUTION = {
     "new": "Recorded as a new sourced fact.",
     "changed": "Replaces the current value; the old value stays in the history.",
+    "additional": ("Adds the new details to the recorded facts; the earlier value stays in "
+                   "the history."),
     "corroborated": "The current value is kept and this source is added as corroboration.",
     "conflict": "The current value is kept; the difference goes to Review.",
     "protected": "Set by GHUS, so never overwritten; a pending update goes to Review.",
@@ -153,7 +155,8 @@ RESOLUTION = {
     "not_found": "Recorded as not found on the actor's pages.",
     "not_yet_collected": "Not read in this update.",
 }
-WRITTEN = frozenset({"new", "changed", "corroborated", "conflict", "protected", "not_found"})
+WRITTEN = frozenset({"new", "changed", "additional", "corroborated", "conflict", "protected",
+                     "not_found"})
 
 DEFAULT_SETTINGS = {
     "max_usd_per_actor": 0.15,
@@ -163,6 +166,10 @@ DEFAULT_SETTINGS = {
     "time_sensitive_stale_after_days": 180,
     "recheck_not_found_after_days": 90,
     "check_valid_hours": 24,
+    # When its own site refuses: its parent's official site (free), then at
+    # most this many paid web searches - inside max_usd_per_actor.
+    "fallback_web_searches": 1,
+    "web_search_usd_per_request": 0.01,
 }
 
 
@@ -341,6 +348,17 @@ def plan_fields(scope: str, schema: list[str], current: dict[str, dict], *, fiel
     quick_days = int(limits["time_sensitive_stale_after_days"])
     recheck_days = int(limits["recheck_not_found_after_days"])
     asked = [f for f in (fields or ()) if f]
+    if scope == "specific" and not asked and categories:
+        # Specific changes by type of information: the boxes of the chosen
+        # types that this category's schema has - never a box outside it.
+        wanted = {f for c in categories if c in CHANGE_CATEGORIES
+                  for f in CHANGE_CATEGORIES[c]["fields"]}
+        if "_own" in categories:
+            wanted |= set(category_fields or ())
+        asked = [f for f in schema if f in wanted]
+        if not asked:
+            raise ActorUpdateError("None of the chosen types of information applies to "
+                                   "this actor's category.")
     for key in asked:
         if key not in schema:
             skipped.append({"field": key, "reason": "Not in this actor's category schema, "
@@ -463,6 +481,10 @@ def describe(plan: dict) -> str:
                                                                      else "."))
     else:
         parts.append("Nothing needs reading, so nothing will be spent.")
+    blocked = (plan.get("access") or {}).get("blocked")
+    if blocked:
+        parts.append(f"{blocked['plain']} It is not tried again before {blocked['retry_after']}, "
+                     "so this update reads other sources that name it instead.")
     if plan["depth"] == "deep" and not plan["deep"]["permitted"]:
         parts.append("Deep Pull is not permitted: " + plan["deep"]["reason"])
     cost = plan["cost"]
@@ -531,6 +553,21 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
         category_fields=CATEGORY_LIGHT_FIELDS.get(actor["actor_category"] or "", ()),
         today=today, limits=limits)
     deep = deep_eligibility(session, actor_id=actor["actor_id"], topic=topic)
+    from agents.collection.site_access import BLOCKED_SITES, BlockedSites
+
+    held = BlockedSites(BLOCKED_SITES).blocked(actor["website"])
+    searches = int(limits["fallback_web_searches"])
+    access = {
+        "blocked": ({"plain": held["plain"], "since": held["first_seen"][:10],
+                     "retry_after": held["retry_after"][:10]} if held else None),
+        "fallback": (
+            "If its own website refuses the agent, it reads its parent organisation's official "
+            "pages that name it (free)"
+            + (f", then at most {searches} web search (about "
+               f"${float(limits['web_search_usd_per_request']):.2f} plus reading)" if searches
+               else "")
+            + ": three pages at most, each naming this organisation, within the same cost cap."),
+    }
     from agents.collection import hub_reassessment
 
     plan = {
@@ -542,10 +579,10 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
         "schema": schema,
         "schema_size": len(schema),
         "cost": cost_estimate(session, limits, runs_dir=runs_dir),
-        "pages": "Up to 3 pages of the actor's own website (home, About, one topic page); "
-                 "no web search.",
+        "pages": "Up to 3 page requests in total, including unavailable pages. " + access["fallback"],
         "can_check": bool(to_read) and depth == "light",
         "hubs": hub_reassessment.assess(session, actor["actor_id"]),
+        "access": access,
     }
     if depth == "deep":
         plan["can_check"] = False
@@ -576,40 +613,6 @@ def _signature(value) -> tuple[set[str], set[str]]:
     return numbers, words
 
 
-def _same(before, after) -> bool:
-    """The same fact, possibly worded differently.
-
-    The model rephrases between reads ("Paid customers over $1.5 billion" /
-    "CPower has paid customers over $1.5 billion"), which an exact comparison
-    reported as an update. Same fact = the same numbers - an amount, a year, a
-    date - and most of the shorter wording found in the longer.
-    """
-    numbers_a, words_a = _signature(before)
-    numbers_b, words_b = _signature(after)
-    if numbers_a != numbers_b:
-        return False
-    if not words_a or not words_b:
-        return bool(numbers_a)
-    return len(words_a & words_b) / min(len(words_a), len(words_b)) >= 0.7
-
-
-def _contained(before, after) -> bool:
-    """The new reading says less, not something else.
-
-    Seen on CPower Energy, 2026-10-18: the map held "an NRG company; 4,600
-    customers and 21,000 sites", the About page now says only "an NRG
-    company". That page omits detail; it does not contradict it, and
-    superseding would replace a richer value with a poorer one. Contained =
-    every number in the new reading is in the recorded value, and nearly all
-    of its words are too (the same 70% as _same).
-    """
-    numbers_a, words_a = _signature(before)
-    numbers_b, words_b = _signature(after)
-    if not numbers_b <= numbers_a or not words_b:
-        return False
-    return len(words_a & words_b) / len(words_b) >= 0.7
-
-
 def _what_changed(outcome: str, before, after) -> str:
     if outcome == "changed" or outcome in {"conflict", "protected"}:
         numbers_a, _ = _signature(before)
@@ -622,6 +625,7 @@ def _what_changed(outcome: str, before, after) -> str:
     return {
         "new": "Nothing was recorded; the pages now state it.",
         "corroborated": "The pages state what is recorded.",
+        "additional": "The pages state what is recorded, and more.",
         "unchanged": "The pages do not state it; the recorded value stands.",
         "not_found": "The pages do not state it, and nothing was recorded.",
         "not_yet_collected": "Not read in this update.",
@@ -638,16 +642,20 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
     """
     from agents.enrichment.decisions import _confidence_rank
 
+    from agents.common.fact_parts import compare_values, parts_line
+
     had = bool(before) and before.get("collection_state") == "found"
     found = bool(evidence) and evidence.get("collection_state") == "found"
+    comparison = None
     if evidence is None:
         outcome = "unchanged" if had else "not_yet_collected"
     elif not found:
         outcome = "unchanged" if had else "not_found"
     elif not had:
         outcome = "new"
-    elif (_same(before.get("fact_value"), evidence.get("value"))
-          or _contained(before.get("fact_value"), evidence.get("value"))):
+    elif (comparison := compare_values(field, before.get("fact_value"),
+                                       evidence.get("value")))["outcome"] == "corroborated":
+        # Fact by fact: the same facts (or fewer of them) confirm the record.
         outcome = "corroborated"
     elif before.get("creator_class") == "ghus_human":
         outcome = "protected"
@@ -660,7 +668,10 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
         stronger = (_confidence_rank(evidence.get("confidence") or "medium")
                     >= _confidence_rank(before.get("confidence") or "low"))
         newer = previous_read is None or read_at > previous_read
-        outcome = "changed" if stronger and newer else "conflict"
+        if not (stronger and newer):
+            outcome = "conflict"
+        else:
+            outcome = "additional" if comparison["outcome"] == "additional" else "changed"
     previous = None
     if before:
         previous = {"value": before.get("fact_value") if had else None,
@@ -674,6 +685,13 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
         proposed = {"value": evidence.get("value"), "source_url": evidence.get("source_url"),
                     "date_read": str(evidence.get("date_read") or "")[:10],
                     "confidence": evidence.get("confidence")}
+    parts = (comparison or {}).get("parts") or []
+    write_value = (comparison or {}).get("merged") if outcome in {
+        "additional", "changed", "conflict", "protected"} else None
+    if proposed and write_value is not None:
+        # What the box would hold: the new facts, and the recorded facts this
+        # reading did not restate - never a poorer value than the record's.
+        proposed["value"] = write_value
     return {
         "field": field,
         "topic": topic_name,
@@ -681,8 +699,10 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
         "group": GROUPS[outcome],
         "previous": previous,
         "proposed": proposed,
-        "what_changed": _what_changed(outcome, previous and previous["value"],
-                                      proposed and proposed["value"]),
+        "parts": parts,
+        "what_changed": (parts_line(parts) if parts and outcome != "corroborated" else
+                         _what_changed(outcome, previous and previous["value"],
+                                       proposed and proposed["value"])),
         # An answer that failed a check is not evidence of absence either.
         "resolution": ("Nothing is written: the answer failed a check."
                        if rejected and outcome == "not_found" else RESOLUTION[outcome]),
@@ -690,6 +710,7 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
         # Kept for apply; not shown.
         "_evidence": evidence,
         "_current_value": before.get("fact_value") if had else None,
+        "_write_value": write_value,
     }
 
 
@@ -758,16 +779,25 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
                            category_type=str(actor.get("category_type") or ""),
                            topic_terms=terms, read_at=read_at, fields=plan["fields"])
     except Exception as exc:  # noqa: BLE001 - a stalled call or the cost cap; say what was spent
-        return {**plan, "ok": False, "cost_usd": round(float(meter.spent_usd), 4),
-                "error": f"{actor['name']} could not be checked: {type(exc).__name__}: {exc}"[:400]}
-    spent = round(float(meter.spent_usd), 4)
-    if not read.pages:
-        # Nothing was read - the site refused (403), did not resolve, or had no
-        # text. Reporting each box as "not found" would claim the pages were
-        # read and were silent; say what actually happened instead.
+        from agents.collection.site_access import failure_of
+
+        spent = round(float(meter.spent_usd), 4)
+        reason = ("it reached its spending limit" if "cost" in str(exc).casefold()
+                  or "budget" in str(exc).casefold()
+                  else "the AI service did not answer in time" if "timeout" in str(exc).casefold()
+                  else failure_of(exc)["plain"].rstrip(".").lower())
         return {**plan, "ok": False, "cost_usd": spent,
-                "error": f"{actor['name']}'s website could not be read, so nothing was "
-                         f"compared or written. {read.error or ''}".strip()}
+                "error": f"{actor['name']} could not be checked: {reason}. Nothing was written.",
+                "technical": type(exc).__name__}
+    spent = round(float(meter.spent_usd), 4)
+    attempts = list(getattr(read, "attempts", []) or [])
+    if not read.pages:
+        # Nothing was read - its site refused (403), did not resolve, or had no
+        # text, and no other source open to the agent names it. Reporting each
+        # box as "not found" would claim pages were read and were silent.
+        return {**plan, "ok": False, "cost_usd": spent, "attempts": attempts,
+                "error": f"Nothing could be read about {actor['name']}. "
+                         f"{read.error or ''} Nothing was compared or written.".replace("  ", " ")}
     findings = [classify(f, before.get(f), read.evidence.get(f), read.rejected.get(f),
                          read_at=read_at, topic_name=topic["name"]) for f in plan["fields"]]
     from agents.collection import related_actors
@@ -794,6 +824,7 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
         "topic_id": topic["topic_id"], "topic_code": topic["code"], "topic_name": topic["name"],
         "scope": scope, "depth": depth, "categories": plan["categories"], "focus": plan["focus"],
         "fields": plan["fields"], "pages_read": read.pages, "cost_usd": spent, "cap_usd": cap,
+        "sources": dict(getattr(read, "sources", {}) or {}), "attempts": attempts,
         "model": model, "summary": plan["summary"], "findings": findings,
         "applied_run_id": None, "written_fields": [],
         "related": related, "hubs": plan["hubs"], "proposals_written": False,
@@ -802,6 +833,9 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
     _check_path(runs_dir, check_id).write_text(json.dumps(record, default=str, indent=1),
                                                encoding="utf-8")
     return {**plan, "ok": True, "check_id": check_id, "pages_read": read.pages,
+            # Which source each page was, and what was tried when its own site
+            # was closed - shown on the page, in plain words.
+            "sources": record["sources"], "attempts": attempts,
             "findings": [public(f) for f in findings], "unread": [public(f) for f in unread],
             "counts": counts_of(findings), "cost_usd": spent, "model": model,
             "related": related, "related_error": related_error,
@@ -826,6 +860,7 @@ def _record_run(session, record: dict) -> tuple[str, str]:
             "check_id": record["check_id"], "scope": record["scope"], "depth": record["depth"],
             "categories": record["categories"], "focus": record["focus"],
             "fields": record["fields"], "pages_read": record["pages_read"],
+            "sources": record.get("sources") or {}, "attempts": record.get("attempts") or [],
             "model": record["model"], "read_at": record["read_at"],
         })
 
@@ -995,6 +1030,10 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
             # Same fact in other words: corroborate the recorded value itself,
             # so the writer adds this source instead of a near-duplicate fact.
             value = now_current["fact_value"]
+        elif finding.get("_write_value") is not None:
+            # Compared fact by fact: the new facts, with the recorded ones this
+            # reading did not restate - a reading never makes a box poorer.
+            value = finding["_write_value"]
         result = public(finding)
         savepoint = session.begin_nested()
         try:
@@ -1018,6 +1057,8 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
                          now_current.get("actor_fact_id") if now_current else None)
         if finding["outcome"] == "not_found":
             actual = "not_found"
+        elif finding["outcome"] == "additional" and actual == "changed":
+            actual = "additional"
         result.update(written=True, fact_id=fact_id, actual=actual)
         results.append(result)
     location = _fill_location(session, record, results)
@@ -1055,7 +1096,9 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
 # boxes first, stops at the request's actor cap or spend ceiling, and writes
 # through the same check -> Phase 11 writer path as a single update.
 
-SCOPE_NAMES = {"general": "General profile", "topic": "Specific topic",
+# The Discovery page offers two choices: General Update, and Specific Changes
+# (by type of information, or by a question - the "topic" scope).
+SCOPE_NAMES = {"general": "General update", "topic": "Specific changes",
                "missing": "Missing information", "outdated": "Outdated information",
                "specific": "Specific changes"}
 REQUEST_KEYS = frozenset({
@@ -1114,8 +1157,8 @@ def request_options(payload: dict, *, config: dict | None = None,
     if any(c not in CATEGORY_CHOICES for c in categories):
         raise ActorUpdateError("Unknown change category.")
     fields = [str(f) for f in payload.get("fields") or []]
-    if scope == "specific" and not fields:
-        raise ActorUpdateError("Choose at least one box to update.")
+    if scope == "specific" and not fields and not categories:
+        raise ActorUpdateError("Choose at least one box, or a type of information, to update.")
     cadence = str(payload.get("cadence") or "once")
     if cadence not in CADENCE_DAYS:
         raise ActorUpdateError(f"Unknown frequency {cadence!r}.")
@@ -1235,22 +1278,29 @@ def choose_actors(session, prepared: dict, *, config: dict | None = None,
             continue
         schema = schema_fields(actor.get("actor_category"))
         current = current_values(session, actor["actor_id"], topic["topic_id"], schema)
+        own_fields = CATEGORY_LIGHT_FIELDS.get(actor.get("actor_category") or "", ())
         try:
             fields, _ = plan_fields(
                 options["scope"], schema, current, fields=options["fields"],
-                categories=options["categories"],
-                category_fields=CATEGORY_LIGHT_FIELDS.get(actor.get("actor_category") or "", ()),
+                categories=options["categories"], category_fields=own_fields,
                 today=today, limits=limits)
-        except ActorUpdateError:
-            fields = []
+        except ActorUpdateError as exc:
+            waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
+                            "reason": str(exc)})
+            continue
         if not fields:
             waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
                             "reason": "Nothing to read: every box in scope is filled and fresh."})
             continue
+        # Gaps = boxes in scope that are empty or out of date: the order in
+        # which a capped run reaches actors, whatever the scope.
+        gaps = {f for gap_scope in ("missing", "outdated")
+                for f in plan_fields(gap_scope, schema, current, today=today, limits=limits)[0]}
         ready.append({"actor_id": actor["actor_id"], "name": actor["name"],
                       "actor_category": actor.get("actor_category"),
-                      "topic": topic["code"], "boxes": len(fields), "fields": fields})
-    ready.sort(key=lambda a: (-a["boxes"], a["name"]))
+                      "topic": topic["code"], "boxes": len(fields), "fields": fields,
+                      "gaps": len(gaps & set(fields))})
+    ready.sort(key=lambda a: (-a["gaps"], -a["boxes"], a["name"]))
     cap = int(options["max_actors_per_run"])
     for actor in ready[cap:]:
         waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
@@ -1311,7 +1361,7 @@ def plan_request(session, payload: dict, *, config: dict | None = None,
         f"{frequency}"
         + (f" from {prepared['start_date']} to {prepared['end_date']} ({runs} runs)"
            if prepared["cadence"] != "once" else f" on {prepared['start_date']}")
-        + f", each from its own website (Light refresh, up to 3 pages, no web search). "
+        + f", each with a Light refresh (up to 3 page requests including fallback sources). "
         f"{choice['matched']} actor(s) match; {n} would be read on the first run, those "
         f"with the most missing or out-of-date boxes first. Each run stops at "
         f"${ceiling:.2f}. New and changed values are written with their source; "
@@ -1441,6 +1491,11 @@ def list_requests(session) -> dict:
 
     today = datetime.now(UTC).date()
     requests = []
+    # A request on an inactive sector is a test fixture (the integration tests
+    # create inactive topics); the page says how many and does not list them.
+    inactive = set(session.execute(text(
+        "SELECT upper(code) FROM topic WHERE NOT COALESCE((to_jsonb(topic)->>'active')::boolean, true)"
+    )).scalars()) if _has_table(session, "topic") else set()
     for row in store.load_actor_update_requests(session):
         item = dict(row)
         try:
@@ -1454,8 +1509,42 @@ def list_requests(session) -> dict:
             "SELECT name FROM actor WHERE actor_id = ANY(CAST(:ids AS uuid[])) ORDER BY name"
         ), {"ids": ids})] if ids else []
         item["runs"] = store.load_request_runs(session, str(row["subscription_id"]))
+        options = row.get("update_options") or {}
+        codes = {str(c).upper() for c in [options.get("topic"), *(row.get("sector_codes") or [])]
+                 if c}
+        item["test_sector"] = bool(codes) and codes <= inactive
         requests.append(item)
-    return {"requests": requests, "ready": store.has_update_requests(session)}
+    return {"requests": requests, "ready": store.has_update_requests(session),
+            "one_time": one_time_updates(session, inactive=inactive)}
+
+
+def one_time_updates(session, *, inactive=frozenset(), limit: int = 30) -> list[dict]:
+    """The one-actor updates written from the page (Check, then Write), newest first."""
+    if not (_has_table(session, "collection_run") and _has_table(session, "collection_request")):
+        return []
+    rows = session.execute(text(
+        "SELECT r.collection_run_id::text AS run_id, r.started_at, r.status, r.spent_usd, "
+        "r.config_snapshot, a.actor_id::text AS actor_id, a.name, upper(t.code) AS topic, "
+        "t.name AS topic_name FROM collection_run r "
+        "JOIN collection_request q ON q.collection_request_id = r.collection_request_id "
+        "JOIN actor a ON a.actor_id = q.actor_id LEFT JOIN topic t ON t.topic_id = q.topic_id "
+        "WHERE r.job_name = :job ORDER BY r.started_at DESC LIMIT :limit"
+    ), {"job": JOB_NAME, "limit": limit}).mappings()
+    out = []
+    for row in rows:
+        if row["topic"] in inactive:
+            continue
+        snapshot = row["config_snapshot"] or {}
+        counts: dict[str, int] = {}
+        for outcome in (snapshot.get("outcomes") or {}).values():
+            group = GROUPS.get(str(outcome), str(outcome))
+            counts[group] = counts.get(group, 0) + 1
+        out.append({"run_id": row["run_id"], "started_at": str(row["started_at"] or "")[:19],
+                    "status": row["status"], "spent_usd": float(row["spent_usd"] or 0),
+                    "actor_id": row["actor_id"], "name": row["name"],
+                    "topic_name": row["topic_name"], "scope": snapshot.get("scope"),
+                    "counts": counts})
+    return out
 
 
 # --------------------------------------------------------------------- CLI

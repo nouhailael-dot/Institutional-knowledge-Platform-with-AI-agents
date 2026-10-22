@@ -101,6 +101,12 @@ its application status was not assumed. No database was modified.
 
 ## Backend comparison and integration plan
 
+**Follow-up completed on 22 October 2026:** see
+[GHUS_BACKEND_RECONCILIATION_REPORT.md](GHUS_BACKEND_RECONCILIATION_REPORT.md)
+for the selective runtime integration, preserved local work, final tests and
+database validation gap. The comparison and plan below describe the earlier
+Phase 12 merge handoff; its statements about pending backend work are historical.
+
 The `HEAD:ghus-backend` tree is byte-for-byte identical to the root tree at
 `62e4008`. The common ancestor of the platform and current backend tip is also
 `62e4008`. Main's import commit `d58c9d9` therefore already contains the full

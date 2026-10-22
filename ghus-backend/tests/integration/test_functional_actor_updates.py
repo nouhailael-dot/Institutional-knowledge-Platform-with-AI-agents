@@ -279,6 +279,45 @@ def test_check_predicts_and_apply_writes_exactly_the_phase11_outcomes(
         assert plan["last_update"]["status"] == "succeeded"
 
 
+def test_an_update_compares_fact_by_fact_and_never_makes_a_box_poorer(
+        session_factory, world, tmp_path):
+    """500 -> 600 employees is one change; what the page did not restate is kept."""
+    with session_factory() as session:
+        past = datetime.now(UTC) - timedelta(days=40)
+        old = _seed(session, world, "ownership_and_size",
+                    {"employees": 500, "ownership": "private", "customers": 2000},
+                    when=past, confidence="medium")
+        session.commit()
+        reader = FakeReader({"ownership_and_size": {"employees": 600}})
+        check = au.check_update(
+            session, actor_id=world["actor"], topic_code=world["code"], scope="specific",
+            fields=["ownership_and_size"], config=CONFIG, runs_dir=tmp_path,
+            reader_factory=_factory(reader))
+        finding = check["findings"][0]
+        assert finding["outcome"] == "changed"
+        assert {p["part"]: p["outcome"] for p in finding["parts"]} == {
+            "employees": "changed", "ownership": "not_restated", "customers": "not_restated"}
+        assert finding["what_changed"].startswith("Employees: 500 → 600")
+        applied = au.apply_check(session, check["check_id"], runs_dir=tmp_path, config=CONFIG)
+        assert applied["ok"], applied
+        current = session.execute(text(
+            "SELECT f.fact_value, f.supersedes_fact_id::text AS supersedes FROM "
+            "actor_fact_current_pointer p JOIN actor_fact f ON f.actor_fact_id = p.actor_fact_id "
+            "WHERE p.actor_id=CAST(:a AS uuid) AND p.topic_id=CAST(:t AS uuid) "
+            "AND p.fact_key='ownership_and_size'"),
+            {"a": world["actor"], "t": world["topic"]}).mappings().one()
+        assert current["fact_value"] == {"employees": 600, "ownership": "private",
+                                         "customers": 2000,
+                                         "carried_over": ["customers", "ownership"]}
+        assert current["supersedes"] == old           # the earlier fact is history, not gone
+        # The same facts again, in fewer words: confirmed, nothing replaced.
+        again = au.check_update(
+            session, actor_id=world["actor"], topic_code=world["code"], scope="specific",
+            fields=["ownership_and_size"], config=CONFIG, runs_dir=tmp_path,
+            reader_factory=_factory(FakeReader({"ownership_and_size": {"employees": 600}})))
+        assert again["findings"][0]["outcome"] == "corroborated"
+
+
 def test_missing_scope_skips_the_read_when_nothing_is_missing(session_factory, world, tmp_path):
     with session_factory() as session:
         now = datetime.now(UTC)
@@ -428,6 +467,55 @@ def test_review_can_keep_the_current_value(session_factory, world):
                                "review_item_id=CAST(:i AS uuid)", i=item) == "rejected"
 
 
+def test_review_can_keep_both_locations_and_only_locations(session_factory, world):
+    """Keep both adds the proposed place as an additional location; never committed here.
+
+    Rolled back at the end: the world actor is a real record of the test database,
+    and an extra location would show on it everywhere.
+    """
+    past = datetime.now(UTC) - timedelta(days=10)
+    with session_factory() as session:
+        try:
+            current = _seed(session, world, "location", {"city": "Austin", "state": "TX"},
+                            when=past, confidence="high")
+            proposed = _seed(session, world, "location",
+                             {"city": "Dallas", "state": "TX", "country": "US"},
+                             when=past - timedelta(days=5), confidence="low")
+            item = session.execute(text(
+                "SELECT review_item_id::text FROM review_item WHERE payload->>'new_fact_id' = :f"),
+                {"f": proposed}).scalar_one()
+            result = record_fact_review_decision(session, review_item_id=item,
+                                                 decided_by="Reviewer", accept=False,
+                                                 keep_both=True, live=True)
+            assert result["decision"] == "keep_both" and result["action"] == "decided"
+            assert result["added_location"]["state_code"] == "TX"
+            pointer = session.execute(text(
+                "SELECT actor_fact_id::text FROM actor_fact_current_pointer WHERE "
+                "actor_id=CAST(:a AS uuid) AND topic_id=CAST(:t AS uuid) AND fact_key='location'"),
+                {"a": world["actor"], "t": world["topic"]}).scalar_one()
+            assert pointer == current                       # the current place stays current
+            added = session.execute(text(
+                "SELECT l.city, l.is_primary FROM actor_location l JOIN actor_fact f "
+                "ON f.source_id = l.source_id WHERE f.actor_fact_id = CAST(:f AS uuid) "
+                "AND l.actor_id = CAST(:a AS uuid)"), {"f": proposed, "a": world["actor"]}).one()
+            assert (added.city, added.is_primary) == ("Dallas", False)
+            assert _count(session, "SELECT status FROM review_item WHERE "
+                                   "review_item_id=CAST(:i AS uuid)", i=item) == "approved"
+            # Every other box holds one current value: keep both is refused there.
+            _seed(session, world, "funding_signal", "$1M.", when=past, confidence="high")
+            other = _seed(session, world, "funding_signal", "$3M.",
+                          when=past - timedelta(days=5), confidence="low")
+            other_item = session.execute(text(
+                "SELECT review_item_id::text FROM review_item WHERE payload->>'new_fact_id' = :f"),
+                {"f": other}).scalar_one()
+            with pytest.raises(ValueError, match="only to locations"):
+                record_fact_review_decision(session, review_item_id=other_item,
+                                            decided_by="Reviewer", accept=False,
+                                            keep_both=True, live=True)
+        finally:
+            session.rollback()
+
+
 def test_review_refuses_to_accept_over_a_value_that_changed_since(session_factory, world):
     with session_factory() as session:
         _current, _proposed, item = _conflict(session, world)
@@ -509,9 +597,14 @@ def test_a_saved_request_is_paused_resumed_and_cancelled(session_factory, world,
         made = au.create_request(session, _payload(world, three_actors, cadence="monthly",
                                                    end_date="2027-03-01"),
                                  config=CONFIG, live=True)
-        listed = {r["subscription_id"]: r for r in au.list_requests(session)["requests"]}
+        listing = au.list_requests(session)
+        listed = {r["subscription_id"]: r for r in listing["requests"]}
         request = listed[made["subscription_id"]]
         assert request["status"] == "active" and request["cadence"] == "monthly"
+        # The world topic is inactive: the page counts this request, never lists it.
+        assert request["test_sector"] is True
+        assert isinstance(listing["one_time"], list)
+        assert all(u["topic_name"] != world["code"] for u in listing["one_time"])
         assert request["update_options"]["scope"] == "general"
         assert float(request["max_usd_per_run"]) == 1.0
         assert len(request["actor_names"]) == 3

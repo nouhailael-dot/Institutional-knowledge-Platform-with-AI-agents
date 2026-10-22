@@ -51,3 +51,11 @@ test('category confirmations coexist with the normal actor decision footer', () 
   assert.match(output, /Example Lab/);
   assert.match(output, /<footer class="review-footer"/);
 });
+
+test('keep both is offered only for location fact conflicts and pending updates', () => {
+  for (const kind of ['fact_conflict', 'pending_update']) {
+    assert.match(renderReview(kind, {field_key: 'location'}), /Keep both locations/);
+    assert.doesNotMatch(renderReview(kind, {field_key: 'funding_signal'}), /Keep both locations/);
+  }
+  assert.doesNotMatch(renderReview('category_doubt', {field_key: 'location'}), /Keep both locations/);
+});
