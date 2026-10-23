@@ -10,6 +10,9 @@ Configuration:
                                      GHUS_ADMISSION_PROJECT_ROOT)
     GHUS_DISCOVERY_PYTHON            its Python (falls back to GHUS_ADMISSION_PYTHON)
     DISCOVERY_REQUESTS_DATABASE_URL  where requests are kept
+    GHUS_AGENT_CONTACT_EMAIL         contact address the agents give websites;
+                                     reading pages refuses without it, so live
+                                     runs and checks are stopped here first
 
 Unconfigured, the page says so and nothing is read or written.
 """
@@ -31,6 +34,16 @@ _KEYS = re.compile(r"^[a-z0-9_]+(,[a-z0-9_]+)*$")
 _SECTOR = re.compile(r"^[A-Za-z0-9_-]{1,20}$")
 UPDATE_SCOPES = ("topic", "general", "missing", "outdated", "specific")
 UPDATE_DEPTHS = ("light", "deep")
+CONTACT_ENV = "GHUS_AGENT_CONTACT_EMAIL"
+
+
+def _require_contact() -> None:
+    """The backend refuses to read any page without a contact address, but only
+    after the paid search has run. Say so before anything is searched."""
+    if not os.environ.get(CONTACT_ENV, "").strip():
+        raise DiscoveryBridgeError(
+            f"Discovery needs a contact address before it reads websites: add {CONTACT_ENV}="
+            "<address> to .env and restart. Nothing was searched or charged.", rejected=True)
 
 
 def _update_arguments(actor_id: str, options: dict[str, Any]) -> list[str]:
@@ -134,6 +147,7 @@ class DiscoveryBridge:
             raise DiscoveryBridgeError("Discovery requests are not configured.")
         if not _UUID.match(subscription_id or ""):
             raise DiscoveryBridgeError("unknown request", rejected=True)
+        _require_contact()
         env = os.environ.copy()
         env["DATABASE_URL"] = str(self.database_url)
         runs = self.project_root / "agents" / "runs"
@@ -165,7 +179,9 @@ class DiscoveryBridge:
 
     def check_update(self, actor_id: str, options: dict[str, Any]) -> dict[str, Any]:
         """Read the actor's own pages once and compare every box. Nothing is written."""
-        return self._call(["check", *_update_arguments(actor_id, options)],
+        arguments = _update_arguments(actor_id, options)   # a bad value is refused first
+        _require_contact()
+        return self._call(["check", *arguments],
                           module="agents.collection.actor_updates", timeout=300)
 
     # Update requests: one actor or a bounded group, once or on a frequency.
