@@ -11,7 +11,7 @@ import json
 
 from src.map_agent.dedup import deduplicate
 from src.map_agent.client import get_client
-from src.map_agent.entity_schemas import submit_entities_tool
+from src.map_agent.entity_schemas import EVENT_FORMATS, FREQUENCIES, submit_entities_tool
 from src.map_agent.costs import paid_message
 from src.map_agent.planner import _bounded_tasks, _EMPTY_REQS, MAP_TYPES
 from src.map_agent.relationships import link_people_to_actors
@@ -69,13 +69,56 @@ person must be documented as currently at that organization. Public professional
 information only, never private details. Give contact details only if the request
 explicitly asks for them, and only official public contacts."""
 
-EVENT_GUIDANCE = """This is a map of EVENTS. Use the Architecture V2 light pull only:
-name and type, sector and topic, date and location, organizer, website, whether it
-is annual, recurring or one-time, why it matches, whether the edition found is
-upcoming, past or its date is unconfirmed, any visible UM6P/OCP involvement, and a
-short description including any notable publicly stated claim about its scale or
-standing, with its source. Keep past events; they are historical evidence. Do not
-collect speakers, sponsors, agendas or participants."""
+EVENT_GUIDANCE = """This is a map of EVENTS. Use the Architecture V2 light pull:
+name and type, sector (one of the listed sectors) and specific topic, date and
+location, format (in-person, virtual or hybrid), organizer, website, frequency, typical
+attendance with its edition and source, who usually attends, whether the edition found
+is upcoming, past or its date is unconfirmed, any visible UM6P/OCP involvement and its
+role (sponsor, speaker, partner, organizer, attendee), and a description of what the
+event covers. Put the event's substance in the description and keep "why it matches"
+to one sentence. Keep past events; they are historical evidence. Do not collect lists
+of speakers, sponsors, agendas or participants."""
+
+
+def event_sectors():
+    """The sectors an event may be filed under: the same active list Discovery uses.
+    None when the database cannot be read, and the sector then stays free text."""
+    try:
+        from src.map_agent.discovery_brief import sectors
+        return list(sectors())
+    except Exception:
+        return None
+
+
+# Common wordings for the fixed lists. "Biannual" is left out on purpose: it is
+# used for both "twice a year" and "every two years".
+_EVENT_SYNONYMS = {
+    "annually": "Annual", "yearly": "Annual", "every year": "Annual", "once": "One-time",
+    "one time": "One-time", "single": "One-time", "biennial": "Every two years",
+    "every 2 years": "Every two years", "semiannual": "Twice a year", "semi-annual": "Twice a year",
+    "twice yearly": "Twice a year", "recurring": "Irregular",
+    "in person": "In-person", "onsite": "In-person", "on-site": "In-person", "physical": "In-person",
+    "online": "Virtual", "remote": "Virtual", "livestream": "Virtual", "in-person and online": "Hybrid",
+}
+
+
+def _event_fields(event, sectors=None):
+    """Keep the fixed lists fixed. An off-list value becomes "Not found"; an
+    off-list sector is kept as the topic rather than lost."""
+    for field, allowed in (("recurring_pattern", FREQUENCIES), ("event_format", EVENT_FORMATS)):
+        value = str(event.get(field) or "").strip()
+        if value:
+            match = next((a for a in allowed if a.casefold() == value.casefold()), None)
+            match = match or (_EVENT_SYNONYMS.get(value.casefold()) if
+                              _EVENT_SYNONYMS.get(value.casefold()) in allowed else None)
+            event[field] = match or "Not found"
+    sector = str(event.get("sector") or "").strip()
+    if sectors and sector:
+        match = next((s for s in sectors if s.casefold() == sector.casefold()), None)
+        if match is None and sector.casefold() != "not found":
+            topic = str(event.get("thematic_focus") or "").strip()
+            event["thematic_focus"] = f"{topic}; {sector}" if topic and sector.casefold() not in topic.casefold() else topic or sector
+        event["sector"] = match or "Not found"
 
 
 def _date_status(event, today=None):
@@ -188,7 +231,9 @@ def extract(run, request, task, evidence, client=None, target=None):
     stage = ("People extraction" if et == "person" else
              "Organization extraction" if et == "actor" else "Event extraction")
     key = ("extract-people-v2" if target else "extract-map-people-v1" if people_map else
-           "extract-actor-fields-v3" if et == "actor" else "extract-v1")
+           "extract-actor-fields-v3" if et == "actor" else
+           "extract-event-v2" if et == "event" else "extract-v1")
+    sectors = event_sectors() if et == "event" else None
     response = paid_message(client or get_client(), run, stage,
         operation_key=operation_key(key, payload),
         model=EXTRACTION_MODEL, max_tokens=8192 if target else 16000,
@@ -199,7 +244,7 @@ def extract(run, request, task, evidence, client=None, target=None):
                         "Prioritize completing the structured response over returning more people." if target else "")
                + ("\n" + PEOPLE_MAP_GUIDANCE if people_map else "")
                + ("\n" + EVENT_GUIDANCE if et == "event" else ""),
-        tools=[submit_entities_tool("map_person" if people_map else et)],
+        tools=[submit_entities_tool("map_person" if people_map else et, sectors)],
         tool_choice={"type": "tool", "name": "submit_entities"},
         messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
     available = {canonical_url(e["url"]): e for e in evidence}
@@ -238,6 +283,7 @@ def extract(run, request, task, evidence, client=None, target=None):
                     entity.pop("profile_url")
             if et == "event":
                 _date_status(entity)
+                _event_fields(entity, sectors)
             if et == "person" and target:
                 if not affiliation_matches(entity.get("organization_name", ""), target["name"]):
                     rejected += 1

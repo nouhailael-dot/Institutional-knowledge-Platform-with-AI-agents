@@ -60,8 +60,9 @@ FIELDS = {
     "event": [
         ("name", "Name"), ("_review", "Review"), ("event_type", "Type"), ("description", "Description"),
         ("sector", "Sector"), ("thematic_focus", "Topic"),
-        ("next_date", "Date"), ("date_status", "Date status"), ("location", "Location"),
-        ("organizer", "Organizer"), ("recurring_pattern", "Recurs"),
+        ("next_date", "Date"), ("date_status", "Date status"), ("event_format", "Format"),
+        ("location", "Location"), ("organizer", "Organizer"), ("recurring_pattern", "Frequency"),
+        ("expected_attendance", "Scale"), ("audience", "Audience"),
         ("match_explanation", "Why it matched"), ("um6p_ocp_status", "UM6P/OCP involvement"),
         ("um6p_ocp_detail", "UM6P/OCP details"), ("website", "Website"),
     ],

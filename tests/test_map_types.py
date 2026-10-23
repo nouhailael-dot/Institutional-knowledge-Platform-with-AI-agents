@@ -163,7 +163,9 @@ class SchemaTests(unittest.TestCase):
         props = submit_entities_tool("event")["input_schema"]["properties"]["entities"]["items"]["properties"]
         for field in ("sector", "organizer", "date_status", "match_explanation", "um6p_ocp_status"):
             self.assertIn(field, props)
-        for dropped in ("sponsoring_orgs", "expected_attendance", "access_type"):
+        # Scale was added back on GHUS's request (20 Oct 2026); lists of sponsors and
+        # registration terms stay out of the light pull.
+        for dropped in ("sponsoring_orgs", "access_type"):
             self.assertNotIn(dropped, props)
 
 
