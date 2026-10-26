@@ -5,9 +5,10 @@ with visible results. Replaying after a safe interruption uses saved responses,
 never repeats a completed paid operation. Unknown charges prohibit resumption.
 """
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import urlsplit
 import json
+import re
 
 from src.map_agent.dedup import deduplicate
 from src.map_agent.client import get_client
@@ -119,6 +120,140 @@ def _event_fields(event, sectors=None):
             topic = str(event.get("thematic_focus") or "").strip()
             event["thematic_focus"] = f"{topic}; {sector}" if topic and sector.casefold() not in topic.casefold() else topic or sector
         event["sector"] = match or "Not found"
+
+
+# --- Event editions and time window (asked for on 20 Oct 2026) -----------------
+EDITION_CHECKS = 5        # targeted "newest edition" searches per map, at most
+WINDOW_DAYS = 365         # with no period in the request, older past editions are left out
+_PERIOD = re.compile(r"\b(19|20)\d{2}\b|\b(day|week|month|quarter|year|upcoming|past|"
+                     r"previous|recent|soon|next|last|since|until|before|after|"
+                     r"january|february|march|april|may|june|july|august|september|"
+                     r"october|november|december|spring|summer|fall|autumn|winter)s?\b", re.I)
+
+
+def _event_date(event):
+    try:
+        return date.fromisoformat(str(event.get("next_date") or "")[:10])
+    except ValueError:
+        return None
+
+
+def _needs_edition_check(event):
+    """A past edition of an event that recurs may have a newer one we missed."""
+    return (event.get("_entity_type") == "event" and event.get("date_status") == "past"
+            and event.get("recurring_pattern") != "One-time" and not event.get("_edition_checked"))
+
+
+def _event_core(name):
+    """The event's name without years, edition numbers or punctuation."""
+    text = re.sub(r"\b(19|20)\d{2}\b|\b\d+(st|nd|rd|th)\b|\b(annual|edition|inaugural)\b",
+                  " ", str(name or "").casefold())
+    return set(re.findall(r"[a-z0-9]+", text))
+
+
+def _same_event(a, b):
+    left, right = _event_core(a), _event_core(b)
+    if not (left and right):
+        return False
+    shorter, longer = sorted((left, right), key=len)
+    # "TechConnect World" is the same event as "TechConnect World Innovation Conference".
+    return len(left & right) / len(left | right) >= 0.6 or (len(shorter) >= 2 and shorter <= longer)
+
+
+def _newer_edition(event, rows):
+    """The extracted row that is the same event with a later date, if any."""
+    known = _event_date(event)
+    best = None
+    for row in rows:
+        when = _event_date(row)
+        if (_same_event(event.get("name"), row.get("name")) and when
+                and (known is None or when > known) and (best is None or when > _event_date(best))):
+            best = row
+    return best
+
+
+def _adopt_edition(event, newer):
+    """Move the card to the newer edition; the previous date stays as a note."""
+    previous = event.get("next_date") or "date not recorded"
+    for field in ("name", "next_date", "date_status", "location", "website", "event_format",
+                  "expected_attendance", "description", "organizer"):
+        if newer.get(field):
+            event[field] = newer[field]
+    sources = {s.get("url"): s for s in (event.get("sources") or []) + (newer.get("sources") or [])}
+    event["sources"] = list(sources.values())
+    event["previous_edition"] = previous
+
+
+def check_event_editions(state, run, sources, client=None):
+    """One targeted search per past, recurring event (at most EDITION_CHECKS per
+    map), so a 2025 edition is not shown when the 2026 one exists. Resumable."""
+    if state.get("edition_queue") is None:
+        state["edition_queue"] = [entity_key(e) for e in state["found"] if _needs_edition_check(e)][:EDITION_CHECKS]
+        state["edition_index"] = 0
+    year = date.today().year
+    request = state.get("round_description") or state["description"]
+    while state["edition_index"] < len(state["edition_queue"]):
+        run.check()
+        key = state["edition_queue"][state["edition_index"]]
+        event = next((e for e in state["found"] if entity_key(e) == key), None)
+        if event is not None:
+            core = re.sub(r"\b(19|20)\d{2}\b|\b\d+(st|nd|rd|th)\b|\b(annual|edition|inaugural)\b|[()]",
+                          " ", str(event.get("name") or ""), flags=re.I)
+            query = f'"{" ".join(core.split())}" {year} {year + 1}'
+            evidence = _collect(sources, query, state["gaps"], max_pages=2)
+            rows, _ = extract(run, request, {"entity_type": "event", "query": query,
+                                             "focus": f"Only the newest edition of {event.get('name')}."},
+                              evidence, client=client)
+            newer = _newer_edition(event, rows)
+            if newer:
+                _adopt_edition(event, newer)
+            else:
+                state["gaps"].append(f"No newer edition found for {event.get('name')} in a targeted search.")
+            event["_edition_checked"] = True
+        state["edition_index"] += 1
+        yield
+
+
+def names_a_period(request_text, requirements):
+    """Whether the user said anything about when (a year, month, "upcoming", ...)."""
+    filters = " ".join(str(f) for f in (requirements or {}).get("hard_filters") or [])
+    return bool(_PERIOD.search(f"{request_text or ''} {filters}"))
+
+
+def window_split(entities, request_text, requirements, today=None):
+    """With no period named, keep upcoming editions and past ones from the last
+    WINDOW_DAYS; older past editions are left out with the reason (still shown)."""
+    if names_a_period(request_text, requirements):
+        return entities, []
+    cutoff = (today or date.today()) - timedelta(days=WINDOW_DAYS)
+    keep, old = [], []
+    for e in entities:
+        when = _event_date(e)
+        if e.get("_entity_type") == "event" and e.get("date_status") == "past" and when and when < cutoff:
+            e["_selected"], e["_why_not"] = False, "Last edition more than 12 months ago."
+            e.pop("_rank", None)
+            old.append(e)
+        else:
+            keep.append(e)
+    return keep, old
+
+
+def sort_events(found):
+    """Matching events: upcoming (soonest first), date unconfirmed, then past
+    (most recent first). Ranks are renumbered; everything else keeps its order."""
+    events = [e for e in found if e.get("_entity_type") == "event" and e.get("_selected")]
+    if not events:
+        return found
+    group = {"upcoming": 0, "date unconfirmed": 1, "past": 2}
+    def order(e):
+        when = _event_date(e)
+        stamp = when.toordinal() if when else 0
+        return (group.get(e.get("date_status"), 1), stamp if e.get("date_status") == "upcoming" else -stamp)
+    events.sort(key=order)
+    for rank, e in enumerate(events, 1):
+        e["_rank"] = rank
+    chosen = {id(e) for e in events}
+    return events + [e for e in found if id(e) not in chosen]
 
 
 def _date_status(event, today=None):
@@ -363,7 +498,9 @@ def _visible(state):
     pending = []
     if state["phase"] == "organizations":
         pending.append(f"{len(state['tasks'])-state['task_index']} topic searches/extractions remain.")
-    if state["phase"] in ("organizations", "selection"):
+    if state["phase"] == "editions":
+        pending.append("Checking past events for a newer edition.")
+    if state["phase"] in ("organizations", "editions", "selection"):
         pending.append("Candidate selection is unfinished.")
     elif state["phase"] == "people":
         pending.append("Finalizing institutional results.")
@@ -450,6 +587,12 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state["task_index"] += 1
         save()  # Includes late evidence if the user stopped during extraction.
     if state["phase"] == "organizations":
+        state["phase"] = "editions" if state.get("map_type") == "events" else "selection"
+        state["edition_queue"] = None
+        save()
+    if state["phase"] == "editions":
+        for _ in check_event_editions(state, run, sources, client):
+            save()
         state["phase"] = "selection"
         save()
     if state["phase"] == "selection":
@@ -458,8 +601,11 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         if judged:
             earlier = [e for e in state["found"] if _judged_key(e) in judged]
             newcomers = [e for e in state["found"] if _judged_key(e) not in judged]
+            newcomers, too_old = window_split(newcomers, state["round_description"],
+                                              state["round_requirements"])
             selection = apply_request(newcomers, state["round_description"],
                                       state["round_requirements"], run=run)
+            selection["rest"] = selection["rest"] + too_old
             # New matches rank after the earlier ones rather than interleaving.
             offset = max((e.get("_rank") or 0 for e in earlier), default=0)
             for e in selection["selected"]:
@@ -470,10 +616,14 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                 state["found"], selection, len(newcomers), state.get("selection_outcome"),
                 state.get("map_type", "organizations"))
         else:
-            selection = apply_request(state["found"], state["description"], state["requirements"], run=run)
-            state["found"] = selection["selected"] + selection["rest"]
-            state["selection_note"] = selection["note"]
+            candidates, too_old = window_split(state["found"], state["description"], state["requirements"])
+            selection = apply_request(candidates, state["description"], state["requirements"], run=run)
+            state["found"] = selection["selected"] + selection["rest"] + too_old
+            state["selection_note"] = (selection["note"] + (
+                f" {len(too_old)} older event(s), last held more than 12 months ago, are shown "
+                "as left out." if too_old else "")).strip()
             state["selection_outcome"] = selection["outcome"]
+        state["found"] = sort_events(state["found"])
         state["phase"] = "rankings"
         save()
     if state["phase"] == "rankings":
