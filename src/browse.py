@@ -181,7 +181,8 @@ def hub_columns() -> list[str]:
 
 def load_events() -> list[dict]:
     sql = """
-        SELECT event_id, name, event_type, location, next_date
+        SELECT event_id, name, event_type, location, next_date, website,
+               recurring_pattern, description, record_status
         FROM event ORDER BY name
     """
     out = []
@@ -196,6 +197,10 @@ def load_events() -> list[dict]:
                 "event_type": r["event_type"],
                 "location": r["location"],
                 "next_date": r["next_date"],
+                "website": r["website"],
+                "recurring_pattern": r["recurring_pattern"],
+                "description": r["description"],
+                "status": r["record_status"],
             })
     return out
 
