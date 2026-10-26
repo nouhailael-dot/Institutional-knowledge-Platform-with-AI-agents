@@ -35,7 +35,7 @@ SANS   = "Calibri"                    # body / labels
 # the column order in the sheet and the field order on a slide.
 FIELDS = {
     "actor": [
-        ("name", "Name"), ("_review", "Review"), ("actor_type", "Category"), ("category_type", "Category type"),
+        ("name", "Name"), ("_review", "Review"), ("_found_by", "Found by"), ("actor_type", "Category"), ("category_type", "Category type"),
         ("description", "Description"),
         ("location_city", "City"), ("state", "State"),
         ("primary_technical_focus", "Focus"), ("technical_approach", "Approach"),
@@ -49,7 +49,7 @@ FIELDS = {
         ("actor_relationships", "Organization relationships"), ("category_details", "Category-specific information"),
     ],
     "person": [
-        ("full_name", "Name"), ("_review", "Review"), ("title", "Title"), ("organization_name", "Organization"),
+        ("full_name", "Name"), ("_review", "Review"), ("_found_by", "Found by"), ("title", "Title"), ("organization_name", "Organization"),
         ("organization_location", "Organization location"), ("affiliation_note", "Affiliation"),
         ("organizations", "Organizations"),
         ("expertise", "Expertise"), ("work_evidence", "Relevant work"),
@@ -58,7 +58,7 @@ FIELDS = {
         ("email", "Email"), ("linkedin_url", "LinkedIn"),
     ],
     "event": [
-        ("name", "Name"), ("_review", "Review"), ("event_type", "Type"), ("description", "Description"),
+        ("name", "Name"), ("_review", "Review"), ("_found_by", "Found by"), ("event_type", "Type"), ("description", "Description"),
         ("sector", "Sector"), ("thematic_focus", "Topic"),
         ("next_date", "Date"), ("date_status", "Date status"), ("location", "Location"),
         ("organizer", "Organizer"), ("recurring_pattern", "Recurs"),

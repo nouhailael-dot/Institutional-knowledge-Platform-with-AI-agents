@@ -8,6 +8,8 @@ from copy import deepcopy
 from datetime import date
 from urllib.parse import urlsplit
 import json
+import re
+import unicodedata
 
 from src.map_agent.dedup import deduplicate
 from src.map_agent.client import get_client
@@ -121,6 +123,79 @@ def _profile_ok(url, name):
         return False
     surname = (name.split() or [""])[-1].strip(".,").casefold()
     return any(hint in url for hint in _PROFILE_HINTS) or (len(surname) >= 3 and surname in url)
+
+
+# --- People: profile at their organization, then LinkedIn (asked for on 20 Oct 2026)
+PROFILE_CHECKS = 8        # targeted profile searches per people map, at most
+_ORG_STOP = {"university", "universities", "institute", "institution", "department", "dept",
+             "school", "college", "center", "centre", "research", "laboratory", "laboratories",
+             "national", "division", "program", "programme", "faculty", "science", "sciences",
+             "state", "the", "and", "for", "with", "office", "group", "company", "inc"}
+
+
+def _plain(text):
+    folded = unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode()
+    return folded.casefold()
+
+
+def _name_words(name):
+    """Given name and surname words; initials and titles cannot identify anyone."""
+    return [w for w in re.findall(r"[a-z]+", _plain(name)) if len(w) >= 2 and w not in ("dr", "prof", "phd")]
+
+
+def _org_words(org):
+    return [w for w in re.findall(r"[a-z0-9]+", _plain(org)) if len(w) >= 3 and w not in _ORG_STOP]
+
+
+def same_person(hit, name, org):
+    """A search result is about this person only if it shows their full name AND a
+    distinctive word of their organization - never the name alone."""
+    hay = _plain(" ".join(str(hit.get(k) or "") for k in ("title", "text", "url")))
+    names, orgs = _name_words(name), _org_words(org)
+    return len(names) >= 2 and all(re.search(rf"\b{w}\b", hay) for w in names) and \
+        bool(orgs) and any(w in hay for w in orgs)
+
+
+def profile_links(hits, name, org):
+    """(profile, linkedin) from search results: a profile-style page at their
+    organization, and a LinkedIn /in/ page, each passing same_person."""
+    profile = linkedin = None
+    for hit in hits:
+        url = str(hit.get("url") or "")
+        if not url or not same_person(hit, name, org):
+            continue
+        if "linkedin.com/in/" in url.casefold():
+            linkedin = linkedin or url
+        elif profile is None and _profile_ok(url, name):
+            profile = url
+    return profile, linkedin
+
+
+def find_people_profiles(state, sources):
+    """One search per kept person on a people map (at most PROFILE_CHECKS), filling
+    Profile and LinkedIn only when the result is the same person. Resumable."""
+    if state.get("profile_queue") is None:
+        people = [e for e in state["found"] if e.get("_entity_type") == "person"
+                  and e.get("_selected", True) and not e.get("_profile_checked")]
+        people.sort(key=lambda e: e.get("_rank") or 1e6)
+        state["profile_queue"] = [entity_key(e) for e in people][:PROFILE_CHECKS]
+        state["profile_index"] = 0
+    while state["profile_index"] < len(state["profile_queue"]):
+        key = state["profile_queue"][state["profile_index"]]
+        person = next((e for e in state["found"] if entity_key(e) == key), None)
+        if person is not None:
+            name, org = person.get("full_name") or "", person.get("organization_name") or ""
+            hits = sources.search(f'"{name}" {org}'.strip())
+            profile, linkedin = profile_links(hits, name, org)
+            if profile:
+                person["profile_url"] = profile
+            if linkedin:
+                person["linkedin_url"] = linkedin
+            if not (profile or linkedin):
+                state["gaps"].append(f"No profile page or LinkedIn confirmed for {name} ({org}).")
+            person["_profile_checked"] = True
+        state["profile_index"] += 1
+        yield
 
 
 AFFILIATION_MAX_AGE = 3   # years; older evidence no longer shows where someone works now
@@ -304,7 +379,12 @@ def _follow_up_summary(found, selection, new_count, prior_outcome, map_type="org
 
 def _visible(state):
     grouped = {"actor": [], "person": [], "event": []}
+    rounds = state.get("rounds") or [state["description"]]
     for entity in link_people_to_actors(deduplicate(deepcopy(state["found"]))):
+        number = entity.get("_round") or 1
+        if len(rounds) > 1:     # only a map with follow-ups needs to say which list
+            entity["_found_by"] = ("Original request" if number == 1 else
+                                   f"Follow-up {number - 1}: {rounds[number - 1] if number <= len(rounds) else ''}".strip())
         grouped[entity["_entity_type"]].append(entity)
     map_type = state.get("map_type", "organizations")
     # On an organization map a person counts through their organization; on a
@@ -319,6 +399,8 @@ def _visible(state):
         pending.append(f"{len(state['tasks'])-state['task_index']} topic searches/extractions remain.")
     if state["phase"] in ("organizations", "selection"):
         pending.append("Candidate selection is unfinished.")
+    elif state["phase"] == "profiles":
+        pending.append("Looking for each person's profile page and LinkedIn.")
     elif state["phase"] == "people":
         pending.append("Finalizing institutional results.")
     elif state["phase"] == "rankings":
@@ -328,7 +410,7 @@ def _visible(state):
     if map_type == "organizations":
         coverage += (" Selected whole universities also receive official-site ranking lookups within the map allowance. "
                      "Deeper people research starts only when requested on an organization card.")
-    return {"map_type": map_type, "tasks": state["tasks"], "requirements": state["requirements"],
+    return {"map_type": map_type, "rounds": rounds, "tasks": state["tasks"], "requirements": state["requirements"],
             "entities": grouped, "counts": {k: len(v) for k, v in grouped.items()},
             "partial": state["phase"] != "done", "coverage_gaps": gaps + pending,
             "selection_note": state.get("selection_note", "Selection has not completed."),
@@ -355,6 +437,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state = {"version": 1, "map_type": map_type, "description": description, "tasks": tasks,
                  "requirements": {**_EMPTY_REQS, **(plan.get("requirements") or {})},
                  "phase": "organizations", "task_index": 0, "found": [], "gaps": [],
+                 "rounds": [description],
                  "people_targets": [], "people_index": 0}
         if len(plan["tasks"]) > len(tasks):
             state["gaps"].append("Duplicate or excess planned queries were omitted from this focused pass.")
@@ -376,6 +459,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                                            if t["entity_type"] == kind]
         state["judged"] = [_judged_key(e) for e in state["found"]]
         state["round_description"] = description or state["description"]
+        state["rounds"] = (state.get("rounds") or [state["description"]]) + [state["round_description"]]
         state["round_requirements"] = {**_EMPTY_REQS, **(plan.get("requirements") or {})}
         state["phase"] = "organizations"
         state["ranking_index"] = 0
@@ -396,6 +480,8 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                             evidence, client=client)
         rejected = set(state.get("rejected") or [])
         rows = [r for r in rows if entity_key(r) not in rejected]
+        for r in rows:
+            r["_round"] = len(state.get("rounds") or [None])
         state["found"] = deduplicate(state["found"] + rows)
         if gap:
             state["gaps"].append(task["query"] + ": " + gap)
@@ -428,6 +514,13 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
             state["found"] = selection["selected"] + selection["rest"]
             state["selection_note"] = selection["note"]
             state["selection_outcome"] = selection["outcome"]
+        state["phase"] = "profiles" if state.get("map_type") == "people" else "rankings"
+        state["profile_queue"] = None
+        save()
+    if state["phase"] == "profiles":
+        for _ in find_people_profiles(state, sources):
+            run.check()
+            save()
         state["phase"] = "rankings"
         save()
     if state["phase"] == "rankings":
