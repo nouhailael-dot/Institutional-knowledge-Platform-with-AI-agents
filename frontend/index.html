@@ -928,9 +928,9 @@ function People(){
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
   if(sel) return html`<${PersonDetail} p=${sel} onBack=${()=>setSel(null)}/>`;
-  if(data.people.length===0) return html`<div class="fade"><div class="empty">
-    No people in the database yet. People found in Build the Map appear here once
-    they are verified into the database.</div></div>`;
+  // The filters always show, so the page reads the same before the first person
+  // reaches the database; only the results area says there is nothing yet.
+  const empty=data.people.length===0;
   const needle=q.trim().toLowerCase();
   const matches=data.people.filter(p=>
     (!org||p.organizations.includes(org)) && (!state||p.states.includes(state)) &&
@@ -945,8 +945,10 @@ function People(){
       <div><label>Name or expertise</label>
         <input class="field" placeholder="phosphogypsum, Smith…" value=${q} onInput=${e=>setQ(e.target.value)}/></div>
     </div></div>
-    <div class="count"><b>${matches.length}</b> ${matches.length===1?"person matches":"people match"}</div>
-    ${matches.length===0? html`<div class="empty">No people match these filters.</div>` : html`
+    ${empty? html`<div class="empty">No people in the database yet. People found in Build the Map
+      appear here once they are verified into the database.</div>` : html`
+    <div class="count"><b>${matches.length}</b> ${matches.length===1?"person matches":"people match"}</div>`}
+    ${empty? null : matches.length===0? html`<div class="empty">No people match these filters.</div>` : html`
     <div class="card" style=${{overflow:"hidden"}}>
       <table class="grid"><thead><tr><th>Name</th><th>Title</th><th>Organization</th><th>State</th><th>Topics</th></tr></thead>
       <tbody>${matches.map(p=>html`<tr key=${p.id} onClick=${()=>setSel(p)}>
