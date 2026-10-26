@@ -1298,7 +1298,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       setForm(handoffForm(handoff, today));
       setView("new"); setShowDetails(true); setTouched(false); setPreview(null);
       if (status.configured) setMessage({kind: "running", text: "Proposed from your map. Check the "
-        + "sector, area and sub-topics, then preview the searches before creating the request."});
+        + "sector, area and sub-topics, then preview the searches before creating the request. "
+        + "Discovery doesn't know the map's results, so its first run may send some of the same "
+        + "organizations to Review again."});
       onHandoffUsed();
     }, [handoff]);
 
