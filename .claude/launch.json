@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "ghus-review",
-      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/GHUS-Shared/.venv/Scripts/python.exe",
       "runtimeArgs": [
         "-m",
         "uvicorn",
@@ -15,7 +15,7 @@
     },
     {
       "name": "ghus-review-demo",
-      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/GHUS-Shared/.venv/Scripts/python.exe",
       "runtimeArgs": [
         "-m",
         "scripts.run_demo_server",
@@ -26,7 +26,7 @@
     },
     {
       "name": "ghus-hub-demo",
-      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/GHUS-Shared/.venv/Scripts/python.exe",
       "runtimeArgs": [
         "-m",
         "scripts.run_demo_server",
@@ -39,7 +39,7 @@
     },
     {
       "name": "ghus-actor-updates-test",
-      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/GHUS-Shared/.venv/Scripts/python.exe",
       "runtimeArgs": [
         "-m",
         "scripts.run_demo_server",
@@ -52,7 +52,7 @@
     },
     {
       "name": "ghus-datafeed-test",
-      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/GHUS-Shared/.venv/Scripts/python.exe",
       "runtimeArgs": [
         "-m",
         "scripts.run_demo_server",

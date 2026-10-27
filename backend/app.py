@@ -37,7 +37,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src import browse
-from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
 from src.generate import ask_handoff, condense_question, stream_answer
@@ -376,7 +375,9 @@ def ask_to_map_handoff(payload: HandoffRequest):
 # Approximate (hub-level), but it's the only sector signal the data supports.
 @lru_cache(maxsize=1)
 def _sector_code_to_name() -> dict:
-    with get_readonly_connection() as conn, conn.cursor() as cur:
+    # Browse's own connection: an instance with BROWSE_DATABASE_URL (the demo)
+    # names its sectors from that database, never from DATABASE_URL in .env.
+    with browse._readonly() as conn, conn.cursor() as cur:
         cur.execute("SELECT code, name FROM sector")
         return {code: name for code, name in cur.fetchall()}
 

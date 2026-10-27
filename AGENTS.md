@@ -2,21 +2,36 @@
 
 ## Repository boundaries
 
-- Frontend: `C:\Users\Ismail\Projects\Institutional-knowledge-Platform`.
-  Architecture V2 phases 15-16 live here, together with the platform UI,
-  FastAPI routes, review/curation, browsing, Ask, retrieval/RAG, and source
-  labels. Older references to Streamlit mean this platform unless explicitly
-  stated otherwise.
-- Backend: `C:\Users\Ismail\Projects\GHUS-Platform`. Architecture V2 phases
-  2-14, agents, schema proposals, and scripts live there.
+- One repository: `C:\Users\Ismail\Projects\GHUS-Shared`, a clone of
+  `https://github.com/nouhailael-dot/Institutional-knowledge-Platform-with-AI-agents`.
+  All Claude Code and Codex development happens here (or in a worktree of it),
+  on a feature branch created from the latest `origin/main`. Never commit to
+  `main` directly; changes reach it through a reviewed Pull Request.
+  - Repository root: the platform. Architecture V2 phases 15-16, the platform
+    UI, FastAPI routes, review/curation, browsing, Ask, retrieval/RAG, Data Feed
+    and source labels. Older references to Streamlit mean this platform unless
+    explicitly stated otherwise.
+  - `ghus-backend/`: the backend. Architecture V2 phases 2-14, agents,
+    migrations, schema proposals and scripts. It is part of this repository,
+    never a separate repository or a second copy; the platform reaches it
+    through the bridges in `src/` (see `scripts/run_demo_server.py`).
+- Retired folders, kept only as read-only archives: never edit, run, commit or
+  migrate from them. `C:\Users\Ismail\Projects\GHUS-Platform`,
+  `C:\Users\Ismail\Projects\Institutional-knowledge-Platform` (and its
+  `.claude\worktrees`), `C:\Users\Ismail\Projects\GHUS-Complete-Integration`
+  and `C:\Users\Ismail\Projects\Institutional-knowledge-Platform-with-AI-agents`.
+  Their unmerged work of 27 Oct 2026 is preserved on `backup/wip-2026-10-27-*`
+  branches in those folders.
 - Old draft: `C:\Users\Ismail\Documents\GHUS\GHUS-Platform-v2`. It is
   read-only reference material. Never edit, commit, or run migrations there.
-- Isolated test database: local PostgreSQL `ghus_v2_test` at
-  `127.0.0.1:55432`; its data directory stays outside all repositories.
+- Isolated test database: local PostgreSQL `ghus_v2_test` (and other
+  `ghus_v2_*_test` databases) at `127.0.0.1:55432`; its data directory stays
+  outside all repositories.
 - Shared Supabase database: read-only. Never execute DDL or writes there.
 
-At the start of every session, print and verify both Projects repository paths
-before touching files. Stop if either path differs.
+At the start of every session, print the working directory and branch, and
+`git fetch origin`. Stop if the directory is one of the retired folders, or if
+the branch was not created from the current `origin/main`.
 
 ## Architecture V2 standing rules
 
@@ -39,8 +54,8 @@ before touching files. Stop if either path differs.
    `hub_overlap`.
 7. Never invent data. Missing evidence is represented as `not_found`.
 8. Work one Architecture V2 phase at a time. End each phase with tests for
-   both repositories, a phase report, and a stop for approval. Do not begin the
-   next phase without explicit approval.
+   the platform and for `ghus-backend/`, a phase report, and a stop for
+   approval. Do not begin the next phase without explicit approval.
 9. A backend schema change that affects frontend reads must ship in the same
    phase as its frontend compatibility change or a compatibility alias.
 10. Commit at the end of every requested step so no work remains uncommitted
