@@ -144,7 +144,8 @@ def build_xlsx(record_type: str, vocab: dict[str, Any]) -> bytes:
         ("How to fill it", Font(bold=True)),
         (f"1. Enter one record per row on the '{data.title}' sheet, starting on row 2.", None),
         ("2. Columns marked * are required. Use the dropdowns where they are offered.", None),
-        ("3. Dates are YYYY-MM-DD. Separate several values in one cell with ';'.", None),
+        ("3. Dates are MM/DD/YYYY (for example 04/02/2027). Separate several values in one "
+         "cell with ';'.", None),
         ("4. Do not rename, reorder or delete the column headers.", None),
         ("5. Type values only: formulas, macros and links to other files are not accepted.",
          None),
@@ -218,7 +219,7 @@ def build_xlsx(record_type: str, vocab: dict[str, Any]) -> bytes:
             category_letter = letter
         target = f"{letter}2:{letter}{DATA_ROWS + 1}"
         if field.kind == "date":
-            data.column_dimensions[letter].number_format = "yyyy-mm-dd"
+            data.column_dimensions[letter].number_format = "mm/dd/yyyy"
         if field.vocab == "category_types" and category_letter:
             rule = DataValidation(type="list", formula1=_type_formula(f"${category_letter}2"),
                                   allow_blank=True)

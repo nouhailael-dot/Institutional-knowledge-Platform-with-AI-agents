@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {usDate, usDateTime} from "./dates.js?v=20261027a";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261027b";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.parked,
@@ -801,7 +801,7 @@ function collectedBlock(html, candidate) {
       ${box.quote && html`<small>“${box.quote}”</small>`}
       ${(box.source || box.dateRead) && html`<small>${box.source
         ? html`<a href=${box.source} target="_blank" rel="noreferrer">Source</a>` : ""}${box.dateRead
-        ? ` · read ${box.dateRead}` : ""}</small>`}
+        ? ` · read ${shortDate(box.dateRead)}` : ""}</small>`}
     </div>`)}</div>
   </section>`;
 }
@@ -826,7 +826,7 @@ function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewe
               <p>${value ? value.value : MISSING.notFound}</p>
               ${value && html`<small>${value.source
                 ? html`<a href=${value.source} target="_blank" rel="noreferrer">Source</a>` : MISSING.notFound}
-                ${value.date && ` · read ${value.date}`}${value.confidence && ` · ${value.confidence}`}
+                ${value.date && ` · read ${shortDate(value.date)}`}${value.confidence && ` · ${value.confidence}`}
                 · set by ${value.setBy}</small>`}
             </div>`)}
         </div>`
@@ -928,6 +928,10 @@ export function validateReviewDraft(candidate, draft) {
     if (rules?.max_length && String(payload[field] ?? "").length > rules.max_length) {
       errors[field] = `Maximum ${rules.max_length} characters.`;
     }
+  });
+  DATE_FIELDS.forEach(field => {
+    const value = String(payload[field] ?? "").trim();
+    if (value && !isoFromUs(value)) errors[field] = "Use MM/DD/YYYY.";
   });
   if (candidate?.entity_type === "actor") {
     const category = String(payload.actor_category ?? "").trim();
@@ -1122,7 +1126,8 @@ function fieldLabel(key) {
  */
 export function formatFactValue(value) {
   if (value === null || value === undefined) return "No value recorded";
-  if (typeof value === "string") return value;
+  // A value that is a date (an event's next date) reads MM/DD/YYYY; other text as written.
+  if (typeof value === "string") return usDate(value);
   if (typeof value !== "object") return String(value);
   if (Array.isArray(value)) {
     const items = value.map(item => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
@@ -1565,7 +1570,19 @@ export function whyMatchedFact(candidate) {
 
 const LONG_FIELDS = /description|activities|approach|summary|constraints|focus|research|category_note|thematic/;
 
+// Fields holding a calendar day: shown and typed as MM/DD/YYYY, kept as ISO.
+const DATE_FIELDS = new Set(["next_date"]);
+
 function textField(html, candidate, field, value, onChange, disabled, error) {
+  if (DATE_FIELDS.has(field)) {
+    return html`<label class=${"review-field " + (error ? "invalid" : "")}>
+    <span>${reviewFieldLabel(field)}</span>
+    <input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" maxLength="10"
+      value=${usDate(value ?? "")} disabled=${disabled}
+      onInput=${event => onChange(field, isoFromUs(event.target.value) || event.target.value)}/>
+    ${error && html`<small class="field-error">${error}</small>`}
+  </label>`;
+  }
   const long = LONG_FIELDS.test(field);
   const type = field === "estimated_trl" ? "number" : /url|website|profile/.test(field) ? "url" : "text";
   const limit = candidate?.field_constraints?.[field]?.max_length;
@@ -2481,7 +2498,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <tbody>${historyRows.map((row, index) => html`<tr key=${row.key + index}>
                   <th scope="row">${row.label}</th>
                   <td>${formatFactValue(row.value)}</td>
-                  <td>${row.dateRead || MISSING.notFound}</td>
+                  <td>${row.dateRead ? shortDate(row.dateRead) : MISSING.notFound}</td>
                   <td>${row.confidence || MISSING.notFound}</td>
                   <td>${row.isCurrent ? FACTS.current : row.lifecycle || "Superseded"}</td>
                 </tr>`)}</tbody></table></div>

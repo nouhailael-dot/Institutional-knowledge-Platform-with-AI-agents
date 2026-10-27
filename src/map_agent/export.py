@@ -81,9 +81,23 @@ def _sources_text(e: dict) -> str:
     return "\n".join(s.get("url", "") for s in (e.get("sources") or []) if s.get("url"))
 
 
+def _us_date(value):
+    """An ISO day ("2027-04-02") as MM/DD/YYYY; anything else as given."""
+    text = str(value or "").strip()
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-" and text[:4].isdigit():
+        try:
+            from datetime import date
+            return date.fromisoformat(text[:10]).strftime("%m/%d/%Y")
+        except ValueError:
+            pass
+    return value
+
+
 def _field_value(entity: dict, field: str):
     """Human-readable value for scalar and relationship fields."""
     value = entity.get(field)
+    if field == "next_date":
+        return _us_date(value)
     if field in ("category_details", "actor_relationships"):
         return "\n".join(json.dumps(row, ensure_ascii=False) for row in (value or []))
     if field == "rankings":

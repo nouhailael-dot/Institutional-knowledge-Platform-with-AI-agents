@@ -291,6 +291,14 @@
   .nav-label{padding:14px 12px}.workspace-nav{display:grid;gap:7px}
   .nav-item{display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border:1px solid transparent;border-radius:8px;padding:13px 12px;color:var(--muted);font-weight:550;cursor:pointer;font-size:14px}
   .nav-item:hover{background:var(--surface-2);color:var(--ink)}
+  /* MM/DD/YYYY date field with its calendar button (frontend/dates.js) */
+  .date-input{position:relative;display:flex;align-items:center;gap:6px;width:100%;min-width:0}
+  .date-input>input[type="text"]{flex:1;min-width:0}
+  .date-input.invalid>input[type="text"]{border-color:#b42318;outline-color:#b42318}
+  .date-input-pick{flex:none;align-self:stretch;min-width:40px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:8px;padding:0 9px;cursor:pointer;font-size:15px;line-height:1}
+  .date-input-pick:hover{background:var(--surface-2)}
+  .date-input-pick:disabled{opacity:.5;cursor:default}
+  .date-input>.date-input-native{position:absolute;right:0;bottom:0;width:1px;height:1px;min-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none}
   .nav-item.active{background:var(--accent-soft);color:var(--accent-ink);border-color:#f5d5c7}
   .nav-symbol{width:21px;height:21px;display:grid;place-items:center;font-size:20px;line-height:1}
   .sidebar-foot{margin-top:auto;border-top:1px solid var(--line);padding:20px 12px 0;font-size:12px;color:var(--muted)}
@@ -480,10 +488,10 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261027a"/>
-<link rel="stylesheet" href="/discovery.css?v=20261027a"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261027a"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261027a"/>
+<link rel="stylesheet" href="/review.css?v=20261027b"/>
+<link rel="stylesheet" href="/discovery.css?v=20261027b"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261027b"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261027b"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -500,16 +508,18 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261027a";
-import {createDiscoveryPage} from "./discovery.js?v=20261027a";
-import {usDate} from "./dates.js?v=20261027a";
-import {createDataFeedPage} from "./datafeed.js?v=20261027a";
-import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261027a";
+import {createReviewPage} from "./review.js?v=20261027b";
+import {createDiscoveryPage} from "./discovery.js?v=20261027b";
+import {createDateInput, usDate} from "./dates.js?v=20261027b";
+import {createDataFeedPage} from "./datafeed.js?v=20261027b";
+import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261027b";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect});
 const DataFeed=createDataFeedPage({html,useState,useEffect});
+// Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
+const DateInput=createDateInput({html,useState,useEffect});
 const Dashboard=createDashboardPage({html,useState,useEffect});
 
 /* colour-coded entity chip */
@@ -903,10 +913,8 @@ function Events(){
             <option value="range">Custom range…</option>
           </select></div>
         ${when==="range"&&html`
-          <div><label>From</label><input class="field" type="date" value=${from}
-            onInput=${e=>setFrom(e.target.value)}/></div>
-          <div><label>To</label><input class="field" type="date" value=${to}
-            onInput=${e=>setTo(e.target.value)}/></div>`}
+          <div><label>From</label><${DateInput} ariaLabel="From" value=${from} onChange=${setFrom}/></div>
+          <div><label>To</label><${DateInput} ariaLabel="To" value=${to} min=${from} onChange=${setTo}/></div>`}
       </div>
       ${when!=="any"&&html`<div class="hint" style=${{marginTop:"12px"}}>
         Only ${nDated} of ${data.events.length} events carry a scheduled date — date
@@ -1215,7 +1223,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
     ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
     ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
     <div class="mrow">
-      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):e[k]])
+      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):k==="next_date"&&e[k]?usDate(e[k]):e[k]])
         .filter(([,,v])=>v).map(([k,label,v])=>
         html`<span key=${k}>${label}: <b>${v}</b></span>`)}
     </div>

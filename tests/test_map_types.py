@@ -256,5 +256,14 @@ class SelectionNoteTests(unittest.TestCase):
         self.assertIn("None of the 2 people matched", out["note"])
 
 
+
+class ExportDateTests(unittest.TestCase):
+    def test_event_dates_export_as_mm_dd_yyyy_and_other_text_as_written(self):
+        from src.map_agent.export import _field_value
+        self.assertEqual(_field_value({"next_date": "2027-04-02"}, "next_date"), "04/02/2027")
+        self.assertEqual(_field_value({"next_date": "Spring 2027"}, "next_date"), "Spring 2027")
+        self.assertIsNone(_field_value({}, "next_date"))
+
+
 if __name__ == "__main__":
     unittest.main()

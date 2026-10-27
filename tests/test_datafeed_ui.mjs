@@ -99,7 +99,7 @@ test('filters split the preview by status', () => {
 test('the import name defaults to the file name or a dated manual entry', () => {
   assert.equal(defaultImportName({file: {name: 'Kansas_water-actors.xlsx'}}), 'Kansas water actors');
   assert.equal(defaultImportName({file: null}, new Date('2026-10-26T12:00:00Z')),
-    'Manual entry 2026-10-26');
+    'Manual entry 10/26/2026');
 });
 
 test('a match is described with its strength and reason; a new record says nothing', () => {

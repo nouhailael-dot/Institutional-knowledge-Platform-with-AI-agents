@@ -40,14 +40,20 @@ def _url(value: str) -> str | None:
 
 
 def _date(value: str) -> str | None:
+    """A calendar day typed MM/DD/YYYY (the US form the templates ask for), or
+    the ISO form an Excel date cell becomes; stored as ISO either way."""
     if not value:
         return None
+    us = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", value.strip())
     try:
-        day = date.fromisoformat(value[:10])
+        if us:
+            day = date(int(us.group(3)), int(us.group(1)), int(us.group(2)))
+        else:
+            day = date.fromisoformat(value[:10])
     except ValueError as exc:
-        raise ValueError("is not a date: use YYYY-MM-DD") from exc
-    if len(value) > 10 and value[10:].strip() not in ("", "T00:00:00", "00:00:00"):
-        raise ValueError("must be a date only (YYYY-MM-DD)")
+        raise ValueError("is not a date: use MM/DD/YYYY") from exc
+    if not us and len(value) > 10 and value[10:].strip() not in ("", "T00:00:00", "00:00:00"):
+        raise ValueError("must be a date only (MM/DD/YYYY)")
     if not 1900 <= day.year <= 2100:
         raise ValueError("is outside the years 1900-2100")
     return day.isoformat()

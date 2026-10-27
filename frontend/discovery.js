@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {usDate} from "./dates.js?v=20261027a";
+import {createDateInput, usDate} from "./dates.js?v=20261027b";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -761,7 +761,7 @@ export function factLine(value) {
     try { v = JSON.parse(v); } catch { return v; }
   }
   if (v && typeof v === "object" && !Array.isArray(v)) {
-    if (v.date && v.description) return `${v.date} — ${v.description}`;
+    if (v.date && v.description) return `${usDate(v.date)} — ${v.description}`;
     if (v.reason) return v.reason;
     // Flags (is_multi_location: false) are not something to read out.
     const text = Object.entries(v).filter(([key, x]) => key !== "carried_over"
@@ -1016,6 +1016,8 @@ export function handoffForm(handoff, today) {
 }
 
 export function createDiscoveryPage({html, useState, useEffect}) {
+  // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
+  const DateInput = createDateInput({html, useState, useEffect});
   async function api(path, options = {}) {
     const response = await fetch(path, {
       headers: {"Content-Type": "application/json"}, ...options,
@@ -1719,8 +1721,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         <//>
         ${isEvent && html`<${Field} label="Event dates" error=${shown.dates}>
           <div class="discovery-inline">
-            <input type="date" aria-label="From" value=${form.dateFrom} onInput=${(e) => set({dateFrom: e.target.value})}/>
-            <input type="date" aria-label="To" value=${form.dateTo} min=${form.dateFrom} onInput=${(e) => set({dateTo: e.target.value})}/>
+            <${DateInput} ariaLabel="From" value=${form.dateFrom} onChange=${(v) => set({dateFrom: v})}/>
+            <${DateInput} ariaLabel="To" value=${form.dateTo} min=${form.dateFrom} onChange=${(v) => set({dateTo: v})}/>
           </div>
           <small class="muted">Optional. Past events are kept as evidence; leave empty for any date.</small>
         <//>
@@ -1732,7 +1734,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           </div>
         <//>`}
         <${Field} label="Start">
-          <input type="date" value=${form.startDate} min=${today} onInput=${(e) => set({startDate: e.target.value})}/>
+          <${DateInput} ariaLabel="Start" value=${form.startDate} min=${today} onChange=${(v) => set({startDate: v})}/>
         <//>
         <${Field} label="Frequency">
           <select value=${form.cadence} onChange=${(e) => set({cadence: e.target.value})}>
@@ -1744,7 +1746,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             ${DURATION_PRESETS.map((p) => html`<button type="button" key=${p.id} class=${form.duration === p.id ? "active" : ""} onClick=${() => setDuration(p.id)}>${p.label}</button>`)}
           </div>
           ${form.duration === "custom"
-            ? html`<input type="date" value=${form.endDate} min=${form.startDate} max=${addMonths(form.startDate, 12)} onInput=${(e) => set({endDate: e.target.value})}/>`
+            ? html`<${DateInput} ariaLabel="End" value=${form.endDate} min=${form.startDate} max=${addMonths(form.startDate, 12)} onChange=${(v) => set({endDate: v})}/>`
             : html`<small class="muted">Ends ${formatDay(form.endDate)}</small>`}
         <//>`}
       </div>
@@ -2092,14 +2094,14 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             </select>
           <//>
           <${Field} label="Start">
-            <input type="date" value=${form.startDate} min=${today} onInput=${(e) => setStart(e.target.value)}/>
+            <${DateInput} ariaLabel="Start" value=${form.startDate} min=${today} onChange=${setStart}/>
           <//>
           ${form.cadence !== "once" && html`<${Field} label="Duration" error=${shown.duration} wide=${true}>
             <div class="discovery-segment">
               ${DURATION_PRESETS.map((p) => html`<button type="button" key=${p.id} class=${form.duration === p.id ? "active" : ""} onClick=${() => setDuration(p.id)}>${p.label}</button>`)}
             </div>
             ${form.duration === "custom"
-              ? html`<input type="date" value=${form.endDate} min=${form.startDate} max=${addMonths(form.startDate, 12)} onInput=${(e) => set({endDate: e.target.value})}/>`
+              ? html`<${DateInput} ariaLabel="End" value=${form.endDate} min=${form.startDate} max=${addMonths(form.startDate, 12)} onChange=${(v) => set({endDate: v})}/>`
               : html`<small class="muted">Ends ${formatDay(form.endDate)}</small>`}
           <//>`}
           <${Field} label="New organizations per run" error=${shown.cap}>

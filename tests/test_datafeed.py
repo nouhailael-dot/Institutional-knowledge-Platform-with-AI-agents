@@ -270,8 +270,13 @@ def test_event_dates_and_identity():
     assert any("no confirmed host" in w for w in result["warnings"])
     result = check("event", {**event, "End date": "2027-04-01"})
     assert any("is before the Start date" in e for e in result["errors"])
-    result = check("event", {**event, "Start date": "04/02/2027"})
-    assert any("is not a date" in e for e in result["errors"])
+    # The templates ask for MM/DD/YYYY; it is stored as ISO, like an Excel date cell.
+    result = check("event", {**event, "Start date": "04/02/2027", "End date": "4/3/2027"})
+    assert result["errors"] == []
+    assert (result["payload"]["start_date"], result["payload"]["end_date"]) == (
+        "2027-04-02", "2027-04-03")
+    result = check("event", {**event, "Start date": "02/30/2027"})
+    assert any("is not a date: use MM/DD/YYYY" in e for e in result["errors"])
     result = check("event", {**event, "Event type": "Party"})
     assert any("Event type 'Party' is not an allowed value" in e for e in result["errors"])
 

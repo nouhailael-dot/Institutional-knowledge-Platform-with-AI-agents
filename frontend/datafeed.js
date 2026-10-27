@@ -6,8 +6,8 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261027a";
-import {usDate, usDateTime} from "./dates.js?v=20261027a";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261027b";
+import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261027b";
 
 export const RECORD_TYPES = [
   {id: "actor", label: "Actors / Organizations", short: "Actors", noun: "organization"},
@@ -77,8 +77,7 @@ export function stageable(counts = {}) {
 export function defaultImportName(preview, today = new Date()) {
   const file = preview?.file?.name;
   if (file) return file.replace(/\.(xlsx|csv)$/i, "").replace(/[_-]+/g, " ").trim().slice(0, 120);
-  const day = today.toISOString().slice(0, 10);
-  return `Manual entry ${day}`;
+  return `Manual entry ${usDate(today)}`;
 }
 
 /** The label of a code in a vocabulary, or the code itself. */
@@ -331,6 +330,7 @@ export function formatDate(value) {
 
 // ---------------------------------------------------------------- the page
 export function createDataFeedPage({html, useState, useEffect}) {
+  const DateInput = createDateInput({html, useState, useEffect});
   async function api(path, options = {}) {
     const response = await fetch(path, options.body instanceof FormData ? options
       : {headers: {"Content-Type": "application/json"}, ...options});
@@ -373,7 +373,10 @@ export function createDataFeedPage({html, useState, useEffect}) {
       return html`<textarea id=${id} rows="3" value=${value || ""} onInput=${set}
         maxlength=${field.max_length || undefined}></textarea>`;
     }
-    const type = field.kind === "url" ? "url" : field.kind === "date" ? "date" : "text";
+    if (field.kind === "date") {
+      return html`<${DateInput} id=${id} value=${value || ""} onChange=${(v) => onChange(field.key, v)}/>`;
+    }
+    const type = field.kind === "url" ? "url" : "text";
     return html`<input id=${id} type=${type} value=${value || ""} onInput=${set}
       maxlength=${field.max_length || undefined}
       placeholder=${field.kind === "list" ? "Separate several with ;" : ""}/>`;
