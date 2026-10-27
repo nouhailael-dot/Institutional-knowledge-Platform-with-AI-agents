@@ -1007,8 +1007,9 @@ function RecordEditor({kind,record,onClose}){
     </div>
     <div class="filters" style=${{marginTop:"12px"}}>
       ${EDIT_FIELDS[kind].filter(([,,t])=>t!=="long").map(([k,label,t])=>html`<div key=${k}><label>${label}</label>
-        <input class="field" type=${t==="date"?"date":"text"} value=${draft[k]}
-          onInput=${e=>set(k,e.target.value)}/></div>`)}
+        ${t==="date"
+          ? html`<${DateInput} ariaLabel=${label} value=${(draft[k]||"").slice(0,10)} onChange=${v=>set(k,v)}/>`
+          : html`<input class="field" type="text" value=${draft[k]} onInput=${e=>set(k,e.target.value)}/>`}</div>`)}
       <div><label>Status</label>
         <select class="field" value=${status} onChange=${e=>setStatus(e.target.value)}>
           ${!RECORD_STATUSES.includes(status)&&html`<option value=${status}>${status||"Not recorded"}</option>`}

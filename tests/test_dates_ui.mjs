@@ -29,7 +29,10 @@ test('every calendar on the platform is the MM/DD/YYYY date field', () => {
     .map(name => fs.readFileSync(new URL(`../frontend/${name}`, import.meta.url), 'utf8'));
   // The browser's own date field follows the computer's language; only the
   // hidden picker inside DateInput (dates.js) may use it.
-  for (const source of sources) assert.doesNotMatch(source, /type="date"/);
+  for (const source of sources) {
+    assert.doesNotMatch(source, /type="date"/);
+    assert.doesNotMatch(source, /type=\$\{[^}]*["']date["']/);  // chosen in code, e.g. t==="date"?"date":"text"
+  }
   const html = (strings, ...values) => strings.reduce((out, s, i) => out + s + (values[i] ?? ''), '');
   const DateInput = createDateInput({html, useState: init => [typeof init === 'function' ? init() : init, () => {}],
     useEffect() {}});
