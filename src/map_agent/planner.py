@@ -299,7 +299,9 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
         focus_rule=_FOCUS_RULES.get(actor_focus, _FOCUS_RULES["research"])) + _CHAT_RULE + (
         f"\n\nTODAY'S DATE is {today.isoformat()}. Queries that name years must use "
         f"{today.year} or {today.year + 1}, never earlier years, unless the user asked "
-        "about the past. For events, search for upcoming editions.")
+        "about the past. For events, search for upcoming editions. When the user names a "
+        "period (a year, months, 'next 12 months'), put that period's year or years in "
+        "every event query, so the search starts from the dates.")
     found = _found_summary(result)
     built_type = (result or {}).get("map_type") or "organizations"
     if found:

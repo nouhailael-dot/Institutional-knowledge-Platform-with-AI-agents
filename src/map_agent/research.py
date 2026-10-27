@@ -5,13 +5,15 @@ with visible results. Replaying after a safe interruption uses saved responses,
 never repeats a completed paid operation. Unknown charges prohibit resumption.
 """
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import urlsplit
 import json
+import re
+import unicodedata
 
 from src.map_agent.dedup import deduplicate
 from src.map_agent.client import get_client
-from src.map_agent.entity_schemas import submit_entities_tool
+from src.map_agent.entity_schemas import EVENT_FORMATS, FREQUENCIES, submit_entities_tool
 from src.map_agent.costs import paid_message
 from src.map_agent.planner import _bounded_tasks, _EMPTY_REQS, MAP_TYPES
 from src.map_agent.relationships import link_people_to_actors
@@ -69,13 +71,190 @@ person must be documented as currently at that organization. Public professional
 information only, never private details. Give contact details only if the request
 explicitly asks for them, and only official public contacts."""
 
-EVENT_GUIDANCE = """This is a map of EVENTS. Use the Architecture V2 light pull only:
-name and type, sector and topic, date and location, organizer, website, whether it
-is annual, recurring or one-time, why it matches, whether the edition found is
-upcoming, past or its date is unconfirmed, any visible UM6P/OCP involvement, and a
-short description including any notable publicly stated claim about its scale or
-standing, with its source. Keep past events; they are historical evidence. Do not
-collect speakers, sponsors, agendas or participants."""
+EVENT_GUIDANCE = """This is a map of EVENTS. Use the Architecture V2 light pull:
+name and type, sector (one of the listed sectors) and specific topic, date and
+location, format (in-person, virtual or hybrid), organizer, website, frequency, typical
+attendance with its edition and source, who usually attends, whether the edition found
+is upcoming, past or its date is unconfirmed, any visible UM6P/OCP involvement and its
+role (sponsor, speaker, partner, organizer, attendee), and a description of what the
+event covers. Put the event's substance in the description and keep "why it matches"
+to one sentence. Keep past events; they are historical evidence. Do not collect lists
+of speakers, sponsors, agendas or participants."""
+
+
+def event_sectors():
+    """The sectors an event may be filed under: the same active list Discovery uses.
+    None when the database cannot be read, and the sector then stays free text."""
+    try:
+        from src.map_agent.discovery_brief import sectors
+        return list(sectors())
+    except Exception:
+        return None
+
+
+# Common wordings for the fixed lists. "Biannual" is left out on purpose: it is
+# used for both "twice a year" and "every two years".
+_EVENT_SYNONYMS = {
+    "annually": "Annual", "yearly": "Annual", "every year": "Annual", "once": "One-time",
+    "one time": "One-time", "single": "One-time", "biennial": "Every two years",
+    "every 2 years": "Every two years", "semiannual": "Twice a year", "semi-annual": "Twice a year",
+    "twice yearly": "Twice a year", "recurring": "Irregular",
+    "in person": "In-person", "onsite": "In-person", "on-site": "In-person", "physical": "In-person",
+    "online": "Virtual", "remote": "Virtual", "livestream": "Virtual", "in-person and online": "Hybrid",
+}
+
+
+def _event_fields(event, sectors=None):
+    """Keep the fixed lists fixed. An off-list value becomes "Not found"; an
+    off-list sector is kept as the topic rather than lost."""
+    for field, allowed in (("recurring_pattern", FREQUENCIES), ("event_format", EVENT_FORMATS)):
+        value = str(event.get(field) or "").strip()
+        if value:
+            match = next((a for a in allowed if a.casefold() == value.casefold()), None)
+            match = match or (_EVENT_SYNONYMS.get(value.casefold()) if
+                              _EVENT_SYNONYMS.get(value.casefold()) in allowed else None)
+            event[field] = match or "Not found"
+    sector = str(event.get("sector") or "").strip()
+    if sectors and sector:
+        match = next((s for s in sectors if s.casefold() == sector.casefold()), None)
+        if match is None and sector.casefold() != "not found":
+            topic = str(event.get("thematic_focus") or "").strip()
+            event["thematic_focus"] = f"{topic}; {sector}" if topic and sector.casefold() not in topic.casefold() else topic or sector
+        event["sector"] = match or "Not found"
+
+
+# --- Event editions and time window (asked for on 20 Oct 2026) -----------------
+EDITION_CHECKS = 5        # targeted "newest edition" searches per map, at most
+WINDOW_DAYS = 365         # with no period in the request, older past editions are left out
+_PERIOD = re.compile(r"\b(19|20)\d{2}\b|\b(day|week|month|quarter|year|upcoming|past|"
+                     r"previous|recent|soon|next|last|since|until|before|after|"
+                     r"january|february|march|april|may|june|july|august|september|"
+                     r"october|november|december|spring|summer|fall|autumn|winter)s?\b", re.I)
+
+
+def _event_date(event):
+    try:
+        return date.fromisoformat(str(event.get("next_date") or "")[:10])
+    except ValueError:
+        return None
+
+
+def _needs_edition_check(event):
+    """A past edition of an event that recurs may have a newer one we missed."""
+    return (event.get("_entity_type") == "event" and event.get("date_status") == "past"
+            and event.get("recurring_pattern") != "One-time" and not event.get("_edition_checked"))
+
+
+def _event_core(name):
+    """The event's name without years, edition numbers or punctuation."""
+    text = re.sub(r"\b(19|20)\d{2}\b|\b\d+(st|nd|rd|th)\b|\b(annual|edition|inaugural)\b",
+                  " ", str(name or "").casefold())
+    return set(re.findall(r"[a-z0-9]+", text))
+
+
+def _same_event(a, b):
+    left, right = _event_core(a), _event_core(b)
+    if not (left and right):
+        return False
+    shorter, longer = sorted((left, right), key=len)
+    # "TechConnect World" is the same event as "TechConnect World Innovation Conference".
+    return len(left & right) / len(left | right) >= 0.6 or (len(shorter) >= 2 and shorter <= longer)
+
+
+def _newer_edition(event, rows):
+    """The extracted row that is the same event with a later date, if any."""
+    known = _event_date(event)
+    best = None
+    for row in rows:
+        when = _event_date(row)
+        if (_same_event(event.get("name"), row.get("name")) and when
+                and (known is None or when > known) and (best is None or when > _event_date(best))):
+            best = row
+    return best
+
+
+def _adopt_edition(event, newer):
+    """Move the card to the newer edition; the previous date stays as a note."""
+    previous = event.get("next_date") or "date not recorded"
+    for field in ("name", "next_date", "date_status", "location", "website", "event_format",
+                  "expected_attendance", "description", "organizer"):
+        if newer.get(field):
+            event[field] = newer[field]
+    sources = {s.get("url"): s for s in (event.get("sources") or []) + (newer.get("sources") or [])}
+    event["sources"] = list(sources.values())
+    event["previous_edition"] = previous
+
+
+def check_event_editions(state, run, sources, client=None):
+    """One targeted search per past, recurring event (at most EDITION_CHECKS per
+    map), so a 2025 edition is not shown when the 2026 one exists. Resumable."""
+    if state.get("edition_queue") is None:
+        state["edition_queue"] = [entity_key(e) for e in state["found"] if _needs_edition_check(e)][:EDITION_CHECKS]
+        state["edition_index"] = 0
+    year = date.today().year
+    request = state.get("round_description") or state["description"]
+    while state["edition_index"] < len(state["edition_queue"]):
+        run.check()
+        key = state["edition_queue"][state["edition_index"]]
+        event = next((e for e in state["found"] if entity_key(e) == key), None)
+        if event is not None:
+            core = re.sub(r"\b(19|20)\d{2}\b|\b\d+(st|nd|rd|th)\b|\b(annual|edition|inaugural)\b|[()]",
+                          " ", str(event.get("name") or ""), flags=re.I)
+            query = f'"{" ".join(core.split())}" {year} {year + 1}'
+            evidence = _collect(sources, query, state["gaps"], max_pages=2)
+            rows, _ = extract(run, request, {"entity_type": "event", "query": query,
+                                             "focus": f"Only the newest edition of {event.get('name')}."},
+                              evidence, client=client)
+            newer = _newer_edition(event, rows)
+            if newer:
+                _adopt_edition(event, newer)
+            else:
+                state["gaps"].append(f"No newer edition found for {event.get('name')} in a targeted search.")
+            event["_edition_checked"] = True
+        state["edition_index"] += 1
+        yield
+
+
+def names_a_period(request_text, requirements):
+    """Whether the user said anything about when (a year, month, "upcoming", ...)."""
+    filters = " ".join(str(f) for f in (requirements or {}).get("hard_filters") or [])
+    return bool(_PERIOD.search(f"{request_text or ''} {filters}"))
+
+
+def window_split(entities, request_text, requirements, today=None):
+    """With no period named, keep upcoming editions and past ones from the last
+    WINDOW_DAYS; older past editions are left out with the reason (still shown)."""
+    if names_a_period(request_text, requirements):
+        return entities, []
+    cutoff = (today or date.today()) - timedelta(days=WINDOW_DAYS)
+    keep, old = [], []
+    for e in entities:
+        when = _event_date(e)
+        if e.get("_entity_type") == "event" and e.get("date_status") == "past" and when and when < cutoff:
+            e["_selected"], e["_why_not"] = False, "Last edition more than 12 months ago."
+            e.pop("_rank", None)
+            old.append(e)
+        else:
+            keep.append(e)
+    return keep, old
+
+
+def sort_events(found):
+    """Matching events: upcoming (soonest first), date unconfirmed, then past
+    (most recent first). Ranks are renumbered; everything else keeps its order."""
+    events = [e for e in found if e.get("_entity_type") == "event" and e.get("_selected")]
+    if not events:
+        return found
+    group = {"upcoming": 0, "date unconfirmed": 1, "past": 2}
+    def order(e):
+        when = _event_date(e)
+        stamp = when.toordinal() if when else 0
+        return (group.get(e.get("date_status"), 1), stamp if e.get("date_status") == "upcoming" else -stamp)
+    events.sort(key=order)
+    for rank, e in enumerate(events, 1):
+        e["_rank"] = rank
+    chosen = {id(e) for e in events}
+    return events + [e for e in found if id(e) not in chosen]
 
 
 def _date_status(event, today=None):
@@ -121,6 +300,79 @@ def _profile_ok(url, name):
         return False
     surname = (name.split() or [""])[-1].strip(".,").casefold()
     return any(hint in url for hint in _PROFILE_HINTS) or (len(surname) >= 3 and surname in url)
+
+
+# --- People: profile at their organization, then LinkedIn (asked for on 20 Oct 2026)
+PROFILE_CHECKS = 8        # targeted profile searches per people map, at most
+_ORG_STOP = {"university", "universities", "institute", "institution", "department", "dept",
+             "school", "college", "center", "centre", "research", "laboratory", "laboratories",
+             "national", "division", "program", "programme", "faculty", "science", "sciences",
+             "state", "the", "and", "for", "with", "office", "group", "company", "inc"}
+
+
+def _plain(text):
+    folded = unicodedata.normalize("NFKD", str(text or "")).encode("ascii", "ignore").decode()
+    return folded.casefold()
+
+
+def _name_words(name):
+    """Given name and surname words; initials and titles cannot identify anyone."""
+    return [w for w in re.findall(r"[a-z]+", _plain(name)) if len(w) >= 2 and w not in ("dr", "prof", "phd")]
+
+
+def _org_words(org):
+    return [w for w in re.findall(r"[a-z0-9]+", _plain(org)) if len(w) >= 3 and w not in _ORG_STOP]
+
+
+def same_person(hit, name, org):
+    """A search result is about this person only if it shows their full name AND a
+    distinctive word of their organization - never the name alone."""
+    hay = _plain(" ".join(str(hit.get(k) or "") for k in ("title", "text", "url")))
+    names, orgs = _name_words(name), _org_words(org)
+    return len(names) >= 2 and all(re.search(rf"\b{w}\b", hay) for w in names) and \
+        bool(orgs) and any(w in hay for w in orgs)
+
+
+def profile_links(hits, name, org):
+    """(profile, linkedin) from search results: a profile-style page at their
+    organization, and a LinkedIn /in/ page, each passing same_person."""
+    profile = linkedin = None
+    for hit in hits:
+        url = str(hit.get("url") or "")
+        if not url or not same_person(hit, name, org):
+            continue
+        if "linkedin.com/in/" in url.casefold():
+            linkedin = linkedin or url
+        elif profile is None and _profile_ok(url, name):
+            profile = url
+    return profile, linkedin
+
+
+def find_people_profiles(state, sources):
+    """One search per kept person on a people map (at most PROFILE_CHECKS), filling
+    Profile and LinkedIn only when the result is the same person. Resumable."""
+    if state.get("profile_queue") is None:
+        people = [e for e in state["found"] if e.get("_entity_type") == "person"
+                  and e.get("_selected", True) and not e.get("_profile_checked")]
+        people.sort(key=lambda e: e.get("_rank") or 1e6)
+        state["profile_queue"] = [entity_key(e) for e in people][:PROFILE_CHECKS]
+        state["profile_index"] = 0
+    while state["profile_index"] < len(state["profile_queue"]):
+        key = state["profile_queue"][state["profile_index"]]
+        person = next((e for e in state["found"] if entity_key(e) == key), None)
+        if person is not None:
+            name, org = person.get("full_name") or "", person.get("organization_name") or ""
+            hits = sources.search(f'"{name}" {org}'.strip())
+            profile, linkedin = profile_links(hits, name, org)
+            if profile:
+                person["profile_url"] = profile
+            if linkedin:
+                person["linkedin_url"] = linkedin
+            if not (profile or linkedin):
+                state["gaps"].append(f"No profile page or LinkedIn confirmed for {name} ({org}).")
+            person["_profile_checked"] = True
+        state["profile_index"] += 1
+        yield
 
 
 AFFILIATION_MAX_AGE = 3   # years; older evidence no longer shows where someone works now
@@ -188,7 +440,9 @@ def extract(run, request, task, evidence, client=None, target=None):
     stage = ("People extraction" if et == "person" else
              "Organization extraction" if et == "actor" else "Event extraction")
     key = ("extract-people-v2" if target else "extract-map-people-v1" if people_map else
-           "extract-actor-fields-v3" if et == "actor" else "extract-v1")
+           "extract-actor-fields-v3" if et == "actor" else
+           "extract-event-v2" if et == "event" else "extract-v1")
+    sectors = event_sectors() if et == "event" else None
     response = paid_message(client or get_client(), run, stage,
         operation_key=operation_key(key, payload),
         model=EXTRACTION_MODEL, max_tokens=8192 if target else 16000,
@@ -199,7 +453,7 @@ def extract(run, request, task, evidence, client=None, target=None):
                         "Prioritize completing the structured response over returning more people." if target else "")
                + ("\n" + PEOPLE_MAP_GUIDANCE if people_map else "")
                + ("\n" + EVENT_GUIDANCE if et == "event" else ""),
-        tools=[submit_entities_tool("map_person" if people_map else et)],
+        tools=[submit_entities_tool("map_person" if people_map else et, sectors)],
         tool_choice={"type": "tool", "name": "submit_entities"},
         messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
     available = {canonical_url(e["url"]): e for e in evidence}
@@ -238,6 +492,7 @@ def extract(run, request, task, evidence, client=None, target=None):
                     entity.pop("profile_url")
             if et == "event":
                 _date_status(entity)
+                _event_fields(entity, sectors)
             if et == "person" and target:
                 if not affiliation_matches(entity.get("organization_name", ""), target["name"]):
                     rejected += 1
@@ -304,7 +559,12 @@ def _follow_up_summary(found, selection, new_count, prior_outcome, map_type="org
 
 def _visible(state):
     grouped = {"actor": [], "person": [], "event": []}
+    rounds = state.get("rounds") or [state["description"]]
     for entity in link_people_to_actors(deduplicate(deepcopy(state["found"]))):
+        number = entity.get("_round") or 1
+        if len(rounds) > 1:     # only a map with follow-ups needs to say which list
+            entity["_found_by"] = ("Original request" if number == 1 else
+                                   f"Follow-up {number - 1}: {rounds[number - 1] if number <= len(rounds) else ''}".strip())
         grouped[entity["_entity_type"]].append(entity)
     map_type = state.get("map_type", "organizations")
     # On an organization map a person counts through their organization; on a
@@ -317,8 +577,12 @@ def _visible(state):
     pending = []
     if state["phase"] == "organizations":
         pending.append(f"{len(state['tasks'])-state['task_index']} topic searches/extractions remain.")
-    if state["phase"] in ("organizations", "selection"):
+    if state["phase"] == "editions":
+        pending.append("Checking past events for a newer edition.")
+    if state["phase"] in ("organizations", "editions", "selection"):
         pending.append("Candidate selection is unfinished.")
+    elif state["phase"] == "profiles":
+        pending.append("Looking for each person's profile page and LinkedIn.")
     elif state["phase"] == "people":
         pending.append("Finalizing institutional results.")
     elif state["phase"] == "rankings":
@@ -328,7 +592,7 @@ def _visible(state):
     if map_type == "organizations":
         coverage += (" Selected whole universities also receive official-site ranking lookups within the map allowance. "
                      "Deeper people research starts only when requested on an organization card.")
-    return {"map_type": map_type, "tasks": state["tasks"], "requirements": state["requirements"],
+    return {"map_type": map_type, "rounds": rounds, "tasks": state["tasks"], "requirements": state["requirements"],
             "entities": grouped, "counts": {k: len(v) for k, v in grouped.items()},
             "partial": state["phase"] != "done", "coverage_gaps": gaps + pending,
             "selection_note": state.get("selection_note", "Selection has not completed."),
@@ -355,6 +619,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state = {"version": 1, "map_type": map_type, "description": description, "tasks": tasks,
                  "requirements": {**_EMPTY_REQS, **(plan.get("requirements") or {})},
                  "phase": "organizations", "task_index": 0, "found": [], "gaps": [],
+                 "rounds": [description],
                  "people_targets": [], "people_index": 0}
         if len(plan["tasks"]) > len(tasks):
             state["gaps"].append("Duplicate or excess planned queries were omitted from this focused pass.")
@@ -376,6 +641,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                                            if t["entity_type"] == kind]
         state["judged"] = [_judged_key(e) for e in state["found"]]
         state["round_description"] = description or state["description"]
+        state["rounds"] = (state.get("rounds") or [state["description"]]) + [state["round_description"]]
         state["round_requirements"] = {**_EMPTY_REQS, **(plan.get("requirements") or {})}
         state["phase"] = "organizations"
         state["ranking_index"] = 0
@@ -396,6 +662,8 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                             evidence, client=client)
         rejected = set(state.get("rejected") or [])
         rows = [r for r in rows if entity_key(r) not in rejected]
+        for r in rows:
+            r["_round"] = len(state.get("rounds") or [None])
         state["found"] = deduplicate(state["found"] + rows)
         if gap:
             state["gaps"].append(task["query"] + ": " + gap)
@@ -404,6 +672,12 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state["task_index"] += 1
         save()  # Includes late evidence if the user stopped during extraction.
     if state["phase"] == "organizations":
+        state["phase"] = "editions" if state.get("map_type") == "events" else "selection"
+        state["edition_queue"] = None
+        save()
+    if state["phase"] == "editions":
+        for _ in check_event_editions(state, run, sources, client):
+            save()
         state["phase"] = "selection"
         save()
     if state["phase"] == "selection":
@@ -412,8 +686,11 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         if judged:
             earlier = [e for e in state["found"] if _judged_key(e) in judged]
             newcomers = [e for e in state["found"] if _judged_key(e) not in judged]
+            newcomers, too_old = window_split(newcomers, state["round_description"],
+                                              state["round_requirements"])
             selection = apply_request(newcomers, state["round_description"],
                                       state["round_requirements"], run=run)
+            selection["rest"] = selection["rest"] + too_old
             # New matches rank after the earlier ones rather than interleaving.
             offset = max((e.get("_rank") or 0 for e in earlier), default=0)
             for e in selection["selected"]:
@@ -424,10 +701,21 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                 state["found"], selection, len(newcomers), state.get("selection_outcome"),
                 state.get("map_type", "organizations"))
         else:
-            selection = apply_request(state["found"], state["description"], state["requirements"], run=run)
-            state["found"] = selection["selected"] + selection["rest"]
-            state["selection_note"] = selection["note"]
+            candidates, too_old = window_split(state["found"], state["description"], state["requirements"])
+            selection = apply_request(candidates, state["description"], state["requirements"], run=run)
+            state["found"] = selection["selected"] + selection["rest"] + too_old
+            state["selection_note"] = (selection["note"] + (
+                f" {len(too_old)} older event(s), last held more than 12 months ago, are shown "
+                "as left out." if too_old else "")).strip()
             state["selection_outcome"] = selection["outcome"]
+        state["found"] = sort_events(state["found"])
+        state["phase"] = "profiles" if state.get("map_type") == "people" else "rankings"
+        state["profile_queue"] = None
+        save()
+    if state["phase"] == "profiles":
+        for _ in find_people_profiles(state, sources):
+            run.check()
+            save()
         state["phase"] = "rankings"
         save()
     if state["phase"] == "rankings":

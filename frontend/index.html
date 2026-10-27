@@ -509,7 +509,7 @@ import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261027b";
-import {createDiscoveryPage} from "./discovery.js?v=20261027b";
+import {createDiscoveryPage} from "./discovery.js?v=20261027c";
 import {createDateInput, usDate} from "./dates.js?v=20261027b";
 import {createDataFeedPage} from "./datafeed.js?v=20261027b";
 import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261027b";
@@ -786,8 +786,12 @@ function Actors(){
 }
 function ActorDetail({a,onBack}){
   const loc=[a.city,a.state,a.country_raw].filter(Boolean).join(", ");
+  const [editing,setEditing]=useState(false);
   return html`<div class="card pad detail fade">
-    <button class="backlink" onClick=${onBack}>← Back to results</button>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <button class="backlink" onClick=${onBack}>← Back to results</button>
+      ${!editing&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
+    </div>
     <h2>${a.name}</h2>
     <div class="loc">${[(a.actor_category||a.actor_type)&&("Actor Category: "+(a.actor_category||a.actor_type).replace(/_/g," ")),a.category_type&&("Category Type: "+a.category_type.replace(/_/g," ")),loc,a.trl!=null&&("TRL "+a.trl)]
       .filter(Boolean).join("  ·  ")}</div>
@@ -801,6 +805,7 @@ function ActorDetail({a,onBack}){
     ${a.description&&html`<p>${a.description}</p>`}
     ${a.hubs.length>0&&html`<div class="kv"><div><div class="k">In hubs</div>
       <div class="v">${a.hubs.join(" · ")}</div></div></div>`}
+    ${editing&&html`<${RecordEditor} kind="actor" record=${a} onClose=${()=>setEditing(false)}/>`}
   </div>`;
 }
 
@@ -878,7 +883,9 @@ function Events(){
   const [evType,setEvType]=useState("");
   const [when,setWhen]=useState("any");      // any | upcoming | past | range
   const [from,setFrom]=useState("");const[to,setTo]=useState("");
+  const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
+  if(sel) return html`<${EventDetail} e=${sel} onBack=${()=>setSel(null)}/>`;
   const today=new Date().toISOString().slice(0,10);
   const nDated=data.events.filter(e=>e.next_date).length;
   const matches=data.events.filter(e=>{
@@ -924,7 +931,7 @@ function Events(){
     ${matches.length===0? html`<div class="empty">No events match.</div>` : html`
     <div class="card" style=${{overflow:"hidden"}}>
       <table class="grid"><thead><tr><th>Event</th><th>Type</th><th>Location</th><th>Next date</th></tr></thead>
-      <tbody>${matches.map(e=>html`<tr key=${e.id}><td class="name-cell">${e.name}</td>
+      <tbody>${matches.map(e=>html`<tr key=${e.id} onClick=${()=>setSel(e)}><td class="name-cell">${e.name}</td>
         <td>${dash(e.event_type)}</td><td>${dash(e.location)}</td>
         <td>${dateCell(e.next_date)}</td></tr>`)}</tbody></table></div>`}
   </div>`;
@@ -934,10 +941,12 @@ function People(){
   const data=useOnce(()=>api("/api/browse/people"));
   const [org,setOrg]=useState(""); const [state,setState]=useState("");
   const [topic,setTopic]=useState(""); const [q,setQ]=useState("");
+  const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
-  if(data.people.length===0) return html`<div class="fade"><div class="empty">
-    No people in the database yet. People found in Build the Map appear here once
-    they are verified into the database.</div></div>`;
+  if(sel) return html`<${PersonDetail} p=${sel} onBack=${()=>setSel(null)}/>`;
+  // The filters always show, so the page reads the same before the first person
+  // reaches the database; only the results area says there is nothing yet.
+  const empty=data.people.length===0;
   const needle=q.trim().toLowerCase();
   const matches=data.people.filter(p=>
     (!org||p.organizations.includes(org)) && (!state||p.states.includes(state)) &&
@@ -952,14 +961,111 @@ function People(){
       <div><label>Name or expertise</label>
         <input class="field" placeholder="phosphogypsum, Smith…" value=${q} onInput=${e=>setQ(e.target.value)}/></div>
     </div></div>
-    <div class="count"><b>${matches.length}</b> ${matches.length===1?"person matches":"people match"}</div>
-    ${matches.length===0? html`<div class="empty">No people match these filters.</div>` : html`
+    ${empty? html`<div class="empty">No people in the database yet. People found in Build the Map
+      appear here once they are verified into the database.</div>` : html`
+    <div class="count"><b>${matches.length}</b> ${matches.length===1?"person matches":"people match"}</div>`}
+    ${empty? null : matches.length===0? html`<div class="empty">No people match these filters.</div>` : html`
     <div class="card" style=${{overflow:"hidden"}}>
       <table class="grid"><thead><tr><th>Name</th><th>Title</th><th>Organization</th><th>State</th><th>Topics</th></tr></thead>
-      <tbody>${matches.map(p=>html`<tr key=${p.id}>
+      <tbody>${matches.map(p=>html`<tr key=${p.id} onClick=${()=>setSel(p)}>
         <td class="name-cell">${p.profile_url?html`<a href=${p.profile_url} target="_blank" rel="noopener">${p.name}</a>`:p.name}</td>
         <td>${dash(p.title)}</td><td>${list(p.organizations)}</td><td>${list(p.states)}</td>
         <td>${list(p.topics.length?p.topics:p.research_areas)}</td></tr>`)}</tbody></table></div>`}
+  </div>`;
+}
+
+/* ------------------------------------------------- Edit (Browse) — save not wired yet
+   One editing panel for organizations, events and people, as agreed with GHUS on
+   20 Oct 2026: every field editable, a status dropdown, analyst notes (the place for
+   a back-to-office report link) and, for events, "attended". Saving needs the
+   backend's approved writers (facts, verification history, notes), so it stays off
+   and says so; nothing typed here is stored yet. */
+const RECORD_STATUSES=["verified","parked","rejected"];
+const EDIT_FIELDS={
+  actor:[["name","Name"],["actor_category","Actor category"],["category_type","Category type"],
+         ["website","Website"],["city","City"],["state","State"],["country_raw","Country"],
+         ["description","Description","long"]],
+  event:[["name","Name"],["event_type","Type"],["next_date","Date","date"],["location","Location"],
+         ["website","Website"],["recurring_pattern","Frequency"],["description","Description","long"]],
+  person:[["name","Name"],["title","Title"],["organizations","Organization"],
+          ["profile_url","Public profile"],["orcid","ORCID"]],
+};
+function RecordEditor({kind,record,onClose}){
+  const initial=()=>Object.fromEntries(EDIT_FIELDS[kind].map(([k])=>{
+    const v=k==="actor_category"?(record.actor_category||record.actor_type):record[k];
+    return [k,Array.isArray(v)?v.join(", "):(v??"")];
+  }));
+  const [draft,setDraft]=useState(initial);
+  const [status,setStatus]=useState(String(record.status||record.verification_status||"").toLowerCase());
+  const [notes,setNotes]=useState(record.ghus_notes||"");
+  const [attended,setAttended]=useState(!!record.attended);
+  const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  return html`<div class="card pad fade" style=${{marginTop:"14px"}}>
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <strong>Edit ${kind==="actor"?"organization":kind}</strong>
+      <button class="example" type="button" onClick=${onClose}>Close</button>
+    </div>
+    <div class="filters" style=${{marginTop:"12px"}}>
+      ${EDIT_FIELDS[kind].filter(([,,t])=>t!=="long").map(([k,label,t])=>html`<div key=${k}><label>${label}</label>
+        <input class="field" type=${t==="date"?"date":"text"} value=${draft[k]}
+          onInput=${e=>set(k,e.target.value)}/></div>`)}
+      <div><label>Status</label>
+        <select class="field" value=${status} onChange=${e=>setStatus(e.target.value)}>
+          ${!RECORD_STATUSES.includes(status)&&html`<option value=${status}>${status||"Not recorded"}</option>`}
+          ${RECORD_STATUSES.map(v=>html`<option key=${v} value=${v}>${v[0].toUpperCase()+v.slice(1)}</option>`)}
+        </select></div>
+      ${kind==="event"&&html`<div><label>Attended</label>
+        <label style=${{display:"flex",gap:"8px",alignItems:"center",height:"39px",fontWeight:600,
+          textTransform:"none",letterSpacing:0,fontSize:"13.5px",color:"var(--ink)"}}>
+          <input type="checkbox" checked=${attended} onChange=${e=>setAttended(e.target.checked)}/>
+          GHUS attended this event</label></div>`}
+    </div>
+    ${EDIT_FIELDS[kind].filter(([,,t])=>t==="long").map(([k,label])=>html`<div key=${k} class="filters"
+        style=${{gridTemplateColumns:"1fr",marginTop:"12px"}}><div>
+      <label>${label}</label>
+      <textarea class="discovery-brief" rows="4" value=${draft[k]} onInput=${e=>set(k,e.target.value)}></textarea></div></div>`)}
+    <div class="filters" style=${{gridTemplateColumns:"1fr",marginTop:"12px"}}><div>
+      <label>Analyst notes</label>
+      <textarea class="discovery-brief" rows="4" value=${notes} onInput=${e=>setNotes(e.target.value)}
+        placeholder=${kind==="event"
+          ?"Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
+          :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea>
+    </div></div>
+    <div class="attach-row" style=${{marginTop:"12px"}}>
+      <button class="btn" type="button" disabled=${true} title="Saving is not connected yet">Save</button>
+      <button class="example" type="button" onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");
+        setAttended(!!record.attended);setStatus(String(record.status||record.verification_status||"").toLowerCase());}}>Reset</button>
+      <span class="hint" style=${{margin:0}}>Saving isn't connected yet: edits here are not stored.</span>
+    </div>
+  </div>`;
+}
+function EventDetail({e,onBack}){
+  const [editing,setEditing]=useState(false);
+  return html`<div class="card pad detail fade">
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <button class="backlink" onClick=${onBack}>← Back to results</button>
+      ${!editing&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
+    </div>
+    <h2>${e.name}</h2>
+    <div class="loc">${[e.event_type,e.location,e.next_date,e.recurring_pattern].filter(Boolean).join("  ·  ")}</div>
+    ${e.status&&html`<div class="badges"><span class="chip">${e.status}</span></div>`}
+    ${e.website&&html`<p>🔗 <a href=${e.website} target="_blank" rel="noopener">${e.website}</a></p>`}
+    ${e.description&&html`<p>${e.description}</p>`}
+    ${editing&&html`<${RecordEditor} kind="event" record=${e} onClose=${()=>setEditing(false)}/>`}
+  </div>`;
+}
+function PersonDetail({p,onBack}){
+  const [editing,setEditing]=useState(false);
+  return html`<div class="card pad detail fade">
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <button class="backlink" onClick=${onBack}>← Back to results</button>
+      ${!editing&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
+    </div>
+    <h2>${p.name}</h2>
+    <div class="loc">${[p.title,p.organizations.join(", "),p.states.join(", ")].filter(Boolean).join("  ·  ")}</div>
+    ${p.status&&html`<div class="badges"><span class="chip">${p.status}</span></div>`}
+    ${p.profile_url&&html`<p>🔗 <a href=${p.profile_url} target="_blank" rel="noopener">Public profile</a></p>`}
+    ${editing&&html`<${RecordEditor} kind="person" record=${p} onClose=${()=>setEditing(false)}/>`}
   </div>`;
 }
 
@@ -981,12 +1087,16 @@ const MFIELDS={
   person:[["title","Title"],["organization_name","Organization"],["organization_location","Location"],
           ["affiliation_note","Affiliation"],
           ["expertise","Expertise"],["work_evidence","Relevant work"],["_um6p_ocp","UM6P/OCP"],["email","Email"]],
-  event:[["event_type","Type"],["next_date","Date"],["date_status","Status"],["location","Location"],
-         ["organizer","Organizer"],["sector","Sector"],["thematic_focus","Topic"],
-         ["recurring_pattern","Recurs"],["match_explanation","Why it matched"],["_um6p_ocp","UM6P/OCP"],
+  event:[["event_type","Type"],["next_date","Date"],["date_status","Status"],["event_format","Format"],
+         ["location","Location"],["organizer","Organizer"],["recurring_pattern","Frequency"],["previous_edition","Previous edition"],
+         ["expected_attendance","Scale"],["audience","Audience"],["sector","Sector"],["thematic_focus","Topic"],
+         ["match_explanation","Why it matched"],["_um6p_ocp","UM6P/OCP"],
          // Older maps recorded these before the Architecture V2 event fields.
-         ["sponsoring_orgs","Sponsors"],["expected_attendance","Attendance"],["access_type","Access"]],
+         ["sponsoring_orgs","Sponsors"],["access_type","Access"]],
 };
+// Short list values read better capitalized ("conference" -> "Conference").
+const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector"]);
+const capFirst=v=>typeof v==="string"&&v?v.charAt(0).toUpperCase()+v.slice(1):v;
 // Architecture V2 §5.5 states; records from before the check show nothing.
 const um6pOcp=e=>e.um6p_ocp_status==="found"
   ? "Found — "+(e.um6p_ocp_detail||"details not recorded")
@@ -1223,7 +1333,9 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
     ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
     ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
     <div class="mrow">
-      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):k==="next_date"&&e[k]?usDate(e[k]):e[k]])
+      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):
+          (k==="next_date"||k==="previous_edition")&&e[k]?usDate(e[k]):
+          CAPITALIZED.has(k)&&e._entity_type==="event"?capFirst(e[k]):e[k]])
         .filter(([,,v])=>v).map(([k,label,v])=>
         html`<span key=${k}>${label}: <b>${v}</b></span>`)}
     </div>
@@ -1329,9 +1441,7 @@ function CarriedRows({rows,onChange,onDismiss}){
 
 function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [jobId,setJobId]=useState(null);
-  const [discovery,setDiscovery]=useState(null);   // proposed Discovery request, unsaved
   const [proposing,setProposing]=useState(false);
-  useEffect(()=>setDiscovery(null),[jobId]);        // a proposal belongs to one map
   const [cost,setCost]=useState(null);
   const [recent,setRecent]=useState([]);
   const [researchAvailable,setResearchAvailable]=useState(false);
@@ -1557,7 +1667,8 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       const d=await r.json();
       if(!r.ok) throw new Error(d.detail||"Could not propose a Discovery request.");
       if(d.cost) setCost(d.cost);
-      setDiscovery({...d,edited:false,firstLine:d.brief.split("\n")[0].trim()});
+      // Straight to Discovery: the request is edited there, not under the map.
+      if(onDiscovery) onDiscovery({...d,edited:false});
     }catch(e){ setErr(e.message); }
     setProposing(false);
   }
@@ -1815,15 +1926,27 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
               const items=[...((res.entities&&res.entities[k])||[])]
                 .filter(e=>!(parkedOnly&&parkedCount>0)||e._review==="parked").sort((a,b)=>order(a)-order(b));
               if(!items.length) return null;
-              return html`<div class="mgroup" key=${k}>
-                <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
-                  <span class="n">${items.length}</span></div>
-                ${items.map((e,i)=>html`<${MapCard} key=${k+i} e=${e} request=${request}
+              const card=(e,i)=>html`<${MapCard} key=${k+(e._round||1)+"-"+i} e=${e} request=${request}
                   jobId=${jobId} onCost=${setCost} onError=${setErr}
                   onBusy=${v=>{setVerifying(v);poll(jobId);}}
                   disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}
                   onReviewed=${d=>{setRes(d.result);setCost(d.cost);}}
-                  reviewDisabled=${busy||verifying||["running","planning","verifying"].includes(runStatus)}/>`)}
+                  reviewDisabled=${busy||verifying||["running","planning","verifying"].includes(runStatus)}/>`;
+              // Each follow-up that found something new keeps its own list, under its own
+              // words, after the original results — never mixed into them.
+              const rounds=res.rounds||[];
+              const sections=[...new Set(items.map(e=>e._round||1))].sort((a,b)=>a-b);
+              return html`<div class="mgroup" key=${k}>
+                <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
+                  <span class="n">${items.length}</span></div>
+                ${sections.map(r=>{
+                  const part=items.filter(e=>(e._round||1)===r);
+                  return html`<div key=${"round"+r}>
+                    ${r>1&&html`<div class="mgroup-h" style=${{marginTop:"22px"}}>
+                      <span class="chip slate">Follow-up ${r-1}</span>
+                      <span class="hint" style=${{margin:0}}>${rounds[r-1]||""} · ${part.length} result${part.length===1?"":"s"}</span></div>`}
+                    ${part.map(card)}</div>`;
+                })}
               </div>`;
             });
           })()}
@@ -1834,31 +1957,13 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
           </details>`}
           ${(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>
             <strong>Keep finding organizations like these</strong>
-            ${!discovery
-              ? html`<div>Discovery can keep searching for more of them, every month for as long as
-                  you choose. One short call (under $0.01, on this map's budget) proposes the request
-                  from what you asked. You edit it there before anything is saved.</div>
-                <button class="example" type="button" style=${{marginTop:"8px"}}
-                  disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
-                  onClick=${proposeDiscovery}>
-                  ${proposing?html`<span class="spin"></span> Proposing…`:"Continue discovery"}</button>`
-              : html`<textarea class="discovery-brief" rows="5" style=${{marginTop:"8px"}}
-                  aria-label="Proposed Discovery request" value=${discovery.brief}
-                  onInput=${e=>setDiscovery({...discovery,brief:e.target.value,
-                    // Only a changed first line (sector and area) hands those back to Discovery's own reading.
-                    edited:e.target.value.split("\n")[0].trim()!==discovery.firstLine})}></textarea>
-                <div class="hint" style=${{marginTop:"6px"}}>First line: the sector and the area. Each line
-                  after: one short sub-topic, from your own words — every word of it has to appear on an
-                  organization's own page, so keep them short.</div>
-                ${!discovery.sector_code&&!discovery.edited&&html`<div class="hint" style=${{marginTop:"4px"}}>
-                  None of the sectors clearly fitted your request. Choose one on the Discovery page.</div>`}
-                <div class="hint" style=${{marginTop:"4px"}}>Discovery doesn't know this map's results, so its
-                  first run may send some of the same organizations to Review again.</div>
-                <div class="attach-row" style=${{marginTop:"8px"}}>
-                  <button class="example" type="button" disabled=${!discovery.brief.trim()}
-                    onClick=${()=>onDiscovery&&onDiscovery({...discovery})}>Open in Discovery</button>
-                  <button class="example" type="button" onClick=${()=>setDiscovery(null)}>Discard</button>
-                </div>`}
+            <div>Discovery can keep searching for more of them, every month for as long as
+              you choose. One short call (under $0.01, on this map's budget) proposes the request
+              from what you asked, then opens it in Discovery, where you edit it before anything is saved.</div>
+            <button class="example" type="button" style=${{marginTop:"8px"}}
+              disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
+              onClick=${proposeDiscovery}>
+              ${proposing?html`<span class="spin"></span> Proposing…`:"Continue discovery"}</button>
           </div>`}`}
     </div>`}
   </div>`;
