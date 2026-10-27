@@ -15,6 +15,7 @@ import ssl
 import time
 from html.parser import HTMLParser
 from urllib.parse import urlsplit, urlunsplit
+from urllib.robotparser import RobotFileParser
 
 import anthropic
 from dotenv import load_dotenv
@@ -23,7 +24,16 @@ from src.map_agent.costs import paid_message
 
 MAX_BYTES = 1_000_000
 MAX_PAGE_CHARS = 24_000
+ROBOTS_MAX_BYTES = 64_000
+AGENT_PRODUCT = "UM6P-MapResearch"
 load_dotenv()
+
+
+def user_agent():
+    """How the map identifies itself to websites: product, plus the contact
+    address in GHUS_AGENT_CONTACT_EMAIL (shared with Discovery) when it is set."""
+    contact = os.environ.get("GHUS_AGENT_CONTACT_EMAIL", "").strip()
+    return f"{AGENT_PRODUCT}/1.0" + (f" ({contact})" if contact else "")
 
 
 def operation_key(kind, value):
@@ -79,29 +89,33 @@ def plain_text(value):
     return "\n".join(parser.parts)
 
 
-def fetch_page(url):
-    """Pin a validated public IP to prevent DNS rebinding; TLS still checks hostname.
-
-    No environment proxies, cookies, authorization, redirects, JS, or downloads.
-    Redirects/unsupported pages are reported as gaps, not bypassed.
-    """
-    url = canonical_url(url)
-    parts = urlsplit(url)
+def _pinned_connection(parts, timeout=12):
+    """Pin a validated public IP to prevent DNS rebinding; TLS still checks hostname."""
     host, port = parts.hostname, parts.port or (443 if parts.scheme == "https" else 80)
     addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
     if not addresses or any(not ipaddress.ip_address(a[4][0]).is_global for a in addresses):
         raise ValueError("Non-public destination blocked")
     family, socktype, proto, _, address = addresses[0]
-    conn = http.client.HTTPConnection(host, port, timeout=12)
+    conn = http.client.HTTPConnection(host, port, timeout=timeout)
     sock = socket.socket(family, socktype, proto)
-    sock.settimeout(12)
+    sock.settimeout(timeout)
+    return conn, sock, address, host
+
+
+def fetch_page(url):
+    """No environment proxies, cookies, authorization, redirects, JS, or downloads.
+    Redirects/unsupported pages are reported as gaps, not bypassed.
+    """
+    url = canonical_url(url)
+    parts = urlsplit(url)
+    conn, sock, address, host = _pinned_connection(parts)
     try:
         sock.connect(address)  # Uses the validated address; never resolves again.
         if parts.scheme == "https":
             sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
         conn.sock = sock
         conn.request("GET", urlunsplit(("", "", parts.path or "/", parts.query, "")),
-                     headers={"User-Agent": "UM6P-MapResearch/1.0", "Accept": "text/html,text/plain",
+                     headers={"User-Agent": user_agent(), "Accept": "text/html,text/plain",
                               "Accept-Encoding": "identity"})
         response = conn.getresponse()
         if response.status != 200:
@@ -127,6 +141,43 @@ def fetch_page(url):
     finally:
         conn.close()
         sock.close()
+
+
+_ROBOTS = {}
+
+
+def robots_allows(url):
+    """Whether the site's robots.txt lets this agent read `url`.
+
+    Only an explicit Disallow refuses: a missing, unreadable, redirected or
+    failing robots.txt counts as no rule (as for a 4xx under RFC 9309), so a
+    flaky file never costs evidence. One read per site per server run, through
+    the same pinned connection as page reads."""
+    parts = urlsplit(canonical_url(url))
+    site = (parts.scheme, parts.netloc)
+    if site not in _ROBOTS:
+        rules = None
+        try:
+            conn, sock, address, host = _pinned_connection(parts, timeout=5)
+            try:
+                sock.connect(address)
+                if parts.scheme == "https":
+                    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+                conn.sock = sock
+                conn.request("GET", "/robots.txt", headers={"User-Agent": user_agent(),
+                                                           "Accept-Encoding": "identity"})
+                response = conn.getresponse()
+                if response.status == 200:
+                    rules = RobotFileParser()
+                    rules.parse(response.read(ROBOTS_MAX_BYTES).decode("utf-8", "replace").splitlines())
+            finally:
+                conn.close()
+                sock.close()
+        except Exception:
+            rules = None
+        _ROBOTS[site] = rules
+    rules = _ROBOTS[site]
+    return rules is None or rules.can_fetch(AGENT_PRODUCT, url)
 
 
 def _field(value, name, default=None):
@@ -178,10 +229,13 @@ class ClaudeSearch:
 
 class ResearchSources:
     """Per-map persistent cache; no cross-user or stale cross-map evidence reuse."""
-    def __init__(self, run, provider=None, fetcher=None):
+    def __init__(self, run, provider=None, fetcher=None, robots=None):
         self.run = run
         self.provider = provider or ClaudeSearch(run)
         self.fetcher = fetcher or fetch_page
+        # The real page reader asks robots.txt first; an injected test fetcher
+        # does not touch the network unless a robots check is given too.
+        self.robots = robots if robots is not None else (None if fetcher else robots_allows)
 
     def search(self, query):
         self.run.check()
@@ -221,7 +275,11 @@ class ResearchSources:
         if saved is not None:
             return saved
         try:
-            result = self.fetcher(url)
+            if self.robots and not self.robots(url):
+                result = {"url": url, "text": "",
+                          "error": "Site asks automated readers not to read this page (robots.txt)"}
+            else:
+                result = self.fetcher(url)
         except Exception as exc:
             result = {"url": url, "text": "", "error": type(exc).__name__ + ": page unavailable"}
         # Failed reads are cached too: no repeat attempts during this map.
