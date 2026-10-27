@@ -1087,12 +1087,16 @@ const MFIELDS={
   person:[["title","Title"],["organization_name","Organization"],["organization_location","Location"],
           ["affiliation_note","Affiliation"],
           ["expertise","Expertise"],["work_evidence","Relevant work"],["_um6p_ocp","UM6P/OCP"],["email","Email"]],
-  event:[["event_type","Type"],["next_date","Date"],["date_status","Status"],["location","Location"],
-         ["organizer","Organizer"],["sector","Sector"],["thematic_focus","Topic"],
-         ["recurring_pattern","Recurs"],["match_explanation","Why it matched"],["_um6p_ocp","UM6P/OCP"],
+  event:[["event_type","Type"],["next_date","Date"],["date_status","Status"],["event_format","Format"],
+         ["location","Location"],["organizer","Organizer"],["recurring_pattern","Frequency"],["previous_edition","Previous edition"],
+         ["expected_attendance","Scale"],["audience","Audience"],["sector","Sector"],["thematic_focus","Topic"],
+         ["match_explanation","Why it matched"],["_um6p_ocp","UM6P/OCP"],
          // Older maps recorded these before the Architecture V2 event fields.
-         ["sponsoring_orgs","Sponsors"],["expected_attendance","Attendance"],["access_type","Access"]],
+         ["sponsoring_orgs","Sponsors"],["access_type","Access"]],
 };
+// Short list values read better capitalized ("conference" -> "Conference").
+const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector"]);
+const capFirst=v=>typeof v==="string"&&v?v.charAt(0).toUpperCase()+v.slice(1):v;
 // Architecture V2 §5.5 states; records from before the check show nothing.
 const um6pOcp=e=>e.um6p_ocp_status==="found"
   ? "Found — "+(e.um6p_ocp_detail||"details not recorded")
@@ -1329,7 +1333,9 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
     ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
     ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
     <div class="mrow">
-      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):k==="next_date"&&e[k]?usDate(e[k]):e[k]])
+      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):
+          (k==="next_date"||k==="previous_edition")&&e[k]?usDate(e[k]):
+          CAPITALIZED.has(k)&&e._entity_type==="event"?capFirst(e[k]):e[k]])
         .filter(([,,v])=>v).map(([k,label,v])=>
         html`<span key=${k}>${label}: <b>${v}</b></span>`)}
     </div>

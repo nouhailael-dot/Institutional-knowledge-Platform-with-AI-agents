@@ -129,26 +129,47 @@ _MAP_PERSON_ITEM = {
     "additionalProperties": False,
 }
 
-# Architecture V2 §5.4 light pull.
+# Architecture V2 §5.4 light pull, plus the event details GHUS asked for on 20 Oct 2026.
+# Field names follow the production `event` table where one exists
+# (recurring_pattern, expected_attendance), so a verified event maps 1:1.
+FREQUENCIES = ["One-time", "Annual", "Every two years", "Twice a year", "Quarterly",
+               "Monthly", "Irregular", "Not found"]
+EVENT_FORMATS = ["In-person", "Virtual", "Hybrid", "Not found"]
+
 _EVENT_ITEM = {
     "type": "object",
     "properties": {
         "name":                {"type": "string", "description": "Event name."},
         "event_type":          {"type": "string", "description": "e.g. conference, summit, workshop, demo day, hackathon."},
-        "description":         {"type": "string", "description": "Short description. Include any notable "
-                                "publicly stated claim about its scale, reputation or standing (e.g. 'the "
-                                "leading AI conference'), quoted and backed by a cited source."},
-        "sector":              {"type": "string", "description": "Sector, e.g. water, energy, agriculture, mining."},
-        "thematic_focus":      {"type": "string", "description": "Topic or themes."},
+        "description":         {"type": "string", "description": "What the event is about, in two to four "
+                                "sentences: its themes, notable sessions or presentations relevant to the "
+                                "request, and any publicly stated claim about its scale or standing (e.g. "
+                                "'the leading AI conference'), quoted and backed by a cited source."},
+        "sector":              {"type": "string", "description": "The ONE listed sector the event belongs to, "
+                                "or 'Not found' if none fits. The specific subject goes in thematic_focus."},
+        "thematic_focus":      {"type": "string", "description": "The specific topic or themes, e.g. "
+                                "'critical minerals, national security'."},
         "location":            {"type": "string", "description": "City, State or venue."},
         "website":             {"type": "string", "description": "Event website URL."},
         "next_date":           {"type": "string", "description": "Date of the edition found (YYYY-MM-DD if known)."},
         "date_status":         {"type": "string", "enum": ["upcoming", "past", "date unconfirmed"],
                                 "description": "Whether that edition is upcoming, past, or its date is unconfirmed."},
-        "recurring_pattern":   {"type": "string", "description": "annual, recurring, or one-time."},
-        "organizer":           {"type": "string", "description": "Organization that runs the event."},
-        "match_explanation":   {"type": "string", "description": "Why it matches the request, in one or two sentences."},
+        "recurring_pattern":   {"type": "string", "enum": FREQUENCIES,
+                                "description": "How often the event takes place: one-time, annual, every two "
+                                "years, twice a year, quarterly, monthly, irregular, or Not found."},
+        "event_format":        {"type": "string", "enum": EVENT_FORMATS,
+                                "description": "In-person, virtual, hybrid, or Not found."},
+        "expected_attendance": {"type": "string", "description": "Typical attendance with the edition and the "
+                                "source, e.g. '≈870 delegates at the November 2025 edition (per organiser)'. "
+                                "A past edition is fine. Leave empty if no source gives a number."},
+        "audience":            {"type": "string", "description": "Who usually attends, as stated by a source, "
+                                "e.g. 'students, founders, investors, industry professionals, government'."},
+        "organizer":           {"type": "string", "description": "Organization that runs or hosts the event."},
+        "match_explanation":   {"type": "string", "description": "Why it matches the request, in one short "
+                                "sentence. Put details about the event in the description, not here."},
         **_UM6P_OCP_FIELDS,
+        "um6p_ocp_detail":     {"type": "string", "description": "When found: which UM6P/OCP entity and its "
+                                "role at the event: sponsor, speaker, partner, organizer or attendee."},
     },
     "required": ["name"],
     "additionalProperties": False,
@@ -186,8 +207,15 @@ for _schema in _ENTITY_SCHEMAS.values():
     _schema["properties"]["sources"] = _SOURCES_FIELD
 
 
-def submit_entities_tool(entity_type: str) -> dict:
-    """Build the submit_entities tool with the right item schema."""
+def submit_entities_tool(entity_type: str, sectors: list[str] | None = None) -> dict:
+    """Build the submit_entities tool with the right item schema.
+
+    `sectors` (events only) restricts the sector to that list - the database's
+    active sectors - so events group consistently; without it the field stays free."""
+    item = _ENTITY_SCHEMAS[entity_type]
+    if entity_type == "event" and sectors:
+        item = {**item, "properties": {**item["properties"], "sector": {
+            **item["properties"]["sector"], "enum": [*sectors, "Not found"]}}}
     return {
         "name": "submit_entities",
         "description": "Report all entities found from this search. Call exactly once.",
@@ -199,7 +227,7 @@ def submit_entities_tool(entity_type: str) -> dict:
                     "description": f"Best matching "
                                    f"{'people' if entity_type == 'map_person' else entity_type + 's'} found, up to "
                                    f"{_RESULT_LIMITS[entity_type]} results.",
-                    "items": _ENTITY_SCHEMAS[entity_type],
+                    "items": item,
                     "maxItems": _RESULT_LIMITS[entity_type],
                 },
             },
