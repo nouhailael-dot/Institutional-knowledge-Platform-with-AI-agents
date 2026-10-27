@@ -52,6 +52,26 @@ MAX_FOCUS_TERMS = 8
 MAX_NEW_ACTORS_PER_RUN = 50
 DEFAULT_NEW_ACTORS_PER_RUN = 10
 MAX_TITLE_CHARS = 160
+# What a Discovery-page request finds (migration 580). Every request before it
+# found organizations, and still does: actor is the default.
+DISCOVERY_ENTITIES = ("actor", "event", "person")
+# Each entity's own scope, kept in discovery_options; anything else is refused.
+DISCOVERY_OPTION_KEYS = {
+    "actor": ("pull_depth",),
+    "event": ("date_from", "date_to", "event_types"),
+    "person": ("institution", "role"),
+}
+# The event types a new request may choose (GHUS, 2026-10-26).
+EVENT_TYPES = ("conference", "summit", "symposium", "forum", "training")
+# Offered before; a request saved with one of them still loads and runs.
+RETIRED_EVENT_TYPES = ("workshop", "expo", "webinar", "hackathon")
+MAX_EVENT_TYPES = len(EVENT_TYPES)
+# What an actor request reads of each organization it keeps. A new actor is not
+# verified, so a Discovery request never Deep Pulls: Light Pull is the default,
+# and a request may opt out ("none").
+PULL_DEPTHS = ("light", "none")
+DEFAULT_PULL_DEPTH = "light"
+MAX_OPTION_CHARS = 120
 
 
 class SubscriptionError(ValueError):
@@ -84,6 +104,9 @@ class Subscription:
     # agents/collection/actor_updates.py; here only what the table enforces.
     update_options: dict = field(default_factory=dict)
     max_usd_per_run: float | None = None
+    # Event and people requests (migration 580).
+    discovery_entity: str = "actor"
+    discovery_options: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.requested_via not in REQUESTED_VIA:
@@ -115,6 +138,7 @@ class Subscription:
                 raise SubscriptionError(
                     f"an actor update request needs a spend ceiling above $0 and at most "
                     f"${MAX_USD_PER_RUN:.2f} per run")
+        self._check_discovery_scope()
         if self.title is not None and not 1 <= len(self.title.strip()) <= MAX_TITLE_CHARS:
             raise SubscriptionError(f"a title must be 1 to {MAX_TITLE_CHARS} characters")
         if len(self.focus_terms) > MAX_FOCUS_TERMS:
@@ -123,6 +147,41 @@ class Subscription:
             raise SubscriptionError(
                 f"max_new_actors_per_run must be 1 to {MAX_NEW_ACTORS_PER_RUN}"
             )
+
+    def _check_discovery_scope(self) -> None:
+        """What an event or people request may say, the way migration 580 enforces it."""
+        if self.discovery_entity not in DISCOVERY_ENTITIES:
+            raise SubscriptionError(
+                f"a request finds one of {list(DISCOVERY_ENTITIES)}, got {self.discovery_entity!r}")
+        if self.discovery_entity != "actor" and self.requested_via != DISCOVERY_PAGE:
+            raise SubscriptionError("only a Discovery-page request finds events or people")
+        options = self.discovery_options or {}
+        if not isinstance(options, dict):
+            raise SubscriptionError("discovery options must be an object")
+        unknown = set(options) - set(DISCOVERY_OPTION_KEYS[self.discovery_entity])
+        if unknown:
+            raise SubscriptionError(
+                f"unknown option(s) for {'an' if self.discovery_entity == 'event' else 'a'} "
+                f"{self.discovery_entity} request: {sorted(unknown)}")
+        for key in ("institution", "role"):
+            if len(str(options.get(key) or "")) > MAX_OPTION_CHARS:
+                raise SubscriptionError(f"{key} must be at most {MAX_OPTION_CHARS} characters")
+        types = options.get("event_types") or []
+        if not isinstance(types, list) or len(types) > MAX_EVENT_TYPES \
+                or any(t not in EVENT_TYPES + RETIRED_EVENT_TYPES for t in types):
+            raise SubscriptionError(
+                f"event types: up to {MAX_EVENT_TYPES} of {list(EVENT_TYPES)}")
+        if options.get("pull_depth") not in (None, *PULL_DEPTHS):
+            raise SubscriptionError(f"pull depth must be one of {list(PULL_DEPTHS)}")
+        bounds = []
+        for key in ("date_from", "date_to"):
+            if options.get(key):
+                try:
+                    bounds.append(date.fromisoformat(str(options[key])))
+                except ValueError as exc:
+                    raise SubscriptionError(f"{key} must be a date (YYYY-MM-DD)") from exc
+        if len(bounds) == 2 and bounds[1] < bounds[0]:
+            raise SubscriptionError("the event date range ends before it starts")
 
     @property
     def is_discovery_request(self) -> bool:

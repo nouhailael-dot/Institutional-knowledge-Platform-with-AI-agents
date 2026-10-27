@@ -1,0 +1,7 @@
+BEGIN
+SET
+SET
+SET
+SET
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/reconcile_ledger_540_580.sql:205: ERROR:  precondition failed: schema differs from the 540-580 end state: comment constraint actor_verification_event.ck_actor_verification_event_origin missing; constraint actor_verification_event.ck_actor_verification_event_origin different
+CONTEXT:  PL/pgSQL function inline_code_block line 153 at RAISE

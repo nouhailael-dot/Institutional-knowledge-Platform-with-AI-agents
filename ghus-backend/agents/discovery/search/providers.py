@@ -18,7 +18,8 @@ WEB_SEARCH_USD_PER_REQUEST = 0.01
 class SearchProvider(Protocol):
     name: str
 
-    def search(self, query: str, *, count: int = 10) -> list[SearchResult]:
+    def search(self, query: str, *, count: int = 10,
+               allowed_domains: list[str] | None = None) -> list[SearchResult]:
         ...
 
 
@@ -38,11 +39,15 @@ class BraveSearchProvider:
     endpoint: str = "https://api.search.brave.com/res/v1/web/search"
     name: str = "brave"
 
-    def search(self, query: str, *, count: int = 10) -> list[SearchResult]:
+    def search(self, query: str, *, count: int = 10,
+               allowed_domains: list[str] | None = None) -> list[SearchResult]:
         api_key = os.environ.get(self.api_key_env)
         if not api_key:
             raise RuntimeError(f"{self.api_key_env} is not set")
         clean_query = query.strip()
+        if allowed_domains:
+            # Brave has no domain parameter; its query language does.
+            clean_query = f"{clean_query} ({' OR '.join(f'site:{d}' for d in allowed_domains)})"
         if not clean_query:
             raise ValueError("search query cannot be empty")
         params = parse.urlencode(
@@ -101,10 +106,20 @@ class ClaudeWebSearchProvider:
     client: Any | None = None
     name: str = "claude"
 
-    def search(self, query: str, *, count: int = 10) -> list[SearchResult]:
+    def search(self, query: str, *, count: int = 10,
+               allowed_domains: list[str] | None = None) -> list[SearchResult]:
         clean_query = query.strip()
         if not clean_query:
             raise ValueError("search query cannot be empty")
+        tool = {
+            "type": self.tool_version,
+            "name": "web_search",
+            "max_uses": max(1, int(self.max_uses)),
+            "allowed_callers": ["direct"],
+        }
+        if allowed_domains:
+            # Only these sites (and their subdomains) are searched.
+            tool["allowed_domains"] = [str(d) for d in allowed_domains]
         response = self._client().messages.create(
             model=self.model,
             max_tokens=512,
@@ -118,14 +133,7 @@ class ClaudeWebSearchProvider:
                     ),
                 }
             ],
-            tools=[
-                {
-                    "type": self.tool_version,
-                    "name": "web_search",
-                    "max_uses": max(1, int(self.max_uses)),
-                    "allowed_callers": ["direct"],
-                }
-            ],
+            tools=[tool],
         )
         self._record_usage(response)
         return self._extract_results(response, query=clean_query, count=count)

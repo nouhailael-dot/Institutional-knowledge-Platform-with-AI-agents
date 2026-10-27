@@ -92,9 +92,9 @@ def test_migration_tracks_are_separate_and_detached():
     )
     platform = sorted((ROOT / "agents" / "sql").glob("*_v2_*.sql"))
     assert [int(path.name[:3]) for path in platform] == [
-        *range(190, 391, 10), 420, 430, 510, 520, 530, 540, 550, 560, 570,
+        *range(190, 391, 10), 420, 430, 510, 520, 530, 540, 550, 560, 570, 580, 590,
     ]
-    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 30
+    assert len(list((ROOT / "agents" / "sql" / "rollback").glob("*_v2_*.sql"))) == 32
 
 
 def test_populated_canonical_constraints_are_not_valid():

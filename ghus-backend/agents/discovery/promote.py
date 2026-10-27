@@ -45,6 +45,7 @@ from agents.enrichment.decisions import (
     append_actor_fact,
     append_entity_edge,
     record_agent_auto_verification,
+    record_import_verification,
 )
 from src.ML.entity_resolution.resolve_or_create import (
     INHERITABLE_FIELDS as ACTOR_FIELDS,
@@ -68,6 +69,15 @@ DISCOVERED_DOMAIN_PAYLOAD_KEY = "_discovered_domain"
 # Set by the open-web actor pipeline only for a candidate it ACCEPTED (score
 # and every quality gate). Its value is the agent's stated reasons.
 AUTO_ACCEPT_PAYLOAD_KEY = "_auto_accept_reasons"
+# Who supplied a new record: the open-web pipeline, or a GHUS person through
+# the Data Feed (a spreadsheet, or the manual form). Set only by the Data Feed
+# importer; anything absent or unknown is the pipeline. It labels the record's
+# origin and nothing else - status stays Parked until GHUS verifies it.
+RECORD_ORIGIN_PAYLOAD_KEY = "_record_origin"
+# Set only by agents.review.admission for a Data Feed import its named uploader
+# attested (never read from a staged row): {"by": ..., "reason": ...}.
+IMPORT_VERIFICATION_PAYLOAD_KEY = "_import_verification"
+RECORD_ORIGINS = frozenset({"claude_discovered", "ghus_uploaded_doc", "ghus_manual"})
 ACTOR_CREATE_FIELDS = [*ACTOR_FIELDS, "funding_summary"]
 ACTOR_ABSORB_FIELDS = list(ACTOR_FIELDS)
 ACTOR_ABSORB_CONNECTOR_RE = re.compile(
@@ -338,10 +348,15 @@ def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
             cols[field_name] = value
     # Architecture V2: a newly discovered event is parked until GHUS reviews it.
     columns = _table_columns(session, "event")
+    # The event's own dates, when stated. next_date alone lost every end date.
+    for field_name in ("start_date", "end_date"):
+        day = _iso_day(payload.get(field_name))
+        if day and (not columns or field_name in columns):
+            cols[field_name] = day
     if "record_status" in columns:
         cols["record_status"] = "parked"
     if "source_origin" in columns:
-        cols["source_origin"] = "claude_discovered"
+        cols["source_origin"] = _record_origin(payload)
     if "date_status" in columns:
         cols["date_status"] = _event_date_status(cols.get("next_date"))
     names = ", ".join(cols)
@@ -630,7 +645,7 @@ ACTOR_MAPPING_STEPS = (
 # The last step is one of two outcomes: queued for a person to verify, or -
 # for a candidate the discovery agent accepted (decision 2026-10-14) - verified
 # by the agent through a labelled verification event.
-ACTOR_FINAL_STEPS = ("verify_actor", "verified_by_agent")
+ACTOR_FINAL_STEPS = ("verify_actor", "verified_by_agent", "verified_by_import")
 
 
 def map_new_actor(
@@ -847,8 +862,18 @@ def map_new_actor(
             auto_accept = str(
                 staged.normalized_payload.get(AUTO_ACCEPT_PAYLOAD_KEY) or ""
             ).strip()
+            imported = staged.normalized_payload.get(IMPORT_VERIFICATION_PAYLOAD_KEY)
             _mapping_step(route, trace, "parked")
-            if auto_accept:
+            if isinstance(imported, dict) and imported.get("by") and imported.get("reason"):
+                # A named GHUS uploader attested this import (decision 2026-10-26):
+                # verified through a labelled ghus_import event instead of queued.
+                record_import_verification(
+                    session, actor_id=actor_id, topic_id=topic_id,
+                    decided_by=str(imported["by"]), reason=str(imported["reason"]),
+                )
+                review_id = None
+                _mapping_step(route, trace, "verified_by_import")
+            elif auto_accept:
                 # Accepted on score and every quality gate: verified through a
                 # labelled agent verification event instead of being queued.
                 record_agent_auto_verification(
@@ -953,7 +978,7 @@ def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str
         "actor_id": actor_id,
         "name": name,
         "slug": _actor_slug(name, actor_id),
-        "source_origin": "claude_discovered",
+        "source_origin": _record_origin(payload),
         "source_id": source_id,
     }
     # Final V2 names win; legacy names are written only while they still exist.
@@ -1944,7 +1969,7 @@ def _insert_person(
     if "record_status" in columns:
         cols["record_status"] = "parked"
     if "source_origin" in columns:
-        cols["source_origin"] = "claude_discovered"
+        cols["source_origin"] = _record_origin(payload)
     if columns and "verification_status" not in columns:
         cols.pop("verification_status")
     profile_url = str(payload.get("public_profile_url") or "").strip()
@@ -2241,3 +2266,19 @@ def _is_empty(value: object) -> bool:
 
 def _has_value(value: object) -> bool:
     return not _is_empty(value)
+
+
+def _record_origin(payload: dict[str, object] | None) -> str:
+    """The record's origin code: the Data Feed's, when it set a known one."""
+    origin = str((payload or {}).get(RECORD_ORIGIN_PAYLOAD_KEY) or "").strip()
+    return origin if origin in RECORD_ORIGINS else "claude_discovered"
+
+
+def _iso_day(value: object) -> str | None:
+    """A calendar date as YYYY-MM-DD, or None when the value is not one."""
+    if isinstance(value, date):
+        return value.isoformat()
+    try:
+        return date.fromisoformat(str(value or "").strip()[:10]).isoformat()
+    except ValueError:
+        return None

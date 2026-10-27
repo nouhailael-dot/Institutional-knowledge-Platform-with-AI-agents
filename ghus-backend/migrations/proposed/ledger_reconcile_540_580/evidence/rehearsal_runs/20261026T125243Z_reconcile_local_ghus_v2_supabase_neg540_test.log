@@ -1,0 +1,9 @@
+BEGIN
+SET
+SET
+SET
+SET
+DO
+INSERT 0 4
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/reconcile_ledger_540_580.sql:236: ERROR:  postcondition failed: the five rows do not share one reconciliation time
+CONTEXT:  PL/pgSQL function inline_code_block line 14 at RAISE

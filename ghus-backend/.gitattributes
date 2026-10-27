@@ -2,3 +2,5 @@
 *.sql text eol=lf
 *.sql.tmpl text eol=lf
 migrations/release/** text eol=lf
+# The release manifest hashes these migration modules byte for byte as well.
+migrations/proposed/**/*.py text eol=lf

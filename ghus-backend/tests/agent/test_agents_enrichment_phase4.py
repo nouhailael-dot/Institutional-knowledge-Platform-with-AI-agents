@@ -309,22 +309,30 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
     }
     allowed_by_table.update(
         {
-            "scrape_run": {Path("agents/common/run_log.py")},
+            # The Data Feed stages GHUS-supplied records for Review exactly where
+            # discovery stages its finds, in ONE transaction per import (the
+            # helpers above commit per row). Staging only: never a canonical table.
+            "scrape_run": {Path("agents/common/run_log.py"),
+                           Path("agents/datafeed/stage_import.py")},
             "raw_document": {Path("agents/common/run_log.py")},
             "staged_record": {
                 Path("agents/discovery/stage.py"),
                 Path("agents/enrichment/decisions.py"),
+                Path("agents/datafeed/stage_import.py"),
             },
             "field_proposal": {Path("agents/common/provenance.py")},
             "index_dirty": {
                 Path("agents/discovery/promote.py"),
                 Path("agents/index/refresh.py"),
             },
-            "event_review_queue": {Path("agents/discovery/promote.py")},
-            "person_review_queue": {Path("agents/discovery/promote.py")},
+            "event_review_queue": {Path("agents/discovery/promote.py"),
+                                   Path("agents/datafeed/stage_import.py")},
+            "person_review_queue": {Path("agents/discovery/promote.py"),
+                                    Path("agents/datafeed/stage_import.py")},
             "person_change_log": {Path("agents/discovery/promote.py")},
             "person_discovery_profile": {Path("agents/discovery/promote.py")},
-            "search_candidate": {Path("agents/discovery/search/store.py")},
+            "search_candidate": {Path("agents/discovery/search/store.py"),
+                                 Path("agents/datafeed/stage_import.py")},
             "discovered_domain": {Path("agents/discovery/search/phase2.py")},
             "proposed_hub": {
                 Path("agents/review/admission.py"),

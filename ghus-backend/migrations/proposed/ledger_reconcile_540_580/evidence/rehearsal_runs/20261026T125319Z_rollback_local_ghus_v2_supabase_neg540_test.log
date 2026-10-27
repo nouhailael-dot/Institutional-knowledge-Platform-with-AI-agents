@@ -1,0 +1,12 @@
+BEGIN
+SET
+SET
+SET
+SET
+            set_config            
+----------------------------------
+ 2026-10-26 12:52:16.335490+00:00
+(1 row)
+
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/rollback_reconcile_ledger_540_580.sql:71: ERROR:  rollback refused: 0 row(s) match this reconciliation (5 expected), 1 other 540-580 row(s) exist
+CONTEXT:  PL/pgSQL function inline_code_block line 26 at RAISE

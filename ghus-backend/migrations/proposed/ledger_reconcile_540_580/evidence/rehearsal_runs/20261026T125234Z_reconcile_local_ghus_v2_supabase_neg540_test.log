@@ -1,0 +1,7 @@
+BEGIN
+SET
+SET
+SET
+SET
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/reconcile_ledger_540_580.sql:205: ERROR:  precondition failed: ledger row(s) 560 exist with another checksum
+CONTEXT:  PL/pgSQL function inline_code_block line 174 at RAISE

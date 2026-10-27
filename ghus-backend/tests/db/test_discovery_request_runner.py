@@ -82,7 +82,9 @@ def _row(db, subscription_id):
 def test_a_dry_create_writes_nothing(session):
     db, _ = session
     before = db.execute(text("SELECT count(*) FROM actor_update_subscription")).scalar()
-    result = store.create_request(db, title="Dry", sector_codes=["AGRI"],
+    # Dated from the fixed TODAY, like every other request here: left to default
+    # to the real date, the end date fell before the start once TODAY passed.
+    result = store.create_request(db, title="Dry", sector_codes=["AGRI"], start_date=TODAY,
                                   end_date=TODAY + timedelta(days=5), cadence="once")
     assert result.live is False and result.subscription_id is None
     assert db.execute(text("SELECT count(*) FROM actor_update_subscription")).scalar() == before

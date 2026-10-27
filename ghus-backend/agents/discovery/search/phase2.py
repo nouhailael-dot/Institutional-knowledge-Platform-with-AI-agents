@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -26,6 +27,8 @@ from agents.discovery.extractors.actor import ActorRecordValidationError
 from agents.discovery.extractors.event import EventExtractor, EventRecordValidationError
 from agents.discovery.extractors.person import PersonExtractor
 from agents.discovery.normalize import event_natural_key, parse_date_to_iso
+from agents.discovery.page_facts import page_text, reading_text
+from agents.discovery.quality_gates import cap_band, event_gate, held_event_match, person_gate
 from agents.discovery.run import (
     _extract_stage_route_promote,
     _skip_audit_row,
@@ -63,7 +66,21 @@ from agents.discovery.search.actor_scoring import (
     score_actor_rubric,
     write_analysis_cache,
 )
-from agents.discovery.search.discovery_request import apply_new_actor_cap
+from agents.discovery.search.discovery_request import (
+    apply_new_actor_cap,
+    event_outside_request,
+    person_outside_request,
+)
+from agents.discovery.search.followup import (
+    FollowupBudget,
+    event_followup_urls,
+    merge_event_reads,
+    pending_review_events,
+    pending_review_people,
+    person_followup_urls,
+    person_key,
+    same_person,
+)
 from agents.discovery.search.event_scoring import (
     PROMPT_VERSION as EVENT_ANALYSIS_VERSION,
 )
@@ -1318,8 +1335,15 @@ def fetch_score_stage_events(
     event_candidates=None,
     actor_resolver=None,
     run_date: date | None = None,
+    request=None,
 ) -> EventFetchOutcome:
-    """Fetch gated events, score page evidence, then route by score and qualification."""
+    """Fetch gated events, score page evidence, then route by score and qualification.
+
+    ``request`` is a Discovery-page request for events (on-request mode); the
+    automatic weekly run passes none. Both use the same extraction, gates,
+    follow-up and Review routing; a request also excludes what falls outside
+    its dates or area and keeps at most its per-run number of new events.
+    """
     if not sector_codes:
         raise RuntimeError("event rubric pipeline requires seeded sector codes")
     current_date = run_date or datetime.now(UTC).date()
@@ -1362,6 +1386,9 @@ def fetch_score_stage_events(
         if event_candidates is not None
         else ([] if session is None else load_event_candidates(session))
     )
+    # Already waiting in Review (staged by an earlier or overlapping run): not
+    # read or staged again, so two runs cannot create two review profiles.
+    waiting_events = pending_review_events(session) if event_candidates is None else []
     plan = plan_event_fetches(candidates, domain_store=domain_store, config=config)
     stats["fetch_candidates"] = plan.eligible_pages
     stats["pages_selected"] = len(plan.candidates)
@@ -1388,8 +1415,27 @@ def fetch_score_stage_events(
         str,
         tuple[FetchedDoc, str, str, list[dict[str, object]], list[dict[str, object]], bool],
     ] = {}
+    followup_budget = FollowupBudget.from_config(config)
 
+    stage_start = cost_meter.spent_usd
     for candidate in plan.candidates:
+        held = held_event_match(candidate.title, canonical_candidates)
+        waiting = None if held is not None else held_event_match(candidate.title, waiting_events)
+        if (held or waiting) is not None and by_id[candidate.candidate_id].score_band != "duplicate":
+            # Already on the map, same edition - or already waiting in Review:
+            # not fetched or analysed again.
+            where = (f"already on the map as {held.get('name')}" if held is not None
+                     else f"already waiting in Review as {waiting.get('name')}")
+            by_id[candidate.candidate_id] = replace(
+                candidate,
+                triage_verdict="duplicate",
+                triage_reason=f"{where}; not read again",
+                duplicate_of=str((held or {}).get("event_id") or "") or None,
+                score_band="duplicate",
+            )
+            key = "held_event_skips" if held is not None else "pending_review_skips"
+            stats[key] = int(stats.get(key, 0) or 0) + 1
+            continue
         candidate_domain = candidate.domain or normalized_domain(candidate.url)
         domain_store.touch(candidate_domain)
         page_fetched = False
@@ -1424,9 +1470,18 @@ def fetch_score_stage_events(
                 sector_codes=sector_codes,
                 run_date=current_date,
             )
+            text_cache_path = _text_cache_path(raw_store, "event_analysis", doc,
+                                               EVENT_ANALYSIS_VERSION)
+            if analysis is None:
+                analysis = read_event_analysis_cache(
+                    text_cache_path, sector_codes=sector_codes, run_date=current_date)
+                if analysis is not None:
+                    stats["analyses_from_text_cache"] = int(
+                        stats.get("analyses_from_text_cache", 0) or 0) + 1
+                    write_event_analysis_cache(cache_path, analysis)
             participant_actors: list[dict[str, object]] = []
             participant_people: list[dict[str, object]] = []
-            unchanged = prior_raw is not None
+            unchanged = prior_raw is not None and _staged_before(session, prior_raw)
             if unchanged:
                 stats["skipped_unchanged"] += 1
                 audit_rows.append(
@@ -1482,6 +1537,7 @@ def fetch_score_stage_events(
                 else:
                     raise TypeError("event rubric extractor returned an unsupported result")
                 write_event_analysis_cache(cache_path, analysis)
+                write_event_analysis_cache(text_cache_path, analysis)
                 stats["event_pages_analyzed"] = int(
                     stats.get("event_pages_analyzed", 0) or 0
                 ) + 1
@@ -1502,7 +1558,8 @@ def fetch_score_stage_events(
                 page_fetched=True,
                 fit_score=score.total,
                 rubric=analysis.rubric,
-                record_preview=analysis.record,
+                record_preview={**analysis.record,
+                                **({"facts": analysis.facts} if analysis.facts else {})},
                 score_breakdown=score.contributions,
                 score_band=_qualification_capped_event_band(
                     raw_band,
@@ -1579,6 +1636,7 @@ def fetch_score_stage_events(
                 }
             )
 
+    stats["cost_stage_pages_usd"] = round(cost_meter.spent_usd - stage_start, 6)
     updated = [by_id[candidate.candidate_id] for candidate in candidates]
     updated, event_duplicate_count = _collapse_extracted_event_duplicates(updated)
     stats["event_record_duplicates_collapsed"] = event_duplicate_count
@@ -1587,11 +1645,13 @@ def fetch_score_stage_events(
         for candidate in updated
         if candidate.rubric is not None and candidate.score_band != "duplicate"
     ]
+    stage_start = cost_meter.spent_usd
     reranked, rerank_attention = rerank_top_event_candidates(
         scored,
         reranker=reranker,
         config=config,
     )
+    stats["cost_stage_rerank_usd"] = round(cost_meter.spent_usd - stage_start, 6)
     attention_reasons.extend(rerank_attention)
     reranked_by_id = {candidate.candidate_id: candidate for candidate in reranked}
     updated = [reranked_by_id.get(candidate.candidate_id, candidate) for candidate in updated]
@@ -1635,20 +1695,70 @@ def fetch_score_stage_events(
                 "event qualification capped rubric score at review: upcoming and neither "
                 "attendable nor minable"
             )
+        if band != "auto_low" and record.get("title"):
+            # Separate checks - official source, identity, date, place,
+            # relevance, cancellation, completeness - that only lower the band.
+            doc_entry = docs.get(candidate.candidate_id)
+            read_text = page_text(doc_entry[0].content) if doc_entry else ""
+            gate = event_gate(
+                record, facts=record.get("facts"), page_url=candidate.url,
+                page_text=read_text, rubric=candidate.rubric, run_date=current_date,
+                config=config)
+            outside = event_outside_request(record, request) if request is not None else None
+            if gate.decision == "research" and outside is None and doc_entry is not None:
+                # Needs More Research: one bounded read of the official pages.
+                followup = _event_followup(
+                    record, candidate.url, doc_entry[0], budget=followup_budget,
+                    source=source, run_log=run_log, raw_store=raw_store, run_id=run_id,
+                    rubric_extractor=rubric_extractor, sector_codes=sector_codes,
+                    hub_names=hub_names, run_date=current_date, stats=stats,
+                    cost_meter=cost_meter)
+                if followup is not None:
+                    extra_doc, extra_analysis = followup
+                    record = merge_event_reads(
+                        record, {**extra_analysis.record,
+                                 "facts": extra_analysis.facts}, extra_doc.url)
+                    read_text = f"{read_text}\n{page_text(extra_doc.content)}"
+                    gate = event_gate(
+                        record, facts=record.get("facts"), page_url=candidate.url,
+                        page_text=read_text, rubric=candidate.rubric,
+                        run_date=current_date, config=config)
+                    if gate.decision != "research":
+                        stats["followups_resolved"] = int(
+                            stats.get("followups_resolved", 0) or 0) + 1
+                    outside = (event_outside_request(record, request)
+                               if request is not None else None)
+            record = {**record, "quality": gate.payload()}
+            capped = cap_band(band, gate)
+            if capped != band:
+                band = capped
+                verdict = "rejected" if band == "auto_low" else "review"
+                reason = f"{reason}; quality gate -> {band}: {gate.summary}"
+            if outside is not None:
+                band, verdict = "auto_low", "rejected"
+                reason = f"{reason}; outside the request: {outside}"
         final.append(
             replace(
                 candidate,
                 triage_verdict=verdict,
                 triage_reason=reason,
                 score_band=band,
+                record_preview=record,
             )
         )
+
+    stats["cost_stage_followups_usd"] = round(followup_budget.spent_usd, 6)
+    if request is not None:
+        # At most the request's number of new events per run, strongest first.
+        final, held_back = apply_new_actor_cap(final, request.max_new_actors, noun="events")
+        stats["request_cap_held_back"] = held_back
 
     routable = [
         candidate
         for candidate in final
         if candidate.score_band in {"auto_high", "review"}
     ]
+    stage_start = cost_meter.spent_usd
     for candidate in routable:
         doc_entry = docs.get(candidate.candidate_id)
         if doc_entry is None:
@@ -1664,7 +1774,17 @@ def fetch_score_stage_events(
             and not participant_actors
             and not participant_people
         ):
-            participant_records = participant_extractor.extract(doc)
+            try:
+                participant_records = participant_extractor.extract(doc)
+            except CostLimitExceeded:
+                raise
+            except Exception as exc:  # noqa: BLE001 - the event stands without its participants
+                # Measured 2026-10-23: one dropped API connection here failed a
+                # whole run after every page had been read and paid for.
+                logger.warning("participant extraction failed for %s: %s", candidate.url, exc)
+                stats["participant_extraction_failures"] = int(
+                    stats.get("participant_extraction_failures", 0) or 0) + 1
+                participant_records = []
             if participant_records:
                 participant_record = participant_records[0]
                 participant_actors = [
@@ -1705,20 +1825,23 @@ def fetch_score_stage_events(
                 run_date=current_date,
                 actor_resolver=actor_resolver,
                 event_rubric=candidate.rubric,
-                event_review_metadata=(
-                    {
-                        "review_kind": "rubric_band",
-                        "search_candidate_id": candidate.candidate_id,
-                        "rubric_score": candidate.fit_score,
-                        "rubric": candidate.rubric,
-                        "score_breakdown": candidate.score_breakdown,
-                        "rerank_position": candidate.rerank_position,
-                        "rerank_reason": candidate.rerank_reason,
-                        "qualification_paths": list(candidate.qualification_paths),
-                    }
-                    if candidate.score_band == "review"
-                    else None
-                ),
+                # Every qualified event goes to GHUS Review - a confident one
+                # too. Nothing is created on the map until a person verifies
+                # it (Architecture V2: a new record is Parked until reviewed,
+                # and Review is where that happens). A close match to an event
+                # already on the map rides along as its candidate.
+                event_review_metadata={
+                    "review_kind": "rubric_band",
+                    "search_candidate_id": candidate.candidate_id,
+                    "rubric_score": candidate.fit_score,
+                    "rubric": candidate.rubric,
+                    "score_breakdown": candidate.score_breakdown,
+                    "rerank_position": candidate.rerank_position,
+                    "rerank_reason": candidate.rerank_reason,
+                    "qualification_paths": list(candidate.qualification_paths),
+                    "quality": (candidate.record_preview or {}).get("quality"),
+                    "score_band": candidate.score_band,
+                },
             )
         finally:
             domain_store.add_counts(
@@ -1727,6 +1850,7 @@ def fetch_score_stage_events(
                 records_promoted=int(stats["records_promoted"]) - before_promoted,
             )
 
+    stats["cost_stage_participants_usd"] = round(cost_meter.spent_usd - stage_start, 6)
     _attach_event_band_stats(stats, final, config=config)
     if stats["fetch_failures"]:
         attention_reasons.append(
@@ -1738,6 +1862,180 @@ def fetch_score_stage_events(
             f"open-web event record validation failures: {validation_failures} page(s)"
         )
     return EventFetchOutcome(attention_reasons=attention_reasons, candidates=final)
+
+
+def _followup_read(urls, *, budget, kind, source, run_log, raw_store, run_id, analyse, stats,
+                   cost_meter):
+    """Fetch the first follow-up page that loads, store it, analyse it. None if none did."""
+    before = cost_meter.spent_usd
+    try:
+        for url in urls:
+            try:
+                doc = source.fetch(url)
+                stats["pages_fetched"] += 1
+                stats["followup_pages_fetched"] = int(
+                    stats.get("followup_pages_fetched", 0) or 0) + 1
+                prior_raw = run_log.find_raw_document(url=doc.url, content_hash=doc.content_hash)
+                raw_document_id = run_log.write_raw_document(
+                    run_id=run_id, doc=doc,
+                    storage_path=_storage_path_for_doc(raw_store, run_id=run_id, doc=doc,
+                                                       prior_raw=prior_raw))
+                analysis = analyse(doc)
+                cost_meter.enforce()
+                return doc, raw_document_id, analysis
+            except CostLimitExceeded:
+                raise
+            except Exception as exc:  # noqa: BLE001 - a follow-up never stops the run
+                logger.info("%s follow-up %s not read: %s", kind, url, exc)
+                stats["followup_failures"] = int(stats.get("followup_failures", 0) or 0) + 1
+        return None
+    finally:
+        budget.spent_usd += cost_meter.spent_usd - before
+
+
+def _event_followup(record, page_url, doc, *, budget, source, run_log, raw_store, run_id,
+                    rubric_extractor, sector_codes, hub_names, run_date, stats, cost_meter):
+    urls = event_followup_urls(record, page_url, doc.content)
+    if not urls or not budget.take():
+        return None
+    stats["followups_attempted"] = int(stats.get("followups_attempted", 0) or 0) + 1
+
+    def analyse(page):
+        cache_path = (raw_store.base_dir / "event_analysis"
+                      / f"{page.content_hash}.{EVENT_ANALYSIS_VERSION}.json")
+        text_path = _text_cache_path(raw_store, "event_analysis", page, EVENT_ANALYSIS_VERSION)
+        for path in (cache_path, text_path):
+            cached = read_event_analysis_cache(path, sector_codes=sector_codes,
+                                               run_date=run_date)
+            if cached is not None:
+                return cached
+        if not isinstance(rubric_extractor, EventRubricExtractor):
+            raise RuntimeError("follow-up needs the event rubric extractor")
+        analysis = rubric_extractor.extract(page, sector_codes=sector_codes,
+                                            hub_names=hub_names, run_date=run_date)
+        write_event_analysis_cache(cache_path, analysis)
+        write_event_analysis_cache(text_path, analysis)
+        return analysis
+
+    read = _followup_read(urls, budget=budget, kind="event", source=source, run_log=run_log,
+                          raw_store=raw_store, run_id=run_id, analyse=analyse, stats=stats,
+                          cost_meter=cost_meter)
+    return None if read is None else (read[0], read[2])
+
+
+def _linkedin_lookup(linkedin_search, record, *, stats, cost_meter, budget):
+    """{url, title} of this person's matched public LinkedIn profile, or None."""
+    name = str(record.get("name") or "").strip()
+    affiliation = str(record.get("affiliation") or "").strip()
+    if not name or not affiliation:
+        return None
+    stats["linkedin_searches"] = int(stats.get("linkedin_searches", 0) or 0) + 1
+    before = cost_meter.spent_usd
+    try:
+        found = linkedin_search(name, affiliation)
+        cost_meter.enforce()
+    except CostLimitExceeded:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a missing LinkedIn never stops the run
+        logger.info("LinkedIn search for %s failed: %s", name, exc)
+        found = None
+    finally:
+        budget.spent_usd += cost_meter.spent_usd - before
+    if found is not None:
+        stats["linkedin_found"] = int(stats.get("linkedin_found", 0) or 0) + 1
+    return found
+
+
+def _person_followup(record, page_url, *, page_html="", budget, source, run_log, raw_store,
+                     run_id,
+                     rubric_extractor, sector_codes, hub_names, held_actor_names, stats,
+                     cost_meter):
+    urls = person_followup_urls(record, page_url, page_html)
+    if not urls or not budget.take():
+        return None
+    stats["followups_attempted"] = int(stats.get("followups_attempted", 0) or 0) + 1
+
+    def analyse(page):
+        cache_path = (raw_store.base_dir / "person_analysis"
+                      / f"{page.content_hash}.{PERSON_ANALYSIS_VERSION}.json")
+        text_path = _text_cache_path(raw_store, "person_analysis", page, PERSON_ANALYSIS_VERSION)
+        for path in (cache_path, text_path):
+            cached = read_person_analysis_cache(path, held_actor_names=held_actor_names)
+            if cached is not None:
+                return cached
+        if not isinstance(rubric_extractor, PersonRubricExtractor):
+            raise RuntimeError("follow-up needs the person rubric extractor")
+        analysis = rubric_extractor.extract(page, sector_codes=sector_codes,
+                                            hub_names=hub_names,
+                                            held_actor_names=held_actor_names)
+        write_person_analysis_cache(cache_path, analysis)
+        write_person_analysis_cache(text_path, analysis)
+        return analysis
+
+    read = _followup_read(urls, budget=budget, kind="person", source=source, run_log=run_log,
+                          raw_store=raw_store, run_id=run_id, analyse=analyse, stats=stats,
+                          cost_meter=cost_meter)
+    return read
+
+
+def _staged_before(session, prior_raw) -> bool:
+    """The same page, unchanged, already reached staging (and so Review): skip it.
+
+    A page read before but never staged - excluded under older rules, or read
+    by a run that failed or stopped at its cost cap - is read again (from the
+    analysis cache: no second model call) and decided under today's rules.
+    Without a database the old behaviour stands: an unchanged page is skipped.
+    """
+    if _read_by_failed_run(session, prior_raw):
+        return False
+    url = str((prior_raw or {}).get("url") or "")
+    if session is None or not url:
+        return True
+    try:
+        with session.begin_nested():
+            return session.execute(
+                text("SELECT 1 FROM staged_record WHERE source_url = :url LIMIT 1"),
+                {"url": url}).first() is not None
+    except Exception:  # noqa: BLE001 - no staging table: keep the old behaviour
+        return True
+
+
+def _read_by_failed_run(session, prior_raw) -> bool:
+    """The page was last read by a run that failed, or stopped at its cost cap.
+
+    Such a page is not "unchanged": nothing from it reached Review, so it is
+    read again (from the analysis cache - no second model call). Measured
+    2026-10-23: a run that lost its API connection after reading 13 pages left
+    them stored, and every later run skipped them. Events and people only; the
+    actor pipeline is untouched.
+    """
+    run_id = str((prior_raw or {}).get("run_id") or "")
+    if session is None or not run_id:
+        return False
+    try:
+        with session.begin_nested():
+            row = session.execute(
+                text("SELECT status, status_reason FROM scrape_run "
+                     "WHERE CAST(run_id AS text) = :id"),
+                {"id": run_id}).first()
+        status, reason = (row[0], row[1]) if row else (None, None)
+    except Exception:  # noqa: BLE001 - no run ledger: keep the old behaviour
+        return False
+    return status == "failed" or str(reason or "").startswith("max_usd_per_run cap hit")
+
+
+def _text_cache_path(raw_store, folder: str, doc, version: str) -> Path:
+    """The analysis cache keyed by what the model reads: the address and the page text.
+
+    The raw-HTML hash changes with every nonce, ad slot or session token; the
+    readable text often does not (measured 2026-10-23: 5 of 7 event pages
+    re-read with changed HTML had identical text). Same address and same text
+    is the same model input, so its analysis is reused - no second call.
+    """
+    key = hashlib.sha256(
+        f"{doc.url}\n{reading_text(doc.content, doc.content_type)}".encode("utf-8")
+    ).hexdigest()
+    return raw_store.base_dir / folder / f"text-{key}.{version}.json"
 
 
 def _qualification_capped_event_band(
@@ -1861,8 +2159,17 @@ def fetch_score_stage_people(
     person_candidates=None,
     affiliation_candidates=None,
     actor_resolver=None,
+    request=None,
+    linkedin_search=None,
+    own_sites: dict[str, str] | None = None,
 ) -> PersonFetchOutcome:
-    """Fetch person profiles, score page evidence, then resolve identity in code."""
+    """Fetch person profiles, score page evidence, then resolve identity in code.
+
+    ``request`` is a Discovery-page request for people (on-request mode). The
+    same gates, follow-up and Review routing apply as in any other run; a
+    request also excludes people at another institution than the one asked
+    for and keeps at most its per-run number of new people.
+    """
     if not bool(config.get("people_enabled", False)):
         raise RuntimeError(
             "open-web person fetch is disabled pending TARGETING_POLICY.md section 6 approval"
@@ -1919,13 +2226,38 @@ def fetch_score_stage_people(
     attention_reasons = _cap_attention_reasons(plan, config)
     by_id = {candidate.candidate_id: candidate for candidate in candidates}
     docs: dict[str, tuple[FetchedDoc, str, str, bool]] = {}
+    # A complete profile often needs the person's own site or a LinkedIn
+    # search; a people run has its own, larger allowance (still bounded).
+    followup_budget = FollowupBudget(
+        remaining=max(0, int(config.get("person_followup_max_per_run", 12))))
+    waiting_people = pending_review_people(session) if person_candidates is None else set()
 
+    stage_start = cost_meter.spent_usd
     for candidate in plan.candidates:
+        if str(candidate.url or "").lower().rstrip("/") in waiting_people or (
+                candidate.title and person_key(candidate.title) in waiting_people):
+            # Already waiting in Review from an earlier or overlapping run.
+            by_id[candidate.candidate_id] = replace(
+                candidate, triage_verdict="duplicate", score_band="duplicate",
+                triage_reason="already waiting in Review; not read again")
+            stats["pending_review_skips"] = int(stats.get("pending_review_skips", 0) or 0) + 1
+            continue
         candidate_domain = candidate.domain or normalized_domain(candidate.url)
         domain_store.touch(candidate_domain)
         page_fetched = False
         try:
-            doc = source.fetch(candidate.url)
+            try:
+                doc = source.fetch(candidate.url)
+            except Exception as exc:  # noqa: BLE001 - a refused profile has one alternative
+                own_site = (own_sites or {}).get(candidate.url)
+                if not own_site or not re.search(r"\b(401|403|429)\b", str(exc)):
+                    raise
+                # The department site refuses automated reading; the person's
+                # own lab or group site, linked from the same directory card,
+                # is read instead (still an official, self-published source).
+                doc = source.fetch(own_site)
+                candidate_domain = normalized_domain(doc.url)
+                stats["person_own_site_used"] = int(stats.get("person_own_site_used", 0) or 0) + 1
             page_fetched = True
             final_domain = normalized_domain(doc.url)
             if not final_domain:
@@ -1954,7 +2286,16 @@ def fetch_score_stage_people(
                 cache_path,
                 held_actor_names=held_actor_names,
             )
-            unchanged = prior_raw is not None
+            text_cache_path = _text_cache_path(raw_store, "person_analysis", doc,
+                                               PERSON_ANALYSIS_VERSION)
+            if analysis is None:
+                analysis = read_person_analysis_cache(
+                    text_cache_path, held_actor_names=held_actor_names)
+                if analysis is not None:
+                    stats["analyses_from_text_cache"] = int(
+                        stats.get("analyses_from_text_cache", 0) or 0) + 1
+                    write_person_analysis_cache(cache_path, analysis)
+            unchanged = prior_raw is not None and _staged_before(session, prior_raw)
             if unchanged:
                 stats["skipped_unchanged"] += 1
                 audit_rows.append(
@@ -1997,6 +2338,7 @@ def fetch_score_stage_people(
                 else:
                     raise TypeError("person rubric extractor returned an unsupported result")
                 write_person_analysis_cache(cache_path, analysis)
+                write_person_analysis_cache(text_cache_path, analysis)
                 stats["person_pages_analyzed"] = int(
                     stats.get("person_pages_analyzed", 0) or 0
                 ) + 1
@@ -2006,7 +2348,8 @@ def fetch_score_stage_people(
                 page_fetched=True,
                 fit_score=score.total,
                 rubric=analysis.rubric,
-                record_preview=analysis.record,
+                record_preview={**analysis.record,
+                                **({"facts": analysis.facts} if analysis.facts else {})},
                 score_breakdown=score.contributions,
                 score_band=person_score_band(score.total, config),
             )
@@ -2046,13 +2389,16 @@ def fetch_score_stage_people(
                 }
             )
 
+    stats["cost_stage_pages_usd"] = round(cost_meter.spent_usd - stage_start, 6)
     updated = [by_id[candidate.candidate_id] for candidate in candidates]
     scored = [candidate for candidate in updated if candidate.rubric is not None]
+    stage_start = cost_meter.spent_usd
     reranked, rerank_attention = rerank_top_person_candidates(
         scored,
         reranker=reranker,
         config=config,
     )
+    stats["cost_stage_rerank_usd"] = round(cost_meter.spent_usd - stage_start, 6)
     attention_reasons.extend(rerank_attention)
     reranked_by_id = {candidate.candidate_id: candidate for candidate in reranked}
     updated = [reranked_by_id.get(candidate.candidate_id, candidate) for candidate in updated]
@@ -2075,6 +2421,108 @@ def fetch_score_stage_people(
         )
         reason = f"person rubric score {float(candidate.fit_score or 0.0):.3f} -> {band}"
         record = candidate.record_preview or {}
+        if band != "auto_low" and record.get("name"):
+            # Separate checks - identity source, affiliation, relevance,
+            # completeness - that can only lower the rubric's band.
+            doc_entry = docs.get(candidate.candidate_id)
+            page_url = candidate.url
+            gate = person_gate(
+                record, facts=record.get("facts"), page_url=page_url,
+                page_text=page_text(doc_entry[0].content) if doc_entry else "",
+                rubric=candidate.rubric, config=config)
+            outside = person_outside_request(record, request) if request is not None else None
+            if gate.decision == "research" and outside is None:
+                # Needs More Research: read the official profile the page names,
+                # once. If it is this person's, it becomes the source.
+                followup = _person_followup(
+                    record, page_url, page_html=doc_entry[0].content if doc_entry else "",
+                    budget=followup_budget, source=source,
+                    run_log=run_log, raw_store=raw_store, run_id=run_id,
+                    rubric_extractor=rubric_extractor, sector_codes=sector_codes,
+                    hub_names=hub_names, held_actor_names=held_actor_names,
+                    stats=stats, cost_meter=cost_meter)
+                if followup is not None:
+                    extra_doc, extra_raw_id, extra = followup
+                    extra_record = {**extra.record,
+                                    **({"facts": extra.facts} if extra.facts else {})}
+                    extra_bio = (extra.facts or {}).get("bio")
+                    if extra_bio and not (record.get("facts") or {}).get("bio") \
+                            and same_person(str(record.get("name")),
+                                            str(extra_record.get("name") or "")):
+                        # The person's own site holds the bio their faculty page
+                        # lacks: the bio joins the profile, with that site as source.
+                        facts = dict(record.get("facts") or {})
+                        facts["bio"] = extra_bio
+                        facts["evidence"] = {
+                            **dict(facts.get("evidence") or {}),
+                            "bio": dict((extra.facts.get("evidence") or {}).get("bio") or {
+                                "quote": extra_bio, "source_url": extra_doc.url})}
+                        record = {**record, "facts": facts}
+                        gate = person_gate(
+                            record, facts=facts, page_url=page_url,
+                            page_text=page_text(doc_entry[0].content) if doc_entry else "",
+                            rubric=candidate.rubric, config=config)
+                        stats["bios_from_own_site"] = int(
+                            stats.get("bios_from_own_site", 0) or 0) + 1
+                    extra_gate = person_gate(
+                        extra_record, facts=extra_record.get("facts"), page_url=extra_doc.url,
+                        page_text=page_text(extra_doc.content), rubric=extra.rubric,
+                        config=config)
+                    if same_person(str(record.get("name")), str(extra_record.get("name") or "")) \
+                            and (extra_gate.decision in ("accept", "review")
+                                 or (extra_gate.decision == "research"
+                                     and len(extra_gate.missing_mandatory)
+                                     < len(gate.missing_mandatory))):
+                        score = score_person_rubric(extra.rubric, config=config)
+                        candidate = replace(candidate, rubric=extra.rubric,
+                                            fit_score=score.total,
+                                            score_breakdown=score.contributions)
+                        band = person_score_band(score.total, config)
+                        verdict = "accepted" if band == "auto_high" else (
+                            "rejected" if band == "auto_low" else "review")
+                        reason = (f"person rubric score {score.total:.3f} -> {band} "
+                                  f"(official profile read: {extra_doc.url})")
+                        record = {**extra_record,
+                                  "followup": {"url": extra_doc.url, "from": page_url}}
+                        gate = extra_gate
+                        docs[candidate.candidate_id] = (
+                            extra_doc, normalized_domain(extra_doc.url), extra_raw_id, False)
+                        stats["followups_resolved"] = int(
+                            stats.get("followups_resolved", 0) or 0) + 1
+                        outside = (person_outside_request(record, request)
+                                   if request is not None else None)
+            if (gate.decision == "research" and outside is None
+                    and linkedin_search is not None
+                    and set(gate.missing_mandatory) == {"bio or LinkedIn"}
+                    and followup_budget.take()):
+                # Complete but for a bio: one LinkedIn-only search for this name
+                # and organization. The profile's address is taken from the
+                # search result; LinkedIn itself is never opened.
+                found = _linkedin_lookup(linkedin_search, record, stats=stats,
+                                         cost_meter=cost_meter, budget=followup_budget)
+                if found is not None:
+                    facts = dict(record.get("facts") or {})
+                    facts["linkedin_url"] = found["url"]
+                    facts["evidence"] = {**dict(facts.get("evidence") or {}), "linkedin_url": {
+                        "quote": found["title"], "source_url": found["url"],
+                        "date_read": datetime.now(UTC).isoformat(),
+                        "how": "search result title; LinkedIn itself not opened"}}
+                    record = {**record, "facts": facts}
+                    doc_entry = docs.get(candidate.candidate_id)
+                    gate = person_gate(
+                        record, facts=facts,
+                        page_url=doc_entry[0].url if doc_entry else candidate.url,
+                        page_text=page_text(doc_entry[0].content) if doc_entry else "",
+                        rubric=candidate.rubric, config=config)
+            record = {**record, "quality": gate.payload()}
+            capped = cap_band(band, gate)
+            if capped != band:
+                band = capped
+                verdict = "rejected" if band == "auto_low" else "review"
+                reason = f"{reason}; quality gate -> {band}: {gate.summary}"
+            if outside is not None:
+                band, verdict = "auto_low", "rejected"
+                reason = f"{reason}; outside the request: {outside}"
         identity_outcome = None
         route = None
         if band != "auto_low" and not record.get("name"):
@@ -2127,8 +2575,14 @@ def fetch_score_stage_people(
                 triage_reason=reason,
                 score_band=band,
                 identity_outcome=identity_outcome,
+                record_preview=record,
             )
         )
+
+    stats["cost_stage_followups_usd"] = round(followup_budget.spent_usd, 6)
+    if request is not None:
+        final, held_back = apply_new_actor_cap(final, request.max_new_actors, noun="people")
+        stats["request_cap_held_back"] = held_back
 
     routable = [
         candidate
@@ -2177,6 +2631,7 @@ def fetch_score_stage_people(
                     "rerank_reason": candidate.rerank_reason,
                     "score_band": candidate.score_band,
                     "identity_outcome": candidate.identity_outcome,
+                    "quality": (candidate.record_preview or {}).get("quality"),
                 },
             )
         finally:

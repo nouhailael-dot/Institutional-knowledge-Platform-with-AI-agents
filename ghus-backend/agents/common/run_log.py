@@ -126,6 +126,27 @@ class SQLRunLog:
         self.session.commit()
         return run_id
 
+    def record_progress(self, run_id: str, *, spent_usd: float) -> None:
+        """What a running run has spent so far, for the page that follows it.
+
+        On its own short connection: the run's session may be in the middle
+        of its own work, which must never be committed by a progress note.
+        Only a still-running row is touched; a lock is never waited for.
+        """
+        bind = self.session.get_bind()
+        with bind.connect() as connection:
+            connection.execute(text("SET lock_timeout = '2s'"))
+            connection.execute(
+                text(
+                    "UPDATE scrape_run SET cost_usd = :cost, stats = COALESCE(stats, "
+                    "'{}'::jsonb) || jsonb_build_object('progress', jsonb_build_object("
+                    "'spent_usd', CAST(:cost AS numeric), 'at', now())) "
+                    "WHERE run_id = CAST(:run_id AS uuid) AND status = 'running'"
+                ),
+                {"run_id": run_id, "cost": round(float(spent_usd), 6)},
+            )
+            connection.commit()
+
     def get_run(self, run_id: str) -> dict[str, object]:
         row = self.session.execute(
             text(

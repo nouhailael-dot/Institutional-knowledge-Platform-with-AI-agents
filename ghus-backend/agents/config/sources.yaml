@@ -227,6 +227,15 @@
           "public_profile_url_present": 0.05,
         },
       "max_usd_per_run": 5.00,
+      # The automatic weekly event run (2026-10-23): every recorded live event
+      # run cost $0.13-$2.36 (mean $1.46), so $3.00 leaves headroom for the
+      # follow-up and participant reads; a run that does reach it is picked up
+      # where it stopped by the next run. Actor and people runs keep 5.00.
+      "event_max_usd_per_run": 3.00,
+      # Event and people searches repeated within this many hours are answered
+      # from disk (agents/discovery/search/search_cache.py). Shorter than the
+      # weekly cadence, so the weekly run always searches fresh.
+      "search_cache_ttl_hours": 72,
       "forward_window_days": 365,
       # TARGETING_POLICY.md section 6: supervisor sign-off was confirmed by the
       # platform owner on 2026-10-15, so person discovery is on. Section 6's own

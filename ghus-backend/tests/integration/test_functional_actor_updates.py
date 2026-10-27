@@ -17,6 +17,8 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from agents.collection import actor_updates as au
+from agents.collection.deep_pull import DEEP_FIELDS
+from agents.collection.deep_pull_reader import MAX_DEEP_FIELDS
 from agents.collection.light_pull_reader import LightRead
 from agents.common.facts import ActorFactWrite
 from agents.enrichment.decisions import (
@@ -154,7 +156,9 @@ def test_plan_is_free_and_writes_nothing(session_factory, world, tmp_path):
     assert plan["topic"]["code"] == world["code"]
     assert plan["fields"] == au.schema_fields("company")
     assert plan["cost"]["cap_usd"] == CONFIG["actor_updates"]["max_usd_per_actor"]
-    assert "no web search" in plan["pages"]
+    # Three page requests at most; a fallback search is disclosed, never hidden.
+    assert plan["pages"].startswith("Up to 3 page requests in total")
+    assert "web search" in plan["pages"]
     assert plan["summary"].startswith("Re-read ")
 
 
@@ -193,9 +197,67 @@ def test_deep_pull_permission_follows_the_ghus_decision_for_the_topic(
         session.commit()
         plan = au.plan_update(session, actor_id=world["actor"], topic_code=world["code"],
                               depth="deep", config=CONFIG, runs_dir=tmp_path)
-    assert plan["deep"]["permitted"]
-    # Permitted, but there is no Deep Pull reader yet: said, not faked.
-    assert not plan["can_check"] and "no Deep Pull reader" in plan["refusal"]
+    assert plan["deep"]["permitted"] and plan["can_check"] and not plan.get("refusal")
+
+
+def _verify(session, world, decision="verified"):
+    record_verification_decision(
+        session, entity_type="actor", entity_ids=[world["actor"]], decision=decision,
+        decided_by="ghus:test", topic_id=world["topic"],
+        rejection_reason="Other" if decision == "rejected" else None)
+    session.commit()
+
+
+def test_a_verified_actor_gets_a_selected_deep_pull_written_as_layer_2(
+        session_factory, world, tmp_path):
+    deep = DEEP_FIELDS["company"]
+    with session_factory() as session:
+        _verify(session, world)
+        plan = au.plan_update(session, actor_id=world["actor"], topic_code=world["code"],
+                              depth="deep", config=CONFIG, runs_dir=tmp_path)
+        assert plan["schema"] == list(deep)
+        # Selected, never exhaustive: a few Deep items, the rest said to wait.
+        assert 0 < len(plan["fields"]) <= MAX_DEEP_FIELDS < len(deep)
+        assert set(plan["fields"]) | {s["field"] for s in plan["skipped"]} == set(deep)
+        assert "Deep Pull, selected" in plan["summary"]
+        stated = plan["fields"][0]
+        reader = FakeReader({stated: "Filtration units for small-town water systems."})
+        checked = au.check_update(session, actor_id=world["actor"], topic_code=world["code"],
+                                  depth="deep", config=CONFIG, runs_dir=tmp_path,
+                                  reader_factory=_factory(reader))
+        assert checked["ok"], checked.get("error")
+        assert reader.calls[0]["fields"] == plan["fields"]
+        applied = au.apply_check(session, checked["check_id"], runs_dir=tmp_path, config=CONFIG)
+        assert applied["ok"], applied.get("error")
+        rows = session.execute(text(
+            "SELECT fact_key, layer, fact_type, collection_state FROM actor_fact "
+            "WHERE actor_id = CAST(:a AS uuid) AND topic_id = CAST(:t AS uuid)"),
+            {"a": world["actor"], "t": world["topic"]}).all()
+        assert {(r.fact_key, r.layer, r.fact_type) for r in rows} == {
+            (f, 2, "deep_pull") for f in plan["fields"]}
+        assert {r.fact_key: r.collection_state for r in rows}[stated] == "found"
+        kind = session.execute(text(
+            "SELECT q.request_kind, q.layer FROM collection_run r JOIN collection_request q "
+            "ON q.collection_request_id = r.collection_request_id "
+            "WHERE r.collection_run_id = CAST(:r AS uuid)"), {"r": applied["run_id"]}).one()
+        assert tuple(kind) == ("deep_pull", 2)
+
+
+def test_a_deep_pull_is_not_written_when_verification_is_reversed_after_the_check(
+        session_factory, world, tmp_path):
+    with session_factory() as session:
+        _verify(session, world)
+        plan = au.plan_update(session, actor_id=world["actor"], topic_code=world["code"],
+                              depth="deep", config=CONFIG, runs_dir=tmp_path)
+        reader = FakeReader({plan["fields"][0]: "Filtration units for small towns."})
+        checked = au.check_update(session, actor_id=world["actor"], topic_code=world["code"],
+                                  depth="deep", config=CONFIG, runs_dir=tmp_path,
+                                  reader_factory=_factory(reader))
+        _verify(session, world, decision="rejected")
+        before = _ledger(session)
+        applied = au.apply_check(session, checked["check_id"], runs_dir=tmp_path, config=CONFIG)
+        assert applied["ok"] is False and "no longer" in applied["error"]
+        assert _ledger(session) == before
 
 
 # ---------------------------------------------------------- check + apply

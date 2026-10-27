@@ -1,0 +1,18 @@
+BEGIN
+SET
+SET
+SET
+SET
+DO
+INSERT 0 5
+DO
+ migration_id |                   source_path                   |                          source_sha256                           |          applied_at          | written_now 
+--------------+-------------------------------------------------+------------------------------------------------------------------+------------------------------+-------------
+ 540          | agents/sql/540_v2_actor_update_subscription.sql | 8a6f1dbec788694c2eca45b9e5f10b363da6a74197e40a60eaf8ac48805d6907 | 2026-10-26 12:52:16.33549+00 | t
+ 550          | agents/sql/550_v2_discovery_requests.sql        | 56dc21550fd74771915b84794a29068081f5eff367810409ad2cf95885d0e46d | 2026-10-26 12:52:16.33549+00 | t
+ 560          | agents/sql/560_v2_agent_auto_verification.sql   | d52c855edf804b319cf77ca4f5919d76462d0436e4a884455467e8bd0e566c4a | 2026-10-26 12:52:16.33549+00 | t
+ 570          | agents/sql/570_v2_actor_update_requests.sql     | ee0f192baf82ca0649fe2edc4516f41a518f4deaa6a8696b3505250ffeb01190 | 2026-10-26 12:52:16.33549+00 | t
+ 580          | agents/sql/580_v2_event_people_requests.sql     | 63d7419e7b9511e12e7e339745bff3903c72f3ff13b55bd078aadb3f467b5f11 | 2026-10-26 12:52:16.33549+00 | t
+(5 rows)
+
+COMMIT

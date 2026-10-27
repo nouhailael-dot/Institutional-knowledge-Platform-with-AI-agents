@@ -257,9 +257,40 @@ class QueryGenerator:
                 "excluding sectors from open-web query generation: %s", sorted(excluded)
             )
             sectors = [s for s in sectors if str(s["code"]).upper() not in excluded]
+        if request is not None and entity_type in {"event", "person"}:
+            # An on-request event or people run searches only what was asked
+            # for; the automatic runs below are untouched.
+            from agents.discovery.search.discovery_request import (
+                request_event_queries,
+                request_person_queries,
+            )
+
+            limit = int(self.config.get("request_query_limit") or 24)
+            if entity_type == "event":
+                queries, metadata = request_event_queries(
+                    request, sectors, today=self.today, max_queries=limit)
+            else:
+                queries, metadata = self._person_request_queries(
+                    request, sectors, session=session, limit=limit)
+            queries = _distinct_queries(queries)
+            if not queries:
+                raise RuntimeError("query generation returned zero queries for the request")
+            return QueryBundle(
+                entity_type=entity_type,
+                queries=queries,
+                deterministic_queries=list(queries),
+                llm_queries=[],
+                reference_count=0,
+                metadata=metadata,
+            )
         if entity_type == "event":
-            references = load_event_reference_examples(session)
-            geographies = load_event_geographies(session)
+            from agents.discovery.search.us_scope import us_places
+
+            # United States only (agents/discovery/search/us_scope.py): the
+            # map's own events abroad never steer a search.
+            references = [r for r in load_event_reference_examples(session)
+                          if us_places([str(r.get("location") or "")])]
+            geographies = us_places(load_event_geographies(session))
             sector_terms = load_sector_event_terms(session)
             search_sectors = _sectors_with_representative_terms(sectors, sector_terms)
             deterministic = _event_seed_queries(
@@ -278,7 +309,9 @@ class QueryGenerator:
                 "query_quality_rule": (
                     "Use sector names and representative title terms. Do not use sector codes. "
                     "Use city, state, region, or metro geography only; never use a venue street "
-                    "address, postcode, room, suite, or floor."
+                    "address, postcode, room, suite, or floor. Every query is for events "
+                    "taking place in the United States (or online): never name another "
+                    "country, a foreign city or a world region."
                 ),
             }
         elif entity_type == "actor" and request is not None:
@@ -367,6 +400,15 @@ class QueryGenerator:
             )
 
         llm_queries = self._llm_queries(prompt_context)
+        if entity_type == "event":
+            from agents.discovery.search.us_scope import us_queries
+
+            # A search naming a foreign place is not run, whoever wrote it.
+            deterministic, dropped_seed = us_queries(deterministic)
+            llm_queries, dropped_llm = us_queries(llm_queries)
+            if dropped_seed or dropped_llm:
+                logger.info("not searched (outside the United States): %s",
+                            [*dropped_seed, *dropped_llm])
         queries = _distinct_queries([*deterministic, *llm_queries])
         if not queries:
             raise RuntimeError(f"query generation returned zero queries for {entity_type}")
@@ -378,6 +420,43 @@ class QueryGenerator:
             reference_count=len(references),
             metadata=None,
         )
+
+    def _person_request_queries(self, request, sectors, *, session, limit: int):
+        """Profile searches on the official sites of the institutions that employ them.
+
+        agents/discovery/search/people_targets.py. Without a map to read (no
+        database) or with no institution held in the area, the open search
+        built from the request is used instead.
+        """
+        from agents.discovery.search.discovery_request import request_person_queries
+        from agents.discovery.search.people_targets import (
+            academic_role,
+            institution_domains,
+            profile_queries,
+            themes_for,
+        )
+
+        themes = themes_for(request, sectors)
+        names = {str(s.get("code") or "").upper(): str(s.get("name") or "") for s in sectors}
+        targets = institution_domains(
+            session, states=request.states, sector_codes=request.sector_codes,
+            institution=request.institution,
+            keywords=[*themes, *(names.get(c, c) for c in request.sector_codes)],
+            academic_only=academic_role(request.role),
+            limit=int(self.config.get("person_target_domains", 8)),
+        ) if session is not None else []
+        if not targets:
+            return request_person_queries(request, sectors, max_queries=limit)
+        queries, where = profile_queries(
+            themes, [t["domain"] for t in targets], role=request.role,
+            max_queries=min(limit, int(self.config.get("person_request_searches", 6))))
+        return queries, {
+            "discovery_request": request.describe(),
+            "query_domains": where,
+            "target_institutions": [{"domain": t["domain"],
+                                     "institutions": t["institutions"][:4]} for t in targets],
+            "sector_codes_covered": list(request.sector_codes),
+        }
 
     def _llm_queries(self, context: dict[str, object]) -> list[str]:
         payload = self.llm_client.extract_with_tool(
@@ -670,14 +749,14 @@ def _event_seed_queries(
     year_terms = _year_terms(start, end)
     geo_terms = [geo for geo in geographies[:5] if geo]
     if not geo_terms:
-        geo_terms = ["New York", "United States", "global"]
+        geo_terms = ["United States", "New York"]
 
     queries: list[str] = []
     for sector in sectors:
         phrase = _sector_search_phrase(sector)
         queries.append(f"{phrase} summit conference event {year_terms}")
         queries.append(f"{phrase} innovation forum {geo_terms[0]} {year_terms}")
-    queries.append(f'"UM6P" global hubs ecosystem event {year_terms}')
+    queries.append(f'"UM6P" United States event {year_terms}')
     return _distinct_queries(queries)
 
 

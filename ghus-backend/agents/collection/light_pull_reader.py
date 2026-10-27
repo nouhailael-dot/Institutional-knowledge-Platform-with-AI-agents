@@ -393,13 +393,14 @@ def _value_shape(key: str) -> dict:
     return _VALUE_SHAPES.get(key) or part_schema(key) or {"type": "string"}
 
 
-def _answer_schema(fields: Sequence[str], urls: Sequence[str]) -> dict:
+def _answer_schema(fields: Sequence[str], urls: Sequence[str],
+                   criteria: Mapping[str, str] = FIELD_CRITERIA) -> dict:
     props = {}
     for key in fields:
         parts = FACT_PARTS.get(key)
         props[key] = {
             "type": "object", "additionalProperties": False,
-            "description": FIELD_CRITERIA[key] + (
+            "description": criteria[key] + (
                 " Fill each part separately; leave a part empty when no page states it."
                 if parts else ""),
             "properties": {
@@ -518,7 +519,16 @@ class LightPullReader:
     ``fallback`` (site_access.Fallback) is used when the organisation's own
     website refuses the agent or cannot be read: other sources open to it,
     within the same three pages. Without it, a refusal is reported.
+
+    The class attributes are what a reader of another layer changes - the
+    boxes' criteria, the instructions and the tool's name (``deep_pull_reader``);
+    the pages, the quote check and the evidence rules stay the same.
     """
+
+    criteria: Mapping[str, str] = FIELD_CRITERIA
+    system = _SYSTEM
+    tool_name = "fill_light_pull_boxes"
+    tool_description = "Answer every Light Pull box from these pages only."
 
     def __init__(self, client, fetch, *, max_tokens: int = 3000, fallback=None):
         self.client = client
@@ -595,10 +605,10 @@ class LightPullReader:
                       for d in documents],
         }, ensure_ascii=False)
         answers = self.client.extract_with_tool(
-            system=_SYSTEM + (_OTHER_SOURCES if others else ""), user=user,
-            tool_name="fill_light_pull_boxes",
-            tool_description="Answer every Light Pull box from these pages only.",
-            input_schema=_answer_schema(wanted, result.pages), max_tokens=self.max_tokens,
+            system=self.system + (_OTHER_SOURCES if others else ""), user=user,
+            tool_name=self.tool_name, tool_description=self.tool_description,
+            input_schema=_answer_schema(wanted, result.pages, self.criteria),
+            max_tokens=self.max_tokens,
         ) or {}
         cost_meter = getattr(self.client, "cost_meter", None)
         if cost_meter is not None:

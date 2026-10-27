@@ -262,11 +262,13 @@ def write_cached_analysis(
     prompt_version: str,
     rubric: dict[str, object],
     record: dict[str, object],
+    facts: dict[str, object] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
-            {"prompt_version": prompt_version, "rubric": rubric, "record": record},
+            {"prompt_version": prompt_version, "rubric": rubric, "record": record,
+             "facts": facts or {}},
             ensure_ascii=False,
             sort_keys=True,
         ),

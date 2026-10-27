@@ -48,10 +48,14 @@ changes anything:
     page never overwrites a recorded value. One failed box does not stop the
     others; applying the same check again retries only the boxes that failed.
 
-Deep Pull is refused unless the latest GHUS decision verified this actor for
-this exact sector (``deep_pull.actor_is_verified_for_topic``); the refusal
-says why and offers the Light Refresh. Even when permitted it is not run here:
-Phase 10 built the gate and the writer, not a Deep Pull reader.
+Deep Pull (``--depth deep``) is refused unless the latest GHUS decision
+verified this actor for this exact sector (``deep_pull.actor_is_verified_for_topic``);
+the refusal says why and offers the Light Refresh. When permitted, the same
+three steps run with the Deep boxes: ``plan`` selects at most
+``deep_pull_reader.MAX_DEEP_FIELDS`` of the category's Deep schema (never all
+of it), ``check`` reads them with ``deep_pull_reader.DeepPullReader``, and
+``apply`` checks the gate again and writes each box as a Layer 2 fact through
+``deep_pull.append_deep_pull``, under a ``deep_pull`` collection request.
 
 Live writes against a database other than a local ``*_test`` one also need
 ACTOR_UPDATE_WRITES_ENABLED=true, which only the platform bridge sets.
@@ -487,6 +491,9 @@ def describe(plan: dict) -> str:
                      "so this update reads other sources that name it instead.")
     if plan["depth"] == "deep" and not plan["deep"]["permitted"]:
         parts.append("Deep Pull is not permitted: " + plan["deep"]["reason"])
+    elif plan["depth"] == "deep" and plan["fields"]:
+        parts.append(f"Deep Pull, selected: {len(plan['fields'])} of the "
+                     f"{plan['schema_size']} Deep items for this type; run it again for others.")
     cost = plan["cost"]
     if plan["fields"]:
         if cost["typical_usd"] is not None:
@@ -585,13 +592,36 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
         "access": access,
     }
     if depth == "deep":
-        plan["can_check"] = False
-        plan["refusal"] = (deep["reason"] if not deep["permitted"] else
-                           "Deep Pull is permitted for this actor and sector, but no Deep Pull "
-                           "reader exists yet (Phase 10 built the gate and the writer). Run a "
-                           "Light Refresh instead.")
+        _deep_plan(session, plan, actor, topic, fields=fields)
     plan["summary"] = describe(plan)
     return plan
+
+
+def _deep_plan(session, plan: dict, actor: dict, topic: dict, *, fields=()) -> None:
+    """Replace the Light boxes with a selected set of Deep boxes, or refuse."""
+    from agents.collection.deep_pull_reader import MAX_DEEP_FIELDS, deep_schema, select_fields
+
+    schema = deep_schema(actor["actor_category"])
+    plan["can_check"] = False
+    plan["schema"], plan["schema_size"] = schema, len(schema)
+    plan["fields"], plan["skipped"] = [], []
+    if not plan["deep"]["permitted"]:
+        plan["refusal"] = plan["deep"]["reason"]
+        return
+    if not schema:
+        plan["refusal"] = ("This organization's type has no Deep Pull items, so there is nothing "
+                           "deeper to read. Run a Light Refresh instead.")
+        return
+    current = current_values(session, actor["actor_id"], topic["topic_id"], schema)
+    chosen = select_fields(actor["actor_category"], current, wanted=fields)
+    plan["fields"] = chosen
+    plan["skipped"] = [{"field": f, "reason": (
+        f"Not in this Deep Pull: it reads at most {MAX_DEEP_FIELDS} items at a time, those "
+        "with nothing recorded first. Run it again for this one.")}
+        for f in schema if f not in chosen]
+    plan["can_check"] = bool(chosen)
+    plan["pages"] = ("Up to 3 page requests in total, including unavailable pages, read for the "
+                     "selected Deep items. " + plan["access"]["fallback"])
 
 
 # ----------------------------------------------------------------- compare
@@ -749,8 +779,9 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
                        config=config, today=today, runs_dir=runs_dir)
     if not plan.get("ok"):
         return plan
-    if depth == "deep":
-        return {**plan, "ok": False, "error": plan["refusal"]}
+    if depth == "deep" and not plan["can_check"]:
+        return {**plan, "ok": False, "error": plan.get("refusal")
+                or "Nothing is selected for this Deep Pull."}
     if not plan["fields"]:
         return {**plan, "ok": True, "findings": [], "counts": {}, "cost_usd": 0.0,
                 "pages_read": [], "check_id": None,
@@ -758,9 +789,11 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
     cap = float(limits["max_usd_per_actor"])
     cap = min(cap, float(max_usd)) if max_usd else cap
     if reader_factory is None:
+        from agents.collection.deep_pull_reader import DeepPullReader
         from agents.collection.light_pull_candidates import _reader
 
-        reader, meter, model = _reader(config, cap)
+        reader, meter, model = _reader(
+            config, cap, reader_class=DeepPullReader if depth == "deep" else None)
     else:
         reader, meter, model = reader_factory(cap)
 
@@ -812,7 +845,7 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
             related_error = f"Related organisations were not listed: {type(exc).__name__}"
     spent = round(float(meter.spent_usd), 4)
     # Boxes in the schema with nothing recorded and not read now.
-    schema = schema_fields(actor["actor_category"])
+    schema = plan["schema"]
     others = current_values(session, actor["actor_id"], topic["topic_id"],
                             [f for f in schema if f not in plan["fields"]])
     unread = [classify(f, None, None, None, read_at=read_at, topic_name=topic["name"])
@@ -821,7 +854,7 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
     record = {
         "check_id": check_id, "created_at": read_at.isoformat(), "read_at": read_at.isoformat(),
         "actor_id": actor["actor_id"], "actor_name": actor["name"],
-        "topic_id": topic["topic_id"], "topic_code": topic["code"], "topic_name": topic["name"],
+        "actor_category": actor["actor_category"], "topic_id": topic["topic_id"], "topic_code": topic["code"], "topic_name": topic["name"],
         "scope": scope, "depth": depth, "categories": plan["categories"], "focus": plan["focus"],
         "fields": plan["fields"], "pages_read": read.pages, "cost_usd": spent, "cap_usd": cap,
         "sources": dict(getattr(read, "sources", {}) or {}), "attempts": attempts,
@@ -855,6 +888,7 @@ def _record_run(session, record: dict) -> tuple[str, str]:
         session, actor_id=record["actor_id"], topic_id=record["topic_id"],
         need=f"Actor update ({record['scope']}): {record['summary']}",
         requested_by=REQUESTED_BY, job_name=JOB_NAME, cap_usd=float(record["cap_usd"]),
+        deep=record.get("depth") == "deep",
         spent_usd=float(record["cost_usd"]), pages_fetched=len(record["pages_read"]),
         snapshot={
             "check_id": record["check_id"], "scope": record["scope"], "depth": record["depth"],
@@ -1000,6 +1034,17 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
         return {"ok": False, "error": (
             f"This check is older than {limits['check_valid_hours']} hours; its pages may "
             "have changed. Run the check again.")}
+    deep = record.get("depth") == "deep"
+    if deep:
+        from agents.collection.deep_pull import actor_is_verified_for_topic
+
+        # Checked again at the moment of writing: a verification reversed
+        # after the check stops the Deep Pull here (the writer refuses too).
+        if not actor_is_verified_for_topic(session, actor_id=record["actor_id"],
+                                           topic_id=record["topic_id"]):
+            return {"ok": False, "check_id": check_id, "error": (
+                "GHUS no longer has this actor verified for this sector, so the Deep Pull "
+                "is not written. Nothing was changed.")}
     done = set(record.get("written_fields") or ())
     pending = [f for f in record["findings"] if f["outcome"] in WRITTEN
                and not (f["outcome"] == "not_found" and f.get("reason"))
@@ -1037,16 +1082,20 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
         result = public(finding)
         savepoint = session.begin_nested()
         try:
-            fact_id = append_actor_fact(session, ActorFactWrite(
-                actor_id=record["actor_id"], topic_id=record["topic_id"], fact_type="light_pull",
-                field_key=finding["field"],
-                value=value if evidence.get("collection_state") == "found" else None,
-                layer=1, collection_state=evidence.get("collection_state") or "not_found",
-                confidence=evidence.get("confidence") or "medium",
-                source_url=evidence.get("source_url") or record["pages_read"][0],
-                date_read=read_at, source_origin="newly_found", created_by=CREATED_BY,
-                request_id=request_id,
-            ), live=True)
+            if deep:
+                fact_id = _write_deep(session, record, finding["field"], evidence, value,
+                                      read_at=read_at, request_id=request_id)
+            else:
+                fact_id = append_actor_fact(session, ActorFactWrite(
+                    actor_id=record["actor_id"], topic_id=record["topic_id"],
+                    fact_type="light_pull", field_key=finding["field"],
+                    value=value if evidence.get("collection_state") == "found" else None,
+                    layer=1, collection_state=evidence.get("collection_state") or "not_found",
+                    confidence=evidence.get("confidence") or "medium",
+                    source_url=evidence.get("source_url") or record["pages_read"][0],
+                    date_read=read_at, source_origin="newly_found", created_by=CREATED_BY,
+                    request_id=request_id,
+                ), live=True)
             savepoint.commit()
         except Exception as exc:  # noqa: BLE001 - one box must not stop the others
             savepoint.rollback()
@@ -1086,6 +1135,25 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
             "review_items": proposed + sum(1 for r in results
                                            if r.get("written")
                                            and r["actual"] in {"conflict", "protected"})}
+
+
+def _write_deep(session, record: dict, field: str, evidence: dict, value, *,
+                read_at: datetime, request_id: str) -> str:
+    """One Deep box as a Layer 2 fact, through the Phase 10 writer and its gate."""
+    from agents.collection.deep_pull import CollectedValue, DeepPullRequest, append_deep_pull
+
+    found = evidence.get("collection_state") == "found"
+    request = DeepPullRequest(
+        actor_id=record["actor_id"], topic_id=record["topic_id"],
+        actor_category=str(record.get("actor_category") or ""), selected_fields=(field,),
+        requested_by=CREATED_BY, request_id=request_id)
+    collected = CollectedValue(
+        field_key=field, value=value if found else None,
+        collection_state=evidence.get("collection_state") or "not_found",
+        source_url=evidence.get("source_url") or record["pages_read"][0],
+        source_origin="newly_found", date_read=read_at,
+        confidence=evidence.get("confidence") or "medium")
+    return append_deep_pull(session, request, {field: collected}, live=True)[0]
 
 
 # ----------------------------------------------------------------- requests
@@ -1599,9 +1667,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     from agents.collection.discovery_requests import open_session
-    from agents.discovery.search.run import load_open_web_config
+    from agents.common.config import load_sources_config
 
-    config = load_open_web_config(ROOT)
+    # The same section load_open_web_config returns, read without importing the
+    # search pipeline: that import alone took 10-14 s, and the Discovery page
+    # waited 21 s for its list of update requests (2026-10-24).
+    config = dict(load_sources_config(ROOT).get("open_web_discovery") or {})
+    if not config:
+        raise RuntimeError("agents/config/sources.yaml must define open_web_discovery")
     session = open_session()
     try:
         if args.command == "apply":

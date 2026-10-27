@@ -94,6 +94,11 @@ class StaticEventExtractor:
             {
                 "title": f"Climate Event {slug}",
                 "start_date": "2027-03-10",
+                # A place: an event with no date or place is Needs More
+                # Research and is not routed (quality_gates.event_gate).
+                "city": "Denver",
+                "state": "CO",
+                "country": "United States",
                 "access_type": "Public",
                 "event_type": "Conference",
                 "source_url": doc.url,

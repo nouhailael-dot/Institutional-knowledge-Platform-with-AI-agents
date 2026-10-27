@@ -429,6 +429,38 @@ def record_agent_auto_verification(
     )
 
 
+def record_import_verification(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    decided_by: str,
+    reason: str,
+) -> None:
+    """Verify an actor a named GHUS uploader imported, attesting to it (migration 590).
+
+    Decision 2026-10-26: a Data Feed import may create an actor Verified when
+    the uploader is named and attests to their authority and the source. The
+    event is labelled ``ghus_import``, names the uploader and carries the
+    provenance (file, row, attestation) in its reason, so it is never mistaken
+    for a reviewer's decision. Verify only. It does not authorize Deep Pull.
+    """
+    if not str(decided_by or "").strip():
+        raise ValueError("an import verification must name its uploader")
+    if not str(reason or "").strip():
+        raise ValueError("an import verification must state its provenance")
+    execute_canonical_write(
+        session,
+        text(
+            "INSERT INTO actor_verification_event (actor_id,topic_id,decision,decided_by,"
+            "decided_at,reason,decision_origin) VALUES (CAST(:actor_id AS uuid),"
+            "CAST(:topic_id AS uuid),'verified',:decided_by,now(),:reason,'ghus_import')"
+        ),
+        {"actor_id": actor_id, "topic_id": topic_id, "decided_by": str(decided_by).strip(),
+         "reason": str(reason).strip()},
+    )
+
+
 def record_category_review_decision(
     session,
     *,
