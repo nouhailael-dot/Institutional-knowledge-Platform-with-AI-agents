@@ -7,6 +7,7 @@ PostgreSQL's transaction-level read-only mode before any schema inspection.
 
 from __future__ import annotations
 
+import ast
 import os
 import ipaddress
 import math
@@ -21,6 +22,9 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
+
+
+DATAFEED_SOURCE = "ghus_data_feed"
 
 
 class PostgresReviewSourceError(RuntimeError):
@@ -215,6 +219,12 @@ def _timestamp(value: Any) -> float | None:
     return None
 
 
+def _iso(value: Any) -> str | None:
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return str(value) if value not in (None, "") else None
+
+
 def _source_evidence(url: Any, *, supports: str) -> list[dict[str, str]]:
     if not isinstance(url, str):
         return []
@@ -230,6 +240,43 @@ def _source_evidence(url: Any, *, supports: str) -> list[dict[str, str]]:
         "supports": supports,
         "evidence_type": "discovery_source_page",
     }]
+
+
+def _lift_quality(payload: dict[str, Any], metadata: dict[str, Any]) -> None:
+    """A discovered person's or event's page facts and quality checks, for the boxes.
+
+    The agent stages them beside the record (agents/discovery/page_facts.py,
+    quality_gates.py). They are evidence for the reviewer, not record fields,
+    so they move out of the editable payload into the card's metadata.
+    """
+    facts = payload.pop("facts", None)
+    quality = payload.pop("quality", None)
+    if isinstance(facts, dict) and facts:
+        metadata["page_facts"] = facts
+    if isinstance(quality, dict) and quality:
+        metadata["quality"] = {k: _as_list(v) if k in _QUALITY_LISTS else v
+                               for k, v in quality.items()}
+
+
+_QUALITY_LISTS = ("reasons", "missing_mandatory", "missing_priority", "conflicts", "checks")
+
+
+def _as_list(value: Any) -> list[Any]:
+    """A list, also from the Python text of a tuple ("('a', 'b')") that staged
+    records stored before 2026-10-24; the Review page crashed joining it."""
+    if isinstance(value, (list, tuple)):
+        return list(value)
+    if isinstance(value, str) and value.strip():
+        text = value.strip()
+        if text[0] in "([":
+            try:
+                parsed = ast.literal_eval(text)
+            except (ValueError, SyntaxError):
+                parsed = None
+            if isinstance(parsed, (list, tuple)):
+                return [str(item) for item in parsed]
+        return [text]
+    return []
 
 
 def _event_name(payload: dict[str, Any], fallback: Any) -> None:
@@ -253,6 +300,8 @@ class PostgresReviewSource:
 
     def __init__(self, database_url: str):
         self.database_url = _validate_database_url(database_url)
+        # Source keys the last fetch no longer serves, and why (see fetch_candidates).
+        self.retired_keys: dict[str, str] = {}
 
     @classmethod
     def from_environment(cls) -> "PostgresReviewSource | None":
@@ -372,23 +421,411 @@ class PostgresReviewSource:
                         metadata["hubs"] = entry["available"]
                     candidates[candidate["source_key"]] = candidate
 
+            self._attach_discovery_runs(db, columns, candidates)
+
+            self.retired_keys = {}
             if {"collection_run", "collection_request", "actor_fact",
                     "actor_update_subscription_run"} <= set(columns):
-                for candidate in self._actor_update_cards(db):
-                    candidates.setdefault(candidate["source_key"], candidate)
+                cards = self._actor_update_cards(db)
                 # One name per update run: what its cards say (the request's
                 # title, or the actor), also on the conflicts and proposals it
                 # raised - otherwise the run took whichever item came first.
-                names = {c["source_run_id"]: c["source_description"]
-                         for c in candidates.values()
-                         if c["agent_metadata"].get("source_table") == "actor_update"}
+                names = {c["source_run_id"]: c["source_description"] for c in cards}
                 for candidate in candidates.values():
                     if candidate["source_run_id"] in names:
                         candidate["source_description"] = names[candidate["source_run_id"]]
+                raised = [c for c in candidates.values()
+                          if c["agent_metadata"].get("source_table") == "review_item"
+                          and str(c["source_run_id"]).startswith("actor-update:")]
+                profiles, folded, retired = self._actor_update_profiles(
+                    db, columns, cards, raised, hub_context)
+                for key in (*folded, *retired):
+                    candidates.pop(key, None)
+                for profile in profiles:
+                    candidates[profile["source_key"]] = profile
+                self.retired_keys = retired
 
             return list(candidates.values()), warnings
 
-    def _actor_update_cards(self, db, *, limit: int = 60) -> list[dict[str, Any]]:
+    # ------------------------------------------- event and people discovery runs
+    def _attach_discovery_runs(self, db, columns, candidates) -> None:
+        """One name per event or people discovery run.
+
+        A run's records reach Review two ways - review-band search candidates
+        and staged records in the event/person queues - and each carried its own
+        description, so the run took whichever came first. Both now take the
+        name from the run itself: its request title, or its automatic kind. A
+        read only.
+        """
+        runs = {
+            str(c["source_run_id"]).removeprefix("discovery:")
+            for c in candidates.values()
+            if c["entity_type"] in ("event", "person")
+            and str(c["source_run_id"]).startswith("discovery:")
+        }
+        if not runs or not {"run_id", "stats"} <= columns.get("scrape_run", set()):
+            return
+        rows = {str(r["run_id"]): r for r in db.execute(
+            "SELECT run_id::text AS run_id, mode, stats->>'discovery_request_title' AS title "
+            "FROM scrape_run WHERE run_id::text = ANY(%s)", (sorted(runs),)).fetchall()}
+        for candidate in candidates.values():
+            run_id = str(candidate["source_run_id"]).removeprefix("discovery:")
+            row = rows.get(run_id)
+            if row is None or candidate["entity_type"] not in ("event", "person"):
+                continue
+            candidate["source_description"] = (
+                f"Discovery request: {row['title']} · {row.get('mode') or ''} · {run_id}"
+                if row.get("title")
+                else self._run_description(candidate["entity_type"], run_id, row.get("mode")))
+
+    # One profile per actor: its update runs, what they wrote into its boxes,
+    # and only the changes that need a person.
+    FACT_REASONS = {
+        "conflict_flagged": "The new reading is older or less confident than the value on the "
+                            "map, so the map kept its value and the difference waits here.",
+        "pending_update": "The value on the map was set by GHUS, so an update never replaces "
+                          "it on its own.",
+    }
+
+    def _actor_update_profiles(self, db, columns, cards, raised, hub_context):
+        """Fold every update run of an actor, and what they raised, into one profile.
+
+        Returns (profiles, folded source keys, retired source keys). Folded
+        keys are the per-run cards and per-change items a profile now shows;
+        retired keys are update runs on an inactive (test) sector, which no
+        sector list shows either. Nothing is written: this is a read.
+        """
+        topics: dict[str, dict[str, Any]] = {}
+        by_code: dict[str, dict[str, Any]] = {}
+        topic_columns = columns.get("topic", set())
+        if {"topic_id", "code"} <= topic_columns:
+            active = "active" if "active" in topic_columns else "true AS active"
+            name = "name" if "name" in topic_columns else "code AS name"
+            for row in db.execute(
+                f"SELECT topic_id::text AS topic_id, code, {name}, {active} FROM topic"
+            ).fetchall():
+                topics[row["topic_id"]] = dict(row)
+                by_code[str(row["code"] or "").upper()] = dict(row)
+
+        def topic_for(meta: dict[str, Any]) -> dict[str, Any] | None:
+            return (topics.get(str(meta.get("topic_id") or ""))
+                    or by_code.get(str(meta.get("topic_code") or "").upper()))
+
+        retired: dict[str, str] = {}
+        runs_by_actor: dict[str, list[tuple[dict[str, Any], dict[str, Any] | None]]] = {}
+        for card in cards:
+            topic = topic_for(card["agent_metadata"])
+            if topic is not None and topic.get("active") is False:
+                retired[card["source_key"]] = "inactive_sector"
+                continue
+            runs_by_actor.setdefault(card["agent_metadata"]["entity_id"], []).append((card, topic))
+        raised_by_actor: dict[str, list[dict[str, Any]]] = {}
+        for item in raised:
+            topic = topic_for(item["agent_metadata"])
+            if topic is not None and topic.get("active") is False:
+                retired[item["source_key"]] = "inactive_sector"
+                continue
+            raised_by_actor.setdefault(str(item["agent_metadata"].get("entity_id")), []).append(item)
+
+        profiles, folded = [], []
+        for actor_id, runs in runs_by_actor.items():
+            runs.sort(key=lambda pair: pair[0].get("created_at") or 0, reverse=True)
+            latest, topic = runs[0]
+            meta = latest["agent_metadata"]
+            topic_id = (topic or {}).get("topic_id") or meta.get("topic_id")
+            facts, history = self._actor_topic_facts(db, columns, actor_id, topic_id)
+            # A box this sector has not filled shows what the actor's facts in
+            # another sector say, labelled with that sector - stored facts only.
+            have = {f["fact_key"] for f in facts}
+            for other in self._other_sector_facts(db, columns, actor_id, topic_id, topics):
+                if other["fact_key"] not in have:
+                    have.add(other["fact_key"])
+                    facts.append(other)
+            # The earlier GHUS profile (migrated legacy facts) fills what no read
+            # has; beside a box read and not found, it is shown, never merged.
+            by_key = {f["fact_key"]: f for f in facts}
+            legacy = self._legacy_record_facts(
+                db, actor_id, str(latest["payload"].get("actor_category") or ""))
+            for record in legacy:
+                current = by_key.get(record["fact_key"])
+                if current is None:
+                    facts.append(record)
+                elif current.get("collection_state") != "found":
+                    current["record_value"] = record["value"]
+            notes = self._box_notes(runs, topic_id)
+            for fact in facts:
+                if fact["fact_key"] in notes:
+                    fact["update"] = notes[fact["fact_key"]]
+            changes, mine = [], []
+            for item in raised_by_actor.get(actor_id, []):
+                change = self._change_of(item, topics)
+                if change is None:
+                    continue                   # not a decision a profile holds; stays its own card
+                changes.append(change)
+                mine.append(item["source_key"])
+            run_rows = []
+            for card, run_topic in runs:
+                run_meta = card["agent_metadata"]
+                run_rows.append({
+                    "run_id": run_meta["run_id"], "date": card.get("created_at"),
+                    "title": str(card["source_description"]).removeprefix("Actor update: "),
+                    "status": run_meta.get("run_status"), "scope": run_meta.get("scope"),
+                    "topic_name": (run_topic or {}).get("name"),
+                    "pages_read": run_meta.get("pages_read") or [],
+                    "spent_usd": run_meta.get("spent_usd"),
+                    "counts": self._run_counts(run_meta),
+                })
+                mine.append(card["source_key"])
+                # The profile a newer run replaces, if one was made for this run.
+                mine.append(f"postgres:actor_updates:{actor_id}:{run_meta['run_id']}")
+            evidence, seen = [], set()
+            for card, _topic in runs:
+                for row in card.get("evidence") or []:
+                    if row.get("url") not in seen:
+                        seen.add(row.get("url"))
+                        evidence.append(row)
+            hubs = hub_context.get(actor_id) or {}
+            source_key = f"postgres:actor_updates:{actor_id}:{meta['run_id']}"
+            mine = [key for key in dict.fromkeys(mine) if key != source_key]
+            folded.extend(mine)
+            profiles.append({
+                "source_key": source_key,
+                # The cards this profile now shows: earlier per-run cards, the
+                # per-change items, and the profile of an earlier run.
+                "folds": mine,
+                "source_run_id": latest["source_run_id"],
+                "source_index": f"actor-updates:{actor_id}:{meta['run_id']}",
+                "source_description": latest["source_description"],
+                "entity_type": "actor",
+                "payload": dict(latest["payload"]),
+                "evidence": evidence,
+                "agent_metadata": {
+                    "source_table": "actor_update", "review_kind": "actor_profile",
+                    "entity_id": actor_id, "run_id": meta["run_id"],
+                    "record_status": meta.get("record_status"),
+                    "topic_id": topic_id, "topic_name": (topic or {}).get("name"),
+                    "topic_code": (topic or {}).get("code") or meta.get("topic_code"),
+                    "facts": facts, "fact_history": history,
+                    "relationships": self._actor_relationships(db, columns, actor_id),
+                    "update_runs": run_rows, "changes": changes,
+                    "hub_memberships": hubs.get("current", []),
+                    "hub_suggestions": hubs.get("suggestions", []),
+                    "hubs": hubs.get("available", []),
+                },
+                "duplicate_state": "not_checked",
+                "created_at": latest.get("created_at"),
+            })
+        return profiles, folded, retired
+
+    @staticmethod
+    def _run_counts(meta: dict[str, Any]) -> dict[str, int]:
+        """What one run found for this actor: new, changed, confirmed, not found, to review."""
+        counts: dict[str, int] = {}
+        outcomes = meta.get("outcomes") or {}
+        if outcomes:
+            for outcome in outcomes.values():
+                word = PostgresReviewSource.OUTCOME_WORDS.get(str(outcome), str(outcome))
+                counts[word] = counts.get(word, 0) + 1
+            return counts
+        for fact in meta.get("written") or []:
+            word = PostgresReviewSource._outcome_of(fact)
+            counts[word] = counts.get(word, 0) + 1
+        if meta.get("corroborated"):
+            counts["confirmed"] = counts.get("confirmed", 0) + int(meta["corroborated"])
+        return counts
+
+    OUTCOME_WORDS = {"corroborated": "confirmed", "unchanged": "no_change",
+                     "not_yet_collected": "not_found"}
+
+    @staticmethod
+    def _outcome_of(fact: dict[str, Any]) -> str:
+        if fact.get("lifecycle_state") == "conflict_flagged":
+            return "conflict"
+        if fact.get("lifecycle_state") == "pending_update":
+            return "protected"
+        if fact.get("collection_state") != "found":
+            return "not_found"
+        return "changed" if fact.get("previous_value") is not None else "new"
+
+    def _box_notes(self, runs, topic_id) -> dict[str, dict[str, Any]]:
+        """For each box, what the most recent update of this sector found."""
+        notes: dict[str, dict[str, Any]] = {}
+        for card, _topic in runs:                      # newest first
+            meta = card["agent_metadata"]
+            if topic_id and meta.get("topic_id") and meta.get("topic_id") != topic_id:
+                continue
+            base = {"run_id": meta["run_id"], "date": card.get("created_at"),
+                    "run_title": str(card["source_description"]).removeprefix("Actor update: ")}
+            for fact in meta.get("written") or []:
+                notes.setdefault(fact["fact_key"], {
+                    **base, "outcome": self._outcome_of(fact),
+                    "previous_value": fact.get("previous_value"),
+                    "source_url": fact.get("source_url")})
+            for key, outcome in (meta.get("outcomes") or {}).items():
+                notes.setdefault(key, {**base, "outcome": self.OUTCOME_WORDS.get(
+                    str(outcome), str(outcome)), "previous_value": None})
+        return notes
+
+    def _change_of(self, item: dict[str, Any], topics) -> dict[str, Any] | None:
+        meta = item["agent_metadata"]
+        kind = str(meta.get("review_kind") or "")
+        pipeline = meta.get("pipeline") or {}
+        base = {
+            "review_item_id": meta.get("review_item_id"), "review_kind": kind,
+            "topic_name": (topics.get(str(meta.get("topic_id") or "")) or {}).get("name"),
+            "run_id": str(item["source_run_id"]).removeprefix("actor-update:"),
+            "raised_at": item.get("created_at"),
+        }
+        if kind in ("fact_conflict", "pending_update"):
+            change = meta.get("fact_change") or {}
+            field = change.get("field_key") or pipeline.get("field_key")
+            return {**base, "kind": "fact", "field_key": field,
+                    "current": change.get("current"), "proposed": change.get("proposed"),
+                    "reason": self.FACT_REASONS.get(str(pipeline.get("state") or kind),
+                                                    self.FACT_REASONS["conflict_flagged"]),
+                    # Only a location can hold two values (actor_location).
+                    "can_keep_both": field == "location"}
+        if kind == "relationship_review":
+            return {**base, "kind": "relationship", "candidate_name": meta.get("candidate_name"),
+                    "relationship_type": pipeline.get("proposed_relationship_type"),
+                    "subject_actor_id": pipeline.get("subject_actor_id"),
+                    "source_url": pipeline.get("source_url")}
+        if kind == "hub_assignment" and pipeline.get("proposal") == "membership":
+            return {**base, "kind": "hub", "hub_name": meta.get("proposed_hub_name"),
+                    "evidence": pipeline.get("deterministic_evidence") or {}}
+        return None
+
+    def _actor_topic_facts(self, db, columns, actor_id, topic_id):
+        """The actor's current boxes for one sector, and every value they held."""
+        if not topic_id or "actor_fact_current_pointer" not in columns:
+            return [], []
+        rows = db.execute(
+            "SELECT f.fact_key, f.fact_type, f.layer, f.collection_state, f.fact_value AS value, "
+            "f.confidence, f.retrieved_at, f.source_origin, s.url AS source_url, "
+            "to_jsonb(f)->>'creator_class' AS set_by "
+            "FROM actor_fact_current_pointer p JOIN actor_fact f ON f.actor_fact_id = p.actor_fact_id "
+            "LEFT JOIN source s ON s.source_id = f.source_id "
+            "WHERE p.actor_id = CAST(%s AS uuid) AND p.topic_id = CAST(%s AS uuid) "
+            "ORDER BY f.fact_key", (actor_id, topic_id)
+        ).fetchall()
+        facts = [{
+            "fact_key": r["fact_key"], "fact_type": r["fact_type"], "layer": r["layer"],
+            "collection_state": r["collection_state"], "value": r["value"],
+            "confidence": r["confidence"], "date_read": _iso(r["retrieved_at"]),
+            "source_origin": r["source_origin"], "source_url": r["source_url"],
+            "set_by": r["set_by"], "is_current": True,
+        } for r in rows]
+        history = db.execute(
+            "SELECT f.fact_key, f.fact_value AS value, f.confidence, f.retrieved_at, "
+            "f.lifecycle_state, (p.actor_fact_id = f.actor_fact_id) AS is_current "
+            "FROM actor_fact f LEFT JOIN actor_fact_current_pointer p ON p.actor_id = f.actor_id "
+            " AND p.topic_id = f.topic_id AND p.fact_key = f.fact_key "
+            "WHERE f.actor_id = CAST(%s AS uuid) AND f.topic_id = CAST(%s AS uuid) "
+            "ORDER BY f.fact_key, f.created_at", (actor_id, topic_id)
+        ).fetchall()
+        return facts, [{
+            "fact_key": r["fact_key"], "value": r["value"], "confidence": r["confidence"],
+            "date_read": _iso(r["retrieved_at"]), "lifecycle_state": r["lifecycle_state"],
+            "is_current": bool(r["is_current"]),
+        } for r in history]
+
+    def _other_sector_facts(self, db, columns, actor_id, topic_id, topics) -> list[dict[str, Any]]:
+        """The actor's current found facts in its other active sectors, newest first."""
+        if "actor_fact_current_pointer" not in columns:
+            return []
+        rows = db.execute(
+            "SELECT f.fact_key, f.fact_type, f.layer, f.collection_state, f.fact_value AS value, "
+            "f.confidence, f.retrieved_at, f.source_origin, s.url AS source_url, "
+            "to_jsonb(f)->>'creator_class' AS set_by, p.topic_id::text AS topic_id "
+            "FROM actor_fact_current_pointer p JOIN actor_fact f ON f.actor_fact_id = p.actor_fact_id "
+            "LEFT JOIN source s ON s.source_id = f.source_id "
+            "WHERE p.actor_id = CAST(%s AS uuid) AND p.topic_id IS DISTINCT FROM CAST(%s AS uuid) "
+            "AND f.collection_state = 'found' ORDER BY f.retrieved_at DESC",
+            (actor_id, topic_id)
+        ).fetchall()
+        out = []
+        for r in rows:
+            topic = topics.get(r["topic_id"]) or {}
+            if topic.get("active") is False:
+                continue                       # a test sector's facts are not shown
+            out.append({
+                "fact_key": r["fact_key"], "fact_type": r["fact_type"], "layer": r["layer"],
+                "collection_state": r["collection_state"], "value": r["value"],
+                "confidence": r["confidence"], "date_read": _iso(r["retrieved_at"]),
+                "source_origin": r["source_origin"], "source_url": r["source_url"],
+                "set_by": r["set_by"], "is_current": True,
+                "from_sector": topic.get("name") or "another sector",
+            })
+        return out
+
+    # Legacy (pre-V2) profile facts and the boxes they answer: the same mapping
+    # the Review uses for a discovery page's statements (_CATEGORY_PAGE_ROWS).
+    # Each legacy fact fills ONE box - the category's own first - so a
+    # paragraph is never repeated across boxes; and undated legacy text is
+    # never "recent activity", which is one dated thing.
+    _LEGACY_COMMON = {"funding_signal": "funding_summary"}
+
+    def _legacy_record_facts(self, db, actor_id, category) -> list[dict[str, Any]]:
+        boxes: dict[str, str] = {}
+        used: set[str] = set()
+        for box, legacy_key in (*_CATEGORY_PAGE_ROWS.get(category, ()),
+                                *self._LEGACY_COMMON.items()):
+            if legacy_key not in used:
+                used.add(legacy_key)
+                boxes[box] = legacy_key
+        rows = db.execute(
+            "SELECT f.fact_key, f.fact_value AS value, f.confidence, f.retrieved_at, f.fact_type, "
+            "s.url AS source_url FROM actor_fact f LEFT JOIN source s ON s.source_id = f.source_id "
+            "WHERE f.actor_id = CAST(%s AS uuid) AND f.fact_type IN ('legacy_profile','legacy_baseline') "
+            "AND f.collection_state = 'found' AND f.fact_key = ANY(%s) "
+            # The curated profile summary first, then the baseline; newest first.
+            "ORDER BY (f.fact_type = 'legacy_profile') DESC, f.retrieved_at DESC NULLS LAST",
+            (actor_id, sorted(set(boxes.values())))
+        ).fetchall()
+        first: dict[str, Any] = {}
+        for row in rows:
+            first.setdefault(row["fact_key"], row)
+        out = []
+        for box, legacy_key in boxes.items():
+            row = first.get(legacy_key)
+            if row is None or row["value"] in (None, "", [], {}):
+                continue
+            out.append({
+                "fact_key": box, "fact_type": "light_pull", "layer": 1,
+                "collection_state": "found", "value": row["value"],
+                "confidence": row["confidence"], "date_read": _iso(row["retrieved_at"]),
+                "source_origin": "imported", "source_url": row["source_url"],
+                "is_current": False, "from_record": "earlier GHUS profile",
+            })
+        return out
+
+    def _actor_relationships(self, db, columns, actor_id) -> list[dict[str, Any]]:
+        if not {"subject_type", "subject_id", "object_type", "object_id",
+                "relationship_type"} <= columns.get("entity_edge", set()):
+            return []
+        rows = db.execute(
+            "SELECT CASE WHEN ee.subject_id = CAST(%s AS uuid) THEN 'outgoing' ELSE 'incoming' END "
+            " AS direction, ee.relationship_type, "
+            "CASE WHEN ee.subject_id = CAST(%s AS uuid) THEN ee.object_type ELSE ee.subject_type END "
+            " AS counterpart_type, "
+            "CASE WHEN ee.subject_id = CAST(%s AS uuid) THEN ee.object_id ELSE ee.subject_id END::text "
+            " AS counterpart_id, s.url AS source_url "
+            "FROM entity_edge ee LEFT JOIN source s ON s.source_id = ee.source_id "
+            "WHERE (ee.subject_type = 'actor' AND ee.subject_id = CAST(%s AS uuid)) "
+            "   OR (ee.object_type = 'actor' AND ee.object_id = CAST(%s AS uuid)) "
+            "ORDER BY ee.created_at", (actor_id,) * 5
+        ).fetchall()
+        edges = [dict(r) for r in rows]
+        ids = [e["counterpart_id"] for e in edges if e.get("counterpart_type") == "actor"]
+        if ids:
+            names = {r["actor_id"]: r["name"] for r in db.execute(
+                "SELECT actor_id::text AS actor_id, name FROM actor WHERE actor_id::text = ANY(%s)",
+                (ids,)).fetchall()}
+            for edge in edges:
+                edge["counterpart_name"] = names.get(edge["counterpart_id"])
+        return edges
+
+    def _actor_update_cards(self, db, *, limit: int = 200) -> list[dict[str, Any]]:
         """What each actor update wrote, as one card per actor, under its run.
 
         Read-only. An update writes through the backend's fact writer; most of
@@ -397,14 +834,23 @@ class PostgresReviewSource:
         actor - before and after, with its source - and its run groups it as
         "Actor update". Conflicts and proposals it raised join the same run.
         """
-        runs = db.execute(
-            "SELECT r.collection_run_id::text AS run_id, r.started_at, r.finished_at, r.status, "
-            "r.spent_usd, r.job_name, q.collection_request_id::text AS request_id, "
-            "q.actor_id::text AS actor_id, r.config_snapshot, "
-            # A request run is named by its request; a one-actor update by its actor.
+        # A request run is named by its request; a one-actor update by its actor.
+        # The request title arrives with migration 550; before it, runs are
+        # named by their actor and the rest of Review still reads.
+        columns = self._columns(db)
+        if not (columns.get("collection_run") and columns.get("collection_request")):
+            return []
+        request_title = (
             "(SELECT s.title FROM actor_update_subscription_run sr JOIN actor_update_subscription s "
             " ON s.actor_update_subscription_id = sr.actor_update_subscription_id "
             " WHERE sr.collection_run_id = r.collection_run_id LIMIT 1) AS request_title "
+            if "title" in columns.get("actor_update_subscription", set())
+            and columns.get("actor_update_subscription_run") else "NULL::text AS request_title ")
+        runs = db.execute(
+            "SELECT r.collection_run_id::text AS run_id, r.started_at, r.finished_at, r.status, "
+            "r.spent_usd, r.job_name, q.collection_request_id::text AS request_id, "
+            "q.actor_id::text AS actor_id, q.topic_id::text AS topic_id, r.config_snapshot, "
+            + request_title +
             "FROM collection_run r JOIN collection_request q USING (collection_request_id) "
             f"WHERE r.job_name IN {UPDATE_JOBS} AND r.status IN ('succeeded','attention') "
             "ORDER BY r.started_at DESC LIMIT %s", (limit,)
@@ -437,6 +883,7 @@ class PostgresReviewSource:
             return None
         written = db.execute(
             "SELECT f.fact_key, f.collection_state, f.fact_value, f.confidence, f.retrieved_at, "
+            "f.topic_id::text AS topic_id, "
             "f.lifecycle_state, s.url AS source_url, pf.fact_value AS previous_value, "
             "(cp.actor_fact_id = f.actor_fact_id) AS is_current "
             "FROM actor_fact f LEFT JOIN source s ON s.source_id = f.source_id "
@@ -463,6 +910,13 @@ class PostgresReviewSource:
             "is_current": bool(w["is_current"]),
         } for w in written]
         pages = [str(u) for u in _json_list(snapshot.get("pages_read")) if u]
+        # The sector the run wrote under: its facts say so; a one-actor run's
+        # request names it too. A request run records it per actor, by code.
+        topic_id = next((w["topic_id"] for w in written if w["topic_id"]), None) or run.get("topic_id")
+        topic_code = next((str(a.get("topic") or "") for a in _json_list(snapshot.get("actor_results"))
+                           if isinstance(a, dict) and str(a.get("actor_id")) == actor_id), None)
+        result = next((a for a in _json_list(snapshot.get("actor_results"))
+                       if isinstance(a, dict) and str(a.get("actor_id")) == actor_id), {})
         payload = {k: v for k, v in {
             "name": actor["name"], "website": actor["website"],
             "description": actor["description"], "actor_category": actor["actor_category"],
@@ -487,6 +941,13 @@ class PostgresReviewSource:
                 "spent_usd": float(run["spent_usd"] or 0), "pages_read": pages,
                 "written": facts, "corroborated": int(corroborated["n"] or 0),
                 "scope": snapshot.get("scope") or (snapshot.get("update_request") or {}).get("scope"),
+                "topic_id": topic_id, "topic_code": topic_code,
+                # Per box, what the update found - including what it confirmed
+                # or left unchanged, which writes no new fact. One-actor runs
+                # record it; request runs record counts per actor.
+                "outcomes": _json_object(snapshot.get("outcomes")),
+                "counts": _json_object(result.get("counts")) if isinstance(result, dict) else {},
+                "run_title": run.get("request_title"),
             },
             "duplicate_state": "not_checked",
             "created_at": _timestamp(run["finished_at"] or run["started_at"]),
@@ -529,6 +990,7 @@ class PostgresReviewSource:
         run_fields = [
             "NULL::text AS run_mode", "NULL::text AS run_status",
             "NULL::text AS run_status_reason", "NULL::text AS run_request_title",
+            *self._datafeed_run_fields(set()),
         ]
         run_cols = all_columns.get("scrape_run", set())
         if {"run_id", "mode", "status"} <= run_cols:
@@ -542,6 +1004,7 @@ class PostgresReviewSource:
                 # tell one request's finds from another's.
                 ("sr.stats->>'discovery_request_title' AS run_request_title"
                  if "stats" in run_cols else "NULL::text AS run_request_title"),
+                *self._datafeed_run_fields(run_cols),
             ]
         fields.extend(run_fields)
         review_identity = (
@@ -571,17 +1034,20 @@ class PostgresReviewSource:
             ("score_breakdown", "jsonb"), ("qualification_paths", "jsonb"),
             ("rerank_position", "integer"), ("rerank_reason", "text"),
         ]
+        run_cols = all_columns.get("scrape_run", set())
         fields = [
             "q.event_review_id::text AS queue_id",
             "q.staged_record_id::text AS staged_record_id", "q.created_at",
             "s.run_id::text AS run_id", "s.normalized_payload", "s.source_url",
             "s.sector_codes",
-        ] + [self._select("q", queue, name, cast) for name, cast in optional]
+        ] + [self._select("q", queue, name, cast) for name, cast in optional] \
+            + self._datafeed_run_fields(run_cols)
         query = (
             "SELECT " + ", ".join(fields) +
             " FROM event_review_queue q JOIN staged_record s "
             "ON s.staged_record_id = q.staged_record_id "
-            "WHERE q.status = 'pending' ORDER BY q.created_at"
+            + (" LEFT JOIN scrape_run sr ON sr.run_id = s.run_id " if "run_id" in run_cols else "")
+            + "WHERE q.status = 'pending' ORDER BY q.created_at"
         )
         return db.execute(query).fetchall()
 
@@ -598,17 +1064,20 @@ class PostgresReviewSource:
             ("score_breakdown", "jsonb"), ("rerank_position", "integer"),
             ("rerank_reason", "text"), ("identity_outcome", "text"),
         ]
+        run_cols = all_columns.get("scrape_run", set())
         fields = [
             "q.person_review_id::text AS queue_id",
             "q.staged_record_id::text AS staged_record_id", "q.created_at",
             "s.run_id::text AS run_id", "s.normalized_payload",
             "s.source_url AS staged_source_url", "s.sector_codes",
-        ] + [self._select("q", queue, name, cast) for name, cast in optional]
+        ] + [self._select("q", queue, name, cast) for name, cast in optional] \
+            + self._datafeed_run_fields(run_cols)
         query = (
             "SELECT " + ", ".join(fields) +
             " FROM person_review_queue q JOIN staged_record s "
             "ON s.staged_record_id = q.staged_record_id "
-            "WHERE q.status = 'pending' ORDER BY q.created_at"
+            + (" LEFT JOIN scrape_run sr ON sr.run_id = s.run_id " if "run_id" in run_cols else "")
+            + "WHERE q.status = 'pending' ORDER BY q.created_at"
         )
         return db.execute(query).fetchall()
 
@@ -673,10 +1142,32 @@ class PostgresReviewSource:
                 "   AND (ee.topic_id IS NULL OR ee.topic_id IS NOT DISTINCT FROM ri.topic_id)"
                 ") e ON true "
             )
+        # The sector's code, so a verified actor's Deep Pull can be offered for
+        # exactly the sector it was verified for.
+        # The actor update run that raised this item, if one did: a fact it
+        # wrote (conflict, GHUS change) or a proposal carrying its request.
+        # It groups the item under "Actor update", not "Map checks". A database
+        # from before the collection ledger has no runs to point at.
+        update_run = (
+            "COALESCE("
+            " (SELECT ur.collection_run_id::text FROM actor_fact uf JOIN collection_run ur "
+            "  ON ur.collection_request_id=uf.request_id "
+            f"  WHERE uf.actor_fact_id::text=ri.payload->>'new_fact_id' AND ur.job_name IN {UPDATE_JOBS} "
+            "  AND uf.created_at BETWEEN ur.started_at AND COALESCE(ur.finished_at, now()) "
+            "  ORDER BY ur.started_at DESC LIMIT 1),"
+            " (SELECT ur.collection_run_id::text FROM collection_run ur "
+            "  WHERE ur.collection_request_id::text=ri.payload->>'request_id' "
+            f"  AND ur.job_name IN {UPDATE_JOBS} "
+            "  AND ri.created_at BETWEEN ur.started_at AND COALESCE(ur.finished_at, now()) "
+            "  ORDER BY ur.started_at DESC LIMIT 1)) AS update_run_id, "
+            if all_columns.get("collection_run") else "NULL::text AS update_run_id, ")
+        topic_code = ("(SELECT t.code FROM topic t WHERE t.topic_id=ri.topic_id) AS topic_code, "
+                      if "code" in all_columns.get("topic", set()) else "NULL::text AS topic_code, ")
         return db.execute(
             "SELECT ri.review_item_id::text AS review_item_id, ri.review_kind, "
             "ri.entity_type, ri.entity_id::text AS entity_id, "
-            "ri.topic_id::text AS topic_id, ri.priority, ri.payload, ri.created_at, "
+            "ri.topic_id::text AS topic_id, " + topic_code +
+            "ri.priority, ri.payload, ri.created_at, "
             "(SELECT rel.name FROM actor rel WHERE rel.actor_id=ri.candidate_entity_id) "
             "AS related_actor_name, "
             "a.name, NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
@@ -733,21 +1224,8 @@ class PostgresReviewSource:
             "(SELECT ca.name FROM actor ca WHERE ca.actor_id=ri.candidate_entity_id) "
             " AS candidate_name, "
             "(SELECT ph.name FROM hub ph WHERE ph.hub_id::text=ri.payload->>'proposed_hub_id') "
-            " AS proposed_hub_name, "
-            # The actor update run that raised this item, if one did: a fact it
-            # wrote (conflict, GHUS change) or a proposal carrying its request.
-            # It groups the item under "Actor update", not "Map checks".
-            "COALESCE("
-            " (SELECT ur.collection_run_id::text FROM actor_fact uf JOIN collection_run ur "
-            "  ON ur.collection_request_id=uf.request_id "
-            f"  WHERE uf.actor_fact_id::text=ri.payload->>'new_fact_id' AND ur.job_name IN {UPDATE_JOBS} "
-            "  AND uf.created_at BETWEEN ur.started_at AND COALESCE(ur.finished_at, now()) "
-            "  ORDER BY ur.started_at DESC LIMIT 1),"
-            " (SELECT ur.collection_run_id::text FROM collection_run ur "
-            "  WHERE ur.collection_request_id::text=ri.payload->>'request_id' "
-            f"  AND ur.job_name IN {UPDATE_JOBS} "
-            "  AND ri.created_at BETWEEN ur.started_at AND COALESCE(ur.finished_at, now()) "
-            "  ORDER BY ur.started_at DESC LIMIT 1)) AS update_run_id, "
+            " AS proposed_hub_name, " +
+            update_run +
             "COALESCE(f.facts,'[]'::jsonb) AS facts, " + history_field + ", " + edge_field +
             "FROM review_item ri "
             "JOIN actor a ON ri.entity_type='actor' AND a.actor_id=ri.entity_id "
@@ -1189,6 +1667,53 @@ class PostgresReviewSource:
         return context
 
     @staticmethod
+    def _datafeed_run_fields(run_cols: set[str]) -> list[str]:
+        """The run's source, and its Data Feed import name and file, when recorded."""
+        if not {"source_name", "config"} <= run_cols:
+            return ["NULL::text AS run_source", "NULL::text AS run_import_name",
+                    "NULL::text AS run_file_name"]
+        return ["sr.source_name AS run_source",
+                "sr.config->'datafeed'->>'import_name' AS run_import_name",
+                "sr.config->'datafeed'->>'file_name' AS run_file_name"]
+
+    @staticmethod
+    def _datafeed(row: dict[str, Any], payload: dict[str, Any], record: dict[str, Any]) -> dict:
+        """A Data Feed record: its own run key and name, and the match it was checked against.
+
+        GHUS supplied it (a spreadsheet or the form), so it is labelled as such
+        - never as an open-web discovery - and the existing record its check
+        found is offered as "Same as existing". Review still decides.
+        """
+        if row.get("run_source") != DATAFEED_SOURCE:
+            return record
+        run_id = str(row["run_id"])
+        feed = payload.get("data_feed") if isinstance(payload.get("data_feed"), dict) else {}
+        where = row.get("run_file_name") or "manual entry"
+        name = row.get("run_import_name") or feed.get("import_name") or "Data Feed"
+        record["source_run_id"] = f"datafeed:{run_id}"
+        record["source_description"] = f"Data Feed import: {name} · {where}"
+        match = feed.get("match") if isinstance(feed.get("match"), dict) else {}
+        meta = record["agent_metadata"]
+        meta["data_feed"] = {k: feed.get(k) for k in (
+            "import_name", "file_name", "row_number", "method", "uploaded_by", "submitted_at",
+            "template_version", "warnings", "original_values")}
+        if match.get("entity_id") and not meta.get("top_matches"):
+            meta["top_matches"] = [{"entity_id": match["entity_id"], "name": match.get("name"),
+                                    "score": match.get("score"), "reason": match.get("reason")}]
+        if match.get("kind") in ("existing", "possible"):
+            record["duplicate_state"] = "possible_duplicate"
+        # Its boxes were supplied by GHUS (a spreadsheet or the form), not read
+        # from a page: say so on every fact taken from the record itself.
+        origin = "ghus_manual" if feed.get("method") == "manual" else "uploaded_document"
+        for item in meta.get("facts") or []:
+            if item.get("read_from") == "discovery_page":
+                item["source_origin"], item["read_from"] = origin, "data_feed"
+        url = (record.get("evidence") or [{}])[0].get("url")
+        record["evidence"] = _source_evidence(
+            url, supports="Source given by GHUS with this record (Data Feed)")
+        return record
+
+    @staticmethod
     def _run_description(entity_type: str, run_id: str, mode: Any = None) -> str:
         suffix = f" · {mode}" if mode else ""
         return f"Open-web {entity_type} discovery{suffix} · {run_id}"
@@ -1227,7 +1752,9 @@ class PostgresReviewSource:
             _attach_page_facts(payload, metadata, url=row.get("url"),
                                read_at=row.get("created_at"),
                                request_title=row.get("run_request_title"))
-        return {
+        else:
+            _lift_quality(payload, metadata)
+        record = {
             "source_key": f"postgres:search_candidate:{candidate_id}",
             "source_run_id": f"discovery:{run_id}",
             "source_index": candidate_id,
@@ -1246,6 +1773,7 @@ class PostgresReviewSource:
             "created_at": _timestamp(row.get("created_at")),
             "match_key": (entity_type, run_id, str(row.get("url") or "").strip()),
         }
+        return self._datafeed(row, payload, record)
 
     def _from_event_queue(self, row: dict[str, Any]) -> dict[str, Any]:
         payload = _json_object(row.get("normalized_payload"))
@@ -1277,7 +1805,8 @@ class PostgresReviewSource:
                 "score": row.get("similarity_score"),
             }] if row.get("candidate_event_id") else []),
         }
-        return {
+        _lift_quality(payload, metadata)
+        record = {
             "source_key": (
                 f"postgres:search_candidate:{search_id}" if search_id
                 else f"postgres:event_review_queue:{queue_id}"
@@ -1296,6 +1825,7 @@ class PostgresReviewSource:
             "created_at": _timestamp(row.get("created_at")),
             "match_key": ("event", run_id, str(row.get("source_url") or "").strip()),
         }
+        return self._datafeed(row, payload, record)
 
     def _from_person_queue(self, row: dict[str, Any]) -> dict[str, Any]:
         payload = _json_object(row.get("normalized_payload"))
@@ -1324,7 +1854,8 @@ class PostgresReviewSource:
                 "score": row.get("score"),
             }] if row.get("candidate_person_id") else []),
         }
-        return {
+        _lift_quality(payload, metadata)
+        record = {
             "source_key": f"postgres:person_review_queue:{queue_id}",
             "source_run_id": f"discovery:{run_id}",
             "source_index": f"person-queue:{queue_id}",
@@ -1340,6 +1871,7 @@ class PostgresReviewSource:
             "created_at": _timestamp(row.get("created_at")),
             "match_key": ("person", run_id, str(source_url or "").strip()),
         }
+        return self._datafeed(row, payload, record)
 
     def _from_v2_review_item(self, row: dict[str, Any]) -> dict[str, Any]:
         review_id = str(row["review_item_id"])
@@ -1396,6 +1928,7 @@ class PostgresReviewSource:
                 "entity_id": row.get("entity_id"),
                 "related_actor_name": row.get("related_actor_name"),
                 "topic_id": row.get("topic_id"),
+                "topic_code": row.get("topic_code"),
                 "record_status": row.get("record_status"),
                 "priority": row.get("priority"),
                 "pipeline": payload,

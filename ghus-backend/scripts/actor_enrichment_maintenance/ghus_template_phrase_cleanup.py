@@ -25,7 +25,7 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.sql.sqltypes import String, Text
 
-PROJECT_ROOT = Path(r"C:\Users\Ismail\Projects\GHUS-Platform")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  # ghus-backend/
 WORKSPACE = Path(r"C:\Users\Ismail\Documents\GHUS")
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(WORKSPACE))

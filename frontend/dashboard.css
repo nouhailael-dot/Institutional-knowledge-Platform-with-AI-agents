@@ -1,0 +1,29 @@
+/* Dashboard. Same tokens and cards as Discovery, so it follows light and dark. */
+.dashboard-page .discovery-card + .discovery-card{margin-top:16px}
+.dashboard-page h3{margin:0 0 10px;font-size:17px}
+.dash-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 18px}
+.dash-tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;gap:2px}
+.dash-tile strong{font-size:22px;line-height:1.1}
+.dash-tile span{font-size:12px;color:var(--muted);font-weight:600}
+.dash-tile.warn{border-color:#fde68a;background:#fffbeb}
+.dash-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.dash-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.dash-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;border:1px solid var(--line);border-left:4px solid var(--line-strong);border-radius:8px;padding:10px 14px;background:var(--surface)}
+.dash-row.running{border-left-color:var(--accent)}
+.dash-row.succeeded{border-left-color:#059669}
+.dash-row.attention{border-left-color:#d97706}
+.dash-row.failed,.dash-row.stalled{border-left-color:#b42318}
+.dash-main{display:grid;gap:2px;min-width:0}
+.dash-main strong,.dash-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-main small{color:var(--muted)}
+.dash-kind{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.dash-new{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;letter-spacing:0}
+.discovery-status.running{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent)}
+.discovery-status.stalled,.discovery-status.failed{background:#fef2f2;color:#991b1b;border-color:#fecaca}
+.discovery-status.succeeded{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}
+.discovery-status.attention{background:#fffbeb;color:#92400e;border-color:#fde68a}
+.nav-badge{margin-left:auto;min-width:18px;padding:1px 6px;border-radius:999px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;text-align:center}
+@media (max-width:760px){
+  .dash-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dash-row{grid-template-columns:minmax(0,1fr)}
+}

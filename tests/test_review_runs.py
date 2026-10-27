@@ -43,7 +43,7 @@ def store(tmp_path):
 
 def _insert(store: ReviewStore, candidate_id: str, *, created_at: float,
             source_run_id: str, description: str, status: str = "pending_review",
-            payload: dict | None = None) -> None:
+            payload: dict | None = None, entity_type: str = "actor") -> None:
     body = {"name": f"Actor {candidate_id}", **(payload or {})}
     with store.connect() as db:
         db.execute(
@@ -52,7 +52,7 @@ def _insert(store: ReviewStore, candidate_id: str, *, created_at: float,
             " display_name,status,created_at,original_payload,reviewed_payload,evidence,"
             " agent_metadata,duplicate_state)"
             " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (candidate_id, source_run_id, description, candidate_id, "actor",
+            (candidate_id, source_run_id, description, candidate_id, entity_type,
              body["name"], status, created_at, "{}", __import__("json").dumps(body),
              "[]", "{}", "new"),
         )
@@ -144,7 +144,7 @@ def test_run_labels_hide_uuids_and_stored_provenance_is_untouched(store):
             description=description)
 
     item = store.list(status="all")["candidates"][0]
-    assert item["run_label"] == "Actor discovery · test run · Oct 8, 2026"
+    assert item["run_label"] == "Actor discovery · test run · 10/08/2026"
     assert "577bd0bd" not in item["run_label"]
     # The label is a projection. The stored values are identical.
     assert item["source_run_id"] == run_id
@@ -770,3 +770,37 @@ def test_keep_both_api_delegates_and_records_success(store, monkeypatch):
     with store.connect() as db:
         assert db.execute("SELECT status FROM review_candidate WHERE candidate_id=?",
                           ("api-locations",)).fetchone()[0] == "approved"
+
+
+def test_every_run_carries_its_type_name_date_and_counts(store):
+    day = CUTOFF_TS + 86400 * 11  # 2026-10-19
+    _insert(store, "a1", created_at=day, source_run_id="discovery-request:1",
+            description="Discovery request: Grid-scale battery storage organizations in Texas")
+    _insert(store, "a2", created_at=day + 5, source_run_id="discovery-request:1",
+            description="Discovery request: Grid-scale battery storage organizations in Texas",
+            status="approved")
+    _insert(store, "e1", created_at=day, source_run_id="discovery:events",
+            description="Open-web event discovery", entity_type="event")
+    _insert(store, "p1", created_at=day, source_run_id="discovery:people",
+            description="Open-web person discovery", entity_type="person")
+    _insert(store, "u1", created_at=day, source_run_id="actor-update:run-1",
+            description="Actor update: CPower Energy")
+    _insert(store, "m1", created_at=day, source_run_id="v2-review:check",
+            description="Architecture V2 review")
+
+    groups = {g["source_run_ids"][0]: g for g in store.list(status="all")["run_groups"]}
+    request = groups["discovery-request:1"]
+    assert request["run_type"] == "discovery_actors"
+    assert request["run_name"] == "Grid-scale battery storage organizations in Texas"
+    assert request["run_date"] == "10/19/2026"
+    assert request["status_counts"] == {"pending_review": 1, "approved": 1}
+    assert groups["discovery:events"]["run_type"] == "discovery_events"
+    assert groups["discovery:people"]["run_type"] == "discovery_people"
+    assert groups["actor-update:run-1"]["run_type"] == "actor_updates"
+    assert groups["actor-update:run-1"]["run_name"] == "CPower Energy"
+    assert groups["v2-review:check"]["run_type"] == "map_checks"
+    assert groups["v2-review:check"]["run_date"] is None
+    # Each record is in exactly one run.
+    listing = store.list(status="all")
+    keys = {g["key"] for g in listing["run_groups"]}
+    assert all(item["run_group_key"] in keys for item in listing["candidates"])

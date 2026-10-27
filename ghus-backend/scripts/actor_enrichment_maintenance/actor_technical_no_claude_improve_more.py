@@ -13,7 +13,7 @@ from copy import deepcopy
 from pathlib import Path
 from uuid import UUID
 
-PROJECT_ROOT = Path(r"C:\Users\Ismail\Projects\GHUS-Platform")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  # ghus-backend/
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from sqlalchemy import func, select, text  # noqa: E402

@@ -20,7 +20,9 @@ Pure data, runnable on its own:  python -m src.browse
 
 from uuid import UUID
 
-from src.db import get_readonly_connection
+import os
+
+from src.db import get_readonly_connection, psycopg_database_url
 
 # hub names contain commas, so we join them with a delimiter that can't appear in
 # the data and split it back in Python.
@@ -41,6 +43,37 @@ VERIFICATION_LABELS = {
     "ai_inferred": "⚠️ AI-inferred",
     None: "— unset",
 }
+
+
+# Who made a record, in two words: GHUS supplied it (the Phase 1 map, a Data
+# Feed spreadsheet or form) or the discovery agent found it.
+ORIGIN_LABELS = {
+    "claude_discovered": "AI-Mapped",
+    "imported_phase1": "Imported", "imported": "Imported",
+    "ghus_uploaded_doc": "Imported", "uploaded_document": "Imported",
+    "ghus_manual": "Imported",
+}
+
+
+def origin_label(origin: str | None) -> str | None:
+    return ORIGIN_LABELS.get(str(origin or "").strip()) if origin else None
+
+
+def _readonly():
+    """Browse's read-only connection.
+
+    BROWSE_DATABASE_URL when an instance names one - the isolated demo does, so
+    Browse shows the database that instance writes to - else the platform's own.
+    """
+    url = os.environ.get("BROWSE_DATABASE_URL")
+    if not url:
+        return get_readonly_connection()
+    import psycopg
+
+    conn = psycopg.connect(psycopg_database_url(url), connect_timeout=10,
+                           options="-c statement_timeout=8000")
+    conn.read_only = True
+    return conn
 
 
 def verification_label(status: str | None) -> str:
@@ -116,6 +149,7 @@ def load_actors() -> list[dict]:
                -- read through to_jsonb. V2 status is authoritative.
                COALESCE(NULLIF(to_jsonb(a)->>'status', ''),
                         NULLIF(to_jsonb(a)->>'verification_status', '')) AS verification_status,
+               NULLIF(to_jsonb(a)->>'source_origin', '') AS source_origin,
                COALESCE(NULLIF(to_jsonb(a)->>'location_city', ''),
                         NULLIF(to_jsonb(a)->>'city', '')) AS location_city,
                coalesce(rs.state_name,
@@ -140,7 +174,7 @@ def load_actors() -> list[dict]:
         ORDER BY a.name
     """
     out = []
-    with get_readonly_connection() as conn, conn.cursor() as cur:
+    with _readonly() as conn, conn.cursor() as cur:
         cur.execute(sql)
         cols = [c.name for c in cur.description]
         for row in cur.fetchall():
@@ -154,6 +188,7 @@ def load_actors() -> list[dict]:
                 "actor_type": r["category"],
                 "category_type": r["category_type"],
                 "verification_status": r["verification_status"],
+                "origin": origin_label(r["source_origin"]),
                 "city": r["location_city"],
                 "state": r["state"],
                 "country_raw": r["country"],
@@ -181,7 +216,7 @@ def load_hubs() -> list[dict]:
         FROM hub h ORDER BY h.name
     """
     out = []
-    with get_readonly_connection() as conn, conn.cursor() as cur:
+    with _readonly() as conn, conn.cursor() as cur:
         cur.execute(sql)
         cols = [c.name for c in cur.description]
         for row in cur.fetchall():
@@ -197,7 +232,7 @@ def load_hubs() -> list[dict]:
 
 def hub_columns() -> list[str]:
     """Ordered column names for the hub table, for laying out the Browse view."""
-    with get_readonly_connection() as conn, conn.cursor() as cur:
+    with _readonly() as conn, conn.cursor() as cur:
         cur.execute("""SELECT column_name FROM information_schema.columns
                        WHERE table_name = 'hub' ORDER BY ordinal_position""")
         return [r[0] for r in cur.fetchall()]
@@ -209,7 +244,7 @@ def load_events() -> list[dict]:
         FROM event ORDER BY name
     """
     out = []
-    with get_readonly_connection() as conn, conn.cursor() as cur:
+    with _readonly() as conn, conn.cursor() as cur:
         cur.execute(sql)
         cols = [c.name for c in cur.description]
         for row in cur.fetchall():

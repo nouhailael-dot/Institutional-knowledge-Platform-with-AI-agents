@@ -32,6 +32,7 @@
 .discovery-message{padding:11px 14px;border-radius:8px;margin:0 0 16px}
 .discovery-message.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
 .discovery-message.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.btn.running,.btn.running:disabled{opacity:1;cursor:default;background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent)}
 .discovery-message.running{background:var(--accent-soft);border:1px solid var(--line);color:var(--accent-ink)}
 .discovery-list{display:grid;gap:14px}
 .discovery-empty{padding:28px;text-align:center;color:var(--muted);background:var(--surface);border:1px dashed var(--line-strong);border-radius:12px}
@@ -136,6 +137,9 @@
 .update-builder{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:0 0 14px}
 .update-builder .discovery-field.wide{grid-column:1 / -1}
 .discovery-segment button:disabled{opacity:.45;cursor:not-allowed}
+.update-deep{display:flex;gap:10px;align-items:flex-start;margin:10px 0;padding:10px 12px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-soft);line-height:1.5;cursor:pointer}
+.update-deep input{margin-top:4px}
+.update-deep small{display:block;margin-top:2px}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line-strong);border-radius:999px;
   padding:5px 12px;font-size:13px;cursor:pointer;background:var(--surface)}
@@ -191,3 +195,21 @@
 .several-choice{margin:0 0 10px}
 .related{margin-top:10px}
 .related h4{margin:0 0 4px}
+
+/* Update runs: one row per run - name, actors, when, what it found, status. */
+.update-run-list{list-style:none;margin:12px 0 0;padding:0;display:grid;gap:8px}
+.update-run-row{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(0,1.3fr) minmax(0,1.5fr) auto;gap:6px 14px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface)}
+.update-run-name,.update-run-when{display:grid;gap:2px;min-width:0}
+.update-run-name strong{overflow-wrap:anywhere}
+.update-run-name span,.update-run-when span{color:var(--muted);font-size:12px}
+.update-run-result{font-size:13px}
+.update-run-actions{grid-column:1 / -1;display:flex;flex-wrap:wrap;gap:8px}
+.update-run-details{grid-column:1 / -1;font-size:13px}
+.update-run-details summary{cursor:pointer;color:var(--muted)}
+@media (max-width:760px){.update-run-row{grid-template-columns:1fr}}
+.discovery-message.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e}
+.update-attempts{margin:6px 0 0;font-size:13px}
+
+/* What a new request finds: organizations, events or people. */
+.discovery-kinds{margin:0 0 14px}
+.discovery-kind{display:inline-block;font-size:12px;font-weight:600;color:var(--accent-ink);background:var(--accent-soft);border-radius:999px;padding:2px 10px;margin-bottom:4px}

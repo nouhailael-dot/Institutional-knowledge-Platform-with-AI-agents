@@ -13,8 +13,10 @@ function renderReview(kind, pipeline = {}) {
   const data = {candidates: [candidate], counts: {}, source_maps: [], run_groups: [],
     sync_warnings: [], last_sync: [], admission_configured: false};
   let slot = 0;
-  const state = new Map([[1, data], [2, candidate.candidate_id], [3, candidate],
-    [4, candidate.reviewed_payload]]);
+  // useState slots in call order: 0 filters, 1 the open run, 2 data,
+  // 3 selected id, 4 selected record, 5 draft.
+  const state = new Map([[2, data], [3, candidate.candidate_id], [4, candidate],
+    [5, candidate.reviewed_payload]]);
   const flatten = value => Array.isArray(value) ? value.map(flatten).join('')
     : value == null || value === false ? '' : typeof value === 'function' ? '[handler]' : String(value);
   const Review = createReviewPage({

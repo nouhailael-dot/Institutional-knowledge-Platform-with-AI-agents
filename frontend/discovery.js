@@ -4,6 +4,8 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
+import {usDate} from "./dates.js?v=20261027a";
+
 export const CADENCE_LABELS = {
   once: "Once",
   weekly: "Every week",
@@ -35,9 +37,13 @@ export const DURATION_PRESETS = [
 ];
 
 export const STATUS_LABELS = {
-  active: "Active",
+  // Active and waiting for its next run; "Running" is said only while a run is.
+  active: "Scheduled",
+  running: "Running",
+  stalled: "Stopped responding",
   paused: "Paused",
   expired: "Finished",
+  period_over: "Period over",
   cancelled: "Cancelled",
 };
 
@@ -87,6 +93,19 @@ const CATEGORY_LABELS = {
 };
 
 // The facts a reviewer needs at a glance, only those the page actually stated.
+/** An event's or person's facts on its request card: only what was found. */
+export function entityResultFacts(row) {
+  return [
+    ["Date", row.start_date ? formatDay(row.start_date) : null],
+    ["Type", row.event_type],
+    ["Role", row.role],
+    ["Organization", row.affiliation],
+    ["Place", [row.city, row.state].filter(Boolean).join(", ") || null],
+    ["Completeness", row.completeness
+      ? row.completeness.charAt(0).toUpperCase() + row.completeness.slice(1) : null],
+  ].filter(([, value]) => value);
+}
+
 export function resultFacts(row) {
   const place = [row.city, row.state, row.country && row.country !== "United States" ? row.country : null]
     .filter(Boolean).join(", ");
@@ -100,8 +119,146 @@ export function resultFacts(row) {
   ].filter(([, value]) => value && String(value).trim());
 }
 
+const SOURCE_LABELS = {
+  official_parent: "its parent organization's official site", government: "a government site",
+  third_party: "another credible site",
+};
+
+/** Where a page came from, when it was not the organization's own website. */
+export function sourceLabel(kind) {
+  return SOURCE_LABELS[kind] || "";
+}
+
+/** Ask the page to show an actor's update profile in Review (index.html, review.js). */
+export const OPEN_IN_REVIEW = "ghus:open-review";
+
+export function openInReview(actor) {
+  window.dispatchEvent(new CustomEvent(OPEN_IN_REVIEW, {detail: {
+    actor_id: actor.actor_id, name: actor.name}}));
+}
+
+/** "4 new · 1 updated · 7 not found": what one update wrote. */
+export function writtenLine(counts = {}) {
+  const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
+    ["corroborated", "confirmed"], ["conflict", "to review"], ["protected", "GHUS value kept"],
+    ["not_found", "not found"]];
+  return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`)
+    .join(" · ") || "nothing new";
+}
+
 export function isRunning(request) {
-  return (request.runs || []).some((run) => run.status === "running");
+  return (request.runs || []).some((run) => run.status === "running" && !run.stalled);
+}
+
+/** The run in progress, if any (a run that stopped responding is not "running"). */
+export function runningRun(request) {
+  return (request.runs || []).find((run) => run.status === "running" && !run.stalled) || null;
+}
+
+/** "Running", "Stopped responding", "Period over", or the request's own status. */
+export function requestStatus(request) {
+  if (isRunning(request)) return "running";
+  if ((request.runs || []).some((run) => run.status === "running" && run.stalled)) return "stalled";
+  // Still active, but nothing more is scheduled: it runs only when asked.
+  if (request.status === "active" && !request.next_run && request.skip_reason === "expired") {
+    return "period_over";
+  }
+  return request.status;
+}
+
+/** The run button: "Run again" once it has run or its period is over. */
+export function runButtonLabel(request) {
+  return (request.runs || []).length > 0 || requestStatus(request) === "period_over"
+    ? "Run again" : "Run now";
+}
+
+/** "45 s", "4 min", "1 h 12 min". */
+export function durationLabel(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  if (s < 60) return `${s} s`;
+  const minutes = Math.round(s / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+/** "Running for 4 min · $0.21 spent so far" - what a running run has taken. */
+export function runningLine(run) {
+  if (!run) return "";
+  const spent = run.spent_usd === null || run.spent_usd === undefined ? null : Number(run.spent_usd);
+  return `Running for ${durationLabel(run.elapsed_seconds)} · `
+    + (spent ? `${formatUsd(spent)} spent so far` : "no spend recorded yet");
+}
+
+/** The Review run that holds a discovery run's results. */
+export function reviewRunKey(run) {
+  return run?.search_run_id ? `discovery:${run.search_run_id}` : null;
+}
+
+/** Open that run in Review, every record shown (index.html, review.js). */
+export function openRunInReview(run, entity = "actor") {
+  const key = reviewRunKey(run);
+  if (!key) return;
+  window.dispatchEvent(new CustomEvent(OPEN_IN_REVIEW, {detail: {
+    run_key: key,
+    run_type: {actor: "discovery_actors", event: "discovery_events",
+      person: "discovery_people"}[entity] || "all"}}));
+}
+
+const RUN_STATUS = {succeeded: "Completed", attention: "Completed with limits", failed: "Failed",
+  running: "Running"};
+
+/** "4 updated · 2 confirmed · 2 not found": what a one-actor update found. */
+export function updateCountsLine(counts = {}) {
+  const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
+    ["confirmed", "confirmed"], ["conflicts", "to review"], ["no_change", "unchanged"], ["missing", "not found"]];
+  return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`)
+    .join(" · ") || "Nothing new";
+}
+
+/**
+ * Every actor update, saved request or one-time, as one list, newest first:
+ * name, actors, when, status and what it found. Requests on an inactive (test)
+ * sector are counted, not listed.
+ */
+export function updateRunList(listing = {}, sectors = []) {
+  const rows = [];
+  const sectorName = (code) => (sectors.find((x) => x.code === code) || {}).name || code;
+  for (const r of listing.requests || []) {
+    if (r.test_sector) continue;
+    const last = (r.runs || [])[0];
+    const names = r.actor_names || [];
+    const live = r.status === "active" || r.status === "paused";
+    const running = isRunning(r);
+    rows.push({
+      key: r.subscription_id, kind: "request", request: r,
+      name: r.title || "Update request",
+      actors: names.length
+        ? (names.length <= 3 ? names.join(", ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`)
+        : [(r.sector_codes || [])[0] && `Group: ${sectorName(r.sector_codes[0])}`, r.state_code]
+          .filter(Boolean).join(" · ") || "A group",
+      what: (ACTOR_UPDATE_SCOPES.find((x) => x.id === (r.update_options || {}).scope) || {}).label || "",
+      date: last ? last.started_at : r.start_date,
+      schedule: r.cadence === "once" ? "Once"
+        : `${CADENCE_LABELS[r.cadence] || r.cadence} until ${formatDay(r.end_date)}`
+          + (live && r.next_run ? ` · next ${formatDay(r.next_run)}` : ""),
+      status: requestStatus(r),
+      statusLabel: STATUS_LABELS[requestStatus(r)] || r.status,
+      result: last ? `${last.found_count ?? 0} new or updated · ${last.review_item_count ?? 0} to Review`
+        : "Not run yet",
+      runs: r.runs || [],
+    });
+  }
+  for (const u of listing.one_time || []) {
+    rows.push({
+      key: u.run_id, kind: "single", name: u.name, actors: u.name,
+      what: (ACTOR_UPDATE_SCOPES.find((x) => x.id === u.scope) || {}).label || "",
+      date: u.started_at, schedule: ["One-time update", u.topic_name].filter(Boolean).join(" · "),
+      status: u.status === "failed" ? "failed" : "expired",
+      statusLabel: RUN_STATUS[u.status] || u.status,
+      result: updateCountsLine(u.counts), runs: [],
+    });
+  }
+  return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
 const SKIP_LABELS = {
@@ -128,12 +285,11 @@ export function addMonths(isoStart, months) {
   return isoDate(target > max ? max : target);
 }
 
+/** A day as MM/DD/YYYY; a timestamp is shown by the day it falls on here. */
 export function formatDay(value) {
   if (!value) return "";
-  const text = String(value).slice(0, 10);
-  const [y, m, d] = text.split("-").map(Number);
-  if (!y || !m || !d) return "";
-  return new Date(y, m - 1, d).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"});
+  const text = String(value);
+  return usDate(/^\d{4}-\d{2}-\d{2}$/.test(text) ? text : new Date(text));
 }
 
 export function areaLabel(request, options) {
@@ -152,7 +308,17 @@ export function areaLabel(request, options) {
 
 /** The sectors a request names. The backend calls these topics; a person
  * reading the page calls them sectors, and so does every label here. */
+export const ANY_SECTOR = "ANY";
+
+/** True when a request covers every sector ("Any sector", stored as all of them). */
+export function coversEverySector(request, options) {
+  const codes = (options?.topics || []).map((t) => t.code);
+  const chosen = new Set(request.sector_codes || []);
+  return chosen.has(ANY_SECTOR) || (codes.length > 1 && codes.every((c) => chosen.has(c)));
+}
+
 export function topicLabel(request, options) {
+  if (coversEverySector(request, options)) return "any sector";
   const topics = options?.topics || [];
   const names = [
     ...(request.sector_codes || []).map((code) => topics.find((t) => t.code === code)?.name || code),
@@ -171,7 +337,10 @@ export function requestSummary(request, options) {
     : `From ${formatDay(request.start_date)} to ${formatDay(request.end_date)}, ${cadence}`;
   const cap = request.max_new_actors_per_run
     ? ` At most ${request.max_new_actors_per_run} new organizations per run.` : "";
-  return `${when}: find ${topicLabel(request, options)} organizations in ${areaLabel(request, options)}${focus}.${cap}`;
+  const depth = (request.discovery_options || {}).pull_depth;
+  const read = depth === "light" ? " Each organization kept is read on its own site (Light Pull)."
+    : depth === "none" ? " Organizations are not read beyond the search page." : "";
+  return `${when}: find ${topicLabel(request, options)} organizations in ${areaLabel(request, options)}${focus}.${cap}${read}`;
 }
 
 export function nextRunLabel(request) {
@@ -278,61 +447,131 @@ export function resolveDraft(form, options = {}) {
   return resolved;
 }
 
-// ------------------------------------------------------ specific actor updates
+// --------------------------------------------------------------- actor updates
 
-/** What an update covers (backend actor_updates.SCOPES). */
+/** The backend's scope words (actor_updates.SCOPES), for reading saved requests back. */
 export const ACTOR_UPDATE_SCOPES = [
-  {id: "general", label: "General profile", hint: "Every box its category has."},
-  {id: "topic", label: "Specific topic", hint: "Every box, read for one sector — add words to steer it."},
-  {id: "missing", label: "Missing information", hint: "Only the boxes that are still empty."},
-  {id: "outdated", label: "Outdated information", hint: "Only values older than the freshness window."},
-  {id: "specific", label: "Specific changes", hint: "Only the boxes you tick."},
+  {id: "general", label: "General Update"},
+  {id: "topic", label: "Specific Changes"},
+  {id: "missing", label: "Missing information"},
+  {id: "outdated", label: "Outdated information"},
+  {id: "specific", label: "Specific Changes"},
 ];
 
-export const UPDATE_DEPTHS = [
-  {id: "light", label: "Light refresh", hint: "Its own home, About and one topic page."},
-  {id: "deep", label: "Deep enrichment", hint: "Only for an actor GHUS verified for this exact sector."},
+/** What to update: the page offers only these two. */
+export const UPDATE_KINDS = [
+  {id: "general", label: "General Update",
+    hint: "Check the selected organizations for new, missing, or outdated information."},
+  {id: "specific", label: "Specific Changes",
+    hint: "Look for updates about a particular topic or type of information."},
 ];
 
-/** Change categories only reorder the boxes and steer which page is read. */
-export const CHANGE_CATEGORY_OPTIONS = [
-  {id: "research", label: "Research & programmes"},
-  {id: "funding", label: "Funding & grants"},
-  {id: "partnerships", label: "Partnerships"},
-  {id: "products", label: "Products & technology"},
-  {id: "organization", label: "Organisation"},
-  {id: "geography", label: "Geography"},
-  {id: "category", label: "Its category's own boxes"},
+/**
+ * "What information are you interested in?" Each choice is a set of the
+ * backend's change categories; only the boxes an organization's own category
+ * has are ever read (the category Light Pull rules), so nothing irrelevant is
+ * researched.
+ */
+export const INFORMATION_FOCUS = [
+  {id: "research", label: "Research, Projects & Technology",
+    words: "research, projects and technology", categories: ["research", "products"]},
+  {id: "funding", label: "Funding & Partnerships",
+    words: "funding and partnerships", categories: ["funding", "partnerships"]},
+  {id: "organization", label: "Organization & Activities",
+    words: "the organization and its activities", categories: ["organization", "category"]},
+  {id: "locations", label: "Locations & Operations",
+    words: "locations and operations", categories: ["geography"]},
 ];
 
-/** "Once" checks now; any other frequency saves a request the runner keeps. */
+export const UPDATE_QUESTION_EXAMPLE =
+  "Has this organization launched any new battery storage projects or partnerships?";
+
+/** How often a schedule checks. A one-time check is the separate Run Now. */
 export const UPDATE_FREQUENCIES = [
-  {id: "once", label: "Once"},
-  {id: "weekly", label: "Weekly"},
-  {id: "biweekly", label: "Every 2 weeks"},
-  {id: "monthly", label: "Monthly"},
-  {id: "quarterly", label: "Quarterly"},
+  {id: "weekly", label: "Every Week", words: "every week", first: "next week", days: 7},
+  {id: "biweekly", label: "Every 2 Weeks", words: "every two weeks", first: "in two weeks", days: 14},
+  {id: "monthly", label: "Every Month", words: "every month", first: "next month", months: 1},
+  {id: "quarterly", label: "Every 3 Months", words: "every three months", first: "in three months", months: 3},
 ];
 
 export const UPDATE_DURATIONS = [
-  {months: 1, label: "1 month"},
-  {months: 3, label: "3 months"},
-  {months: 6, label: "6 months"},
-  {months: 12, label: "1 year"},
+  {months: 1, label: "1 month", words: "one month"},
+  {months: 3, label: "3 months", words: "three months"},
+  {months: 6, label: "6 months", words: "six months"},
+  {months: 12, label: "12 months", words: "twelve months"},
 ];
 
-/** The boxes every category has: what a group's "Specific changes" may ask for. */
-export const UPDATE_COMMON_BOXES = ["location", "why_matched", "recent_activity", "funding_signal",
-  "international_connection", "um6p_ocp_connection"];
+export function addDays(isoStart, days) {
+  const [y, m, d] = String(isoStart).split("-").map(Number);
+  return isoDate(new Date(y, m - 1, d + days));
+}
+
+/**
+ * When a schedule runs: the first check comes one interval after today -
+ * never on the day it is made - and checking stops `months` after today.
+ */
+export function updateSchedule(today, cadence, months) {
+  const frequency = UPDATE_FREQUENCIES.find((f) => f.id === cadence) || UPDATE_FREQUENCIES[0];
+  const duration = UPDATE_DURATIONS.find((d) => d.months === Number(months)) || UPDATE_DURATIONS[1];
+  const start = frequency.days ? addDays(today, frequency.days) : addMonths(today, frequency.months);
+  const end = addMonths(today, duration.months);
+  const problem = start > end
+    ? `Checking ${frequency.words} needs longer than ${duration.label}: the first check would come after it ends.`
+    : "";
+  return {start_date: start, end_date: end, problem};
+}
+
+/** The backend change categories behind the chosen information, in order. */
+export function focusCategories(interests = []) {
+  return [...new Set(INFORMATION_FOCUS.filter((x) => interests.includes(x.id))
+    .flatMap((x) => x.categories))];
+}
+
+/** Why the choices cannot be sent yet, or "". */
+export function updateChoiceProblem(form) {
+  if (form.kind === "specific" && !(form.interests || []).length && !String(form.focus || "").trim()) {
+    return "Choose the information you are interested in, or write a topic or question.";
+  }
+  return "";
+}
+
+/**
+ * What the page sends to plan or check an update, in the backend's words.
+ * General Update reads every box the organization's category has, so it finds
+ * what is new, missing or out of date; the chosen information is read first
+ * (the backend's change categories reorder, never add). Specific Changes reads
+ * only the boxes of the chosen information (scope "specific"); with only a
+ * question, every box, steered by the question's words.
+ */
+export function updateRequestBody(form) {
+  const body = {scope: "general", depth: form.depth};
+  if (form.topic) body.topic = form.topic;
+  const categories = focusCategories(form.interests);
+  if (form.kind !== "specific" && categories.length) body.categories = categories;
+  if (form.kind === "specific") {
+    if (categories.length) {
+      body.scope = "specific";
+      body.categories = categories;
+    } else if (form.topic) {
+      body.scope = "topic";
+    }
+    const focus = String(form.focus || "").trim();
+    if (focus) body.focus = focus.slice(0, 200);
+  }
+  return body;
+}
 
 /**
  * What the page sends to plan or save an update request. One actor sends its
  * id; several send the picked ids, or the group (a sector is required: a
- * request never sweeps the whole map). Empty choices are left out.
+ * request never sweeps the whole map). Run Now is a one-time request that
+ * starts today; a schedule starts one interval from today. The backend keeps
+ * its own per-run and per-actor safeguards; a group's run reaches the actors
+ * with the most gaps first.
  */
 export function updateRequestDraft({mode, form, selected, picked = [], group = {}, useGroup,
-  schedule}) {
-  const draft = {...updateRequestBody(form), cadence: form.cadence};
+  today, runNow = false}) {
+  const draft = {...updateRequestBody(form)};
   if (mode === "one") {
     draft.actor_ids = selected ? [selected.actor_id] : [];
     draft.max_actors_per_run = 1;
@@ -340,23 +579,66 @@ export function updateRequestDraft({mode, form, selected, picked = [], group = {
     draft.group = Object.fromEntries(Object.entries({
       sector: group.sector, category: group.category, state: group.state,
     }).filter(([, v]) => v));
-    draft.max_actors_per_run = Number(schedule.maxActors);
   } else {
     draft.actor_ids = picked.map((a) => a.actor_id);
-    draft.max_actors_per_run = Math.min(Number(schedule.maxActors), picked.length || 1);
+    draft.max_actors_per_run = picked.length || 1;
   }
-  draft.start_date = schedule.startDate;
-  if (form.cadence !== "once") draft.end_date = addMonths(schedule.startDate, Number(schedule.months));
-  draft.max_usd_per_run = Number(schedule.maxUsd);
-  const title = String(schedule.title || "").trim();
-  if (title) draft.title = title.slice(0, 160);
+  if (runNow) {
+    draft.cadence = "once";
+  } else {
+    const when = updateSchedule(today, form.cadence, form.months);
+    Object.assign(draft, {cadence: form.cadence, start_date: when.start_date, end_date: when.end_date});
+  }
   return draft;
 }
 
-/** "Missing information · Water · Company · up to 5 actors a run · at most $1.50 a run". */
+/**
+ * The request in one or two sentences: "Check these organizations every week
+ * for three months, starting next week. Look for new research, projects and
+ * technology, and funding and partnerships using Light Refresh."
+ */
+export function updateSummary({form, count = 0, runNow = false, deep = false}) {
+  const who = count === 1 ? "this organization" : "these organizations";
+  const frequency = UPDATE_FREQUENCIES.find((f) => f.id === form.cadence) || UPDATE_FREQUENCIES[0];
+  const duration = UPDATE_DURATIONS.find((d) => d.months === Number(form.months)) || UPDATE_DURATIONS[1];
+  const when = runNow ? `Check ${who} now, once.`
+    : `Check ${who} ${frequency.words} for ${duration.words}, starting ${frequency.first}.`;
+  const depth = deep ? "Light Refresh, then a Deep Pull" : "Light Refresh";
+  const focus = String(form.focus || "").trim();
+  const chosen = INFORMATION_FOCUS.filter((x) => (form.interests || []).includes(x.id)).map((x) => x.words);
+  const list = chosen.length === 1 ? chosen[0]
+    : `${chosen.slice(0, -1).join(", ")}${chosen.length > 2 ? "," : ""} and ${chosen[chosen.length - 1]}`;
+  let what;
+  if (form.kind !== "specific") {
+    what = "Look for new, missing, or outdated information"
+      + (chosen.length ? ` (${list} first)` : "");
+  } else if (chosen.length) {
+    what = `Look for updates on ${list}` + (focus ? `, with this question in mind: “${focus}”` : "");
+  } else {
+    what = focus ? `Look for updates about “${focus}”` : "Look for updates";
+  }
+  // After a quoted question, a comma keeps the sentence readable.
+  return `${when} ${what}${what.endsWith("”") ? "," : ""} using ${depth}.`;
+}
+
+/** "About $0.04 a check; about $0.52 over 13 checks." Only from real past reads. */
+export function estimateLine(cost, runs = 1) {
+  if (!cost) return "";
+  if (cost.expected_usd == null && cost.typical_usd == null) {
+    return `No past checks to estimate from yet; each organization costs at most ${formatUsd(cost.per_actor_cap_usd ?? cost.cap_usd)} a check.`;
+  }
+  const each = cost.expected_usd ?? cost.typical_usd;
+  return runs > 1 ? `About ${formatUsd(each)} a check; about ${formatUsd(each * runs)} over ${runs} checks.`
+    : `About ${formatUsd(each)}.`;
+}
+
+/** "Specific Changes (Funding & Partnerships) · Water · Company · CA". Reads old requests too. */
 export function updateRequestScope(request, sectors = []) {
   const options = request.update_options || {};
-  const scope = (ACTOR_UPDATE_SCOPES.find((s) => s.id === options.scope) || {}).label;
+  const interests = INFORMATION_FOCUS.filter((x) => x.categories.some((c) => (options.categories || []).includes(c)))
+    .map((x) => x.label);
+  const scope = (ACTOR_UPDATE_SCOPES.find((s) => s.id === options.scope) || {}).label
+    + (options.scope === "specific" && interests.length ? ` (${interests.join(", ")})` : "");
   const sectorName = (code) => (sectors.find((x) => x.code === code) || {}).name || code;
   const names = request.actor_names || [];
   const who = names.length
@@ -364,10 +646,7 @@ export function updateRequestScope(request, sectors = []) {
     : [(request.sector_codes || [])[0] && sectorName(request.sector_codes[0]),
       options.category && (CATEGORY_LABELS[options.category] || options.category), request.state_code]
       .filter(Boolean).join(" · ");
-  return [scope, who, options.max_actors_per_run && `up to ${options.max_actors_per_run} `
-    + `${options.max_actors_per_run === 1 ? "actor" : "actors"} a run`,
-  request.max_usd_per_run != null && `at most ${formatUsd(request.max_usd_per_run)} a run`]
-    .filter(Boolean).join(" · ");
+  return [scope, who, options.focus && `“${options.focus}”`].filter(Boolean).join(" · ");
 }
 
 const FIT_WORDS = {
@@ -412,7 +691,7 @@ export function relatedLine(item) {
 export function actorResultLine(result) {
   if (!result.ok) return `${result.name}: not updated — ${result.error || "no reason recorded"}`;
   const counts = result.counts || {};
-  const parts = [["new", "new"], ["changed", "changed"], ["additional", "additional"], ["corroborated", "confirmed"],
+  const parts = [["new", "new"], ["changed", "changed"], ["additional", "more detail"], ["corroborated", "confirmed"],
     ["not_found", "not found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
   if (result.review_items) parts.push(`${result.review_items} to Review`);
   if (!parts.length) parts.push("nothing new");
@@ -423,7 +702,7 @@ export function actorResultLine(result) {
 export const OUTCOME_LABELS = {
   new: "New",
   changed: "Changed",
-  additional: "Additional",
+  additional: "More detail",
   corroborated: "Confirmed",
   conflict: "Conflict",
   protected: "GHUS value kept",
@@ -436,23 +715,12 @@ export const OUTCOME_LABELS = {
 export const RESULT_GROUPS = [
   {id: "new", label: "New"},
   {id: "changed", label: "Changed"},
-  {id: "additional", label: "Additional"},
+  {id: "additional", label: "Additional details"},
   {id: "conflicts", label: "Conflicts requiring review"},
   {id: "confirmed", label: "Confirmed"},
   {id: "missing", label: "Missing"},
   {id: "no_change", label: "No change"},
 ];
-
-/** What the page sends to plan or check one update. Empty choices are left out. */
-export function updateRequestBody(form) {
-  const body = {scope: form.scope, depth: form.depth};
-  if (form.topic) body.topic = form.topic;
-  if (form.scope === "specific" && form.fields?.length) body.fields = [...form.fields];
-  if (form.categories?.length) body.categories = [...form.categories];
-  const focus = String(form.focus || "").trim();
-  if (focus && (form.scope === "topic" || form.scope === "specific")) body.focus = focus.slice(0, 200);
-  return body;
-}
 
 /** "Usually $0.031 (12 past reads, $0.020–$0.052); never more than $0.15." */
 export function costLine(cost) {
@@ -555,6 +823,11 @@ export function outcomeSummary(counts = {}) {
 }
 
 // What the form sends. Empty optional fields are left out, never sent blank.
+export const PULL_DEPTH_LABELS = {
+  light: "Light Pull: read each organization's own pages (recommended)",
+  none: "Search page only: do not read the organizations' sites",
+};
+
 export function draftPayload(form) {
   const payload = {
     title: form.title.trim(),
@@ -564,6 +837,8 @@ export function draftPayload(form) {
     end_date: form.cadence === "once" ? form.startDate : form.endDate,
     cadence: form.cadence,
     max_new_actors_per_run: Number(form.cap),
+    // New requests read what they keep (Light Pull) unless a person opts out.
+    discovery_options: {pull_depth: form.pullDepth || "light"},
   };
   if (form.areaKind === "region" && form.region) payload.region_code = form.region;
   if (form.areaKind === "state" && form.state) {
@@ -579,6 +854,10 @@ export function draftProblems(rawForm, options) {
   if (!form.title.trim()) {
     problems.brief = "Say what you are looking for.";
     problems.title = "Give the request a name.";
+  }
+  if (form.sector === ANY_SECTOR && !form.focusTerms.length) {
+    problems.sector = "Any sector needs a sub-topic to search for.";
+    problems.brief = "With any sector, add at least one line naming what to search for.";
   }
   if (!form.sector) {
     problems.sector = "Choose a sector.";
@@ -600,13 +879,122 @@ export function draftProblems(rawForm, options) {
   return problems;
 }
 
+// ------------------------------------------------------- events and people
+//
+// The same request, for events or people (backend migration 580). The
+// organization form above is untouched; these forms ask only what an event or
+// people search needs, and use the same request storage, scheduler and Review.
+
+export const DISCOVERY_KINDS = [
+  {id: "actor", label: "Organizations / Actors"},
+  {id: "event", label: "Events"},
+  {id: "person", label: "People"},
+];
+
+export const EVENT_TYPE_LABELS = {
+  conference: "Conference", summit: "Summit", symposium: "Symposium", forum: "Forum",
+  training: "Training",
+  // No longer offered; still named on requests saved with them.
+  workshop: "Workshop", expo: "Expo", webinar: "Webinar", hackathon: "Hackathon",
+};
+
+export function blankEntityForm(today, kind) {
+  return {
+    kind, title: "", sector: "", focusTerms: [], focusInput: "",
+    areaKind: "us", region: "", state: "", city: "",
+    dateFrom: "", dateTo: "", eventTypes: [], institution: "", role: "",
+    startDate: today, cadence: "once", duration: "3m", endDate: addMonths(today, 3),
+  };
+}
+
+/** What an event or people form sends. Empty optional fields are left out. */
+export function entityDraftPayload(form) {
+  const options = {};
+  if (form.kind === "event") {
+    if (form.dateFrom) options.date_from = form.dateFrom;
+    if (form.dateTo) options.date_to = form.dateTo;
+    if (form.eventTypes.length) options.event_types = form.eventTypes;
+  } else {
+    if (form.institution.trim()) options.institution = form.institution.trim();
+    if (form.role.trim()) options.role = form.role.trim();
+  }
+  const payload = {
+    title: form.title.trim(),
+    sector_codes: form.sector ? [form.sector] : [],
+    focus_terms: form.focusTerms,
+    start_date: form.startDate,
+    end_date: form.cadence === "once" ? form.startDate : form.endDate,
+    cadence: form.cadence,
+    discovery_entity: form.kind,
+    discovery_options: options,
+  };
+  if (form.areaKind === "region" && form.region) payload.region_code = form.region;
+  if (form.areaKind === "state" && form.state) {
+    payload.state_code = form.state;
+    if (form.city.trim()) payload.city = form.city.trim();
+  }
+  return payload;
+}
+
+export function entityDraftProblems(form, options = {}) {
+  const problems = {};
+  if (!form.title.trim()) problems.title = "Give the request a name.";
+  if (!form.sector) problems.sector = "Choose a sector.";
+  if (!form.focusTerms.length && !String(form.focusInput || "").trim()) {
+    problems.topic = form.kind === "event" ? "Name the topic to search for."
+      : "Name the topic or expertise to search for.";
+  }
+  if (form.areaKind === "region" && !form.region) problems.area = "Choose a region.";
+  if (form.areaKind === "state" && !form.state) problems.area = "Choose a state.";
+  if (form.kind === "event") {
+    if (form.dateFrom && form.dateTo && form.dateTo < form.dateFrom) {
+      problems.dates = "The range ends before it starts.";
+    }
+    if (form.eventTypes.length > (options.max_event_types || 5)) {
+      problems.types = `Choose at most ${options.max_event_types || 5}.`;
+    }
+  }
+  if (form.cadence !== "once") {
+    if (!form.endDate) problems.duration = "Choose how long the request runs.";
+    else if (form.endDate < form.startDate) problems.duration = "The end date is before the start.";
+  }
+  return problems;
+}
+
+/** One sentence a person can check against what they meant. */
+export function entitySummary(request, options) {
+  const kind = request.discovery_entity || request.kind;
+  const opts = request.discovery_options || {
+    date_from: request.dateFrom, date_to: request.dateTo, event_types: request.eventTypes,
+    institution: request.institution, role: request.role,
+  };
+  const cadence = (CADENCE_LABELS[request.cadence] || request.cadence || "").toLowerCase();
+  const when = request.cadence === "once"
+    ? `Once, on ${formatDay(request.start_date) || "the start date"}`
+    : `From ${formatDay(request.start_date)} to ${formatDay(request.end_date)}, ${cadence}`;
+  const topic = (request.focus_terms || []).length ? request.focus_terms.join(", ")
+    : topicLabel(request, options);
+  if (kind === "event") {
+    const types = (opts.event_types || []).map((t) => (EVENT_TYPE_LABELS[t] || t).toLowerCase());
+    const range = opts.date_from || opts.date_to
+      ? ` taking place ${opts.date_from ? `from ${formatDay(opts.date_from)}` : ""}${
+        opts.date_from && opts.date_to ? " " : ""}${opts.date_to ? `to ${formatDay(opts.date_to)}` : ""}`
+      : "";
+    return `${when}: find ${types.length ? types.join(" or ") + "s" : "events"} on ${topic} in ${
+      areaLabel(request, options)}${range}.`;
+  }
+  const role = opts.role ? `${opts.role}s` : "people";
+  const at = opts.institution ? ` at ${opts.institution}` : ` in ${areaLabel(request, options)}`;
+  return `${when}: find ${role} working on ${topic}${at}.`;
+}
+
 function blankForm(today) {
   return {
     brief: "", areaTouched: false,
     title: "", sector: "", focusTerms: [], focusInput: "",
     areaKind: "region", region: "", state: "", city: "",
     startDate: today, duration: "3m", endDate: addMonths(today, 3),
-    cadence: "weekly", cap: 10,
+    cadence: "weekly", cap: 10, pullDepth: "light",
   };
 }
 
@@ -655,27 +1043,31 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const [open, setOpen] = useState(false);
     const [active, setActive] = useState(0);
     const [selected, setSelected] = useState(null);
-    const [form, setForm] = useState({scope: "general", topic: "", depth: "light",
-      categories: [], fields: [], focus: "", cadence: "once"});
+    const [form, setForm] = useState({kind: "general", interests: [], focus: "", topic: "",
+      depth: "light", cadence: "weekly", months: 3});
     const [plan, setPlan] = useState(null);
     const [planning, setPlanning] = useState(false);
     const [busy, setBusy] = useState("");
     const [result, setResult] = useState(null);
     const [applied, setApplied] = useState(null);
-    const [show, setShow] = useState("all");
     const [error, setError] = useState("");
     // Update requests: several actors, or any actor on a frequency.
     const [mode, setMode] = useState("one");
     const [picked, setPicked] = useState([]);
     const [useGroup, setUseGroup] = useState(false);
-    const [schedule, setSchedule] = useState({startDate: isoDate(new Date()), months: 3,
-      maxActors: 5, maxUsd: 1.5, title: ""});
     const [reqPlan, setReqPlan] = useState(null);
     const [reqPlanning, setReqPlanning] = useState(false);
-    const [saved, setSaved] = useState({requests: [], ready: true, loaded: false});
+    const [saved, setSaved] = useState({requests: [], one_time: [], ready: true, loaded: false});
     const [notice, setNotice] = useState("");
+    // Every update is a Light Refresh. A Deep Pull follows only when asked for,
+    // and is offered only where GHUS verified this actor for this sector.
+    const [deepPlan, setDeepPlan] = useState(null);
+    const [wantDeep, setWantDeep] = useState(false);
+    const [deepResult, setDeepResult] = useState(null);
     const topic = form.topic;
-    const asRequest = mode === "several" || form.cadence !== "once";
+    const today = isoDate(new Date());
+    const when = updateSchedule(today, form.cadence, form.months);
+    const choiceProblem = updateChoiceProblem(form);
     // Every sector (the page's own Discovery options), so an actor with no
     // sector link yet can still be updated: facts are kept per sector, and
     // choosing it is a person's decision.
@@ -724,7 +1116,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       }
       setSelected(actor); setResult(null); setApplied(null); setError(""); setOpen(false);
       setQuery(actor.name);
-      setForm((f) => ({...f, topic: (actor.sectors || [])[0] || group.sector || "", fields: []}));
+      setWantDeep(false); setDeepResult(null);
+      setForm((f) => ({...f, topic: (actor.sectors || [])[0] || group.sector || ""}));
     }
 
     function change(patch) {
@@ -740,7 +1133,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     // from the web and nothing is written; it only asks the backend what the
     // request would do. Last answer wins.
     useEffect(() => {
-      if (!selected || !form.topic) { setPlan(null); return undefined; }
+      if (!selected || !form.topic || choiceProblem) { setPlan(null); setPlanning(false); return undefined; }
       let live = true;
       setPlanning(true);
       const timer = setTimeout(async () => {
@@ -752,11 +1145,23 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         if (live) setPlanning(false);
       }, 350);
       return () => { live = false; clearTimeout(timer); };
-    }, [selected?.actor_id, form.topic, form.scope, form.depth, form.focus,
-      form.categories.join(","), form.fields.join(",")]);
+    }, [selected?.actor_id, form.topic, form.kind, form.depth, form.focus, form.interests.join(",")]);
 
-    function draft() {
-      return updateRequestDraft({mode, form, selected, picked, group, useGroup, schedule});
+    // The Deep Pull on offer, when the gate permits it: its items and cost. Free.
+    const deepPermitted = mode === "one" && Boolean(plan?.deep?.permitted);
+    useEffect(() => {
+      if (!deepPermitted || !selected) { setDeepPlan(null); setWantDeep(false); return undefined; }
+      let live = true;
+      api(`/api/discovery/actors/${selected.actor_id}/plan`, {method: "POST",
+        body: JSON.stringify({...updateRequestBody(form), scope: "general", depth: "deep"})})
+        .then((body) => { if (live) setDeepPlan(body); })
+        .catch(() => { if (live) setDeepPlan(null); });
+      return () => { live = false; };
+    }, [deepPermitted, selected?.actor_id, form.topic]);
+    const deepReady = deepPermitted && Boolean(deepPlan?.can_check);
+
+    function draft(runNow = false) {
+      return updateRequestDraft({mode, form, selected, picked, group, useGroup, today, runNow});
     }
 
     const requestReady = mode === "one" ? Boolean(selected && form.topic)
@@ -765,7 +1170,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     async function refreshRequests() {
       try {
         const body = await api("/api/discovery/update-requests");
-        setSaved({requests: body.requests || [], one_time: body.one_time || [], ready: body.ready !== false, loaded: true});
+        setSaved({requests: body.requests || [], one_time: body.one_time || [],
+          ready: body.ready !== false, loaded: true});
       } catch (err) { setSaved((v) => ({...v, loaded: true})); setError(err.message); }
     }
     useEffect(() => { refreshRequests(); }, []);
@@ -776,10 +1182,13 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       return () => clearInterval(timer);
     }, [saved.requests.map((r) => (r.runs || [])[0]?.status).join(",")]);
 
-    // The request preview: which actors the first run reads, its cost and its
+    // Deep Enrichment is asked for one organization at a time and never scheduled.
+    const canSchedule = requestReady && !choiceProblem && !when.problem && form.depth === "light";
+
+    // The schedule preview: which actors the first run reads, its cost and its
     // runs. Free, like the one-actor preview. Last answer wins.
     useEffect(() => {
-      if (!asRequest || !requestReady) { setReqPlan(null); return undefined; }
+      if (!canSchedule) { setReqPlan(null); setReqPlanning(false); return undefined; }
       let live = true;
       setReqPlanning(true);
       const timer = setTimeout(async () => {
@@ -791,22 +1200,38 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         if (live) setReqPlanning(false);
       }, 400);
       return () => { live = false; clearTimeout(timer); };
-    }, [asRequest, requestReady, JSON.stringify(asRequest && requestReady ? draft() : null)]);
+    }, [canSchedule, JSON.stringify(canSchedule ? draft() : null)]);
 
-    async function saveRequest(runNow) {
+    const count = mode === "one" ? (selected ? 1 : 0) : useGroup ? (reqPlan?.matched ?? 0) : picked.length;
+
+    // Save the schedule. Its first check is one interval from today, run by the
+    // existing request runner; nothing runs when it is saved.
+    async function saveSchedule() {
       if (!reqPlan?.can_save) return;
-      const runWords = runNow ? " and run it now (it reads the actors' websites and writes what changed)"
-        : "";
-      if (!window.confirm(`Save “${reqPlan.title}”${runWords}?\n\n${reqPlan.summary}`)) return;
+      if (!window.confirm(`Save this schedule?\n\n${updateSummary({form, count})}\n\nFirst check: `
+        + `${formatDay(when.start_date)}. Last: by ${formatDay(when.end_date)}.`)) return;
       setBusy("save"); setError(""); setNotice("");
       try {
+        await api("/api/discovery/update-requests", {method: "POST", body: JSON.stringify(draft())});
+        setNotice(`Saved. The first check is on ${formatDay(when.start_date)}; you can pause, resume or `
+          + "cancel it in the list below.");
+        await refreshRequests();
+      } catch (err) { setError(err.message); }
+      setBusy("");
+    }
+
+    // Run Now: one organization is read and written now, then shown in Review,
+    // in its own boxes; several are run once by the request runner.
+    async function runNow() {
+      if (mode === "one") { runOne(); return; }
+      if (!window.confirm(`Check ${count} organization(s) now, once? It reads their own websites `
+        + "and writes what changed; conflicts and changes to GHUS values go to Review.")) return;
+      setBusy("run"); setError(""); setNotice("");
+      try {
         const made = await api("/api/discovery/update-requests", {
-          method: "POST", body: JSON.stringify(draft())});
-        if (runNow) {
-          await api(`/api/discovery/update-requests/${made.subscription_id}/run`, {method: "POST"});
-        }
-        setNotice(runNow ? "Saved and started. The run appears below when it finishes."
-          : "Saved. It runs on its start date, and you can run it now from the list below.");
+          method: "POST", body: JSON.stringify(draft(true))});
+        await api(`/api/discovery/update-requests/${made.subscription_id}/run`, {method: "POST"});
+        setNotice("Started. The check appears in the list below when it finishes.");
         await refreshRequests();
       } catch (err) { setError(err.message); }
       setBusy("");
@@ -824,177 +1249,197 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       setBusy("");
     }
 
-    async function check() {
-      if (!selected || !plan?.can_check) return;
-      setBusy("check"); setError(""); setResult(null); setApplied(null); setShow("all");
+    // Read its pages, write what they state through the GHUS fact writer, and
+    // open its profile in Review: each finding in its own box. A value set by
+    // GHUS, or a weaker reading of a recorded one, is never written over - it
+    // waits under "Changes to Review" in the same profile.
+    async function runOne() {
+      const deep = wantDeep && deepReady;
+      if (!selected || !(plan?.can_check || deep)) return;
+      const lines = [`Update ${selected.name} now${deep ? ", then run a Deep Pull" : ""}?`, ""];
+      if (deep) {
+        lines.push(`Deep Pull: ${deepPlan.fields.map(boxLabel).join(", ")}. ${estimateLine(deepPlan.cost)}`, "");
+      }
+      lines.push("The agent reads its pages and writes what they state to the map, each with its "
+        + "source; earlier values stay in the history. Values set by GHUS and conflicting readings "
+        + "are not written over: they wait for you in Review. The result opens in Review.");
+      if (!window.confirm(lines.join("\n"))) return;
+      setBusy("check"); setError(""); setResult(null); setApplied(null); setDeepResult(null);
+      let wrote = false;
       try {
-        setResult(await api(`/api/discovery/actors/${selected.actor_id}/check`, {
-          method: "POST", body: JSON.stringify(updateRequestBody(form))}));
-      } catch (err) { setError(err.message); }
-      setBusy("");
-    }
-
-    async function apply() {
-      if (!result?.check_id) return;
-      if (!window.confirm(`Write ${result.writes} finding(s) for ${selected.name} to the map?\n\n`
-        + "New and changed values are recorded with their source; the old values stay in the "
-        + "history. Conflicts and changes to GHUS values go to Review instead.")) return;
-      setBusy("apply"); setError("");
-      try {
-        setApplied(await api(`/api/discovery/actor-checks/${result.check_id}/apply`, {method: "POST"}));
+        if (plan?.can_check) {
+          const checked = await api(`/api/discovery/actors/${selected.actor_id}/check`, {
+            method: "POST", body: JSON.stringify(updateRequestBody(form))});
+          setResult(checked);
+          if (checked.check_id && checked.writes) {
+            setBusy("apply");
+            setApplied(await api(`/api/discovery/actor-checks/${checked.check_id}/apply`,
+              {method: "POST"}));
+            wrote = true;
+          }
+        }
+        if (deep) {
+          setBusy("deep");
+          const body = JSON.stringify({...updateRequestBody(form), scope: "general", depth: "deep"});
+          const checked = await api(`/api/discovery/actors/${selected.actor_id}/check`, {method: "POST", body});
+          const applied = checked.check_id && checked.writes
+            ? await api(`/api/discovery/actor-checks/${checked.check_id}/apply`, {method: "POST"}) : null;
+          setDeepResult({checked, applied});
+          wrote = wrote || Boolean(applied);
+        }
+        if (wrote) openInReview(selected);
+        refreshRequests();
       } catch (err) { setError(err.message); }
       setBusy("");
     }
 
     const where = (a) => [a.city, a.state].filter(Boolean).join(", ");
 
-    function updateBuilder({schema, sectorControl, lightOnly}) {
+    // One form for one organization, picked organizations, or a group.
+    function updateBuilder({sectorControl}) {
+      const kind = UPDATE_KINDS.find((x) => x.id === form.kind);
       return html`<div class="update-builder">
         ${Field({label: "What to update", wide: true, children: html`
           <div class="discovery-segment">
-            ${ACTOR_UPDATE_SCOPES.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
-              class=${form.scope === x.id ? "active" : ""} onClick=${() => change({scope: x.id})}>${x.label}</button>`)}
+            ${UPDATE_KINDS.map((x) => html`<button type="button" key=${x.id}
+              aria-pressed=${form.kind === x.id}
+              class=${form.kind === x.id ? "active" : ""} onClick=${() => change({kind: x.id})}>${x.label}</button>`)}
           </div>
-          <small class="muted">${ACTOR_UPDATE_SCOPES.find((x) => x.id === form.scope)?.hint}</small>`})}
+          <small class="muted">${kind?.hint}</small>`})}
+
+        ${Field({label: "What information are you interested in?", wide: true, children: html`
+          <div class="chips">${INFORMATION_FOCUS.map((x) => html`<label key=${x.id} class=${"chip" + (form.interests.includes(x.id) ? " on" : "")}>
+            <input type="checkbox" checked=${form.interests.includes(x.id)} onChange=${() => toggle("interests", x.id)}/>${x.label}</label>`)}</div>
+          <small class="muted">${form.kind === "specific"
+            ? "Only this information is checked, and only what each organization's type has."
+            : form.interests.length ? "Checked first; everything else its type has is checked too."
+              : "Optional: choose what to check first. Everything its type has is checked."}</small>`})}
+
+        ${form.kind === "specific" && Field({label: "Specific topic or question (optional)", wide: true, children: html`
+          <input value=${form.focus} maxLength="200" placeholder=${UPDATE_QUESTION_EXAMPLE}
+            onInput=${(e) => change({focus: e.target.value})}/>`})}
 
         ${Field({label: "Sector", children: sectorControl})}
 
-        ${Field({label: "Depth", children: html`
-          <div class="discovery-segment">
-            ${UPDATE_DEPTHS.map((x) => html`<button type="button" key=${x.id} title=${x.hint}
-              disabled=${lightOnly && x.id === "deep"}
-              class=${form.depth === x.id ? "active" : ""} onClick=${() => change({depth: x.id})}>${x.label}</button>`)}
-          </div>
-          ${(lightOnly || asRequest) && html`<small class="muted">Saved and group requests use the Light
-            refresh; Deep enrichment is one actor at a time.</small>`}`})}
+        ${Field({label: "How often should we check for updates?", children: html`
+          <select value=${form.cadence} onChange=${(e) => change({cadence: e.target.value})}>
+            ${UPDATE_FREQUENCIES.map((x) => html`<option key=${x.id} value=${x.id}>${x.label}</option>`)}
+          </select>`})}
 
-        ${Field({label: "Frequency", children: html`
-          <div class="discovery-segment">
-            ${UPDATE_FREQUENCIES.map((x) => html`<button type="button" key=${x.id}
-              class=${form.cadence === x.id ? "active" : ""}
-              onClick=${() => change({cadence: x.id, ...(x.id !== "once" ? {depth: "light"} : {})})}>${x.label}</button>`)}
-          </div>`})}
-
-        ${(form.scope === "topic" || form.scope === "specific") && Field({label: "Look for (optional)", wide: true, children: html`
-          <input value=${form.focus} maxLength="200" placeholder="e.g. desalination pilots, new DOE grants"
-            onInput=${(e) => change({focus: e.target.value})}/>`})}
-
-        ${form.scope === "specific" && schema && Field({label: "Boxes", wide: true, children: html`
-          <div class="chips">${schema.map((key) => html`<label key=${key} class=${"chip" + (form.fields.includes(key) ? " on" : "")}>
-            <input type="checkbox" checked=${form.fields.includes(key)} onChange=${() => toggle("fields", key)}/>${boxLabel(key)}</label>`)}</div>`})}
-
-        ${Field({label: "Changes to look for first", wide: true, children: html`
-          <div class="chips">${CHANGE_CATEGORY_OPTIONS.map((x) => html`<label key=${x.id} class=${"chip" + (form.categories.includes(x.id) ? " on" : "")}>
-            <input type="checkbox" checked=${form.categories.includes(x.id)} onChange=${() => toggle("categories", x.id)}/>${x.label}</label>`)}</div>
-          <small class="muted">${form.categories.length ? "Read first, and they steer which page is read; nothing outside its category is filled." : "All changes."}</small>`})}
+        ${Field({label: "For how long should we keep checking?", children: html`
+          <select value=${form.months} onChange=${(e) => change({months: Number(e.target.value)})}>
+            ${UPDATE_DURATIONS.map((d) => html`<option key=${d.months} value=${d.months}>${d.label}</option>`)}
+          </select>`})}
       </div>`;
     }
 
-    function setScheduleField(patch) { setSchedule((v) => ({...v, ...patch})); }
-
-    // Schedule, limits, the request preview and Save - for several actors or a frequency.
+    // The request preview in plain words, and the two actions.
     function requestPanel() {
+      const organizations = mode === "one" ? selected?.name
+        : useGroup ? (reqPlan ? `${reqPlan.matched} in this group` : "")
+          : `${picked.length} chosen`;
+      const cost = reqPlan?.cost || (plan?.cost && {...plan.cost, expected_usd: plan.cost.typical_usd});
+      const deep = mode === "one" && wantDeep && deepReady;
+      const ready = requestReady && !choiceProblem;
       return html`<div class="update-request">
-        <div class="update-builder">
-          ${Field({label: "Start", children: html`<input type="date" value=${schedule.startDate}
-            min=${isoDate(new Date())} onInput=${(e) => setScheduleField({startDate: e.target.value})}/>`})}
-          ${form.cadence !== "once" && Field({label: "For", children: html`
-            <select value=${schedule.months} onChange=${(e) => setScheduleField({months: Number(e.target.value)})}>
-              ${UPDATE_DURATIONS.map((d) => html`<option key=${d.months} value=${d.months}>${d.label}</option>`)}
-            </select>`})}
-          ${mode === "several" && Field({label: "Actors per run", children: html`
-            <input type="number" min="1" max="10" value=${schedule.maxActors}
-              onInput=${(e) => setScheduleField({maxActors: e.target.value})}/>`})}
-          ${Field({label: "Spend ceiling per run ($)", children: html`
-            <input type="number" min="0.05" max="1.5" step="0.05" value=${schedule.maxUsd}
-              onInput=${(e) => setScheduleField({maxUsd: e.target.value})}/>`})}
-          ${Field({label: "Name (optional)", wide: true, children: html`
-            <input value=${schedule.title} maxLength="160" placeholder=${reqPlan?.title || "Named for you from the choices above"}
-              onInput=${(e) => setScheduleField({title: e.target.value})}/>`})}
+        <div class=${"update-preview" + (reqPlanning || planning ? " loading" : "")}>
+          <h4>Request preview ${(reqPlanning || planning) && html`<span class="muted">· updating…</span>`}</h4>
+          ${choiceProblem && html`<p class="discovery-message error">${choiceProblem}</p>`}
+          ${!choiceProblem && html`<p>${updateSummary({form, count, deep})}</p>`}
+          <dl class="actor-now">
+            <div><dt>Organizations</dt><dd>${organizations || "—"}</dd></div>
+            <div><dt>Next run</dt><dd>${formatDay(when.start_date)}</dd></div>
+            <div><dt>Ends</dt><dd>${formatDay(when.end_date)}${reqPlan ? ` · ${reqPlan.runs} ${reqPlan.runs === 1 ? "check" : "checks"}` : ""}</dd></div>
+            <div><dt>Depth</dt><dd>${deep ? "Light Refresh, then Deep Pull" : "Light Refresh"}</dd></div>
+            <div><dt>Estimated cost</dt><dd>${estimateLine(cost, reqPlan?.runs || 1) || "—"}</dd></div>
+          </dl>
+          ${when.problem && html`<p class="discovery-message error">${when.problem}</p>`}
+          ${mode === "one" && plan?.access?.blocked && html`<p class="discovery-message warn">
+            ${plan.access.blocked.plain} It is not tried again before ${formatDay(plan.access.blocked.retry_after)};
+            this update reads other sources that name it instead.</p>`}
+          ${mode === "one" && plan?.access?.fallback && html`<p class="muted">${plan.access.fallback}</p>`}
+          ${mode === "one" && plan?.refusal && html`<p class="discovery-message error">${plan.refusal}</p>`}
+          ${deepReady && html`<label class="update-deep">
+            <input type="checkbox" checked=${wantDeep} onChange=${(e) => setWantDeep(e.target.checked)}/>
+            <span><strong>Also run a Deep Pull</strong> — GHUS verified this organization for
+              ${" " + (plan.topic?.name || "this sector")}. It reads ${deepPlan.fields.length} selected items:
+              ${" " + deepPlan.fields.map(boxLabel).join(", ")}. ${estimateLine(deepPlan.cost)}
+              <small class="muted">With Run now only; a saved schedule is a Light Refresh.</small></span>
+          </label>`}
+          ${mode === "one" && plan && !deepPermitted && plan.topic && html`<p class="muted">A Deep Pull becomes
+            available here once GHUS verifies this organization for ${plan.topic.name} in Review.</p>`}
+          ${mode === "one" && plan?.error && html`<p class="discovery-message error">${plan.error}</p>`}
+          ${mode === "one" && plan?.fields && html`<details><summary>What will be checked: ${plan.fields.length} of ${plan.schema_size} items</summary>
+            <p class="muted">${plan.fields.map(boxLabel).join(", ") || "Nothing needs checking."}</p>
+            ${plan.skipped.length > 0 && html`<ul class="skipped">${plan.skipped.map((x) => html`<li key=${x.field}><strong>${boxLabel(x.field)}</strong> — ${x.reason}</li>`)}</ul>`}
+            <p class="muted">Hubs: ${hubSummary(plan.hubs) || "—"}</p></details>`}
+          ${mode === "several" && reqPlan && html`
+            ${useGroup && html`<p class="muted">${`${reqPlan.matched} organization(s) match. Each check reaches up to `
+              + `${reqPlan.options?.max_actors_per_run} of them, those with the most missing or out-of-date `
+              + "information first; the others wait for a later check."}</p>`}
+            ${reqPlan.waiting.length > 0 && html`<details><summary>${reqPlan.waiting.length} organization(s) not in the first check, and why</summary>
+              <ul class="skipped">${reqPlan.waiting.map((x) => html`<li key=${x.actor_id}><strong>${x.name}</strong> — ${x.reason}</li>`)}</ul></details>`}`}
+          ${reqPlan?.needs_migration && html`<p class="discovery-message error">${reqPlan.needs_migration}</p>`}
         </div>
-
-        ${(reqPlan || reqPlanning) && html`<div class=${"update-preview" + (reqPlanning ? " loading" : "")}>
-          <h4>Request preview ${reqPlanning && html`<span class="muted">· updating…</span>`}</h4>
-          ${reqPlan && html`
-            <p>${reqPlan.summary}</p>
-            <dl class="actor-now">
-              <div><dt>Actors</dt><dd>${reqPlan.matched} match · ${reqPlan.chosen.length} on the first run</dd></div>
-              <div><dt>Runs</dt><dd>${reqPlan.runs === 1 ? `Once, on ${formatDay(reqPlan.start_date)}`
-                : `${reqPlan.runs} runs, ${formatDay(reqPlan.start_date)} to ${formatDay(reqPlan.end_date)}`}</dd></div>
-              <div><dt>Cost per run</dt><dd>${reqPlan.cost.expected_usd != null
-                ? `About ${formatUsd(reqPlan.cost.expected_usd)} from past reads; `
-                : "No history yet; "}never more than ${formatUsd(reqPlan.max_usd_per_run)} (${formatUsd(reqPlan.cost.per_actor_cap_usd)} per actor at most)</dd></div>
-              <div><dt>Searches</dt><dd>Up to 3 page requests per actor, including fallback sources; at most one fallback search within the cost cap.</dd></div>
-            </dl>
-            ${reqPlan.chosen.length > 0 && html`<ol class="skipped">${reqPlan.chosen.map((a) =>
-              html`<li key=${a.actor_id}><strong>${a.name}</strong> — ${a.boxes} box(es) to read</li>`)}</ol>`}
-            ${reqPlan.waiting.length > 0 && html`<details><summary>${reqPlan.waiting.length} actor(s) not on the first run, and why</summary>
-              <ul class="skipped">${reqPlan.waiting.map((x) => html`<li key=${x.actor_id}><strong>${x.name}</strong> — ${x.reason}</li>`)}</ul></details>`}
-            ${reqPlan.needs_migration && html`<p class="discovery-message error">${reqPlan.needs_migration}</p>`}`}
-        </div>`}
 
         <div class="discovery-actions">
-          <button class="btn ghost" disabled=${!!busy || reqPlanning || !reqPlan?.can_save} onClick=${() => saveRequest(false)}>
-            ${busy === "save" ? "Saving…" : "Save request"}</button>
-          <button class="btn" disabled=${!!busy || reqPlanning || !reqPlan?.can_save || !reqPlan?.chosen.length}
-            onClick=${() => saveRequest(true)}>Save and run now</button>
+          <button class="btn" disabled=${!!busy || !ready || (mode === "one" ? (planning || !(plan?.can_check || deep))
+            : !reqPlan?.chosen?.length)} onClick=${runNow}>
+            ${busy === "check" ? "Reading its pages…" : busy === "apply" ? "Writing…"
+              : busy === "deep" ? "Running Deep Pull…" : busy === "run" ? "Starting…" : "Run now"}</button>
+          <button class="btn ghost" disabled=${!!busy || !canSchedule || reqPlanning || !reqPlan?.can_save}
+            onClick=${saveSchedule}>${busy === "save" ? "Saving…" : "Save schedule"}</button>
         </div>
+        ${busy === "check" && html`<p class="muted">Reading up to three of its own pages — about half a minute.</p>`}
       </div>`;
     }
 
     function updateRequestList() {
-      const requests = saved.requests || [];
       if (!saved.loaded) return null;
+      const rows = updateRunList(saved, allSectors);
+      const hidden = (saved.requests || []).filter((r) => r.test_sector).length;
       return html`<div class="update-requests">
         <div class="update-requests-head">
-          <h3>Update requests</h3>
+          <h3>Update runs</h3>
           <button type="button" class="btn ghost" onClick=${refreshRequests}>Refresh</button>
         </div>
-        ${!saved.ready && html`<p class="muted">Saved update requests need migration 570 on this database.
+        ${!saved.ready && html`<p class="muted">Saved schedules need migration 570 on this database.
           One-time updates of one actor work without it.</p>`}
-        ${saved.ready && !requests.length && html`<p class="muted">None yet. Choose several actors, or a
-          frequency other than Once, to make one.</p>`}
-        ${requests.map((r) => {
-          const live = r.status === "active" || r.status === "paused";
-          const doing = (action) => busy === `${action}:${r.subscription_id}`;
-          return html`<article key=${r.subscription_id} class="discovery-request">
-            <div class="discovery-request-head">
-              <div>
-                <h3>${r.title || "Update request"}</h3>
-                ${r.test_sector && html`<p class="muted">This request uses inactive sectors.</p>`}
-                <p>${updateRequestScope(r, allSectors)}</p>
-                <p class="muted">${CADENCE_LABELS[r.cadence] || r.cadence} · ${formatDay(r.start_date)}${r.cadence !== "once"
-                  ? ` to ${formatDay(r.end_date)}` : ""} · next run: ${live ? nextRunLabel(r) : "none"}</p>
-              </div>
-              <span class=${"discovery-status " + r.status}>${STATUS_LABELS[r.status] || r.status}</span>
-            </div>
-            ${isRunning(r) && html`<p class="discovery-message running">Running now: reading the actors' websites.
-              Results appear here when it finishes.</p>`}
-            <div class="discovery-actions">
-              ${r.status === "active" && html`<button class="btn" disabled=${!!busy || isRunning(r)}
-                onClick=${() => requestAction(r, "run")}>${doing("run") ? "Starting…" : "Run now"}</button>`}
-              ${r.status === "active" && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => requestAction(r, "pause")}>Pause</button>`}
-              ${r.status === "paused" && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => requestAction(r, "resume")}>Resume</button>`}
-              ${live && html`<button class="btn ghost danger" disabled=${!!busy} onClick=${() => requestAction(r, "cancel")}>Cancel request</button>`}
-            </div>
-            ${(r.runs || []).length > 0 && html`<details class="update-runs"><summary>${r.runs.length} run(s) — last: ${formatDay(r.runs[0].started_at)}, ${{succeeded: "completed", attention: "completed with limits", failed: "failed", running: "running"}[r.runs[0].status] || r.runs[0].status}, ${formatUsd(r.runs[0].spent_usd)}</summary>
-              ${r.runs.map((run) => html`<div key=${run.collection_run_id} class="update-run">
-                <p><strong>${formatDay(run.started_at)}</strong> · ${{succeeded: "Completed", attention: "Completed with limits", failed: "Failed", running: "Running"}[run.status] || run.status}
-                  · ${run.found_count ?? 0} new or changed · ${run.review_item_count ?? 0} to Review · ${formatUsd(run.spent_usd)}</p>
+        ${!rows.length && html`<p class="muted">None yet. Update an organization above, or save a schedule.</p>`}
+        ${rows.length > 0 && html`<ul class="update-run-list">${rows.map((row) => {
+          const r = row.request;
+          const live = r && (r.status === "active" || r.status === "paused");
+          const doing = (action) => r && busy === `${action}:${r.subscription_id}`;
+          return html`<li key=${row.key} class="update-run-row">
+            <div class="update-run-name"><strong>${row.name}</strong>
+              <span>${[row.actors !== row.name && row.actors, row.what].filter(Boolean).join(" · ")}</span></div>
+            <div class="update-run-when">${formatDay(row.date)}<span>${row.schedule}</span></div>
+            <div class="update-run-result">${row.result}</div>
+            <span class=${"discovery-status " + row.status}>${row.statusLabel}</span>
+            ${r && (r.status === "active" || live) && html`<div class="update-run-actions">
+              ${isRunning(r) ? html`<button class="btn running" disabled>Running…</button>`
+                : r.status === "active" && html`<button class="btn" disabled=${!!busy}
+                onClick=${() => requestAction(r, "run")}>${doing("run") ? "Starting…" : runButtonLabel(r)}</button>`}
+              ${r.status === "active" && html`<button class="btn ghost" disabled=${!!busy}
+                onClick=${() => requestAction(r, "pause")}>Pause</button>`}
+              ${r.status === "paused" && html`<button class="btn ghost" disabled=${!!busy}
+                onClick=${() => requestAction(r, "resume")}>Resume</button>`}
+              ${live && html`<button class="btn ghost danger" disabled=${!!busy}
+                onClick=${() => requestAction(r, "cancel")}>Cancel</button>`}
+            </div>`}
+            ${row.runs.length > 0 && html`<details class="update-run-details">
+              <summary>${row.runs.length === 1 ? "1 run" : `${row.runs.length} runs`}</summary>
+              ${row.runs.map((run) => html`<div key=${run.collection_run_id} class="update-run">
+                <p><strong>${formatDay(run.started_at)}</strong> · ${RUN_STATUS[run.status] || run.status}
+                  · ${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review</p>
                 ${run.status_reason && html`<p class="muted">${run.status_reason}</p>`}
                 ${(run.actor_results || []).length > 0 && html`<ul class="skipped">${run.actor_results.map((a) =>
                   html`<li key=${a.actor_id} class=${a.ok ? "" : "warn"}>${actorResultLine(a)}</li>`)}</ul>`}
               </div>`)}
             </details>`}
-          </article>`;
-        })}
-        ${(saved.one_time || []).length > 0 && html`<details class="update-runs"><summary>One-time update history (${saved.one_time.length})</summary>
-          ${saved.one_time.map((run) => html`<div key=${run.run_id} class="update-run">
-            <p><strong>${run.name}</strong> · ${run.topic_name || ""} · ${formatDay(run.started_at)}
-              · ${STATUS_LABELS[run.status] || run.status} · ${formatUsd(run.spent_usd)}</p>
-            <p>${outcomeSummary(run.counts) || "No changes recorded"}</p>
-          </div>`)}
-        </details>`}
+          </li>`;
+        })}</ul>`}
+        ${hidden > 0 && html`<p class="muted">${hidden} test request(s) on inactive sectors are not listed.</p>`}
       </div>`;
     }
 
@@ -1095,7 +1540,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             : "Never updated here"}</dd></div>
         </dl>
 
-        ${updateBuilder({schema: plan?.schema, sectorControl: html`
+        ${updateBuilder({sectorControl: html`
             <select value=${topic} onChange=${(e) => change({topic: e.target.value})}>
               ${!(selected.sectors || []).length && html`<option value="">Choose a sector</option>`}
               ${(selected.sectors || []).length > 0 && html`<optgroup label="Its sectors">
@@ -1110,104 +1555,213 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             ${!(selected.sectors || []).length && html`<small class="muted">Not linked to a sector yet —
               facts are kept per sector, so choose the one this update is for.</small>`}`})}
 
-        ${!asRequest && (plan || planning) && html`<div class=${"update-preview" + (planning ? " loading" : "")}>
-          <h4>Request preview ${planning && html`<span class="muted">· updating…</span>`}</h4>
-          ${plan && html`
-            <p>${plan.summary}</p>
-            <dl class="actor-now">
-              <div><dt>Boxes to read</dt><dd>${plan.fields.length} of ${plan.schema_size}</dd></div>
-              <div><dt>Searches</dt><dd>${plan.pages}</dd></div>
-              <div><dt>Cost</dt><dd>${costLine(plan.cost)}</dd></div>
-              <div><dt>Deep Pull</dt><dd>${plan.deep.permitted ? "Permitted" : "Not permitted"} — ${plan.deep.reason}</dd></div>
-              <div><dt>Hubs</dt><dd>${hubSummary(plan.hubs) || "—"}</dd></div>
-              <div><dt>Runs</dt><dd>Once, when you press Check. Nothing is written until you confirm.</dd></div>
-            </dl>
-            ${plan.refusal && html`<p class="discovery-message error">${plan.refusal}
-              ${form.depth === "deep" && html` <button type="button" class="link" onClick=${() => change({depth: "light"})}>Use a Light refresh</button>`}</p>`}
-            ${plan.skipped.length > 0 && html`<details><summary>${plan.skipped.length} box(es) skipped, and why</summary>
-              <ul class="skipped">${plan.skipped.map((x) => html`<li key=${x.field}><strong>${boxLabel(x.field)}</strong> — ${x.reason}</li>`)}</ul></details>`}`}
-        </div>`}
-
-        ${!asRequest && html`<div class="discovery-actions">
-          <button class="btn" disabled=${!!busy || planning || !plan?.can_check} onClick=${check}>
-            ${busy === "check" ? "Reading its pages…" : "Check its website"}</button>
-        </div>`}
-        ${busy === "check" && html`<p class="muted">Reading up to three of its own pages — about half a minute.</p>`}
-        ${asRequest && requestPanel()}
+        ${requestPanel()}
       </div>`}
 
       ${mode === "several" && html`<div class="actor-selected">
-        ${updateBuilder({schema: UPDATE_COMMON_BOXES, sectorControl: html`
+        ${updateBuilder({sectorControl: html`
           <select value=${topic} onChange=${(e) => change({topic: e.target.value})}>
             <option value="">${useGroup && group.sector ? "The group's sector" : "Each actor's own sector"}</option>
             ${allSectors.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-          </select>`, lightOnly: true})}
+          </select>`})}
         ${requestPanel()}
       </div>`}
 
       ${error && html`<p class="discovery-message error">${error}</p>`}
 
       ${result && html`<div class="actor-result">
-        <p class="actor-result-head">
-          <strong>${applied ? "Written" : result.ok === false ? "Could not check" : "Checked"}</strong>
-          · ${outcomeSummary(result.counts) || result.note || "nothing to report"}
-          · ${result.topic?.name} · ${formatUsd(result.cost_usd)}
-        </p>
-        ${result.error && html`<p class="discovery-message error">${result.error}</p>`}
-        ${result.findings?.length > 0 && html`<div class="result-filters" role="group" aria-label="Show">
-          <button type="button" class=${show === "all" ? "active" : ""} onClick=${() => setShow("all")}>All ${result.findings.length}</button>
-          ${RESULT_GROUPS.filter((g) => result.counts?.[g.id]).map((g) => html`<button type="button" key=${g.id}
-            class=${show === g.id ? "active" : ""} onClick=${() => setShow(g.id)}>${g.label} ${result.counts[g.id]}</button>`)}
-        </div>
-        <table class="actor-boxes">
-          <thead><tr><th>Box</th><th>Result</th><th>On the map now</th><th>Sources say</th><th>What writing does</th></tr></thead>
-          <tbody>${findingsIn(result.findings, show).map((f) => {
-            const done = applied?.results?.find((r) => r.field === f.field);
-            return html`<tr key=${f.field}>
-            <td>${boxLabel(f.field)}<small class="muted"> · ${f.topic}</small></td>
-            <td><span class=${"outcome " + f.outcome}>${OUTCOME_LABELS[f.outcome] || f.outcome}</span></td>
-            <td>${f.previous?.value != null ? factLine(f.previous.value) : "—"}
-              ${f.previous?.date_read && html`<small> (read ${f.previous.date_read}${f.previous.set_by === "GHUS" ? ", set by GHUS" : ""})</small>`}</td>
-            <td>${f.proposed ? html`${factLine(f.proposed.value)}<small>
-                · ${f.proposed.confidence} confidence · read ${f.proposed.date_read}
-                · <a href=${f.proposed.source_url} target="_blank" rel="noreferrer">source</a></small>`
-              : (f.reason ? html`<small class="muted">${f.reason}</small>` : "—")}
-              <small class="muted what-changed">${f.what_changed}</small></td>
-            <td>${done ? (done.written ? html`<strong>Done</strong> — ${OUTCOME_LABELS[done.actual] || done.actual}`
-                : html`<span class="warn">Failed: ${done.error}</span>`) : f.resolution}</td>
-          </tr>`; })}</tbody>
-        </table>`}
-        <p class="muted">Pages read: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a> (${{official: "official website", official_parent: "parent organisation", government: "government", third_party: "third party"}[result.sources?.[url]] || "source"})`)}</p>
-        ${(result.attempts || []).length > 0 && html`<details><summary>Source access</summary><ul>
-          ${result.attempts.map((attempt, i) => html`<li key=${i}>${attempt.url}: ${attempt.plain || attempt.outcome}</li>`)}
-        </ul></details>`}
-        ${(result.related?.length > 0 || result.related_error) && html`<div class="related">
-          <h4>Organisations its pages name</h4>
-          ${result.related_error && html`<p class="muted">${result.related_error}</p>`}
-          <ul class="skipped">${(result.related || []).map((r) => html`<li key=${r.name}>
-            ${relatedLine(r)}
-            ${r.status === "ambiguous" && html`<small class="muted"> (${r.matches.map((m) => m.name).join(", ")})</small>`}
-            ${r.status === "not_on_map" && html` <button type="button" class="link" onClick=${() => onFindNew(r.name)}>Find it with Discovery</button>`}
-            ${r.source_url && html` <a href=${r.source_url} target="_blank" rel="noreferrer">source</a>`}
-          </li>`)}</ul>
-        </div>`}
-        ${result.hubs && html`<p class="muted"><strong>Hubs:</strong> ${hubSummary(result.hubs)}</p>`}
-        ${!applied && result.check_id && html`<div class="discovery-actions">
-          <button class="btn" disabled=${!!busy || !result.writes} onClick=${apply}>
-            ${busy === "apply" ? "Writing…" : `Write ${result.writes} finding(s) to the map`}</button>
-          <span class="muted">Checked, nothing written yet. The check stays valid for 24 hours.</span>
-        </div>`}
-        ${applied && html`<p class="discovery-message">${applied.failed
-          ? `${applied.failed} box(es) failed — press Retry to write only those.`
-          : "Written through the GHUS fact writer and recorded as a run."}
-          ${applied.review_items > 0 ? ` ${applied.review_items} item(s) now wait in Review → Map checks.` : ""}
-          ${(applied.proposals || []).filter((p) => p.action === "proposed").map((p) => html`<br/>Proposed to Review:
-            ${p.kind === "hub" ? `add to ${p.name}` : `link with ${p.name}`}`)}</p>
-          ${applied.failed > 0 && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => { setApplied(null); apply(); }}>Retry the failed boxes</button>`}`}
+        <p class="actor-result-head"><strong>${applied ? "Written to the map"
+          : result.ok === false ? "Could not check" : "Nothing new to write"}</strong>
+          · ${selected?.name} · ${result.topic?.name} · ${formatUsd(result.cost_usd)}</p>
+        <p>${applied ? writtenLine(applied.counts) : result.ok === false
+          ? result.error || "Its pages could not be read. Nothing was written."
+          : result.note || "Its pages state nothing new, so nothing was written."}
+          ${applied?.review_items > 0 ? ` · ${applied.review_items} change(s) wait for you in Review.` : ""}
+          ${applied?.failed > 0 ? ` · ${applied.failed} box(es) could not be written; run it again to retry.` : ""}</p>
+        <p class="muted">Read from: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url}
+          target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>${
+          sourceLabel(result.sources?.[url]) && ` (${sourceLabel(result.sources[url])})`}`)}</p>
+        ${(result.attempts || []).length > 0 && html`<details class="update-attempts">
+          <summary>Its own website was closed to the agent — what was tried</summary>
+          <ul class="skipped">${result.attempts.map((attempt, i) => html`<li key=${i}>
+            <strong>${attempt.url.replace(/^https?:\/\//, "")}</strong> — ${attempt.plain}</li>`)}</ul>
+        </details>`}
+        ${(result.related || []).some((r) => r.status === "not_on_map") && html`<p class="muted">Its pages name
+          organizations not yet on the map: ${result.related.filter((r) => r.status === "not_on_map").map((r, i) =>
+            html`${i ? ", " : ""}<button type="button" class="link" onClick=${() => onFindNew(r.name)}>${r.name}</button>`)}</p>`}
+        ${applied && html`<div class="discovery-actions">
+          <button class="btn" onClick=${() => openInReview(selected)}>Open in Review</button></div>`}
+      </div>`}
+
+      ${deepResult && html`<div class="actor-result">
+        <p class="actor-result-head"><strong>Deep Pull</strong> · ${selected?.name}
+          · ${deepResult.checked.topic?.name} · ${formatUsd(deepResult.checked.cost_usd)}</p>
+        <p>${deepResult.checked.ok === false ? deepResult.checked.error
+          : deepResult.applied ? writtenLine(deepResult.applied.counts)
+            : "Its pages state none of the selected items, so nothing was written."}</p>
       </div>`}
 
       ${notice && html`<p class="discovery-message">${notice}</p>`}
       ${updateRequestList()}
+    </section>`;
+  }
+
+  function EntityRequestForm({kind, options, today, onSaved}) {
+    const [form, setForm] = useState(() => blankEntityForm(today, kind));
+    const [touched, setTouched] = useState(false);
+    const [preview, setPreview] = useState(null);
+    const [working, setWorking] = useState("");
+    const [message, setMessage] = useState(null);
+    useEffect(() => { setForm(blankEntityForm(today, kind)); setPreview(null); setTouched(false); setMessage(null); }, [kind]);
+    const set = (patch) => { setForm((f) => ({...f, ...patch})); setPreview(null); };
+    const isEvent = kind === "event";
+    const problems = entityDraftProblems(form, options);
+    const shown = touched ? problems : {};
+    const ready = options.entity_requests_ready !== false;
+
+    function withTyped() {
+      // A term still in the box counts, so "Preview" never ignores it.
+      const term = form.focusInput.trim();
+      return term && !form.focusTerms.includes(term)
+        ? {...form, focusTerms: [...form.focusTerms, term].slice(0, options.max_focus_terms || 8), focusInput: ""}
+        : form;
+    }
+    function addTerm() {
+      const next = withTyped();
+      if (next !== form) set({focusTerms: next.focusTerms, focusInput: ""});
+    }
+    function setDuration(id) {
+      const preset = DURATION_PRESETS.find((p) => p.id === id);
+      set({duration: id, endDate: preset?.months ? addMonths(form.startDate, preset.months) : form.endDate});
+    }
+    function toggleType(type) {
+      set({eventTypes: form.eventTypes.includes(type)
+        ? form.eventTypes.filter((t) => t !== type) : [...form.eventTypes, type]});
+    }
+    async function send(action) {
+      setTouched(true);
+      const draft = withTyped();
+      if (Object.keys(entityDraftProblems(draft, options)).length) return;
+      if (draft !== form) setForm(draft);
+      const body = JSON.stringify(entityDraftPayload(draft));
+      if (action === "run" && !window.confirm(`Run “${draft.title.trim()}” now? It searches the web live, `
+          + `reads the pages it finds and sends what passes the quality checks to Review.`)) return;
+      setWorking(action); setMessage(null);
+      try {
+        if (action === "preview") {
+          setPreview(await api("/api/discovery/preview", {method: "POST", body}));
+        } else {
+          const created = await api("/api/discovery/requests", {method: "POST", body});
+          if (action === "run") {
+            await api(`/api/discovery/requests/${created.subscription_id}/run`, {method: "POST"});
+          }
+          setMessage({kind: "success", text: action === "run"
+            ? `“${draft.title.trim()}” is running. Results go to Review under ${isEvent ? "Discovery Events" : "Discovery People"}, as their own named run.`
+            : `Request “${draft.title.trim()}” saved.`});
+          setForm(blankEntityForm(today, kind)); setTouched(false); setPreview(null);
+          onSaved(action);
+        }
+      } catch (err) { setMessage({kind: "error", text: err.message}); }
+      setWorking("");
+    }
+
+    const summary = entitySummary({...entityDraftPayload(form), start_date: form.startDate}, options);
+    return html`<section class="discovery-card">
+      ${!ready && html`<p class="discovery-message error">Event and people requests need migration 580 on this database.</p>`}
+      ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
+      <div class="discovery-grid">
+        <${Field} label="Request name" error=${shown.title} wide=${true}>
+          <input value=${form.title} maxLength="160"
+            placeholder=${isEvent ? "Water reuse conferences in the Great Lakes, spring 2027" : "Battery storage researchers in Texas"}
+            onInput=${(e) => set({title: e.target.value})}/>
+        <//>
+        <${Field} label="Sector" error=${shown.sector}>
+          <select value=${form.sector} onChange=${(e) => set({sector: e.target.value})}>
+            <option value="">Choose a sector</option>
+            <option value=${ANY_SECTOR}>Any sector</option>
+            ${options.topics.map((t) => html`<option key=${t.code} value=${t.code}>${t.name}</option>`)}
+          </select>
+        <//>
+        <${Field} label=${isEvent ? "Topic and sub-topics" : "Topic or expertise"} error=${shown.topic}>
+          <div class="discovery-terms">
+            ${form.focusTerms.map((term) => html`<span key=${term} class="discovery-term">${term}
+              <button type="button" aria-label=${`Remove ${term}`} onClick=${() => set({focusTerms: form.focusTerms.filter((t) => t !== term)})}>×</button></span>`)}
+            <input value=${form.focusInput} placeholder=${form.focusTerms.length ? "Add another" : (isEvent ? "e.g. water reuse" : "e.g. battery storage")}
+              onInput=${(e) => set({focusInput: e.target.value})}
+              onKeyDown=${(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTerm(); } }}
+              onBlur=${addTerm}/>
+          </div>
+        <//>
+        ${!isEvent && html`<${Field} label="Institution or organization (optional)">
+          <input value=${form.institution} maxLength="120" placeholder="e.g. University of Texas at Austin"
+            onInput=${(e) => set({institution: e.target.value})}/>
+        <//>
+        <${Field} label="Professional role or specialization (optional)">
+          <input value=${form.role} maxLength="120" placeholder="e.g. professor, program director"
+            onInput=${(e) => set({role: e.target.value})}/>
+        <//>`}
+        <${Field} label="Geographic scope" error=${shown.area} wide=${true}>
+          <div class="discovery-segment">
+            ${[["region", "Region"], ["state", "State"], ["us", "All United States"]].map(([id, label]) => html`
+              <button type="button" key=${id} class=${form.areaKind === id ? "active" : ""} onClick=${() => set({areaKind: id})}>${label}</button>`)}
+          </div>
+          ${form.areaKind === "region" && html`<select value=${form.region} onChange=${(e) => set({region: e.target.value})}>
+            <option value="">Choose a region</option>
+            ${options.regions.map((r) => html`<option key=${r.code} value=${r.code}>${r.name}</option>`)}
+          </select>`}
+          ${form.areaKind === "state" && html`<div class="discovery-inline">
+            <select value=${form.state} onChange=${(e) => set({state: e.target.value})}>
+              <option value="">Choose a state</option>
+              ${options.states.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
+            </select>
+            <input value=${form.city} maxLength="120" placeholder="City (optional)" onInput=${(e) => set({city: e.target.value})}/>
+          </div>`}
+        <//>
+        ${isEvent && html`<${Field} label="Event dates" error=${shown.dates}>
+          <div class="discovery-inline">
+            <input type="date" aria-label="From" value=${form.dateFrom} onInput=${(e) => set({dateFrom: e.target.value})}/>
+            <input type="date" aria-label="To" value=${form.dateTo} min=${form.dateFrom} onInput=${(e) => set({dateTo: e.target.value})}/>
+          </div>
+          <small class="muted">Optional. Past events are kept as evidence; leave empty for any date.</small>
+        <//>
+        <${Field} label="Event type (optional)" error=${shown.types}>
+          <div class="discovery-segment">
+            ${(options.event_types || Object.keys(EVENT_TYPE_LABELS)).map((type) => html`
+              <button type="button" key=${type} class=${form.eventTypes.includes(type) ? "active" : ""}
+                onClick=${() => toggleType(type)}>${EVENT_TYPE_LABELS[type] || type}</button>`)}
+          </div>
+        <//>`}
+        <${Field} label="Start">
+          <input type="date" value=${form.startDate} min=${today} onInput=${(e) => set({startDate: e.target.value})}/>
+        <//>
+        <${Field} label="Frequency">
+          <select value=${form.cadence} onChange=${(e) => set({cadence: e.target.value})}>
+            ${options.cadences.map((c) => html`<option key=${c} value=${c}>${CADENCE_LABELS[c] || c}</option>`)}
+          </select>
+        <//>
+        ${form.cadence !== "once" && html`<${Field} label="Duration" error=${shown.duration} wide=${true}>
+          <div class="discovery-segment">
+            ${DURATION_PRESETS.map((p) => html`<button type="button" key=${p.id} class=${form.duration === p.id ? "active" : ""} onClick=${() => setDuration(p.id)}>${p.label}</button>`)}
+          </div>
+          ${form.duration === "custom"
+            ? html`<input type="date" value=${form.endDate} min=${form.startDate} max=${addMonths(form.startDate, 12)} onInput=${(e) => set({endDate: e.target.value})}/>`
+            : html`<small class="muted">Ends ${formatDay(form.endDate)}</small>`}
+        <//>`}
+      </div>
+
+      <p class="discovery-summary">${summary}</p>
+      <p class="muted">Every ${isEvent ? "event" : "person"} found goes to Review; nothing is added to the map until a person verifies it.</p>
+
+      ${preview && html`<div class="discovery-preview">
+        <h4>${preview.queries.length} searches</h4>
+        <ul>${preview.queries.map((q) => html`<li key=${q}>${q}</li>`)}</ul>
+      </div>`}
+
+      <div class="discovery-actions">
+        <button class="btn ghost" disabled=${!!working || !ready} onClick=${() => send("preview")}>${working === "preview" ? "Preparing preview…" : "Preview searches"}</button>
+        <button class="btn ghost" disabled=${!!working || !ready} onClick=${() => send("save")}>${working === "save" ? "Saving…" : "Save request"}</button>
+        <button class="btn" disabled=${!!working || !ready} onClick=${() => send("run")}>${working === "run" ? "Starting…" : "Run now"}</button>
+      </div>
     </section>`;
   }
 
@@ -1218,40 +1772,54 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const excluded = request.excluded || [];
     const last = runs[0];
     const live = request.status === "active" || request.status === "paused";
+    const current = runningRun(request);
+    const status = requestStatus(request);
+    const finished = runs.find((run) => run.status !== "running" && reviewRunKey(run));
+    const entity = request.discovery_entity || "actor";
+    const noun = {actor: "Organizations", event: "Events", person: "People"}[entity];
     return html`<article class="discovery-request">
       <div class="discovery-request-head">
         <div>
+          ${entity !== "actor" && html`<span class="discovery-kind">${noun}</span>`}
           <h3>${request.title || "Untitled request"}</h3>
-          <p>${requestSummary(request, options)}</p>
+          <p>${entity === "actor" ? requestSummary(request, options) : entitySummary(request, options)}</p>
         </div>
-        <span class=${"discovery-status " + request.status}>${STATUS_LABELS[request.status] || request.status}</span>
+        <span class=${"discovery-status " + status}>${STATUS_LABELS[status] || status}</span>
       </div>
       <dl class="discovery-facts">
-        <div><dt>Next run</dt><dd>${live ? nextRunLabel(request) : "None"}</dd></div>
+        <div><dt>Next run</dt><dd>${current ? "Running now" : live ? nextRunLabel(request) : "None"}</dd></div>
         <div><dt>Runs so far</dt><dd>${runs.length}</dd></div>
+        ${entity === "actor" ? html`
         <div><dt>Added to the map</dt><dd>${results.filter((r) => r.score_band === "auto_high").length}</dd></div>
-        <div><dt>Sent to Review</dt><dd>${results.filter((r) => r.score_band === "review").length}</dd></div>
+        <div><dt>Sent to Review</dt><dd>${results.filter((r) => r.score_band === "review").length}</dd></div>` : html`
+        <div><dt>Sent to Review</dt><dd>${results.length}</dd></div>
+        <div><dt>Excluded</dt><dd>${excluded.length}</dd></div>`}
       </dl>
       ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${last.status_reason || "no reason recorded"}</p>`}
-      ${isRunning(request) && html`<p class="discovery-message running">Running now: searching, reading pages and scoring. Results appear here when it finishes.</p>`}
+      ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
+        ${runningLine(current)}. Searching, reading pages and scoring; results appear in Review when it finishes.</p>`}
+      ${status === "stalled" && html`<p class="discovery-message error">The last run stopped responding before it finished. Its spend so far is recorded; you can run the request again.</p>`}
       <div class="discovery-actions">
-        ${request.status === "active" && html`<button class="btn" disabled=${busy || isRunning(request)} onClick=${() => onRun(request)}>${isRunning(request) ? "Running…" : "Run now"}</button>`}
+        ${current ? html`<button class="btn running" disabled aria-live="polite">Running…</button>`
+          : request.status === "active" && html`<button class="btn" disabled=${busy} onClick=${() => onRun(request)}>${runButtonLabel(request)}</button>`}
+        ${finished && html`<button class="btn ghost" onClick=${() => openRunInReview(finished, entity)}>Show Results</button>`}
         ${request.status === "active" && html`<button class="btn ghost" disabled=${busy} onClick=${() => onAction(request, "pause")}>Pause</button>`}
         ${request.status === "paused" && html`<button class="btn ghost" disabled=${busy} onClick=${() => onAction(request, "resume")}>Resume</button>`}
         ${live && html`<button class="btn ghost danger" disabled=${busy} onClick=${() => onAction(request, "cancel")}>Cancel request</button>`}
-        ${(runs.length > 0 || results.length > 0) && html`<button class="btn ghost" onClick=${() => setOpen(!open)}>${open ? "Hide results" : "Show results"}</button>`}
+        ${(runs.length > 0 || results.length > 0) && html`<button class="btn ghost" onClick=${() => setOpen(!open)}>${open ? "Hide run details" : "Run details"}</button>`}
       </div>
       ${open && html`<div class="discovery-results">
-        <h4>Organizations found</h4>
-        ${results.length === 0 ? html`<p class="muted">No organization has passed the quality checks yet.</p>`
+        <h4>${noun} found</h4>
+        ${results.length === 0 ? html`<p class="muted">Nothing has passed the quality checks yet.</p>`
           : html`<ul>${results.map((r) => html`<li key=${r.candidate_id}>
               <div><strong>${r.name || r.url}</strong>
                 ${r.website && html` · <a href=${r.website} target="_blank" rel="noopener noreferrer">${r.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>`}</div>
               ${r.description && html`<p>${r.description}</p>`}
-              <span class=${"discovery-band " + r.score_band}>${RESULT_LABELS[r.score_band] || r.score_band}</span>
+              <span class=${"discovery-band " + r.score_band}>${entity === "actor"
+                ? RESULT_LABELS[r.score_band] || r.score_band : "Sent to Review"}</span>
               ${r.fit_score != null && html`<span class="discovery-scores">${scoreLine(r)}</span>`}
               <dl class="discovery-detail">
-                ${resultFacts(r).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}
+                ${(entity === "actor" ? resultFacts(r) : entityResultFacts(r)).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}
               </dl>
               ${r.score_band === "review" && r.triage_reason && html`<p class="discovery-held"><strong>Why a person should look:</strong> ${r.triage_reason}</p>`}
               <a class="discovery-source" href=${r.url} target="_blank" rel="noopener noreferrer">Page read</a>
@@ -1265,12 +1833,15 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         </details>`}
         <h4>Runs</h4>
         ${runs.length === 0 ? html`<p class="muted">Not run yet.</p>` : html`<table class="discovery-runs">
-          <thead><tr><th>Date</th><th>Result</th><th>Pages found</th><th>Added</th><th>To Review</th><th>Spent</th><th>Per Relevant Actor</th></tr></thead>
+          <thead><tr><th>Date</th><th>Result</th><th>Time</th><th>Pages found</th><th>Added</th><th>To Review</th><th>Spent</th><th>Per Relevant Actor</th><th></th></tr></thead>
           <tbody>${runs.map((run) => html`<tr key=${run.collection_run_id}>
             <td>${formatDay(run.started_at)}</td>
-            <td>${{succeeded: "Completed", attention: "Completed with limits", failed: "Failed", running: "Running"}[run.status] || run.status}</td>
+            <td>${run.status === "running" && run.stalled ? "Stopped responding"
+              : {succeeded: "Completed", attention: "Completed with limits", failed: "Failed", running: "Running"}[run.status] || run.status}</td>
+            <td>${durationLabel(run.elapsed_seconds)}</td>
             <td>${run.found_count ?? ""}</td><td>${run.staged_count ?? ""}</td><td>${run.review_item_count ?? ""}</td>
-            <td>${formatUsd(run.spent_usd)}</td><td>${costPerRelevantActor(run)}</td>
+            <td>${formatUsd(run.spent_usd)}${run.status === "running" ? " so far" : ""}</td><td>${costPerRelevantActor(run)}</td>
+            <td>${run.status !== "running" && reviewRunKey(run) && html`<button class="link" onClick=${() => openRunInReview(run, entity)}>Show Results</button>`}</td>
           </tr>`)}</tbody></table>`}
       </div>`}
     </article>`;
@@ -1282,6 +1853,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const [options, setOptions] = useState(null);
     const [requests, setRequests] = useState([]);
     const [view, setView] = useState("new");
+    // What the new request finds. Organizations keep their form exactly.
+    const [kind, setKind] = useState("actor");
     const [form, setForm] = useState(() => blankForm(today));
     // The fields are folded away: the brief is what a person writes, and the
     // panel below shows what it resolved to for anyone who wants to change it.
@@ -1411,9 +1984,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
     return html`<div class="discovery-page">
       <div class="eyebrow">Discovery</div>
-      <h1 class="hero-h">Ask the agent to find organizations, and keep them up to date.</h1>
-      <p class="lead">Say what you are looking for in your own words. The agent searches
-        only for that, and only where you ask.</p>
+      <h1 class="hero-h">Ask the agent to find organizations, events or people.</h1>
+      <p class="lead">Say what you are looking for. The agent searches only for that, and
+        only where you ask; what it finds goes to Review.</p>
 
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
       ${status.loaded && !status.configured && html`<p class="discovery-message error">Discovery requests are not available on this instance.</p>`}
@@ -1429,7 +2002,16 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Actor updates</button>
       </div>
 
-      ${view === "new" && html`<section class="discovery-card">
+      ${view === "new" && html`<div class="discovery-segment discovery-kinds" role="group" aria-label="What to discover">
+        ${DISCOVERY_KINDS.map((k) => html`<button type="button" key=${k.id}
+          class=${kind === k.id ? "active" : ""} aria-pressed=${kind === k.id}
+          onClick=${() => setKind(k.id)}>${k.label}</button>`)}
+      </div>`}
+
+      ${view === "new" && kind !== "actor" && html`<${EntityRequestForm} kind=${kind} options=${options}
+        today=${today} onSaved=${async (action) => { await load(); if (action === "run") setWatchUntil(Date.now() + 20 * 60 * 1000); }}/>`}
+
+      ${view === "new" && kind === "actor" && html`<section class="discovery-card">
         <${Field} label="What should the agent look for?" error=${shown.brief} wide=${true}>
           <textarea class="discovery-brief" rows="4" value=${form.brief}
             placeholder=${"Water utilities and water-technology organizations in Wisconsin.\nwastewater reuse\nphosphorus removal"}
@@ -1442,7 +2024,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
         ${form.brief.trim() && html`<div class="discovery-resolved">
           <p>
-            <strong>Sector:</strong> ${draft.sector
+            <strong>Sector:</strong> ${draft.sector === ANY_SECTOR ? "Any sector" : draft.sector
               ? (options.topics.find((t) => t.code === draft.sector) || {}).name || draft.sector
               : "none named yet"}
             · <strong>Searches:</strong> ${draft.focusTerms.length || "the sector name"}
@@ -1470,6 +2052,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           <${Field} label="Sector" error=${shown.sector}>
             <select value=${draft.sector} onChange=${(e) => set({sector: e.target.value})}>
               <option value="">Choose a sector</option>
+              <option value=${ANY_SECTOR}>Any sector</option>
               ${options.topics.map((t) => html`<option key=${t.code} value=${t.code}>${t.name}</option>`)}
             </select>
           <//>
@@ -1488,7 +2071,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         <div class="discovery-grid">
           <${Field} label="Area" error=${shown.area} wide=${true}>
             <div class="discovery-segment">
-              ${[["region", "Region"], ["state", "State"], ["us", "Whole United States"]].map(([id, label]) => html`
+              ${[["region", "Region"], ["state", "State"], ["us", "All United States"]].map(([id, label]) => html`
                 <button type="button" key=${id} class=${draft.areaKind === id ? "active" : ""} onClick=${() => set({areaKind: id, areaTouched: true})}>${label}</button>`)}
             </div>
             ${draft.areaKind === "region" && html`<select value=${draft.region} onChange=${(e) => set({region: e.target.value, areaTouched: true})}>
@@ -1521,6 +2104,13 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           <//>`}
           <${Field} label="New organizations per run" error=${shown.cap}>
             <input type="number" min="1" max=${options.max_new_actors_per_run} value=${form.cap} onInput=${(e) => set({cap: e.target.value})}/>
+          <//>
+          <${Field} label="For each organization found" wide=${true}>
+            <select value=${form.pullDepth || "light"} onChange=${(e) => set({pullDepth: e.target.value})}>
+              ${(options.pull_depths || ["light", "none"]).map((d) => html`<option key=${d} value=${d}>${PULL_DEPTH_LABELS[d] || d}</option>`)}
+            </select>
+            <small class="muted">Deep Pull runs only after GHUS verifies an organization for a
+              sector, from Review.</small>
           <//>
         </div>
 

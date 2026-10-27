@@ -43,13 +43,13 @@ def _guarded_url(database: str, user: str) -> str:
 def _backend_root(explicit: str | None) -> Path | None:
     """The GHUS backend checkout that owns discovery requests.
 
-    Explicit argument, then environment, then the sibling `GHUS-Platform`
-    directory next to this repository (or next to the repository this worktree
-    belongs to).
+    Explicit argument, then environment, then this repository's own
+    `ghus-backend/`. The separate GHUS-Platform checkout is no longer searched:
+    the backend lives in this repository, and an old sibling copy must never
+    be run by accident.
     """
     candidates = [explicit, os.environ.get("GHUS_DISCOVERY_PROJECT_ROOT"),
-                  os.environ.get("GHUS_ADMISSION_PROJECT_ROOT")]
-    candidates += [str(parent / "GHUS-Platform") for parent in ROOT.parents]
+                  os.environ.get("GHUS_ADMISSION_PROJECT_ROOT"), str(ROOT / "ghus-backend")]
     for candidate in candidates:
         if candidate and (Path(candidate) / "agents" / "collection"
                           / "discovery_requests.py").is_file():
@@ -73,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
 
     env = {
         "REVIEW_SOURCE_DATABASE_URL": url,
+        # Browse reads the database this instance writes to (it read DATABASE_URL
+        # from .env - the shared database - before).
+        "BROWSE_DATABASE_URL": url,
         # Its own store, so demo decisions never land in the real review store.
         "REVIEW_STORE_DB": str(store),
         "GHUS_DEMO_MODE": "1",
@@ -84,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
         env["GHUS_DISCOVERY_PROJECT_ROOT"] = str(backend)
         env["DISCOVERY_REQUESTS_DATABASE_URL"] = url.replace(
             "postgresql://", "postgresql+psycopg://", 1)
+        # Data Feed stages records for Review in the same isolated database.
+        env["GHUS_DATAFEED_PROJECT_ROOT"] = str(backend)
+        env["DATAFEED_DATABASE_URL"] = env["DISCOVERY_REQUESTS_DATABASE_URL"]
     os.environ.update(env)
     # Whatever .env says, this instance must not reach a canonical database.
     for leaked in ("DATABASE_URL", "REVIEW_ADMISSION_DATABASE_URL",
