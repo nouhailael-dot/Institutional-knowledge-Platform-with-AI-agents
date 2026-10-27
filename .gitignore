@@ -28,3 +28,6 @@ env/
 
 # Backups of the env file hold the real connection string.
 .env.bak*
+
+# Data Feed previews and completion logs: uploaded values, never versioned
+.datafeed/

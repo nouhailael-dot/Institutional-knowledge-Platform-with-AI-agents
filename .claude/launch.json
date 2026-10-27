@@ -49,6 +49,19 @@
         "ghus_v2_actor_updates_test"
       ],
       "port": 8032
+    },
+    {
+      "name": "ghus-datafeed-test",
+      "runtimeExecutable": "C:/Users/Ismail/Projects/Institutional-knowledge-Platform/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "scripts.run_demo_server",
+        "--port",
+        "8033",
+        "--database",
+        "ghus_v2_datafeed_test"
+      ],
+      "port": 8033
     }
   ]
 }

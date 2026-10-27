@@ -15,6 +15,12 @@ import {
   filterReviewCandidates,
   formatFactValue,
   groupQueue,
+  RUN_TYPE_OPTIONS,
+  recordRowNote,
+  recordsOfRun,
+  runMeta,
+  runsForType,
+  runTypeName,
   headerBadges,
   hubDropdownOptions,
   lightPullBoxes,
@@ -314,6 +320,53 @@ test('the queue groups the pre-redesign backlog first, then one group per run', 
   // A candidate whose group is not listed is surfaced, never silently dropped.
   const orphan = groupQueue([{candidate_id: 'z', run_group_key: 'missing'}], []);
   assert.deepEqual(orphan.map(group => group.key), ['unrecorded']);
+});
+
+test('Run Type offers exactly six choices, and the reason filter is gone', () => {
+  assert.deepEqual(RUN_TYPE_OPTIONS.map(o => o.label),
+    ['All Runs', 'Discovery Actors', 'Discovery Events', 'Discovery People', 'Actor Updates',
+     'Data Feed Imports']);
+  assert.equal(runTypeName('map_checks'), 'Map Checks');
+  assert.equal(runTypeName('data_feed'), 'Data Feed Imports');
+  assert.doesNotMatch(component, /review_reason:\s*"all"/);
+  assert.doesNotMatch(component, /FIELDS\.reviewReason/);
+  assert.doesNotMatch(component, /FIELDS\.sourceRun/);
+  assert.match(component, /Back to Records/);
+  // Two panels: the runs, and the centre; no right-hand panel.
+  assert.match(component, /class="review-runs"/);
+  assert.match(component, /class="review-main"/);
+});
+
+test('the runs panel lists only runs of the type with records in the queue, each once', () => {
+  const groups = [
+    {key: 'r1', run_type: 'discovery_actors', run_name: 'Battery storage in Texas', run_date: 'Oct 19, 2026', pending_count: 9},
+    {key: 'r2', run_type: 'actor_updates', run_name: 'CPower Energy', run_date: 'Oct 19, 2026', pending_count: 1},
+    {key: 'r3', run_type: 'discovery_events', run_name: 'Water events', run_date: 'Oct 18, 2026', pending_count: 0},
+  ];
+  const candidates = [
+    {candidate_id: 'a', run_group_key: 'r1'}, {candidate_id: 'b', run_group_key: 'r1'},
+    {candidate_id: 'u', run_group_key: 'r2'},
+  ];
+  // A run with nothing left in the queue disappears.
+  assert.deepEqual(runsForType(groups, candidates, 'all').map(g => g.key), ['r1', 'r2']);
+  assert.deepEqual(runsForType(groups, candidates, 'actor_updates').map(g => g.key), ['r2']);
+  assert.deepEqual(runsForType(groups, candidates, 'discovery_events'), []);
+  const [first] = runsForType(groups, candidates, 'discovery_actors');
+  // The count is what the queue shows now, so a decision lowers it at once.
+  assert.equal(runMeta(first), 'Oct 19, 2026 · 2 pending');
+  assert.equal(runMeta(first, 'approved'), 'Oct 19, 2026 · 2 verified');
+  assert.deepEqual(recordsOfRun(candidates, 'r1').map(c => c.candidate_id), ['a', 'b']);
+  assert.deepEqual(recordsOfRun(candidates, null), []);
+  // Every record belongs to exactly one run.
+  const shown = runsForType(groups, candidates, 'all').flatMap(g => recordsOfRun(candidates, g.key));
+  assert.equal(new Set(shown.map(c => c.candidate_id)).size, shown.length);
+});
+
+test('a record row says what it is: an update result, or the kind and reason', () => {
+  assert.equal(recordRowNote({agent_metadata: {source_table: 'actor_update'}, entity_type: 'actor'}),
+    'Update result · check what it wrote');
+  assert.match(recordRowNote({entity_type: 'actor', review_reason: 'below_threshold', agent_metadata: {}}),
+    /^Actor · /);
 });
 
 test('run labels and chips hide raw UUIDs without changing the stored run id', () => {
@@ -912,8 +965,8 @@ test('a fact conflict is a choice between the value on the map and the one found
   const {field, rows} = factChangeRows(candidate);
   assert.equal(field, 'funding_signal');
   assert.deepEqual(rows.map(r => [r.label, r.value, r.date_read, r.set_by]), [
-    ['On the map now', '$1M grant.', '2026-01-02', 'GHUS'],
-    ['Found by the update', '$2M grant.', '2026-10-18', 'Agent']]);
+    ['On the map now', '$1M grant.', '01/02/2026', 'GHUS'],
+    ['Found by the update', '$2M grant.', '10/18/2026', 'Agent']]);
   assert.ok(labels.fact_conflict && labels.pending_update);
 });
 
@@ -946,8 +999,8 @@ test('a proposed link and a hub proposal are each a choice between two answers',
   assert.equal(canSubmit({candidate: link, reviewer: 'R', decisionKind: 'reject', admissionConfigured: true}), true);
 });
 
-test('an actor update card shows what it wrote and is a two-answer check', async () => {
-  const {twoWayKind, updateRows, decisionOptions: options} = await import('../frontend/review.js');
+test('an actor update card shows what it wrote in its boxes and is a two-answer check', async () => {
+  const {twoWayKind, lightFactRows, decisionOptions: options} = await import('../frontend/review.js');
   const card = {status: 'pending_review', agent_metadata: {source_table: 'actor_update',
     review_kind: 'actor_update', written: [
       {fact_key: 'location', collection_state: 'found', value: {city: 'Montpelier', state: 'VT'},
@@ -960,8 +1013,272 @@ test('an actor update card shows what it wrote and is a two-answer check', async
   assert.equal(twoWayKind(card), 'update');
   assert.deepEqual(options('actor', card).slice(0, 2).map(o => o.label),
     ['Looks right', 'Flag it (the map is not changed)']);
-  const rows = updateRows(card);
-  assert.deepEqual(rows.map(r => r.how), ['Replaced the earlier value (kept in history)',
-    'Recorded as not found', 'Conflict — in this run, for a decision']);
-  assert.equal(rows[1].after, 'Not stated on its pages');
+  // No table: each box holds what the update wrote, marked with what it did.
+  const rows = Object.fromEntries(lightFactRows({...card, reviewed_payload: {}})
+    .map(row => [row.key, row]));
+  assert.deepEqual(['location', 'international_connection', 'funding_signal']
+    .map(key => rows[key].update.outcome), ['changed', 'not_found', 'conflict']);
+  assert.deepEqual(rows.location.value, {city: 'Montpelier', state: 'VT'});
+  assert.equal(rows.international_connection.state, 'Not Found');
+  // The conflict was not applied: proposed, never shown as the saved value.
+  assert.equal(rows.funding_signal.value, null);
+  assert.equal(rows.funding_signal.kept, true);
+  assert.equal(rows.funding_signal.pending.proposed.value, '$3M');
+});
+
+// ------------------------------------------------------------------ actor update profiles
+
+test('an update profile fills its boxes, marks what the update found, and shows proposals as unsaved', async () => {
+  const {lightFactRows, lightPullBoxes, updateNote, changeRows, recordRowNote, canSubmitReview,
+    isUpdateProfile} = await import('../frontend/review.js');
+  const profile = {
+    candidate_id: 'p', status: 'pending_review', display_name: 'CPower Energy', entity_type: 'actor',
+    reviewed_payload: {name: 'CPower Energy', actor_category: 'company'},
+    agent_metadata: {
+      source_table: 'actor_update', review_kind: 'actor_profile', entity_id: 'a1',
+      facts: [
+        {fact_key: 'ownership_and_size', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+          value: 'An NRG company', source_url: 'https://cpowerenergy.com/who-we-are/',
+          update: {outcome: 'changed', date: 1792368000, previous_value: 'Private company'}},
+        {fact_key: 'international_connection', fact_type: 'light_pull', layer: 1,
+          collection_state: 'not_found', value: null, update: {outcome: 'not_found'}},
+        {fact_key: 'funding_signal', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+          value: '$1M.'},
+      ],
+      update_runs: [{run_id: 'r1', title: 'CPower Energy', counts: {changed: 1}}],
+      changes: [{review_item_id: 'c1', kind: 'fact', field_key: 'funding_signal',
+        current: {value: '$1M.', source_url: 'https://x.example/a', set_by: 'agent'},
+        proposed: {value: '$3M.', source_url: 'https://x.example/b', date_read: '2026-10-19'},
+        reason: 'Older reading', can_keep_both: false}],
+    },
+  };
+  assert.equal(isUpdateProfile(profile), true);
+  const rows = Object.fromEntries(lightFactRows(profile).map(row => [row.key, row]));
+  // Saved values sit in their own boxes, each with what the update did.
+  assert.equal(rows.ownership_and_size.value, 'An NRG company');
+  assert.match(updateNote(rows.ownership_and_size.update), /^Updated · .* · was: Private company$/);
+  assert.equal(rows.international_connection.state, 'Not Found');
+  // A box no update read is Not Yet Collected, not Not Found.
+  assert.equal(rows.topic_business_segment_product.state, 'Not Yet Collected');
+  // The saved value stays; the proposal is attached as pending, never merged in.
+  assert.equal(rows.funding_signal.value, '$1M.');
+  assert.equal(rows.funding_signal.pending.proposed.value, '$3M.');
+  assert.ok(lightPullBoxes(profile).specific.some(row => row.key === 'ownership_and_size'));
+  const [change] = changeRows(profile);
+  assert.deepEqual(change.choices.map(choice => choice.label), ['Keep Current Value', 'Use New Value']);
+  assert.equal(change.previous.value, '$1M.');
+  assert.equal(change.proposed.source, 'https://x.example/b');
+  assert.equal(recordRowNote(profile), '1 update · 1 change to review');
+  // Marked reviewed only once its changes are decided; flagging is always possible.
+  const base = {candidate: profile, reviewer: 'R', busy: false, admissionConfigured: true};
+  assert.equal(canSubmitReview({...base, decisionKind: 'new'}), false);
+  assert.equal(canSubmitReview({...base, decisionKind: 'reject'}), true);
+  const decided = {...profile, agent_metadata: {...profile.agent_metadata, changes: []}};
+  assert.equal(canSubmitReview({...base, candidate: decided, decisionKind: 'new'}), true);
+  assert.equal(recordRowNote(decided), '1 update · nothing to decide');
+});
+
+test('keep both is offered only for a location, and links and hubs keep their own answers', async () => {
+  const {changeRows} = await import('../frontend/review.js');
+  const profile = {display_name: 'Stanford Woods', reviewed_payload: {}, agent_metadata: {
+    review_kind: 'actor_profile', entity_id: 'a1', changes: [
+      {review_item_id: 'l', kind: 'fact', field_key: 'location', can_keep_both: true,
+        current: {value: {city: 'Stanford', state: 'CA'}}, proposed: {value: {city: 'Palo Alto', state: 'CA'}}},
+      {review_item_id: 'r', kind: 'relationship', candidate_name: 'Stanford University',
+        relationship_type: 'unit_of', source_url: 'https://woods.stanford.edu/about'},
+      {review_item_id: 'h', kind: 'hub', hub_name: 'Bay Area Water Hub',
+        evidence: {sector_code: 'WATER', distance_miles: 12}},
+    ]}};
+  const [location, link, hub] = changeRows(profile);
+  assert.deepEqual(location.choices.map(c => c.value), ['keep_current', 'use_new', 'keep_both']);
+  assert.equal(link.question, 'Stanford Woods is a unit of Stanford University?');
+  assert.deepEqual(link.choices.map(c => c.value), ['refuse', 'confirm']);
+  assert.equal(hub.question, 'Add Stanford Woods to Bay Area Water Hub?');
+  assert.equal(hub.reason, 'Same sector (WATER); 12 miles from the centre');
+});
+
+test('older update results render in the boxes, from what they wrote, with their run', async () => {
+  const {lightFactRows, updateRunRows} = await import('../frontend/review.js');
+  const legacy = {
+    created_at: 1792368000, source_description: 'Actor update: Clean Energy Group',
+    reviewed_payload: {actor_category: 'foundation_nonprofit'},
+    agent_metadata: {source_table: 'actor_update', run_id: 'r9', run_status: 'succeeded',
+      pages_read: ['https://www.cleanegroup.org/'], corroborated: 3,
+      written: [
+        {fact_key: 'funding_signal', collection_state: 'found', value: 'DOE EERE award',
+          previous_value: 'Older grant', lifecycle_state: 'accepted',
+          source_url: 'https://www.cleanegroup.org/initiatives/'},
+        {fact_key: 'um6p_ocp_connection', collection_state: 'not_found', value: null},
+      ]},
+  };
+  const rows = Object.fromEntries(lightFactRows(legacy).map(row => [row.key, row]));
+  assert.equal(rows.funding_signal.value, 'DOE EERE award');
+  assert.equal(rows.funding_signal.update.outcome, 'changed');
+  assert.equal(rows.um6p_ocp_connection.state, 'Not Found');
+  assert.equal(rows.mission_sector_focus.state, 'Not Yet Collected');
+  const [run] = updateRunRows(legacy);
+  assert.equal(run.title, 'Clean Energy Group');
+  assert.equal(run.summary, '1 updated · 3 confirmed · 1 not found');
+  assert.deepEqual(run.pages, ['https://www.cleanegroup.org/']);
+});
+
+test('the update table is gone: values live in the boxes', () => {
+  assert.doesNotMatch(component, /What this update wrote/);
+  assert.match(component, /Changes to Review/);
+  assert.match(component, /Proposed — Not Yet Approved/);
+});
+
+test('other items for the same actor are listed on its card, never merged', async () => {
+  const {relatedItems} = await import('../frontend/review.js');
+  const profile = {candidate_id: 'p', agent_metadata: {entity_id: 'a1', review_kind: 'actor_profile',
+    source_table: 'actor_update', update_runs: [], changes: []}};
+  const geocode = {candidate_id: 'g', review_reason: 'geocode_failed', run_label: 'Map checks',
+    agent_metadata: {entity_id: 'a1', source_table: 'review_item'}};
+  const other = {candidate_id: 'o', agent_metadata: {entity_id: 'a2'}};
+  assert.deepEqual(relatedItems([profile, geocode, other], profile).map(item => item.id), ['g']);
+  assert.deepEqual(relatedItems([profile, geocode], geocode),
+    [{id: 'p', label: 'Actor updates', run: ''}]);
+  assert.deepEqual(relatedItems([profile], {candidate_id: 'x', agent_metadata: {}}), []);
+});
+
+test('a box shows its change fact by fact, and what an earlier reading supplied', async () => {
+  const {partChanges, updateNote, lightFactRows, changeRows, formatFactValue} =
+    await import('../frontend/review.js');
+  const before = {employees: 500, places: ['Texas']};
+  const after = {employees: 600, places: ['Texas'], customers: 2000};
+  assert.deepEqual(partChanges(before, after).map(change => change.text),
+    ['Employees: 500 → 600', 'Customers: added (2000)']);
+  assert.deepEqual(partChanges('A paragraph', after), []);
+  assert.match(updateNote({outcome: 'changed', date: 1792368000, previous_value: before}, after),
+    /^Updated · .* · Employees: 500 → 600 · Customers: added \(2000\)$/);
+  // Only additions: more detail, not a change.
+  assert.match(updateNote({outcome: 'changed', previous_value: {employees: 500}},
+    {employees: 500, customers: 2000}), /^More detail/);
+  // The bookkeeping is never shown as a line of the value.
+  assert.equal(formatFactValue({employees: 600, carried_over: ['customers']}), 'Employees: 600');
+  const profile = {reviewed_payload: {actor_category: 'company'}, agent_metadata: {
+    source_table: 'actor_update', review_kind: 'actor_profile', entity_id: 'a1',
+    facts: [{fact_key: 'ownership_and_size', fact_type: 'light_pull', layer: 1,
+      collection_state: 'found', value: {employees: 600, ownership: 'private', carried_over: ['ownership']}},
+    {fact_key: 'funding_signal', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+      value: {amount: '$2M'}, from_sector: 'Water'}],
+    changes: [{review_item_id: 'c', kind: 'fact', field_key: 'ownership_and_size',
+      current: {value: {employees: 500}}, proposed: {value: {employees: 600}}}]}};
+  const rows = Object.fromEntries(lightFactRows(profile).map(row => [row.key, row]));
+  assert.deepEqual(rows.ownership_and_size.carriedOver, ['ownership']);
+  assert.equal(rows.funding_signal.fromSector, 'Water');
+  assert.equal(changeRows(profile)[0].difference, 'Employees: 500 → 600');
+});
+
+test('the earlier GHUS profile fills an empty box, and sits beside a box read and not found', async () => {
+  const {lightFactRows} = await import('../frontend/review.js');
+  const rows = Object.fromEntries(lightFactRows({reviewed_payload: {actor_category: 'company'},
+    agent_metadata: {source_table: 'actor_update', review_kind: 'actor_profile', facts: [
+      {fact_key: 'funding_signal', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+        value: 'Corporate R&D and venture investments', from_record: 'earlier GHUS profile'},
+      {fact_key: 'recent_activity', fact_type: 'light_pull', layer: 1, collection_state: 'not_found',
+        value: null, record_value: 'Large-scale CCUS projects', update: {outcome: 'not_found'}},
+    ]}}).map(row => [row.key, row]));
+  assert.equal(rows.funding_signal.fromRecord, 'earlier GHUS profile');
+  assert.equal(rows.funding_signal.value, 'Corporate R&D and venture investments');
+  // Read and not found stays Not Found; the earlier record is shown beside it.
+  assert.equal(rows.recent_activity.state, 'Not Found');
+  assert.equal(rows.recent_activity.recordValue, 'Large-scale CCUS projects');
+});
+
+test('a box read from another site names that site', async () => {
+  const {lightFactRows} = await import('../frontend/review.js');
+  const rows = Object.fromEntries(lightFactRows({
+    reviewed_payload: {actor_category: 'university_academic', website: 'https://mge.engineering.arizona.edu'},
+    agent_metadata: {source_table: 'actor_update', review_kind: 'actor_profile', facts: [
+      {fact_key: 'relevant_centers_programs', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+        value: {names: ['San Xavier Underground Mining Lab']},
+        source_url: 'https://engineering.arizona.edu/majors/mining', confidence: 'medium'},
+      {fact_key: 'location', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+        value: {city: 'Tucson'}, source_url: 'https://mge.engineering.arizona.edu/contact'},
+    ]}}).map(row => [row.key, row]));
+  assert.equal(rows.relevant_centers_programs.sourceHost, 'engineering.arizona.edu');
+  assert.equal(rows.location.sourceHost, null);       // its own site: just "Source"
+});
+
+test('a discovered person or event shows its checks and the facts read from its page', async () => {
+  const {qualityOf, pageFactBoxes, recordRowNote} = await import('../frontend/review.js');
+  const person = {entity_type: 'person', agent_metadata: {
+    quality: {decision: 'review', completeness: 'incomplete',
+      reasons: ['Identified and relevant, but missing: department or unit.'],
+      checks: [{name: 'identity', passed: true, detail: 'An official profile names this person.'},
+        {name: 'affiliation', passed: false, detail: 'The current affiliation could not be established.'}],
+      missing_mandatory: [], missing_priority: ['department or unit'], conflicts: []},
+    page_facts: {expertise: ['desalination', 'water reuse'],
+      linkedin_url: 'https://www.linkedin.com/in/maria-lopez',
+      evidence: {expertise: {quote: 'Research: desalination and water reuse',
+        source_url: 'https://cee.example.edu/p', date_read: '2026-10-22T10:00:00+00:00'}}}}};
+  const quality = qualityOf(person);
+  assert.equal(quality.label, 'Incomplete');
+  assert.deepEqual(quality.checks.map(c => [c.name, c.state]),
+    [['Identity', 'ok'], ['Current affiliation', 'missing']]);
+  const boxes = Object.fromEntries(pageFactBoxes(person).map(b => [b.key, b]));
+  assert.equal(boxes.expertise.value, 'desalination, water reuse');
+  assert.equal(boxes.expertise.quote, 'Research: desalination and water reuse');
+  assert.equal(boxes.expertise.dateRead, '10/22/2026');
+  assert.equal(boxes.linkedin_url.link, 'https://www.linkedin.com/in/maria-lopez');
+  assert.equal(boxes.department.state, 'Not Found');          // read, not stated
+  assert.equal(recordRowNote(person), 'Person · Incomplete');
+  const event = {entity_type: 'event', agent_metadata: {page_facts: {format: 'online', organizer: 'Health AI Alliance'}}};
+  const eventBoxes = Object.fromEntries(pageFactBoxes(event).map(b => [b.key, b]));
+  assert.equal(eventBoxes.format.value, 'Online');
+  assert.equal(eventBoxes.organizer.value, 'Health AI Alliance');
+  assert.equal(qualityOf({agent_metadata: {}}), null);
+});
+
+test('a discovered event shows its outcome, timing and why it matched', async () => {
+  const {qualityOf} = await import('../frontend/review.js');
+  const q = qualityOf({agent_metadata: {quality: {completeness: 'complete', outcome: 'qualified',
+    freshness: 'upcoming', why_matched: 'A water reuse workshop.', checks: []}}});
+  assert.equal(q.outcome, 'Qualified for Review');
+  assert.equal(q.timing, 'Upcoming');
+  assert.equal(q.whyMatched, 'A water reuse workshop.');
+});
+
+test('a record stored with its lists as Python text opens instead of crashing the page', async () => {
+  const {asList, qualityOf} = await import('../frontend/review.js');
+  assert.deepEqual(asList("('Identified and relevant, but missing: department or unit.',)"),
+    ['Identified and relevant, but missing: department or unit.']);
+  assert.deepEqual(asList("('official source', \"GHUS relevance\")"), ['official source', 'GHUS relevance']);
+  // Python writes a value holding an apostrophe in double quotes.
+  assert.deepEqual(asList(`("It's cancelled.",)`), ["It's cancelled."]);
+  assert.deepEqual(asList('()'), []);
+  assert.deepEqual(asList(['a']), ['a']);
+  assert.deepEqual(asList(null), []);
+  const q = qualityOf({agent_metadata: {quality: {completeness: 'incomplete',
+    reasons: "('Missing a date.',)", missing_mandatory: "('confirmed date',)",
+    missing_priority: '()', conflicts: '()', checks: [{name: 'identity', passed: true}]}}});
+  assert.equal(q.reasons.join(' '), 'Missing a date.');
+  assert.deepEqual(q.missing, ['confirmed date']);
+  assert.equal(q.checks.length, 1);
+});
+
+test('a verified actor is offered a Deep Pull for exactly the sector it was verified for', async () => {
+  const {deepPullTarget, deepCostLine, deepResultLine} = await import('../frontend/review.js');
+  const verified = {status: 'approved', display_name: 'Acme Water',
+    agent_metadata: {source_table: 'review_item', review_kind: 'verify_actor',
+      entity_id: 'a1', topic_code: 'WATER'}};
+  assert.deepEqual(deepPullTarget(verified),
+    {key: 'a1:WATER', actor_id: 'a1', topic: 'WATER', name: 'Acme Water'});
+  // Not before the decision, not after a rejection, and never for other kinds.
+  assert.equal(deepPullTarget({...verified, status: 'pending_review'}), null);
+  assert.equal(deepPullTarget({...verified, status: 'rejected_by_reviewer'}), null);
+  assert.equal(deepPullTarget({...verified, agent_metadata: {...verified.agent_metadata,
+    review_kind: 'category_doubt'}}), null);
+  assert.equal(deepPullTarget({...verified, agent_metadata: {...verified.agent_metadata,
+    topic_code: null}}), null);
+  // The cost comes from real past reads, or says there are none.
+  assert.equal(deepCostLine({cap_usd: 0.15, typical_usd: 0.04}), 'About $0.04; never more than $0.15.');
+  assert.equal(deepCostLine({cap_usd: 0.15, typical_usd: null}),
+    'No past reads to estimate from; never more than $0.15.');
+  assert.equal(deepResultLine({cost_usd: 0.031}, {review_items: 1, results: [
+    {written: true, actual: 'new'}, {written: true, actual: 'not_found'},
+    {written: true, actual: 'conflict'}, {written: false}]}),
+  'Deep Pull done: 2 items found on its pages, 1 not stated (recorded as Not Found), '
+    + '1 waiting in Review, 1 could not be written. Cost $0.03.');
 });

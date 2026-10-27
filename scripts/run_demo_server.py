@@ -73,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
 
     env = {
         "REVIEW_SOURCE_DATABASE_URL": url,
+        # Browse reads the database this instance writes to (it read DATABASE_URL
+        # from .env - the shared database - before).
+        "BROWSE_DATABASE_URL": url,
         # Its own store, so demo decisions never land in the real review store.
         "REVIEW_STORE_DB": str(store),
         "GHUS_DEMO_MODE": "1",
@@ -84,6 +87,9 @@ def main(argv: list[str] | None = None) -> int:
         env["GHUS_DISCOVERY_PROJECT_ROOT"] = str(backend)
         env["DISCOVERY_REQUESTS_DATABASE_URL"] = url.replace(
             "postgresql://", "postgresql+psycopg://", 1)
+        # Data Feed stages records for Review in the same isolated database.
+        env["GHUS_DATAFEED_PROJECT_ROOT"] = str(backend)
+        env["DATAFEED_DATABASE_URL"] = env["DISCOVERY_REQUESTS_DATABASE_URL"]
     os.environ.update(env)
     # Whatever .env says, this instance must not reach a canonical database.
     for leaked in ("DATABASE_URL", "REVIEW_ADMISSION_DATABASE_URL",

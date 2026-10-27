@@ -87,7 +87,7 @@ test('the per-run ceiling and the period are checked before sending', () => {
 test('a request that will not run again says why', () => {
   assert.equal(nextRunLabel({next_run: null, skip_reason: 'paused'}), 'Paused');
   assert.equal(nextRunLabel({next_run: null, skip_reason: 'expired'}), 'Period over');
-  assert.match(nextRunLabel({next_run: '2026-10-21'}), /Oct 21, 2026/);
+  assert.match(nextRunLabel({next_run: '2026-10-21'}), /^10\/21\/2026$/);
 });
 
 test('the page writes nothing itself: every call goes to /api/discovery', () => {
@@ -202,12 +202,12 @@ test('actor updates read back each outcome the backend reports', async () => {
   const {OUTCOME_LABELS, RESULT_GROUPS, outcomeSummary, factLine, boxLabel, findingsIn} =
     await import('../frontend/discovery.js');
   // Every outcome actor_updates.classify can return has a label.
-  for (const key of ['new', 'changed', 'corroborated', 'conflict', 'protected', 'unchanged',
-    'not_found', 'not_yet_collected']) {
+  for (const key of ['new', 'changed', 'additional', 'corroborated', 'conflict', 'protected',
+    'unchanged', 'not_found', 'not_yet_collected']) {
     assert.ok(OUTCOME_LABELS[key], key);
   }
   assert.deepEqual(RESULT_GROUPS.map((g) => g.id),
-    ['new', 'changed', 'conflicts', 'confirmed', 'missing', 'no_change']);
+    ['new', 'changed', 'additional', 'conflicts', 'confirmed', 'missing', 'no_change']);
   assert.equal(outcomeSummary({changed: 2, new: 1, conflicts: 1}),
     '1 new · 2 changed · 1 conflicts requiring review');
   assert.equal(outcomeSummary({}), '');
@@ -223,24 +223,81 @@ test('actor updates read back each outcome the backend reports', async () => {
   assert.equal(boxLabel('topic_mandate_program'), 'Topic mandate program');
 });
 
-test('an update request sends only what was chosen, in the backend words', async () => {
-  const {ACTOR_UPDATE_SCOPES, UPDATE_DEPTHS, UPDATE_FREQUENCIES, updateRequestBody} =
+test('an update offers two choices, four kinds of information, and sends the backend words', async () => {
+  const {ACTOR_UPDATE_SCOPES, UPDATE_KINDS, INFORMATION_FOCUS, UPDATE_FREQUENCIES,
+    UPDATE_DURATIONS, UPDATE_QUESTION_EXAMPLE, focusCategories, updateChoiceProblem, updateRequestBody} =
     await import('../frontend/discovery.js');
+  assert.deepEqual(UPDATE_KINDS.map((k) => k.label), ['General Update', 'Specific Changes']);
+  assert.equal(UPDATE_KINDS[0].hint, 'Check the selected organizations for new, missing, or outdated information.');
+  assert.equal(UPDATE_KINDS[1].hint, 'Look for updates about a particular topic or type of information.');
+  assert.deepEqual(INFORMATION_FOCUS.map((x) => x.label), ['Research, Projects & Technology',
+    'Funding & Partnerships', 'Organization & Activities', 'Locations & Operations']);
+  // The four cover the seven backend change categories, each exactly once.
+  assert.deepEqual(INFORMATION_FOCUS.flatMap((x) => x.categories).sort(),
+    ['category', 'funding', 'geography', 'organization', 'partnerships', 'products', 'research']);
+  assert.equal(UPDATE_QUESTION_EXAMPLE,
+    'Has this organization launched any new battery storage projects or partnerships?');
+  // Saved requests keep reading back in every backend scope.
   assert.deepEqual(ACTOR_UPDATE_SCOPES.map((s) => s.id),
     ['general', 'topic', 'missing', 'outdated', 'specific']);
-  assert.deepEqual(UPDATE_DEPTHS.map((d) => d.id), ['light', 'deep']);
-  // Once checks now; every other frequency saves a request for the runner.
-  assert.deepEqual(UPDATE_FREQUENCIES.map((f) => f.id),
-    ['once', 'weekly', 'biweekly', 'monthly', 'quarterly']);
-  const form = {scope: 'general', depth: 'light', topic: 'WATER', fields: ['funding_signal'],
-    categories: [], focus: 'desalination'};
-  // Boxes and look-for words only belong to the scopes that use them.
-  assert.deepEqual(updateRequestBody(form), {scope: 'general', depth: 'light', topic: 'WATER'});
-  assert.deepEqual(updateRequestBody({...form, scope: 'specific', categories: ['funding']}), {
-    scope: 'specific', depth: 'light', topic: 'WATER', fields: ['funding_signal'],
-    categories: ['funding'], focus: 'desalination'});
-  assert.deepEqual(updateRequestBody({...form, scope: 'topic', focus: '  '}),
-    {scope: 'topic', depth: 'light', topic: 'WATER'});
+  // No "Once": a one-time check is the separate Run now.
+  assert.deepEqual(UPDATE_FREQUENCIES.map((f) => [f.id, f.label]), [['weekly', 'Every Week'],
+    ['biweekly', 'Every 2 Weeks'], ['monthly', 'Every Month'], ['quarterly', 'Every 3 Months']]);
+  assert.deepEqual(UPDATE_DURATIONS.map((d) => d.months), [1, 3, 6, 12]);
+  assert.deepEqual(focusCategories(['locations', 'research']), ['research', 'products', 'geography']);
+
+  const form = {kind: 'general', interests: ['funding'], focus: 'desalination', topic: 'WATER', depth: 'light'};
+  // General reads every box of the category: new, missing and out of date alike;
+  // the chosen information is read first, and the question belongs to Specific.
+  assert.deepEqual(updateRequestBody(form), {scope: 'general', depth: 'light', topic: 'WATER',
+    categories: ['funding', 'partnerships']});
+  assert.deepEqual(updateRequestBody({...form, interests: []}), {scope: 'general', depth: 'light', topic: 'WATER'});
+  assert.deepEqual(updateRequestBody({...form, kind: 'specific'}), {scope: 'specific', depth: 'light',
+    topic: 'WATER', categories: ['funding', 'partnerships'], focus: 'desalination'});
+  // Only a question: every box, steered by its words (a sector is needed for "topic").
+  assert.deepEqual(updateRequestBody({...form, kind: 'specific', interests: []}),
+    {scope: 'topic', depth: 'light', topic: 'WATER', focus: 'desalination'});
+  assert.deepEqual(updateRequestBody({...form, kind: 'specific', interests: [], topic: ''}),
+    {scope: 'general', depth: 'light', focus: 'desalination'});
+  assert.equal(updateChoiceProblem({...form, kind: 'specific', interests: [], focus: '  '}),
+    'Choose the information you are interested in, or write a topic or question.');
+  assert.equal(updateChoiceProblem({...form, kind: 'general', interests: [], focus: ''}), '');
+});
+
+test('a schedule first runs one interval after today, never today, and ends after the duration', async () => {
+  const {updateSchedule} = await import('../frontend/discovery.js');
+  assert.deepEqual(updateSchedule('2026-10-20', 'weekly', 3),
+    {start_date: '2026-10-27', end_date: '2027-01-20', problem: ''});
+  assert.equal(updateSchedule('2026-10-20', 'biweekly', 1).start_date, '2026-11-03');
+  assert.equal(updateSchedule('2026-10-20', 'monthly', 6).start_date, '2026-11-20');
+  assert.equal(updateSchedule('2026-10-20', 'quarterly', 12).start_date, '2027-01-20');
+  // Calendar months, short months clamped.
+  assert.equal(updateSchedule('2027-01-31', 'monthly', 3).start_date, '2027-02-28');
+  // Twelve months stay within the 365-day ceiling.
+  assert.equal(updateSchedule('2026-10-20', 'weekly', 12).end_date, '2027-10-20');
+  assert.match(updateSchedule('2026-10-20', 'quarterly', 1).problem, /needs longer than 1 month/);
+  assert.equal(updateSchedule('2026-10-20', 'quarterly', 3).problem, '');
+});
+
+test('the request preview reads as one plain sentence', async () => {
+  const {updateSummary, estimateLine} = await import('../frontend/discovery.js');
+  const form = {kind: 'specific', interests: ['research', 'funding'], focus: '', depth: 'light',
+    cadence: 'weekly', months: 3};
+  assert.equal(updateSummary({form, count: 4}), 'Check these organizations every week for three months, '
+    + 'starting next week. Look for updates on research, projects and technology and funding and '
+    + 'partnerships using Light Refresh.');
+  assert.equal(updateSummary({form: {...form, kind: 'general', interests: [], cadence: 'monthly', months: 6}, count: 1}),
+    'Check this organization every month for six months, starting next month. Look for new, missing, '
+    + 'or outdated information using Light Refresh.');
+  assert.equal(updateSummary({form: {...form, kind: 'general', interests: ['locations']}, count: 3}),
+    'Check these organizations every week for three months, starting next week. Look for new, missing, '
+    + 'or outdated information (locations and operations first) using Light Refresh.');
+  assert.equal(updateSummary({form: {...form, interests: [], focus: 'battery storage'}, count: 2, runNow: true}),
+    'Check these organizations now, once. Look for updates about “battery storage”, using Light Refresh.');
+  assert.equal(estimateLine({expected_usd: 0.04}, 13), 'About $0.04 a check; about $0.52 over 13 checks.');
+  assert.equal(estimateLine({expected_usd: null, typical_usd: null, per_actor_cap_usd: 0.15}),
+    'No past checks to estimate from yet; each organization costs at most $0.15 a check.');
+  assert.equal(estimateLine(null), '');
 });
 
 test('the cost line states the cap and only history that exists', async () => {
@@ -268,34 +325,37 @@ test('suggestions highlight what was typed, and the group narrows the search', a
 
 test('an update request is sent as one actor, the picked actors, or a group with a sector', async () => {
   const {updateRequestDraft} = await import('../frontend/discovery.js');
-  const form = {scope: 'missing', depth: 'light', topic: '', fields: [], categories: ['funding'],
-    focus: '', cadence: 'monthly'};
-  const schedule = {startDate: '2026-10-20', months: 3, maxActors: 5, maxUsd: 1.5, title: ' '};
-  assert.deepEqual(updateRequestDraft({mode: 'one', form, selected: {actor_id: 'a1'}, schedule}), {
-    scope: 'missing', depth: 'light', categories: ['funding'], cadence: 'monthly',
-    actor_ids: ['a1'], max_actors_per_run: 1, start_date: '2026-10-20', end_date: '2027-01-20',
-    max_usd_per_run: 1.5});
+  const form = {kind: 'specific', interests: ['funding'], focus: '', topic: '', depth: 'light',
+    cadence: 'monthly', months: 3};
+  const today = '2026-10-20';
+  assert.deepEqual(updateRequestDraft({mode: 'one', form, selected: {actor_id: 'a1'}, today}), {
+    scope: 'specific', depth: 'light', categories: ['funding', 'partnerships'], cadence: 'monthly',
+    actor_ids: ['a1'], max_actors_per_run: 1, start_date: '2026-11-20', end_date: '2027-01-20'});
   const picked = [{actor_id: 'a1'}, {actor_id: 'a2'}];
-  const several = updateRequestDraft({mode: 'several', form: {...form, cadence: 'once'}, picked,
-    schedule: {...schedule, title: 'Water funders'}});
-  // A run never reads more actors than were picked; once has no end date.
-  assert.deepEqual([several.actor_ids, several.max_actors_per_run, several.end_date, several.title],
-    [['a1', 'a2'], 2, undefined, 'Water funders']);
-  const grouped = updateRequestDraft({mode: 'several', form, useGroup: true, schedule,
+  // Run now is a one-time request that starts today; a run never reads more than were picked.
+  const now = updateRequestDraft({mode: 'several', form, picked, today, runNow: true});
+  assert.deepEqual([now.actor_ids, now.max_actors_per_run, now.cadence, now.start_date, now.end_date],
+    [['a1', 'a2'], 2, 'once', undefined, undefined]);
+  // No user-set limits: the backend's own safeguards apply to a group.
+  const grouped = updateRequestDraft({mode: 'several', form, useGroup: true, today,
     group: {sector: 'WATER', category: '', state: 'CA'}});
-  assert.deepEqual([grouped.group, grouped.actor_ids, grouped.max_actors_per_run],
-    [{sector: 'WATER', state: 'CA'}, undefined, 5]);
+  assert.deepEqual([grouped.group, grouped.actor_ids, grouped.max_actors_per_run, grouped.max_usd_per_run],
+    [{sector: 'WATER', state: 'CA'}, undefined, undefined, undefined]);
 });
 
 test('saved requests and their runs read back in plain words', async () => {
   const {updateRequestScope, actorResultLine} = await import('../frontend/discovery.js');
+  // Requests saved before the two-choice form still read back.
   assert.equal(updateRequestScope({update_options: {scope: 'missing', category: 'company',
     max_actors_per_run: 5}, sector_codes: ['WATER'], state_code: 'CA', max_usd_per_run: 1.5},
   [{code: 'WATER', name: 'Water'}]),
-  'Missing information · Water · Company · CA · up to 5 actors a run · at most $1.50 a run');
+  'Missing information · Water · Company · CA');
   assert.equal(updateRequestScope({update_options: {scope: 'general', max_actors_per_run: 1},
     actor_names: ['CPower Energy'], max_usd_per_run: 0.15}),
-  'General profile · CPower Energy · up to 1 actor a run · at most $0.15 a run');
+  'General Update · CPower Energy');
+  assert.equal(updateRequestScope({update_options: {scope: 'specific', categories: ['funding', 'partnerships'],
+    focus: 'battery storage'}, actor_names: ['A', 'B']}),
+  'Specific Changes (Funding & Partnerships) · A, B · “battery storage”');
   assert.equal(actorResultLine({name: 'CPower', ok: true, counts: {new: 2, changed: 1},
     review_items: 1, spent_usd: 0.031}), 'CPower: 2 new · 1 changed · 1 to Review · $0.03');
   assert.equal(actorResultLine({name: 'X', ok: false, error: 'site could not be read'}),
@@ -320,4 +380,121 @@ test('hub fit and named organisations read back in plain words', async () => {
     'NSF · funder · On the map — the link goes to Review when written');
   assert.equal(relatedLine({name: 'Acme', relation: 'member', status: 'not_on_map'}),
     'Acme · member · Not on the map');
+});
+
+test('update runs are one list: name, actors, when, status and what each found', async () => {
+  const {updateRunList, updateCountsLine} = await import('../frontend/discovery.js');
+  const listing = {
+    requests: [
+      {subscription_id: 's1', title: 'Specific topic: 3 actors', status: 'expired', cadence: 'once',
+        start_date: '2026-10-19', actor_names: ['Chevron', 'ExxonMobil', 'Shell'],
+        update_options: {scope: 'topic'}, runs: [{collection_run_id: 'r1', started_at: '2026-10-19T19:48:45',
+          status: 'succeeded', found_count: 13, review_item_count: 0}]},
+      {subscription_id: 's2', title: 'Water every week', status: 'active', cadence: 'weekly',
+        start_date: '2026-10-27', end_date: '2027-01-20', next_run: '2026-10-27',
+        sector_codes: ['WATER'], update_options: {scope: 'general'}, runs: []},
+      // A test fixture on an inactive sector: counted by the page, not listed.
+      {subscription_id: 's3', title: 'General update: 3 actors', status: 'expired', test_sector: true, runs: []},
+    ],
+    one_time: [{run_id: 'u1', name: 'CPower Energy', started_at: '2026-10-19T14:14:31',
+      status: 'succeeded', scope: 'general', topic_name: 'Energy Transition',
+      counts: {changed: 4, confirmed: 2, missing: 2}}],
+  };
+  const rows = updateRunList(listing, [{code: 'WATER', name: 'Water'}]);
+  assert.deepEqual(rows.map((row) => row.key), ['s2', 's1', 'u1']);
+  const [weekly, topic, single] = rows;
+  assert.equal(weekly.actors, 'Group: Water');
+  assert.equal(weekly.result, 'Not run yet');
+  assert.match(weekly.schedule, /^Every week until .* · next /);
+  assert.equal(topic.actors, 'Chevron, ExxonMobil, Shell');
+  assert.equal(topic.result, '13 new or updated · 0 to Review');
+  assert.equal(topic.statusLabel, 'Finished');
+  assert.equal(single.schedule, 'One-time update · Energy Transition');
+  assert.equal(single.result, '4 updated · 2 confirmed · 2 not found');
+  assert.equal(updateCountsLine({}), 'Nothing new');
+});
+
+test('a page read from another source says which', async () => {
+  const {sourceLabel} = await import('../frontend/discovery.js');
+  assert.equal(sourceLabel('official_parent'), "its parent organization's official site");
+  assert.equal(sourceLabel('government'), 'a government site');
+  assert.equal(sourceLabel('official'), '');
+  assert.equal(sourceLabel(undefined), '');
+});
+
+test('run now writes, says what it wrote, and opens Review - no findings table', async () => {
+  const {writtenLine, openInReview, OPEN_IN_REVIEW} = await import('../frontend/discovery.js');
+  assert.equal(writtenLine({new: 4, not_found: 7}), '4 new · 7 not found');
+  assert.equal(writtenLine({changed: 1, additional: 1, conflict: 1}), '1 updated · 1 more detail · 1 to review');
+  assert.equal(writtenLine({}), 'nothing new');
+  const seen = [];
+  globalThis.window = new EventTarget();
+  globalThis.CustomEvent = class extends Event { constructor(type, init) { super(type); this.detail = init?.detail; } };
+  window.addEventListener(OPEN_IN_REVIEW, (event) => seen.push(event.detail));
+  openInReview({actor_id: 'a1', name: 'CPower Energy'});
+  assert.deepEqual(seen, [{actor_id: 'a1', name: 'CPower Energy'}]);
+  const source = (await import('node:fs')).readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /<table class="actor-boxes">/);
+  delete globalThis.window;
+});
+
+test('events and people have their own request forms; organizations keep theirs', async () => {
+  const {DISCOVERY_KINDS, blankEntityForm, entityDraftPayload, entityDraftProblems,
+    entitySummary, entityResultFacts} = await import('../frontend/discovery.js');
+  assert.deepEqual(DISCOVERY_KINDS.map((k) => k.label), ['Organizations / Actors', 'Events', 'People']);
+
+  const event = {...blankEntityForm('2026-10-23', 'event'), title: 'Water reuse events',
+    sector: 'ENERGY', focusTerms: ['water reuse'], areaKind: 'state', state: 'TX',
+    dateFrom: '2027-03-01', dateTo: '2027-06-30', eventTypes: ['conference']};
+  assert.deepEqual(entityDraftPayload(event), {
+    title: 'Water reuse events', sector_codes: ['ENERGY'], focus_terms: ['water reuse'],
+    start_date: '2026-10-23', end_date: '2026-10-23', cadence: 'once',
+    discovery_entity: 'event',
+    discovery_options: {date_from: '2027-03-01', date_to: '2027-06-30', event_types: ['conference']},
+    state_code: 'TX'});
+  assert.deepEqual(entityDraftProblems(event, OPTIONS), {});
+  assert.match(entitySummary({...entityDraftPayload(event)}, OPTIONS),
+    /^Once, on 10\/23\/2026: find conferences on water reuse in Texas taking place from 03\/01\/2027 to 06\/30\/2027\.$/);
+  assert.equal(entityDraftProblems({...event, dateTo: '2027-01-01'}, OPTIONS).dates,
+    'The range ends before it starts.');
+
+  const person = {...blankEntityForm('2026-10-23', 'person'), title: 'Battery researchers',
+    sector: 'ENERGY', focusTerms: ['battery storage'], institution: ' Rice University ', role: 'professor'};
+  const sent = entityDraftPayload(person);
+  assert.deepEqual(sent.discovery_options, {institution: 'Rice University', role: 'professor'});
+  assert.equal(sent.discovery_entity, 'person');
+  assert.match(entitySummary(sent, OPTIONS), /find professors working on battery storage at Rice University\.$/);
+  // A person form never sends event options, and needs a topic.
+  assert.ok(entityDraftProblems({...person, focusTerms: []}, OPTIONS).topic);
+
+  assert.deepEqual(entityResultFacts({start_date: '2027-03-10', event_type: 'Summit', city: 'Austin', state: 'TX',
+    completeness: 'complete'}), [['Date', '03/10/2027'], ['Type', 'Summit'], ['Place', 'Austin, TX'],
+    ['Completeness', 'Complete']]);
+  // The organization form still sends exactly what it sent before.
+  assert.equal('discovery_entity' in draftPayload(form()), false);
+});
+
+test('a request that ran, or whose period is over, offers Run again; a running one says Running', async () => {
+  const {runButtonLabel, requestStatus, STATUS_LABELS} = await import('../frontend/discovery.js');
+  assert.equal(runButtonLabel({status: 'active', next_run: '2026-11-01', runs: []}), 'Run now');
+  assert.equal(runButtonLabel({status: 'active', next_run: '2026-11-01',
+    runs: [{status: 'succeeded'}]}), 'Run again');
+  const over = {status: 'active', next_run: null, skip_reason: 'expired', runs: []};
+  assert.equal(runButtonLabel(over), 'Run again');
+  // Nothing more is scheduled, so it does not say "Scheduled".
+  assert.equal(STATUS_LABELS[requestStatus(over)], 'Period over');
+  assert.equal(STATUS_LABELS[requestStatus({...over, runs: [{status: 'running'}]})], 'Running');
+  const source = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.match(source, /\["us", "All United States"\]/);
+  assert.doesNotMatch(source, /Whole United States|How detailed should the update be/);
+});
+
+test('every date on the platform is MM/DD/YYYY', async () => {
+  const {usDate, usDateTime} = await import('../frontend/dates.js');
+  assert.equal(usDate('2026-10-26'), '10/26/2026');
+  assert.equal(usDate(new Date(2027, 0, 5)), '01/05/2027');
+  assert.match(usDateTime('2026-10-26T17:38:00'), /^10\/26\/2026, 5:38 PM$/);
+  assert.equal(usDateTime('2026-10-26'), '10/26/2026');
+  assert.equal(usDate(''), '');
+  assert.equal(usDate('not a date'), 'not a date');
 });

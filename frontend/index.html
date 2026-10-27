@@ -471,8 +471,10 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261019c"/>
-<link rel="stylesheet" href="/discovery.css?v=20261019c"/>
+<link rel="stylesheet" href="/review.css?v=20261027a"/>
+<link rel="stylesheet" href="/discovery.css?v=20261027a"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261027a"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261027a"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -489,12 +491,17 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261019c";
-import {createDiscoveryPage} from "./discovery.js?v=20261019c";
+import {createReviewPage} from "./review.js?v=20261027a";
+import {createDiscoveryPage} from "./discovery.js?v=20261027a";
+import {usDate} from "./dates.js?v=20261027a";
+import {createDataFeedPage} from "./datafeed.js?v=20261027a";
+import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261027a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect});
+const DataFeed=createDataFeedPage({html,useState,useEffect});
+const Dashboard=createDashboardPage({html,useState,useEffect});
 
 /* colour-coded entity chip */
 const ETONE={actor:"accent",hub:"teal",event:"violet",uploaded_document:"slate"};
@@ -772,6 +779,7 @@ function ActorDetail({a,onBack}){
     <div class="badges">
       ${a.has_profile&&html`<span class="chip accent">Deeply profiled</span>`}
       ${a.verification_status&&html`<span class="chip">${a.verification_status.replace(/_/g," ")}</span>`}
+      ${a.origin&&html`<span class=${"chip "+(a.origin==="AI-Mapped"?"violet":"slate")} title="Who made this record">${a.origin}</span>`}
       ${(a.sectors||[]).map(s=>html`<span class="chip teal" key=${s}>${s}</span>`)}
     </div>
     ${a.website&&html`<p>🔗 <a href=${a.website} target="_blank" rel="noopener">${a.website}</a></p>`}
@@ -870,7 +878,7 @@ function Events(){
     return true;
   });
   const dateCell=(d)=> !d ? html`<span class="dash">—</span>`
-    : html`${d} ${d<today?html`<span class="chip slate" style=${{marginLeft:"6px"}}>past</span>`:""}`;
+    : html`${usDate(d)} ${d<today?html`<span class="chip slate" style=${{marginLeft:"6px"}}>past</span>`:""}`;
   return html`<div class="fade">
     <div class="card pad">
       <div class="filters">
@@ -1592,6 +1600,13 @@ const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stro
   stroke-linecap="round"/></svg>`;
 function App(){
   const [tab,setTab]=useState("ask");
+  // Discovery's Run now opens the actor's profile in Review (discovery.js openInReview).
+  useEffect(()=>{const go=()=>setTab("review");window.addEventListener("ghus:open-review",go);
+    return ()=>window.removeEventListener("ghus:open-review",go);},[]);
+  // Completed runs not yet seen on the Dashboard: a count on its nav item.
+  const [unseen,setUnseen]=useState(0);
+  useEffect(()=>{const on=(e)=>setUnseen(e.detail?.count||0);window.addEventListener(DASHBOARD_UNSEEN,on);
+    return ()=>window.removeEventListener(DASHBOARD_UNSEEN,on);},[]);
   // Ask -> Build the Map handoff. Client-side only: both pages stay mounted, so
   // there is no session to plumb through the backend.
   const [handoff,setHandoff]=useState(null);
@@ -1603,18 +1618,20 @@ function App(){
     <div class="workspace-brand"><div class="brand-name">UM6P</div><div class="brand-caption">GLOBAL HUBS · UNITED STATES</div></div>
     <div class="nav-label">Intelligence platform</div>
     <nav class="workspace-nav" aria-label="Main navigation">
-      ${[["ask","Ask","⌕"],["browse","Browse","▦"],["map","Build the Map","⊕"],["discovery","Discovery","◎"],["review","Review","✓"]].map(([id,label,symbol])=>html`
-        <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${symbol}</span>${label}</button>`)}
+      ${[["dashboard","Dashboard","◫"],["ask","Ask","⌕"],["browse","Browse","▦"],["map","Build the Map","⊕"],["discovery","Discovery","◎"],["datafeed","Data Feed","⇪"],["review","Review","✓"]].map(([id,label,symbol])=>html`
+        <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${symbol}</span>${label}${id==="dashboard"&&unseen>0&&html`<span class="nav-badge" aria-label=${`${unseen} new completed runs`}>${unseen}</span>`}</button>`)}
     </nav>
     <div class="sidebar-foot"><strong>Connected intelligence</strong>Organizations, people,<br/>and innovation ecosystems.</div>
   </aside>
   <div class="workspace-main">
-  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{ask:"Ask",browse:"Browse",map:"Build the Map",discovery:"Discovery",review:"Review"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
+  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{dashboard:"Dashboard",ask:"Ask",browse:"Browse",map:"Build the Map",discovery:"Discovery",datafeed:"Data Feed",review:"Review"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
   <main class="wrap">
+    <div style=${{display:tab==="dashboard"?"block":"none"}}><${Dashboard}/></div>
     <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}
       onBuildMap=${(h)=>{setHandoff({...h,at:Date.now()}); setTab("map");}}/></div>
     <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
     <div style=${{display:tab==="discovery"?"block":"none"}}><${Discovery}/></div>
+    <div style=${{display:tab==="datafeed"?"block":"none"}}><${DataFeed}/></div>
     <div style=${{display:tab==="review"?"block":"none"}}><${Review}/></div>
     <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
       handoff=${handoff} onHandoffUsed=${()=>setHandoff(null)}/></div>

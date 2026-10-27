@@ -308,6 +308,9 @@ def register_sector_codes(codes) -> None:
 # split them into several identically labelled groups. They are one group.
 MAP_CHECKS_PREFIX = "v2-review:"
 ACTOR_UPDATE_PREFIX = "actor-update:"
+# Records GHUS supplied through the Data Feed (a spreadsheet or the form).
+DATAFEED_PREFIX = "datafeed:"
+DATAFEED_LABEL = "Data Feed import"
 # Review items about one box's value (raised by the Phase 11 fact writer).
 FACT_REVIEW_KINDS = ("fact_conflict", "pending_update")
 MAP_CHECKS_KEY = "map-checks"
@@ -324,7 +327,50 @@ def _short_day(when: Any) -> str | None:
         return None
     if stamp <= 0:
         return None
-    return datetime.fromtimestamp(stamp, tz=timezone.utc).strftime("%b %d, %Y").replace(" 0", " ")
+    # US calendar, as everywhere on the platform: 10/26/2026.
+    return datetime.fromtimestamp(stamp, tz=timezone.utc).strftime("%m/%d/%Y")
+
+
+# The four kinds of run a reviewer chooses between (the Review page's Run Type).
+RUN_TYPES = ("discovery_actors", "discovery_events", "discovery_people", "actor_updates",
+             "data_feed")
+
+
+def run_type_of(source_run_id: Any, entity_types: Any) -> str:
+    """Which kind of run this is, from what is recorded - never guessed.
+
+    An actor update run is keyed "actor-update:<run>"; a discovery run by the
+    kind of record it produced (a run produces one kind: actors, events or
+    people). The map's own checks are their own kind.
+    """
+    run_id = str(source_run_id or "")
+    if run_id.startswith(ACTOR_UPDATE_PREFIX):
+        return "actor_updates"
+    if run_id.startswith(DATAFEED_PREFIX):
+        return "data_feed"
+    if run_id.startswith(MAP_CHECKS_PREFIX):
+        return "map_checks"
+    kinds = {k for k in str(entity_types or "").split(",") if k}
+    if kinds == {"event"}:
+        return "discovery_events"
+    if kinds == {"person"}:
+        return "discovery_people"
+    return "discovery_actors"
+
+
+def run_name(description: Any, source_run_id: Any) -> str:
+    """The run's own name, without its kind or date.
+
+        "Grid-scale battery storage organizations in Texas"  (a Discovery request)
+        "CPower Energy"                                      (an actor update)
+        "Actor discovery (test run)"                         (an unnamed open-web run)
+    """
+    parts = _run_label(description, source_run_id).split(" · ")
+    if parts[0] in ("Discovery request", "Actor update", DATAFEED_LABEL) and len(parts) > 1:
+        return " · ".join(parts[1:])
+    if parts[0] == "Build the Map" and len(parts) > 1:
+        return "Build the Map: " + " · ".join(parts[1:])
+    return parts[0] + (f" ({' · '.join(parts[1:])})" if len(parts) > 1 else "")
 
 
 def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
@@ -347,6 +393,9 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
         parts = [f"{kind.group(1).capitalize()} discovery"]
         if "dry_run" in raw or "dry run" in raw.casefold():
             parts.append("test run")
+    elif run_id.startswith(DATAFEED_PREFIX):
+        # "Data Feed import · Kansas water actors · actors.xlsx · Oct 26, 2026"
+        parts = [DATAFEED_LABEL, raw.removeprefix(f"{DATAFEED_LABEL}:").strip()]
     elif run_id.startswith(ACTOR_UPDATE_PREFIX):
         # "Actor update · CPower Energy · Oct 19, 2026": what an update wrote,
         # and anything it raised for a person (conflicts, links, hubs).
@@ -397,6 +446,9 @@ _GATE_REASONS = (
 
 
 def derive_review_reason(metadata: dict[str, Any], entity_type: Any = None) -> str | None:
+    if "data_feed" in metadata:
+        # Supplied by GHUS through the Data Feed: no agent scored it.
+        return "possible_duplicate" if metadata.get("top_matches") else "data_feed"
     kind = str(metadata.get("review_kind") or "").strip()
     if kind:
         return _KIND_REASONS.get(kind, kind)
@@ -696,6 +748,19 @@ class ReviewStore:
                     error TEXT,
                     attempted_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS review_change_decision (
+                    idempotency_key TEXT PRIMARY KEY,
+                    candidate_id TEXT NOT NULL REFERENCES review_candidate(candidate_id),
+                    actor_id TEXT,
+                    review_item_id TEXT NOT NULL,
+                    field_key TEXT,
+                    choice TEXT NOT NULL CHECK (choice IN
+                        ('keep_current','use_new','keep_both','confirm','refuse')),
+                    reviewer TEXT NOT NULL,
+                    notes TEXT,
+                    decided_at REAL NOT NULL,
+                    outcome TEXT
+                );
                 CREATE TABLE IF NOT EXISTS review_sync_state (
                     source TEXT PRIMARY KEY,
                     last_attempt_at REAL,
@@ -726,6 +791,10 @@ class ReviewStore:
                 "admission_state": "TEXT NOT NULL DEFAULT 'not_applied'",
                 "admission_error": "TEXT",
                 "admission_outcome": "TEXT",
+                # A card another card now shows (an actor's update profile), or
+                # one no longer served (an update run on an inactive sector).
+                # The row is kept, decisions and all; it is only not listed.
+                "folded_into": "TEXT",
             }
             for name, definition in additions.items():
                 if name not in existing:
@@ -790,12 +859,20 @@ class ReviewStore:
                         )
         return inserted
 
-    def sync_external_candidates(self, candidates: list[dict[str, Any]]) -> int:
+    def sync_external_candidates(self, candidates: list[dict[str, Any]],
+                                 retired: dict[str, str] | None = None) -> int:
         """Copy normalized candidates from a read-only external review source.
 
         The external source supplies an immutable stable key.  Existing pending
         candidates receive refreshed evidence and agent metadata only; reviewer
         edits and the original captured payload are never overwritten.
+
+        A candidate may name the source keys it now shows (``folds``): an
+        actor's update profile shows its earlier per-run cards and per-change
+        items. Those rows, while still pending, are folded into it - kept, not
+        listed. ``retired`` keys are no longer served at all (an update run on
+        an inactive sector); their pending rows are folded away the same way.
+        Decided rows are never touched.
         """
         inserted = 0
         with self.connect() as db:
@@ -875,6 +952,25 @@ class ReviewStore:
                                 (_json(payload), _json(_editable_payload(entity_type, payload)),
                                  candidate_id),
                             )
+            for candidate in candidates:
+                folds = [str(key) for key in candidate.get("folds") or [] if key]
+                if not folds:
+                    continue
+                target = _external_candidate_id(str(candidate["source_key"]).strip())
+                db.executemany(
+                    "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
+                    "AND candidate_id<>? AND status='pending_review'",
+                    [(target, _external_candidate_id(key), target) for key in folds],
+                )
+                # The profile itself is always listed.
+                db.execute("UPDATE review_candidate SET folded_into=NULL WHERE candidate_id=?",
+                           (target,))
+            for key, reason in (retired or {}).items():
+                db.execute(
+                    "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
+                    "AND status='pending_review' AND folded_into IS NULL",
+                    (str(reason or "retired"), _external_candidate_id(str(key))),
+                )
         return inserted
 
     @staticmethod
@@ -921,9 +1017,22 @@ class ReviewStore:
             row = db.execute(
                 "SELECT * FROM review_candidate WHERE candidate_id=?", (candidate_id,)
             ).fetchone()
-        if row is None:
-            raise KeyError(candidate_id)
-        return self._decode(row)
+            if row is None:
+                raise KeyError(candidate_id)
+            item = self._decode(row)
+            metadata = item.get("agent_metadata") or {}
+            if metadata.get("review_kind") == "actor_profile":
+                decided = [dict(r) for r in db.execute(
+                    "SELECT review_item_id, field_key, choice, reviewer, notes, decided_at "
+                    "FROM review_change_decision WHERE actor_id=? ORDER BY decided_at DESC",
+                    (str(metadata.get("entity_id") or ""),),
+                )]
+                done = {d["review_item_id"] for d in decided}
+                # Decided here but not yet re-read from the map: shown as decided.
+                metadata["changes"] = [c for c in metadata.get("changes") or []
+                                       if c.get("review_item_id") not in done]
+                metadata["decided_changes"] = decided
+        return item
 
     def list(self, *, status: str | None = "pending_review", entity_type: str | None = None,
              source_run_id: str | None = None, search: str | None = None,
@@ -935,7 +1044,7 @@ class ReviewStore:
             raise ReviewValidationError("Unsupported entity type.")
         if actor_category and actor_category != "all" and actor_category not in CATEGORY_LABELS:
             raise ReviewValidationError("Unsupported actor category.")
-        where, params = [], []
+        where, params = ["folded_into IS NULL"], []
         if status not in (None, "all"):
             where.append("status=?"); params.append(status)
         if entity_type not in (None, "all"):
@@ -960,11 +1069,13 @@ class ReviewStore:
                 params,
             ).fetchall()
             counts = {row["status"]: row["n"] for row in db.execute(
-                "SELECT status,count(*) AS n FROM review_candidate GROUP BY status"
+                "SELECT status,count(*) AS n FROM review_candidate WHERE folded_into IS NULL "
+                "GROUP BY status"
             )}
             maps = [dict(row) for row in db.execute(
                 "SELECT source_run_id, max(source_description) AS description, count(*) AS candidate_count "
-                "FROM review_candidate GROUP BY source_run_id ORDER BY source_run_id"
+                "FROM review_candidate WHERE folded_into IS NULL GROUP BY source_run_id "
+                "ORDER BY source_run_id"
             )]
         candidates = [self._decode(row) for row in rows]
         # Category, review reason and region live inside JSON payloads, so they
@@ -1017,9 +1128,17 @@ class ReviewStore:
                 "SELECT source_run_id, max(source_description) AS description, "
                 "count(*) AS candidate_count, min(created_at) AS earliest, "
                 "max(created_at) AS latest, "
-                "sum(CASE WHEN status='pending_review' THEN 1 ELSE 0 END) AS pending_count "
-                "FROM review_candidate GROUP BY source_run_id"
+                "sum(CASE WHEN status='pending_review' THEN 1 ELSE 0 END) AS pending_count, "
+                "group_concat(DISTINCT entity_type) AS entity_types "
+                "FROM review_candidate WHERE folded_into IS NULL GROUP BY source_run_id"
             ).fetchall()
+            by_status = db.execute(
+                "SELECT source_run_id, status, count(*) AS n FROM review_candidate "
+                "WHERE folded_into IS NULL GROUP BY source_run_id, status"
+            ).fetchall()
+        status_counts: dict[str, dict[str, int]] = {}
+        for row in by_status:
+            status_counts.setdefault(str(row["source_run_id"]), {})[str(row["status"])] = int(row["n"])
         groups: list[dict[str, Any]] = []
         checks: dict[str, Any] | None = None
         for row in rows:
@@ -1030,11 +1149,15 @@ class ReviewStore:
                         "trigger_label": None, "initiated_by": NOT_RECORDED,
                         "candidate_count": 0, "pending_count": 0, "earliest": 0.0,
                         "latest": 0.0, "is_backlog": False, "source_run_ids": [],
+                        "run_type": "map_checks", "run_name": MAP_CHECKS_LABEL, "run_date": None,
+                        "status_counts": {},
                     }
                 checks["candidate_count"] += int(row["candidate_count"] or 0)
                 checks["pending_count"] += int(row["pending_count"] or 0)
                 checks["latest"] = max(checks["latest"], float(row["latest"] or 0))
                 checks["source_run_ids"].append(row["source_run_id"])
+                for status, n in status_counts.get(str(row["source_run_id"]), {}).items():
+                    checks["status_counts"][status] = checks["status_counts"].get(status, 0) + n
                 continue
             trigger = _run_trigger(row["description"], row["source_run_id"])
             groups.append({
@@ -1049,6 +1172,10 @@ class ReviewStore:
                 "latest": float(row["latest"] or 0),
                 "is_backlog": False,
                 "source_run_ids": [row["source_run_id"]],
+                "run_type": run_type_of(row["source_run_id"], row["entity_types"]),
+                "run_name": run_name(row["description"], row["source_run_id"]),
+                "run_date": _short_day(row["earliest"]) or None,
+                "status_counts": status_counts.get(str(row["source_run_id"]), {}),
             })
         groups.sort(key=lambda group: (-group["latest"], str(group["key"])))
         if checks is not None:
@@ -1064,6 +1191,8 @@ class ReviewStore:
             if seen[group["label"]] > 1 and group["earliest"]:
                 stamp = datetime.fromtimestamp(group["earliest"], tz=timezone.utc)
                 group["label"] = f"{group['label']} · {stamp:%H:%M} UTC"
+                if group.get("run_date"):
+                    group["run_date"] = f"{group['run_date']} · {stamp:%H:%M} UTC"
         return groups
 
     @staticmethod
@@ -1336,6 +1465,13 @@ class ReviewStore:
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This candidate has already been decided.")
         metadata = candidate["agent_metadata"]
+        if candidate.get("folded_into"):
+            raise ReviewConflict("This card is now part of the actor's update profile; "
+                                 "decide it there.")
+        if (metadata.get("review_kind") == "actor_profile" and decision_kind == "new"
+                and metadata.get("changes")):
+            raise ReviewValidationError(
+                f"Decide the {len(metadata['changes'])} change(s) to review first.")
         if str(metadata.get("source_table") or "") == "actor_update":
             # What an update wrote is already on the map, through the backend's
             # fact writer, with its sources and history. A reviewer says it
@@ -1456,6 +1592,78 @@ class ReviewStore:
             "notes": notes,
             "idempotency_key": idempotency_key,
         }
+
+    CHANGE_CHOICES = {
+        "fact": ("keep_current", "use_new", "keep_both"),
+        "relationship": ("confirm", "refuse"),
+        "hub": ("confirm", "refuse"),
+    }
+
+    def change_request(self, candidate_id: str, review_item_id: str, *, choice: str,
+                       reviewer: str, idempotency_key: str, notes: str | None = None,
+                       confirmed: bool = False) -> dict[str, Any]:
+        """Shape one change decision on an actor's update profile, without writing it.
+
+        The change is one the map raised and still holds pending: a value to
+        keep or replace, a link to confirm, a hub to join. The backend's
+        approved writer applies it; nothing is written here.
+        """
+        reviewer = _clean_text(reviewer, required=True, max_length=120)
+        idempotency_key = _clean_text(idempotency_key, required=True, max_length=200)
+        notes = _clean_text(notes, max_length=5000)
+        if confirmed is not True:
+            raise ReviewValidationError("Explicit confirmation is required.")
+        candidate = self.get(candidate_id)
+        metadata = candidate["agent_metadata"]
+        if metadata.get("review_kind") != "actor_profile":
+            raise ReviewValidationError("Only an actor's update profile holds changes.")
+        if candidate["status"] != "pending_review":
+            raise ReviewConflict("This profile has already been reviewed.")
+        change = next((c for c in metadata.get("changes") or []
+                       if c.get("review_item_id") == review_item_id), None)
+        if change is None:
+            raise ReviewConflict("This change has already been decided, or is no longer pending.")
+        allowed = self.CHANGE_CHOICES.get(change.get("kind"), ())
+        if choice not in allowed:
+            raise ReviewValidationError("Unsupported choice for this change.")
+        if choice == "keep_both" and not change.get("can_keep_both"):
+            raise ReviewValidationError(
+                "Keep both applies only to a location: every other box holds one current value.")
+        base = {"review_item_id": review_item_id, "reviewer": reviewer, "notes": notes,
+                "idempotency_key": idempotency_key}
+        if change["kind"] == "fact":
+            return {**base, "decision_kind": "resolve_fact", "accept": choice == "use_new",
+                    "keep_both": choice == "keep_both"}
+        if change["kind"] == "relationship":
+            source_url = str(change.get("source_url") or "").strip()
+            if choice == "confirm" and not source_url:
+                raise ReviewValidationError(
+                    "This link has no source page on record, so it cannot be confirmed here.")
+            return {**base, "decision_kind": "resolve_relationship", "approve": choice == "confirm",
+                    "source_url": source_url or None,
+                    "relationship_type": change.get("relationship_type")}
+        return {**base, "decision_kind": "resolve_hub_membership", "accept": choice == "confirm"}
+
+    def record_change_decision(self, candidate_id: str, review_item_id: str, *, choice: str,
+                               reviewer: str, idempotency_key: str, notes: str | None,
+                               outcome: dict[str, Any]) -> dict[str, Any]:
+        """Record an applied change decision; the profile lists it as decided at once."""
+        candidate = self.get(candidate_id)
+        metadata = candidate["agent_metadata"]
+        change = next((c for c in metadata.get("changes") or []
+                       if c.get("review_item_id") == review_item_id), {})
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "INSERT INTO review_change_decision (idempotency_key,candidate_id,actor_id,"
+                "review_item_id,field_key,choice,reviewer,notes,decided_at,outcome) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(idempotency_key) DO NOTHING",
+                (idempotency_key, candidate_id, str(metadata.get("entity_id") or ""),
+                 review_item_id, change.get("field_key"), choice,
+                 _clean_text(reviewer, required=True, max_length=120),
+                 _clean_text(notes, max_length=5000), _now(), _json(outcome)),
+            )
+        return self.get(candidate_id)
 
     def record_admission_failure(
         self, candidate_id: str, *, idempotency_key: str,
