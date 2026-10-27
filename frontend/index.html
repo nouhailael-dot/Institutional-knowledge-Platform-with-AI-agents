@@ -1815,15 +1815,27 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
               const items=[...((res.entities&&res.entities[k])||[])]
                 .filter(e=>!(parkedOnly&&parkedCount>0)||e._review==="parked").sort((a,b)=>order(a)-order(b));
               if(!items.length) return null;
-              return html`<div class="mgroup" key=${k}>
-                <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
-                  <span class="n">${items.length}</span></div>
-                ${items.map((e,i)=>html`<${MapCard} key=${k+i} e=${e} request=${request}
+              const card=(e,i)=>html`<${MapCard} key=${k+(e._round||1)+"-"+i} e=${e} request=${request}
                   jobId=${jobId} onCost=${setCost} onError=${setErr}
                   onBusy=${v=>{setVerifying(v);poll(jobId);}}
                   disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}
                   onReviewed=${d=>{setRes(d.result);setCost(d.cost);}}
-                  reviewDisabled=${busy||verifying||["running","planning","verifying"].includes(runStatus)}/>`)}
+                  reviewDisabled=${busy||verifying||["running","planning","verifying"].includes(runStatus)}/>`;
+              // Each follow-up that found something new keeps its own list, under its own
+              // words, after the original results — never mixed into them.
+              const rounds=res.rounds||[];
+              const sections=[...new Set(items.map(e=>e._round||1))].sort((a,b)=>a-b);
+              return html`<div class="mgroup" key=${k}>
+                <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
+                  <span class="n">${items.length}</span></div>
+                ${sections.map(r=>{
+                  const part=items.filter(e=>(e._round||1)===r);
+                  return html`<div key=${"round"+r}>
+                    ${r>1&&html`<div class="mgroup-h" style=${{marginTop:"22px"}}>
+                      <span class="chip slate">Follow-up ${r-1}</span>
+                      <span class="hint" style=${{margin:0}}>${rounds[r-1]||""} · ${part.length} result${part.length===1?"":"s"}</span></div>`}
+                    ${part.map(card)}</div>`;
+                })}
               </div>`;
             });
           })()}
