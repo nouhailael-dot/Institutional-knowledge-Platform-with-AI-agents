@@ -1,11 +1,12 @@
 import argparse
 import json
 import sys
+from pathlib import Path
 from collections import defaultdict
 
 from sqlalchemy import select, text
 
-sys.path.insert(0, r"C:\Users\Ismail\Projects\GHUS-Platform")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # ghus-backend/
 
 from src.ai.client import SONNET, UsageTracker, call_claude, parse_json_response  # noqa: E402
 from src.db.models import Actor, ActorSector, Hub, HubActor, Sector  # noqa: E402

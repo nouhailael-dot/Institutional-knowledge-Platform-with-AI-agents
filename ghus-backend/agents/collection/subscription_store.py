@@ -47,7 +47,13 @@ _SUBSCRIPTION_COLUMNS = (
     # (production until it is approved) still answers: {} and NULL.
     "COALESCE(to_jsonb(actor_update_subscription)->'update_options', '{}'::jsonb) "
     "AS update_options, "
-    "(to_jsonb(actor_update_subscription)->>'max_usd_per_run')::numeric AS max_usd_per_run"
+    "(to_jsonb(actor_update_subscription)->>'max_usd_per_run')::numeric AS max_usd_per_run, "
+    # Migration 580 columns, read the same way: a database without 580 answers
+    # 'actor' and {} - every request there finds organizations.
+    "COALESCE(to_jsonb(actor_update_subscription)->>'discovery_entity', 'actor') "
+    "AS discovery_entity, "
+    "COALESCE(to_jsonb(actor_update_subscription)->'discovery_options', '{}'::jsonb) "
+    "AS discovery_options"
 )
 # The request sources a person manages from the Discovery page.
 _MANAGED_VIA = (DISCOVERY_PAGE, ACTOR_UPDATES)
@@ -91,6 +97,8 @@ def subscription_from_row(row: Mapping[str, object]) -> Subscription:
         update_options=dict(row.get("update_options") or {}),
         max_usd_per_run=(float(row["max_usd_per_run"])
                          if row.get("max_usd_per_run") is not None else None),
+        discovery_entity=str(row.get("discovery_entity") or "actor"),
+        discovery_options=dict(row.get("discovery_options") or {}),
     )
 
 
@@ -125,24 +133,66 @@ def has_update_requests(session) -> bool:
     )).scalar() == 2)
 
 
+def has_entity_requests(session) -> bool:
+    """Whether migration 580 is applied, so event and people requests can be saved."""
+    return bool(session.execute(text(
+        "SELECT count(*) FROM information_schema.columns WHERE table_schema = "
+        "ANY (current_schemas(false)) AND table_name = 'actor_update_subscription' "
+        "AND column_name IN ('discovery_entity', 'discovery_options')"
+    )).scalar() == 2)
+
+
+# A run still marked running after this long stopped responding (its process
+# ended without finishing); the page says so instead of "Running" for ever.
+STALLED_AFTER = "3 hours"
+
+
 def load_request_runs(session, subscription_id: str, *, limit: int = 20) -> list[dict[str, object]]:
+    """A request's runs, newest first - the one running now included.
+
+    A finished run is linked to its request (actor_update_subscription_run);
+    a running one is found by the request id its snapshot carries, with what
+    its search run has spent so far and how long it has been running.
+    """
     rows = session.execute(text(
-        "SELECT cr.collection_run_id::text AS collection_run_id, cr.status, cr.dry_run, "
-        "cr.started_at, cr.finished_at, cr.found_count, cr.deduplicated_count, "
-        "cr.staged_count, cr.review_item_count, cr.status_reason, cr.spent_usd, "
-        "cr.config_snapshot->>'search_run_id' AS search_run_id, "
+        "SELECT * FROM ("
+        " SELECT cr.collection_run_id::text AS collection_run_id, cr.status, cr.dry_run, "
+        " cr.started_at, cr.finished_at, cr.found_count, cr.deduplicated_count, "
+        " cr.staged_count, cr.review_item_count, cr.status_reason, cr.spent_usd, "
+        " cr.config_snapshot->>'search_run_id' AS search_run_id, "
         # Actor update runs: what each actor's update found (NULL otherwise).
-        "cr.config_snapshot->'actor_results' AS actor_results, "
-        "cr.config_snapshot->>'stopped' AS stopped "
-        "FROM actor_update_subscription_run sr "
-        "JOIN collection_run cr ON cr.collection_run_id = sr.collection_run_id "
-        "WHERE sr.actor_update_subscription_id = CAST(:id AS uuid) "
-        "ORDER BY cr.started_at DESC LIMIT :limit"
-    ), {"id": subscription_id, "limit": limit}).mappings()
+        " cr.config_snapshot->'actor_results' AS actor_results, "
+        " cr.config_snapshot->>'stopped' AS stopped, false AS stalled, "
+        " EXTRACT(EPOCH FROM (COALESCE(cr.finished_at, now()) - cr.started_at))::int "
+        "   AS elapsed_seconds "
+        " FROM actor_update_subscription_run sr "
+        " JOIN collection_run cr ON cr.collection_run_id = sr.collection_run_id "
+        " WHERE sr.actor_update_subscription_id = CAST(:id AS uuid) "
+        " UNION ALL "
+        " SELECT cr.collection_run_id::text, cr.status, cr.dry_run, cr.started_at, "
+        " cr.finished_at, cr.found_count, cr.deduplicated_count, cr.staged_count, "
+        " cr.review_item_count, cr.status_reason, "
+        " COALESCE((SELECT s.cost_usd FROM scrape_run s WHERE s.source_name = 'open_web_search' "
+        "   AND s.status = 'running' AND s.started_at >= cr.started_at "
+        "   ORDER BY s.started_at LIMIT 1), cr.spent_usd, 0) AS spent_usd, "
+        " (SELECT s.run_id::text FROM scrape_run s WHERE s.source_name = 'open_web_search' "
+        "   AND s.started_at >= cr.started_at ORDER BY s.started_at LIMIT 1) AS search_run_id, "
+        " NULL::jsonb, NULL::text, "
+        " (now() - cr.started_at > CAST(:stalled AS interval)) AS stalled, "
+        " EXTRACT(EPOCH FROM (now() - cr.started_at))::int "
+        " FROM collection_run cr "
+        " WHERE cr.status = 'running' "
+        " AND COALESCE(cr.config_snapshot->>'subscription_id', "
+        "     cr.config_snapshot->'discovery_request'->>'subscription_id') = CAST(:id AS text) "
+        " AND NOT EXISTS (SELECT 1 FROM actor_update_subscription_run l "
+        "                 WHERE l.collection_run_id = cr.collection_run_id)"
+        ") runs ORDER BY started_at DESC LIMIT :limit"
+    ), {"id": subscription_id, "limit": limit, "stalled": STALLED_AFTER}).mappings()
     return [dict(row) for row in rows]
 
 
-def load_request_results(session, search_run_ids, *, limit: int = 50) -> list[dict[str, object]]:
+def load_request_results(session, search_run_ids, *, limit: int = 50,
+                         entity: str = "actor") -> list[dict[str, object]]:
     """The organisations a request's runs added to the map or sent to review.
 
     Rejected candidates are not listed: they never reached the map or the
@@ -154,25 +204,34 @@ def load_request_results(session, search_run_ids, *, limit: int = 50) -> list[di
         return []
     rows = session.execute(text(
         "SELECT candidate_id::text AS candidate_id, run_id::text AS search_run_id, url, "
-        "record_preview->>'name' AS name, record_preview->>'website' AS website, "
+        "COALESCE(record_preview->>'name', record_preview->>'title', title) AS name, "
+        "COALESCE(record_preview->>'website', record_preview->>'public_profile_url') "
+        "AS website, "
         "record_preview->>'description' AS description, fit_score, score_band, "
-        "record_preview->>'location_city' AS city, record_preview->>'state' AS state, "
+        "COALESCE(record_preview->>'location_city', record_preview->>'city') AS city, "
+        "record_preview->>'state' AS state, "
         "record_preview->>'country' AS country, record_preview->>'actor_category' AS category, "
         "record_preview->>'primary_technical_focus' AS focus, "
         "record_preview->>'current_activities' AS activities, "
         "record_preview->>'funding_summary' AS funding, "
         "record_preview->>'match_reason' AS why_matched, "
+        # Events and people: when, what kind, who and where they work.
+        "record_preview->>'start_date' AS start_date, "
+        "record_preview->>'event_type' AS event_type, "
+        "record_preview->>'role' AS role, record_preview->>'affiliation' AS affiliation, "
+        "record_preview->'quality'->>'completeness' AS completeness, "
 
         "(score_breakdown->>'priority_score')::float AS priority, "
         "triage_reason, created_at FROM search_candidate "
-        "WHERE run_id = ANY(CAST(:ids AS uuid[])) AND entity_type = 'actor' "
+        "WHERE run_id = ANY(CAST(:ids AS uuid[])) AND entity_type = :entity "
         "AND score_band IN ('auto_high', 'review') "
         "ORDER BY score_band = 'auto_high' DESC, fit_score DESC NULLS LAST LIMIT :limit"
-    ), {"ids": ids, "limit": limit}).mappings()
+    ), {"ids": ids, "limit": limit, "entity": entity}).mappings()
     return [dict(row) for row in rows]
 
 
-def load_request_exclusions(session, search_run_ids, *, limit: int = 300) -> list[dict[str, object]]:
+def load_request_exclusions(session, search_run_ids, *, limit: int = 300,
+                            entity: str = "actor") -> list[dict[str, object]]:
     """Every candidate a request's runs did NOT keep, with the recorded reason.
 
     Exclusion is never silent: rejected, not read (budget, limits), superseded
@@ -183,16 +242,16 @@ def load_request_exclusions(session, search_run_ids, *, limit: int = 300) -> lis
     if not ids:
         return []
     rows = session.execute(text(
-        "SELECT url, COALESCE(record_preview->>'name', title) AS name, triage_verdict, "
-        "score_band, fit_score, triage_reason FROM search_candidate "
-        "WHERE run_id = ANY(CAST(:ids AS uuid[])) AND entity_type = 'actor' "
+        "SELECT url, COALESCE(record_preview->>'name', record_preview->>'title', title) "
+        "AS name, triage_verdict, score_band, fit_score, triage_reason FROM search_candidate "
+        "WHERE run_id = ANY(CAST(:ids AS uuid[])) AND entity_type = :entity "
         "AND COALESCE(score_band, '') NOT IN ('auto_high', 'review') "
         "ORDER BY fit_score DESC NULLS LAST LIMIT :limit"
-    ), {"ids": ids, "limit": limit}).mappings()
+    ), {"ids": ids, "limit": limit, "entity": entity}).mappings()
     return [dict(row) for row in rows]
 
 
-def search_run_since(session, started) -> tuple[str | None, float]:
+def search_run_since(session, started, entity: str = "actor") -> tuple[str | None, float]:
     """The open-web actor search run started at or after ``started``, and its cost.
 
     Used when a run fails before returning its own figures. Only one runner
@@ -200,9 +259,9 @@ def search_run_since(session, started) -> tuple[str | None, float]:
     """
     row = session.execute(text(
         "SELECT run_id::text AS run_id, COALESCE(cost_usd, 0) AS cost FROM scrape_run "
-        "WHERE source_name = 'open_web_search' AND entity_type = 'actor' "
+        "WHERE source_name = 'open_web_search' AND entity_type = :entity "
         "AND started_at >= :started ORDER BY started_at LIMIT 1"
-    ), {"started": started}).mappings().first()
+    ), {"started": started, "entity": entity}).mappings().first()
     if row is None:
         return None, 0.0
     return str(row["run_id"]), float(row["cost"])
@@ -234,6 +293,8 @@ def create_request(
     start_date: date | None = None,
     max_new_actors_per_run: int = 10,
     requested_by: str | None = None,
+    discovery_entity: str = "actor",
+    discovery_options: Mapping[str, object] | None = None,
     live: bool = False,
 ) -> WriteResult:
     """Validate a Discovery-page request and, when live, record it.
@@ -257,6 +318,8 @@ def create_request(
         focus_terms=tuple(dict.fromkeys(t.strip() for t in focus_terms if t.strip())),
         max_new_actors_per_run=int(max_new_actors_per_run),
         requested_by=requested_by,
+        discovery_entity=discovery_entity,
+        discovery_options=dict(discovery_options or {}),
     )
     values = {
         "title": candidate.title,
@@ -283,8 +346,25 @@ def create_request(
         ":max_new_actors_per_run, :next_due_at) "
         "RETURNING actor_update_subscription_id::text"
     )
+    if candidate.discovery_entity != "actor":
+        # An organization request is written exactly as before; only an event
+        # or people request names the 580 columns.
+        values["discovery_entity"] = candidate.discovery_entity
+        values["discovery_options"] = json.dumps(candidate.discovery_options, sort_keys=True)
+        statement = statement.replace(
+            "max_new_actors_per_run, next_due_at) VALUES",
+            "max_new_actors_per_run, next_due_at, discovery_entity, discovery_options) VALUES",
+        ).replace(
+            ":max_new_actors_per_run, :next_due_at) ",
+            ":max_new_actors_per_run, :next_due_at, :discovery_entity, "
+            "CAST(:discovery_options AS jsonb)) ",
+        )
     if not live:
         return WriteResult(False, None, statement, values)
+    if candidate.discovery_entity != "actor" and not has_entity_requests(session):
+        raise SubscriptionError(
+            "Saving event or people requests needs migration 580 on this database; it is "
+            "not applied yet.")
     new_id = session.execute(text(statement), values).scalar_one()
     session.commit()
     return WriteResult(True, str(new_id), statement, values)
@@ -448,7 +528,10 @@ def start_run(
         else "discovery_request",
         "by": subscription.requested_via,
         "cadence": subscription.cadence,
-        "snapshot": json.dumps(dict(config_snapshot), default=str),
+        # The request it runs for, from the start: the page shows a run while
+        # it is running, before finish_run links it to the request.
+        "snapshot": json.dumps({**dict(config_snapshot),
+                                "subscription_id": subscription.subscription_id}, default=str),
     }).scalar_one())
 
 
@@ -552,14 +635,21 @@ def start_actor_update_run(
     spent_usd: float,
     pages_fetched: int,
     snapshot: Mapping[str, object],
+    deep: bool = False,
 ) -> tuple[str, str]:
-    """A collection request for the actor and its run; returns both ids."""
+    """A collection request for the actor and its run; returns both ids.
+
+    A Deep Pull is its own request kind, so its audit trail says so. The
+    request's layer follows its kind; the Layer 2 facts themselves are written
+    only by ``deep_pull.append_deep_pull``, behind its gate.
+    """
     request_id = str(session.execute(text(
         "INSERT INTO collection_request (requested_by, request_kind, topic_id, actor_id, "
-        "need_text, layer) VALUES (:by, 'mapping', CAST(:topic AS uuid), CAST(:actor AS uuid), "
-        ":need, 1) RETURNING collection_request_id::text"
-    ), {"by": requested_by, "topic": topic_id, "actor": actor_id,
-        "need": need[:2000]}).scalar_one())
+        "need_text, layer) VALUES (:by, :kind, CAST(:topic AS uuid), CAST(:actor AS uuid), "
+        ":need, CASE WHEN :kind = 'deep_pull' THEN 2 ELSE 1 END) "
+        "RETURNING collection_request_id::text"
+    ), {"by": requested_by, "topic": topic_id, "actor": actor_id, "need": need[:2000],
+        "kind": "deep_pull" if deep else "mapping"}).scalar_one())
     run_id = str(session.execute(text(
         "INSERT INTO collection_run (collection_request_id, job_name, dry_run, status, "
         "fetch_budget, fetch_count, max_usd, spent_usd, trigger_type, cadence, initiated_by, "

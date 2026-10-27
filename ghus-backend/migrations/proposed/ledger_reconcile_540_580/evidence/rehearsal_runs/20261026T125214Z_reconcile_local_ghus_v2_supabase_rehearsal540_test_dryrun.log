@@ -1,0 +1,7 @@
+BEGIN
+SET
+SET
+SET
+SET
+DO
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/reconcile_ledger_540_580.sql:219: ERROR:  cannot execute INSERT in a read-only transaction

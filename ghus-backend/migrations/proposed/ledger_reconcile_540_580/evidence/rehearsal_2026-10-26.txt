@@ -1,0 +1,45 @@
+PASS fresh copy starts at 45 ledger rows  [45]
+PASS preflight GO
+ 1  PASS  primary, not a read replica
+ 2  PASS  ledger table has the expected shape -- migration_id PK, source_path, source_sha256, applied_at default now()
+ 3  PASS  ledger has no user triggers (an insert has no side effects)
+ 4  PASS  this role can insert into and delete from the ledger -- owner or bypassrls, row security not forced; role ghus_test
+ 5  PASS  ledger baseline unchanged since review (45 rows, last 500) -- 45 rows
+ 6  PASS  no 540-580 ledger row yet -- none
+ 7  PASS  dependencies of 540 are recorded (190, 210, 260)
+ 8  PASS  objects 540 references exist -- region_state, region_definition, collection_run, sector (520)
+ 9  PASS  schema equals the 540-580 end state -- 0 objects differ
+10  PASS  no other session holds a lock on the ledger
+PASS verify before reconciliation reports FAIL
+PASS export writes the 45-row ledger backup  [46 lines]
+PASS reconcile dry run: preconditions pass, write refused, nothing changed
+PASS reconcile: 45 -> 50 rows  [rc=0 rows=50]
+PASS five rows share one applied_at (the reconciliation time)  [2026-10-26 12:52:16.335490+00:00]
+PASS idempotent rerun: still 50 rows, rows and applied_at unchanged
+PASS verify PASS
+PASS schema untouched by reconciliation (fingerprint diff)  [[]]
+PASS preflight after reconciliation is NO-GO (rows already present)
+PASS rollback dry run: checks pass, delete refused, nothing changed
+PASS rollback with the wrong reconciliation time is refused
+PASS exact rollback: 50 -> 45, ledger identical to before (incl. applied_at)  [rc=0 rows=45]
+PASS rollback rerun: nothing to roll back
+PASS re-reconcile after rollback: 50 rows
+PASS and its rollback: back to the original 45
+PASS checksum conflict (560 recorded with another checksum) refused  [ERROR:  precondition failed: ledger row(s) 560 exist with another checksum]
+PASS checksum conflict on 540 refused  [ERROR:  precondition failed: ledger row(s) 540 exist with another checksum]
+PASS a correct row recorded at another time is refused (no mixed reconciliation)  [ERROR:  postcondition failed: the five rows do not share one reconciliation time]
+PASS 540 trigger missing refused  [ERROR:  precondition failed: schema differs from the 540-580 end state: trigger actor_update_subscription_run.actor_update_subscription_run_append_only missing]
+PASS 540 index missing refused  [ERROR:  precondition failed: schema differs from the 540-580 end state: index ix_actor_update_subscription_due missing]
+PASS 540 function body changed refused  [ERROR:  precondition failed: schema differs from the 540-580 end state: function ghus_guard_subscription_run_append_only() different]
+PASS 580 column missing refused (580 rolled back)  [ERROR:  precondition failed: schema differs from the 540-580 end state: column actor_update_subscription.discovery_entity missing; column actor_update_subscription.discovery_options missing; comment c]
+PASS 560 constraint at its older definition refused (560 rolled back)  [ERROR:  precondition failed: schema differs from the 540-580 end state: comment constraint actor_verification_event.ck_actor_verification_event_origin missing; constraint actor_verification_event.ck_a]
+PASS unexpected extra constraint refused  [ERROR:  precondition failed: schema differs from the 540-580 end state: constraint actor_update_subscription.ck_extra unexpected]
+PASS comment text changed refused  [ERROR:  precondition failed: schema differs from the 540-580 end state: comment column actor_update_subscription.requested_by different]
+PASS dependency 260 not recorded refused  [ERROR:  precondition failed: 190, 210 or 260 is not recorded in the ledger]
+PASS rollback refuses a 540-580 row it did not write
+PASS last-resort restore from the export CSV: ledger equals the backup again  [rc=0 rows=45]
+PASS restore refuses when a backed-up row has changed
+PASS rehearsal database ends identical to Supabase copy (ledger)
+PASS rehearsal database ends identical to Supabase copy (schema)
+
+33/33 passed

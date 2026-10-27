@@ -4,7 +4,7 @@
 // category types, link types) and Architecture V2 §5.1–§5.4 (the Light Pull
 // fields). Category codes are the stable Phase 5 codes; only labels changed.
 // Every label here must match the backend catalog in
-// GHUS-Platform/config/actor_categories.yaml byte for byte — tests/test_review_taxonomy.py
+// ghus-backend/config/actor_categories.yaml byte for byte — tests/test_review_taxonomy.py
 // compares the two and fails on any drift.
 //
 // Nothing in this file is a free-text string the UI invents. If a value is
@@ -273,7 +273,7 @@ export const NO_PARENT_TOOLTIP =
 // --------------------------------------------------- Light Pull fact rows
 // Architecture V2 §5.1 common rows, then §5.2 per-category rows (Appendix D).
 // The keys are the backend's stable fact-ledger keys
-// (GHUS-Platform/agents/collection/light_pull.py), so a row here resolves
+// (ghus-backend/agents/collection/light_pull.py), so a row here resolves
 // against a real fact or honestly reports which kind of missing it is.
 export const COMMON_LIGHT_ROWS = [
   ["official_identity", "Official Identity"],

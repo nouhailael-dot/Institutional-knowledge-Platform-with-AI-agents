@@ -10,20 +10,25 @@ read-only consumer that owns only three tables: `search_doc`, `query_log`,
 
 ## Architecture V2 repository boundaries
 
-- Backend: `C:\Users\Ismail\Projects\GHUS-Platform`. Architecture V2 phases
-  2-14, agents, migrations, SQL proposals, and scripts live here.
-- Frontend: `C:\Users\Ismail\Projects\Institutional-knowledge-Platform`.
-  Architecture V2 phases 15-16 and all platform UI, review, browsing, Ask,
-  retrieval/RAG, and source-label behavior live there. References to Streamlit
-  in older specifications mean this frontend unless explicitly stated.
+- Backend: this `ghus-backend/` folder of the shared repository
+  `C:\Users\Ismail\Projects\GHUS-Shared`. Architecture V2 phases 2-14,
+  agents, migrations, SQL proposals, and scripts live here.
+- Frontend: the root of the same repository. Architecture V2 phases 15-16 and
+  all platform UI, review, browsing, Ask, retrieval/RAG, Data Feed and
+  source-label behavior live there. References to Streamlit in older
+  specifications mean this frontend unless explicitly stated.
+- The repository root `AGENTS.md` governs both; read it first. The former
+  separate checkouts (`C:\Users\Ismail\Projects\GHUS-Platform`,
+  `C:\Users\Ismail\Projects\Institutional-knowledge-Platform` and the others it
+  lists) are read-only archives: never edit, run, or commit there.
 - Old draft: `C:\Users\Ismail\Documents\GHUS\GHUS-Platform-v2`. It is
   read-only reference material. Never edit, commit, or run migrations there.
 - Isolated test database: local PostgreSQL `ghus_v2_test` at
   `127.0.0.1:55432`. Its data directory must remain outside every repository.
 - Shared Supabase database: read-only. Never execute DDL or any write there.
 
-At the start of every session, print and verify the backend and frontend
-working directories before touching files. Stop if either path differs.
+At the start of every session, print the working directory and branch, and
+stop if the directory is not `GHUS-Shared` (or a worktree of it).
 
 Current state: ~872 canonical actors (reduced from 952 via ER merges), 220
 events, 10 seeded sectors. A frozen ER combiner model with HIGH/LOW thresholds

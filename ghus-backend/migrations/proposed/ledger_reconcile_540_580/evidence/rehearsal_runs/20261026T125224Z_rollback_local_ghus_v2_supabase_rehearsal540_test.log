@@ -1,0 +1,18 @@
+BEGIN
+SET
+SET
+SET
+SET
+            set_config            
+----------------------------------
+ 2026-10-26 12:52:24.444829+00:00
+(1 row)
+
+DO
+ ledger_rows | rows_540_580 
+-------------+--------------
+          45 |            0
+(1 row)
+
+COMMIT
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/rollback_reconcile_ledger_540_580.sql:71: NOTICE:  rolled back: 5 ledger rows of the 2026-10-26 12:52:24.444829+00 reconciliation removed

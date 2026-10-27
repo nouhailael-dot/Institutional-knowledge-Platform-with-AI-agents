@@ -6,9 +6,12 @@ import argparse
 import inspect
 import logging
 import re
+import time
 from dataclasses import replace
 from datetime import date
+from functools import partial
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import text
@@ -21,6 +24,7 @@ from agents.common.run_log import InMemoryRunLog, SQLRunLog, write_audit_csv
 from agents.discovery.search.actor_scoring import actor_rubric_weights, actor_score_thresholds
 from agents.discovery.search.event_scoring import event_rubric_weights, event_score_thresholds
 from agents.discovery.search.models import CandidateRecord, SearchResult, TriageDecision
+from agents.discovery.search.people_targets import profile_page_kind, search_linkedin
 from agents.discovery.search.person_scoring import (
     person_rubric_weights,
     person_score_thresholds,
@@ -59,6 +63,7 @@ from agents.discovery.search.triage import (
     person_scope_rejection,
     registrable_domain,
 )
+from agents.discovery.search.us_scope import result_outside_us
 
 logger = logging.getLogger(__name__)
 
@@ -131,8 +136,10 @@ def run_search_triage(
     if entity_type not in {"event", "actor", "person"}:
         raise ValueError("--entity must be one of event, actor, person")
     discovery_request = getattr(args, "discovery_request", None)
-    if discovery_request is not None and entity_type != "actor":
-        raise ValueError("a discovery request scopes actor discovery only")
+    if discovery_request is not None and getattr(discovery_request, "entity", "actor") != entity_type:
+        raise ValueError(
+            f"this discovery request finds {getattr(discovery_request, 'entity', 'actor')}s, "
+            f"not {entity_type}s")
     live = bool(getattr(args, "live", False))
     offline = bool(getattr(args, "offline", False))
     person_create_preview = bool(getattr(args, "preview_person_create", False))
@@ -154,12 +161,17 @@ def run_search_triage(
         session = SessionLocal()
         owned_session = True
 
-    # A requested run has its own, stricter ceiling (request_max_usd_per_run).
-    run_ceiling = float(
-        config.get("request_max_usd_per_run", config.get("max_usd_per_run", 5.0))
-        if getattr(args, "discovery_request", None) is not None
-        else config.get("max_usd_per_run", 5.0)
-    )
+    # A requested run has its own, stricter ceiling (request_max_usd_per_run);
+    # so does the automatic event run (event_max_usd_per_run, 2026-10-23: every
+    # recorded live event run cost under $2.40). Actors and people keep theirs.
+    if getattr(args, "discovery_request", None) is not None:
+        run_ceiling = float(config.get("request_max_usd_per_run",
+                                       config.get("max_usd_per_run", 5.0)))
+    elif entity_type == "event":
+        run_ceiling = float(config.get("event_max_usd_per_run",
+                                       config.get("max_usd_per_run", 5.0)))
+    else:
+        run_ceiling = float(config.get("max_usd_per_run", 5.0))
     cost_meter = cost_meter or CostMeter(max_usd=run_ceiling)
     llm_client = llm_client or _build_llm_client(config, cost_meter)
     run_log = run_log or (InMemoryRunLog() if offline else SQLRunLog(session))
@@ -168,6 +180,7 @@ def run_search_triage(
     )
     if offline and search_provider is None:
         raise RuntimeError("--offline open-web search requires an injected search_provider")
+    built_provider = search_provider is None
     search_provider = search_provider or build_search_provider(
         config, cost_meter=cost_meter, client=search_client
     )
@@ -192,12 +205,41 @@ def run_search_triage(
         live=live,
         config=config,
     )
+    _report_progress(cost_meter, run_log, run_id)
     stats = _empty_stats()
+    # Real searches only: a test's stub client must never fill the shared cache.
+    if (built_provider and search_client is None and not offline
+            and entity_type in {"event", "person"}):
+        # Repeated searches within a few days are answered from disk, not paid
+        # for again (agents/discovery/search/search_cache.py). Actors unchanged.
+        from agents.common.raw_storage import RawContentStore
+        from agents.discovery.search.search_cache import CachedSearchProvider
+
+        search_provider = CachedSearchProvider(
+            search_provider,
+            RawContentStore.from_config(root, config).base_dir / "search_cache",
+            ttl_hours=float(config.get("search_cache_ttl_hours", 72)),
+            stats=stats,
+        )
+    # Automatic (the weekly job, a command line) or on request (a Discovery-page
+    # request): two run types, recorded on every run so Review can tell them apart.
+    stats["run_trigger"] = "on_request" if discovery_request is not None else "automatic"
     candidate_rows: list[CandidateRecord] = []
     audit_rows: list[dict[str, object]] = []
     generated_queries: dict[str, list[str]] = {entity_type: []}
+    run_lock = None
 
     try:
+        if live and session is not None and entity_type in _LIVE_RUN_LOCKS:
+            # Two live event (or people) runs at once - the weekly job and a
+            # request, say - would each stage the same find. One at a time.
+            run_lock = _LIVE_RUN_LOCKS[entity_type]
+            if not session.execute(text("SELECT pg_try_advisory_lock(:k)"),
+                                   {"k": run_lock}).scalar():
+                run_lock = None
+                raise RuntimeError(
+                    f"another live {entity_type} discovery run is in progress; "
+                    "this one was not started so the two cannot stage the same records")
         raw_lookup = InMemorySearchCandidateStore(
             seen_raw_urls=store.load_seen_raw_urls()
         )
@@ -208,6 +250,8 @@ def run_search_triage(
             generate_kwargs["request"] = discovery_request
             stats["discovery_request_id"] = discovery_request.subscription_id
             stats["discovery_request_title"] = discovery_request.title
+            if entity_type != "actor":
+                stats["discovery_request_scope"] = discovery_request.describe()
         bundle: QueryBundle = query_generator.generate(entity_type, **generate_kwargs)
         cost_meter.enforce()
         generated_queries[entity_type] = bundle.queries
@@ -267,9 +311,16 @@ def run_search_triage(
 
         search_results: list[SearchResult] = []
         stage_start = cost_meter.spent_usd
+        # People requests search only their target institutions' own sites
+        # (agents/discovery/search/people_targets.py).
+        query_domains = dict((bundle.metadata or {}).get("query_domains") or {})
         for query in queries:
             stats["searches_executed"] += 1
-            results = search_provider.search(query, count=int(config.get("results_per_query", 10)))
+            count = int(config.get("results_per_query", 10))
+            results = (search_provider.search(query, count=count,
+                                              allowed_domains=query_domains[query])
+                       if query_domains.get(query)
+                       else search_provider.search(query, count=count))
             cost_meter.enforce()
             search_results.extend(results)
         stats["search_results"] = len(search_results)
@@ -278,6 +329,7 @@ def run_search_triage(
         stats["search_results_unique"] = len(deduplicated_results)
         stats["search_results_deduplicated"] = len(search_results) - len(deduplicated_results)
 
+        directories: list[SearchResult] = []
         pending_results = _deterministic_triage(
             run_id=run_id,
             entity_type=entity_type,
@@ -288,7 +340,12 @@ def run_search_triage(
             session=session,
             candidate_rows=candidate_rows,
             stats=stats,
+            directories=directories,
         )
+        if entity_type == "person" and directories:
+            pending_results.extend(_people_from_directories(
+                directories, pending_results, config=config, root=root,
+                request=discovery_request, fetch_source=fetch_source, stats=stats))
 
         triaged_results, capped_count = _cap_triage_candidates(
             run_id=run_id,
@@ -442,6 +499,7 @@ def run_search_triage(
                 event_candidates=event_candidates,
                 actor_resolver=actor_resolver,
                 run_date=run_date,
+                request=discovery_request,
             )
             candidate_rows = event_outcome.candidates
             attention_reasons.extend(event_outcome.attention_reasons)
@@ -470,6 +528,11 @@ def run_search_triage(
                 domain_store=domain_store,
                 person_candidates=person_candidates,
                 actor_resolver=actor_resolver,
+                request=discovery_request,
+                # A real search only: the bio-or-LinkedIn rule's last resort.
+                linkedin_search=(partial(search_linkedin, search_provider.search)
+                                 if built_provider and not offline else None),
+                own_sites=stats.pop("_person_own_sites", None),
             )
             candidate_rows = person_outcome.candidates
             attention_reasons.extend(person_outcome.attention_reasons)
@@ -637,8 +700,38 @@ def run_search_triage(
             logger.error("fail_run could not be recorded: %s", log_exc)
         raise
     finally:
+        if run_lock is not None:
+            try:
+                session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": run_lock})
+            except Exception:  # noqa: BLE001 - an aborted transaction; clear it, then unlock
+                _rollback_session(session)
+                session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": run_lock})
         if owned_session and session is not None:
             session.close()
+
+
+# One live run per entity at a time (agents/collection/subscription_runner.py
+# holds 550_001 for the request runner itself).
+_LIVE_RUN_LOCKS = {"event": 580_001, "person": 580_002}
+
+
+PROGRESS_EVERY_SECONDS = 10.0
+
+
+def _report_progress(cost_meter: CostMeter, run_log, run_id: str) -> None:
+    """Let the Discovery page show what a running run has spent, every few seconds."""
+    record = getattr(run_log, "record_progress", None)
+    if record is None or cost_meter.on_change is not None:
+        return
+    last = [0.0]
+
+    def note(spent: float) -> None:
+        now = time.monotonic()
+        if now - last[0] >= PROGRESS_EVERY_SECONDS:
+            last[0] = now
+            record(run_id, spent_usd=spent)
+
+    cost_meter.on_change = note
 
 
 def _build_llm_client(config: dict[str, object], cost_meter: CostMeter) -> ClaudeToolClient:
@@ -677,6 +770,44 @@ def _rollback_session(session) -> None:
         logger.exception("Could not roll back the session before recording run failure")
 
 
+def _people_from_directories(directories, pending, *, config, root, request, fetch_source,
+                             stats) -> list[SearchResult]:
+    """Profile pages of the people a directory lists on the topic - no model call.
+
+    At most ``person_directory_pages`` directories (default 3) are opened, and
+    at most ``person_leads_per_directory`` people (default 6) taken from each.
+    """
+    from agents.discovery.search.people_targets import directory_leads
+    from agents.discovery.search.phase2 import OpenWebEventSource
+
+    source = fetch_source or OpenWebEventSource(config)
+    themes: list[str] = []
+    if request is not None:
+        themes = list(request.themes(load_seeded_sectors(root)))
+    known = {r.url for r in pending}
+    leads: list[SearchResult] = []
+    own_sites = stats.setdefault("_person_own_sites", {})
+    for directory in directories[: int(config.get("person_directory_pages", 3))]:
+        try:
+            doc = source.fetch(directory.url)
+        except Exception as exc:  # noqa: BLE001 - one directory never stops the run
+            logger.info("people directory %s not read: %s", directory.url, exc)
+            continue
+        stats["person_directories_read"] = int(stats.get("person_directories_read", 0) or 0) + 1
+        for lead in directory_leads(doc.content, doc.url, themes,
+                                    limit=int(config.get("person_leads_per_directory", 6))):
+            if lead["url"] in known:
+                continue
+            known.add(lead["url"])
+            leads.append(SearchResult(url=lead["url"], title=lead["name"],
+                                      snippet=lead["context"], provider="directory",
+                                      query=f"listed on {directory.url}"))
+            if lead.get("own_site"):
+                own_sites[lead["url"]] = lead["own_site"]
+    stats["person_directory_leads"] = len(leads)
+    return leads
+
+
 def _deterministic_triage(
     *,
     run_id: str,
@@ -688,6 +819,7 @@ def _deterministic_triage(
     session,
     candidate_rows: list[CandidateRecord],
     stats: dict[str, object],
+    directories: list[SearchResult] | None = None,
 ) -> list[SearchResult]:
     pending: list[SearchResult] = []
     configured_domains = known_source_domains(full_config)
@@ -722,6 +854,28 @@ def _deterministic_triage(
                 held_actor_domains=existing_actor_domains,
                 config=config,
             )
+        if rejected is None and entity_type == "person" \
+                and bool(config.get("person_profile_pages_only", True)):
+            # A complete profile is on the person's own profile page; a people
+            # directory is a list of leads to follow (people_targets.py).
+            kind = profile_page_kind(result.url)
+            if kind == "directory":
+                if directories is not None:
+                    directories.append(result)
+                rejected = SimpleNamespace(domain=domain, reason=(
+                    "A people directory, not one person's profile: the profiles of the "
+                    "people it lists on this topic are read instead."))
+            elif kind == "other":
+                rejected = SimpleNamespace(domain=domain, reason=(
+                    "Not a person's profile page: news, events, documents and other pages "
+                    "never hold a complete profile."))
+        if rejected is None and entity_type in {"event", "person"}:
+            # United States only, decided before any paid triage or read
+            # (agents/discovery/search/us_scope.py). Actors are unchanged.
+            abroad = result_outside_us(result.url, result.title, result.snippet)
+            if abroad is not None:
+                stats["outside_us_rejected"] = int(stats.get("outside_us_rejected", 0) or 0) + 1
+                rejected = SimpleNamespace(domain=domain, reason=abroad)
         if rejected is not None:
             stats["deterministic_rejected"] += 1
             candidate_rows.append(

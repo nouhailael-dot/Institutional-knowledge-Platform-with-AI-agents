@@ -1,0 +1,9 @@
+BEGIN
+ ledger_rows |            latest             
+-------------+-------------------------------
+          45 | 2026-10-06 23:46:41.764001+00
+(1 row)
+
+COPY 45
+ROLLBACK
+ledger exported to runs/ ledger_backup_20261026T125322Z.csv

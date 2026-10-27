@@ -1,0 +1,17 @@
+BEGIN
+SET
+SET
+ ledger_rows 
+-------------
+          45
+(1 row)
+
+ migration_id | source_path | source_sha256 | applied_at 
+--------------+-------------+---------------+------------
+(0 rows)
+
+ledger rows: 45  exact 540-580 rows: 0  reconciliation times: 0  schema objects differing: 0
+ROLLBACK
+VERIFY RESULT: FAIL 
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/verify_540_580.sql:186: ERROR:  verification failed
+CONTEXT:  PL/pgSQL function inline_code_block line 1 at RAISE

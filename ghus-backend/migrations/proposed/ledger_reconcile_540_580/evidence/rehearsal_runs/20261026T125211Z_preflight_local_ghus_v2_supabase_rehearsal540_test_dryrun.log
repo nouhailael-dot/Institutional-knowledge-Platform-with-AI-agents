@@ -1,0 +1,27 @@
+BEGIN
+SET
+SET
+ current_user | session_user |          current_database          |                                 version                                 |          checked_at           | read_only 
+--------------+--------------+------------------------------------+-------------------------------------------------------------------------+-------------------------------+-----------
+ ghus_test    | ghus_test    | ghus_v2_supabase_rehearsal540_test | PostgreSQL 17.5 on x86_64-windows, compiled by msvc-19.44.35209, 64-bit | 2026-10-26 12:52:12.170439+00 | on
+(1 row)
+
+ migration_id |                                 source_path                                 |                          source_sha256                           |          applied_at           
+--------------+-----------------------------------------------------------------------------+------------------------------------------------------------------+-------------------------------
+ 190          | migrations/proposed/additive_apply_2026-09-28/sql/190_v2_reference_data.sql | 3ebd6b758e328144bb2e05a096d82c93d70d2fb30d400487efd2cb34cffa8d1c | 2026-10-06 23:18:55.988155+00
+ 210          | migrations/proposed/additive_apply_2026-09-28/sql/210_v2_topics.sql         | cc1d2d9a57e304a6d7896b06da99b6fb8b9383a9331c85848727dd1b60b89868 | 2026-10-06 23:19:03.753959+00
+ 260          | agents/sql/260_v2_collection_runs.sql                                       | ac93c7393bd4bce1c71480a4e2e7caeabee20b3c558a3eca4cd6ff4e43b4ddd0 | 2026-10-06 23:19:28.658717+00
+(3 rows)
+
+ 1  PASS  primary, not a read replica
+ 2  PASS  ledger table has the expected shape -- migration_id PK, source_path, source_sha256, applied_at default now()
+ 3  PASS  ledger has no user triggers (an insert has no side effects)
+ 4  PASS  this role can insert into and delete from the ledger -- owner or bypassrls, row security not forced; role ghus_test
+ 5  PASS  ledger baseline unchanged since review (45 rows, last 500) -- 45 rows
+ 6  PASS  no 540-580 ledger row yet -- none
+ 7  PASS  dependencies of 540 are recorded (190, 210, 260)
+ 8  PASS  objects 540 references exist -- region_state, region_definition, collection_run, sector (520)
+ 9  PASS  schema equals the 540-580 end state -- 0 objects differ
+10  PASS  no other session holds a lock on the ledger
+ROLLBACK
+PREFLIGHT RESULT: GO

@@ -57,6 +57,9 @@ class RequestOutcome:
     collection_run_id: str | None = None
     next_status: str | None = None
     kind: str = "discovery"
+    entity: str = "actor"
+    # The request's own Light Pull choice; None for requests saved before it.
+    pull_depth: str | None = None
 
 
 @dataclass
@@ -93,7 +96,9 @@ def _default_discover(session, root: Path, runs_dir: Path) -> Callable:
     def discover(request: DiscoveryRequest) -> dict[str, object]:
         stem = f"discovery-request-{request.subscription_id[:8]}"
         args = SimpleNamespace(
-            entity="actor",
+            # What the request finds: organizations, events or people. Each
+            # runs the same open-web pipeline as its automatic counterpart.
+            entity=request.entity,
             live=True,
             offline=False,
             discovery_request=request,
@@ -192,7 +197,8 @@ def run_due_requests(
             continue
         try:
             request = DiscoveryRequest.from_subscription(subscription, topic_codes=codes)
-            bundle = generator.generate("actor", project_root=root, request=request)
+            bundle = generator.generate(request.entity, session=session, project_root=root,
+                                        request=request)
         except (DiscoveryRequestError, RuntimeError, ValueError) as exc:
             report.invalid[subscription.subscription_id] = str(exc)
             continue
@@ -201,6 +207,8 @@ def run_due_requests(
             subscription_id=subscription.subscription_id,
             title=request.title,
             queries=list(bundle.queries),
+            entity=request.entity,
+            pull_depth=(subscription.discovery_options or {}).get("pull_depth"),
         ))
 
     if not live:
@@ -256,7 +264,7 @@ def _run_one(session, subscription, request, outcome, *, discover, config, topic
         session.rollback()
         outcome.status, outcome.status_reason = "failed", str(exc)[:500]
         # A failed run still spent money; record what its search run logged.
-        search_run_id, spent = store.search_run_since(session, started)
+        search_run_id, spent = store.search_run_since(session, started, request.entity)
         store.finish_run(session, collection_run_id=run_id, subscription=subscription,
                          status="failed", status_reason=outcome.status_reason, counts={},
                          fetch_count=0, spent_usd=spent, search_run_id=search_run_id)
@@ -380,7 +388,7 @@ def render_report(report: RunnerReport) -> str:
     return "\n".join(lines)
 
 
-def _light_pull_after(report: RunnerReport) -> None:
+def _light_pull_after(report: RunnerReport, *, everything: bool = False) -> None:
     """Read the kept candidates of each discovery request that just ran.
 
     A discovery run scores pages; the Light Pull read - the organisation's own
@@ -393,6 +401,15 @@ def _light_pull_after(report: RunnerReport) -> None:
 
     for outcome in report.outcomes:
         if outcome.kind != "discovery" or outcome.status not in ("succeeded", "attention"):
+            continue
+        if outcome.entity != "actor":
+            # Events and people are read in full by their own run (with a
+            # bounded official-page follow-up); the Light Pull here reads
+            # organizations' own sites.
+            continue
+        # The request's own choice decides; requests saved before it had one
+        # are read only when the operator asks (--light-pull), as before.
+        if outcome.pull_depth == "none" or (outcome.pull_depth is None and not everything):
             continue
         try:
             # A second pass reads only the candidates the first could not (a
@@ -436,8 +453,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"database: {target}", file=sys.stderr)
         report = run_due_requests(session, live=args.live, today=args.today,
                                   request_id=args.request_id)
-    if args.live and args.light_pull:
-        _light_pull_after(report)
+    if args.live:
+        _light_pull_after(report, everything=args.light_pull)
     text_report = render_report(report)
     out = Path(args.report_out)
     out.parent.mkdir(parents=True, exist_ok=True)

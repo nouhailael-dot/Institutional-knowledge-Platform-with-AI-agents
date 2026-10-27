@@ -21,6 +21,12 @@ way to show what would be written), nothing is saved. ``--live`` saves. The
 spend is capped by ``--max-usd`` (default ``light_pull_max_usd_per_run``) and
 reported per organisation. Refuses any database but a local ``*_test`` one
 unless ``--allow-shared-database`` is given by the operator.
+
+``--missing-only`` (the Data Feed's "Complete missing information"): only the
+boxes a candidate's record has no value for are read, and a value a GHUS person
+supplied is never replaced - the new readings fill the empty boxes beside it.
+``--estimate`` reads nothing and calls no model: it lists the candidates, the
+boxes each would read, and the expected cost from what past reads cost.
 """
 
 from __future__ import annotations
@@ -88,6 +94,75 @@ def candidate_targets(session, run_ids: list[str], *, force: bool, limit: int) -
     return [dict(r) for r in rows]
 
 
+# When no Light Pull has been paid for yet: one Sonnet call over three pages.
+DEFAULT_COST_PER_ORGANISATION = 0.05
+# Boxes that describe the record itself, not something its pages state.
+_RECORD_BOX_KEYS = {"location": ("city", "location_city", "state", "state_code")}
+
+
+def missing_boxes(record: dict) -> list[str]:
+    """The Light Pull boxes this candidate has no value for, in reading order.
+
+    A box already ``found`` - read earlier, or supplied by a GHUS person - is
+    never asked again. Location is the record's own when it has a city or a
+    state. "Why it matched" is about the topic a search was run for, which a
+    record GHUS supplied through the Data Feed did not have. A Data Feed record
+    that matches an actor already on the map is completed by updating that
+    actor (Actor updates), not by reading it again here.
+    """
+    if ((record.get("data_feed") or {}).get("match") or {}).get("kind") == "existing":
+        return []
+    from agents.collection.light_pull import CATEGORY_LIGHT_FIELDS
+    from agents.collection.light_pull_reader import COMMON_READ_FIELDS
+
+    evidence = record.get("light_pull_evidence") or {}
+    wanted = []
+    for key in (*COMMON_READ_FIELDS,
+                *CATEGORY_LIGHT_FIELDS.get(str(record.get("actor_category") or ""), ())):
+        if (evidence.get(key) or {}).get("collection_state") == "found":
+            continue
+        if any(record.get(field) for field in _RECORD_BOX_KEYS.get(key, ())):
+            continue
+        if key == "why_matched" and "data_feed" in record:
+            continue
+        if key not in wanted:
+            wanted.append(key)
+    return wanted
+
+
+def keep_supplied(existing: dict, read: dict) -> dict:
+    """New readings for the empty boxes; every box already found stays as it was."""
+    kept = {k: v for k, v in (existing or {}).items() if (v or {}).get("collection_state") == "found"}
+    return {**read, **kept}
+
+
+def cost_per_organisation(session) -> tuple[float, str]:
+    """What one organisation's Light Pull has cost here, on average, and why that figure."""
+    row = session.execute(text(
+        "SELECT count(*), avg((record_preview->'light_pull_read'->>'cost_usd')::numeric) "
+        "FROM search_candidate WHERE (record_preview->'light_pull_read'->>'cost_usd')::numeric > 0"
+    )).one()
+    if row[0]:
+        return float(row[1]), f"average of {row[0]} earlier reads"
+    return DEFAULT_COST_PER_ORGANISATION, "no earlier read; typical cost of one read"
+
+
+def estimate(session, targets: list[dict], *, missing_only: bool) -> dict:
+    per_org, basis = cost_per_organisation(session)
+    organisations = []
+    for row in targets:
+        record = row.get("record_preview") or {}
+        boxes = missing_boxes(record) if missing_only else None
+        if boxes == []:
+            continue
+        organisations.append({"candidate_id": row.get("candidate_id"),
+                              "name": record.get("name"), "website": record.get("website"),
+                              "boxes": boxes})
+    return {"mode": "estimate", "organisations": organisations,
+            "per_organisation_usd": round(per_org, 4), "basis": basis,
+            "estimated_usd": round(per_org * len(organisations), 2)}
+
+
 def actor_targets(session, *, origin: str, force: bool, limit: int) -> list[dict]:
     """Existing actors with a Light Pull box that no page was read for."""
     rows = session.execute(text(
@@ -103,7 +178,9 @@ def actor_targets(session, *, origin: str, force: bool, limit: int) -> list[dict
     return [dict(r) for r in rows]
 
 
-def _reader(config: dict, max_usd: float):
+def _reader(config: dict, max_usd: float, *, reader_class=None):
+    """The page reader with its client and cost meter; Light Pull unless a reader
+    class of another layer is given (``deep_pull_reader.DeepPullReader``)."""
     from agents.collection.light_pull_reader import LightPullReader
     from agents.common.cost import CostMeter
     from agents.common.llm import ClaudeToolClient
@@ -126,7 +203,25 @@ def _reader(config: dict, max_usd: float):
         # is then recorded against that organisation only.
         client._client = Anthropic(timeout=180.0, max_retries=1)
     source = OpenWebEventSource(config)
-    return LightPullReader(client, source.fetch), meter, model
+    reader_class = reader_class or LightPullReader
+    return reader_class(client, source.fetch, fallback=_fallback(config, meter)), meter, model
+
+
+def _fallback(config: dict, meter):
+    """Other sources when an organisation's own site refuses: its parent's official
+    site (free), then at most ``fallback_web_searches`` paid searches (default 1),
+    inside the same per-organisation cost cap."""
+    from agents.collection.site_access import BLOCKED_SITES, BlockedSites, Fallback
+
+    section = dict(config.get("actor_updates") or {})
+    searches = int(section.get("fallback_web_searches", 1))
+    search = None
+    if searches > 0 and os.environ.get("ANTHROPIC_API_KEY"):
+        from agents.discovery.search.providers import build_search_provider
+
+        provider = build_search_provider(config, cost_meter=meter)
+        search = lambda query: provider.search(query, count=5)
+    return Fallback(blocked=BlockedSites(BLOCKED_SITES), search=search, max_searches=searches)
 
 
 def _summary(name: str, read, cost: float) -> dict:
@@ -148,7 +243,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-usd", type=float, default=None)
     parser.add_argument("--limit", type=int, default=25)
     parser.add_argument("--allow-shared-database", action="store_true")
+    parser.add_argument("--missing-only", action="store_true",
+                        help="candidates: read only empty boxes; never replace a value")
+    parser.add_argument("--estimate", action="store_true",
+                        help="list what would be read and its expected cost; no model call")
     args = parser.parse_args(argv)
+    if args.actors and (args.missing_only or args.estimate):
+        parser.error("--missing-only and --estimate apply to candidates")
 
     sys.path.insert(0, str(ROOT))
     _guard(args.allow_shared_database)
@@ -163,6 +264,15 @@ def main(argv: list[str] | None = None) -> int:
     config = load_open_web_config(ROOT)
     max_usd = float(args.max_usd if args.max_usd is not None
                     else config.get("light_pull_max_usd_per_run", 0.50))
+    if args.estimate:
+        with open_session() as session:
+            run_ids = (_runs_for_request(session, args.request_id) if args.request_id
+                       else list(args.search_run))
+            targets = candidate_targets(session, run_ids, force=args.force, limit=args.limit)
+            report = estimate(session, targets, missing_only=args.missing_only)
+        report["max_usd"] = max_usd
+        print(json.dumps(report, indent=2, default=str))
+        return 0
     reader, meter, model = _reader(config, max_usd)
     report: dict = {"mode": "live" if args.live else "dry-run", "model": model,
                     "max_usd": max_usd, "organisations": [], "stopped": None}
@@ -192,12 +302,15 @@ def main(argv: list[str] | None = None) -> int:
                                        read_at=read_at)
                 else:
                     record = row["record_preview"] or {}
+                    wanted = missing_boxes(record) if args.missing_only else None
+                    if wanted == []:
+                        continue
                     read = reader.read(name=str(record.get("name") or ""),
                                        website=str(record["website"]),
                                        actor_category=record.get("actor_category"),
                                        category_type=str(record.get("category_type") or ""),
                                        topic_terms=topics.get(row["run_id"], []),
-                                       read_at=read_at)
+                                       read_at=read_at, fields=wanted)
             except CostLimitExceeded as exc:
                 report["stopped"] = f"budget of ${max_usd:.2f} reached: {exc}"
                 break
@@ -229,7 +342,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 from agents.discovery.search.store import attach_light_pull
 
-                attach_light_pull(session, row["candidate_id"], evidence=read.evidence,
+                evidence = read.evidence
+                if args.missing_only:
+                    evidence = keep_supplied(
+                        (row["record_preview"] or {}).get("light_pull_evidence") or {}, evidence)
+                attach_light_pull(session, row["candidate_id"], evidence=evidence,
                                   read=read.as_record(model=model, read_at=read_at))
             session.commit()
     finally:

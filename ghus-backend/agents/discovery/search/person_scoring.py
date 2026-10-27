@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,9 +23,22 @@ from agents.discovery.search.rubric_scoring import (
     weighted_score,
     write_cached_analysis,
 )
+from agents.discovery.page_facts import (
+    PERSON_FACT_FIELDS,
+    PERSON_FACT_SCHEMA,
+    reading_text,
+    verify_facts,
+)
+from agents.discovery.quality_gates import linkedin_profile
 from agents.discovery.sources.base import FetchedDoc
 
-PROMPT_VERSION = "person_rubric_record_v1"
+# v2 (2026-10-22): professional facts - department, expertise, named work, any
+# UM6P/OCP link - beside the five-field record, each with a quote checked on the page.
+# v3 (2026-10-22): the model reads the page's text (page_facts.page_text), not
+# the first 16,000 characters of raw HTML, which were mostly scripts and styles.
+# v4 (2026-10-23): where the person works and their other stated affiliations.
+# v5 (2026-10-25): the person's professional bio, copied from the page.
+PROMPT_VERSION = "person_rubric_record_v5"
 RUBRIC_ITEM_NAMES = (
     "institution_or_self_published",
     "research_area_stated",
@@ -129,6 +142,10 @@ PERSON_RUBRIC_ANCHORS: tuple[dict[str, object], ...] = (
 class PersonPageAnalysis:
     rubric: dict[str, object]
     record: dict[str, object]
+    # Professional facts beyond the five-field record, each kept only with
+    # evidence on the page (agents.discovery.page_facts), and a public LinkedIn
+    # profile only when this official page links to it.
+    facts: dict[str, object] = field(default_factory=dict)
 
 
 PersonScore = WeightedScore
@@ -158,7 +175,15 @@ class PersonRubricExtractor:
                 "forced tool payload. The record is limited to the five permitted public "
                 "professional fields and must contain only facts explicitly present on the "
                 "page; missing facts are null and never inferred. The rubric may make "
-                "evidence-grounded relevance judgments but never identity decisions."
+                "evidence-grounded relevance judgments but never identity decisions. Fill "
+                "every permitted record field the page states; facts are additional. In facts, "
+                "give the professional facts the page states about this person - department "
+                "or unit, expertise, up to three named projects or publications, any UM6P/OCP "
+                "link, where they work (city, state) and other stated affiliations - each "
+                "with a quote of up to 30 words copied exactly from the page. "
+                "Copy the person's professional bio from the page into facts.bio (up to "
+                "three sentences, as written). Never contact details or private "
+                "information."
             ),
             cached_user=json.dumps(
                 {
@@ -169,7 +194,7 @@ class PersonRubricExtractor:
                         "Every checklist item is present=true only with specific page evidence. "
                         "The institution criterion is false for news, feature coverage, "
                         "directories, aggregators, and social media. The record must never "
-                        "contain contact details, biography, or a sixth field."
+                        "contain contact details or a sixth field; a bio goes in facts.bio."
                     ),
                 },
                 ensure_ascii=False,
@@ -178,7 +203,7 @@ class PersonRubricExtractor:
             user=(
                 f"Source URL: {doc.url}\nContent type: {doc.content_type}\n"
                 "<untrusted_source_content>\n"
-                f"{doc.content[:16000]}\n"
+                f"{reading_text(doc.content, doc.content_type)}\n"
                 "</untrusted_source_content>"
             ),
             tool_name="record_person_rubric_and_record",
@@ -188,10 +213,17 @@ class PersonRubricExtractor:
             input_schema=person_rubric_record_schema(),
             max_tokens=self.max_tokens,
         )
-        return validate_person_analysis(
+        analysis = validate_person_analysis(
             payload,
             held_actor_names=held_actor_names,
         )
+        facts = verify_facts(payload.get("facts") if isinstance(payload, dict) else None,
+                             html=doc.content, source_url=doc.url,
+                             read_at=datetime.now(UTC), fields=PERSON_FACT_FIELDS)
+        linkedin = linkedin_profile(doc.content, str(analysis.record.get("name") or ""))
+        if linkedin:
+            facts["linkedin_url"] = linkedin
+        return PersonPageAnalysis(rubric=analysis.rubric, record=analysis.record, facts=facts)
 
 
 class PersonListwiseReranker(ListwiseReranker):
@@ -211,6 +243,10 @@ class PreExtractedPersonExtractor:
 
     def __init__(self, record: dict[str, object]):
         self.record = {field: record.get(field) for field in PERSON_FIELDS}
+        # The page's professional facts and the quality gate's checks travel
+        # with the staged record into Review; the canonical write reads only
+        # the five fields.
+        self.extra = {key: record[key] for key in ("facts", "quality") if record.get(key)}
 
     def extract(self, doc: FetchedDoc) -> list[dict[str, object]]:
         if not self.record.get("name"):
@@ -218,6 +254,7 @@ class PreExtractedPersonExtractor:
         return [
             {
                 **self.record,
+                **self.extra,
                 "source_url": doc.url,
                 "extracted_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
                 "prompt_version": self.prompt_version,
@@ -238,6 +275,7 @@ def person_rubric_record_schema() -> dict[str, object]:
                 "required": list(RUBRIC_ITEM_NAMES),
             },
             "record": person_record_schema(),
+            "facts": PERSON_FACT_SCHEMA,
         },
         "required": ["rubric", "record"],
     }
@@ -250,8 +288,8 @@ def validate_person_analysis(
 ) -> PersonPageAnalysis:
     if not isinstance(payload, dict):
         raise TypeError("person rubric extraction returned a non-object payload")
-    rubric = payload.get("rubric")
-    record = payload.get("record")
+    rubric = _decoded(payload.get("rubric"))
+    record = _decoded(payload.get("record"))
     if not isinstance(rubric, dict) or not isinstance(record, dict):
         raise TypeError("person rubric extraction must return separate rubric and record objects")
     if set(rubric) != set(RUBRIC_ITEM_NAMES):
@@ -284,7 +322,18 @@ def validate_person_analysis(
             True,
             f"Affiliation exactly matches held actor {held_by_key[affiliation]}.",
         )
-    return PersonPageAnalysis(rubric=normalized_rubric, record=normalized_record)
+    facts = payload.get("facts") if isinstance(payload.get("facts"), dict) else {}
+    return PersonPageAnalysis(rubric=normalized_rubric, record=normalized_record, facts=facts)
+
+
+def _decoded(value):
+    """A rubric or record sent as a JSON string is read, not discarded."""
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return value
+    return value
 
 
 def score_person_rubric(
@@ -345,6 +394,7 @@ def write_analysis_cache(path: Path, analysis: PersonPageAnalysis) -> None:
         prompt_version=PROMPT_VERSION,
         rubric=analysis.rubric,
         record=analysis.record,
+        facts=analysis.facts,
     )
 
 

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from sqlalchemy import select, text
 
-PROJECT_ROOT = Path(r"C:\Users\Ismail\Projects\GHUS-Platform")
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  # ghus-backend/
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.db.models import Actor  # noqa: E402

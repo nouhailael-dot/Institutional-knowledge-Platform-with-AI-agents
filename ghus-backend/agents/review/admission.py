@@ -33,7 +33,12 @@ from agents.common.resolve_route import (
     route_person,
 )
 from agents.discovery.normalize import is_institution_affiliation
-from agents.discovery.promote import ACTOR_CREATE_FIELDS, EVENT_CREATE_FIELDS, promote
+from agents.discovery.promote import (
+    ACTOR_CREATE_FIELDS,
+    EVENT_CREATE_FIELDS,
+    IMPORT_VERIFICATION_PAYLOAD_KEY,
+    promote,
+)
 from agents.discovery.stage import StagedRecord
 from agents.enrichment.decisions import create_sector
 from src.db.models import Actor, Event, Person
@@ -490,8 +495,15 @@ def _update_source_status(session, table: str, source_id: str, status: str, revi
         raise AdmissionConflict("source review row is no longer pending")
 
 
-def apply_review_decision(session, decision: Mapping[str, Any]) -> dict[str, Any]:
-    """Apply one idempotent review decision in a single database transaction."""
+def apply_review_decision(session, decision: Mapping[str, Any], *,
+                          import_verification: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """Apply one idempotent review decision in a single database transaction.
+
+    ``import_verification`` ({"by", "reason"}) is passed only by the Data Feed
+    writer (agents.datafeed.stage_import) for a new actor its named uploader
+    attested; it is never read from a decision file or a staged row, so Review
+    can never verify through it.
+    """
     clean = _normalise_decision(decision)
     validate_edited_payload(clean["entity_type"], clean["edited_payload"])
     transaction = session.begin()
@@ -516,6 +528,12 @@ def apply_review_decision(session, decision: Mapping[str, Any]) -> dict[str, Any
         proposed_hub_id = None
         if clean["decision_kind"] in {"same_existing", "new"}:
             staged = _staged(source, clean["entity_type"], clean["edited_payload"])
+            staged.normalized_payload.pop(IMPORT_VERIFICATION_PAYLOAD_KEY, None)
+            if (import_verification and clean["entity_type"] == "actor"
+                    and clean["decision_kind"] == "new"):
+                staged.normalized_payload[IMPORT_VERIFICATION_PAYLOAD_KEY] = {
+                    "by": str(import_verification["by"]),
+                    "reason": str(import_verification["reason"])}
             route = _promotion_route(session, clean, staged)
             result = promote(
                 staged, route, session=session, live=True, people_enabled=True,
@@ -652,9 +670,11 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
         elif kind == "resolve_fact":
             # A fact conflict or pending update: use the proposed value or keep
             # the current one. Both facts stay in the ledger either way.
+            # Keep both only where the model holds several values (locations).
             result = record_fact_review_decision(
                 session, review_item_id=item_id, decided_by=reviewer,
-                accept=bool(decision.get("accept")), notes=notes, live=True,
+                accept=bool(decision.get("accept")), keep_both=bool(decision.get("keep_both")),
+                notes=notes, live=True,
             )
         elif kind == "resolve_hub_membership":
             # A hub an unassigned actor now fits: accept adds the membership,

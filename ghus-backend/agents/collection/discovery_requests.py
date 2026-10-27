@@ -29,9 +29,14 @@ from agents.collection import subscription_store as store
 from agents.collection.subscriptions import (
     CADENCE_DAYS,
     DEFAULT_NEW_ACTORS_PER_RUN,
+    DEFAULT_PULL_DEPTH,
+    DISCOVERY_ENTITIES,
     DISCOVERY_PAGE,
+    EVENT_TYPES,
+    MAX_EVENT_TYPES,
     MAX_FOCUS_TERMS,
     MAX_NEW_ACTORS_PER_RUN,
+    PULL_DEPTHS,
     Subscription,
     SubscriptionError,
 )
@@ -72,7 +77,7 @@ def _draft_fields(payload: dict) -> dict:
 
     allowed = {"title", "sector_codes", "topic_ids", "focus_terms", "region_code",
                "state_code", "city", "start_date", "end_date", "cadence",
-               "max_new_actors_per_run"}
+               "max_new_actors_per_run", "discovery_entity", "discovery_options"}
     unknown = set(payload) - allowed
     if unknown:
         raise SubscriptionError(f"unknown field(s): {sorted(unknown)}")
@@ -94,6 +99,18 @@ def _draft_fields(payload: dict) -> dict:
             raise SubscriptionError(f"unknown state {payload['state_code']!r}")
     if payload.get("region_code") and payload["region_code"] not in REGION_STATES:
         raise SubscriptionError(f"unknown region {payload['region_code']!r}")
+    entity = str(payload.get("discovery_entity") or "actor")
+    options = {k: v for k, v in dict(payload.get("discovery_options") or {}).items()
+               if v not in (None, "", [])}
+    # A new request chooses only from the event types offered now.
+    retired = [t for t in options.get("event_types") or [] if t not in EVENT_TYPES]
+    if retired:
+        raise SubscriptionError(f"event types are chosen from {list(EVENT_TYPES)}, "
+                                f"not {retired}")
+    if entity == "actor":
+        # Every new organization request reads what it keeps (Light Pull),
+        # unless the person opts out.
+        options.setdefault("pull_depth", DEFAULT_PULL_DEPTH)
     return {
         "title": str(payload.get("title") or "").strip(),
         "sector_codes": [str(c) for c in payload.get("sector_codes") or []],
@@ -107,10 +124,33 @@ def _draft_fields(payload: dict) -> dict:
         "cadence": str(payload.get("cadence") or "weekly"),
         "max_new_actors_per_run": int(
             payload.get("max_new_actors_per_run") or DEFAULT_NEW_ACTORS_PER_RUN),
+        # Organizations unless the page asked for events or people (580).
+        "discovery_entity": entity,
+        "discovery_options": options,
     }
 
 
-def _preview(fields: dict, codes: dict[str, str]) -> dict:
+ANY_SECTOR = "ANY"
+
+
+def expand_any_sector(fields: dict, codes: dict[str, str]) -> dict:
+    """"Any sector": every active sector, and only for a named topic.
+
+    Stored as all active sectors (the schema requires at least one), so a
+    result that fits any GHUS sector counts; what is searched for is the topic
+    or sub-topics the person named - never an unscoped sweep of an area.
+    """
+    every = sorted({str(c).upper() for c in codes.values()})
+    chosen = [str(c).upper() for c in fields.get("sector_codes") or []]
+    if ANY_SECTOR in chosen:
+        chosen = every
+    if every and set(chosen) >= set(every) and not fields.get("focus_terms"):
+        raise SubscriptionError("“Any sector” needs a topic or sub-topic to search for: "
+                                "an area alone is the unscoped sweep this design replaces")
+    return {**fields, "sector_codes": chosen}
+
+
+def _preview(fields: dict, codes: dict[str, str], session=None) -> dict:
     """The queries a draft would search, without saving it."""
 
     from agents.common.config import load_sources_config
@@ -125,8 +165,12 @@ def _preview(fields: dict, codes: dict[str, str]) -> dict:
     request = DiscoveryRequest.from_subscription(draft, topic_codes=codes)
     config = dict(load_sources_config(ROOT).get("open_web_discovery") or {})
     bundle = QueryGenerator(None, config).generate(
-        "actor", project_root=ROOT, request=request)
-    return {"request": request.describe(), "queries": bundle.queries,
+        request.entity, session=session, project_root=ROOT, request=request)
+    where = dict((bundle.metadata or {}).get("query_domains") or {})
+    return {"request": request.describe(),
+            # A people search shows the sites it is limited to.
+            "queries": [f"{q}  [on {', '.join(where[q])}]" if where.get(q) else q
+                        for q in bundle.queries],
             "first_run": draft.next_due(draft.start_date)}
 
 
@@ -147,6 +191,13 @@ def _options(session) -> dict:
         "max_new_actors_per_run": MAX_NEW_ACTORS_PER_RUN,
         "default_new_actors_per_run": DEFAULT_NEW_ACTORS_PER_RUN,
         "max_duration_days": _max_duration_days(),
+        # What a request can find, and an event request's types (migration 580).
+        "entities": list(DISCOVERY_ENTITIES),
+        "entity_requests_ready": store.has_entity_requests(session),
+        "event_types": list(EVENT_TYPES),
+        "max_event_types": MAX_EVENT_TYPES,
+        "pull_depths": list(PULL_DEPTHS),
+        "default_pull_depth": DEFAULT_PULL_DEPTH,
     }
 
 
@@ -163,8 +214,9 @@ def _list(session) -> dict:
             item["next_run"], item["skip_reason"] = None, f"invalid: {exc}"
         item["runs"] = store.load_request_runs(session, str(row["subscription_id"]))
         run_ids = [run.get("search_run_id") for run in item["runs"]]
-        item["results"] = store.load_request_results(session, run_ids)
-        item["excluded"] = store.load_request_exclusions(session, run_ids)
+        entity = str(row.get("discovery_entity") or "actor")
+        item["results"] = store.load_request_results(session, run_ids, entity=entity)
+        item["excluded"] = store.load_request_exclusions(session, run_ids, entity=entity)
         requests.append(item)
     return {"requests": requests}
 
@@ -209,7 +261,8 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command in ("preview", "create"):
                 fields = _draft_fields(json.loads(args.payload))
                 codes = store.topic_codes(session)
-                preview = _preview(fields, codes)
+                fields = expand_any_sector(fields, codes)
+                preview = _preview(fields, codes, session)
                 if args.command == "preview":
                     result = preview
                 else:

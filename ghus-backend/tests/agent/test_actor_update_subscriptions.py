@@ -236,22 +236,14 @@ def test_the_event_update_schedule_is_untouched():
     # The event discovery step is still there and still unconditional.
     assert re.search(r'"--entity",\s*\n\s*"event",', runner), "the event sweep was removed"
     assert "open-web-event-report.md" in runner
-    # And the subscription module operates on actors only. Checked against the
-    # parsed module rather than its text, because the docstring quite rightly
-    # talks about events in order to say they are left alone.
-    import ast
-
-    tree = ast.parse((ROOT / "agents/collection/subscriptions.py").read_text(encoding="utf-8"))
-    identifiers = (
-        {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-        | {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
-        | {node.arg for node in ast.walk(tree) if isinstance(node, ast.arg)}
-        | {node.name for node in ast.walk(tree)
-           if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
-    )
-    assert not any("event" in name.lower() for name in identifiers), (
-        "the subscription module must not operate on events"
-    )
+    # Since 2026-10-23 (migration 580) a person may also ASK for events on the
+    # Discovery page. That adds a scoped request; it never replaces or schedules
+    # the weekly sweep above. Only a Discovery-page request can find events, and
+    # every existing request stays an organization request.
+    assert _subscription().discovery_entity == "actor"
+    with pytest.raises(SubscriptionError, match="only a Discovery-page request"):
+        _subscription(discovery_entity="event")
+    assert "agents.collection.subscription_runner" not in runner
 
 
 # --------------------------------------------------------------- the migration

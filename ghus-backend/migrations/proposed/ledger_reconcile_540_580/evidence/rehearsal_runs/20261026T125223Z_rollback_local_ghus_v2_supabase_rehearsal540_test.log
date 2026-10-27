@@ -1,0 +1,18 @@
+BEGIN
+SET
+SET
+SET
+SET
+            set_config            
+----------------------------------
+ 2026-10-26 12:52:16.335490+00:00
+(1 row)
+
+DO
+ ledger_rows | rows_540_580 
+-------------+--------------
+          45 |            0
+(1 row)
+
+COMMIT
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/rollback_reconcile_ledger_540_580.sql:71: NOTICE:  nothing to roll back: no 540-580 ledger row exists

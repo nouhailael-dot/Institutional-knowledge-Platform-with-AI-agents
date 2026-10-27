@@ -24,6 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
+import {usDate, usDateTime} from "./dates.js?v=20261027a";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.parked,
@@ -76,6 +77,7 @@ export const REVIEW_REASON_LABELS = {
   // replace the sources' internal codes - rubric_band, fuzzy_match,
   // relationship_review - which read as nothing to a reviewer.
   borderline_score: "Borderline Score",
+  data_feed: "Supplied by GHUS (Data Feed)",
   third_party_page: "Read From Another Site",
   website_unverified: "Website Not Confirmed",
   page_not_organisation: "A Page, Not an Organisation",
@@ -93,6 +95,7 @@ export const REVIEW_REASON_LABELS = {
 /** One sentence per reason: what the agent could not settle, and so asks you. */
 export const REVIEW_REASON_HINTS = {
   borderline_score: "The agent scored it between reject and accept, so a person decides.",
+  data_feed: "GHUS supplied it through the Data Feed; a person decides whether it is added.",
   third_party_page: "It was read from a page about the organisation on someone else's site, not its own.",
   website_unverified: "The page states no website of its own, so who published it is unconfirmed.",
   page_not_organisation: "The description reads like a web page or portal, not an organisation.",
@@ -229,6 +232,129 @@ export function filterReviewCandidates(candidates, filters = {}) {
 }
 
 /** Queue groups in render order: the backlog first, then one group per run. */
+// ------------------------------------------------------------- runs (left panel)
+// Review is organised Run Type -> named run -> records -> one record's review.
+
+/** The Run Type dropdown: exactly these six, in this order. */
+export const RUN_TYPE_OPTIONS = [
+  {value: "all", label: "All Runs"},
+  {value: "discovery_actors", label: "Discovery Actors"},
+  {value: "discovery_events", label: "Discovery Events"},
+  {value: "discovery_people", label: "Discovery People"},
+  {value: "actor_updates", label: "Actor Updates"},
+  {value: "data_feed", label: "Data Feed Imports"},
+];
+
+const RUN_TYPE_NAMES = {
+  discovery_actors: "Discovery Actors", discovery_events: "Discovery Events",
+  discovery_people: "Discovery People", actor_updates: "Actor Updates", map_checks: "Map Checks",
+  data_feed: "Data Feed Imports",
+};
+
+export function runTypeName(type) {
+  return RUN_TYPE_NAMES[type] || "Run";
+}
+
+/**
+ * The named runs for the left panel: of the chosen type, with at least one
+ * record in the current queue (status, category and search already applied),
+ * newest first. Each carries how many of its records are shown.
+ */
+export function runsForType(groups = [], candidates = [], runType = "all") {
+  const shown = new Map();
+  for (const candidate of candidates) {
+    shown.set(candidate.run_group_key, (shown.get(candidate.run_group_key) || 0) + 1);
+  }
+  return groups
+    .filter(group => runType === "all" || group.run_type === runType)
+    .filter(group => shown.get(group.key))
+    .map(group => ({...group, shown_count: shown.get(group.key)}));
+}
+
+/** "Oct 19, 2026 · 6 pending" - the run's real date and what waits in it. */
+export function runMeta(group, status = "pending_review") {
+  const word = {pending_review: "pending", approved: "verified", rejected_by_reviewer: "rejected"}[status]
+    || "shown";
+  return [group.run_date, `${group.shown_count ?? group.pending_count ?? 0} ${word}`]
+    .filter(Boolean).join(" · ");
+}
+
+/** Records of one run, in queue order. */
+export function recordsOfRun(candidates = [], runKey) {
+  return runKey ? candidates.filter(candidate => candidate.run_group_key === runKey) : [];
+}
+
+/**
+ * Who made the record: "Imported" (GHUS supplied it - a Data Feed spreadsheet
+ * or form) or "AI-Mapped" (the discovery agent found it). Null for checks the
+ * map raised about records already on it.
+ */
+export function originLabel(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  if (meta.data_feed) return "Imported";
+  if (["search_candidate", "event_review_queue", "person_review_queue"].includes(meta.source_table)) {
+    return "AI-Mapped";
+  }
+  return null;
+}
+
+/**
+ * The Deep Pull a reviewer may start once they verified an actor for a sector:
+ * that actor and exactly that sector, or null. The backend checks the same
+ * gate again before it reads and before it writes.
+ */
+export function deepPullTarget(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  if (candidate?.status !== "approved" || meta.source_table !== "review_item"
+    || meta.review_kind !== "verify_actor" || !meta.entity_id || !meta.topic_code) return null;
+  return {key: `${meta.entity_id}:${meta.topic_code}`, actor_id: meta.entity_id,
+    topic: meta.topic_code, name: candidate.display_name || candidate.payload?.name || "This actor"};
+}
+
+/** "About $0.04; never more than $0.15." Only from real past reads. */
+export function deepCostLine(cost) {
+  if (!cost) return "";
+  const cap = Number(cost.cap_usd);
+  const ceiling = Number.isFinite(cap) && cost.cap_usd != null ? `never more than $${cap.toFixed(2)}` : "";
+  if (cost.typical_usd == null) {
+    return ceiling ? `No past reads to estimate from; ${ceiling}.` : "";
+  }
+  return `About $${Number(cost.typical_usd).toFixed(2)}${ceiling ? `; ${ceiling}` : ""}.`;
+}
+
+/** What a finished Deep Pull did, in one sentence. */
+export function deepResultLine(checked = {}, applied = null) {
+  const results = applied?.results || [];
+  const written = results.filter(r => r.written);
+  const found = written.filter(r => r.actual !== "not_found").length;
+  const missing = written.filter(r => r.actual === "not_found").length;
+  const failed = results.length - written.length;
+  const parts = [`Deep Pull done: ${found} ${found === 1 ? "item" : "items"} found on its pages`];
+  if (missing) parts.push(`${missing} not stated (recorded as Not Found)`);
+  if (applied?.review_items) parts.push(`${applied.review_items} waiting in Review`);
+  if (failed) parts.push(`${failed} could not be written`);
+  if (!applied) parts.splice(0, 1, "Deep Pull done: its pages state none of the selected items, so nothing was written");
+  return `${parts.join(", ")}. Cost $${Number(checked.cost_usd || 0).toFixed(2)}.`;
+}
+
+/** A record row's second line: what it is and why it waits. */
+export function recordRowNote(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  if (meta.review_kind === "actor_profile") {
+    const runs = (meta.update_runs || []).length;
+    const changes = (meta.changes || []).length;
+    return [`${runs} update${runs === 1 ? "" : "s"}`,
+      changes ? `${changes} change${changes === 1 ? "" : "s"} to review` : "nothing to decide"].join(" · ");
+  }
+  if (meta.source_table === "actor_update") return "Update result · check what it wrote";
+  const kind = RECORD_KIND_LABELS[candidate?.entity_type] || candidate?.entity_type || "";
+  const origin = originLabel(candidate);
+  const quality = qualityOf(candidate);
+  if (quality?.completeness) return [kind, origin, quality.label].filter(Boolean).join(" · ");
+  const reason = candidate?.review_reason ? reviewReasonLabel(candidate.review_reason) : "";
+  return [kind, origin, reason].filter(Boolean).join(" · ");
+}
+
 export function groupQueue(candidates, groups = []) {
   const byKey = new Map();
   for (const group of groups) byKey.set(group.key, {...group, candidates: []});
@@ -322,41 +448,402 @@ export function twoWaySummary(candidate) {
   return null;
 }
 
-/** What an actor update wrote: one row per box, before and after, with its source. */
-export function updateRows(candidate) {
+// ------------------------------------------------------------ actor updates
+// One profile per actor: what its updates found is shown in its own boxes, and
+// only the changes that need a person are listed below them.
+
+// ------------------------------------------------- discovered people and events
+// The agent's quality checks and the facts it read from the page, each with
+// its quote (backend agents/discovery/quality_gates.py and page_facts.py).
+
+const COMPLETENESS_WORDS = {
+  complete: "Complete", incomplete: "Incomplete", insufficient: "Not enough to keep",
+};
+const OUTCOME_WORDS = {
+  qualified: "Qualified for Review", needs_research: "Needs More Research", excluded: "Excluded",
+};
+const TIMING_WORDS = {
+  upcoming: "Upcoming", past: "Past", date_unconfirmed: "Date unconfirmed", cancelled: "Cancelled",
+};
+const CHECK_WORDS = {
+  identity: "Identity", source: "Official source", affiliation: "Current affiliation",
+  relevance: "GHUS relevance", completeness: "Completeness", freshness: "Date",
+  location: "Place or format",
+};
+
+/**
+ * A list, whatever arrived: staged records stored before 2026-10-24 carried
+ * Python's text of a tuple ("('a', 'b')"), and joining that crashed the page.
+ */
+export function asList(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+  const text = value.trim();
+  if (/^[([]/.test(text)) {
+    const items = [...text.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"/g)]
+      .map(m => (m[1] ?? m[2]).replace(/\\(.)/g, "$1"));
+    if (items.length) return items;
+    if (/^[([]\s*,?\s*[)\]]$/.test(text)) return [];   // an empty tuple or list
+  }
+  return [text];
+}
+
+/** The quality checks of a discovered person or event, or null for anything else. */
+export function qualityOf(candidate) {
+  const quality = candidate?.agent_metadata?.quality;
+  if (!quality || typeof quality !== "object") return null;
+  return {
+    completeness: quality.completeness || null,
+    label: COMPLETENESS_WORDS[quality.completeness] || "Not checked",
+    decision: quality.decision || null,
+    outcome: OUTCOME_WORDS[quality.outcome] || null,
+    whyMatched: quality.why_matched || null,
+    timing: TIMING_WORDS[quality.freshness] || null,
+    reasons: asList(quality.reasons),
+    checks: asList(quality.checks).filter(check => check && typeof check === "object").map(check => ({
+      name: CHECK_WORDS[check.name] || check.name,
+      state: check.passed === true ? "ok" : check.passed === false ? "missing" : "unknown",
+      detail: check.detail || "",
+    })),
+    missing: asList(quality.missing_mandatory),
+    priorityMissing: asList(quality.missing_priority),
+    conflicts: asList(quality.conflicts),
+  };
+}
+
+const PERSON_FACT_BOXES = [
+  ["bio", "Biography"], ["linkedin_url", "LinkedIn profile"],
+  ["department", "Department or unit"], ["expertise", "Expertise"],
+  ["relevant_work", "Relevant projects or work"],
+  ["work_location", "Work location"], ["other_affiliations", "Other affiliations"],
+  ["um6p_ocp_connection", "UM6P / OCP connection"],
+];
+const EVENT_FACT_BOXES = [
+  ["organizer", "Organizer"], ["format", "Format"], ["event_status", "Status"],
+  ["registration_url", "Registration"], ["registration_deadline", "Registration deadline"],
+  ["themes", "Themes or agenda"], ["speakers", "Confirmed speakers"],
+  ["participating_organizations", "Participating organizations"],
+  ["standing_claims", "Stated scale or standing"],
+  ["um6p_ocp_involvement", "UM6P / OCP involvement"],
+];
+const FACT_VALUE_WORDS = {in_person: "In person", online: "Online", hybrid: "Hybrid",
+  scheduled: "Scheduled", postponed: "Postponed", cancelled: "Cancelled"};
+
+/** One box per fact the agent reads for this kind of record: value, quote and source. */
+export function pageFactBoxes(candidate) {
+  const facts = candidate?.agent_metadata?.page_facts || {};
+  const evidence = facts.evidence || {};
+  const read = candidate?.agent_metadata?.quality || facts.evidence;
+  const boxes = candidate?.entity_type === "event" ? EVENT_FACT_BOXES : PERSON_FACT_BOXES;
+  return boxes.map(([key, label]) => {
+    const value = facts[key];
+    const has = value !== null && value !== undefined && value !== "" && !(Array.isArray(value) && !value.length);
+    const proof = evidence[key] || {};
+    return {
+      key, label,
+      value: has ? (Array.isArray(value) ? value.join(", ") : FACT_VALUE_WORDS[value] || String(value)) : null,
+      link: has && /^https?:\/\//.test(String(value)) ? String(value) : null,
+      // A bio is its own quote; it is not shown twice.
+      quote: proof.quote && proof.quote !== value ? proof.quote : null,
+      source: proof.source_url || null,
+      dateRead: proof.date_read ? shortDate(proof.date_read) : null,
+      // The agent read the page for it: absent means Not Found; never read, Not Yet Collected.
+      state: has ? null : read ? MISSING.notFound : MISSING.notYetChecked,
+      dropped: (facts.dropped || []).includes(key),
+    };
+  });
+}
+
+/** The event Discovery sends to open an actor's update profile here. */
+export const OPEN_IN_REVIEW = "ghus:open-review";
+
+export function isUpdateProfile(candidate) {
+  return candidate?.agent_metadata?.review_kind === "actor_profile";
+}
+
+function shortDate(value) {
+  if (value === null || value === undefined || value === "") return "";
+  return usDate(value);
+}
+
+function clip(text, length = 90) {
+  const value = String(text ?? "");
+  return value.length > length ? `${value.slice(0, length - 1)}…` : value;
+}
+
+/**
+ * Two readings of one box, fact by fact: "Employees: 500 → 600", "Customers:
+ * added (2000)". Only for values in parts; plain text has no parts to compare.
+ */
+export function partChanges(previous, current) {
+  const isParts = value => value && typeof value === "object" && !Array.isArray(value);
+  if (!isParts(previous) || !isParts(current)) return [];
+  const show = value => (Array.isArray(value) ? value.join(", ") : String(value));
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const out = [];
+  for (const key of new Set([...Object.keys(current), ...Object.keys(previous)])) {
+    if (key === CARRIED_OVER || FACT_DATE_KEYS.has(key)) continue;
+    const before = previous[key], after = current[key];
+    const had = before !== null && before !== undefined && before !== "";
+    const has = after !== null && after !== undefined && after !== "";
+    if (had && has && !same(before, after)) {
+      out.push({part: key, kind: "changed", text: `${fieldLabel(key)}: ${show(before)} → ${show(after)}`});
+    } else if (!had && has) {
+      out.push({part: key, kind: "added", text: `${fieldLabel(key)}: added (${show(after)})`});
+    }
+  }
+  return out;
+}
+
+const UPDATE_WORDS = {
+  new: "New", changed: "Updated", additional: "More detail", confirmed: "Confirmed",
+  no_change: "No change",
+  not_found: "Not found on its pages", conflict: "Change to review",
+  protected: "GHUS value kept", not_yet_collected: "Not read",
+};
+
+/**
+ * What the latest update found for one box: "Updated · Oct 19, 2026 ·
+ * Employees: 500 → 600", or "was: …" for a value written as plain text.
+ */
+export function updateNote(update, value) {
+  if (!update) return "";
+  const changes = ["changed", "additional"].includes(update.outcome)
+    ? partChanges(update.previous_value, value) : [];
+  const outcome = update.outcome === "changed" && changes.length
+    && changes.every(change => change.kind === "added") ? "additional" : update.outcome;
+  const parts = [UPDATE_WORDS[outcome] || outcome, shortDate(update.date)];
+  if (changes.length) {
+    parts.push(...changes.map(change => change.text));
+  } else if (update.outcome === "changed" && update.previous_value !== null
+      && update.previous_value !== undefined) {
+    parts.push(`was: ${clip(formatFactValue(update.previous_value), 70)}`);
+  }
+  return parts.filter(Boolean).join(" · ");
+}
+
+const CHANGE_CHOICES = {
+  fact: [
+    {value: "keep_current", label: "Keep Current Value", done: "the current value stays.",
+      consequence: "The value on the map stays current. The new reading is kept in the history, marked not used."},
+    {value: "use_new", label: "Use New Value", primary: true, done: "the new value is now current.",
+      consequence: "The new value becomes current through the GHUS fact writer. The previous value stays in the history."},
+  ],
+  keepBoth: {value: "keep_both", label: "Keep Both", done: "both locations are kept.",
+    consequence: "The current location stays primary; the new one is added as an additional location, with its source."},
+  relationship: [
+    {value: "refuse", label: "Not a link", done: "no link is recorded.", consequence: "No link is recorded."},
+    {value: "confirm", label: "Confirm the link", primary: true, done: "the link is recorded.",
+      consequence: "The link is recorded with its source page."},
+  ],
+  hub: [
+    {value: "refuse", label: "Keep it out", done: "it stays out of the hub.", consequence: "No membership is added."},
+    {value: "confirm", label: "Add to the hub", primary: true, done: "it is added to the hub.",
+      consequence: "The hub membership is added. Nothing is ever removed from a hub here."},
+  ],
+};
+
+const CHOICE_WORDS = {
+  keep_current: "Kept the current value", use_new: "Used the new value", keep_both: "Kept both",
+  confirm: "Confirmed", refuse: "Refused",
+};
+
+function side(fact) {
+  if (!fact) return null;
+  return {
+    value: formatFactValue(fact.value),
+    source: present(fact.source_url),
+    date: shortDate(fact.date_read),
+    confidence: confidenceLabel(present(fact.confidence)),
+    setBy: fact.set_by === "ghus_human" ? "GHUS" : "Agent",
+  };
+}
+
+/** The changes waiting on a profile, each with its two values and its choices. */
+export function changeRows(candidate) {
   const meta = candidate?.agent_metadata || {};
-  return (meta.written || []).map((fact) => ({
-    field: fact.fact_key,
-    before: fact.previous_value != null ? formatFactValue(fact.previous_value) : "—",
-    after: fact.collection_state === "found" ? formatFactValue(fact.value) : "Not stated on its pages",
-    how: fact.lifecycle_state === "conflict_flagged" ? "Conflict — in this run, for a decision"
-      : fact.lifecycle_state === "pending_update" ? "GHUS value kept — change in this run, for a decision"
-      : fact.collection_state !== "found" ? "Recorded as not found"
-      : fact.previous_value != null ? "Replaced the earlier value (kept in history)" : "New",
-    source_url: fact.source_url || null,
-    confidence: fact.confidence || "—",
+  const name = candidate?.display_name || candidate?.reviewed_payload?.name || "This actor";
+  return (meta.changes || []).map(change => {
+    const base = {id: change.review_item_id, kind: change.kind, topic: change.topic_name || null,
+      reason: change.reason || ""};
+    if (change.kind === "fact") {
+      const difference = partChanges(change.current?.value, change.proposed?.value)
+        .map(item => item.text).join(" · ");
+      return {...base, field: change.field_key, label: factRowLabel(candidate, String(change.field_key || "")),
+        previous: side(change.current), proposed: side(change.proposed), difference,
+        choices: [...CHANGE_CHOICES.fact, ...(change.can_keep_both ? [CHANGE_CHOICES.keepBoth] : [])]};
+    }
+    if (change.kind === "relationship") {
+      const other = change.candidate_name || "another actor on the map";
+      const words = LINK_WORDS[change.relationship_type] || "is linked to";
+      const subjectIsThis = !change.subject_actor_id || change.subject_actor_id === meta.entity_id;
+      return {...base, label: "Proposed link",
+        question: subjectIsThis ? `${name} ${words} ${other}?` : `${other} ${words} ${name}?`,
+        source: present(change.source_url),
+        reason: change.source_url ? "Named on its own pages by an actor update."
+          : "No source page is recorded for this link, so it can only be refused or left.",
+        choices: CHANGE_CHOICES.relationship};
+    }
+    const evidence = change.evidence || {};
+    return {...base, label: "Proposed hub", question: `Add ${name} to ${change.hub_name || "a hub"}?`,
+      source: null,
+      reason: [evidence.sector_code && `Same sector (${evidence.sector_code})`,
+        evidence.distance_miles != null && `${evidence.distance_miles} miles from the centre`]
+        .filter(Boolean).join("; "),
+      choices: CHANGE_CHOICES.hub};
+  });
+}
+
+/**
+ * Other items waiting in Review for the same actor on the map - a location
+ * check, a hub, its verification - each with its own decision. Listed on the
+ * actor's card so one actor reads as one profile, without merging decisions
+ * that need their own form.
+ */
+export function relatedItems(candidates = [], selected) {
+  const actorId = selected?.agent_metadata?.entity_id;
+  if (!actorId) return [];
+  return candidates
+    .filter(item => item.candidate_id !== selected.candidate_id
+      && item.agent_metadata?.entity_id === actorId)
+    .map(item => ({
+      id: item.candidate_id,
+      label: isUpdateProfile(item) ? "Actor updates"
+        : item.review_reason ? reviewReasonLabel(item.review_reason) : recordRowNote(item),
+      run: item.run_label || "",
+    }));
+}
+
+/** The changes already decided on this actor, newest first. */
+export function decidedChangeRows(candidate) {
+  return (candidate?.agent_metadata?.decided_changes || []).map(row => ({
+    id: row.review_item_id,
+    label: row.field_key ? factRowLabel(candidate, row.field_key) : "Proposal",
+    choice: CHOICE_WORDS[row.choice] || row.choice,
+    by: row.reviewer, date: shortDate(row.decided_at),
   }));
 }
 
-function updateBlock(html, candidate) {
+const RUN_STATUS_WORDS = {succeeded: "Completed", attention: "Completed with limits", failed: "Failed"};
+
+function countsLine(counts = {}) {
+  const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
+    ["confirmed", "confirmed"],
+    ["conflict", "to review"], ["protected", "GHUS kept"], ["not_found", "not found"]];
+  return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`).join(" · ")
+    || "nothing new";
+}
+
+/** The actor's update runs, newest first: date, name, status and what each found. */
+export function updateRunRows(candidate) {
   const meta = candidate?.agent_metadata || {};
-  const rows = updateRows(candidate);
+  const runs = meta.update_runs || (meta.run_id ? [{
+    run_id: meta.run_id, date: candidate.created_at, title: String(candidate.source_description || "")
+      .replace(/^Actor update:\s*/, ""), status: meta.run_status, pages_read: meta.pages_read || [],
+    counts: Object.fromEntries(Object.entries((meta.written || []).reduce((acc, fact) => {
+      const key = fact.lifecycle_state === "conflict_flagged" ? "conflict"
+        : fact.lifecycle_state === "pending_update" ? "protected"
+        : fact.collection_state !== "found" ? "not_found"
+        : fact.previous_value != null ? "changed" : "new";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, meta.corroborated ? {confirmed: meta.corroborated} : {}))),
+  }] : []);
+  return runs.map(run => ({
+    id: run.run_id, date: shortDate(run.date), title: run.title || "Actor update",
+    status: RUN_STATUS_WORDS[run.status] || run.status || "",
+    summary: countsLine(run.counts), sector: run.topic_name || null,
+    pages: (run.pages_read || []).filter(Boolean),
+  }));
+}
+
+function updateHistoryBlock(html, candidate) {
+  const runs = updateRunRows(candidate);
+  if (!runs.length) return null;
   return html`<section class="review-section">
-    <h3>What this update wrote</h3>
-    <p class="review-hint">Already on the map, written through the GHUS fact writer with its
-      sources; earlier values stay in the history. ${meta.corroborated
-        ? `${meta.corroborated} recorded value(s) were confirmed by its pages. ` : ""}Read
-      ${(meta.pages_read || []).length} page(s) · ${typeof meta.spent_usd === "number"
-        ? `$${meta.spent_usd.toFixed(3)}` : ""}.</p>
-    <table><thead><tr><th>Box</th><th>Before</th><th>Now</th><th>What it did</th><th>Source</th></tr></thead>
-    <tbody>${rows.map(row => html`<tr key=${row.field}>
-      <th scope="row">${reviewFieldLabel(row.field)}</th><td>${row.before}</td><td>${row.after}</td>
-      <td>${row.how}</td>
-      <td>${row.source_url ? html`<a href=${row.source_url} target="_blank" rel="noreferrer">open</a>` : "—"}</td>
-    </tr>`)}</tbody></table>
-    ${(meta.pages_read || []).length > 0 && html`<p class="review-hint">Pages read:
-      ${meta.pages_read.map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank"
-        rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}</p>`}
+    <h3>Update history</h3>
+    <p class="review-hint">Every update of this organization, newest first. What they found is
+      in its boxes above; earlier values stay in Fact History.</p>
+    <ul class="review-update-runs">
+      ${runs.map(run => html`<li key=${run.id}>
+        <div><strong>${run.title}</strong><span>${[run.date, run.status, run.sector].filter(Boolean).join(" · ")}</span></div>
+        <small>${run.summary}${run.pages.length > 0 && html` · pages read:
+          ${run.pages.map((url, index) => html`${index ? ", " : " "}<a href=${url} target="_blank"
+            rel="noreferrer">${pageLabel(url)}</a>`)}`}</small>
+      </li>`)}
+    </ul>
+  </section>`;
+}
+
+function collectedBlock(html, candidate) {
+  const quality = qualityOf(candidate);
+  const boxes = pageFactBoxes(candidate);
+  if (!quality && boxes.every(box => box.state === MISSING.notYetChecked)) return null;
+  return html`<section class="review-section">
+    <h3>Collected information</h3>
+    ${quality && html`<div class=${"review-quality " + (quality.completeness || "")}>
+      <div class="review-quality-head"><strong>${quality.outcome
+        ? `${quality.outcome} · ${quality.label}` : quality.label}</strong>
+        ${quality.timing && html`<span class="review-chip">${quality.timing}</span>`}
+        <span>${quality.reasons.join(" ")}</span></div>
+      ${quality.whyMatched && html`<p class="review-hint"><strong>Why it matched:</strong> ${quality.whyMatched}</p>`}
+      <ul class="review-checks">${quality.checks.map(check => html`<li key=${check.name}
+        class=${check.state}><strong>${check.name}</strong> ${check.detail}</li>`)}</ul>
+      ${quality.missing.length > 0 && html`<p class="review-hint">Not confirmed: ${quality.missing.join(", ")}.</p>`}
+      ${quality.priorityMissing.length > 0 && html`<p class="review-hint">Not found on the page:
+        ${quality.priorityMissing.join(", ")}.</p>`}
+      ${quality.conflicts.map((conflict, index) => html`<p class="review-message error" key=${index}>${conflict}</p>`)}
+    </div>`}
+    <div class="review-boxes">${boxes.map(box => html`<div class="review-box light-box" key=${box.key}>
+      <dt>${box.label}</dt>
+      <dd>${box.state ? html`<span class="review-missing">${box.state}</span>`
+        : box.link ? html`<a href=${box.link} target="_blank" rel="noreferrer">${box.value}</a>` : box.value}</dd>
+      ${box.quote && html`<small>“${box.quote}”</small>`}
+      ${(box.source || box.dateRead) && html`<small>${box.source
+        ? html`<a href=${box.source} target="_blank" rel="noreferrer">Source</a>` : ""}${box.dateRead
+        ? ` · read ${box.dateRead}` : ""}</small>`}
+    </div>`)}</div>
+  </section>`;
+}
+
+function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewer}) {
+  const rows = changeRows(candidate);
+  const decided = decidedChangeRows(candidate);
+  if (!rows.length && !decided.length) return null;
+  const pending = candidate?.status === "pending_review";
+  return html`<section class="review-section review-changes">
+    <h3>Changes to Review ${rows.length > 0 && html`<span class="review-chip">${rows.length}</span>`}</h3>
+    ${!rows.length && html`<p class="review-hint">Every change has been decided.</p>`}
+    ${rows.length > 0 && pending && html`<label class="review-field review-changes-reviewer">
+      <span>Reviewer</span>
+      <input value=${reviewer} onInput=${e => setReviewer(e.target.value)} placeholder="Your name"/></label>`}
+    ${rows.map(row => html`<div class="review-change" key=${row.id}>
+      <div class="review-change-head"><strong>${row.label}</strong>
+        ${row.topic && html`<span class="review-chip">${row.topic}</span>`}</div>
+      ${row.kind === "fact" ? html`<div class="review-change-values">
+          ${[["Current value", row.previous], ["Newly collected", row.proposed]].map(([title, value]) => html`
+            <div key=${title}><span class="review-change-label">${title}</span>
+              <p>${value ? value.value : MISSING.notFound}</p>
+              ${value && html`<small>${value.source
+                ? html`<a href=${value.source} target="_blank" rel="noreferrer">Source</a>` : MISSING.notFound}
+                ${value.date && ` · read ${value.date}`}${value.confidence && ` · ${value.confidence}`}
+                · set by ${value.setBy}</small>`}
+            </div>`)}
+        </div>`
+        : html`<p>${row.question}${row.source && html` <a href=${row.source} target="_blank"
+            rel="noreferrer">Open the page</a>`}</p>`}
+      ${row.difference && html`<p class="review-change-difference">${row.difference}</p>`}
+      ${row.reason && html`<p class="review-hint">${row.reason}</p>`}
+      ${pending && html`<div class="review-change-actions">
+        ${row.choices.map(choice => html`<button key=${choice.value}
+          class=${"btn " + (choice.primary ? "" : "ghost")} disabled=${disabled || !reviewer.trim()}
+          onClick=${() => onDecide(row, choice)}>${choice.label}</button>`)}
+      </div>`}
+    </div>`)}
+    ${decided.length > 0 && html`<details class="review-subsection"><summary>${decided.length} decided</summary>
+      <ul class="review-evidence">${decided.map(row => html`<li key=${row.id}>
+        <strong>${row.label}</strong> <span>${row.choice}</span> <span>${row.by} · ${row.date}</span>
+      </li>`)}</ul></details>`}
   </section>`;
 }
 
@@ -378,7 +865,7 @@ export function factChangeRows(candidate) {
     label,
     value: formatFactValue(fact.value),
     source_url: fact.source_url || null,
-    date_read: fact.date_read ? String(fact.date_read).slice(0, 10) : "—",
+    date_read: fact.date_read ? shortDate(fact.date_read) : "—",
     confidence: fact.confidence || "—",
     set_by: fact.set_by === "ghus_human" ? "GHUS" : "Agent",
   } : null;
@@ -404,6 +891,12 @@ function factChangeBlock(html, candidate) {
   </section>`;
 }
 
+export function canKeepBothLocations(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  return isFactReview(candidate)
+    && (meta.fact_change?.field_key || meta.pipeline?.field_key) === "location";
+}
+
 export function decisionOptions(entityType, candidate = null) {
   const twoWay = twoWayKind(candidate);
   if (twoWay) {
@@ -411,6 +904,7 @@ export function decisionOptions(entityType, candidate = null) {
     return [
       {value: "new", label: yes},
       {value: "reject", label: no},
+      ...(canKeepBothLocations(candidate) ? [{value: "keep_both", label: "Keep both locations"}] : []),
       {value: "defer", label: BUTTONS.park},
     ];
   }
@@ -451,6 +945,38 @@ export function validateReviewDraft(candidate, draft) {
   }
   return errors;
 }
+/** Legacy location/link decisions use their own form; new link proposals keep
+ * the evidence and relationship type supplied by the actor-update workflow. */
+export function reviewItemKind(candidate) {
+  const meta = candidate?.agent_metadata;
+  if (meta?.source_table !== "review_item") return null;
+  if (["geocode", "geocode_failed"].includes(meta.review_kind)) return "location";
+  return meta.review_kind === "relationship_review" && !meta.pipeline?.proposed_relationship_type
+    ? "relationship" : null;
+}
+
+export function canSubmitReviewItem({candidate, kind, reviewer, city, state,
+  keepUnlocated, notes, approve, sourceUrl, busy, admissionConfigured}) {
+  if (!candidate || candidate.status !== "pending_review" || busy || !admissionConfigured
+      || !String(reviewer || "").trim()) return false;
+  if (kind === "location") return keepUnlocated ? Boolean(String(notes || "").trim())
+    : Boolean(String(city || "").trim() && String(state || "").trim());
+  if (kind === "relationship") return approve
+    ? /^https?:\/\/\S+/i.test(String(sourceUrl || "").trim()) : true;
+  return false;
+}
+
+export function pendingCategoryReviews(candidates) {
+  return (candidates || []).filter(candidate => candidate?.status === "pending_review"
+    && candidate?.agent_metadata?.review_kind === "category_doubt"
+    && !candidate?.agent_metadata?.pipeline?.is_true_aggregate
+    && String(candidate?.reviewed_payload?.actor_category || "").trim());
+}
+
+export function canConfirmCategories({selectedIds, reviewer, busy, admissionConfigured}) {
+  return Boolean((selectedIds || []).length && String(reviewer || "").trim()
+    && !busy && admissionConfigured);
+}
 
 export function canSubmitReview({
   candidate, reviewer, rejectionReason, rejectionOther, decision, decisionKind, targetId,
@@ -459,6 +985,11 @@ export function canSubmitReview({
   const kind = decisionKind || decision;
   if (!candidate || candidate.status !== "pending_review" || busy || !admissionConfigured
       || !String(reviewer || "").trim() || Object.keys(draftErrors).length) return false;
+  if (kind === "keep_both") return canKeepBothLocations(candidate);
+  // A profile is marked reviewed once its changes are decided.
+  if (isUpdateProfile(candidate) && kind === "new" && (candidate.agent_metadata?.changes || []).length) {
+    return false;
+  }
   if (twoWayKind(candidate)) return ["new", "reject", "defer"].includes(kind);
   if (kind === "same_existing" && !String(targetId || "").trim()) return false;
   if (kind === "reject") {
@@ -493,7 +1024,7 @@ const REVIEW_FIELD_LABELS = {
   description: FIELDS.description, estimated_trl: FIELDS.trl,
   affiliation: "Organization", role: "Title", public_profile_url: "Public Profile",
   research_area: "Relevant Expertise", event_type: "Event Type", next_date: "Date",
-  recurring_pattern: "Recurrence", sponsoring_orgs: "Organizer",
+  recurring_pattern: "Frequency", sponsoring_orgs: "Organizer",
   thematic_focus: "Sector and Topic", expected_attendance: "Scale Claim",
   access_type: "Access Type", location: "Location",
 };
@@ -509,7 +1040,31 @@ export const DERIVED_FIELDS = new Set(["region"]);
 export const AUDIT_ONLY_FIELDS = new Set(["actor_type", "actor_type_raw"]);
 
 export function lightPullFacts(candidate) {
-  return (candidate?.agent_metadata?.facts || [])
+  const meta = candidate?.agent_metadata || {};
+  if (meta.source_table === "actor_update" && !meta.facts && Array.isArray(meta.written)) {
+    // An update result recorded before profiles: what it wrote fills its boxes,
+    // each marked with what the update did. Nothing else is inferred.
+    return meta.written.map(fact => {
+      // A conflict or a change to a GHUS value was not applied: the map kept
+      // its value, and this reading is a proposal, never shown as saved.
+      const proposal = ["conflict_flagged", "pending_update"].includes(fact.lifecycle_state);
+      return {
+      fact_key: fact.fact_key, fact_type: "light_pull", layer: 1,
+      collection_state: fact.collection_state, value: proposal ? null : fact.value ?? null,
+      pending_value: proposal ? fact.value ?? null : null,
+      confidence: fact.confidence, source_url: fact.source_url, date_read: fact.date_read
+        ? new Date(fact.date_read * 1000).toISOString() : null,
+      update: {
+        outcome: fact.lifecycle_state === "conflict_flagged" ? "conflict"
+          : fact.lifecycle_state === "pending_update" ? "protected"
+          : fact.collection_state !== "found" ? "not_found"
+          : fact.previous_value != null ? "changed" : "new",
+        date: candidate.created_at, previous_value: fact.previous_value ?? null,
+      },
+    };
+    });
+  }
+  return (meta.facts || [])
     .filter(fact => fact?.fact_type === "light_pull" && Number(fact?.layer) === 1);
 }
 
@@ -533,10 +1088,13 @@ const FACT_DATE_KEYS = new Set([
   "as_of", "timestamp", "fetched_at", "observed_at", "updated_at", "created_at",
 ]);
 
+// Which parts of a value an earlier reading supplied (backend fact_parts).
+const CARRIED_OVER = "carried_over";
+
 /** Turn one key of a fact object into "Label: value", or null if it says nothing. */
 function factEntry(key, value) {
   if (value === null || value === undefined) return null;
-  if (FACT_DATE_KEYS.has(key)) return null;
+  if (FACT_DATE_KEYS.has(key) || key === CARRIED_OVER) return null;
   if (Array.isArray(value)) {
     const items = value.map(item => (typeof item === "string" ? item : null)).filter(Boolean);
     if (!items.length) return null;
@@ -585,6 +1143,15 @@ export function formatFactValue(value) {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
+function hostOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+}
+
+function otherHost(source, website) {
+  const host = hostOf(source);
+  return host && hostOf(website) && host !== hostOf(website) ? host : null;
+}
+
 function present(value) {
   return value === null || value === undefined || String(value).trim() === ""
     ? null : String(value).trim();
@@ -605,7 +1172,18 @@ export function lightFactRows(candidate) {
   for (const fact of lightPullFacts(candidate)) {
     if (fact?.fact_key) facts.set(String(fact.fact_key), fact);
   }
-  const layerRan = facts.size > 0;
+  // An actor's boxes are its recorded facts: a box with no fact was never
+  // read (a read that found nothing records Not Found), so it is Not Yet
+  // Collected - not Not Found because some other box was read.
+  const recordFacts = candidate?.agent_metadata?.source_table === "actor_update";
+  // A Data Feed record's boxes are what GHUS supplied: until a Light Pull
+  // reads its pages, an empty box was never looked for.
+  const supplied = Boolean(candidate?.agent_metadata?.data_feed)
+    && !candidate?.agent_metadata?.light_pull_read?.read_at;
+  const layerRan = facts.size > 0 && !recordFacts && !supplied;
+  const pendingByField = new Map((candidate?.agent_metadata?.changes || [])
+    .filter(change => change.kind === "fact" && change.field_key)
+    .map(change => [String(change.field_key), change]));
   const specific = CATEGORY_LIGHT_ROWS[category] || [];
   return [...COMMON_LIGHT_ROWS, ...specific]
     // D14: TRL is a Startup row only, rankings a University row only. Neither
@@ -622,6 +1200,7 @@ export function lightFactRows(candidate) {
         return {
           key, label, value: null, state, metaState: state,
           source: null, dateRead: null, confidence: null, origin: null,
+          update: null, pending: pendingByField.get(key) || null, recordValue: null,
         };
       }
       // The ledger's own vocabulary, from the actor_fact CHECK constraint:
@@ -641,6 +1220,9 @@ export function lightFactRows(candidate) {
         // genuinely means the layer looked and found nothing to record.
         metaState: state === MISSING.notYetChecked ? MISSING.notYetChecked : MISSING.notFound,
         source: present(fact.source_url),
+        // A source that is not its own website (its parent's site, a government
+        // or another credible site, read when its own refused): named.
+        sourceHost: otherHost(fact.source_url, candidate?.reviewed_payload?.website),
         dateRead: present(fact.date_read),
         confidence: confidenceLabel(present(fact.confidence)),
         origin: present(fact.source_origin),
@@ -648,6 +1230,18 @@ export function lightFactRows(candidate) {
         // "Not Found" with pages listed means those pages were read and none
         // of them states it - never that nobody looked.
         pagesRead: Array.isArray(fact.pages_read) ? fact.pages_read.filter(Boolean) : [],
+        // What the latest actor update found for this box, and a change to it
+        // still waiting for a decision (shown as proposed, never as saved).
+        update: fact.update || null,
+        pending: pendingByField.get(key)
+          || (fact.pending_value != null ? {proposed: {value: fact.pending_value}} : null),
+        kept: fact.pending_value != null,
+        recordValue: fact.record_value ?? null,
+        fromSector: present(fact.from_sector),
+        // From the earlier GHUS profile: a value no read has replaced, or the
+        // record beside a box its own pages did not state.
+        fromRecord: present(fact.from_record),
+        carriedOver: Array.isArray(fact.value?.[CARRIED_OVER]) ? fact.value[CARRIED_OVER] : [],
       };
     });
 }
@@ -875,6 +1469,7 @@ function lightBox(html, row) {
     <dt>${row.label}</dt>
     <dd>${row.state
       ? html`<span class="review-missing">${missingWithPages(row)}</span>`
+      : row.kept ? html`<span class="review-missing">The value on the map was kept (see Fact History)</span>`
       : formatFactValue(row.value)}</dd>
     ${row.state && row.pagesRead?.length > 0 && html`<small>Checked:
       ${row.pagesRead.map((url, index) => html`${index ? " · " : " "}<a href=${url}
@@ -882,22 +1477,36 @@ function lightBox(html, row) {
     </small>`}
     ${provenance && html`<small>
       ${row.source
-        ? html`<a href=${row.source} target="_blank" rel="noreferrer">Source</a>`
+        ? html`<a href=${row.source} target="_blank" rel="noreferrer">${row.sourceHost
+          ? `Source: ${row.sourceHost}` : "Source"}</a>`
         : ""}
       ${row.confidence ? (row.source ? ` · ${row.confidence}` : row.confidence) : ""}
     </small>`}
+    ${row.fromSector && html`<small>From its ${row.fromSector} facts.</small>`}
+    ${row.fromRecord && html`<small>From the ${row.fromRecord} (not re-read from its pages).</small>`}
+    ${row.recordValue != null && html`<div class="review-record-value">
+      <span>On the earlier GHUS profile</span><p>${formatFactValue(row.recordValue)}</p></div>`}
+    ${row.carriedOver?.length > 0 && html`<small>Kept from an earlier reading:
+      ${row.carriedOver.map(fieldLabel).join(", ")}.</small>`}
+    ${row.update && !row.pending && html`<div class=${"review-update-note " + row.update.outcome}>
+      <span>This update</span>${updateNote(row.update, row.value)}</div>`}
+    ${row.pending && html`<div class="review-proposed">
+      <span>Proposed — Not Yet Approved</span>
+      <p>${formatFactValue(row.pending.proposed?.value)}</p>
+      <small>Decide under Changes to Review.</small>
+    </div>`}
   </div>`;
 }
 
 function formatSync(lastSync) {
   const row = (lastSync || []).find(item => item.source === "postgresql");
   return row?.last_success_at
-    ? new Date(row.last_success_at * 1000).toLocaleString()
+    ? usDateTime(row.last_success_at)
     : "Not yet synchronized";
 }
 
 function formatDate(seconds) {
-  return seconds ? new Date(seconds * 1000).toLocaleDateString() : SENTENCES.noRunRecorded;
+  return seconds ? usDate(seconds) : SENTENCES.noRunRecorded;
 }
 
 /**
@@ -910,9 +1519,7 @@ function formatDate(seconds) {
  * recorded.
  */
 function formatDay(value) {
-  const parts = String(value || "").split("-").map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) return String(value || "");
-  return new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString();
+  return usDate(String(value || ""));
 }
 
 /** Where a proposed hub sits, in words. */
@@ -977,9 +1584,12 @@ function textField(html, candidate, field, value, onChange, disabled, error) {
 export function createReviewPage({html, useEffect, useRef, useState}) {
   return function Review() {
     const [filters, setFilters] = useState({
-      status: "pending_review", entity_type: "all", run_group: "all",
-      actor_category: "all", review_reason: "all", search: "",
+      status: "pending_review", run_type: "all", entity_type: "all",
+      actor_category: "all", search: "",
     });
+    // The named run open in the centre panel, and where the list was scrolled.
+    const [runKey, setRunKey] = useState(null);
+    const listScroll = useRef(0);
     const [data, setData] = useState({
       candidates: [], counts: {}, source_maps: [], run_groups: [], sync_warnings: [],
       last_sync: [], admission_configured: false,
@@ -1002,26 +1612,38 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     // Sectors come from the database, so one added here appears at once.
     const [sectorState, setSectorState] = useState({canCreate: false, version: 0});
     const [newSector, setNewSector] = useState(null);
+    const [categoryIds, setCategoryIds] = useState([]);
+    const [itemCity, setItemCity] = useState("");
+    const [itemState, setItemState] = useState("");
+    const [keepUnlocated, setKeepUnlocated] = useState(false);
+    const [sourceUrl, setSourceUrl] = useState("");
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [feedback, setFeedback] = useState("");
+    // The Deep Pull offered after a verification: its plan (free), then its run.
+    const [deep, setDeep] = useState(null);
     const keys = useRef(new Map());
 
+    const loaded = useRef(null);
     async function load(signal, force = false) {
       setLoading(true);
       setError("");
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
-        if (value && value !== "all") params.set(key, value);
+        // The run type narrows the runs panel; it is not a server filter.
+        if (key !== "run_type" && value && value !== "all") params.set(key, value);
       });
       if (force) params.set("refresh", "true");
       try {
         const body = await request(`/api/review/candidates?${params}`, {signal});
         setData(body);
+        setCategoryIds(ids => ids.filter(id => pendingCategoryReviews(body.candidates)
+          .some(row => row.candidate_id === id)));
+        loaded.current = body;
+        // A record stays open after a decision; nothing opens by itself.
         setSelectedId(current =>
-          body.candidates.some(item => item.candidate_id === current)
-            ? current : body.candidates[0]?.candidate_id ?? null);
+          body.candidates.some(item => item.candidate_id === current) ? current : null);
       } catch (exception) {
         if (exception.name !== "AbortError") setError(exception.message);
       } finally {
@@ -1033,8 +1655,37 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       const controller = new AbortController();
       load(controller.signal);
       return () => controller.abort();
-    }, [filters.status, filters.entity_type, filters.run_group, filters.actor_category,
-        filters.review_reason, filters.search]);
+    }, [filters.status, filters.entity_type, filters.actor_category, filters.search]);
+
+    // Discovery -> Run now: show that actor's update profile, freshly read from the map.
+    useEffect(() => {
+      async function onOpen(event) {
+        // Discovery / Dashboard -> Show Results: that run, every record shown.
+        const wanted = event.detail?.run_key;
+        if (wanted) {
+          setView("queue");
+          setFilters(current => ({...current, run_type: event.detail.run_type || "all",
+            status: "all"}));
+          setSelectedId(null);
+          loaded.current = null;
+          await load(undefined, true);
+          setRunKey(wanted);
+          return;
+        }
+        const actorId = event.detail?.actor_id;
+        setView("queue");
+        setFilters(current => ({...current, run_type: "actor_updates"}));
+        setSelectedId(null);
+        setRunKey(null);
+        loaded.current = null;
+        await load(undefined, true);
+        const profile = (loaded.current?.candidates || []).find(item => isUpdateProfile(item)
+          && item.agent_metadata?.entity_id === actorId);
+        if (profile) { setRunKey(profile.run_group_key); openRecord(profile.candidate_id); }
+      }
+      window.addEventListener(OPEN_IN_REVIEW, onOpen);
+      return () => window.removeEventListener(OPEN_IN_REVIEW, onOpen);
+    }, []);
 
     useEffect(() => {
       if (!selectedId) { setSelected(null); setDraft({}); return; }
@@ -1043,9 +1694,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         if (!active) return;
         setSelected(candidate);
         setDraft({...candidate.reviewed_payload});
+        setItemCity(candidate.reviewed_payload?.location_city || "");
+        setItemState(candidate.reviewed_payload?.state_code || candidate.reviewed_payload?.state || "");
+        setKeepUnlocated(false);
+        setSourceUrl("");
         // Two values for one box: keeping the map's value is the safe default.
         // Keeping the map as it is is the safe default; a proposal waits.
-        setDecisionKind(isFactReview(candidate) ? "reject" : twoWayKind(candidate) ? "defer"
+        setDecisionKind(isFactReview(candidate) ? "reject"
+          : twoWayKind(candidate) === "update" ? "new" : twoWayKind(candidate) ? "defer"
           : candidate.duplicate_state === "already_exists" ? "same_existing" : "new");
         setTargetId("");
         setRejectionReason("");
@@ -1106,6 +1762,20 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
     function setFilter(key, value) {
       setFilters(current => ({...current, [key]: value}));
+      if (key === "run_type") { setSelectedId(null); setRunKey(null); }
+    }
+
+    function openRecord(candidateId) {
+      const list = document.querySelector(".review-main");
+      listScroll.current = list ? window.scrollY : 0;
+      setSelectedId(candidateId);
+      window.scrollTo({top: 0});
+    }
+
+    function backToRecords() {
+      setSelectedId(null);
+      // Restore where the list was, once it has rendered again.
+      requestAnimationFrame(() => window.scrollTo({top: listScroll.current}));
     }
 
     function edit(field, value) {
@@ -1151,6 +1821,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           body: JSON.stringify({fields: editableReviewPayload(selected, draft)}),
         });
         setSelected(saved);
+        setData(current => ({...current, candidates: current.candidates.map(row =>
+          row.candidate_id === saved.candidate_id ? saved : row)}));
         setDraft({...saved.reviewed_payload});
         setFeedback("Edits saved as a new reviewer-sourced fact. The previous value is kept in History.");
       } catch (exception) {
@@ -1170,6 +1842,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           lines.push(`  ${reviewFieldLabel(item.field)}: ${item.before ?? "—"} → ${item.after ?? "—"}`);
         }
       }
+      if (kind === "keep_both") lines.push("", "Keep the current location and add the proposed place as an additional sourced location.");
       if (isFactReview(selected)) {
         if (kind !== "defer") lines.push("", "Both values stay in the history; nothing is deleted.");
       } else if (twoWayKind(selected) === "update") {
@@ -1199,7 +1872,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       setBusy(true); setError(""); setFeedback("");
       try {
         const body = {
-          decision_kind: decisionKind,
+          decision_kind: decisionKind === "keep_both" ? "new" : decisionKind,
+          keep_both: decisionKind === "keep_both",
           reviewer: reviewer.trim(),
           idempotency_key: keys.current.get(mapKey),
           confirmed: true,
@@ -1229,6 +1903,130 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       }
     }
 
+    async function confirmCategories() {
+      const rows = pendingCategoryReviews(data.candidates)
+        .filter(row => categoryIds.includes(row.candidate_id));
+      if (!canConfirmCategories({selectedIds: rows.map(row => row.candidate_id), reviewer,
+        busy, admissionConfigured: data.admission_configured})) return;
+      if (!window.confirm(`Confirm the shown category for ${rows.length} actors?`)) return;
+      const keyName = `categories:${rows.map(row => row.candidate_id).sort().join(",")}`;
+      if (!keys.current.has(keyName)) keys.current.set(keyName, decisionKey());
+      setBusy(true); setError(""); setFeedback("");
+      try {
+        const result = await request("/api/review/category-decisions", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({candidate_ids: rows.map(row => row.candidate_id),
+            reviewer: reviewer.trim(), notes: notes.trim() || null, confirmed: true,
+            idempotency_key: keys.current.get(keyName)}),
+        });
+        keys.current.delete(keyName);
+        setCategoryIds([]);
+        setFeedback(`${result.outcome?.resolved ?? rows.length} categories committed to GHUS.`);
+        await load(undefined, true);
+      } catch (exception) { setError(exception.message); }
+      finally { setBusy(false); }
+    }
+
+    async function decideReviewItem(approve) {
+      const kind = reviewItemKind(selected);
+      if (!canSubmitReviewItem({candidate: selected, kind, reviewer, city: itemCity,
+        state: itemState, keepUnlocated, notes, approve, sourceUrl, busy,
+        admissionConfigured: data.admission_configured})) return;
+      const label = kind === "location"
+        ? (keepUnlocated ? "keep unlocated" : `locate at ${itemCity}, ${itemState}`)
+        : (approve ? "approve this relationship" : "reject this relationship");
+      if (!window.confirm(`Confirm: ${label} for ${selected.display_name}?`)) return;
+      const keyName = `${selected.candidate_id}:item:${label}`;
+      if (!keys.current.has(keyName)) keys.current.set(keyName, decisionKey());
+      setBusy(true); setError(""); setFeedback("");
+      try {
+        const decided = await request(
+          `/api/review/candidates/${selected.candidate_id}/review-item-decision`, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({decision_kind: kind === "location"
+              ? "resolve_location" : "resolve_relationship", reviewer: reviewer.trim(),
+              notes: notes.trim() || null, confirmed: true,
+              idempotency_key: keys.current.get(keyName), city: itemCity.trim() || null,
+              state: itemState.trim() || null, keep_unlocated: keepUnlocated,
+              approve: Boolean(approve), source_url: sourceUrl.trim() || null}),
+          });
+        keys.current.delete(keyName);
+        setSelected(decided);
+        setFeedback("Decision committed to GHUS.");
+        await load(undefined, true);
+      } catch (exception) { setError(exception.message); }
+      finally { setBusy(false); }
+    }
+
+    const categoryRows = pendingCategoryReviews(data.candidates);
+    const deepTarget = deepPullTarget(selected);
+    // Free: asks the backend what a Deep Pull would read and cost. Nothing runs.
+    useEffect(() => {
+      if (!deepTarget) { setDeep(null); return undefined; }
+      let live = true;
+      setDeep({key: deepTarget.key, state: "planning"});
+      request(`/api/discovery/actors/${deepTarget.actor_id}/plan`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({scope: "general", depth: "deep", topic: deepTarget.topic}),
+      }).then(plan => { if (live) setDeep({key: deepTarget.key, state: "ready", plan}); })
+        .catch(err => { if (live) setDeep({key: deepTarget.key, state: "error", error: err.message}); });
+      return () => { live = false; };
+    }, [deepTarget?.key]);
+
+    async function runDeepPull() {
+      const plan = deep?.plan;
+      if (!deepTarget || !plan?.can_check || deep.state === "running") return;
+      const items = plan.fields.map(fieldLabel).join(", ");
+      if (!window.confirm([`Run Deep Pull for ${deepTarget.name} in ${plan.topic?.name || deepTarget.topic}?`,
+        "", `It reads up to three of its own pages for ${plan.fields.length} selected items: ${items}.`,
+        deepCostLine(plan.cost), "",
+        "What the pages state is written to the map with its source. Values set by GHUS and "
+          + "conflicting readings are not written over; they wait in Review."].join("\n"))) return;
+      setDeep({...deep, state: "running"});
+      try {
+        const body = JSON.stringify({scope: "general", depth: "deep", topic: deepTarget.topic});
+        const checked = await request(`/api/discovery/actors/${deepTarget.actor_id}/check`, {
+          method: "POST", headers: {"Content-Type": "application/json"}, body});
+        if (checked.ok === false) throw new Error(checked.error || "The Deep Pull could not read its pages.");
+        const applied = checked.check_id && checked.writes
+          ? await request(`/api/discovery/actor-checks/${checked.check_id}/apply`, {method: "POST"})
+          : null;
+        if (applied && applied.ok === false && !(applied.results || []).length) {
+          throw new Error(applied.error || "The Deep Pull was not written.");
+        }
+        setDeep(d => ({...d, state: "done", line: deepResultLine(checked, applied)}));
+      } catch (exception) {
+        setDeep(d => ({...d, state: "failed", error: exception.message}));
+      }
+    }
+
+    async function decideChange(row, choice) {
+      if (!selected || busy || !reviewer.trim()) return;
+      const text = [`${selected.display_name} — ${row.label}: ${choice.label}`, "", choice.consequence,
+        "", "Nothing is deleted; every value stays in the history."].join("\n");
+      if (!window.confirm(text)) return;
+      const mapKey = `${selected.candidate_id}:${row.id}:${choice.value}`;
+      if (!keys.current.has(mapKey)) keys.current.set(mapKey, decisionKey());
+      setBusy(true); setError(""); setFeedback("");
+      try {
+        const updated = await request(
+          `/api/review/candidates/${selected.candidate_id}/changes/${row.id}`,
+          {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({
+            choice: choice.value, reviewer: reviewer.trim(), confirmed: true,
+            idempotency_key: keys.current.get(mapKey), notes: notes.trim() || null,
+          })},
+        );
+        setSelected(updated);
+        keys.current.delete(mapKey);
+        setFeedback(`${row.label}: ${choice.done}`);
+        await load(undefined, true);
+      } catch (exception) {
+        setError(exception.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
     const counts = data.counts || {};
     const pending = selected?.status === "pending_review";
     const draftErrors = selected ? validateReviewDraft(selected, draft) : {};
@@ -1240,7 +2038,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const memberships = selected?.agent_metadata?.hub_memberships || [];
     const suggestions = selected?.agent_metadata?.hub_suggestions || [];
     const hubOptions = selected ? hubDropdownOptions(selected) : [];
-    const groups = groupQueue(data.candidates, data.run_groups);
+    const runs = runsForType(data.run_groups, data.candidates, filters.run_type);
+    // The open run: the one chosen, or the newest of this type.
+    const activeRun = runs.find(run => run.key === runKey) || runs[0] || null;
+    const records = recordsOfRun(data.candidates, activeRun?.key);
     const isActor = selected?.entity_type === "actor";
     // Light Pull populates the information boxes. The category-specific group
     // follows the category currently chosen in the dropdown, so it updates as
@@ -1334,26 +2135,18 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
 
       ${view === "queue" && html`<div class="review-filters" aria-label="Review filters">
-        <label><span>${FIELDS.recordKind}</span>
+        <label><span>Run Type</span>
+          <select value=${filters.run_type} onChange=${e => setFilter("run_type", e.target.value)}>
+            ${RUN_TYPE_OPTIONS.map(option => html`
+              <option key=${option.value} value=${option.value}>${option.label}</option>`)}
+          </select></label>
+        ${filters.run_type === "all" && html`<label><span>${FIELDS.recordKind}</span>
           <select value=${filters.entity_type} onChange=${e => setFilter("entity_type", e.target.value)}>
             <option value="all">${QUEUE.allTypes}</option>
             <option value="actor">${BADGES.actor}</option>
             <option value="person">${BADGES.person}</option>
             <option value="event">${BADGES.event}</option>
-          </select></label>
-        <label><span>${FIELDS.reviewReason}</span>
-          <select value=${filters.review_reason} onChange=${e => setFilter("review_reason", e.target.value)}>
-            <option value="all">${QUEUE.allReasons}</option>
-            ${reasonOptions(data.reason_counts, filters.review_reason).map(([kind, count]) => html`
-              <option key=${kind} value=${kind} title=${reviewReasonHint(kind)}>
-                ${reviewReasonLabel(kind)}${count ? ` (${count})` : ""}</option>`)}
-          </select></label>
-        <label><span>${FIELDS.sourceRun}</span>
-          <select value=${filters.run_group} onChange=${e => setFilter("run_group", e.target.value)}>
-            <option value="all">${QUEUE.allRuns}</option>
-            ${(data.run_groups || []).map(group => html`
-              <option key=${group.key} value=${group.key}>${runOptionLabel(group)}</option>`)}
-          </select></label>
+          </select></label>`}
         <label><span>${FIELDS.actorCategory}</span>
           <select value=${filters.actor_category} onChange=${e => setFilter("actor_category", e.target.value)}>
             <option value="all">${QUEUE.allCategories}</option>
@@ -1366,39 +2159,79 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       </div>`}
       ${error && html`<div class="review-message error" role="alert">${error}</div>`}
       ${feedback && html`<div class="review-message success" role="status">${feedback}</div>`}
+      ${deepTarget && deep?.key === deepTarget.key && html`<section class="review-deep" aria-label="Deep Pull">
+        <div>
+          <strong>Deep Pull for ${deepTarget.name}</strong>
+          ${deep.state === "planning" && html`<p>Checking what a Deep Pull would read…</p>`}
+          ${deep.state === "error" && html`<p>${deep.error}</p>`}
+          ${deep.plan && !deep.plan.can_check && deep.state !== "done" && html`<p>${deep.plan.refusal
+            || deep.plan.error || "Nothing is selected for a Deep Pull."}</p>`}
+          ${deep.plan?.can_check && ["ready", "running", "failed"].includes(deep.state) && html`
+            <p>${`Verified for ${deep.plan.topic?.name}: it may now read selected detail on this sector — `
+              + `${deep.plan.fields.length} of ${deep.plan.schema_size} Deep items: `
+              + `${deep.plan.fields.map(fieldLabel).join(", ")}.`}</p>
+            <p class="review-deep-cost">Expected cost: ${deepCostLine(deep.plan.cost) || "—"}</p>`}
+          ${deep.state === "running" && html`<p role="status">Reading up to three of its own pages — about a minute.</p>`}
+          ${deep.state === "failed" && html`<p class="review-deep-error" role="alert">${deep.error}</p>`}
+          ${deep.state === "done" && html`<p role="status">${deep.line}</p>`}
+        </div>
+        ${deep.plan?.can_check && deep.state !== "done" && html`<button type="button" class="btn"
+          disabled=${deep.state === "running"} onClick=${runDeepPull}>
+          ${deep.state === "running" ? "Running Deep Pull…" : "Run Deep Pull"}</button>`}
+      </section>`}
+
+      ${view === "queue" && categoryRows.length>0&&html`<section class="review-section review-category-bulk" aria-labelledby="category-bulk-title"><h3 id="category-bulk-title">Category reviews</h3><p class="muted">Each row shows the proposed actor category. Confirm only the ones you agree with; open a row below to change its category first. Collections of organizations are not listed here: they need a separate GHUS decision.</p><label><input type="checkbox" checked=${categoryIds.length===categoryRows.length} onChange=${e=>setCategoryIds(e.target.checked?categoryRows.map(row=>row.candidate_id):[])}/> Select all (${categoryRows.length})</label><ul class="review-category-list">${categoryRows.map(row=>html`<li key=${row.candidate_id}><label><input type="checkbox" checked=${categoryIds.includes(row.candidate_id)} onChange=${e=>setCategoryIds(current=>e.target.checked?[...current,row.candidate_id]:current.filter(id=>id!==row.candidate_id))}/> <strong>${row.display_name}</strong> → ${row.reviewed_payload.actor_category}${row.agent_metadata?.pipeline?.proposal_confidence?html` <small>(${row.agent_metadata.pipeline.proposal_confidence} confidence)</small>`:""}</label></li>`)}</ul><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${busy} onInput=${e=>setReviewer(e.target.value)} required/></label><button class="btn" disabled=${!canConfirmCategories({selectedIds:categoryIds,reviewer,busy,admissionConfigured:data.admission_configured})} onClick=${confirmCategories}>${busy?"Committing…":`Confirm ${categoryIds.length} categor${categoryIds.length===1?"y":"ies"}`}</button></section>`}
 
       ${view === "queue" && html`<div class="review-workspace">
-        <!-- QUEUE (left rail) -->
-        <div class="review-queue" aria-label=${QUEUE.title}>
+        <!-- NAMED RUNS (left panel) -->
+        <nav class="review-runs" aria-label="Runs">
           <div class="review-queue-head">
-            <strong>${QUEUE.title}</strong>
-            <span>${data.candidates.length} ${QUEUE.shown.toLocaleLowerCase()}</span>
+            <strong>${RUN_TYPE_OPTIONS.find(o => o.value === filters.run_type)?.label || "Runs"}</strong>
+            <span>${runs.length} ${runs.length === 1 ? "run" : "runs"}</span>
           </div>
           ${loading && html`<div class="review-empty" role="status">${SENTENCES.queueLoading}</div>`}
-          ${!loading && !data.candidates.length && html`<div class="review-empty">${SENTENCES.queueEmpty}</div>`}
-          ${groups.map(group => html`<div class="review-queue-group" key=${group.key}>
-            <div class="review-group-head">
-              <strong>${group.label}</strong>
-              <span>${group.candidates.length}</span>
-              ${group.is_backlog && html`<small title=${SENTENCES.backlogGroup}>${BADGES.readOnly}</small>`}
-            </div>
-            ${group.candidates.map(candidate => html`
-              <button key=${candidate.candidate_id}
-                class=${"review-row " + (selectedId === candidate.candidate_id ? "active" : "")}
-                aria-pressed=${selectedId === candidate.candidate_id}
-                onClick=${() => setSelectedId(candidate.candidate_id)}>
-                <span class="review-row-main">
-                  <strong>${candidate.display_name}</strong>
-                  <small>${RECORD_KIND_LABELS[candidate.entity_type] || candidate.entity_type}
-                    ${candidate.review_reason ? ` · ${reviewReasonLabel(candidate.review_reason)}` : ""}</small>
-                </span>
-                <span class=${"review-status " + candidate.status}>${reviewStatusLabel(candidate.status)}</span>
-              </button>`)}
-          </div>`)}
-        </div>
+          ${!loading && !runs.length && html`<div class="review-empty">No runs with records here.</div>`}
+          ${runs.map(run => html`
+            <button key=${run.key} class=${"review-run " + (activeRun?.key === run.key ? "active" : "")}
+              aria-pressed=${activeRun?.key === run.key}
+              onClick=${() => { setRunKey(run.key); setSelectedId(null); }}>
+              <strong>${run.run_name || run.label}</strong>
+              ${filters.run_type === "all" && html`<span class="review-run-type">${runTypeName(run.run_type)}</span>`}
+              <small>${runMeta(run, filters.status)}</small>
+            </button>`)}
+        </nav>
 
-        <article class="review-detail" aria-live="polite">
-          ${!selected && html`<div class="review-empty">${SENTENCES.queueSelectOne}</div>`}
+        <div class="review-main">
+        ${!selectedId && html`<section class="review-records" aria-label="Records">
+          ${!activeRun && !loading && html`<div class="review-empty">${SENTENCES.queueEmpty}</div>`}
+          ${activeRun && html`
+            <header class="review-records-head">
+              <div>
+                <span class="review-run-type">${runTypeName(activeRun.run_type)}</span>
+                <h2>${activeRun.run_name || activeRun.label}</h2>
+                <p class="review-subhead">${runMeta(activeRun, filters.status)}</p>
+              </div>
+            </header>
+            <ul class="review-record-list">
+              ${records.map(candidate => html`<li key=${candidate.candidate_id}>
+                <button class="review-record" onClick=${() => openRecord(candidate.candidate_id)}>
+                  <span class="review-row-main">
+                    <strong>${candidate.display_name}</strong>
+                    <small>${recordRowNote(candidate)}</small>
+                  </span>
+                  <span class=${"review-status " + candidate.status}>${
+                    candidate.status !== "pending_review" ? reviewStatusLabel(candidate.status)
+                      : (candidate.agent_metadata?.changes || []).length ? "To decide"
+                      : candidate.agent_metadata?.source_table === "actor_update" ? "To check"
+                      : reviewStatusLabel(candidate.status)}</span>
+                </button></li>`)}
+            </ul>`}
+        </section>`}
+
+        ${selectedId && html`<button class="btn ghost review-back" onClick=${backToRecords}>
+          ← Back to Records</button>`}
+        ${selectedId && html`<article class="review-detail" aria-live="polite">
+          ${!selected && html`<div class="review-empty" role="status">${SENTENCES.queueLoading}</div>`}
           ${selected && html`
           <!-- HEADER -->
           <header class="review-detail-head">
@@ -1487,6 +2320,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 </label>
               ${textField(html, selected, "location_city", draft.location_city, edit, !pending || busy, draftErrors.location_city)}
             </div>
+            ${twoWayKind(selected) === "update" && (() => {
+              const row = factRows.find(item => item.key === "location");
+              return row && (row.value || row.update || row.pending) && html`<div class="review-boxes">
+                ${lightBox(html, {...row, label: "Location read from its pages"})}</div>`;
+            })()}
             <dl class="review-facts">
               <div><dt>${FIELDS.coordinates}</dt><dd>
                 ${selected.agent_metadata?.coordinates ? "Geocoded" : MISSING.notFound}
@@ -1615,6 +2453,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           <!-- 4 LIGHT PULL INFORMATION -->
           ${isActor && html`<section class="review-section">
             <h3><span class="review-step">4</span>${SECTIONS.facts}</h3>
+            ${twoWayKind(selected) === "update" && html`<p class="review-hint">${[
+              selected.agent_metadata?.topic_name && `Sector: ${selected.agent_metadata.topic_name}.`,
+              "Values in the boxes are on the map, each marked with what the latest update found.",
+              (selected.agent_metadata?.changes || []).some(change => change.kind === "fact")
+                && "A box marked Proposed has a change waiting below."].filter(Boolean).join(" ")}</p>`}
             <h4>${FIELDS.commonLightPull}</h4>
             <div class="review-boxes">
               ${lightBoxes.common.map(row => lightBox(html, row))}
@@ -1667,9 +2510,22 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             </div>`}
           </section>`}
 
+          ${!isActor && collectedBlock(html, selected)}
           ${isFactReview(selected) && factChangeBlock(html, selected)}
-          ${twoWayKind(selected) === "update" && updateBlock(html, selected)}
-          ${["relationship", "hub"].includes(twoWayKind(selected)) && twoWayBlock(html, selected)}
+          ${(() => {
+            const others = relatedItems(data.candidates, selected);
+            return others.length > 0 && html`<section class="review-section">
+              <h3>Also waiting for this actor</h3>
+              <ul class="review-evidence">${others.map(item => html`<li key=${item.id}>
+                <strong>${item.label}</strong> <span>${item.run}</span>
+                <button class="link" onClick=${() => openRecord(item.id)}>Open</button>
+              </li>`)}</ul>
+            </section>`;
+          })()}
+          ${twoWayKind(selected) === "update" && changesBlock(html, selected, {
+            onDecide: decideChange, disabled: busy || writerDown, reviewer, setReviewer})}
+          ${twoWayKind(selected) === "update" && updateHistoryBlock(html, selected)}
+          ${!reviewItemKind(selected) && ["relationship", "hub"].includes(twoWayKind(selected)) && twoWayBlock(html, selected)}
 
           <!-- 5 POSSIBLE DUPLICATES -->
           ${matches.length > 0 && html`<section class="review-section">
@@ -1707,10 +2563,16 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 || selected.agent_metadata?._verification || null, null, 2)}</pre></details>
           </details>
 
+        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the actor's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the actor is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate actor"}</button></section>`}
+        ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
           <!-- DECISION + STICKY FOOTER -->
+          ${!reviewItemKind(selected) && html`
           <section class="review-section review-decision">
             <h3>Decision</h3>
             ${writerDown && html`<p class="review-hint">${SENTENCES.writerUnavailable}</p>`}
+            ${isUpdateProfile(selected) && (selected.agent_metadata?.changes || []).length > 0 && html`
+              <p class="review-hint">Decide the ${selected.agent_metadata.changes.length} change(s) above
+                first; then mark this profile as reviewed.</p>`}
             <div class="review-field-grid">
               <label class="review-field"><span>Decision</span>
                 <select value=${decisionKind} disabled=${!pending || busy}
@@ -1737,7 +2599,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     onInput=${e => setRejectionOther(e.target.value)}/></label>`}
             </div>
             <p class="review-reason">${SENTENCES.noDeletion}</p>`}
-            ${isActor && ["same_existing", "new"].includes(decisionKind) && html`
+            ${isActor && !twoWayKind(selected) && ["same_existing", "new"].includes(decisionKind) && html`
               <label class="review-field"><span>${BUTTONS.chooseHub}</span>
                 <input type="checkbox" checked=${proposeHub} disabled=${!pending || busy}
                   onChange=${e => setProposeHub(e.target.checked)}/></label>`}
@@ -1766,8 +2628,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 ? TWO_WAY_ANSWERS[twoWayKind(selected)][1] : BUTTONS.reject}</button>
             <button class="btn ghost" disabled=${!pending || busy || writerDown}
               onClick=${() => { setDecisionKind("defer"); }}>${BUTTONS.park}</button>
-            <button class="btn ghost" disabled=${!pending || busy || Object.keys(draftErrors).length > 0}
-              onClick=${save}>${BUTTONS.saveEdits}</button>
+            ${twoWayKind(selected) !== "update" && html`<button class="btn ghost"
+              disabled=${!pending || busy || Object.keys(draftErrors).length > 0}
+              onClick=${save}>${BUTTONS.saveEdits}</button>`}
             <button class="btn" onClick=${decide} disabled=${!canSubmitReview({
               candidate: selected, reviewer, rejectionReason, rejectionOther, decisionKind,
               targetId, busy, admissionConfigured: data.admission_configured, draftErrors,
@@ -1775,8 +2638,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ? decisionOptions(selected.entity_type, selected).find(o => o.value === decisionKind)?.label
               : decisionKind === "reject" ? BUTTONS.reject
               : decisionKind === "defer" ? BUTTONS.park : BUTTONS.verify}</button>
-          </footer>`}
-        </article>
+          </footer>`}`}
+        </article>`}
+        </div>
       </div>`}
     </section>`;
   };

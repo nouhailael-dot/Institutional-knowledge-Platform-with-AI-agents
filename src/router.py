@@ -43,6 +43,7 @@ actor_read(actor_id uuid, name text, actor_category text, description text,
   - region_code is one of: 'northeast', 'mid_atlantic', 'southeast',
     'midwest_great_lakes', 'south_central_texas_gulf', 'mountain_west',
     'west_coast_pacific'.
+  - status is 'verified', 'imported', 'parked' or 'rejected'.
   - estimated_trl is 1..9 or NULL. country is free text and inconsistent
     ('USA' vs 'United States') — match with ILIKE/IN when needed.
 

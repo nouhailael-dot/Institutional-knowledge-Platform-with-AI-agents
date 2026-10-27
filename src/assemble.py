@@ -16,6 +16,7 @@ Design notes:
   hook is left in place (commented) so it lights up when they're populated.
 """
 
+from src.browse import verification_label
 from src.db import get_connection
 
 
@@ -56,6 +57,7 @@ def assemble_actors() -> list[dict]:
             a.key_constraints,
             a.estimated_trl,
             a.city, coalesce(rs.state_name, a.state_code) AS state, a.country,
+            COALESCE(to_jsonb(a)->>'status', to_jsonb(a)->>'verification_status') AS status,
             pp.why_valuable_for_um6p,
             pp.thematic_focus,
             pp.key_entry_points,
@@ -73,6 +75,8 @@ def assemble_actors() -> list[dict]:
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
         LEFT JOIN actor_relevance     ar ON ar.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
+          -- GHUS-rejected records (e.g. collections of organizations) are not indexed.
+          AND COALESCE(to_jsonb(a)->>'status', '') <> 'rejected'
         ORDER BY a.name
     """
     docs = []
@@ -94,6 +98,7 @@ def assemble_actors() -> list[dict]:
                 + _section("Other names", alt_names)
                 + _section("Actor category", r["actor_category"])
                 + _section("Category type", r["category_type"])
+                + _section("Record status", verification_label(r["status"]))
                 + _section("Location", location)
                 + _section("Description", r["description"])
                 + _section("Primary technical focus", r["primary_technical_focus"])

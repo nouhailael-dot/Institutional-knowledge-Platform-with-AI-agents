@@ -1,0 +1,152 @@
+{
+ "540_v2_actor_update_subscription": {
+  "added": {
+   "columns": [
+    "actor_update_subscription.actor_ids ARRAY null=YES default=",
+    "actor_update_subscription.actor_update_subscription_id uuid null=NO default=gen_random_uuid()",
+    "actor_update_subscription.cadence text null=NO default=",
+    "actor_update_subscription.city text null=YES default=",
+    "actor_update_subscription.country text null=YES default=",
+    "actor_update_subscription.created_at timestamp with time zone null=NO default=now()",
+    "actor_update_subscription.end_date date null=NO default=",
+    "actor_update_subscription.last_run_at timestamp with time zone null=YES default=",
+    "actor_update_subscription.next_due_at timestamp with time zone null=YES default=",
+    "actor_update_subscription.origin_run_id uuid null=YES default=",
+    "actor_update_subscription.region_code text null=YES default=",
+    "actor_update_subscription.requested_by text null=YES default=",
+    "actor_update_subscription.requested_via text null=NO default=",
+    "actor_update_subscription.sector_codes ARRAY null=YES default=",
+    "actor_update_subscription.start_date date null=NO default=CURRENT_DATE",
+    "actor_update_subscription.state_code text null=YES default=",
+    "actor_update_subscription.status text null=NO default='active'::text",
+    "actor_update_subscription.topic_ids ARRAY null=YES default=",
+    "actor_update_subscription.updated_at timestamp with time zone null=NO default=now()",
+    "actor_update_subscription_run.actor_update_subscription_id uuid null=NO default=",
+    "actor_update_subscription_run.collection_run_id uuid null=NO default=",
+    "actor_update_subscription_run.created_at timestamp with time zone null=NO default=now()",
+    "actor_update_subscription_run.dry_run boolean null=NO default="
+   ],
+   "comments": [
+    "column actor_update_subscription.requested_by: Who asked for this subscription. NULL until authentication exists; shown as \"Not Recorded\". Never defaulted, never inferred.",
+    "constraint actor_update_subscription.ck_actor_update_subscription_scope: A subscription with no scope would sweep everything, which is the behaviour opt-in subscriptions replace."
+   ],
+   "constraints": [
+    "actor_update_subscription.actor_update_subscription_origin_run_id_fkey [f] FOREIGN KEY (origin_run_id) REFERENCES collection_run(collection_run_id)",
+    "actor_update_subscription.actor_update_subscription_pkey [p] PRIMARY KEY (actor_update_subscription_id)",
+    "actor_update_subscription.actor_update_subscription_region_code_fkey [f] FOREIGN KEY (region_code) REFERENCES region_definition(region_code)",
+    "actor_update_subscription.actor_update_subscription_state_code_fkey [f] FOREIGN KEY (state_code) REFERENCES region_state(state_code)",
+    "actor_update_subscription.ck_actor_update_subscription_cadence [c] CHECK ((cadence = ANY (ARRAY['once'::text, 'weekly'::text, 'monthly'::text, 'quarterly'::text])))",
+    "actor_update_subscription.ck_actor_update_subscription_period [c] CHECK ((end_date >= start_date))",
+    "actor_update_subscription.ck_actor_update_subscription_scope [c] CHECK (((COALESCE(cardinality(actor_ids), 0) > 0) OR (COALESCE(cardinality(sector_codes), 0) > 0) OR (COALESCE(cardinality(topic_ids), 0) > 0) OR (NULLIF(btrim(COALESCE(country, ''::text)), ''::text) IS NOT NULL) OR (state_code IS NOT NULL) OR (region_code IS NOT NULL) OR (NULLIF(btrim(COALESCE(city, ''::text)), ''::text) IS NOT NULL)))",
+    "actor_update_subscription.ck_actor_update_subscription_status [c] CHECK ((status = ANY (ARRAY['active'::text, 'paused'::text, 'expired'::text, 'cancelled'::text])))",
+    "actor_update_subscription.ck_actor_update_subscription_via [c] CHECK ((requested_via = ANY (ARRAY['map_verification'::text, 'review_updates'::text])))",
+    "actor_update_subscription_run.actor_update_subscription_run_actor_update_subscription_id_fkey [f] FOREIGN KEY (actor_update_subscription_id) REFERENCES actor_update_subscription(actor_update_subscription_id)",
+    "actor_update_subscription_run.actor_update_subscription_run_collection_run_id_fkey [f] FOREIGN KEY (collection_run_id) REFERENCES collection_run(collection_run_id)",
+    "actor_update_subscription_run.actor_update_subscription_run_pkey [p] PRIMARY KEY (actor_update_subscription_id, collection_run_id)"
+   ],
+   "functions": [
+    "ghus_guard_subscription_run_append_only() 9fb1de9de98a3cac25de1eee0b74e3c1"
+   ],
+   "indexes": [
+    "CREATE INDEX ix_actor_update_subscription_due ON public.actor_update_subscription USING btree (next_due_at) WHERE (status = 'active'::text)",
+    "CREATE INDEX ix_actor_update_subscription_run_run ON public.actor_update_subscription_run USING btree (collection_run_id)",
+    "CREATE INDEX ix_actor_update_subscription_status ON public.actor_update_subscription USING btree (status)",
+    "CREATE UNIQUE INDEX actor_update_subscription_pkey ON public.actor_update_subscription USING btree (actor_update_subscription_id)",
+    "CREATE UNIQUE INDEX actor_update_subscription_run_pkey ON public.actor_update_subscription_run USING btree (actor_update_subscription_id, collection_run_id)"
+   ],
+   "tables": [
+    "actor_update_subscription kind=r rls=false force_rls=false",
+    "actor_update_subscription_run kind=r rls=false force_rls=false"
+   ],
+   "triggers": [
+    "actor_update_subscription_run.actor_update_subscription_run_append_only -> ghus_guard_subscription_run_append_only enabled=O CREATE TRIGGER actor_update_subscription_run_append_only BEFORE DELETE OR UPDATE ON public.actor_update_subscription_run FOR EACH ROW EXECUTE FUNCTION ghus_guard_subscription_run_append_only()"
+   ]
+  },
+  "replaced": {}
+ },
+ "550_v2_discovery_requests": {
+  "added": {
+   "columns": [
+    "actor_update_subscription.focus_terms ARRAY null=NO default='{}'::text[]",
+    "actor_update_subscription.max_new_actors_per_run integer null=NO default=10",
+    "actor_update_subscription.title text null=YES default="
+   ],
+   "comments": [
+    "column actor_update_subscription.focus_terms: Sub-topic terms that narrow the search within the sector or topic. At most 8.",
+    "column actor_update_subscription.max_new_actors_per_run: Ceiling on new actors one run may stage; bounds review load and cost."
+   ],
+   "constraints": [
+    "actor_update_subscription.ck_actor_update_subscription_cadence [c] CHECK ((cadence = ANY (ARRAY['once'::text, 'weekly'::text, 'biweekly'::text, 'monthly'::text, 'quarterly'::text])))",
+    "actor_update_subscription.ck_actor_update_subscription_cap [c] CHECK (((max_new_actors_per_run >= 1) AND (max_new_actors_per_run <= 50)))",
+    "actor_update_subscription.ck_actor_update_subscription_discovery_topic [c] CHECK (((requested_via <> 'discovery_page'::text) OR (COALESCE(cardinality(sector_codes), 0) > 0) OR (COALESCE(cardinality(topic_ids), 0) > 0)))",
+    "actor_update_subscription.ck_actor_update_subscription_focus_terms [c] CHECK ((cardinality(focus_terms) <= 8))",
+    "actor_update_subscription.ck_actor_update_subscription_title [c] CHECK (((title IS NULL) OR ((char_length(btrim(title)) >= 1) AND (char_length(btrim(title)) <= 160))))",
+    "actor_update_subscription.ck_actor_update_subscription_via [c] CHECK ((requested_via = ANY (ARRAY['map_verification'::text, 'review_updates'::text, 'discovery_page'::text])))",
+    "collection_run.ck_collection_run_cadence [c] CHECK (((cadence IS NULL) OR (cadence = ANY (ARRAY['once'::text, 'weekly'::text, 'biweekly'::text, 'monthly'::text, 'quarterly'::text])))) NOT VALID NOT VALID"
+   ]
+  },
+  "replaced": {
+   "constraints": [
+    "actor_update_subscription.ck_actor_update_subscription_cadence [c] CHECK ((cadence = ANY (ARRAY['once'::text, 'weekly'::text, 'monthly'::text, 'quarterly'::text])))",
+    "actor_update_subscription.ck_actor_update_subscription_via [c] CHECK ((requested_via = ANY (ARRAY['map_verification'::text, 'review_updates'::text])))",
+    "collection_run.ck_collection_run_cadence [c] CHECK (((cadence IS NULL) OR (cadence = ANY (ARRAY['once'::text, 'weekly'::text, 'monthly'::text, 'quarterly'::text])))) NOT VALID NOT VALID"
+   ]
+  }
+ },
+ "560_v2_agent_auto_verification": {
+  "added": {
+   "comments": [
+    "constraint actor_verification_event.ck_actor_verification_event_origin: ghus_review = a person; existing_canonical_migration = pre-V2 carry-over; agent_auto_accept = the discovery agent accepted it on score and quality gates (verify only, reasons required)."
+   ],
+   "constraints": [
+    "actor_verification_event.ck_actor_verification_event_origin [c] CHECK ((((decision_origin = 'ghus_review'::text) AND (NULLIF(btrim(decided_by), ''::text) IS NOT NULL) AND (decided_at IS NOT NULL) AND (migration_batch_id IS NULL)) OR ((decision_origin = 'existing_canonical_migration'::text) AND (decision = 'verified'::text) AND (decided_by IS NULL) AND (decided_at IS NULL) AND (NULLIF(btrim(migration_batch_id), ''::text) IS NOT NULL) AND (topic_id IS NULL)) OR ((decision_origin = 'agent_auto_accept'::text) AND (decision = 'verified'::text) AND (NULLIF(btrim(decided_by), ''::text) IS NOT NULL) AND (decided_at IS NOT NULL) AND (NULLIF(btrim(reason), ''::text) IS NOT NULL) AND (migration_batch_id IS NULL))))"
+   ]
+  },
+  "replaced": {
+   "constraints": [
+    "actor_verification_event.ck_actor_verification_event_origin [c] CHECK ((((decision_origin = 'ghus_review'::text) AND (NULLIF(btrim(decided_by), ''::text) IS NOT NULL) AND (decided_at IS NOT NULL) AND (migration_batch_id IS NULL)) OR ((decision_origin = 'existing_canonical_migration'::text) AND (decision = 'verified'::text) AND (decided_by IS NULL) AND (decided_at IS NULL) AND (NULLIF(btrim(migration_batch_id), ''::text) IS NOT NULL) AND (topic_id IS NULL))))"
+   ]
+  }
+ },
+ "570_v2_actor_update_requests": {
+  "added": {
+   "columns": [
+    "actor_update_subscription.max_usd_per_run numeric null=YES default=",
+    "actor_update_subscription.update_options jsonb null=NO default='{}'::jsonb"
+   ],
+   "comments": [
+    "column actor_update_subscription.max_usd_per_run: Actor update requests only: the spend ceiling of one run, in USD.",
+    "column actor_update_subscription.update_options: Actor update requests only: what to re-read (scope, depth, categories, boxes, focus, actor category, fact sector, actors per run). Empty for other requests."
+   ],
+   "constraints": [
+    "actor_update_subscription.ck_actor_update_subscription_max_usd [c] CHECK (((max_usd_per_run IS NULL) OR ((max_usd_per_run > (0)::numeric) AND (max_usd_per_run <= (5)::numeric))))",
+    "actor_update_subscription.ck_actor_update_subscription_options [c] CHECK ((jsonb_typeof(update_options) = 'object'::text))",
+    "actor_update_subscription.ck_actor_update_subscription_update_request [c] CHECK (((requested_via <> 'actor_updates'::text) OR ((max_usd_per_run IS NOT NULL) AND (update_options ? 'scope'::text))))",
+    "actor_update_subscription.ck_actor_update_subscription_via [c] CHECK ((requested_via = ANY (ARRAY['map_verification'::text, 'review_updates'::text, 'discovery_page'::text, 'actor_updates'::text])))"
+   ]
+  },
+  "replaced": {
+   "constraints": [
+    "actor_update_subscription.ck_actor_update_subscription_via [c] CHECK ((requested_via = ANY (ARRAY['map_verification'::text, 'review_updates'::text, 'discovery_page'::text])))"
+   ]
+  }
+ },
+ "580_v2_event_people_requests": {
+  "added": {
+   "columns": [
+    "actor_update_subscription.discovery_entity text null=NO default='actor'::text",
+    "actor_update_subscription.discovery_options jsonb null=NO default='{}'::jsonb"
+   ],
+   "comments": [
+    "column actor_update_subscription.discovery_entity: What a Discovery-page request finds: actor, event or person.",
+    "column actor_update_subscription.discovery_options: Event requests: date_from, date_to, event_types. People requests: institution, role."
+   ],
+   "constraints": [
+    "actor_update_subscription.ck_actor_update_subscription_discovery_options [c] CHECK ((jsonb_typeof(discovery_options) = 'object'::text))",
+    "actor_update_subscription.ck_actor_update_subscription_entity [c] CHECK ((discovery_entity = ANY (ARRAY['actor'::text, 'event'::text, 'person'::text])))",
+    "actor_update_subscription.ck_actor_update_subscription_entity_via [c] CHECK (((discovery_entity = 'actor'::text) OR (requested_via = 'discovery_page'::text)))"
+   ]
+  },
+  "replaced": {}
+ }
+}

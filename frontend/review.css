@@ -16,6 +16,10 @@
 .review-notice{background:#fff7ed;border:1px solid #fed7aa;color:#8a3b12}
 .review-message.error{background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
 .review-message.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.review-deep{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;padding:13px 15px;border-radius:8px;margin:12px 0;border:1px solid var(--accent);background:var(--accent-soft);color:var(--ink)}
+.review-deep p{margin:4px 0 0;line-height:1.5}
+.review-deep-cost{font-weight:600}
+.review-deep-error{color:#991b1b}
 .review-tabs{display:flex;gap:8px;margin:16px 0 4px}
 .review-tabs .btn.active{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
 .review-updates{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:18px;margin-top:12px}
@@ -35,7 +39,7 @@
 .review-queue-head span{color:var(--muted);font-size:12px}
 
 /* ---------------------------------------------------------------- filters */
-.review-filters{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:16px 0}
+.review-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:16px 0}
 .review-filters label,.review-field{display:grid;gap:6px}
 .review-filters label>span,.review-field>span{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .review-filters input,.review-filters select,.review-field input,.review-field textarea,.review-field select{width:100%;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--ink);padding:10px 11px;font:inherit}
@@ -163,3 +167,67 @@
 
 .review-new-sector{margin-top:12px;padding:12px;border:1px dashed var(--line-strong);border-radius:8px;display:grid;gap:10px}
 .review-new-sector-actions{display:flex;gap:8px}
+
+.review-category-bulk{margin:1rem 0}.review-category-list{list-style:none;padding:0;margin:.5rem 0;max-height:18rem;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px}.review-category-list li{padding:.35rem .6rem;border-bottom:1px solid var(--line,#eee)}.review-category-list li:last-child{border-bottom:0}
+
+/* Run Type -> named run (left) -> records or one record's review (centre). */
+.review-runs,.review-records{background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.review-runs{position:sticky;top:12px;max-height:calc(100vh - 40px);overflow:auto}
+.review-runs .review-queue-head{position:sticky;top:0;background:var(--surface);z-index:1}
+.review-run{display:grid;gap:3px;width:100%;padding:12px 14px;text-align:left;background:transparent;
+  border:0;border-top:1px solid var(--line);color:var(--ink);cursor:pointer;font:inherit}
+.review-run:hover{background:var(--surface-2)}
+.review-run.active{background:var(--surface-2);box-shadow:inset 3px 0 var(--accent)}
+.review-run strong{font-size:14px;line-height:1.3}
+.review-run small{color:var(--muted);font-size:12px}
+.review-run-type{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.review-main{min-width:0;display:grid;gap:12px}
+.review-records{padding:20px}
+.review-records-head h2{margin:4px 0 2px;font-size:22px}
+.review-record-list{list-style:none;margin:16px 0 0;padding:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.review-record-list li+li{border-top:1px solid var(--line)}
+.review-record{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:14px 16px;background:transparent;border:0;color:var(--ink);cursor:pointer;text-align:left;font:inherit}
+.review-record:hover,.review-record:focus-visible{background:var(--surface-2)}
+.review-record:focus-visible,.review-run:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.review-back{justify-self:start}
+@media(max-width:1180px){.review-runs{position:static;max-height:320px}}
+
+/* Actor update profiles: what an update found, inside the boxes; changes below. */
+.light-box .review-update-note{margin-top:6px;padding:6px 9px;border-radius:7px;font-size:12px;line-height:1.45;color:var(--muted);background:var(--surface-2);border:1px solid var(--line)}
+.light-box .review-update-note span{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.light-box .review-update-note.new,.light-box .review-update-note.changed,.light-box .review-update-note.additional{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent)}
+.review-proposed{margin-top:6px;padding:8px 10px;border:1px dashed var(--accent);border-radius:8px;background:var(--accent-soft)}
+.review-proposed span{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-ink)}
+.review-proposed p{margin:4px 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.review-proposed small{color:var(--muted);font-size:11px}
+.review-changes .review-changes-reviewer{max-width:280px;margin:6px 0 12px}
+.review-change{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-top:10px;background:var(--surface)}
+.review-change-head{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.review-change-values{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.review-change-values>div{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface-2)}
+.review-change-label{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.review-change-values p{margin:4px 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.review-change-values small{color:var(--muted);font-size:11px}
+.review-change-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.review-update-runs{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}
+.review-update-runs li{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:4px}
+.review-update-runs li div{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+.review-update-runs li span,.review-update-runs li small{color:var(--muted);font-size:12px}
+@media (max-width:700px){.review-change-values{grid-template-columns:1fr}}
+.review-change-difference{margin:8px 0 0;font-size:13px;font-weight:600;color:var(--accent-ink)}
+.review-record-value{margin-top:6px;padding:8px 10px;border-radius:8px;background:var(--surface-2)}
+.review-record-value span{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.review-record-value p{margin:4px 0 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* Discovered people and events: completeness and checks. */
+.review-quality{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;background:var(--surface)}
+.review-quality.complete{border-color:#86c79d}
+.review-quality.insufficient{border-color:#e5a3a3}
+.review-quality-head{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
+.review-quality-head span{color:var(--muted);font-size:13px}
+.review-checks{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px;font-size:13px}
+.review-checks li::before{content:"○ ";color:var(--muted)}
+.review-checks li.ok::before{content:"✓ ";color:#2f7d4f}
+.review-checks li.missing::before{content:"✕ ";color:#b42318}
+

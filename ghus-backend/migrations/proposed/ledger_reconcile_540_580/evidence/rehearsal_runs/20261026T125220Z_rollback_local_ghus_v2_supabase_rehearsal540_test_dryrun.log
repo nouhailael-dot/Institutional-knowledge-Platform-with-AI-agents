@@ -1,0 +1,20 @@
+BEGIN
+SET
+SET
+SET
+SET
+            set_config            
+----------------------------------
+ 2026-10-26 12:52:16.335490+00:00
+(1 row)
+
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/rollback_reconcile_ledger_540_580.sql:71: ERROR:  cannot execute DELETE in a read-only transaction
+CONTEXT:  SQL statement "DELETE FROM public.architecture_v2_migration_ledger
+    WHERE (migration_id, source_sha256) IN (
+            ('540', '8a6f1dbec788694c2eca45b9e5f10b363da6a74197e40a60eaf8ac48805d6907'),
+            ('550', '56dc21550fd74771915b84794a29068081f5eff367810409ad2cf95885d0e46d'),
+            ('560', 'd52c855edf804b319cf77ca4f5919d76462d0436e4a884455467e8bd0e566c4a'),
+            ('570', 'ee0f192baf82ca0649fe2edc4516f41a518f4deaa6a8696b3505250ffeb01190'),
+            ('580', '63d7419e7b9511e12e7e339745bff3903c72f3ff13b55bd078aadb3f467b5f11'))
+      AND applied_at = stamp"
+PL/pgSQL function inline_code_block line 30 at SQL statement

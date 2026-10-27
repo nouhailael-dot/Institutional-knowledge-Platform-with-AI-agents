@@ -757,13 +757,49 @@ def _extract_stage_route_promote(
                     affiliation_candidates=person_affiliation_candidates,
                     actor_resolver=actor_resolver,
                 )
-            if person_review_metadata is not None:
+            held_people = {
+                str(c.get("person_id") or c.get("entity_id") or c.get("id") or "")
+                for c in candidates
+            }
+            if decision.zone == "review" and decision.target_entity_id \
+                    and str(decision.target_entity_id) not in held_people:
+                # An unsure affiliation match routes with the ORGANIZATION as
+                # its target (route_person via route_actor). A person review's
+                # target is a held person; the organization is kept as what it
+                # is. Found by the first live people run (2026-10-23).
                 decision = replace(
                     decision,
-                    score=float(person_review_metadata.get("rubric_score") or 0.0),
+                    target_entity_id=None,
+                    candidate_ids=[],
                     metadata={
                         **dict(decision.metadata or {}),
-                        **person_review_metadata,
+                        "affiliation_candidate_actor_id": decision.target_entity_id,
+                        "affiliation_candidate_actor_ids": list(decision.candidate_ids or []),
+                    },
+                )
+            proposed = None
+            if decision.zone in ("create", "link_existing") and not person_create_preview:
+                # Every discovered person goes to GHUS Review (AGENTS rule 4):
+                # a new person is proposed, not created; a match to a person
+                # already on the map is shown as that candidate, not linked.
+                proposed = decision.zone
+                decision = replace(
+                    decision,
+                    zone="review",
+                    target_entity_id=(decision.target_entity_id
+                                      if proposed == "link_existing" else None),
+                )
+            if person_review_metadata is not None or proposed:
+                decision = replace(
+                    decision,
+                    score=float((person_review_metadata or {}).get("rubric_score")
+                                or decision.score or 0.0),
+                    metadata={
+                        **dict(decision.metadata or {}),
+                        **(person_review_metadata or {}),
+                        **({"review_kind": ("identity" if proposed == "link_existing"
+                                            else "rubric_band"),
+                            "proposed_zone": proposed} if proposed else {}),
                     },
                 )
         else:

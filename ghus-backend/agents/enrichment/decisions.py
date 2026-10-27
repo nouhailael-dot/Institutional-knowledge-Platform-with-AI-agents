@@ -429,6 +429,38 @@ def record_agent_auto_verification(
     )
 
 
+def record_import_verification(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str | None,
+    decided_by: str,
+    reason: str,
+) -> None:
+    """Verify an actor a named GHUS uploader imported, attesting to it (migration 590).
+
+    Decision 2026-10-26: a Data Feed import may create an actor Verified when
+    the uploader is named and attests to their authority and the source. The
+    event is labelled ``ghus_import``, names the uploader and carries the
+    provenance (file, row, attestation) in its reason, so it is never mistaken
+    for a reviewer's decision. Verify only. It does not authorize Deep Pull.
+    """
+    if not str(decided_by or "").strip():
+        raise ValueError("an import verification must name its uploader")
+    if not str(reason or "").strip():
+        raise ValueError("an import verification must state its provenance")
+    execute_canonical_write(
+        session,
+        text(
+            "INSERT INTO actor_verification_event (actor_id,topic_id,decision,decided_by,"
+            "decided_at,reason,decision_origin) VALUES (CAST(:actor_id AS uuid),"
+            "CAST(:topic_id AS uuid),'verified',:decided_by,now(),:reason,'ghus_import')"
+        ),
+        {"actor_id": actor_id, "topic_id": topic_id, "decided_by": str(decided_by).strip(),
+         "reason": str(reason).strip()},
+    )
+
+
 def record_category_review_decision(
     session,
     *,
@@ -589,6 +621,7 @@ def record_fact_review_decision(
     review_item_id: str,
     decided_by: str,
     accept: bool,
+    keep_both: bool = False,
     notes: str | None = None,
     live: bool = False,
 ) -> dict[str, object]:
@@ -599,6 +632,11 @@ def record_fact_review_decision(
     resolved ``rejected`` and the current one stands. Both facts stay in the
     ledger; nothing is deleted. If the current value changed after the review
     item was raised, accepting is refused rather than overwriting the newer value.
+
+    ``keep_both`` exists only where the model holds several valid values: a
+    box has one current value, but an actor may have several locations. The
+    current location stays current; the proposed one is added as an additional
+    ``actor_location`` with its source, once the gazetteer places it.
     """
     reviewer = str(decided_by or "").strip()
     if not reviewer:
@@ -608,27 +646,38 @@ def record_fact_review_decision(
     current_id = str(payload.get("current_fact_id") or "")
     if not new_id or not current_id:
         raise ValueError("this review item does not name the two facts it compares")
+    if keep_both and accept:
+        raise ValueError("choose one: use the new value, keep the current one, or keep both")
     outcome: dict[str, object] = {
         "review_item_id": review_item_id, "actor_id": item["entity_id"],
         "field_key": payload.get("field_key"), "new_fact_id": new_id,
         "current_fact_id": current_id,
-        "decision": "use_new_value" if accept else "keep_current_value",
+        "decision": ("keep_both" if keep_both else
+                     "use_new_value" if accept else "keep_current_value"),
     }
     if item["status"] != "pending":
         return {**outcome, "action": "already_resolved"}
     fact = session.execute(text(
-        "SELECT actor_id::text AS actor_id, topic_id::text AS topic_id, fact_key "
+        "SELECT actor_id::text AS actor_id, topic_id::text AS topic_id, fact_key, "
+        "fact_value, source_id::text AS source_id "
         "FROM actor_fact WHERE actor_fact_id=CAST(:id AS uuid)"
     ), {"id": new_id}).mappings().first()
     if fact is None:
         raise ValueError("the proposed fact no longer exists")
+    if keep_both and (str(fact["actor_id"]) != str(item["entity_id"])
+                      or fact["fact_key"] != payload.get("field_key", fact["fact_key"])):
+        raise ValueError("the proposed fact does not belong to this review item")
     pointer = session.execute(text(
         "SELECT actor_fact_id::text FROM actor_fact_current_pointer WHERE "
         "actor_id=CAST(:a AS uuid) AND topic_id=CAST(:t AS uuid) AND fact_key=:k FOR UPDATE"
     ), {"a": fact["actor_id"], "t": fact["topic_id"], "k": fact["fact_key"]}).scalar()
-    if accept and pointer != current_id:
+    if (accept or keep_both) and pointer != current_id:
         raise ValueError("the current value changed after this review was raised; "
                          "check the actor again before replacing it")
+    if keep_both:
+        return _keep_both_locations(session, item=item, fact=fact, outcome=outcome,
+                                    review_item_id=review_item_id, current_id=current_id,
+                                    reviewer=reviewer, notes=notes, live=live)
     if not live:
         return {**outcome, "action": "would_decide"}
     reason = ("GHUS review: use the new value" if accept else
@@ -647,6 +696,73 @@ def record_fact_review_decision(
                        status="approved" if accept else "rejected", decided_by=reviewer,
                        reason=reason)
     return {**outcome, "action": "decided"}
+
+
+def _keep_both_locations(session, *, item, fact, outcome, review_item_id, current_id,
+                         reviewer, notes, live):
+    """Keep the current location and add the proposed one as an additional location."""
+    from agents.common.geography import default_gazetteer, normalize_state
+
+    if fact["fact_key"] != "location":
+        raise ValueError("keep both applies only to locations: every other box holds one "
+                         "current value")
+    if not fact.get("source_id"):
+        raise ValueError("an additional location requires a source")
+    value = fact["fact_value"]
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            value = {}
+    value = value if isinstance(value, dict) else {}
+    country = str(value.get("country") or "US").strip()
+    if country.casefold() not in {"us", "usa", "united states", "united states of america"}:
+        raise ValueError("an additional location outside the US cannot be placed yet; "
+                         "keep the current value or use the new one")
+    state = normalize_state(value.get("state") or value.get("state_code"))
+    place = default_gazetteer().lookup(value.get("city"), state, "US")
+    if not place.found:
+        raise ValueError(f"the proposed location could not be placed: {place.reason}")
+    located = {"city": place.city, "state_code": place.state_code,
+               "region_code": place.region_code, "latitude": place.latitude,
+               "longitude": place.longitude}
+    # Serialize separate review items for the same actor before checking duplicates.
+    actor = session.execute(text("SELECT actor_id FROM actor WHERE actor_id=CAST(:a AS uuid) FOR UPDATE"),
+                            {"a": item["entity_id"]}).first()
+    if actor is None:
+        raise ValueError("the actor no longer exists")
+    already = session.execute(text(
+        "SELECT 1 FROM actor_location WHERE actor_id=CAST(:a AS uuid) "
+        "AND lower(city)=lower(:city) AND state_code IS NOT DISTINCT FROM :state"
+    ), {"a": item["entity_id"], "city": place.city, "state": place.state_code}).first()
+    if not live:
+        return {**outcome, "action": "would_decide", "added_location": located,
+                "location_already_listed": already is not None}
+    if already is None:
+        inserted = execute_canonical_write(session, text(
+            "INSERT INTO actor_location (actor_location_id,actor_id,location_name,country,"
+            "state_code,city,region_code,latitude,longitude,is_primary,source_id) VALUES ("
+            "CAST(:id AS uuid),CAST(:a AS uuid),:name,'US',:state_code,:city,:region_code,"
+            ":latitude,:longitude,false,CAST(:source AS uuid))"
+        ), {"id": str(uuid.uuid4()), "a": item["entity_id"],
+            "name": f"{place.city}, {place.state_code}", "source": fact["source_id"],
+            **located})
+        if inserted.rowcount != 1:
+            raise ValueError("the additional location was not written")
+    if _has_column(session, "actor", "is_multi_location"):
+        updated = execute_canonical_write(session, text(
+            "UPDATE actor SET is_multi_location=true, updated_at=now() "
+            "WHERE actor_id=CAST(:a AS uuid)"), {"a": item["entity_id"]})
+        if updated.rowcount != 1:
+            raise ValueError("the actor location flag was not written")
+    reason = ("GHUS review: keep both; the proposed location is added as an additional "
+              "location and the current one stays current") + (f"; {notes}" if notes else "")
+    _append_fact_resolution(session, str(outcome["new_fact_id"]), "accepted", current_id,
+                            reviewer, reason)
+    _close_review_item(session, review_item_id, decision="approve", status="approved",
+                       decided_by=reviewer, reason=reason)
+    return {**outcome, "action": "decided", "added_location": located,
+            "location_already_listed": already is not None}
 
 
 def propose_actor_relationship(
@@ -896,12 +1012,14 @@ def fill_actor_location(
                "longitude": result.longitude}
     if not live:
         return {"action": "would_locate", **outcome}
-    legacy_state = ",state=:state_code" if _has_column(session, "actor", "state") else ""
+    # A separate parameter: state_code and the legacy state column may differ
+    # in type (varchar / text), and one parameter cannot be both.
+    legacy_state = ",state=:legacy_state" if _has_column(session, "actor", "state") else ""
     execute_canonical_write(session, text(
         f"UPDATE actor SET {city_column}=:city,state_code=:state_code{legacy_state},"
         "region_code=:region_code,country='US',latitude=:latitude,longitude=:longitude,"
         "updated_at=now() WHERE actor_id=CAST(:actor AS uuid)"
-    ), {**outcome, "actor": actor_id})
+    ), {**outcome, "legacy_state": result.state_code, "actor": actor_id})
     return {"action": "located", **outcome}
 
 

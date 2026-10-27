@@ -262,7 +262,8 @@ def test_a_requested_run_searches_only_what_was_asked(monkeypatch, tmp_path):
     assert result["stats"]["discovery_request_title"] == "Energy actors in the Northeast"
 
 
-def test_a_request_cannot_scope_event_discovery(monkeypatch, tmp_path):
+def test_an_organization_request_cannot_scope_event_discovery(monkeypatch, tmp_path):
+    """A request finds what it was made for: an organization request never runs events."""
     from argparse import Namespace
     from pathlib import Path
 
@@ -279,7 +280,7 @@ def test_a_request_cannot_scope_event_discovery(monkeypatch, tmp_path):
                      discovery_request=DiscoveryRequest.from_subscription(_subscription()),
                      report_out=str(tmp_path / "r.md"), rejection_report_out=None,
                      audit_out=str(tmp_path / "a.csv"))
-    with pytest.raises(ValueError, match="actor discovery only"):
+    with pytest.raises(ValueError, match="finds actors, not events"):
         search_run.run_search_triage(
             args, root=Path(__file__).resolve().parents[2], run_log=InMemoryRunLog(),
             store=InMemorySearchCandidateStore(), search_provider=StaticSearchProvider({}),

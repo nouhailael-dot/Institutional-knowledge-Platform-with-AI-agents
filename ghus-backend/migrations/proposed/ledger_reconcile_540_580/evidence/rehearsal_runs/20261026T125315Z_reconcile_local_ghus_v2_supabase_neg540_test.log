@@ -1,0 +1,7 @@
+BEGIN
+SET
+SET
+SET
+SET
+psql:C:/Users/Ismail/Projects/GHUS-Platform/migrations/proposed/ledger_reconcile_540_580/reconcile_ledger_540_580.sql:205: ERROR:  precondition failed: 190, 210 or 260 is not recorded in the ledger
+CONTEXT:  PL/pgSQL function inline_code_block line 160 at RAISE

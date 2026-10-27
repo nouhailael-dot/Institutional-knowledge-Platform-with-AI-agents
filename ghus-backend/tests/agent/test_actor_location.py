@@ -77,7 +77,7 @@ def test_a_live_discovery_request_is_followed_by_the_light_pull_read(monkeypatch
         runner.RequestOutcome("r2", "Failed one", [], status="failed"),
         runner.RequestOutcome("r3", "An update", [], status="succeeded", kind="actor_update"),
     ])
-    runner._light_pull_after(report)
+    runner._light_pull_after(report, everything=True)       # the operator's --light-pull
     # Only the discovery run that ran; a second pass picks up any unread candidate.
     assert calls == [["--request-id", "r1", "--live"]] * 2
     assert "Light Pull" in report.outcomes[0].status_reason
@@ -88,6 +88,26 @@ def test_a_live_discovery_request_is_followed_by_the_light_pull_read(monkeypatch
     monkeypatch.setattr(light_pull_candidates, "main", refuse)
     shared = runner.RunnerReport(live=True, today=date(2026, 10, 19), outcomes=[
         runner.RequestOutcome("r4", "Prod", [], status="succeeded")])
-    runner._light_pull_after(shared)
+    runner._light_pull_after(shared, everything=True)
     assert shared.outcomes[0].status == "succeeded"  # the discovery run itself stands
     assert "Light Pull not run" in shared.outcomes[0].status_reason
+
+
+def test_a_request_reads_what_it_keeps_by_its_own_choice(monkeypatch):
+    """New requests carry pull_depth=light: every run reads, scheduled or not."""
+    from datetime import date
+
+    from agents.collection import light_pull_candidates, subscription_runner as runner
+
+    calls = []
+    monkeypatch.setattr(light_pull_candidates, "main", lambda argv: calls.append(argv[1]) or 0)
+    report = runner.RunnerReport(live=True, today=date(2026, 10, 26), outcomes=[
+        runner.RequestOutcome("light", "New", [], status="succeeded", pull_depth="light"),
+        runner.RequestOutcome("none", "Opted out", [], status="succeeded", pull_depth="none"),
+        runner.RequestOutcome("legacy", "Saved before", [], status="succeeded"),
+    ])
+    runner._light_pull_after(report)                         # a scheduled run: no flag
+    assert calls == ["light", "light"]
+    calls.clear()
+    runner._light_pull_after(report, everything=True)        # Run now passes --light-pull
+    assert calls == ["light", "light", "legacy", "legacy"]

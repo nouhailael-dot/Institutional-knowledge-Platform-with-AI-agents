@@ -39,3 +39,10 @@ env/
 
 # Office lock files (~$Book.xlsx) left while a document is open
 ~$*
+
+# Local test caches and Windows temporary test directories
+.pytest_cache/
+pytest-of-*/
+
+# Data Feed previews and completion logs: uploaded values, never versioned
+.datafeed/

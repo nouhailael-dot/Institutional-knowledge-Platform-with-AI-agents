@@ -1,0 +1,129 @@
+{
+  "imported_backend_commit": "62e4008",
+  "published_backend_commit": "9640da0f18cbd7162ec64aabef379d1afb3ce85e",
+  "platform_start_commit": "728813ddd38080e70e3cd729c12dff2253db84a2",
+  "initial_capture_utc": "2026-10-21T16:07:47.270728+00:00",
+  "followup_capture_utc": "2026-10-22T12:30:25.944587+00:00",
+  "initial_manifest_sha256": "e8b14dac02c20146984eb5b6d52bb583ec0e3e503b200346fcd88bf0ae81fe21",
+  "note": "Source hashes identify reviewed inputs, before integration adaptations. Non-incorporated files remain in the separate backend checkout. No source checkout file was modified by this integration.",
+  "files": {
+    "agents/collection/actor_updates.py": {
+      "source_sha256": "0ae507174a53921a74825767a26fcb9e39bf0f7691df8b0a49775d71e9027975",
+      "incorporated": true
+    },
+    "agents/collection/light_pull_candidates.py": {
+      "source_sha256": "aa4980fb22f6ee24686b52dc54f63a8bea4e2f132ca9ca8a70344e8dabfaa729",
+      "incorporated": true
+    },
+    "agents/collection/light_pull_reader.py": {
+      "source_sha256": "b7ed1c84cfd800536108a285e938487a7681e138957befce18903da5de6dd548",
+      "incorporated": true
+    },
+    "agents/collection/site_access.py": {
+      "source_sha256": "92d37e3edfceaa2e6eb7ed53cec91c4e617c654fbcef746469813de187c505c4",
+      "incorporated": true
+    },
+    "agents/common/fact_parts.py": {
+      "source_sha256": "2ef4f48f4bff5cce53acfd83e930d017a38e60a7bacd9250028e832fdd026942",
+      "incorporated": true,
+      "earlier_snapshot_sha256": "3c18a3bbd07799d0f48bf066e9bcfec17e742c9112e786eb5c0cc7a9b84c72b9"
+    },
+    "agents/config/sources.yaml": {
+      "source_sha256": "8bc57c2040c0c88989fca6773ea38160a452134cb456101c3cd3ff3c6e15fd9f",
+      "incorporated": true
+    },
+    "agents/enrichment/decisions.py": {
+      "source_sha256": "4bf3f938dab78bb0090384591399f6826027d9bcf1c97e08b9096cbe33b9a6d7",
+      "incorporated": true
+    },
+    "agents/review/admission.py": {
+      "source_sha256": "6a6aeb72817de63463cf02a3e221c616c564655200e0aacea4bd0df28a28bf43",
+      "incorporated": true
+    },
+    "alembic.ini": {
+      "source_sha256": "e8096bcb8f811dae06f7d426f18198c2844fff296f4e7a46fc8e9911a02e3295",
+      "incorporated": false
+    },
+    "docs/adr/002-data-quality-findings.md": {
+      "source_sha256": "e6381e5f20831c174369c6024722c4f593280e975759df25fc1f9b3e12e4bbce",
+      "incorporated": false
+    },
+    "docs/adr/003-institutional-partner-sidecar.md": {
+      "source_sha256": "3842b1b2b427ccc1a9e8d29424ef20cf36886cf11db4f12b46f045837ff40fe3",
+      "incorporated": false
+    },
+    "docs/evidence/hub_real_world_shortlist.md": {
+      "source_sha256": "3c60e3047b4a4f6de32fe690edda99cc2471b0d372a72510ba30e94e0313fae2",
+      "incorporated": false
+    },
+    "docs/phase-4-plan.md": {
+      "source_sha256": "4dd13a5446fdf6f35cc884be4cc3f8aee584ad03dd4406cad4ade539e884fd18",
+      "incorporated": false
+    },
+    "evals/actor_type_gold.jsonl": {
+      "source_sha256": "12521c2112ccf3b84fe256522357d1bf96a092a39f41bc96fded2bfecd74e6ed",
+      "incorporated": false
+    },
+    "evals/entity_extraction_gold.jsonl": {
+      "source_sha256": "bc3068841d7f0293811fea87fe50f27bff41364f82840d947e96e283198ae167",
+      "incorporated": false
+    },
+    "evals/run_researcher_eval.py": {
+      "source_sha256": "efbc7e017f8ed6cbdcbf9f780a41ac4a9484fe7d2be9a5ebc9f572a4493a3795",
+      "incorporated": false
+    },
+    "migrations/versions/c4e8a1d9f206_add_event_content_fields.py": {
+      "source_sha256": "e2a92835f01af007be46176c0402adfd9d7cafc008f5f2c72802201175becd35",
+      "incorporated": false
+    },
+    "scripts/evaluate_actor_pipeline.py": {
+      "source_sha256": "169986f4d8109d5a2f0f146558088e3b723b9df6e3731dff7c842f231c1d09ec",
+      "incorporated": false
+    },
+    "scripts/light_pull_second_pass.py": {
+      "source_sha256": "b6a52f44aedcd3e7744e3c619527e78da3bd712b014bb49eac31713c284105be",
+      "incorporated": false
+    },
+    "scripts/smoke_test_actor_merge.py": {
+      "source_sha256": "8a23e5ab9ca3b90c74e9dd20f6b5b199423f6437281d608b310021191ba624c1",
+      "incorporated": false
+    },
+    "src/ML/entity_resolution/er_description_features.py": {
+      "source_sha256": "ed730cf63d35f017984f3908e12e80717bc6921021ef0e8cb7b5ee26a94c17e6",
+      "incorporated": false
+    },
+    "tests/agent/test_actor_updates.py": {
+      "source_sha256": "0bbb813b35bdf23117020f355a643366219698f0fe1cf9b4372f528f70bb75cb",
+      "incorporated": true
+    },
+    "tests/agent/test_agents_enrichment_phase4.py": {
+      "source_sha256": "ef8cd39e72b9f354a4024771022a059238cb1a92633e5450877311b64d4138e5",
+      "incorporated": true
+    },
+    "tests/agent/test_fact_parts.py": {
+      "source_sha256": "f4dacdc424e1b7425dc70676ca5a158fc2bfaffe5dbf9894ff026a3f972c6b59",
+      "incorporated": true,
+      "earlier_snapshot_sha256": "8187e62618c470f4b8c6402e60b4f05f544ba646705657348635d3afee8290b2"
+    },
+    "tests/agent/test_light_pull_reader.py": {
+      "source_sha256": "6ebe21191c5d7e81cf9a4bccfdb4dcc6aaf2e82dbfbed5e7fcc741889eed2d33",
+      "incorporated": true
+    },
+    "tests/agent/test_site_access.py": {
+      "source_sha256": "d6c9cd0339e6fa73d02f489202f4d4a25a17de3e46a2d5ce569a802ed8ddc82c",
+      "incorporated": true
+    },
+    "tests/demo/__init__.py": {
+      "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "incorporated": false
+    },
+    "tests/demo/seed_hub_cohort.py": {
+      "source_sha256": "ee88a3e28b4b1221af53b9238095ae545c8b9fa6b33f04d74ea3e2492c8a6eaa",
+      "incorporated": false
+    },
+    "tests/integration/test_functional_actor_updates.py": {
+      "source_sha256": "8216e51143cd2b31ae4fa2d85d51dd90e6ee54550aa06c770e30263aab671780",
+      "incorporated": true
+    }
+  }
+}

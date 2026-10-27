@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,13 +29,14 @@ sys.path.insert(0, str(ROOT))          # make `src` importable no matter the CWD
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import (FileResponse, JSONResponse, Response,
                                StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src import browse
-from src.db import get_readonly_connection
 from src.documents.doc_store import build_store, search_chunks
 from src.documents.extract import ExtractionError, extract_text
 from src.generate import ask_handoff, condense_question, stream_answer
@@ -52,6 +53,9 @@ from src.map_agent.run_store import RunStore, RunContext, MapStopped
 from src.map_agent.search_backend import availability as research_availability
 from src.retrieve import retrieve
 from src.discovery.bridge import DiscoveryBridge, DiscoveryBridgeError
+from backend.datafeed_routes import router as datafeed_router
+from src.plain_errors import GENERIC as PLAIN_GENERIC
+from src.plain_errors import REASON_KEYS, explain, explain_payload, is_technical
 from src.review.store import register_sector_codes
 from src.review import (AdmissionBridge, AdmissionBridgeError, DuplicateRisk, PostgresReviewSource,
                         PostgresReviewSourceError, ReadOnlyRunStore,
@@ -141,6 +145,63 @@ async def revalidate_frontend_assets(request, call_next):
     if path == "/" or path.endswith((".js", ".css", ".html")):
         response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+# ------------------------------------------------- errors in plain words
+# Every screen shows ``detail`` (a failed request) or ``error`` / ``status_reason``
+# (a run that finished without what was asked). They are put into words a person
+# without technical training understands here, once, for every page; the original
+# stays beside them under ``technical`` for support. See src/plain_errors.py.
+
+@app.exception_handler(StarletteHTTPException)
+async def plain_http_error(request, exc):
+    detail = exc.detail
+    body = {"detail": detail}
+    if isinstance(detail, str) and is_technical(detail):
+        body = {"detail": explain(detail), "technical": detail}
+    elif isinstance(detail, dict) and is_technical(detail.get("message")):
+        body = {"detail": {**detail, "message": explain(detail["message"])},
+                "technical": detail["message"]}
+    return JSONResponse(jsonable_encoder(body), status_code=exc.status_code,
+                        headers=getattr(exc, "headers", None))
+
+
+@app.exception_handler(RequestValidationError)
+async def plain_validation_error(request, exc):
+    fields = sorted({str(error.get("loc", ())[-1]).replace("_", " ")
+                     for error in exc.errors() if error.get("loc")})
+    return JSONResponse(status_code=422, content=jsonable_encoder({
+        "detail": ("Some information is missing or not valid"
+                   + (f": {', '.join(fields)}." if fields else ".")),
+        "errors": exc.errors(),
+    }))
+
+
+@app.exception_handler(Exception)
+async def plain_unexpected_error(request, exc):
+    logger.exception("Unexpected error on %s", request.url.path)
+    return JSONResponse(status_code=500, content={
+        "detail": PLAIN_GENERIC, "technical": f"{type(exc).__name__}: {exc}"[:500]})
+
+
+@app.middleware("http")
+async def plain_reasons(request, call_next):
+    """A finished run's reasons (error, status_reason ...) in plain words."""
+    response = await call_next(request)
+    if (not request.url.path.startswith("/api/")
+            or "application/json" not in response.headers.get("content-type", "")):
+        return response
+    body = b"".join([chunk async for chunk in response.body_iterator])
+    if len(body) <= 3_000_000 and any(f'"{key}"'.encode() in body for key in REASON_KEYS):
+        try:
+            body = json.dumps(explain_payload(json.loads(body))).encode("utf-8")
+        except ValueError:
+            pass
+    headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
+    return Response(content=body, status_code=response.status_code, headers=headers,
+                    media_type="application/json")
+
+
 FRONTEND = ROOT / "frontend"
 
 
@@ -314,7 +375,9 @@ def ask_to_map_handoff(payload: HandoffRequest):
 # Approximate (hub-level), but it's the only sector signal the data supports.
 @lru_cache(maxsize=1)
 def _sector_code_to_name() -> dict:
-    with get_readonly_connection() as conn, conn.cursor() as cur:
+    # Browse's own connection: an instance with BROWSE_DATABASE_URL (the demo)
+    # names its sectors from that database, never from DATABASE_URL in .env.
+    with browse._readonly() as conn, conn.cursor() as cur:
         cur.execute("SELECT code, name FROM sector")
         return {code: name for code, name in cur.fetchall()}
 
@@ -856,7 +919,8 @@ def _sync_review_candidates(*, force: bool = False):
             postgres = review_postgres_source()
             if postgres is not None:
                 candidates, source_warnings = postgres.fetch_candidates()
-                target.sync_external_candidates(candidates)
+                target.sync_external_candidates(
+                    candidates, retired=getattr(postgres, "retired_keys", None))
                 warnings.extend(source_warnings)
                 target.set_sync_state("postgresql", success=not source_warnings,
                                       error="; ".join(source_warnings) or None)
@@ -917,8 +981,40 @@ class ReviewRejectionRequest(ReviewDecisionRequest):
     rejection_reason: str = Field(min_length=1, max_length=5000)
 
 
+class ReviewCategoryRequest(BaseModel):
+    candidate_ids: list[str] = Field(min_length=1, max_length=500)
+    reviewer: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
+    notes: str | None = Field(default=None, max_length=5000)
+    categories: dict[str, str] = Field(default_factory=dict)
+
+
+class ReviewItemDecisionRequest(BaseModel):
+    decision_kind: str = Field(pattern="^(resolve_location|resolve_relationship)$")
+    reviewer: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
+    notes: str | None = Field(default=None, max_length=5000)
+    city: str | None = Field(default=None, max_length=120)
+    state: str | None = Field(default=None, max_length=80)
+    country: str | None = Field(default=None, max_length=80)
+    keep_unlocated: bool = False
+    approve: bool = False
+    source_url: str | None = Field(default=None, max_length=2000)
+
+
+class ReviewChangeRequest(BaseModel):
+    choice: str = Field(min_length=1, max_length=20)
+    reviewer: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
+    notes: str | None = Field(default=None, max_length=5000)
+
+
 class ReviewAdmissionRequest(ReviewDecisionRequest):
     decision_kind: str
+    keep_both: bool = False
     target_id: str | None = None
     hub_ids: list[str] = Field(default_factory=list)
     proposed_hub: dict | None = None
@@ -1038,9 +1134,41 @@ def review_candidates(status: str = Query("pending_review"),
         result["sync_warnings"] = sync_warnings
         result["demo_banner"] = _demo_banner()
         result["admission_configured"] = review_admission_bridge().configured
+        result["candidates"] = [_list_view(c) for c in result.get("candidates") or []]
         return result
     except Exception as exc:
         _raise_review_error(exc)
+
+
+# What only an opened record needs. The list carried them for every record -
+# the whole hub list alone 3.2 MB, fact histories 1.8 MB, 7.9 MB in all
+# (2026-10-24) - and the page froze parsing it on every load and filter change.
+# An opened record is read in full from /api/review/candidates/{id}.
+_DETAIL_ONLY_METADATA = frozenset({
+    "hubs", "fact_history", "facts", "relationships", "rubric", "score_breakdown",
+    "page_facts", "pipeline", "fact_change", "top_matches", "hub_suggestions",
+    "decided_changes", "evidence_items", "qualification_paths",
+})
+
+
+# The edit form of an opened record: constraints, original values, evidence.
+_DETAIL_ONLY_FIELDS = frozenset({
+    "original_payload", "field_constraints", "editable_fields", "rejection_reasons",
+    "evidence",
+})
+
+
+def _list_view(candidate: dict) -> dict:
+    light = {k: v for k, v in candidate.items() if k not in _DETAIL_ONLY_FIELDS}
+    metadata = candidate.get("agent_metadata")
+    if not isinstance(metadata, dict):
+        return light
+    meta = {k: v for k, v in metadata.items() if k not in _DETAIL_ONLY_METADATA}
+    if isinstance(meta.get("quality"), dict):
+        # The row shows completeness; the checks are read when it is opened.
+        meta["quality"] = {"completeness": meta["quality"].get("completeness"),
+                           "outcome": meta["quality"].get("outcome")}
+    return {**light, "agent_metadata": meta}
 
 
 @app.get("/api/review/candidates/{candidate_id}")
@@ -1094,6 +1222,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
             reviewer=payload.reviewer,
             idempotency_key=payload.idempotency_key,
             target_id=payload.target_id,
+            keep_both=payload.keep_both,
             notes=payload.notes,
             edited_payload=payload.edited_payload,
             hub_ids=payload.hub_ids,
@@ -1131,6 +1260,41 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
         _raise_review_error(exc)
 
 
+@app.post("/api/review/candidates/{candidate_id}/changes/{review_item_id}")
+def review_candidate_change(candidate_id: str, review_item_id: str, payload: ReviewChangeRequest):
+    """Decide one change on an actor's update profile.
+
+    Keep the current value, use the new one, or keep both (locations only);
+    confirm or refuse a proposed link or hub. Applied by the backend's approved
+    writer: the current-fact pointer moves, both facts stay in the history.
+    """
+    store = review_store()
+    try:
+        UUID(review_item_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Unknown change.") from exc
+    try:
+        decision = store.change_request(
+            candidate_id, review_item_id, choice=payload.choice, reviewer=payload.reviewer,
+            idempotency_key=payload.idempotency_key, notes=payload.notes,
+            confirmed=payload.confirmed,
+        )
+        outcome = review_admission_bridge().apply(decision)
+        updated = store.record_change_decision(
+            candidate_id, review_item_id, choice=payload.choice, reviewer=payload.reviewer,
+            idempotency_key=payload.idempotency_key, notes=payload.notes, outcome=outcome,
+        )
+        # Re-read the map so the boxes show the value now current.
+        try:
+            _sync_review_candidates(force=True)
+            updated = store.get(candidate_id)
+        except Exception:
+            logger.exception("Review re-read after a change decision failed")
+        return updated
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
 # ---------------------------------------------------------------- discovery
 # Actor discovery runs only for requests made here. The page never writes the
 # request tables: every call goes through the backend's own command, which
@@ -1148,6 +1312,11 @@ class DiscoveryDraft(BaseModel):
     end_date: str
     cadence: str
     max_new_actors_per_run: int = Field(default=10, ge=1, le=50)
+    # What the request finds. Left out, it is an organization request exactly
+    # as before; events and people carry their own scope (backend migration 580,
+    # validated by agents/collection/subscriptions.py).
+    discovery_entity: Literal["actor", "event", "person"] | None = None
+    discovery_options: dict[str, Any] | None = None
 
 
 def _discovery_call(fn, *args):
@@ -1334,9 +1503,44 @@ def discovery_change(subscription_id: str, action: str):
     return _discovery_call(discovery_bridge().change, subscription_id, action)
 
 
+@app.post("/api/review/candidates/{candidate_id}/review-item-decision")
+def review_item_decision(candidate_id: str, payload: ReviewItemDecisionRequest):
+    """Resolve a V2 location or relationship review item through GHUS."""
+    store = review_store()
+    try:
+        request = store.review_item_decision_request(candidate_id, **payload.model_dump())
+        outcome = review_admission_bridge().apply(request)
+        return store.record_review_item_success(request, outcome)
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.post("/api/review/category-decisions")
+def review_category_decisions(payload: ReviewCategoryRequest):
+    """Confirm GHUS actor categories for one or many category_doubt reviews at once."""
+    store = review_store()
+    try:
+        request = store.category_decision_request(
+            payload.candidate_ids,
+            reviewer=payload.reviewer,
+            idempotency_key=payload.idempotency_key,
+            notes=payload.notes,
+            categories=payload.categories,
+            confirmed=payload.confirmed,
+        )
+        outcome = review_admission_bridge().apply(request)
+        return {"outcome": outcome, "candidates": store.record_category_success(request, outcome)}
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+# Data Feed: spreadsheet and manual records, staged for Review by the backend.
+app.include_router(datafeed_router)
 
 
 # ---------------------------------------------------------------- static frontend
