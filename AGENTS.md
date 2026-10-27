@@ -4,9 +4,8 @@
 
 - One repository: `C:\Users\Ismail\Projects\GHUS-Shared`, a clone of
   `https://github.com/nouhailael-dot/Institutional-knowledge-Platform-with-AI-agents`.
-  All Claude Code and Codex development happens here (or in a worktree of it),
-  on a feature branch created from the latest `origin/main`. Never commit to
-  `main` directly; changes reach it through a reviewed Pull Request.
+  All Claude Code and Codex development happens here, directly on `main` (see
+  "Working on main" below).
   - Repository root: the platform. Architecture V2 phases 15-16, the platform
     UI, FastAPI routes, review/curation, browsing, Ask, retrieval/RAG, Data Feed
     and source labels. Older references to Streamlit mean this platform unless
@@ -29,9 +28,24 @@
   outside all repositories.
 - Shared Supabase database: read-only. Never execute DDL or writes there.
 
-At the start of every session, print the working directory and branch, and
-`git fetch origin`. Stop if the directory is one of the retired folders, or if
-the branch was not created from the current `origin/main`.
+At the start of every session, print the working directory and branch. Stop if
+the directory is one of the retired folders.
+
+## Working on main
+
+Ismail and Nouhaila both work directly on `main`; there are no long-lived
+feature branches.
+
+- Before starting work, `git switch main` and `git pull --ff-only origin main`,
+  so every change builds on the other person's latest commits.
+- Commit in small, self-contained steps, each with its tests passing.
+- Before pushing, `git pull --rebase origin main` (or a merge if the rebase
+  conflicts), rerun the relevant tests, then `git push origin main`.
+- Never force-push, never reset or rewrite pushed commits, and never resolve a
+  conflict by blindly taking one side: keep both people's changes.
+- Pushing to GitHub happens only when the user asks for it.
+- A large or risky change (a migration, a shared frontend rewrite) may still go
+  through a short-lived branch and Pull Request for Nouhaila's review.
 
 ## Architecture V2 standing rules
 

@@ -164,9 +164,9 @@ project. Treat them as compile errors, not preferences.
 
 - This repository is the canonical shared GHUS development repository.
 - Never work from old downloaded/ZIP copies of the project.
-- `main` is the shared stable branch.
-- Do not develop directly on `main`.
-- Use feature/fix/integration branches.
+- `main` is the shared branch, and development happens directly on it; follow
+  "Working on main" in the repository root `AGENTS.md` (pull before working
+  and before pushing, small commits with passing tests).
 - Do not force-push or destructively reset shared work.
 - Do not resolve merge conflicts by blindly choosing one side.
 - Preserve existing functionality unless explicitly asked to change it.
