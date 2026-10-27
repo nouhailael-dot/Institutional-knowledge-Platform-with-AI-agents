@@ -6,6 +6,10 @@ import {
   AUDIT_ONLY_FIELDS,
   DERIVED_FIELDS,
   actorReviewSummary,
+  createReviewPage,
+  twoWayKind,
+  canConfirmCategories,
+  canSubmitReviewItem,
   canSubmitReview,
   decisionOptions,
   deepPullFacts,
@@ -27,6 +31,8 @@ import {
   matchStrengthLabel,
   parentDisplay,
   pendingEdits,
+  pendingCategoryReviews,
+  reviewItemKind,
   reviewFieldLabel,
   reviewReasonLabel,
   reviewRunLabel,
@@ -964,4 +970,43 @@ test('an actor update card shows what it wrote and is a two-answer check', async
   assert.deepEqual(rows.map(r => r.how), ['Replaced the earlier value (kept in history)',
     'Recorded as not found', 'Conflict — in this run, for a decision']);
   assert.equal(rows[1].after, 'Not stated on its pages');
+});
+
+test('bulk category confirmation lists only pending, categorized, non-aggregate category reviews',()=>{
+  const row=(id,extra={})=>({candidate_id:id,status:"pending_review",reviewed_payload:{actor_category:"company"},agent_metadata:{review_kind:"category_doubt",pipeline:{}},...extra});
+  const rows=[row("a"),row("b",{status:"approved"}),row("c",{agent_metadata:{review_kind:"category_doubt",pipeline:{is_true_aggregate:true}}}),row("d",{reviewed_payload:{actor_category:""}}),row("e",{agent_metadata:{review_kind:"verify_actor",pipeline:{}}})];
+  assert.deepEqual(pendingCategoryReviews(rows).map(item=>item.candidate_id),["a"]);
+  assert.equal(canConfirmCategories({selectedIds:["a"],reviewer:"GHUS",busy:false,admissionConfigured:true}),true);
+  assert.equal(canConfirmCategories({selectedIds:[],reviewer:"GHUS",busy:false,admissionConfigured:true}),false);
+  assert.equal(canConfirmCategories({selectedIds:["a"],reviewer:" ",busy:false,admissionConfigured:true}),false);
+  assert.equal(canConfirmCategories({selectedIds:["a"],reviewer:"GHUS",busy:false,admissionConfigured:false}),false);
+  const component=fs.readFileSync(new URL('../frontend/review.js',import.meta.url),'utf8');
+  assert.match(component,/\/api\/review\/category-decisions/);
+});
+
+test('location and relationship reviews have their own validated decisions',()=>{
+  const item=(kind)=>({status:"pending_review",agent_metadata:{source_table:"review_item",review_kind:kind}});
+  assert.equal(reviewItemKind(item("geocode_failed")),"location");
+  assert.equal(reviewItemKind(item("geocode")),"location");
+  assert.equal(reviewItemKind(item("relationship_review")),"relationship");
+  assert.equal(reviewItemKind(item("verify_actor")),null);
+  const base={reviewer:"GHUS",busy:false,admissionConfigured:true};
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",city:"Austin",state:"TX"}),true);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",city:"Austin",state:""}),false);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",keepUnlocated:true,notes:""}),false);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("geocode_failed"),kind:"location",keepUnlocated:true,notes:"Based in Canada"}),true);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("relationship_review"),kind:"relationship",approve:true,sourceUrl:""}),false);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("relationship_review"),kind:"relationship",approve:true,sourceUrl:"https://un.org"}),true);
+  assert.equal(canSubmitReviewItem({...base,candidate:item("relationship_review"),kind:"relationship",approve:false}),true);
+});
+
+
+test('modern relationship proposals retain their two-way decision workflow',()=>{
+  const candidate={status:"pending_review",agent_metadata:{source_table:"review_item",
+    review_kind:"relationship_review",pipeline:{proposed_relationship_type:"funded_by",
+    source_url:"https://example.org/evidence"}}};
+  assert.equal(reviewItemKind(candidate),null);
+  assert.equal(twoWayKind(candidate),"relationship");
+  assert.equal(canSubmitReview({candidate,reviewer:"Reviewer",decisionKind:"new",
+    busy:false,admissionConfigured:true}),true);
 });

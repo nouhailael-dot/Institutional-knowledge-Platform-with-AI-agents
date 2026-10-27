@@ -26,6 +26,28 @@ from src.db import get_readonly_connection
 # the data and split it back in Python.
 _HUB_SEP = "||"
 
+# Friendly, trust-ordered labels for verification_status. Used by the UI and as
+# the canonical vocabulary for the Browse trust filter. Order = most to least
+# trustworthy, which is also the order we show them in.
+VERIFICATION_LABELS = {
+    # Architecture V2 status (actor.status); every migrated actor is verified.
+    "verified": "✅ Verified",
+    "imported": "📥 Imported",
+    "parked": "🅿️ Parked",
+    "rejected": "⛔ Rejected",
+    # Legacy verification_status values, read until the V2 cutover.
+    "phase_1": "✅ Verified",
+    "needs_review": "🔶 Needs review",
+    "ai_inferred": "⚠️ AI-inferred",
+    None: "— unset",
+}
+
+
+def verification_label(status: str | None) -> str:
+    """Human label for a raw verification_status (falls back to the raw value)."""
+    return VERIFICATION_LABELS.get(status, status or "— unset")
+
+
 # --- country normalization -------------------------------------------------
 # The `country` column is inconsistent (see the data-quality scan): 'USA' vs
 # 'United States', US states mislabeled as countries, and free-text leaks. We
@@ -91,9 +113,9 @@ def load_actors() -> list[dict]:
                NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
                -- Migration 500 drops verification_status, estimated_trl and
                -- renames location_city -> city, state -> state_code, so each is
-               -- read through to_jsonb: legacy name first, V2 name as fallback.
-               COALESCE(NULLIF(to_jsonb(a)->>'verification_status', ''),
-                        NULLIF(to_jsonb(a)->>'status', '')) AS verification_status,
+               -- read through to_jsonb. V2 status is authoritative.
+               COALESCE(NULLIF(to_jsonb(a)->>'status', ''),
+                        NULLIF(to_jsonb(a)->>'verification_status', '')) AS verification_status,
                COALESCE(NULLIF(to_jsonb(a)->>'location_city', ''),
                         NULLIF(to_jsonb(a)->>'city', '')) AS location_city,
                coalesce(rs.state_name,
@@ -113,6 +135,8 @@ def load_actors() -> list[dict]:
         LEFT JOIN region_state rs ON rs.state_code = a.state_code
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
+          -- GHUS-rejected records (e.g. collections of organizations) are not on the map.
+          AND COALESCE(to_jsonb(a)->>'status', '') <> 'rejected'
         ORDER BY a.name
     """
     out = []

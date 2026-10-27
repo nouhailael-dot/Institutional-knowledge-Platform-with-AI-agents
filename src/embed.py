@@ -52,9 +52,13 @@ def _to_pgvector(vec: list[float]) -> str:
 
 def build_index() -> int:
     docs = assemble_all()
+    if not docs:
+        raise RuntimeError("No documents assembled; search index was left unchanged.")
     print(f"Assembled {len(docs)} docs. Embedding with {MODEL} ...")
 
     embeddings = embed_texts([d["doc_text"] for d in docs], input_type="document")
+    if len(embeddings) != len(docs) or any(not embedding for embedding in embeddings):
+        raise RuntimeError("Incomplete embeddings; search index was left unchanged.")
     print(f"Got {len(embeddings)} embeddings. Writing to search_doc ...")
 
     upsert = """
@@ -72,6 +76,13 @@ def build_index() -> int:
                 d["entity_id"], d["entity_type"], d["name"],
                 d["doc_text"], _to_pgvector(emb),
             ))
+        # Drop documents for actors, hubs and events that are no longer on the map
+        # (merged, GHUS-rejected or retired), so Ask never cites them.
+        cur.execute(
+            "DELETE FROM search_doc WHERE entity_type IN ('actor','hub','event') "
+            "AND NOT (entity_id = ANY(%s::uuid[]))",
+            ([str(d["entity_id"]) for d in docs],),
+        )
         conn.commit()
     return len(docs)
 

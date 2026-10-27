@@ -126,7 +126,24 @@ def _reader(config: dict, max_usd: float):
         # is then recorded against that organisation only.
         client._client = Anthropic(timeout=180.0, max_retries=1)
     source = OpenWebEventSource(config)
-    return LightPullReader(client, source.fetch), meter, model
+    return LightPullReader(client, source.fetch, fallback=_fallback(config, meter)), meter, model
+
+
+def _fallback(config: dict, meter):
+    """Other sources when an organisation's own site refuses: its parent's official
+    site (free), then at most ``fallback_web_searches`` paid searches (default 1),
+    inside the same per-organisation cost cap."""
+    from agents.collection.site_access import BLOCKED_SITES, BlockedSites, Fallback
+
+    section = dict(config.get("actor_updates") or {})
+    searches = int(section.get("fallback_web_searches", 1))
+    search = None
+    if searches > 0 and os.environ.get("ANTHROPIC_API_KEY"):
+        from agents.discovery.search.providers import build_search_provider
+
+        provider = build_search_provider(config, cost_meter=meter)
+        search = lambda query: provider.search(query, count=5)  # noqa: E731
+    return Fallback(blocked=BlockedSites(BLOCKED_SITES), search=search, max_searches=searches)
 
 
 def _summary(name: str, read, cost: float) -> dict:

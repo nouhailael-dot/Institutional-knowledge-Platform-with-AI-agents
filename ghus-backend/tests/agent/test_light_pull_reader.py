@@ -139,7 +139,9 @@ def test_an_unreachable_site_reads_nothing_and_says_so():
     read = LightPullReader(model, down).read(name="X", website="https://down.example/",
                                              actor_category="company", read_at=NOW)
     assert read.evidence == {} and model.calls == 0
-    assert "could not be read" in read.error
+    # Said plainly: no exception names, no status codes.
+    assert read.error == ("Its website could not be reached (the address may be wrong, the "
+                          "site down, or its security certificate broken).")
 
 
 @pytest.mark.parametrize(("quote", "ok"), [
@@ -149,6 +151,18 @@ def test_an_unreachable_site_reads_nothing_and_says_so():
 ])
 def test_quotes_are_checked_against_the_page(quote, ok):
     assert quote_on_page(quote, ABOUT) is ok
+
+
+def test_evidence_cannot_depend_on_a_fifth_quote_that_would_be_discarded():
+    model = Model({"funding_signal": {
+        "stated": True, "page": ABOUT_URL, "value": {"amount": "$2 million"},
+        "quotes": ["The Water Council"] * 4 + ["received a $2 million grant"],
+    }})
+    read = LightPullReader(model, _fetch).read(
+        name="The Water Council", website="https://thewatercouncil.com",
+        actor_category="association_network", read_at=NOW, fields=["funding_signal"])
+    assert "funding_signal" in read.rejected
+    assert read.evidence["funding_signal"]["collection_state"] != "found"
 
 
 def test_promotion_uses_collected_boxes_but_the_reviewer_wins():
@@ -175,9 +189,11 @@ def test_promotion_uses_collected_boxes_but_the_reviewer_wins():
 
 
 @pytest.mark.parametrize(("date", "accepted"), [
-    ("October 2026", True), ("2025", True),
+    ("October 2026", True), ("2025", True), ("November 2024", True),
     ("October 20, 2021", False),     # NEW Water's 2021 launch, read as "recent"
     ("recently", False),
+    ("July 5, 2024", False),         # ExxonMobil, read October 2026: 27 months
+    ("not specified, listed under October 2026 newsroom items", False),   # Chevron
 ])
 def test_recent_activity_must_be_dated_and_recent(date, accepted):
     model = Model({"recent_activity": {
@@ -191,3 +207,66 @@ def test_recent_activity_must_be_dated_and_recent(date, accepted):
     assert state == ("found" if accepted else "not_found")
     if not accepted:
         assert "recent" in read.rejected["recent_activity"]
+
+
+def test_the_website_publishing_content_is_not_recent_activity():
+    model = Model({"recent_activity": {
+        "stated": True, "page": ABOUT_URL,
+        "value": {"date": "March 2026", "description": "Published content on risk management"},
+        "quote": "In March 2026 it launched BREW 2.0, a global accelerator"}})
+    read = LightPullReader(model, _fetch).read(
+        name="The Water Council", website="https://thewatercouncil.com/",
+        actor_category="association_network", read_at=NOW)
+    assert read.evidence["recent_activity"]["collection_state"] == "not_found"
+    assert "website's content" in read.rejected["recent_activity"]
+
+
+@pytest.mark.parametrize(("stated", "stored"), [
+    ({"city": "Milwaukee", "state": "Wisconsin", "country": None},
+     {"city": "Milwaukee", "state": "WI", "country": "US"}),
+    ({"city": "Milwaukee", "state": "WI"}, {"city": "Milwaukee", "state": "WI", "country": "US"}),
+    # Not a US state: kept as the page says it, never placed in the US.
+    ({"city": "Toronto", "state": "Ontario", "country": "Canada"},
+     {"city": "Toronto", "state": "Ontario", "country": "Canada"}),
+])
+def test_a_location_is_stored_in_one_shape(stated, stored):
+    model = Model({"location": {"stated": True, "page": ABOUT_URL, "value": stated,
+                                "quote": "nonprofit in Milwaukee, Wisconsin"}})
+    read = LightPullReader(model, _fetch).read(
+        name="The Water Council", website="https://thewatercouncil.com/",
+        actor_category="association_network", read_at=NOW, fields=["location"])
+    assert read.evidence["location"]["value"] == stored
+
+
+CORP = {
+    "https://corp.example/": ('<a href="/what-we-do/energy">Energy</a>'
+                              '<a href="/contact-us">Contact us</a><p>Energy for the world.</p>'),
+    "https://corp.example/what-we-do/energy": "<p>Oil, gas and lower carbon energy.</p>",
+    "https://corp.example/contact-us": "<p>Headquarters: 1 Main St, Houston, TX 77002</p>",
+}
+
+
+def _corp_fetch(url):
+    fetched.append(url)
+    if url not in CORP:
+        raise RuntimeError(f"not found: {url}")
+    return FetchedDoc.from_content(url=url, content=CORP[url], content_type="text/html")
+
+
+def test_a_free_third_page_goes_to_the_contact_page_when_the_location_is_asked():
+    fetched.clear()
+    docs = choose_pages(_corp_fetch, "https://corp.example", topic_terms=["energy"],
+                        actor_category="company", want_location=True)
+    assert [d.url for d in docs] == ["https://corp.example/",
+                                     "https://corp.example/what-we-do/energy",
+                                     "https://corp.example/contact-us"]
+    # Not asked for the location: the same two pages, nothing more fetched.
+    docs = choose_pages(_corp_fetch, "https://corp.example", topic_terms=["energy"],
+                        actor_category="company")
+    assert len(docs) == 2
+
+
+def test_no_contact_page_is_read_when_a_page_already_states_an_address():
+    docs = choose_pages(_fetch, "https://thewatercouncil.com", topic_terms=["Water technology"],
+                        actor_category="association_network", want_location=True)
+    assert len(docs) == 3 and docs[-1].url == TOPIC_URL

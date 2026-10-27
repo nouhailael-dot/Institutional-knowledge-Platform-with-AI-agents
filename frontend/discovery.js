@@ -412,7 +412,7 @@ export function relatedLine(item) {
 export function actorResultLine(result) {
   if (!result.ok) return `${result.name}: not updated — ${result.error || "no reason recorded"}`;
   const counts = result.counts || {};
-  const parts = [["new", "new"], ["changed", "changed"], ["corroborated", "confirmed"],
+  const parts = [["new", "new"], ["changed", "changed"], ["additional", "additional"], ["corroborated", "confirmed"],
     ["not_found", "not found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
   if (result.review_items) parts.push(`${result.review_items} to Review`);
   if (!parts.length) parts.push("nothing new");
@@ -423,6 +423,7 @@ export function actorResultLine(result) {
 export const OUTCOME_LABELS = {
   new: "New",
   changed: "Changed",
+  additional: "Additional",
   corroborated: "Confirmed",
   conflict: "Conflict",
   protected: "GHUS value kept",
@@ -435,6 +436,7 @@ export const OUTCOME_LABELS = {
 export const RESULT_GROUPS = [
   {id: "new", label: "New"},
   {id: "changed", label: "Changed"},
+  {id: "additional", label: "Additional"},
   {id: "conflicts", label: "Conflicts requiring review"},
   {id: "confirmed", label: "Confirmed"},
   {id: "missing", label: "Missing"},
@@ -494,7 +496,10 @@ export function factLine(value) {
     if (v.date && v.description) return `${v.date} — ${v.description}`;
     if (v.reason) return v.reason;
     // Flags (is_multi_location: false) are not something to read out.
-    return Object.values(v).filter((x) => x !== null && x !== "" && typeof x !== "boolean").join(" · ");
+    const text = Object.entries(v).filter(([key, x]) => key !== "carried_over"
+      && x !== null && x !== "" && typeof x !== "boolean").map(([, x]) => factLine(x)).join(" · ");
+    const carried = Array.isArray(v.carried_over) ? v.carried_over : [];
+    return text + (carried.length ? ` (kept from earlier reading: ${carried.map(boxLabel).join(", ")})` : "");
   }
   if (Array.isArray(v)) return v.map(factLine).join("; ");
   return String(v);
@@ -760,7 +765,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     async function refreshRequests() {
       try {
         const body = await api("/api/discovery/update-requests");
-        setSaved({requests: body.requests || [], ready: body.ready !== false, loaded: true});
+        setSaved({requests: body.requests || [], one_time: body.one_time || [], ready: body.ready !== false, loaded: true});
       } catch (err) { setSaved((v) => ({...v, loaded: true})); setError(err.message); }
     }
     useEffect(() => { refreshRequests(); }, []);
@@ -919,7 +924,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               <div><dt>Cost per run</dt><dd>${reqPlan.cost.expected_usd != null
                 ? `About ${formatUsd(reqPlan.cost.expected_usd)} from past reads; `
                 : "No history yet; "}never more than ${formatUsd(reqPlan.max_usd_per_run)} (${formatUsd(reqPlan.cost.per_actor_cap_usd)} per actor at most)</dd></div>
-              <div><dt>Searches</dt><dd>Each actor's own website, up to 3 pages; no web search.</dd></div>
+              <div><dt>Searches</dt><dd>Up to 3 page requests per actor, including fallback sources; at most one fallback search within the cost cap.</dd></div>
             </dl>
             ${reqPlan.chosen.length > 0 && html`<ol class="skipped">${reqPlan.chosen.map((a) =>
               html`<li key=${a.actor_id}><strong>${a.name}</strong> — ${a.boxes} box(es) to read</li>`)}</ol>`}
@@ -956,6 +961,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             <div class="discovery-request-head">
               <div>
                 <h3>${r.title || "Update request"}</h3>
+                ${r.test_sector && html`<p class="muted">This request uses inactive sectors.</p>`}
                 <p>${updateRequestScope(r, allSectors)}</p>
                 <p class="muted">${CADENCE_LABELS[r.cadence] || r.cadence} · ${formatDay(r.start_date)}${r.cadence !== "once"
                   ? ` to ${formatDay(r.end_date)}` : ""} · next run: ${live ? nextRunLabel(r) : "none"}</p>
@@ -982,12 +988,19 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             </details>`}
           </article>`;
         })}
+        ${(saved.one_time || []).length > 0 && html`<details class="update-runs"><summary>One-time update history (${saved.one_time.length})</summary>
+          ${saved.one_time.map((run) => html`<div key=${run.run_id} class="update-run">
+            <p><strong>${run.name}</strong> · ${run.topic_name || ""} · ${formatDay(run.started_at)}
+              · ${STATUS_LABELS[run.status] || run.status} · ${formatUsd(run.spent_usd)}</p>
+            <p>${outcomeSummary(run.counts) || "No changes recorded"}</p>
+          </div>`)}
+        </details>`}
       </div>`;
     }
 
     return html`<section class="discovery-card actor-updates">
       <p class="muted actor-updates-lead">Pick an organization already on the map. The agent
-        re-reads its own website and tells you what changed — nothing is written until you say so.</p>
+        reads available sources and tells you what changed — nothing is written until you say so.</p>
 
       <div class="discovery-segment actor-mode" role="group" aria-label="How many actors">
         <button type="button" class=${mode === "one" ? "active" : ""}
@@ -1136,17 +1149,18 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
       ${result && html`<div class="actor-result">
         <p class="actor-result-head">
-          <strong>${applied ? "Written" : "Checked"}</strong>
+          <strong>${applied ? "Written" : result.ok === false ? "Could not check" : "Checked"}</strong>
           · ${outcomeSummary(result.counts) || result.note || "nothing to report"}
           · ${result.topic?.name} · ${formatUsd(result.cost_usd)}
         </p>
+        ${result.error && html`<p class="discovery-message error">${result.error}</p>`}
         ${result.findings?.length > 0 && html`<div class="result-filters" role="group" aria-label="Show">
           <button type="button" class=${show === "all" ? "active" : ""} onClick=${() => setShow("all")}>All ${result.findings.length}</button>
           ${RESULT_GROUPS.filter((g) => result.counts?.[g.id]).map((g) => html`<button type="button" key=${g.id}
             class=${show === g.id ? "active" : ""} onClick=${() => setShow(g.id)}>${g.label} ${result.counts[g.id]}</button>`)}
         </div>
         <table class="actor-boxes">
-          <thead><tr><th>Box</th><th>Result</th><th>On the map now</th><th>Its pages say</th><th>What writing does</th></tr></thead>
+          <thead><tr><th>Box</th><th>Result</th><th>On the map now</th><th>Sources say</th><th>What writing does</th></tr></thead>
           <tbody>${findingsIn(result.findings, show).map((f) => {
             const done = applied?.results?.find((r) => r.field === f.field);
             return html`<tr key=${f.field}>
@@ -1163,7 +1177,10 @@ export function createDiscoveryPage({html, useState, useEffect}) {
                 : html`<span class="warn">Failed: ${done.error}</span>`) : f.resolution}</td>
           </tr>`; })}</tbody>
         </table>`}
-        <p class="muted">Pages read: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>`)}</p>
+        <p class="muted">Pages read: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url} target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a> (${{official: "official website", official_parent: "parent organisation", government: "government", third_party: "third party"}[result.sources?.[url]] || "source"})`)}</p>
+        ${(result.attempts || []).length > 0 && html`<details><summary>Source access</summary><ul>
+          ${result.attempts.map((attempt, i) => html`<li key=${i}>${attempt.url}: ${attempt.plain || attempt.outcome}</li>`)}
+        </ul></details>`}
         ${(result.related?.length > 0 || result.related_error) && html`<div class="related">
           <h4>Organisations its pages name</h4>
           ${result.related_error && html`<p class="muted">${result.related_error}</p>`}

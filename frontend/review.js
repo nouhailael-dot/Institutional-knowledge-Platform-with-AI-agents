@@ -404,6 +404,12 @@ function factChangeBlock(html, candidate) {
   </section>`;
 }
 
+export function canKeepBothLocations(candidate) {
+  const meta = candidate?.agent_metadata || {};
+  return isFactReview(candidate)
+    && (meta.fact_change?.field_key || meta.pipeline?.field_key) === "location";
+}
+
 export function decisionOptions(entityType, candidate = null) {
   const twoWay = twoWayKind(candidate);
   if (twoWay) {
@@ -411,6 +417,7 @@ export function decisionOptions(entityType, candidate = null) {
     return [
       {value: "new", label: yes},
       {value: "reject", label: no},
+      ...(canKeepBothLocations(candidate) ? [{value: "keep_both", label: "Keep both locations"}] : []),
       {value: "defer", label: BUTTONS.park},
     ];
   }
@@ -451,6 +458,38 @@ export function validateReviewDraft(candidate, draft) {
   }
   return errors;
 }
+/** Legacy location/link decisions use their own form; new link proposals keep
+ * the evidence and relationship type supplied by the actor-update workflow. */
+export function reviewItemKind(candidate) {
+  const meta = candidate?.agent_metadata;
+  if (meta?.source_table !== "review_item") return null;
+  if (["geocode", "geocode_failed"].includes(meta.review_kind)) return "location";
+  return meta.review_kind === "relationship_review" && !meta.pipeline?.proposed_relationship_type
+    ? "relationship" : null;
+}
+
+export function canSubmitReviewItem({candidate, kind, reviewer, city, state,
+  keepUnlocated, notes, approve, sourceUrl, busy, admissionConfigured}) {
+  if (!candidate || candidate.status !== "pending_review" || busy || !admissionConfigured
+      || !String(reviewer || "").trim()) return false;
+  if (kind === "location") return keepUnlocated ? Boolean(String(notes || "").trim())
+    : Boolean(String(city || "").trim() && String(state || "").trim());
+  if (kind === "relationship") return approve
+    ? /^https?:\/\/\S+/i.test(String(sourceUrl || "").trim()) : true;
+  return false;
+}
+
+export function pendingCategoryReviews(candidates) {
+  return (candidates || []).filter(candidate => candidate?.status === "pending_review"
+    && candidate?.agent_metadata?.review_kind === "category_doubt"
+    && !candidate?.agent_metadata?.pipeline?.is_true_aggregate
+    && String(candidate?.reviewed_payload?.actor_category || "").trim());
+}
+
+export function canConfirmCategories({selectedIds, reviewer, busy, admissionConfigured}) {
+  return Boolean((selectedIds || []).length && String(reviewer || "").trim()
+    && !busy && admissionConfigured);
+}
 
 export function canSubmitReview({
   candidate, reviewer, rejectionReason, rejectionOther, decision, decisionKind, targetId,
@@ -459,6 +498,7 @@ export function canSubmitReview({
   const kind = decisionKind || decision;
   if (!candidate || candidate.status !== "pending_review" || busy || !admissionConfigured
       || !String(reviewer || "").trim() || Object.keys(draftErrors).length) return false;
+  if (kind === "keep_both") return canKeepBothLocations(candidate);
   if (twoWayKind(candidate)) return ["new", "reject", "defer"].includes(kind);
   if (kind === "same_existing" && !String(targetId || "").trim()) return false;
   if (kind === "reject") {
@@ -1002,6 +1042,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     // Sectors come from the database, so one added here appears at once.
     const [sectorState, setSectorState] = useState({canCreate: false, version: 0});
     const [newSector, setNewSector] = useState(null);
+    const [categoryIds, setCategoryIds] = useState([]);
+    const [itemCity, setItemCity] = useState("");
+    const [itemState, setItemState] = useState("");
+    const [keepUnlocated, setKeepUnlocated] = useState(false);
+    const [sourceUrl, setSourceUrl] = useState("");
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
@@ -1019,6 +1064,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       try {
         const body = await request(`/api/review/candidates?${params}`, {signal});
         setData(body);
+        setCategoryIds(ids => ids.filter(id => pendingCategoryReviews(body.candidates)
+          .some(row => row.candidate_id === id)));
         setSelectedId(current =>
           body.candidates.some(item => item.candidate_id === current)
             ? current : body.candidates[0]?.candidate_id ?? null);
@@ -1043,6 +1090,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         if (!active) return;
         setSelected(candidate);
         setDraft({...candidate.reviewed_payload});
+        setItemCity(candidate.reviewed_payload?.location_city || "");
+        setItemState(candidate.reviewed_payload?.state_code || candidate.reviewed_payload?.state || "");
+        setKeepUnlocated(false);
+        setSourceUrl("");
         // Two values for one box: keeping the map's value is the safe default.
         // Keeping the map as it is is the safe default; a proposal waits.
         setDecisionKind(isFactReview(candidate) ? "reject" : twoWayKind(candidate) ? "defer"
@@ -1151,6 +1202,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           body: JSON.stringify({fields: editableReviewPayload(selected, draft)}),
         });
         setSelected(saved);
+        setData(current => ({...current, candidates: current.candidates.map(row =>
+          row.candidate_id === saved.candidate_id ? saved : row)}));
         setDraft({...saved.reviewed_payload});
         setFeedback("Edits saved as a new reviewer-sourced fact. The previous value is kept in History.");
       } catch (exception) {
@@ -1170,6 +1223,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           lines.push(`  ${reviewFieldLabel(item.field)}: ${item.before ?? "—"} → ${item.after ?? "—"}`);
         }
       }
+      if (kind === "keep_both") lines.push("", "Keep the current location and add the proposed place as an additional sourced location.");
       if (isFactReview(selected)) {
         if (kind !== "defer") lines.push("", "Both values stay in the history; nothing is deleted.");
       } else if (twoWayKind(selected) === "update") {
@@ -1199,7 +1253,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       setBusy(true); setError(""); setFeedback("");
       try {
         const body = {
-          decision_kind: decisionKind,
+          decision_kind: decisionKind === "keep_both" ? "new" : decisionKind,
+          keep_both: decisionKind === "keep_both",
           reviewer: reviewer.trim(),
           idempotency_key: keys.current.get(mapKey),
           confirmed: true,
@@ -1229,6 +1284,62 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       }
     }
 
+    async function confirmCategories() {
+      const rows = pendingCategoryReviews(data.candidates)
+        .filter(row => categoryIds.includes(row.candidate_id));
+      if (!canConfirmCategories({selectedIds: rows.map(row => row.candidate_id), reviewer,
+        busy, admissionConfigured: data.admission_configured})) return;
+      if (!window.confirm(`Confirm the shown category for ${rows.length} actors?`)) return;
+      const keyName = `categories:${rows.map(row => row.candidate_id).sort().join(",")}`;
+      if (!keys.current.has(keyName)) keys.current.set(keyName, decisionKey());
+      setBusy(true); setError(""); setFeedback("");
+      try {
+        const result = await request("/api/review/category-decisions", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({candidate_ids: rows.map(row => row.candidate_id),
+            reviewer: reviewer.trim(), notes: notes.trim() || null, confirmed: true,
+            idempotency_key: keys.current.get(keyName)}),
+        });
+        keys.current.delete(keyName);
+        setCategoryIds([]);
+        setFeedback(`${result.outcome?.resolved ?? rows.length} categories committed to GHUS.`);
+        await load(undefined, true);
+      } catch (exception) { setError(exception.message); }
+      finally { setBusy(false); }
+    }
+
+    async function decideReviewItem(approve) {
+      const kind = reviewItemKind(selected);
+      if (!canSubmitReviewItem({candidate: selected, kind, reviewer, city: itemCity,
+        state: itemState, keepUnlocated, notes, approve, sourceUrl, busy,
+        admissionConfigured: data.admission_configured})) return;
+      const label = kind === "location"
+        ? (keepUnlocated ? "keep unlocated" : `locate at ${itemCity}, ${itemState}`)
+        : (approve ? "approve this relationship" : "reject this relationship");
+      if (!window.confirm(`Confirm: ${label} for ${selected.display_name}?`)) return;
+      const keyName = `${selected.candidate_id}:item:${label}`;
+      if (!keys.current.has(keyName)) keys.current.set(keyName, decisionKey());
+      setBusy(true); setError(""); setFeedback("");
+      try {
+        const decided = await request(
+          `/api/review/candidates/${selected.candidate_id}/review-item-decision`, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({decision_kind: kind === "location"
+              ? "resolve_location" : "resolve_relationship", reviewer: reviewer.trim(),
+              notes: notes.trim() || null, confirmed: true,
+              idempotency_key: keys.current.get(keyName), city: itemCity.trim() || null,
+              state: itemState.trim() || null, keep_unlocated: keepUnlocated,
+              approve: Boolean(approve), source_url: sourceUrl.trim() || null}),
+          });
+        keys.current.delete(keyName);
+        setSelected(decided);
+        setFeedback("Decision committed to GHUS.");
+        await load(undefined, true);
+      } catch (exception) { setError(exception.message); }
+      finally { setBusy(false); }
+    }
+
+    const categoryRows = pendingCategoryReviews(data.candidates);
     const counts = data.counts || {};
     const pending = selected?.status === "pending_review";
     const draftErrors = selected ? validateReviewDraft(selected, draft) : {};
@@ -1366,6 +1477,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       </div>`}
       ${error && html`<div class="review-message error" role="alert">${error}</div>`}
       ${feedback && html`<div class="review-message success" role="status">${feedback}</div>`}
+
+      ${view === "queue" && categoryRows.length>0&&html`<section class="review-section review-category-bulk" aria-labelledby="category-bulk-title"><h3 id="category-bulk-title">Category reviews</h3><p class="muted">Each row shows the proposed actor category. Confirm only the ones you agree with; open a row below to change its category first. Collections of organizations are not listed here: they need a separate GHUS decision.</p><label><input type="checkbox" checked=${categoryIds.length===categoryRows.length} onChange=${e=>setCategoryIds(e.target.checked?categoryRows.map(row=>row.candidate_id):[])}/> Select all (${categoryRows.length})</label><ul class="review-category-list">${categoryRows.map(row=>html`<li key=${row.candidate_id}><label><input type="checkbox" checked=${categoryIds.includes(row.candidate_id)} onChange=${e=>setCategoryIds(current=>e.target.checked?[...current,row.candidate_id]:current.filter(id=>id!==row.candidate_id))}/> <strong>${row.display_name}</strong> → ${row.reviewed_payload.actor_category}${row.agent_metadata?.pipeline?.proposal_confidence?html` <small>(${row.agent_metadata.pipeline.proposal_confidence} confidence)</small>`:""}</label></li>`)}</ul><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${busy} onInput=${e=>setReviewer(e.target.value)} required/></label><button class="btn" disabled=${!canConfirmCategories({selectedIds:categoryIds,reviewer,busy,admissionConfigured:data.admission_configured})} onClick=${confirmCategories}>${busy?"Committing…":`Confirm ${categoryIds.length} categor${categoryIds.length===1?"y":"ies"}`}</button></section>`}
 
       ${view === "queue" && html`<div class="review-workspace">
         <!-- QUEUE (left rail) -->
@@ -1669,7 +1782,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
           ${isFactReview(selected) && factChangeBlock(html, selected)}
           ${twoWayKind(selected) === "update" && updateBlock(html, selected)}
-          ${["relationship", "hub"].includes(twoWayKind(selected)) && twoWayBlock(html, selected)}
+          ${!reviewItemKind(selected) && ["relationship", "hub"].includes(twoWayKind(selected)) && twoWayBlock(html, selected)}
 
           <!-- 5 POSSIBLE DUPLICATES -->
           ${matches.length > 0 && html`<section class="review-section">
@@ -1707,7 +1820,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 || selected.agent_metadata?._verification || null, null, 2)}</pre></details>
           </details>
 
+        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the actor's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the actor is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate actor"}</button></section>`}
+        ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
           <!-- DECISION + STICKY FOOTER -->
+          ${!reviewItemKind(selected) && html`
           <section class="review-section review-decision">
             <h3>Decision</h3>
             ${writerDown && html`<p class="review-hint">${SENTENCES.writerUnavailable}</p>`}
@@ -1775,7 +1891,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ? decisionOptions(selected.entity_type, selected).find(o => o.value === decisionKind)?.label
               : decisionKind === "reject" ? BUTTONS.reject
               : decisionKind === "defer" ? BUTTONS.park : BUTTONS.verify}</button>
-          </footer>`}
+          </footer>`}`}
         </article>
       </div>`}
     </section>`;

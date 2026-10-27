@@ -186,6 +186,28 @@ def test_specific_reads_only_the_chosen_boxes_and_refuses_inapplicable_ones():
         plan_fields("specific", SCHEMA, {}, fields=["rankings"], today=NOW, limits=LIMITS)
 
 
+def test_specific_changes_by_type_read_only_those_boxes_the_category_has():
+    # "Funding & Partnerships": funding + partnerships; only funding_signal is in this schema.
+    read, skipped = plan_fields("specific", SCHEMA, {}, categories=["funding", "partnerships"],
+                                today=NOW, limits=LIMITS)
+    assert read == ["funding_signal"]
+    # Boxes outside the category are not listed as "not in schema" noise.
+    assert skipped == []
+    # "Organization & Activities": organisation boxes plus the category's own.
+    read, _ = plan_fields("specific", SCHEMA, {}, categories=["organization", "category"],
+                          category_fields=("recent_activity",), today=NOW, limits=LIMITS)
+    assert read == ["recent_activity", "ownership_and_size"]
+    read, _ = plan_fields("specific", SCHEMA, {}, categories=["geography"], today=NOW, limits=LIMITS)
+    assert read == ["location"]
+    # Nothing of the chosen type in this category: refused, never widened.
+    with pytest.raises(ActorUpdateError, match="None of the chosen types"):
+        plan_fields("specific", ["location"], {}, categories=["funding"], today=NOW, limits=LIMITS)
+    # Chosen boxes still win over types.
+    read, _ = plan_fields("specific", SCHEMA, {}, fields=["location"], categories=["funding"],
+                          today=NOW, limits=LIMITS)
+    assert read == ["location"]
+
+
 def test_change_categories_reorder_and_never_add_boxes():
     assert prioritise(SCHEMA, ["funding"]) == [
         "funding_signal", "location", "recent_activity", "ownership_and_size"]
@@ -285,6 +307,16 @@ def test_a_request_is_normalised_into_what_the_table_stores():
 def test_a_request_that_could_run_unbounded_or_wrong_is_refused(changes, words):
     with pytest.raises(ActorUpdateError, match=words):
         _request(**changes)
+
+
+def test_specific_changes_may_be_asked_by_type_of_information_alone():
+    prepared = _request(scope="specific", categories=["funding", "partnerships"])
+    assert prepared["options"]["scope"] == "specific"
+    assert prepared["options"]["fields"] == []
+    # Without limits from the page, the configured safeguards apply.
+    assert prepared["max_usd_per_run"] == LIMITS["max_usd_per_request_run"]
+    grouped = _request(actor_ids=[], group={"sector": "WATER"}, scope="general")
+    assert grouped["options"]["max_actors_per_run"] == LIMITS["max_actors_per_request"]
 
 
 def test_a_group_request_needs_a_sector_and_takes_its_facts_there():

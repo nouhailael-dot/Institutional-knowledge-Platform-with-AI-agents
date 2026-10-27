@@ -202,15 +202,16 @@ test('actor updates read back each outcome the backend reports', async () => {
   const {OUTCOME_LABELS, RESULT_GROUPS, outcomeSummary, factLine, boxLabel, findingsIn} =
     await import('../frontend/discovery.js');
   // Every outcome actor_updates.classify can return has a label.
-  for (const key of ['new', 'changed', 'corroborated', 'conflict', 'protected', 'unchanged',
+  for (const key of ['new', 'changed', 'additional', 'corroborated', 'conflict', 'protected', 'unchanged',
     'not_found', 'not_yet_collected']) {
     assert.ok(OUTCOME_LABELS[key], key);
   }
   assert.deepEqual(RESULT_GROUPS.map((g) => g.id),
-    ['new', 'changed', 'conflicts', 'confirmed', 'missing', 'no_change']);
+    ['new', 'changed', 'additional', 'conflicts', 'confirmed', 'missing', 'no_change']);
   assert.equal(outcomeSummary({changed: 2, new: 1, conflicts: 1}),
     '1 new · 2 changed · 1 conflicts requiring review');
   assert.equal(outcomeSummary({}), '');
+  assert.equal(outcomeSummary({additional: 2}), '2 additional');
   const findings = [{field: 'a', group: 'new'}, {field: 'b', group: 'conflicts'}];
   assert.deepEqual(findingsIn(findings, 'conflicts').map((f) => f.field), ['b']);
   assert.equal(findingsIn(findings, 'all').length, 2);
@@ -219,6 +220,8 @@ test('actor updates read back each outcome the backend reports', async () => {
   assert.equal(factLine('"$2M grant."'), '$2M grant.');
   assert.equal(factLine(null), '');
   assert.equal(factLine({city: 'Austin', country: 'US', is_multi_location: false}), 'Austin · US');
+  assert.equal(factLine({employees: 600, customers: 2000, carried_over: ['customers']}),
+    '600 · 2000 (kept from earlier reading: Customers)');
   assert.equal(boxLabel('funding_signal'), 'Funding');
   assert.equal(boxLabel('topic_mandate_program'), 'Topic mandate program');
 });

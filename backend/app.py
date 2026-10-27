@@ -917,8 +917,32 @@ class ReviewRejectionRequest(ReviewDecisionRequest):
     rejection_reason: str = Field(min_length=1, max_length=5000)
 
 
+class ReviewCategoryRequest(BaseModel):
+    candidate_ids: list[str] = Field(min_length=1, max_length=500)
+    reviewer: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
+    notes: str | None = Field(default=None, max_length=5000)
+    categories: dict[str, str] = Field(default_factory=dict)
+
+
+class ReviewItemDecisionRequest(BaseModel):
+    decision_kind: str = Field(pattern="^(resolve_location|resolve_relationship)$")
+    reviewer: str = Field(min_length=1, max_length=120)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    confirmed: bool = False
+    notes: str | None = Field(default=None, max_length=5000)
+    city: str | None = Field(default=None, max_length=120)
+    state: str | None = Field(default=None, max_length=80)
+    country: str | None = Field(default=None, max_length=80)
+    keep_unlocated: bool = False
+    approve: bool = False
+    source_url: str | None = Field(default=None, max_length=2000)
+
+
 class ReviewAdmissionRequest(ReviewDecisionRequest):
     decision_kind: str
+    keep_both: bool = False
     target_id: str | None = None
     hub_ids: list[str] = Field(default_factory=list)
     proposed_hub: dict | None = None
@@ -1094,6 +1118,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
             reviewer=payload.reviewer,
             idempotency_key=payload.idempotency_key,
             target_id=payload.target_id,
+            keep_both=payload.keep_both,
             notes=payload.notes,
             edited_payload=payload.edited_payload,
             hub_ids=payload.hub_ids,
@@ -1332,6 +1357,37 @@ def discovery_change(subscription_id: str, action: str):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown request") from exc
     return _discovery_call(discovery_bridge().change, subscription_id, action)
+
+
+@app.post("/api/review/candidates/{candidate_id}/review-item-decision")
+def review_item_decision(candidate_id: str, payload: ReviewItemDecisionRequest):
+    """Resolve a V2 location or relationship review item through GHUS."""
+    store = review_store()
+    try:
+        request = store.review_item_decision_request(candidate_id, **payload.model_dump())
+        outcome = review_admission_bridge().apply(request)
+        return store.record_review_item_success(request, outcome)
+    except Exception as exc:
+        _raise_review_error(exc)
+
+
+@app.post("/api/review/category-decisions")
+def review_category_decisions(payload: ReviewCategoryRequest):
+    """Confirm GHUS actor categories for one or many category_doubt reviews at once."""
+    store = review_store()
+    try:
+        request = store.category_decision_request(
+            payload.candidate_ids,
+            reviewer=payload.reviewer,
+            idempotency_key=payload.idempotency_key,
+            notes=payload.notes,
+            categories=payload.categories,
+            confirmed=payload.confirmed,
+        )
+        outcome = review_admission_bridge().apply(request)
+        return {"outcome": outcome, "candidates": store.record_category_success(request, outcome)}
+    except Exception as exc:
+        _raise_review_error(exc)
 
 
 @app.get("/api/health")
