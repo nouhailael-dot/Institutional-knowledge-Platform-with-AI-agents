@@ -98,7 +98,7 @@ def _us_date(value):
 def _field_value(entity: dict, field: str):
     """Human-readable value for scalar and relationship fields."""
     value = entity.get(field)
-    if field == "next_date":
+    if field in ("next_date", "previous_edition"):
         return _us_date(value)
     if field in ("category_details", "actor_relationships"):
         return "\n".join(json.dumps(row, ensure_ascii=False) for row in (value or []))

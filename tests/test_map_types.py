@@ -265,6 +265,8 @@ class ExportDateTests(unittest.TestCase):
         self.assertEqual(_field_value({"next_date": "2027-04-02"}, "next_date"), "04/02/2027")
         self.assertEqual(_field_value({"next_date": "Spring 2027"}, "next_date"), "Spring 2027")
         self.assertIsNone(_field_value({}, "next_date"))
+        self.assertEqual(_field_value({"previous_edition": "2026-03-04"}, "previous_edition"),
+                         "03/04/2026")
 
 
 if __name__ == "__main__":
