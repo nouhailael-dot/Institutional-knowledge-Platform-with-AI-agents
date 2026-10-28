@@ -320,6 +320,8 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(self.client.post("/api/map", json=request).status_code, 200)
             self.assertEqual(self.client.post("/api/map", json=request).status_code, 409)
             submit.assert_called_once()
+        # Its results go after the prompt and the plan's announcement.
+        self.assertEqual(submit.call_args.args[3]["after_message"], 2)
         result = self.client.get("/api/map/"+job_id).json()
         self.assertEqual(result["cost"]["estimated_usd"], .0002)
         self.assertEqual(result["cost"]["budget_usd"], 2)
