@@ -1,4 +1,4 @@
-"""Descriptions of discovered people and events: written, then checked on the page."""
+"""Results a reviewer can use: grounded descriptions, one event once, readable actors first."""
 
 from __future__ import annotations
 
@@ -100,3 +100,37 @@ def test_one_event_is_staged_once_however_its_pages_spell_it():
                           {"name": "2027 WateReuse Symposium", "source_url": "u2"})
     assert same_event({"title": "2027 WateReuse Symposium", "source_url": "u1"},
                       {"name": "WateReuse Symposium", "source_url": "u2"})
+
+
+def test_an_update_reads_actors_whose_sites_answer_before_one_that_refused(monkeypatch):
+    from agents.collection import actor_updates
+
+    actors = [{"actor_id": "glc", "name": "Great Lakes Commission", "website": "https://www.glc.org",
+               "actor_category": "association_network"},
+              {"actor_id": "nu", "name": "Northwestern", "website": "https://nu.example.edu",
+               "actor_category": "university_academic"},
+              {"actor_id": "tamu", "name": "Texas A&M", "website": "https://tamu.example.edu",
+               "actor_category": "university_academic"}]
+    monkeypatch.setattr(actor_updates, "group_actors", lambda session, **kw: actors)
+    monkeypatch.setattr(actor_updates, "topic_by_code",
+                        lambda session, code: {"topic_id": "t", "code": code})
+    monkeypatch.setattr(actor_updates, "schema_fields", lambda category: ["a", "b", "c"])
+    monkeypatch.setattr(actor_updates, "current_values", lambda *args: {})
+    # The Great Lakes Commission has the most gaps.
+    monkeypatch.setattr(actor_updates, "plan_fields", lambda *args, **kw: (["a", "b", "c"], []))
+
+    class Blocked:
+        def blocked(self, url):
+            return ({"retry_after": "2026-11-11T12:52:16+00:00"} if "glc.org" in url else None)
+
+    prepared = {"actor_ids": [], "sector": "WATER", "state": None,
+                "options": {"category": None, "topic": "WATER", "scope": "general", "fields": [],
+                            "categories": [], "max_actors_per_run": 2}}
+    choice = actor_updates.choose_actors(None, prepared, blocked_sites=Blocked())
+    assert [a["actor_id"] for a in choice["chosen"]] == ["nu", "tamu"]
+    waiting = {w["actor_id"]: w["reason"] for w in choice["waiting"]}
+    assert "refuses automated access" in waiting["glc"] and "2026-11-11" in waiting["glc"]
+    # With room under the cap it is still read, last, through the fallback sources.
+    prepared["options"]["max_actors_per_run"] = 3
+    choice = actor_updates.choose_actors(None, prepared, blocked_sites=Blocked())
+    assert [a["actor_id"] for a in choice["chosen"]] == ["nu", "tamu", "glc"]

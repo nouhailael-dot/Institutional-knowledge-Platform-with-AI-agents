@@ -1302,14 +1302,23 @@ def group_actors(session, *, sector: str, category: str | None, state: str | Non
 
 
 def choose_actors(session, prepared: dict, *, config: dict | None = None,
-                  today: datetime | None = None) -> dict:
+                  today: datetime | None = None, blocked_sites=None) -> dict:
     """Which actors a run updates, most gaps first, and why the others wait.
 
     Gap-aware: an actor with nothing missing or out of date for the request's
     scope is not read at all, so it costs nothing. The actor cap is applied
     after ordering, so the cap spends the run on the actors that need it most.
+
+    An actor whose website refused the agent (site_access.BlockedSites, still
+    in its cooldown) comes after every readable one: on 2026-10-28 the Great
+    Lakes Commission had the most gaps, so two Water runs in a row spent a
+    slot on it and read nothing. It is still read when the cap leaves room,
+    through the fallback sources.
     """
     from agents.collection.light_pull import CATEGORY_LIGHT_FIELDS
+    from agents.collection.site_access import BLOCKED_SITES, BlockedSites
+
+    blocked_sites = blocked_sites or BlockedSites(BLOCKED_SITES)
 
     limits = settings(config)
     today = today or datetime.now(UTC)
@@ -1364,16 +1373,21 @@ def choose_actors(session, prepared: dict, *, config: dict | None = None,
         # which a capped run reaches actors, whatever the scope.
         gaps = {f for gap_scope in ("missing", "outdated")
                 for f in plan_fields(gap_scope, schema, current, today=today, limits=limits)[0]}
+        held = blocked_sites.blocked(actor["website"]) if actor.get("website") else None
         ready.append({"actor_id": actor["actor_id"], "name": actor["name"],
                       "actor_category": actor.get("actor_category"),
                       "topic": topic["code"], "boxes": len(fields), "fields": fields,
-                      "gaps": len(gaps & set(fields))})
-    ready.sort(key=lambda a: (-a["gaps"], -a["boxes"], a["name"]))
+                      "gaps": len(gaps & set(fields)),
+                      **({"blocked_until": held["retry_after"][:10]} if held else {})})
+    ready.sort(key=lambda a: ("blocked_until" in a, -a["gaps"], -a["boxes"], a["name"]))
     cap = int(options["max_actors_per_run"])
     for actor in ready[cap:]:
         waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
-                        "reason": f"Over this run's cap of {cap} actors; it comes first next run "
-                                  "if it still has the most gaps."})
+                        "reason": (f"Its website refuses automated access; it waits behind readable "
+                                   f"actors until {actor['blocked_until']}."
+                                   if "blocked_until" in actor else
+                                   f"Over this run's cap of {cap} actors; it comes first next run "
+                                   "if it still has the most gaps.")})
     return {"matched": matched, "chosen": ready[:cap], "waiting": waiting}
 
 
