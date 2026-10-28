@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028a";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028b";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.parked,
@@ -511,8 +511,10 @@ export function qualityOf(candidate) {
   };
 }
 
+// The bio (or the agent's summary) is the person's description, shown at the
+// top of the card - not repeated here.
 const PERSON_FACT_BOXES = [
-  ["bio", "Biography"], ["linkedin_url", "LinkedIn profile"],
+  ["linkedin_url", "LinkedIn profile"],
   ["department", "Department or unit"], ["expertise", "Expertise"],
   ["relevant_work", "Relevant projects or work"],
   ["work_location", "Work location"], ["other_affiliations", "Other affiliations"],
@@ -552,6 +554,26 @@ export function pageFactBoxes(candidate) {
       dropped: (facts.dropped || []).includes(key),
     };
   });
+}
+
+/**
+ * What a person does: the bio copied from their page, else the agent's own
+ * summary of the page, kept sentence by sentence only where the page supports
+ * it (backend page_facts.grounded_sentences). Null when the page gave neither.
+ */
+export function personDescription(candidate) {
+  const facts = candidate?.agent_metadata?.page_facts || {};
+  const evidence = facts.evidence || {};
+  for (const [key, kind] of [["bio", "Biography from its page"], ["description", "Summary of its page"]]) {
+    const text = String(facts[key] ?? "").trim();
+    if (text) return {text, kind, source: evidence[key]?.source_url || null};
+  }
+  return null;
+}
+
+/** ISO days inside a sentence ("Took place on 2026-09-15.") read MM/DD/YYYY. */
+export function usDatesIn(text) {
+  return String(text ?? "").replace(/\b\d{4}-\d{2}-\d{2}\b/g, day => usDate(day));
 }
 
 /** The event Discovery sends to open an actor's update profile here. */
@@ -775,35 +797,38 @@ function updateHistoryBlock(html, candidate) {
   </section>`;
 }
 
-function collectedBlock(html, candidate) {
+/**
+ * What the agent checked and read for a discovered person or event, as lines:
+ * the outcome, why it matched, each check, then each fact its page states with
+ * its source. Facts the page does not state are named once, together.
+ */
+function readoutBlock(html, candidate) {
   const quality = qualityOf(candidate);
-  const boxes = pageFactBoxes(candidate);
-  if (!quality && boxes.every(box => box.state === MISSING.notYetChecked)) return null;
-  return html`<section class="review-section">
-    <h3>Collected information</h3>
-    ${quality && html`<div class=${"review-quality " + (quality.completeness || "")}>
-      <div class="review-quality-head"><strong>${quality.outcome
-        ? `${quality.outcome} · ${quality.label}` : quality.label}</strong>
-        ${quality.timing && html`<span class="review-chip">${quality.timing}</span>`}
-        <span>${quality.reasons.join(" ")}</span></div>
-      ${quality.whyMatched && html`<p class="review-hint"><strong>Why it matched:</strong> ${quality.whyMatched}</p>`}
-      <ul class="review-checks">${quality.checks.map(check => html`<li key=${check.name}
-        class=${check.state}><strong>${check.name}</strong> ${check.detail}</li>`)}</ul>
-      ${quality.missing.length > 0 && html`<p class="review-hint">Not confirmed: ${quality.missing.join(", ")}.</p>`}
-      ${quality.priorityMissing.length > 0 && html`<p class="review-hint">Not found on the page:
-        ${quality.priorityMissing.join(", ")}.</p>`}
-      ${quality.conflicts.map((conflict, index) => html`<p class="review-message error" key=${index}>${conflict}</p>`)}
-    </div>`}
-    <div class="review-boxes">${boxes.map(box => html`<div class="review-box light-box" key=${box.key}>
-      <dt>${box.label}</dt>
-      <dd>${box.state ? html`<span class="review-missing">${box.state}</span>`
-        : box.link ? html`<a href=${box.link} target="_blank" rel="noreferrer">${box.value}</a>` : box.value}</dd>
-      ${box.quote && html`<small>“${box.quote}”</small>`}
-      ${(box.source || box.dateRead) && html`<small>${box.source
-        ? html`<a href=${box.source} target="_blank" rel="noreferrer">Source</a>` : ""}${box.dateRead
-        ? ` · read ${shortDate(box.dateRead)}` : ""}</small>`}
-    </div>`)}</div>
-  </section>`;
+  const facts = pageFactBoxes(candidate);
+  const found = facts.filter(fact => !fact.state);
+  const notFound = facts.filter(fact => fact.state === MISSING.notFound);
+  if (!quality && !found.length && !notFound.length) return null;
+  return html`<div class=${"review-quality review-readout " + (quality?.completeness || "")}>
+    ${quality && html`<div class="review-quality-head"><strong>${quality.outcome
+      ? `${quality.outcome} · ${quality.label}` : quality.label}</strong>
+      ${quality.timing && html`<span class="review-chip">${quality.timing}</span>`}
+      <span>${quality.reasons.join(" ")}</span></div>`}
+    ${quality?.whyMatched && html`<p class="review-readout-why"><b>Why it matched:</b> ${quality.whyMatched}</p>`}
+    ${quality?.checks.length > 0 && html`<ul class="review-checks">${quality.checks.map(check => html`<li
+      key=${check.name} class=${check.state}><strong>${check.name}</strong> ${usDatesIn(check.detail)}</li>`)}</ul>`}
+    ${quality?.missing.length > 0 && html`<p class="review-hint">Not confirmed: ${quality.missing.join(", ")}.</p>`}
+    ${(quality?.conflicts || []).map((conflict, index) => html`<p class="review-message error" key=${index}>${conflict}</p>`)}
+    ${found.length > 0 && html`<p class="review-readout-label">Read from its page</p>
+      <ul class="review-checks review-page-facts">${found.map(fact => html`<li key=${fact.key} class="ok">
+        <strong>${fact.label}</strong>${" "}${fact.link
+          ? html`<a href=${fact.link} target="_blank" rel="noreferrer">${fact.value}</a>` : fact.value}
+        ${fact.source && html`<span class="review-fact-source"> · <a href=${fact.source} target="_blank"
+          rel="noreferrer">Source</a>${fact.dateRead ? ` · read ${fact.dateRead}` : ""}</span>`}
+        ${fact.quote && html`<small class="review-quote">“${fact.quote}”</small>`}
+      </li>`)}</ul>`}
+    ${notFound.length > 0 && html`<p class="review-hint"><b>Not found on its page:</b>${" "}
+      ${notFound.map(fact => fact.label).join(", ")}.</p>`}
+  </div>`;
 }
 
 function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewer}) {
@@ -1464,33 +1489,25 @@ function pageLabel(url) {
   }
 }
 
-function lightBox(html, row) {
-  // The date a page was read is provenance, not something a reviewer reads a
-  // box for, and a full ISO timestamp in every box crowded out the value. The
-  // source link and the confidence stay; the timestamp is still recorded on the
-  // fact and still shown in Audit & Details.
-  const provenance = [row.source, row.confidence].some(Boolean);
-  return html`<div class="review-box light-box" key=${row.key}>
-    <dt>${row.label}</dt>
-    <dd>${row.state
-      ? html`<span class="review-missing">${missingWithPages(row)}</span>`
-      : row.kept ? html`<span class="review-missing">The value on the map was kept (see Fact History)</span>`
-      : formatFactValue(row.value)}</dd>
-    ${row.state && row.pagesRead?.length > 0 && html`<small>Checked:
-      ${row.pagesRead.map((url, index) => html`${index ? " · " : " "}<a href=${url}
-        target="_blank" rel="noreferrer">${pageLabel(url)}</a>`)}
-    </small>`}
-    ${provenance && html`<small>
-      ${row.source
-        ? html`<a href=${row.source} target="_blank" rel="noreferrer">${row.sourceHost
-          ? `Source: ${row.sourceHost}` : "Source"}</a>`
-        : ""}
-      ${row.confidence ? (row.source ? ` · ${row.confidence}` : row.confidence) : ""}
-    </small>`}
+/**
+ * One Light Pull fact as a line - "Funding: $2M from DOE · Source: doe.gov" -
+ * with what the latest update found, or a proposed value, beneath it.
+ */
+function lightLine(html, row) {
+  // The date a page was read is provenance, kept in Fact History; the source
+  // link and the confidence stay on the line.
+  return html`<div class="review-fact-line" key=${row.key}>
+    <div class="review-line read"><b>${row.label}:</b>
+      <span>${row.state ? html`<span class="review-missing">${missingWithPages(row)}</span>`
+        : row.kept ? html`<span class="review-missing">The value on the map was kept (see Fact History)</span>`
+        : formatFactValue(row.value)}</span>
+      ${row.source && html`<a href=${row.source} target="_blank" rel="noreferrer">${row.sourceHost
+        ? `Source: ${row.sourceHost}` : "Source"}</a>`}
+      ${row.confidence && html`<small>${row.confidence}</small>`}
+    </div>
     ${row.fromSector && html`<small>From its ${row.fromSector} facts.</small>`}
     ${row.fromRecord && html`<small>From the ${row.fromRecord} (not re-read from its pages).</small>`}
-    ${row.recordValue != null && html`<div class="review-record-value">
-      <span>On the earlier GHUS profile</span><p>${formatFactValue(row.recordValue)}</p></div>`}
+    ${row.recordValue != null && html`<small>On the earlier GHUS profile: ${formatFactValue(row.recordValue)}</small>`}
     ${row.carriedOver?.length > 0 && html`<small>Kept from an earlier reading:
       ${row.carriedOver.map(fieldLabel).join(", ")}.</small>`}
     ${row.update && !row.pending && html`<div class=${"review-update-note " + row.update.outcome}>
@@ -1500,6 +1517,26 @@ function lightBox(html, row) {
       <p>${formatFactValue(row.pending.proposed?.value)}</p>
       <small>Decide under Changes to Review.</small>
     </div>`}
+  </div>`;
+}
+
+/**
+ * A group of Light Pull facts as lines: each fact found, then the ones not
+ * found named together on one line ("Not Found: Funding, Employees."), with
+ * the pages that were checked for them.
+ */
+function lightLines(html, rows) {
+  const shown = rows.filter(row => !row.state || row.pending || row.update);
+  const missing = rows.filter(row => !shown.includes(row));
+  const states = [...new Set(missing.map(row => row.state))];
+  const pages = [...new Set(missing.flatMap(row => row.pagesRead || []))];
+  return html`<div class="review-fact-lines">
+    ${shown.map(row => lightLine(html, row))}
+    ${states.map(state => html`<p class="review-hint review-not-found" key=${state}><b>${state}:</b>${" "}
+      ${missing.filter(row => row.state === state).map(row => row.label).join(", ")}.</p>`)}
+    ${pages.length > 0 && html`<p class="review-hint">Pages checked:
+      ${pages.map((url, index) => html`${index ? " · " : " "}<a key=${url} href=${url}
+        target="_blank" rel="noreferrer">${pageLabel(url)}</a>`)}</p>`}
   </div>`;
 }
 
@@ -2408,10 +2445,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${selected.admission_error && html`<div class="review-message error">
               <strong>Last admission failed:</strong> ${selected.admission_error}
             </div>`}
-            <textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")} rows="3"
+            ${selected.entity_type === "person" ? (() => {
+              const about = personDescription(selected);
+              return html`<div class="review-desc read" aria-label="What this person does">
+                ${about ? about.text : html`<span class="review-missing">${MISSING.notFound}</span>`}
+                ${about && html`<small>${about.kind}${about.source && html` · <a href=${about.source}
+                  target="_blank" rel="noreferrer">Source</a>`}</small>`}</div>`;
+            })() : html`<textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")}
+              rows=${Math.min(10, Math.max(3, Math.ceil(String(draft.description ?? "").length / 95)))}
               aria-label=${reviewFieldLabel("description")} placeholder="Description"
               value=${draft.description ?? ""} disabled=${!pending || busy}
-              onInput=${e => edit("description", e.target.value)}></textarea>
+              onInput=${e => edit("description", e.target.value)}></textarea>`}
             ${draftErrors.description && html`<small class="field-error">${draftErrors.description}</small>`}
             ${cardField(html, selected, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
             ${cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
@@ -2538,8 +2582,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             </div>
             ${twoWayKind(selected) === "update" && (() => {
               const row = factRows.find(item => item.key === "location");
-              return row && (row.value || row.update || row.pending) && html`<div class="review-boxes">
-                ${lightBox(html, {...row, label: "Location read from its pages"})}</div>`;
+              return row && (row.value || row.update || row.pending)
+                && lightLine(html, {...row, label: "Location read from its pages"});
             })()}
             ${cardField(html, selected, "primary_technical_focus", draft.primary_technical_focus, edit,
               !pending || busy, draftErrors.primary_technical_focus, "Focus")}
@@ -2571,7 +2615,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ${(CARD_EXTRA_FIELDS[selected.entity_type] || []).filter(([field]) => present(draft[field]))
                 .map(([field, label]) => cardLine(html, label, field === "previous_edition"
                   ? usDate(draft[field]) : formatCardValue(draft[field])))}
-            </details>`}
+            </details>
+            ${readoutBlock(html, selected)}`}
 
             ${sources.length > 0 && html`<details class="msrc">
               <summary>${sources.length} web source${sources.length > 1 ? "s" : ""}</summary>
@@ -2580,24 +2625,20 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 ${item.supports && html`<span class="dash"> — ${item.supports}</span>`}</div>`)}
             </details>`}
 
-            ${isActor && html`<details class="mpeople review-collected">
+            ${isActor && html`<details class="mpeople review-collected" open>
               <summary>${SECTIONS.facts}</summary>
             ${twoWayKind(selected) === "update" && html`<p class="review-hint">${[
               selected.agent_metadata?.topic_name && `Sector: ${selected.agent_metadata.topic_name}.`,
-              "Values in the boxes are on the map, each marked with what the latest update found.",
+              "Each value below is on the map, marked with what the latest update found.",
               (selected.agent_metadata?.changes || []).some(change => change.kind === "fact")
-                && "A box marked Proposed has a change waiting below."].filter(Boolean).join(" ")}</p>`}
+                && "A value marked Proposed has a change waiting below."].filter(Boolean).join(" ")}</p>`}
             <h4>${FIELDS.commonLightPull}</h4>
-            <div class="review-boxes">
-              ${lightBoxes.common.map(row => lightBox(html, row))}
-            </div>
+            ${lightLines(html, lightBoxes.common)}
 
             <h4>${categoryLabel(draft.actor_category) || FIELDS.categoryLightPull}</h4>
             ${!lightBoxes.specific.length && html`
               <p class="muted">${SENTENCES.chooseCategoryForBoxes}</p>`}
-            <div class="review-boxes">
-              ${lightBoxes.specific.map(row => lightBox(html, row))}
-            </div>
+            ${lightLines(html, lightBoxes.specific)}
 
             <details class="review-subsection">
               <summary>${FACTS.history}</summary>
@@ -2640,7 +2681,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ${selected.agent_metadata?._why || why.reason}</div>`}
           </div>
 
-          ${!isActor && collectedBlock(html, selected)}
           ${isFactReview(selected) && factChangeBlock(html, selected)}
           ${(() => {
             const others = relatedItems(data.candidates, selected);

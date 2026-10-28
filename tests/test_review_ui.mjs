@@ -780,7 +780,10 @@ test('Light Pull fills information boxes, and the category drives which ones', (
   // Not a separate table: boxes, in two groups.
   assert.match(component, /lightPullBoxes\(selected, draft\.actor_category\)/);
   assert.match(component, /FIELDS\.commonLightPull/);
-  assert.match(component, /review-boxes/);
+  // As lines, not boxes: found facts each on a line, the rest named together.
+  assert.match(component, /lightLines\(html, lightBoxes\.common\)/);
+  assert.match(component, /lightLines\(html, lightBoxes\.specific\)/);
+  assert.doesNotMatch(component, /review-boxes|light-box/);
 
   const candidate = {reviewed_payload: {actor_category: 'university_academic'}};
   const university = lightPullBoxes(candidate, 'university_academic');
@@ -1238,6 +1241,28 @@ test('a discovered person or event shows its checks and the facts read from its 
   assert.equal(eventBoxes.format.value, 'Online');
   assert.equal(eventBoxes.organizer.value, 'Health AI Alliance');
   assert.equal(qualityOf({agent_metadata: {}}), null);
+});
+
+test('a person reads what they do; an event its fuller description; checks read US dates', async () => {
+  const {personDescription, usDatesIn} = await import('../frontend/review.js');
+  const page = 'https://cee.example.edu/p';
+  const bio = {agent_metadata: {page_facts: {bio: 'Maria Lopez joined Rice in 2019.',
+    description: 'Maria Lopez is a professor.',
+    evidence: {bio: {source_url: page}}}}};
+  assert.deepEqual(personDescription(bio),
+    {text: 'Maria Lopez joined Rice in 2019.', kind: 'Biography from its page', source: page});
+  const summary = {agent_metadata: {page_facts: {description: 'Maria Lopez is a professor.'}}};
+  assert.equal(personDescription(summary).kind, 'Summary of its page');
+  assert.equal(personDescription({agent_metadata: {}}), null);
+  assert.equal(usDatesIn('Took place on 2026-09-15.'), 'Took place on 09/15/2026.');
+  // The Collected information section is gone: the checks and the page's facts
+  // read as lines inside the record card, under its profile.
+  assert.doesNotMatch(component, /Collected information|collectedBlock/);
+  assert.match(component, /<\/details>\s*\$\{readoutBlock\(html, selected\)\}/);
+  assert.match(component, /Not found on its page:/);
+  assert.match(component, /personDescription\(selected\)/);
+  // An event's description box grows with its text.
+  assert.match(component, /String\(draft\.description \?\? ""\)\.length \/ 95/);
 });
 
 test('a discovered event shows its outcome, timing and why it matched', async () => {

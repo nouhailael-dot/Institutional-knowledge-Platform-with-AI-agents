@@ -38,7 +38,9 @@ from agents.discovery.sources.base import FetchedDoc
 # the first 16,000 characters of raw HTML, which were mostly scripts and styles.
 # v4 (2026-10-23): where the person works and their other stated affiliations.
 # v5 (2026-10-25): the person's professional bio, copied from the page.
-PROMPT_VERSION = "person_rubric_record_v5"
+# v6 (2026-10-28): what the person does, in two or three sentences of the
+# agent's own words (facts.description), each sentence checked on the page.
+PROMPT_VERSION = "person_rubric_record_v6"
 RUBRIC_ITEM_NAMES = (
     "institution_or_self_published",
     "research_area_stated",
@@ -182,7 +184,10 @@ class PersonRubricExtractor:
                 "link, where they work (city, state) and other stated affiliations - each "
                 "with a quote of up to 30 words copied exactly from the page. "
                 "Copy the person's professional bio from the page into facts.bio (up to "
-                "three sentences, as written). Never contact details or private "
+                "three sentences, as written). In facts.description, say what this "
+                "person does in two or three plain sentences built only from what the "
+                "page states - role and where, what they work on, named work - even "
+                "when the page has no bio. Never contact details or private "
                 "information."
             ),
             cached_user=json.dumps(
@@ -244,8 +249,8 @@ class PreExtractedPersonExtractor:
     def __init__(self, record: dict[str, object]):
         self.record = {field: record.get(field) for field in PERSON_FIELDS}
         # The page's professional facts and the quality gate's checks travel
-        # with the staged record into Review; the canonical write reads only
-        # the five fields.
+        # with the staged record into Review; the canonical write reads the
+        # five fields and the bio (promote._insert_person).
         self.extra = {key: record[key] for key in ("facts", "quality") if record.get(key)}
 
     def extract(self, doc: FetchedDoc) -> list[dict[str, object]]:

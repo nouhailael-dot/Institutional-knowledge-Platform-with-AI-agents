@@ -32,6 +32,8 @@ from agents.discovery.search.rubric_scoring import (
 from agents.discovery.page_facts import (
     EVENT_FACT_FIELDS,
     EVENT_FACT_SCHEMA,
+    grounded_sentences,
+    page_text,
     reading_text,
     verify_facts,
 )
@@ -44,7 +46,9 @@ from agents.discovery.sources.base import FetchedDoc
 # v5 (2026-10-23): speakers, participating organisations, UM6P/OCP involvement
 # and stated standing claims join the facts (Architecture V2 5.4; collected for
 # every event, by GHUS decision), each item checked on the page.
-PROMPT_VERSION = "event_rubric_record_v5"
+# v6 (2026-10-28): a fuller description (three to five sentences), each
+# sentence kept only when the page supports it (page_facts.grounded_sentences).
+PROMPT_VERSION = "event_rubric_record_v6"
 RUBRIC_ITEM_NAMES = (
     "single_discrete_event",
     "date_within_window",
@@ -193,7 +197,8 @@ class EventRubricExtractor:
                     ),
                     "record_length_rule": (
                         "Respect every canonical maxLength in the record schema. Constrained "
-                        "fields are compact labels or values, not narrative sentences."
+                        "fields are compact labels or values, not narrative sentences. The "
+                        "description is the exception: three to five sentences."
                     ),
                     "canonical_string_max_lengths": EVENT_STRING_MAX_LENGTHS,
                 },
@@ -245,7 +250,13 @@ class EventRubricExtractor:
         facts = verify_facts(payload.get("facts") if isinstance(payload, dict) else None,
                              html=doc.content, source_url=doc.url,
                              read_at=datetime.now(UTC), fields=EVENT_FACT_FIELDS)
-        return EventPageAnalysis(rubric=analysis.rubric, record=analysis.record, facts=facts)
+        record = dict(analysis.record)
+        if record.get("description"):
+            # The description is written, not quoted: each sentence stays only
+            # when the page supports it.
+            record["description"] = grounded_sentences(record["description"],
+                                                       page_text(doc.content))
+        return EventPageAnalysis(rubric=analysis.rubric, record=record, facts=facts)
 
 
 class EventListwiseReranker(ListwiseReranker):

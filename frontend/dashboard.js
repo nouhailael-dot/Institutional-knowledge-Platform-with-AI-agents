@@ -7,8 +7,8 @@
 
 import {
   OPEN_IN_REVIEW, STATUS_LABELS, durationLabel, formatUsd, reviewRunKey, runningLine,
-} from "./discovery.js?v=20261028a";
-import {usDateTime} from "./dates.js?v=20261028a";
+} from "./discovery.js?v=20261028b";
+import {usDateTime} from "./dates.js?v=20261028b";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";
 const SEEN_KEY = "ghus.dashboard.seenAt";

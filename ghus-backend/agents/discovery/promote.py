@@ -1975,6 +1975,13 @@ def _insert_person(
     profile_url = str(payload.get("public_profile_url") or "").strip()
     if _is_linkedin_profile(profile_url):
         cols["linkedin_url"] = profile_url
+    # The professional bio copied from the page, else what the person does as
+    # the agent summarised it - each sentence checked on the page
+    # (page_facts.verify_facts). Neither is ever composed here.
+    facts = payload.get("facts") if isinstance(payload.get("facts"), dict) else {}
+    bio = str(facts.get("bio") or facts.get("description") or "").strip()
+    if bio and "bio" in columns:
+        cols["bio"] = bio
     names = ", ".join(cols)
     binds = ", ".join(
         f"CAST(:{name} AS uuid)" if name in {"person_id", "source_id"} else f":{name}"

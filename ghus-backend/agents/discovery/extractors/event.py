@@ -71,6 +71,17 @@ def validate_event_record_lengths(record: dict[str, object]) -> None:
             )
 
 
+# A reviewer reads the description to decide whether GHUS should go: one line
+# was not enough (GHUS, 2026-10-28). Every sentence is still only what the page
+# states; event_scoring keeps a sentence only when the page supports it.
+EVENT_DESCRIPTION_GUIDE = (
+    "What the event is, in three to five sentences (about 80-150 words), only as the "
+    "page states it: what it is and its edition, who organises and who attends, its "
+    "main themes or tracks, its format and stated scale. No praise the page does not "
+    "make; null when the page does not describe the event."
+)
+
+
 def _nullable_string_schema(field_name: str) -> dict[str, object]:
     schema: dict[str, object] = {"type": ["string", "null"]}
     max_length = EVENT_STRING_MAX_LENGTHS.get(field_name)
@@ -91,7 +102,10 @@ EVENT_TOOL_SCHEMA: dict[str, Any] = {
                     "title": _nullable_string_schema("title"),
                     "start_date": {"type": ["string", "null"]},
                     "end_date": {"type": ["string", "null"]},
-                    "description": _nullable_string_schema("description"),
+                    "description": {
+                        **_nullable_string_schema("description"),
+                        "description": EVENT_DESCRIPTION_GUIDE,
+                    },
                     "location": _nullable_string_schema("location"),
                     "city": {"type": ["string", "null"]},
                     "state": {"type": ["string", "null"]},

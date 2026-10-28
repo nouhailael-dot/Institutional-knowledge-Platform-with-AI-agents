@@ -38,7 +38,7 @@ def _evidence(fields) -> dict:
 # contact details or private information. A short PROFESSIONAL bio, as the
 # official page states it, is collected (GHUS decision 2026-10-25: a complete
 # profile has a bio or a public LinkedIn) - never family, age, home or contact.
-PERSON_FACT_FIELDS = ("bio", "department", "expertise", "relevant_work",
+PERSON_FACT_FIELDS = ("bio", "description", "department", "expertise", "relevant_work",
                       "um6p_ocp_connection", "work_location", "other_affiliations")
 PERSON_FACT_SCHEMA = {
     "type": "object", "additionalProperties": False,
@@ -52,6 +52,14 @@ PERSON_FACT_SCHEMA = {
                                         "notable work. Never family, age, home, personal "
                                         "life or contact details. Null when the page has "
                                         "no biography of this person."},
+        "description": {**_TEXT, "description": "What this person does, in two or three "
+                                                 "plain sentences (about 50-90 words) built "
+                                                 "only from what this page states: their "
+                                                 "role and where, what they work on, and any "
+                                                 "named work or responsibility. Written for a "
+                                                 "reader who does not know them; no praise, "
+                                                 "nothing the page does not say. Given even "
+                                                 "when the page has no biography."},
         "department": {**_TEXT, "description": "The department, laboratory, school or unit "
                                                 "the person works in."},
         "expertise": {**_LIST, "description": "Research areas or professional specialisms, "
@@ -121,6 +129,36 @@ _LISTS = {"themes", "speakers", "participating_organizations", "standing_claims"
           "expertise", "relevant_work", "other_affiliations"}
 # Text kept only when the text itself is on the page (no paraphrase).
 _ON_PAGE = {"bio"}
+# Text in the agent's own words, kept sentence by sentence: a sentence stays
+# only when its words are on the page; the rest are dropped, never kept as a
+# guess.
+_GROUNDED = {"description"}
+_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(])")
+_WORD = re.compile(r"[a-z0-9]+")
+GROUNDED_SHARE = 0.8
+
+
+def grounded_sentences(text: object, page: str) -> str | None:
+    """The sentences of a written description that the page supports, in order.
+
+    A description is the agent's summary, not a quote, so it cannot be found
+    on the page whole. Each sentence is checked instead: it stays when it is
+    on the page as written, or when at least 80% of its words of three or more
+    letters are words of the page (punctuation aside). A sentence of fewer
+    than four such words stays only when it is on the page as written.
+    """
+    page_words = set(_WORD.findall(str(page or "").casefold()))
+    kept = []
+    for sentence in _SENTENCE.split(" ".join(str(text or "").split())):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        words = [w for w in _WORD.findall(sentence.casefold()) if len(w) > 2]
+        if quote_on_page(sentence.rstrip(".!?"), page) or (
+                len(words) >= 4
+                and sum(w in page_words for w in words) / len(words) >= GROUNDED_SHARE):
+            kept.append(sentence)
+    return " ".join(kept) or None
 
 
 def _item_supported(item: str, text: str, quote: str | None) -> bool:
@@ -229,6 +267,17 @@ def verify_facts(facts: object, *, html: str, source_url: str, read_at: datetime
                              "date_read": read_at.isoformat(),
                              **({"items_dropped": len(value) - len(items)}
                                 if len(items) < len(value) else {})}
+            continue
+        if key in _GROUNDED:
+            grounded = grounded_sentences(value, text)
+            if not grounded:
+                dropped.append(key)
+                continue
+            kept[key] = grounded
+            evidence[key] = {"quote": None, "source_url": source_url,
+                             "date_read": read_at.isoformat(),
+                             **({"sentences_dropped": True}
+                                if grounded != " ".join(str(value).split()) else {})}
             continue
         if key in _ON_PAGE:
             bio = " ".join(str(value).split())

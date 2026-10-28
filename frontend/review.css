@@ -89,22 +89,8 @@
 .review-section pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;background:var(--surface-2);border-radius:7px;padding:12px;font-size:11px}
 .review-field-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:12px}
 .review-two-up{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.review-box{border:1px solid var(--line);border-radius:10px;padding:12px;
-  background:var(--surface-2);min-height:92px}
-.review-boxes{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
-  gap:10px;margin-bottom:6px;
-  /* Every box the same height, whatever it holds. A grid sizes each row to
-     its tallest item by default, so a long value in one row made that row
-     taller than the next and the grid read as ragged. */
-  grid-auto-rows:1fr}
-.light-box{display:grid;gap:4px;align-content:start;height:100%}
-.light-box dt{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.light-box dd{margin:0;font-size:13px;overflow-wrap:anywhere;white-space:pre-wrap}
-.light-box small{color:var(--muted);font-size:11px}
-.light-box a{color:var(--accent-ink)}
 .review-subsection{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
 .review-subsection summary{cursor:pointer;font-weight:650;font-size:13px}
-.review-box h4{margin-top:0}
 .review-checklist{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:13px}
 .review-checklist label{display:flex;align-items:center;gap:8px}
 
@@ -158,7 +144,7 @@
 }
 @media(max-width:640px){
   .review-counts,.review-field-grid,.review-two-up,.review-facts,
-  .review-filters,.review-boxes{grid-template-columns:1fr}
+  .review-filters{grid-template-columns:1fr}
   .review-detail-head{display:grid}
   .review-badges{justify-content:flex-start}
   .review-footer{display:grid}
@@ -193,10 +179,7 @@
 .review-back{justify-self:start}
 @media(max-width:1180px){.review-runs{position:static;max-height:320px}}
 
-/* Actor update profiles: what an update found, inside the boxes; changes below. */
-.light-box .review-update-note{margin-top:6px;padding:6px 9px;border-radius:7px;font-size:12px;line-height:1.45;color:var(--muted);background:var(--surface-2);border:1px solid var(--line)}
-.light-box .review-update-note span{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
-.light-box .review-update-note.new,.light-box .review-update-note.changed,.light-box .review-update-note.additional{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent)}
+/* Actor update profiles: what an update found, under each fact; changes below. */
 .review-proposed{margin-top:6px;padding:8px 10px;border:1px dashed var(--accent);border-radius:8px;background:var(--accent-soft)}
 .review-proposed span{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--accent-ink)}
 .review-proposed p{margin:4px 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -262,10 +245,37 @@ textarea.review-inline{resize:vertical;line-height:1.5}
 .review-facts-row.compact{border-top:0;padding-top:0;margin-top:0}
 .review-hubs{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
 .review-source{margin-top:5px;overflow-wrap:anywhere}
-.review-collected .review-boxes{margin-top:8px}
 .review-card-foot{background:var(--surface-2);border-radius:7px;margin:12px -8px 0;padding:12px}
 .review-analyst-notes{display:grid;gap:6px;font-size:13px}
 .review-analyst-notes textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:8px;
   padding:8px 10px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;resize:vertical}
 .review-analyst-notes small{font-size:11.5px}
 @media (max-width:700px){.review-card-actions{margin-left:0}.review-facts-row{grid-template-columns:1fr}}
+
+/* Facts as lines (2026-10-28): what the agent checked and read, in the card. */
+.review-readout{margin:14px 0 4px;font-size:13.5px;line-height:1.5}
+.review-readout .review-checks{font-size:13.5px}
+.review-readout-why{margin:6px 0 0;color:var(--ink)}
+.review-readout-why b{font-weight:600}
+.review-readout-label{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line);font-size:11px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.review-checks li{overflow-wrap:anywhere}
+.review-checks a,.review-fact-line a,.review-desc.read a,.review-not-found a{color:var(--accent-ink)}
+.review-fact-source{color:var(--muted);font-size:12px}
+.review-quote{display:block;margin:2px 0 0 16px;color:var(--muted);font-style:italic;font-size:12px}
+.review-fact-lines{margin:4px 0 10px}
+.review-fact-line{margin:7px 0}
+.review-fact-line .review-line{font-size:13.5px;color:var(--ink);margin:0}
+.review-fact-line .review-line small{color:var(--muted);font-size:11.5px}
+.review-fact-line>small{display:block;padding-left:14px;color:var(--muted);font-size:12px;margin-top:2px}
+.review-fact-line .review-update-note{margin:5px 0 0 14px;padding:6px 9px;border-radius:7px;
+  font-size:12px;line-height:1.45;color:var(--muted);background:var(--surface-2);border:1px solid var(--line)}
+.review-fact-line .review-update-note span{display:block;font-size:10px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.06em}
+.review-fact-line .review-proposed{margin:5px 0 0 14px}
+.review-fact-line .review-update-note.new,.review-fact-line .review-update-note.changed,
+.review-fact-line .review-update-note.additional{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent)}
+.review-fact-line .review-proposed p{margin:2px 0;color:var(--ink)}
+.review-not-found{margin:8px 0 0}
+.review-desc.read{color:var(--ink);white-space:normal;cursor:default}
+.review-desc.read small{display:block;margin-top:4px;color:var(--muted);font-size:11.5px}
