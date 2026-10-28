@@ -40,6 +40,7 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import date
+from difflib import SequenceMatcher
 from urllib.parse import urlsplit
 
 from agents.discovery.normalize import parse_date_to_iso
@@ -448,6 +449,56 @@ _EVENT_STOP = {"the", "of", "and", "for", "in", "on", "at", "a", "an", "annual",
                "conference", "summit", "forum", "event", "events", "home", "register",
                "registration", "agenda", "speakers"}
 _YEAR = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
+
+
+_EDITION_WORDS = {"the", "annual", "edition", "of"}
+_ORDINAL = re.compile(r"^\d+(st|nd|rd|th)$")
+SAME_EVENT_NAME_SIMILARITY = 0.9
+# page_facts.EVENT_FACT_SCHEMA page_kind values for the event's own page.
+OFFICIAL_EVENT_PAGES = ("official_event_site", "organizer_page")
+
+
+def event_name_key(name: str) -> str:
+    """An event's name without its year, edition number or "annual": the series.
+
+    "2027 WateReuse Symposium", "WateReuse Symposium 2027 (42nd Annual)" and
+    "2027 WaterReuse Symposium" (a listing's spelling) give watereusesymposium
+    and waterreusesymposium - close enough to compare, never equal by accident
+    to another series.
+    """
+    return "".join(t for t in _tokens(name)
+                   if t not in _EDITION_WORDS and not _YEAR.fullmatch(t)
+                   and not _ORDINAL.match(t))
+
+
+def _url_key(url: object) -> str:
+    return re.sub(r"^https?://(www\.)?", "", str(url or "").strip().casefold()).rstrip("/")
+
+
+def same_event(record: dict, other: dict) -> bool:
+    """Two readings of one event: the same page, or the same series on the same day.
+
+    Measured 2026-10-28: the 2027 WateReuse Symposium was staged for Review six
+    times in three runs - from its own page each run, and from an alliance's
+    page and an aggregator that spell it differently. The search-title check
+    (held_event_match) needs three distinctive words and missed a two-word name.
+    This compares what was read from the page: the same source page, or names
+    that are the same series (at least 90% alike once the year, edition number
+    and "annual" are set aside) with the same start date. Without a date on
+    both, the names must match exactly.
+    """
+    url = _url_key(record.get("source_url"))
+    if url and url == _url_key(other.get("source_url")):
+        return True
+    a = event_name_key(record.get("title") or record.get("name") or "")
+    b = event_name_key(other.get("title") or other.get("name") or "")
+    if len(a) < 6 or len(b) < 6:
+        return False
+    day_a = str(record.get("start_date") or record.get("next_date") or "")[:10]
+    day_b = str(other.get("start_date") or other.get("next_date") or "")[:10]
+    if day_a and day_b:
+        return day_a == day_b and SequenceMatcher(None, a, b).ratio() >= SAME_EVENT_NAME_SIMILARITY
+    return a == b
 
 
 def held_event_match(title: str, held_events) -> dict | None:

@@ -28,7 +28,14 @@ from agents.discovery.extractors.event import EventExtractor, EventRecordValidat
 from agents.discovery.extractors.person import PersonExtractor
 from agents.discovery.normalize import event_natural_key, parse_date_to_iso
 from agents.discovery.page_facts import page_text, reading_text
-from agents.discovery.quality_gates import cap_band, event_gate, held_event_match, person_gate
+from agents.discovery.quality_gates import (
+    OFFICIAL_EVENT_PAGES,
+    cap_band,
+    event_gate,
+    held_event_match,
+    person_gate,
+    same_event,
+)
 from agents.discovery.run import (
     _extract_stage_route_promote,
     _skip_audit_row,
@@ -1416,6 +1423,7 @@ def fetch_score_stage_events(
         tuple[FetchedDoc, str, str, list[dict[str, object]], list[dict[str, object]], bool],
     ] = {}
     followup_budget = FollowupBudget.from_config(config)
+    read_this_run: list[dict[str, object]] = []
 
     stage_start = cost_meter.spent_usd
     for candidate in plan.candidates:
@@ -1541,6 +1549,29 @@ def fetch_score_stage_events(
                 stats["event_pages_analyzed"] = int(
                     stats.get("event_pages_analyzed", 0) or 0
                 ) + 1
+            # What the page says the event is - name, date, page - against what
+            # waits in Review and what this run already read: the same event is
+            # staged once. A run keeps the first reading unless a later one is
+            # the event's own (or its organiser's) page and the first was not.
+            facts = getattr(analysis, "facts", None) or {}
+            reading = {**analysis.record, "source_url": doc.url,
+                       "official": facts.get("page_kind") in OFFICIAL_EVENT_PAGES}
+            twin = next((event for event in waiting_events if same_event(reading, event)), None)
+            if twin is None:
+                twin = next((event for event in read_this_run if same_event(reading, event)
+                             and (event["official"] or not reading["official"])), None)
+            if twin is not None:
+                by_id[candidate.candidate_id] = replace(
+                    candidate,
+                    page_fetched=True,
+                    triage_verdict="duplicate",
+                    triage_reason=(f"the same event as {twin.get('title') or twin.get('name')}, "
+                                   "already waiting in Review or read in this run; not staged again"),
+                    score_band="duplicate",
+                )
+                stats["same_event_skips"] = int(stats.get("same_event_skips", 0) or 0) + 1
+                continue
+            read_this_run.append(reading)
             score = score_event_rubric(analysis.rubric, config=config)
             qualification = qualify_event(
                 {

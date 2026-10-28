@@ -74,3 +74,29 @@ def test_promotion_writes_the_bio_else_the_description_to_the_person(monkeypatch
     promote._insert_person(session, {"name": "A B", "role": "Engineer"},
                            "00000000-0000-0000-0000-000000000001", confidence=0.8)
     assert "bio" not in session.sql[-1][1]
+
+
+def test_one_event_is_staged_once_however_its_pages_spell_it():
+    from agents.discovery.quality_gates import event_name_key, same_event
+
+    official = {"title": "2027 WateReuse Symposium", "start_date": "2027-03-01",
+                "source_url": "https://watereuse.org/news-events/conferences/2027-watereuse-symposium/"}
+    # Measured 2026-10-28: staged six times in three runs.
+    assert same_event({**official, "title": "anything"},
+                      {"name": "x", "source_url": "https://www.watereuse.org/news-events/"
+                                                  "conferences/2027-watereuse-symposium"})
+    assert same_event({"title": "2027 WaterReuse Symposium", "start_date": "2027-03-01",
+                       "source_url": "https://allianceforwaterefficiency.org/2027-waterreuse-symposium"},
+                      official)
+    assert same_event({"title": "WateReuse Symposium 2027 (42nd Annual)", "start_date": "2027-03-01",
+                       "source_url": "https://emitree.com/conferences/watereuse-symposium"}, official)
+    assert event_name_key("WateReuse Symposium 2027 (42nd Annual)") == "watereusesymposium"
+    # Another edition, another series, or a name alone without dates: not the same.
+    assert not same_event({**official, "start_date": "2028-03-06", "source_url": "u1"},
+                          {**official, "source_url": "u2"})
+    assert not same_event({"title": "2027 WateReuse California", "start_date": "2027-03-01",
+                           "source_url": "u1"}, official)
+    assert not same_event({"title": "2027 WaterReuse Symposium", "source_url": "u1"},
+                          {"name": "2027 WateReuse Symposium", "source_url": "u2"})
+    assert same_event({"title": "2027 WateReuse Symposium", "source_url": "u1"},
+                      {"name": "WateReuse Symposium", "source_url": "u2"})

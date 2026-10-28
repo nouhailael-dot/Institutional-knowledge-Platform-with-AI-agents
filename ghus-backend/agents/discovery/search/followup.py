@@ -168,18 +168,21 @@ def merge_event_reads(record: dict, extra: dict, extra_url: str) -> dict:
 # ------------------------------------------------------- already waiting in Review
 
 def pending_review_events(session) -> list[dict]:
-    """Events staged and waiting for a person, by title and date."""
+    """Events staged and waiting for a person, by title, date and source page."""
     if session is None:
         return []
     try:
         # A savepoint: on a database without the queue only this read is undone.
         with session.begin_nested():
             rows = session.execute(text(
-                "SELECT staged_title AS name, shared_start_date AS next_date "
-                "FROM event_review_queue WHERE status = 'pending' AND staged_title IS NOT NULL"
+                "SELECT q.staged_title AS name, q.shared_start_date AS next_date, "
+                "s.source_url AS source_url "
+                "FROM event_review_queue q LEFT JOIN staged_record s "
+                "ON s.staged_record_id = q.staged_record_id "
+                "WHERE q.status = 'pending' AND q.staged_title IS NOT NULL"
             )).mappings().all()
-        return [{"name": r["name"], "next_date": r["next_date"], "event_id": None}
-                for r in rows]
+        return [{"name": r["name"], "next_date": r["next_date"], "event_id": None,
+                 "source_url": r["source_url"]} for r in rows]
     except Exception:  # noqa: BLE001 - an older database: nothing known to be pending
         logger.warning("could not read pending event reviews", exc_info=True)
         return []
