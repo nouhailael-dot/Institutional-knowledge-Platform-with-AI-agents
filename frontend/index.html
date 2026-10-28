@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>UM6P Intelligence</title>
+<title>COMPASS · Ecosystem Intelligence</title>
 <style>
   :root{
     --bg:#f4f3ef; --surface:#fffffe; --surface-2:#faf8f4;
@@ -13,6 +13,7 @@
     --teal:#0e7b71; --teal-soft:#e2f2ef;
     --violet:#5850c4; --violet-soft:#ecebfa;
     --slate:#556072; --slate-soft:#ebedf0;
+    --green:#2f7a33; --green-soft:#e5f2e3; --amber:#94600a; --amber-soft:#fbf0d9; --link:#1f5fa8;
     --shadow-sm:0 1px 2px rgba(24,24,24,.05);
     --shadow:0 1px 3px rgba(24,24,24,.05),0 10px 26px -8px rgba(24,24,24,.11);
     --shadow-lg:0 2px 8px rgba(24,24,24,.06),0 22px 48px -14px rgba(24,24,24,.20);
@@ -30,6 +31,7 @@
       --teal:#3fd0c0; --teal-soft:#14302a;
       --violet:#a79ef3; --violet-soft:#211e4d;
       --slate:#aeb6bf; --slate-soft:#252a2f;
+      --green:#7fcf83; --green-soft:#16301a; --amber:#f0c060; --amber-soft:#33270f; --link:#82b6f2;
       --shadow-sm:0 1px 2px rgba(0,0,0,.35);
       --shadow:0 1px 3px rgba(0,0,0,.4),0 12px 28px -8px rgba(0,0,0,.5);
       --shadow-lg:0 2px 8px rgba(0,0,0,.45),0 24px 52px -14px rgba(0,0,0,.62);
@@ -99,6 +101,22 @@
   .chip.teal{background:var(--teal-soft);color:var(--teal)}
   .chip.violet{background:var(--violet-soft);color:var(--violet)}
   .chip.slate{background:var(--slate-soft);color:var(--slate)}
+  .chip.green{background:var(--green-soft);color:var(--green)}
+  .chip.amber{background:var(--amber-soft);color:var(--amber)}
+  .badges.inline{display:inline-flex;gap:5px;margin:4px 0 0}
+  .name-link{color:var(--link);font-weight:600}
+  .dir-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:14px}
+  .dir-row .check,.edit-field .check{display:flex;gap:8px;align-items:center;font-size:13.5px;font-weight:600;
+    color:var(--ink);text-transform:none;letter-spacing:0}
+  .more-filters summary{cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:600}
+  .dir-count{display:flex;justify-content:space-between;align-items:center;margin:22px 2px 12px}
+  .edit-form{margin-top:14px;max-width:760px}
+  .edit-group{margin-top:20px}
+  .edit-h{font-family:var(--serif);font-size:17px;font-weight:600;margin-bottom:10px}
+  .edit-field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px}
+  .edit-field>label{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .edit-long{width:100%;resize:vertical;font-family:var(--sans);line-height:1.5;padding:9px 11px}
+  .edit-ro{color:var(--muted);font-size:14px;padding:4px 0}
 
   /* answer */
   .answer{font-size:15.5px;line-height:1.65}
@@ -304,6 +322,54 @@
   .nav-symbol{width:21px;height:21px;display:grid;place-items:center;font-size:20px;line-height:1}
   .sidebar-foot{margin-top:auto;border-top:1px solid var(--line);padding:20px 12px 0;font-size:12px;color:var(--muted)}
   .sidebar-foot strong{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+  .compass-brand{display:flex;align-items:center;gap:12px;padding:18px 12px 20px;margin-bottom:10px;border-top:1px solid var(--line)}
+  .compass-mark{flex:0 0 44px;color:var(--ink)}
+  .compass-name{font-size:19px;font-weight:700;letter-spacing:1.5px;color:var(--ink)}
+  .compass-tag{font-size:12px;color:var(--muted)}
+  .start{padding:18px 0 10px}
+  .start .hero-h{margin-bottom:8px}
+  .start-lead{color:var(--muted);font-size:16px;line-height:1.6;margin:0 0 22px;max-width:880px}
+  .start-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:22px;margin-top:22px;box-shadow:var(--shadow-sm)}
+  .start-box{width:100%;min-height:120px;resize:vertical;font-size:15px;line-height:1.55;padding:14px 16px}
+  .start-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:14px}
+  .start-actions .btn{padding:12px 26px;font-size:15px}
+  .attach-btn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-strong);border-radius:8px;
+    padding:9px 14px;font-size:14px;color:var(--ink);cursor:pointer;background:var(--surface)}
+  .attach-chip{display:inline-flex;align-items:center;gap:10px;font-size:14px}
+  .linkbtn{border:0;background:none;padding:0;color:var(--accent-ink);font:inherit;cursor:pointer;font-weight:600}
+  .linkbtn:hover{text-decoration:underline}
+  .start-note{color:var(--muted);font-size:14px;margin:14px 2px 0}
+  .start-select{width:100%;max-width:560px;margin-bottom:14px}
+  .prompt-list{margin-top:34px}
+  .prompt-h{font-size:22px;font-weight:700;margin:0 0 14px;color:var(--ink)}
+  .prompt-row{display:flex;justify-content:space-between;align-items:center;gap:16px;width:100%;text-align:left;
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin-bottom:10px;
+    font-size:15px;line-height:1.5;color:var(--ink);cursor:pointer}
+  .prompt-row:hover{border-color:var(--accent);box-shadow:var(--shadow-sm)}
+  .prompt-row b{color:var(--accent-ink);font-weight:600}
+  .prompt-go{font-size:24px;color:var(--muted);line-height:1}
+  .map-head{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:6px 0 14px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .map-title{font-family:var(--serif);font-size:22px;font-weight:600;color:var(--ink)}
+  .map-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .map-select{max-width:260px}
+  .filter-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:5;background:var(--bg)}
+  .fchip{border:1px solid transparent;background:transparent;border-radius:999px;padding:5px 12px;font-size:13px;
+    color:var(--muted);cursor:pointer;font-weight:600}
+  .fchip:hover{color:var(--ink)}
+  .fchip.on{background:var(--surface);border-color:var(--line-strong);color:var(--ink)}
+  .fsep{width:1px;height:18px;background:var(--line-strong);margin:0 6px}
+  .dir-top{display:flex;gap:14px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+  .dir-top .field{flex:1;min-width:220px}
+  .seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
+  .seg button{border:0;background:var(--surface);padding:10px 22px;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff}
+  .seg button:disabled{cursor:not-allowed;opacity:.65}
+  .dir-results{margin-top:18px}
+  .dir-results .dir-count{margin:0;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink)}
+  .dir-results .empty{margin:0;border:0}
+  .row-go{color:var(--muted);font-size:20px;width:24px;text-align:right}
   .workspace-main{margin-left:236px;min-width:0}
   .workspace-header{height:72px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;padding:0 42px;background:var(--surface);gap:15px}
   .breadcrumb{color:var(--muted);font-size:12px}.breadcrumb span{margin:0 12px;color:#a4acb7}.breadcrumb strong{color:var(--ink);font-weight:550}
@@ -355,6 +421,7 @@
   /* Contrast separates navigation, workspace, and research content. */
   :root{--bg:#eeece8;--line:#dddcd8;--surface-2:#f5f4f1;--shadow:0 5px 18px #2428310d}
   .sidebar{background:#27292d;border-right-color:#27292d;color:#fff}
+  .sidebar .compass-brand{border-top-color:rgba(255,255,255,.14)}.sidebar .compass-mark,.sidebar .compass-name{color:#fff}.sidebar .compass-tag{color:#bbbcc0}
   .brand-name{color:#fff}.brand-caption{color:#bbbcc0}
   .workspace-brand{border-bottom:1px solid #414348;margin-bottom:16px}
   .nav-label{color:#a7a9af}.nav-item{color:#d0d1d5}
@@ -535,7 +602,24 @@ const AVATAR=html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" st
   stroke-linecap="round"/></svg>`;
 
 /* ------------------------------------------------------------------ Ask */
-function Ask({onCarryOver}){
+/* Commonly used prompts (Fatima's mockups, 27 Oct 2026). Clicking one fills the
+   box and selects the first [bracket], so typing replaces it. */
+function fillPrompt(text,setText,ref){
+  setText(text);
+  setTimeout(()=>{const el=ref.current, at=text.indexOf("[");
+    if(!el) return; el.focus();
+    if(at>=0) el.setSelectionRange(at,text.indexOf("]",at)+1);},0);
+}
+function PromptList({prompts,onPick}){
+  return html`<div class="prompt-list">
+    <h2 class="prompt-h">Commonly used prompts</h2>
+    ${prompts.map(x=>html`<button key=${x} type="button" class="prompt-row" onClick=${()=>onPick(x)}>
+      <span>${x.split(/(\[[^\]]*\])/).map((part,i)=>part.startsWith("[")?html`<b key=${i}>${part}</b>`:part)}</span>
+      <span class="prompt-go" aria-hidden="true">›</span></button>`)}
+  </div>`;
+}
+
+function Ask({onCarryOver,onExplore}){
   const [q,setQ]=useState("");
   const [carrying,setCarrying]=useState(false);
   const [carryNote,setCarryNote]=useState(null);
@@ -549,10 +633,13 @@ function Ask({onCarryOver}){
   const bottomRef=useRef(null);
 
   const examples=[
-    "Who works on phosphogypsum?",
-    "How many actors are at TRL 6 or above?",
-    "Which hubs focus on water?",
+    "Which organizations in our directory work on [topic]?",
+    "Which hubs have we mapped for [sector]?",
+    "Who in our directory has expertise in [topic]?",
+    "Give me a list of people who work on [topic] in [geographic region].",
+    "Give me a list of events our team attended in [year].",
   ];
+  const boxRef=useRef(null);
 
   async function onFile(e){
     const f=e.target.files[0]; if(!f) return;
@@ -639,16 +726,24 @@ function Ask({onCarryOver}){
   return html`
   <div>
     ${empty
-      ? html`<div class="welcome">
-          <div class="eyebrow">Your research workspace</div>
-          <h1 class="hero-h">Turn information into insight.</h1>
-          <p class="lead">Ask anything about the actors, hubs, and events we track across
-            US innovation ecosystems. Every answer is grounded in the database with cited sources.</p>
-          <div class="prompt-grid">
-            ${examples.map((x,i)=>html`<button key=${i} class="prompt-card" type="button"
-              onClick=${()=>{setQ(x);}}><small>${["Discover expertise","Explore technology","Connect ecosystems"][i]}</small>${x}<span class="arrow" aria-hidden="true">↗</span></button>`)}
-          </div>
-          <div class="hint">Choose a starting question, then select Ask to run it.</div>
+      ? html`<div class="start">
+          <h1 class="hero-h">What would you like to know?</h1>
+          <form class="start-card" onSubmit=${e=>{e.preventDefault();ask();}}>
+            <textarea ref=${boxRef} class="field start-box" rows="4" placeholder="Ask about organizations, hubs, people, or events…"
+              value=${q} onInput=${e=>setQ(e.target.value)}
+              onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask();}}}></textarea>
+            <div class="start-actions">
+              ${docName
+                ? html`<span class="attach-chip">📎 ${docName}
+                    <button class="linkbtn" type="button" onClick=${clearDoc}>Remove</button></span>`
+                : html`<label class="attach-btn">${uploading?html`<span class="spin"></span> Indexing…`:"📎 Attach a document"}
+                    <input type="file" accept=".pdf,.txt,.md" style=${{display:"none"}} onChange=${onFile}/></label>`}
+              <button class="btn" disabled=${busy||!q.trim()}>Ask Compass</button>
+            </div>
+          </form>
+          <p class="start-note">ⓘ Answers use information already saved in Compass. To search external
+            sources, go to <button class="linkbtn" type="button" onClick=${onExplore}>Explore and Map</button>.</p>
+          <${PromptList} prompts=${examples} onPick=${x=>fillPrompt(x,setQ,boxRef)}/>
         </div>`
       : html`
         <div class="conv-head"><span class="chip accent">💬 Conversation</span>
@@ -688,7 +783,7 @@ function Ask({onCarryOver}){
           <div ref=${bottomRef}></div>
         </div>`}
 
-    <div class="composer">
+    ${!empty&&html`<div class="composer">
       <div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>
         ${docName
           ? html`<span class="chip accent">📎 ${docName}</span>
@@ -711,364 +806,380 @@ function Ask({onCarryOver}){
             value=${q} onInput=${e=>setQ(e.target.value)}
             onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask();}}}></textarea>
         </div>
-        <button class="btn" disabled=${busy}>${busy?html`<span class="spin"></span>`:"Ask"}</button>
+        <button class="btn" disabled=${busy}>${busy?html`<span class="spin"></span>`:"Ask Compass"}</button>
       </form>
-    </div>
+    </div>`}
   </div>`;
 }
 
 /* --------------------------------------------------------------- Browse */
 const api = (p)=>fetch(p).then(r=>r.json());
 const dash = (v)=> (v===null||v===undefined||v==="") ? html`<span class="dash">—</span>` : v;
-const trlCell=(t)=> t!=null ? html`<span class="trl">${t}</span>` : html`<span class="dash">—</span>`;
 
 function useOnce(fn,dep){ const[d,setD]=useState(null);
   useEffect(()=>{let ok=true;fn().then(x=>ok&&setD(x));return()=>{ok=false}},dep||[]);return d; }
 
-function Actors(){
-  const data=useOnce(()=>api("/api/browse/actors"));
-  const [hub,setHub]=useState("");const[country,setCountry]=useState("");
-  const [state,setState]=useState("");const[types,setTypes]=useState([]);
-  const [sector,setSector]=useState("");
-  const [minTrl,setMinTrl]=useState(0);const[prof,setProf]=useState(false);
-  const [text,setText]=useState("");const[sel,setSel]=useState(null);
-  if(!data) return html`<${Loading}/>`;
-  const {actors,options}=data;
-  const matches=actors.filter(a=>
-    (!hub||a.hubs.includes(hub)) && (!country||a.country===country) &&
-    (!state||a.state===state) && (types.length===0||types.includes(a.actor_category||a.actor_type)) &&
-    (!sector||(a.sectors||[]).includes(sector)) &&
-    (!minTrl||(a.trl!=null&&a.trl>=minTrl)) && (!prof||a.has_profile) &&
-    (!text|| (a.name||"").toLowerCase().includes(text.toLowerCase()) ||
-             (a.description||"").toLowerCase().includes(text.toLowerCase())));
-  if(sel) return html`<${ActorDetail} a=${sel} onBack=${()=>setSel(null)}/>`;
-  const toggle=(t)=>setTypes(ts=>ts.includes(t)?ts.filter(x=>x!==t):[...ts,t]);
-  return html`
-  <div class="fade">
+/* ------------------------------------------------- Ecosystem directory (Browse)
+   One design for every tab (asked for on 28 Oct 2026): a keyword box, a row of
+   filters with Status and Owner, a table whose names carry a status and a source
+   badge, a count with Export, and a detail page whose Edit form shows every field
+   in one column, in groups. Owner reads "Not recorded" until logins exist. */
+const OWNER_NONE="Not recorded";
+const ownerOf=r=>r.owner||OWNER_NONE;
+// Pending review = still waiting for a decision; Parked = a person clicked Park.
+function statusOf(r){
+  const s=String(r.status||r.verification_status||"").toLowerCase();
+  if(s==="verified"||s==="phase_1") return "Verified";
+  if(s==="parked") return "Parked";
+  if(s==="rejected") return "Rejected";
+  return "Pending review";
+}
+const STATUS_CHIP={"Verified":"green","Pending review":"amber","Parked":"slate","Rejected":"slate"};
+function RecordBadges({r}){
+  const status=statusOf(r), origin=r.origin==="AI-Mapped"?"AI mapped":r.origin;
+  return html`<span class="badges inline">
+    ${origin&&html`<span class=${"chip "+(origin==="AI mapped"?"violet":"slate")} title="Who made this record">${origin}</span>`}
+    <span class=${"chip "+STATUS_CHIP[status]}>${status==="Verified"?"✓ ":""}${status}</span>
+  </span>`;
+}
+const today=()=>new Date().toISOString().slice(0,10);
+const shortType=t=>String(t||"").split("/")[0].trim();
+const plusMore=xs=>!xs||!xs.length?"":xs[0]+(xs.length>1?" +"+(xs.length-1):"");
+const distinct=xs=>[...new Set(xs.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b)));
+
+function downloadCsv(name,columns,rows){
+  const cell=v=>{const t=String(v??"");return /[",\n]/.test(t)?'"'+t.replace(/"/g,'""')+'"':t;};
+  const text=[columns.map(c=>cell(c.label)),...rows.map(r=>columns.map(c=>cell(c.text(r))))]
+    .map(line=>line.join(",")).join("\n");
+  const url=URL.createObjectURL(new Blob(["﻿"+text],{type:"text/csv"}));
+  const a=document.createElement("a"); a.href=url; a.download=name+".csv";
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
+
+/* The list every tab shares. `filters` are {key,label,options,test} (a select) or
+   {key,label,kind:"text",placeholder,test}; `more` folds the rarely used ones.
+   Status and Owner are added to every tab. `columns` are {label,text,cell?}. */
+function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],columns,onOpen,exportName,empty,note}){
+  const [q,setQ]=useState("");
+  const [vals,setVals]=useState({});
+  const [verifiedOnly,setVerifiedOnly]=useState(false);
+  const set=(k,v)=>setVals(x=>({...x,[k]:v}));
+  const common=[
+    {key:"_status",label:"Status",options:distinct(rows.map(statusOf)),test:(r,v)=>statusOf(r)===v},
+    {key:"_owner",label:"Owner",options:distinct(rows.map(ownerOf)),test:(r,v)=>ownerOf(r)===v},
+  ];
+  const all=[...filters,...common,...more];
+  const needle=q.trim().toLowerCase();
+  const matches=rows.filter(r=>
+    (!needle||search.text(r).toLowerCase().includes(needle)) &&
+    (!verifiedOnly||statusOf(r)==="Verified") &&
+    all.every(f=>!vals[f.key]||f.test(r,vals[f.key])));
+  const control=f=>html`<div key=${f.key}><label>${f.label}</label>
+    ${f.kind==="text"
+      ? html`<input class="field" placeholder=${f.placeholder||""} value=${vals[f.key]||""}
+          onInput=${e=>set(f.key,e.target.value)}/>`
+      : html`<${Sel} v=${vals[f.key]||""} set=${v=>set(f.key,v)} opts=${f.options}/>`}</div>`;
+  const exportColumns=[{label:"Name",text:r=>r.name},{label:"Status",text:statusOf},
+    {label:"Source",text:r=>r.origin||""},...columns,{label:"Owner",text:ownerOf}];
+  return html`<div class="fade">
     <div class="card pad">
-      <div class="filters">
-        <div><label>Hub</label><${Sel} v=${hub} set=${setHub} opts=${options.hubs}/></div>
-        <div><label title="Derived from each actor's hub sectors — actors aren't tagged to a sector directly">Sector ⓘ</label>
-          <${Sel} v=${sector} set=${setSector} opts=${options.sectors||[]}/></div>
-        <div><label>Country</label><${Sel} v=${country} set=${setCountry} opts=${options.countries}/></div>
-        <div><label>State</label><${Sel} v=${state} set=${setState} opts=${options.states}/></div>
-        <div><label>Min TRL · ${minTrl||"any"}</label>
-          <input type="range" min="0" max="9" value=${minTrl}
-            onInput=${e=>setMinTrl(+e.target.value)}/></div>
-        <div><label>Search name / description</label>
-          <input class="field" placeholder="water, phosphate, Stanford…"
-            value=${text} onInput=${e=>setText(e.target.value)}/></div>
-        <div><label>Curation</label>
-          <label style=${{fontWeight:600,color:"var(--ink)",display:"flex",gap:"8px",alignItems:"center",fontSize:"13.5px",height:"39px"}}>
-            <input type="checkbox" checked=${prof} onChange=${e=>setProf(e.target.checked)}/>
-            Deeply-profiled only</label></div>
+      <div class="dir-top">
+        <div class="seg" role="group" aria-label="Whose records">
+          <button type="button" class="on">All Records</button>
+          <button type="button" disabled title="Available once logins exist">My Records</button>
+        </div>
+        <input class="field" placeholder=${search.placeholder} aria-label="Search"
+          value=${q} onInput=${e=>setQ(e.target.value)}/>
       </div>
-      <div class="typechips">
-        ${options.types.map(t=>html`<button key=${t} class=${"tc"+(types.includes(t)?" on":"")}
-          onClick=${()=>toggle(t)}>${t.replace(/_/g," ")}</button>`)}
+      <div class="filters">${[...filters,...common].map(control)}</div>
+      <div class="dir-row">
+        <label class="check"><input type="checkbox" checked=${verifiedOnly}
+          onChange=${e=>setVerifiedOnly(e.target.checked)}/> Verified records only</label>
+        ${more.length>0&&html`<details class="more-filters"><summary>More filters</summary>
+          <div class="filters" style=${{marginTop:"12px"}}>${more.map(control)}</div></details>`}
       </div>
+      ${note&&html`<div class="hint" style=${{marginTop:"10px"}}>${note}</div>`}
     </div>
-    <div class="count"><b>${matches.length}</b> actor${matches.length===1?"":"s"} match</div>
-    ${matches.length===0? html`<div class="empty">No actors match these filters. Try widening them.</div>` : html`
-    <div class="card" style=${{overflow:"hidden"}}>
-      <table class="grid"><thead><tr>
-        <th>Name</th><th>Actor Category</th><th>Category Type</th><th>Country</th><th>State</th><th class="num">TRL</th></tr></thead>
-        <tbody>${matches.slice(0,400).map(a=>html`<tr key=${a.id} onClick=${()=>setSel(a)}>
-          <td class="name-cell">${a.name}</td>
-          <td>${dash((a.actor_category||a.actor_type||"").replace(/_/g," "))}</td>
-          <td>${dash((a.category_type||"").replace(/_/g," "))}</td>
-          <td>${dash(a.country)}</td><td>${dash(a.state)}</td>
-          <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody>
+    <div class="card dir-results" style=${{overflow:"hidden"}}>
+      <div class="dir-count">
+        <span>${matches.length} ${matches.length===1?noun:plural} shown</span>
+        <button class="example" type="button" disabled=${!matches.length}
+          onClick=${()=>downloadCsv(exportName,exportColumns,matches)}>⤓ Export</button>
+      </div>
+    ${!rows.length? html`<div class="empty">${empty}</div>`
+      : !matches.length? html`<div class="empty">No ${plural} match these filters. Try widening them.</div>`
+      : html`
+      <table class="grid"><thead><tr><th>${nameLabel}</th>
+        ${columns.map(c=>html`<th key=${c.label} class=${c.num?"num":""}>${c.label}</th>`)}<th>Owner</th><th aria-hidden="true"></th></tr></thead>
+        <tbody>${matches.slice(0,400).map(r=>html`<tr key=${r.id||r.hub_id||r.name} onClick=${()=>onOpen(r)}>
+          <td><div class="name-link">${r.name}</div><${RecordBadges} r=${r}/></td>
+          ${columns.map(c=>html`<td key=${c.label} class=${c.num?"num":""}>${c.cell?c.cell(r):dash(c.text(r))}</td>`)}
+          <td class=${r.owner?"":"dash"}>${ownerOf(r)}</td><td class="row-go" aria-hidden="true">›</td></tr>`)}</tbody>
       </table>
       ${matches.length>400&&html`<div class="tablecap">
-        Showing first 400 of ${matches.length} — narrow the filters to see the rest.</div>`}
-    </div>`}
+        Showing first 400 of ${matches.length}. Narrow the filters to see the rest.</div>`}`}
+    </div>
   </div>`;
 }
-function ActorDetail({a,onBack}){
-  const loc=[a.city,a.state,a.country_raw].filter(Boolean).join(", ");
+
+/* A record's page: what we hold, then the Edit form for every field. */
+function RecordPage({kind,r,onBack,subtitle,facts=[],children,options}){
   const [editing,setEditing]=useState(false);
   return html`<div class="card pad detail fade">
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <button class="backlink" onClick=${onBack}>← Back to results</button>
       ${!editing&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
     </div>
-    <h2>${a.name}</h2>
-    <div class="loc">${[(a.actor_category||a.actor_type)&&("Actor Category: "+(a.actor_category||a.actor_type).replace(/_/g," ")),a.category_type&&("Category Type: "+a.category_type.replace(/_/g," ")),loc,a.trl!=null&&("TRL "+a.trl)]
-      .filter(Boolean).join("  ·  ")}</div>
-    <div class="badges">
-      ${a.has_profile&&html`<span class="chip accent">Deeply profiled</span>`}
-      ${a.verification_status&&html`<span class="chip">${a.verification_status.replace(/_/g," ")}</span>`}
-      ${a.origin&&html`<span class=${"chip "+(a.origin==="AI-Mapped"?"violet":"slate")} title="Who made this record">${a.origin}</span>`}
-      ${(a.sectors||[]).map(s=>html`<span class="chip teal" key=${s}>${s}</span>`)}
-    </div>
-    ${a.website&&html`<p>🔗 <a href=${a.website} target="_blank" rel="noopener">${a.website}</a></p>`}
-    ${a.description&&html`<p>${a.description}</p>`}
-    ${a.hubs.length>0&&html`<div class="kv"><div><div class="k">In hubs</div>
-      <div class="v">${a.hubs.join(" · ")}</div></div></div>`}
-    ${editing&&html`<${RecordEditor} kind="actor" record=${a} onClose=${()=>setEditing(false)}/>`}
+    <h2>${r.name}</h2>
+    ${subtitle&&html`<div class="loc">${subtitle}</div>`}
+    <div class="badges"><${RecordBadges} r=${r}/><span class="chip slate">Owner: ${ownerOf(r)}</span></div>
+    ${r.website&&html`<p>🔗 <a href=${r.website} target="_blank" rel="noopener">${r.website}</a></p>`}
+    ${r.description&&html`<p>${r.description}</p>`}
+    ${facts.filter(([,v])=>v&&String(v).trim()).length>0&&html`<div class="kv">
+      ${facts.filter(([,v])=>v&&String(v).trim()).map(([k,v])=>html`<div key=${k}><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div>`}
+    ${children}
+    ${editing&&html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}/>`}
   </div>`;
 }
 
-const HUB_HIDDEN=new Set(["hub_id","slug","region","latitude","longitude","upstream_inputs",
-  "downstream_outputs","integrated_flow_description","cross_hub_themes","secondary_sectors",
-  "source_id","verification_status","created_at","updated_at"]);
-const HUB_HEAD=new Set(["name","actor_count","primary_city","state","country","primary_sectors","confidence"]);
+/* ------------------------------------------------- Edit — save not wired yet
+   Every field the database holds, one column, in groups (asked for on 27 Oct
+   2026). Saving needs the backend's approved writers (facts, verification
+   history, notes), so it stays off and says so; nothing typed here is stored. */
+const RECORD_STATUSES=["verified","pending review","parked","rejected"];
+const FREQUENCIES=["One-time","Annual","Every two years","Twice a year","Quarterly","Monthly","Irregular","Not found"];
+// [field, label, type, options-key]. Types: text, long, date, select, readonly.
+const EDIT_GROUPS={
+  actor:[
+    ["Identity",[["name","Name"],["alt_names","Other names"],["actor_type","Organization type","select","types"],
+      ["category_type","Category type"],["website","Website"]]],
+    ["Location",[["city","City"],["state","State","select","states"],["country_raw","Country"],
+      ["region","Region","select","regions"]]],
+    ["What it does",[["description","Description","long"],["primary_technical_focus","Primary technical focus","long"],
+      ["technical_approach","Technical approach","long"],["current_activities","Current activities","long"],
+      ["technology_ip_notes","Technology and IP","long"],["key_constraints","Key constraints","long"],
+      ["funding_summary","Funding","long"],["primary_lifecycle_role","Lifecycle role"]]],
+    ["Hubs and sector",[["hubs","Hubs","readonly"],["sectors","Sector","readonly"]]],
+  ],
+  hub:[
+    ["Identity",[["name","Name"],["sector","Sector","readonly"],["official_websites","Websites"]]],
+    ["Location",[["primary_city","Primary city"],["state","State"],["country","Country"]]],
+    ["What it is",[["description","Description","long"],["strategic_value_summary","Strategic value","long"],
+      ["core_topic_strengths","Core strengths","long"],["composition_narrative","Composition","long"],
+      ["programs_and_labs_narrative","Programs and labs","long"],["talent_narrative","Talent","long"],
+      ["research_infrastructure_narrative","Research infrastructure","long"],
+      ["industry_integration_narrative","Industry integration","long"],
+      ["international_engagement_narrative","International engagement","long"],
+      ["funding_summary","Funding","long"],["constraints_summary","Constraints","long"]]],
+  ],
+  event:[
+    ["Identity",[["name","Name"],["event_type","Type"],["organizer","Organizer"],["website","Website"]]],
+    ["When and where",[["start_date","Start date","date"],["end_date","End date","date"],
+      ["recurring_pattern","Frequency","select","frequencies"],["location","Location"],["access_type","Access"]]],
+    ["What it covers",[["description","Description","long"],["thematic_focus","Topic","long"],
+      ["expected_attendance","Scale"],["sponsoring_orgs","Sponsors","long"]]],
+  ],
+  person:[
+    ["Identity",[["name","Name"],["title","Title"],["organizations","Organization"],
+      ["profile_url","Public profile"],["orcid","ORCID"]]],
+    ["Expertise",[["topics","Topics","readonly"],["research_areas","Research areas","long"]]],
+  ],
+};
+const asText=v=>Array.isArray(v)?v.join(", "):(v??"");
+function RecordEditor({kind,record,options,onClose}){
+  const fields=EDIT_GROUPS[kind].flatMap(([,fs])=>fs);
+  const choices={...options,frequencies:FREQUENCIES};
+  const initial=()=>Object.fromEntries(fields.map(([k])=>[k,String(asText(record[k]))]));
+  const firstStatus=()=>statusOf(record).toLowerCase();
+  const [draft,setDraft]=useState(initial);
+  const [status,setStatus]=useState(firstStatus);
+  const [notes,setNotes]=useState(record.ghus_notes||"");
+  const [attended,setAttended]=useState(!!record.attended);
+  const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const input=([k,label,type,opts])=>{
+    if(type==="readonly") return html`<div class="edit-ro">${draft[k]||html`<span class="dash">—</span>`}</div>`;
+    if(type==="long") return html`<textarea class="field edit-long" aria-label=${label}
+      rows=${Math.min(10,Math.max(2,Math.ceil((draft[k]||"").length/90)))}
+      value=${draft[k]} onInput=${e=>set(k,e.target.value)}></textarea>`;
+    if(type==="date") return html`<${DateInput} ariaLabel=${label} value=${(draft[k]||"").slice(0,10)} onChange=${v=>set(k,v)}/>`;
+    if(type==="select"){
+      const list=choices[opts]||[];
+      return html`<select class="field" aria-label=${label} value=${draft[k]} onChange=${e=>set(k,e.target.value)}>
+        ${!list.includes(draft[k])&&html`<option value=${draft[k]}>${draft[k]||"Not recorded"}</option>`}
+        ${list.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`;
+    }
+    return html`<input class="field" type="text" aria-label=${label} value=${draft[k]} onInput=${e=>set(k,e.target.value)}/>`;
+  };
+  return html`<div class="card pad fade edit-form">
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <strong>Edit ${kind==="actor"?"organization":kind}</strong>
+      <button class="example" type="button" onClick=${onClose}>Close</button>
+    </div>
+    ${EDIT_GROUPS[kind].map(([group,fs])=>html`<div class="edit-group" key=${group}>
+      <div class="edit-h">${group}${fs.every(([,,t])=>t==="readonly")?html` <span class="hint" style=${{margin:0}}>read only</span>`:""}</div>
+      ${fs.map(f=>html`<div class="edit-field" key=${f[0]}><label>${f[1]}</label>${input(f)}</div>`)}
+    </div>`)}
+    <div class="edit-group">
+      <div class="edit-h">Review</div>
+      <div class="edit-field"><label>Status</label>
+        <select class="field" value=${status} onChange=${e=>setStatus(e.target.value)}>
+          ${RECORD_STATUSES.map(v=>html`<option key=${v} value=${v}>${v[0].toUpperCase()+v.slice(1)}</option>`)}
+        </select></div>
+      <div class="edit-field"><label>Source</label><div class="edit-ro">${record.origin||html`<span class="dash">—</span>`}</div></div>
+      <div class="edit-field"><label>Owner</label><div class="edit-ro">${ownerOf(record)}</div></div>
+      ${kind==="event"&&html`<div class="edit-field"><label>Attended</label>
+        <label class="check"><input type="checkbox" checked=${attended} onChange=${e=>setAttended(e.target.checked)}/>
+          GHUS attended this event</label></div>`}
+      <div class="edit-field"><label>Analyst notes</label>
+        <textarea class="field edit-long" rows="4" value=${notes} onInput=${e=>setNotes(e.target.value)}
+          placeholder=${kind==="event"
+            ?"Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
+            :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea></div>
+    </div>
+    <div class="attach-row" style=${{marginTop:"12px"}}>
+      <button class="btn" type="button" disabled=${true} title="Saving is not connected yet">Save</button>
+      <button class="example" type="button" onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");
+        setAttended(!!record.attended);setStatus(firstStatus());}}>Reset</button>
+      <span class="hint" style=${{margin:0}}>Saving isn't connected yet: edits here are not stored.</span>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------- The four tabs */
+function Actors(){
+  const data=useOnce(()=>api("/api/browse/actors"));
+  const [sel,setSel]=useState(null);
+  if(!data) return html`<${Loading}/>`;
+  const {actors,options}=data;
+  const typeOf=a=>a.actor_category||a.actor_type||"";
+  const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
+  if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)}
+    subtitle=${[typeOf(sel),[sel.city,sel.state,sel.country_raw].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
+    facts=${[["Hubs",sel.hubs.join(" · ")],["Sector",(sel.sectors||[]).join(" · ")],["Region",sel.region],
+      ["Primary technical focus",sel.primary_technical_focus],["Current activities",sel.current_activities],
+      ["Lifecycle role",sel.primary_lifecycle_role]]}/>`;
+  return html`<${Directory} noun="organization" plural="organizations" nameLabel="Organization" rows=${actors} exportName="organizations"
+    onOpen=${setSel} empty="No organizations in the database yet."
+    search=${{placeholder:"Search name, description, technical focus…",
+      text:a=>[a.name,a.description,a.primary_technical_focus,a.alt_names].join(" ")}}
+    filters=${[
+      {key:"sector",label:"Sector",options:options.sectors||[],test:(a,v)=>(a.sectors||[]).includes(v)},
+      {key:"type",label:"Organization type",options:options.types,test:(a,v)=>typeOf(a)===v},
+      {key:"hub",label:"Hub",options:options.hubs,test:(a,v)=>a.hubs.includes(v)},
+      {key:"region",label:"Region",options:distinct(actors.map(a=>a.region)),test:(a,v)=>a.region===v},
+      {key:"state",label:"State",options:options.states,test:(a,v)=>a.state===v},
+    ]}
+    more=${[
+      {key:"country",label:"Country",options:options.countries,test:(a,v)=>a.country===v},
+      {key:"profiled",label:"Curation",options:["Deeply profiled"],test:a=>a.has_profile},
+    ]}
+    columns=${[
+      {label:"Type",text:typeOf,cell:a=>dash(shortType(typeOf(a)))},
+      {label:"Sector",text:a=>(a.sectors||[]).join("; "),
+        cell:a=>(a.sectors||[]).length?plusMore(a.sectors):html`<span class="dash">${a.hubs.length?"—":"Not in a hub"}</span>`},
+      {label:"Hub",text:a=>a.hubs.join("; "),cell:a=>a.hubs.length?plusMore(a.hubs):dash("")},
+      {label:"Location",text:a=>a.state||a.city||""},
+    ]}/>`;
+}
 
 function Hubs(){
   const data=useOnce(()=>api("/api/browse/hubs"));
   const actorsData=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
-  const [q,setQ]=useState("");
   if(!data) return html`<${Loading}/>`;
   const {hubs}=data;
-  if(sel) return html`<${HubDetail} h=${sel} actors=${actorsData?actorsData.actors:[]} onBack=${()=>setSel(null)}/>`;
-  const ql=q.trim().toLowerCase();
-  const matches=hubs.filter(h=>!ql
-    || (h.name||"").toLowerCase().includes(ql)
-    || (h.primary_city||"").toLowerCase().includes(ql)
-    || (h.state||"").toLowerCase().includes(ql)
-    || (h.primary_sectors||"").toLowerCase().includes(ql));
-  return html`<div class="fade">
-    <div class="card pad"><div class="filters"><div>
-      <label>Search hubs</label>
-      <input class="field" placeholder="name, city, or sector…"
-        value=${q} onInput=${e=>setQ(e.target.value)}/></div></div></div>
-    <div class="count"><b>${matches.length}</b> hub${matches.length===1?"":"s"}</div>
-    ${matches.length===0? html`<div class="empty">No hubs match. Try a shorter term.</div>` : html`
-    <div class="card" style=${{overflow:"hidden"}}>
-      <table class="grid"><thead><tr>
-        <th>Hub</th><th class="num">Actors</th><th>Primary city</th><th>Country</th><th>Primary sectors</th></tr></thead>
-        <tbody>${matches.map(h=>html`<tr key=${h.name} onClick=${()=>setSel(h)}>
-          <td class="name-cell">${h.name}</td><td class="num">${h.actor_count}</td>
-          <td>${dash(h.primary_city)}</td><td>${dash(h.country)}</td>
-          <td>${dash(h.primary_sectors)}</td></tr>`)}</tbody></table>
-    </div>`}</div>`;
-}
-function HubDetail({h,actors,onBack}){
-  const loc=[h.primary_city,h.state,h.country].filter(Boolean).join(" · ");
-  const sector=((h.primary_sectors||"").split(",")[0]||"").trim();
-  const short=[],narr=[];
-  Object.keys(h).forEach(k=>{
-    if(HUB_HIDDEN.has(k)||HUB_HEAD.has(k)||k==="actor_count") return;
-    const v=h[k]; if(v===null||v===undefined||String(v).trim()==="") return;
-    if(typeof v==="string"&&v.length>200) narr.push([k,v]); else short.push([k,v]);
-  });
-  const related=actors.filter(a=>a.hubs.includes(h.name));
-  return html`<div class="card pad detail fade">
-    <button class="backlink" onClick=${onBack}>← Back to hubs</button>
-    <h2>${h.name}</h2><div class="loc">${loc}</div>
-    <div class="metrics">
-      <div class="metric"><div class="k">Live actors</div><div class="v">${h.actor_count}</div></div>
-      <div class="metric"><div class="k">Primary sector</div><div class="v">${sector?sector.replace(/\b\w/g,c=>c.toUpperCase()):"—"}</div></div>
-      <div class="metric"><div class="k">Confidence</div><div class="v">${h.confidence!=null&&h.confidence!==""?(+h.confidence).toFixed(2):"—"}</div></div>
-    </div>
-    ${short.length>0&&html`<div class="kv">${short.map(([k,v])=>html`<div key=${k}>
-      <div class="k">${k.replace(/_/g," ")}</div><div class="v">${String(v)}</div></div>`)}</div>`}
-    ${narr.length>0&&html`<div style=${{marginTop:"6px"}}>
-      ${narr.map(([k,v])=>html`<details class="narr" key=${k}>
-        <summary>${k.replace(/_/g," ")}</summary><p>${v}</p></details>`)}</div>`}
-    <h3 style=${{fontFamily:"var(--serif)",marginTop:"22px",marginBottom:"8px"}}>Actors in this hub</h3>
-    ${related.length===0? html`<div class="empty">No live actors linked yet.</div>` : html`
-      <div class="card" style=${{overflow:"hidden"}}>
-      <table class="grid"><thead><tr><th>Name</th><th>Actor Category</th><th>Category Type</th><th>Country</th><th class="num">TRL</th></tr></thead>
-      <tbody>${related.map(a=>html`<tr key=${a.id}><td class="name-cell">${a.name}</td>
-        <td>${dash((a.actor_category||a.actor_type||"").replace(/_/g," "))}</td><td>${dash((a.category_type||"").replace(/_/g," "))}</td><td>${dash(a.country)}</td>
-        <td class="num">${trlCell(a.trl)}</td></tr>`)}</tbody></table></div>`}
-  </div>`;
+  const sectorOf=h=>h.sector||h.primary_sectors||"";
+  if(sel){
+    const related=(actorsData?actorsData.actors:[]).filter(a=>a.hubs.includes(sel.name));
+    return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)}
+      subtitle=${[sectorOf(sel),[sel.primary_city,sel.state,sel.country].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
+      facts=${[["Organizations",String(sel.actor_count)],["Strategic value",sel.strategic_value_summary],
+        ["Core strengths",sel.core_topic_strengths]]}>
+      <h3 style=${{fontFamily:"var(--serif)",marginTop:"22px",marginBottom:"8px"}}>Organizations in this hub</h3>
+      ${related.length===0? html`<div class="empty">No organizations linked yet.</div>` : html`
+        <div class="card" style=${{overflow:"hidden"}}>
+        <table class="grid"><thead><tr><th>Name</th><th>Type</th><th>Location</th></tr></thead>
+        <tbody>${related.map(a=>html`<tr key=${a.id}><td><div class="name-link">${a.name}</div><${RecordBadges} r=${a}/></td>
+          <td>${dash(a.actor_category||a.actor_type)}</td><td>${dash([a.city,a.state].filter(Boolean).join(", "))}</td></tr>`)}</tbody></table></div>`}
+    </${RecordPage}>`;
+  }
+  return html`<${Directory} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
+    onOpen=${setSel} empty="No hubs in the database yet."
+    search=${{placeholder:"Search name, city, description…",
+      text:h=>[h.name,h.primary_city,h.state,h.description,sectorOf(h)].join(" ")}}
+    filters=${[
+      {key:"sector",label:"Sector",options:distinct(hubs.map(sectorOf)),test:(h,v)=>sectorOf(h)===v},
+      {key:"state",label:"State",options:distinct(hubs.map(h=>h.state)),test:(h,v)=>h.state===v},
+    ]}
+    columns=${[
+      {label:"Sector",text:sectorOf},
+      {label:"Location",text:h=>[h.primary_city,h.state].filter(Boolean).join(", ")},
+      {label:"Organizations",text:h=>String(h.actor_count??""),num:true},
+    ]}/>`;
 }
 
+// Upcoming first (soonest), then undated, then past (most recent first).
+function eventOrder(e){
+  const d=(e.end_date||e.start_date||"").slice(0,10), t=today();
+  if(!e.start_date) return [1,""];
+  return d>=t?[0,e.start_date]:[2,String(99999999-+e.start_date.slice(0,10).replace(/-/g,""))];
+}
 function Events(){
   const data=useOnce(()=>api("/api/browse/events"));
-  const [loc,setLoc]=useState("");
-  const [evType,setEvType]=useState("");
-  const [when,setWhen]=useState("any");      // any | upcoming | past | range
-  const [from,setFrom]=useState("");const[to,setTo]=useState("");
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
-  if(sel) return html`<${EventDetail} e=${sel} onBack=${()=>setSel(null)}/>`;
-  const today=new Date().toISOString().slice(0,10);
-  const nDated=data.events.filter(e=>e.next_date).length;
-  const matches=data.events.filter(e=>{
-    if(loc && !(e.location||"").toLowerCase().includes(loc.toLowerCase())) return false;
-    if(evType && e.event_type!==evType) return false;
-    if(when==="any") return true;
-    const d=e.next_date;                     // ISO "YYYY-MM-DD" or null
-    if(!d) return false;                     // any date filter drops dateless events
-    if(when==="upcoming") return d>=today;
-    if(when==="past") return d<today;
-    if(when==="range") return (!from||d>=from)&&(!to||d<=to);
-    return true;
-  });
-  const dateCell=(d)=> !d ? html`<span class="dash">—</span>`
-    : html`${usDate(d)} ${d<today?html`<span class="chip slate" style=${{marginLeft:"6px"}}>past</span>`:""}`;
-  return html`<div class="fade">
-    <div class="card pad">
-      <div class="filters">
-        <div><label>Location contains</label>
-          <input class="field" placeholder="New York, USA, Switzerland…"
-            value=${loc} onInput=${e=>setLoc(e.target.value)}/></div>
-        <div><label>Type</label>
-          <select class="field" value=${evType} onChange=${e=>setEvType(e.target.value)}>
-            <option value="">All types</option>
-            ${(data.event_types||[]).map(t=>html`<option key=${t} value=${t}>${t}</option>`)}
-          </select></div>
-        <div><label>Date</label>
-          <select class="field" value=${when} onChange=${e=>setWhen(e.target.value)}>
-            <option value="any">Any date</option>
-            <option value="upcoming">Upcoming</option>
-            <option value="past">Past</option>
-            <option value="range">Custom range…</option>
-          </select></div>
-        ${when==="range"&&html`
-          <div><label>From</label><${DateInput} ariaLabel="From" value=${from} onChange=${setFrom}/></div>
-          <div><label>To</label><${DateInput} ariaLabel="To" value=${to} min=${from} onChange=${setTo}/></div>`}
-      </div>
-      ${when!=="any"&&html`<div class="hint" style=${{marginTop:"12px"}}>
-        Only ${nDated} of ${data.events.length} events carry a scheduled date — date
-        filters list just those. Switch to “Any date” to include the rest.</div>`}
-    </div>
-    <div class="count"><b>${matches.length}</b> event${matches.length===1?"":"s"} match</div>
-    ${matches.length===0? html`<div class="empty">No events match.</div>` : html`
-    <div class="card" style=${{overflow:"hidden"}}>
-      <table class="grid"><thead><tr><th>Event</th><th>Type</th><th>Location</th><th>Next date</th></tr></thead>
-      <tbody>${matches.map(e=>html`<tr key=${e.id} onClick=${()=>setSel(e)}><td class="name-cell">${e.name}</td>
-        <td>${dash(e.event_type)}</td><td>${dash(e.location)}</td>
-        <td>${dateCell(e.next_date)}</td></tr>`)}</tbody></table></div>`}
-  </div>`;
+  const events=[...data.events].sort((a,b)=>{const x=eventOrder(a),y=eventOrder(b);
+    return x[0]-y[0]||String(x[1]).localeCompare(String(y[1]))||a.name.localeCompare(b.name);});
+  const when=e=>{const d=(e.end_date||e.start_date||"").slice(0,10);return !d?"No date":d>=today()?"Upcoming":"Past";};
+  const dated=events.filter(e=>e.start_date).length;
+  if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)}
+    subtitle=${[sel.event_type,sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location,sel.recurring_pattern].filter(Boolean).join("  ·  ")}
+    facts=${[["Organizer",sel.organizer],["Topic",sel.thematic_focus],["Scale",sel.expected_attendance],
+      ["Access",sel.access_type],["Sponsors",sel.sponsoring_orgs]]}/>`;
+  return html`<${Directory} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
+    onOpen=${setSel} empty="No events in the database yet."
+    note=${`Upcoming events first, then those without a date, then past ones. ${dated} of ${events.length} events have a date.`}
+    search=${{placeholder:"Search name, description, topic…",
+      text:e=>[e.name,e.description,e.thematic_focus,e.organizer].join(" ")}}
+    filters=${[
+      {key:"when",label:"When",options:["Upcoming","Past","No date"],test:(e,v)=>when(e)===v},
+      {key:"type",label:"Type",options:data.event_types||[],test:(e,v)=>e.event_type===v},
+      {key:"location",label:"Location",kind:"text",placeholder:"New York, Texas…",
+        test:(e,v)=>(e.location||"").toLowerCase().includes(v.toLowerCase())},
+      {key:"frequency",label:"Frequency",options:distinct(events.map(e=>e.recurring_pattern)),test:(e,v)=>e.recurring_pattern===v},
+    ]}
+    columns=${[
+      {label:"Type",text:e=>e.event_type||""},
+      {label:"Dates",text:e=>e.start_date?eventDates(e.start_date,e.end_date):"",
+        cell:e=>!e.start_date?dash(""):html`${eventDates(e.start_date,e.end_date)}${when(e)==="Past"?html` <span class="chip slate">past</span>`:""}`},
+      {label:"Location",text:e=>e.location||""},
+      {label:"Frequency",text:e=>e.recurring_pattern||""},
+    ]}/>`;
 }
 
 function People(){
   const data=useOnce(()=>api("/api/browse/people"));
-  const [org,setOrg]=useState(""); const [state,setState]=useState("");
-  const [topic,setTopic]=useState(""); const [q,setQ]=useState("");
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
-  if(sel) return html`<${PersonDetail} p=${sel} onBack=${()=>setSel(null)}/>`;
-  // The filters always show, so the page reads the same before the first person
-  // reaches the database; only the results area says there is nothing yet.
-  const empty=data.people.length===0;
-  const needle=q.trim().toLowerCase();
-  const matches=data.people.filter(p=>
-    (!org||p.organizations.includes(org)) && (!state||p.states.includes(state)) &&
-    (!topic||p.topics.includes(topic)) &&
-    (!needle||[p.name,p.title,...p.topics,...p.research_areas].join(" ").toLowerCase().includes(needle)));
-  const list=(xs)=>xs.length?xs.join(", "):html`<span class="dash">—</span>`;
-  return html`<div class="fade">
-    <div class="card pad"><div class="filters">
-      <div><label>Organization</label><${Sel} v=${org} set=${setOrg} opts=${data.options.organizations}/></div>
-      <div><label>State</label><${Sel} v=${state} set=${setState} opts=${data.options.states}/></div>
-      <div><label>Topic</label><${Sel} v=${topic} set=${setTopic} opts=${data.options.topics}/></div>
-      <div><label>Name or expertise</label>
-        <input class="field" placeholder="phosphogypsum, Smith…" value=${q} onInput=${e=>setQ(e.target.value)}/></div>
-    </div></div>
-    ${empty? html`<div class="empty">No people in the database yet. People found in Build the Map
-      appear here once they are verified into the database.</div>` : html`
-    <div class="count"><b>${matches.length}</b> ${matches.length===1?"person matches":"people match"}</div>`}
-    ${empty? null : matches.length===0? html`<div class="empty">No people match these filters.</div>` : html`
-    <div class="card" style=${{overflow:"hidden"}}>
-      <table class="grid"><thead><tr><th>Name</th><th>Title</th><th>Organization</th><th>State</th><th>Topics</th></tr></thead>
-      <tbody>${matches.map(p=>html`<tr key=${p.id} onClick=${()=>setSel(p)}>
-        <td class="name-cell">${p.profile_url?html`<a href=${p.profile_url} target="_blank" rel="noopener">${p.name}</a>`:p.name}</td>
-        <td>${dash(p.title)}</td><td>${list(p.organizations)}</td><td>${list(p.states)}</td>
-        <td>${list(p.topics.length?p.topics:p.research_areas)}</td></tr>`)}</tbody></table></div>`}
-  </div>`;
-}
-
-/* ------------------------------------------------- Edit (Browse) — save not wired yet
-   One editing panel for organizations, events and people, as agreed with GHUS on
-   20 Oct 2026: every field editable, a status dropdown, analyst notes (the place for
-   a back-to-office report link) and, for events, "attended". Saving needs the
-   backend's approved writers (facts, verification history, notes), so it stays off
-   and says so; nothing typed here is stored yet. */
-const RECORD_STATUSES=["verified","parked","rejected"];
-const EDIT_FIELDS={
-  actor:[["name","Name"],["actor_category","Actor category"],["category_type","Category type"],
-         ["website","Website"],["city","City"],["state","State"],["country_raw","Country"],
-         ["description","Description","long"]],
-  event:[["name","Name"],["event_type","Type"],["next_date","Date","date"],["location","Location"],
-         ["website","Website"],["recurring_pattern","Frequency"],["description","Description","long"]],
-  person:[["name","Name"],["title","Title"],["organizations","Organization"],
-          ["profile_url","Public profile"],["orcid","ORCID"]],
-};
-function RecordEditor({kind,record,onClose}){
-  const initial=()=>Object.fromEntries(EDIT_FIELDS[kind].map(([k])=>{
-    const v=k==="actor_category"?(record.actor_category||record.actor_type):record[k];
-    return [k,Array.isArray(v)?v.join(", "):(v??"")];
-  }));
-  const [draft,setDraft]=useState(initial);
-  const [status,setStatus]=useState(String(record.status||record.verification_status||"").toLowerCase());
-  const [notes,setNotes]=useState(record.ghus_notes||"");
-  const [attended,setAttended]=useState(!!record.attended);
-  const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
-  return html`<div class="card pad fade" style=${{marginTop:"14px"}}>
-    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <strong>Edit ${kind==="actor"?"organization":kind}</strong>
-      <button class="example" type="button" onClick=${onClose}>Close</button>
-    </div>
-    <div class="filters" style=${{marginTop:"12px"}}>
-      ${EDIT_FIELDS[kind].filter(([,,t])=>t!=="long").map(([k,label,t])=>html`<div key=${k}><label>${label}</label>
-        ${t==="date"
-          ? html`<${DateInput} ariaLabel=${label} value=${(draft[k]||"").slice(0,10)} onChange=${v=>set(k,v)}/>`
-          : html`<input class="field" type="text" value=${draft[k]} onInput=${e=>set(k,e.target.value)}/>`}</div>`)}
-      <div><label>Status</label>
-        <select class="field" value=${status} onChange=${e=>setStatus(e.target.value)}>
-          ${!RECORD_STATUSES.includes(status)&&html`<option value=${status}>${status||"Not recorded"}</option>`}
-          ${RECORD_STATUSES.map(v=>html`<option key=${v} value=${v}>${v[0].toUpperCase()+v.slice(1)}</option>`)}
-        </select></div>
-      ${kind==="event"&&html`<div><label>Attended</label>
-        <label style=${{display:"flex",gap:"8px",alignItems:"center",height:"39px",fontWeight:600,
-          textTransform:"none",letterSpacing:0,fontSize:"13.5px",color:"var(--ink)"}}>
-          <input type="checkbox" checked=${attended} onChange=${e=>setAttended(e.target.checked)}/>
-          GHUS attended this event</label></div>`}
-    </div>
-    ${EDIT_FIELDS[kind].filter(([,,t])=>t==="long").map(([k,label])=>html`<div key=${k} class="filters"
-        style=${{gridTemplateColumns:"1fr",marginTop:"12px"}}><div>
-      <label>${label}</label>
-      <textarea class="discovery-brief" rows="4" value=${draft[k]} onInput=${e=>set(k,e.target.value)}></textarea></div></div>`)}
-    <div class="filters" style=${{gridTemplateColumns:"1fr",marginTop:"12px"}}><div>
-      <label>Analyst notes</label>
-      <textarea class="discovery-brief" rows="4" value=${notes} onInput=${e=>setNotes(e.target.value)}
-        placeholder=${kind==="event"
-          ?"Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
-          :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea>
-    </div></div>
-    <div class="attach-row" style=${{marginTop:"12px"}}>
-      <button class="btn" type="button" disabled=${true} title="Saving is not connected yet">Save</button>
-      <button class="example" type="button" onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");
-        setAttended(!!record.attended);setStatus(String(record.status||record.verification_status||"").toLowerCase());}}>Reset</button>
-      <span class="hint" style=${{margin:0}}>Saving isn't connected yet: edits here are not stored.</span>
-    </div>
-  </div>`;
-}
-function EventDetail({e,onBack}){
-  const [editing,setEditing]=useState(false);
-  return html`<div class="card pad detail fade">
-    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <button class="backlink" onClick=${onBack}>← Back to results</button>
-      ${!editing&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
-    </div>
-    <h2>${e.name}</h2>
-    <div class="loc">${[e.event_type,e.location,e.next_date,e.recurring_pattern].filter(Boolean).join("  ·  ")}</div>
-    ${e.status&&html`<div class="badges"><span class="chip">${e.status}</span></div>`}
-    ${e.website&&html`<p>🔗 <a href=${e.website} target="_blank" rel="noopener">${e.website}</a></p>`}
-    ${e.description&&html`<p>${e.description}</p>`}
-    ${editing&&html`<${RecordEditor} kind="event" record=${e} onClose=${()=>setEditing(false)}/>`}
-  </div>`;
-}
-function PersonDetail({p,onBack}){
-  const [editing,setEditing]=useState(false);
-  return html`<div class="card pad detail fade">
-    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <button class="backlink" onClick=${onBack}>← Back to results</button>
-      ${!editing&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
-    </div>
-    <h2>${p.name}</h2>
-    <div class="loc">${[p.title,p.organizations.join(", "),p.states.join(", ")].filter(Boolean).join("  ·  ")}</div>
-    ${p.status&&html`<div class="badges"><span class="chip">${p.status}</span></div>`}
-    ${p.profile_url&&html`<p>🔗 <a href=${p.profile_url} target="_blank" rel="noopener">Public profile</a></p>`}
-    ${editing&&html`<${RecordEditor} kind="person" record=${p} onClose=${()=>setEditing(false)}/>`}
-  </div>`;
+  const {people,options}=data;
+  if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)}
+    subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
+    facts=${[["Topics",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")],["ORCID",sel.orcid]]}/>`;
+  return html`<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
+    onOpen=${setSel}
+    empty="No people in the database yet. People found in Build the Map appear here once they are verified into the database."
+    search=${{placeholder:"Search name, title, expertise…",
+      text:p=>[p.name,p.title,...p.topics,...p.research_areas].join(" ")}}
+    filters=${[
+      {key:"org",label:"Organization",options:options.organizations,test:(p,v)=>p.organizations.includes(v)},
+      {key:"state",label:"State",options:options.states,test:(p,v)=>p.states.includes(v)},
+      {key:"topic",label:"Topic",options:options.topics,test:(p,v)=>p.topics.includes(v)},
+    ]}
+    columns=${[
+      {label:"Title",text:p=>p.title||""},
+      {label:"Organization",text:p=>p.organizations.join("; ")},
+      {label:"Location",text:p=>p.states.join("; ")},
+    ]}/>`;
 }
 
 function Sel({v,set,opts}){ return html`<select class="field" value=${v} onChange=${e=>set(e.target.value)}>
@@ -1196,16 +1307,14 @@ function PeopleSearch({actor,jobId,disabled}){
         <textarea value=${criteria} maxLength="2000" rows="3" disabled=${sending||running} onChange=${e=>{setCriteria(e.target.value);key.current=null;}}
           style=${{display:"block",width:"100%",padding:"12px",marginTop:"8px"}}
           placeholder="Researchers working on water treatment who have published recently and led projects in Africa."/></label>
-      <p class="hint">${actor.name} and the original map topic are included automatically. This is a separate paid search with a $3 estimated allowance, additional to the map budget. Estimates are not a billing guarantee.</p>
+      <p class="hint">${actor.name} and the map's topic are included automatically. A separate search, up to $3.</p>
       <button class="example" type="button" disabled=${disabled||sending||running||!criteria.trim()||!jobId} onClick=${start}>${sending?"Starting…":"Search"}</button>
       ${error&&html`<p role="alert">${error}</p>`}
       ${tasks.map(t=>html`<div key=${t.id} style=${{marginTop:"16px"}}>
         <strong>${t.plan?.criteria||t.result?.criteria||"People search"}</strong>
-        <div class="hint">${t.status} · Estimated $${t.cost.estimated_usd.toFixed(3)} / $${t.cost.budget_usd.toFixed(2)}${!t.cost.usage_complete?" · Some charges are unknown":""}</div>
         ${["running","planning","verifying"].includes(t.status)&&html`<button class="example" onClick=${()=>stop(t.id)}>Stop people search</button>`}
         ${t.error&&html`<div role="alert">${t.error}</div>`}
         ${(t.result?.people||[]).map((p,i)=>html`<div class="mperson" key=${i}><div class="mperson-main"><div class="mperson-name">${p.full_name}</div><div>${p.title} · ${p.organization_name}</div><div class="mperson-meta">${p.bio}</div>${(p.sources||[]).map((s,j)=>html`<div key=${j}><a href=${s.url} target="_blank" rel="noopener noreferrer">Source ${j+1}</a> ${s.supports}</div>`)}</div></div>`)}
-        ${(t.result?.coverage_gaps||[]).map((g,i)=>html`<div class="hint" key=${i}>${g}</div>`)}
       </div>`)}
     </div>`}
   </div>`;
@@ -1322,7 +1431,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       ${badge}
       ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
       ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
-      ${parked&&html`<span class="chip slate">Parked</span>`}
+      ${parked?html`<span class="chip slate">Parked</span>`:html`<span class="chip amber">Pending review</span>`}
       <span style=${{marginLeft:"auto",display:"inline-flex",gap:"6px"}}>
         <button class="example" type="button" disabled=${busy||disabled} onClick=${verify}>
           ${busy?html`<span class="spin"></span>`:(j?"Re-verify":"Verify")}</button>
@@ -1443,12 +1552,12 @@ function CarriedRows({rows,onChange,onDismiss}){
     <div class="mperson-meta carried-row"><b>Return:</b>
       <input class="rowedit" type="number" min="0" max="50" value=${rows.result_limit} disabled=${raw}
         onInput=${e=>onChange({...rows,result_limit:Number(e.target.value)||0})}/>
-      <span class="hint">0 means no limit was asked for.</span></div>
+</div>
     ${(rows.known_actors||[]).length>0&&html`<div class="mperson-meta">
       <label><input type="checkbox" checked=${rows.useKnown}
         onChange=${e=>onChange({...rows,useKnown:e.target.checked})}/>
         Already in the database: ${rows.known_actors.join(", ")} — look beyond these</label>
-      <span class="hint">Background for the planner. Not part of the request.</span></div>`}
+      <span class="hint">Background only, not part of the search.</span></div>`}
     <button class="example" type="button" onClick=${()=>{setRaw(!raw); onChange({...rows,raw:!raw});}}>
       ${raw?"◀ Back to rows":"✎ Edit as text"}</button>
   </div>`;
@@ -1462,7 +1571,11 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [researchAvailable,setResearchAvailable]=useState(false);
   const [researchReason,setResearchReason]=useState("Live research is disabled until a controlled test is approved.");
   const [runStatus,setRunStatus]=useState("draft");
-  const [parkedOnly,setParkedOnly]=useState(false);
+  // Result filters for the whole conversation (Fatima's redesign, 27 Oct 2026).
+  const [statusFilter,setStatusFilter]=useState("all");   // all | pending | parked
+  const [matchFilter,setMatchFilter]=useState("all");     // all | matches | leftout
+  const [whenFilter,setWhenFilter]=useState("all");       // all | upcoming | past
+  const boxRef=useRef(null);
   const activeJob=useRef(null);
   const stopped=useRef(false);
   const generation=useRef(0);
@@ -1601,9 +1714,11 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     }catch(e){if(version===generation.current&&id===activeJob.current){setErr(e.message);setBusy(false);}}
   }
 
-  const examples=["Energy optimization research centers",
-                  "Controlled environment agriculture in the US",
-                  "Green hydrogen labs and pilot projects"];
+  const MAP_PROMPTS=[
+    "Map the [water reuse] ecosystem in [California], including research centers, technology companies, experts, and upcoming events.",
+    "Map organizations and experts in [sustainable mining] across [the United States] to identify potential research partners for UM6P.",
+    "Map the [agricultural innovation] ecosystem in [the Midwest] to identify organizations, experts, and field sites for a learning expedition.",
+  ];
 
   const post=(url,body)=>fetch(url,{method:"POST",
     headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
@@ -1782,13 +1897,12 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       : cost?.can_reopen ? "This map was stopped. Use “Reopen this map” above to keep chatting."
       : "This map was stopped.")+fresh;
     if(runStatus==="ready") return "A search plan is ready. Use “Start saved plan” above to run it."+fresh;
-    if(runStatus==="budget_stopped") return "This map reached its budget. Approve the extra $1 above, then continue."+fresh;
+    if(runStatus==="budget_stopped") return "This map reached its budget. Approve $1 more above, then continue."+fresh;
     if(runStatus==="interrupted") return "This map was interrupted. Use “Continue unfinished research” above."+fresh;
     return null;
   }
 
   const total=all().length;
-  const parkedCount=all().filter(e=>e._review==="parked").length;
 
   // The page reads like a chat: each search's results sit right after the message
   // that started it, not in one block under the conversation (asked for on
@@ -1817,16 +1931,30 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   // One search's results: matches in rank order, then anything selection did not
   // judge, then the exclusions with their reasons. A follow-up lists only what it
   // added, and names what it found again that is already shown above.
+  // A people or events search shows only that group; organization searches
+  // (and maps saved before map types) keep people under their organizations.
+  // Each search has its own type: a follow-up may look for experts or events.
+  function groupsFor(r){
+    const only={people:"person",events:"event"}[(res.round_types||[])[r-1]||res.map_type];
+    return only?MGROUPS.filter(([k])=>k===only):MDISPLAY_GROUPS;
+  }
+  // Every card the conversation shows, before the result filters.
+  function visibleItems(){
+    if(!res) return [];
+    return Array.from({length:roundCount},(_,i)=>i+1).flatMap(r=>groupsFor(r).flatMap(([k])=>
+      ((res.entities&&res.entities[k])||[]).filter(e=>(e._round||1)===r)));
+  }
+  const passes=e=>(statusFilter==="all"||(statusFilter==="parked")===(e._review==="parked"))
+    &&(matchFilter==="all"||(matchFilter==="matches")===(e._selected!==false))
+    &&(whenFilter==="all"||e._entity_type!=="event"||e.date_status===whenFilter);
+
   function roundResults(r){
     const order=e=>e._rank?e._rank:(e._selected===false?1e6:5e5);
-    // A people or events map shows only that group; organization maps
-    // (and maps saved before map types) keep people under their organizations.
-    const only={people:"person",events:"event"}[res.map_type];
-    const groups=only?MGROUPS.filter(([k])=>k===only):MDISPLAY_GROUPS;
+    const groups=groupsFor(r);
     const parts=groups.map(([k,label,tone])=>{
       const every=(res.entities&&res.entities[k])||[];
       const items=every.filter(e=>(e._round||1)===r)
-        .filter(e=>!(parkedOnly&&parkedCount>0)||e._review==="parked").sort((a,b)=>order(a)-order(b));
+        .filter(passes).sort((a,b)=>order(a)-order(b));
       const again=r>1?every.filter(e=>(e._round||1)<r&&(e._seen_in||[]).includes(r)):[];
       return {k,label,tone,items,again};
     }).filter(p=>p.items.length||p.again.length);
@@ -1853,51 +1981,85 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     </div>`;
   }
 
-  return html`<div>
-    <h1 class="hero-h">Build the map.</h1>
-    <p class="lead">Describe a domain, venture, or program. An agent searches the web for
-      the US universities, labs, and research centers working on it — plus the people and
-      events around them — then you can verify what it found.</p>
+  const savedMaps=(cls)=>recent.length>0&&html`<select class=${"field "+cls} disabled=${busy||verifying}
+      value=${jobId||""} aria-label="Saved maps" onChange=${e=>{if(e.target.value)restore(e.target.value);}}>
+      <option value="">Select a saved map…</option>
+      ${recent.map(m=>html`<option value=${m.id} key=${m.id}>
+        ${(m.description||"Untitled map").slice(0,65)}${m.status==="done"?"":" — "+m.status}</option>`)}
+    </select>`;
+  const attach=html`${file
+    ? html`<span class="attach-chip">📎 ${file.name}
+        <button class="linkbtn" type="button" onClick=${()=>{setFile(null);
+          if(fileRef.current)fileRef.current.value="";}}>Remove</button></span>`
+    : html`<label class="attach-btn">📎 Attach a document
+        <input ref=${fileRef} type="file" accept=".pdf,.txt,.md" style=${{display:"none"}}
+          onChange=${e=>setFile(e.target.files[0]||null)}/></label>`}`;
+  const sendDisabled=busy||verifying||!researchAvailable||!["draft","awaiting_reply","done","error"].includes(runStatus);
+  const started=msgs.length>0||!!res||busy;
+  const chip=(value,current,set,label)=>html`<button type="button" key=${value}
+    class=${"fchip"+(current===value?" on":"")} onClick=${()=>set(value)}>${label}</button>`;
+  const shown=visibleItems();
+  const hasEvents=shown.some(e=>e._entity_type==="event");
 
+  // Before the first prompt: Fatima's start screen (27 Oct 2026 mockup).
+  if(!started) return html`<div class="start">
+    <h1 class="hero-h">What would you like to explore?</h1>
+    <p class="start-lead">Search external sources to map ecosystems and identify organizations,
+      people, and events relevant to your objectives, areas of interest, and geographic focus.</p>
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
-    <p class="hint">New maps have a $2 total budget, including planning and verification.
-      An extra $1 requires your approval. Existing saved budgets are unchanged.</p>
-    ${recent.length>0&&html`<div class="attach-row">
-      <label>Saved maps <select disabled=${busy||verifying} value=${jobId||""}
-        onChange=${e=>{if(e.target.value)restore(e.target.value);}}>
-        <option value="">Choose a map…</option>
-        ${recent.map(m=>html`<option value=${m.id} key=${m.id}>
-          ${(m.description||"Untitled map").slice(0,65)} — ${m.status}</option>`)}
-      </select></label>
-    </div>`}
-    ${cost&&html`<div class="selnote" aria-live="polite">
-      Estimated usage: $${cost.estimated_usd.toFixed(3)} / $${cost.budget_usd.toFixed(2)} budget.
-      ${cost.reserved_usd>0?" $"+cost.reserved_usd.toFixed(3)+" reserved or awaiting usage.":""}
-      ${!cost.usage_complete?" Some charges are unknown; further calls are blocked.":""}
-      ${cost.can_extend&&html`<div>
-        <button class="example" type="button" disabled=${busy||verifying} onClick=${extendBudget}>
-          Approve extra $1 — $3 total budget
-        </button>
-        <span class="hint">Approval only; this does not start or resume research.</span>
-      </div>`}
-      ${cost.budget_usd===3&&html`<div class="hint">$3 total budget approved. Research only continues when you explicitly start it.</div>`}
+    ${carried&&html`<${CarriedRows} rows=${carried} onChange=${onCarriedChange}
+      onDismiss=${()=>{onCarriedChange(null); setDesc("");}}/>`}
+    <form class="start-card" onSubmit=${e=>{e.preventDefault();send();}}>
+      ${savedMaps("start-select")}
+      <textarea ref=${boxRef} class="field start-box" rows="4" readOnly=${!!(carried&&!carried.raw)}
+        placeholder="Describe the organizations, people, or events you want to map. Include your objective, sector or topic, and geographic focus."
+        value=${desc} onInput=${e=>setDesc(e.target.value)}
+        onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}></textarea>
+      <div class="start-actions">${attach}
+        <button class="btn" disabled=${sendDisabled||!desc.trim()}>Start Search</button></div>
+    </form>
+    ${err&&html`<div class="mprog" style=${{color:"var(--violet)"}}>${err}</div>`}
+    <p class="start-note">ⓘ Review findings and check their sources before you verify them and add
+      them to the Ecosystem Directory.</p>
+    <${PromptList} prompts=${MAP_PROMPTS} onPick=${x=>fillPrompt(x,setDesc,boxRef)}/>
+  </div>`;
+
+  return html`<div>
+    <div class="map-head">
+      <div class="map-title">${(request||msgs.find(m=>m.role==="user")?.content||"New map").split("\n")[0].slice(0,90)}</div>
+      <div class="map-tools">
+        ${cost&&html`<span class="hint" style=${{margin:0}} aria-live="polite">Cost so far: $${cost.estimated_usd.toFixed(2)} of $${cost.budget_usd.toFixed(2)}</span>`}
+        ${savedMaps("map-select")}
+        <button class="example" type="button" disabled=${busy||verifying} onClick=${reset}>+ New map</button>
+      </div>
+    </div>
+    ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
+    ${cost&&(!cost.usage_complete||cost.can_extend||cost.can_resume||runStatus==="ready"||cost.can_reopen)&&html`<div class="selnote" aria-live="polite">
+      ${!cost.usage_complete&&html`<div>Some costs are still being confirmed, so new searches are paused.</div>`}
+      ${cost.can_extend&&html`<div>This map has reached its budget.
+        <button class="example" type="button" disabled=${busy||verifying} onClick=${extendBudget}>Approve $1 more</button></div>`}
       ${(cost.can_resume||runStatus==="ready")&&html`<div>
         <button class="example" type="button" disabled=${busy||verifying||!researchAvailable} onClick=${continueResearch}>
-          ${runStatus==="ready"?"Start saved plan":"Continue unfinished research"} — uses remaining budget
-        </button>
-        <span class="hint">Reuses saved work; the total budget does not reset.</span>
-      </div>`}
+          ${runStatus==="ready"?"Start saved plan":"Continue unfinished research"}</button></div>`}
       ${cost.can_reopen&&html`<div>
-        <button class="example" type="button" disabled=${busy} onClick=${reopen}>Reopen this map</button>
-        <span class="hint">Free. Unlocks the conversation so you can carry on; nothing is searched until you start it.</span>
-      </div>`}
-      <details><summary>Cost by stage</summary>
-        ${Object.entries(cost.by_stage).map(([stage,value])=>html`<div key=${stage}>${stage}: $${value.toFixed(4)}</div>`)}
-        <div class="hint">Estimates use provider-reported usage and configured prices; they are not a billing guarantee.</div>
-      </details>
+        <button class="example" type="button" disabled=${busy} onClick=${reopen}>Reopen this map</button></div>`}
     </div>`}
 
-    ${(msgs.length>0||res||busy)&&html`<div class="thread">
+    ${total>0&&html`<div class="filter-bar" role="group" aria-label="Filter results">
+      ${chip("all",statusFilter,setStatusFilter,`All ${shown.length}`)}
+      ${chip("pending",statusFilter,setStatusFilter,`Pending review ${shown.filter(e=>e._review!=="parked").length}`)}
+      ${chip("parked",statusFilter,setStatusFilter,`Parked ${shown.filter(e=>e._review==="parked").length}`)}
+      <span class="fsep" aria-hidden="true"></span>
+      ${chip("all",matchFilter,setMatchFilter,"Everything")}
+      ${chip("matches",matchFilter,setMatchFilter,"Matches")}
+      ${chip("leftout",matchFilter,setMatchFilter,"Left out")}
+      ${hasEvents&&html`<span class="fsep" aria-hidden="true"></span>
+        ${chip("all",whenFilter,setWhenFilter,"Any date")}
+        ${chip("upcoming",whenFilter,setWhenFilter,"Upcoming")}
+        ${chip("past",whenFilter,setWhenFilter,"Past")}`}
+    </div>`}
+
+    <div class="thread">
       ${msgs.map((m,i)=>html`<${React.Fragment} key=${i}>
         ${m.role==="user"
           ? html`<div class="msg user"><div class="bubble user">${m.content}</div></div>`
@@ -1912,21 +2074,18 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
         ${jobId&&html`<button class="example" type="button" style=${{marginLeft:"auto"}} onClick=${stop}>Stop</button>`}</div>`}
       ${verifying&&jobId&&html`<button class="example" type="button" onClick=${stop}>Stop</button>`}
       <div ref=${bottomRef}></div>
-    </div>`}
+    </div>
 
     ${err&&html`<div class="mprog" style=${{color:"var(--violet)"}}>${err}</div>`}
 
     ${res&&html`<div>
       ${total===0
         ? html`<div class="mprog">${(res.failures||[]).length>0
-            ? "The searches failed. Check the saved status and cost before starting another map."
+            ? "The searches failed. Try again, or start a new map."
             : "No entities found for that description. Try being more specific, or naming the technology and geography."}</div>`
         : html`
           <div class="mbar">
             <span class="chip slate">${total} found in this map</span>
-            ${parkedCount>0&&html`<label class="hint" style=${{margin:0,display:"inline-flex",gap:"6px",alignItems:"center"}}>
-              <input type="checkbox" checked=${parkedOnly} onChange=${ev=>setParkedOnly(ev.target.checked)}/>
-              Parked only (${parkedCount})</label>`}
             <button class="example" type="button" disabled=${verifying||busy||!["done","error"].includes(runStatus)} onClick=${verifyAll}>
               ${verifying?html`<span class="spin"></span> Verifying…`:"Verify all"}</button>
             <button class="example" type="button" disabled=${!!exporting}
@@ -1935,71 +2094,35 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
             <button class="example" type="button" disabled=${!!exporting}
               onClick=${()=>download("pptx")}>
               ${exporting==="pptx"?html`<span class="spin"></span> PowerPoint…`:"⤓ PowerPoint"}</button>
-            ${summary&&html`<span class="hint" style=${{margin:0}}>
-              ${summary.strong} strong · ${summary.weak} weak
-              ${summary.dead_links>0?" · "+summary.dead_links+" dead link(s)":""}
-              ${summary.avg_score!=null?" · avg "+summary.avg_score:""}</span>`}
           </div>`}
-      ${res.coverage_note&&html`<div class="selnote" style=${{marginTop:"14px"}}>${res.partial?"Research is unfinished. ":""}${res.coverage_note}</div>`}
-      ${(res.coverage_gaps||[]).length>0&&html`<details class="selnote" open=${!!res.partial}>
-        <summary>Coverage gaps and remaining work (${res.coverage_gaps.length})</summary>
-        <ul>${res.coverage_gaps.map((gap,i)=>html`<li key=${i}>${gap}</li>`)}</ul>
-      </details>`}
-      ${(res.failures||[]).length>0&&html`<div class="selnote"
-        style=${{color:"var(--violet)"}}>
-        ${res.failures.length} of the searches failed, so this map may be incomplete.
-        Any collected results are saved.</div>`}
-      ${res.tasks&&res.tasks.length>0&&html`<details class="msrc" style=${{marginTop:"6px"}}>
-        <summary>What the agent searched for</summary>
-        ${res.tasks.map((t,i)=>html`<div key=${i} style=${{marginTop:"5px"}}>
-          <span class="dash">${t.entity_type}</span> ${t.query}</div>`)}
-      </details>`}
+      ${res.partial&&!busy&&html`<div class="selnote" style=${{marginTop:"14px"}}>Research is unfinished.</div>`}
+      ${(res.failures||[]).length>0&&html`<div class="selnote" style=${{color:"var(--violet)"}}>
+        Some searches failed, so this map may be incomplete.</div>`}
       ${total>0&&(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>
         <strong>Keep finding organizations like these</strong>
         <div>Discovery can keep searching for more of them, every month for as long as
-          you choose. One short call (under $0.01, on this map's budget) proposes the request
-          from what you asked, then opens it in Discovery, where you edit it before anything is saved.</div>
+          you choose. This opens the request in Discovery, filled in from what you asked,
+          and you edit it there before anything is saved.</div>
         <button class="example" type="button" style=${{marginTop:"8px"}}
           disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
           onClick=${proposeDiscovery}>
-          ${proposing?html`<span class="spin"></span> Proposing…`:"Continue discovery"}</button>
+          ${proposing?html`<span class="spin"></span> Proposing…`:"Monitor this topic"}</button>
       </div>`}
     </div>`}
 
-    ${carried&&!msgs.length&&html`<${CarriedRows} rows=${carried} onChange=${onCarriedChange}
-      onDismiss=${()=>{onCarriedChange(null); setDesc("");}}/>`}
-
     <div class="composer">
-      ${(!msgs.length||file)&&html`<div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>
-        ${file
-          ? html`<span class="chip accent">📎 ${file.name}</span>
-              <button class="example" type="button" onClick=${()=>{setFile(null);
-                if(fileRef.current)fileRef.current.value="";}}>Remove</button>
-              <span class="hint" style=${{margin:0}}>Used as extra context for the search.</span>`
-          : html`<label class="example" style=${{display:"inline-flex",gap:"7px",alignItems:"center"}}>
-              📎 Attach a strategy or program document (PDF, .txt, .md)
-              <input ref=${fileRef} type="file" accept=".pdf,.txt,.md" style=${{display:"none"}}
-                onChange=${e=>setFile(e.target.files[0]||null)}/>
-            </label>`}
-      </div>`}
+      ${file&&html`<div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>${attach}</div>`}
       <form class="ask-form" onSubmit=${e=>{e.preventDefault();send();}}>
         <div class="input-shell">
           ${ICON_SEARCH}
-          <textarea class="field" rows="1" readOnly=${!!(carried&&!carried.raw&&!msgs.length)}
-            placeholder=${msgs.length?"Reply, ask about these results, or ask for more…":"Describe the map you want to build…"}
+          <textarea class="field" rows="1"
+            placeholder="Reply, ask about these results, or ask for more…"
             value=${desc} onInput=${e=>setDesc(e.target.value)}
             onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}></textarea>
         </div>
-        <button class="btn" disabled=${busy||verifying||!researchAvailable||!["draft","awaiting_reply","done","error"].includes(runStatus)}>${busy?html`<span class="spin"></span>`:"Send"}</button>
+        <button class="btn" disabled=${sendDisabled}>${busy?html`<span class="spin"></span>`:"Send"}</button>
       </form>
       ${!busy&&!verifying&&sendBlockedNote()&&html`<div class="hint" role="status" style=${{marginTop:"8px"}}>${sendBlockedNote()}</div>`}
-      ${!msgs.length&&!busy&&!err&&html`<div class="attach-row">
-        ${examples.map(x=>html`<button key=${x} class="example" type="button"
-          onClick=${()=>setDesc(x)}>${x}</button>`)}
-      </div>`}
-      ${(msgs.length>0||res||jobId)&&!busy&&!verifying&&html`<div class="attach-row">
-        <button class="example" type="button" onClick=${reset}>+ New map</button>
-      </div>`}
     </div>
   </div>`;
 }
@@ -2009,18 +2132,38 @@ function Browse(){
   const [k,setK]=useState("actors");
   const V={actors:Actors,hubs:Hubs,events:Events,people:People}[k];
   return html`<div>
-    <div class="eyebrow">Ecosystem directory</div>
-    <h1 class="hero-h">Explore the knowledge base.</h1>
-    <p class="lead">Browse organizations, ecosystem hubs, events, and people. Use filters to find what matters to your research.</p>
+    <h1 class="hero-h">Ecosystem Directory</h1>
+    <p class="start-lead">Find verified organizations, hubs, people, and events. View and edit profiles,
+      add analyst notes, and record team engagement.</p>
     <div class="subnav">
-      ${["actors","hubs","events","people"].map(x=>html`<button key=${x} class=${k===x?"active":""}
-        onClick=${()=>setK(x)}>${x[0].toUpperCase()+x.slice(1)}</button>`)}
+      ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
+        onClick=${()=>setK(x)}>${label}</button>`)}
     </div><${V}/></div>`;
 }
 const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="1.7"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="6" r="2.3"/>
   <circle cx="12" cy="17.5" r="2.3"/><path d="M7.9 8.4 10.6 15.6M16.4 7.6 13.2 15.9M8.2 7 15.7 6.3"
   stroke-linecap="round"/></svg>`;
+/* Page names from Fatima's COMPASS mockups (27 Oct 2026). Ask, Explore and Map
+   and the Ecosystem Directory are renamed; Ismail's pages keep their names until
+   he agrees to "Monitor and Update" and "Review Results". */
+const NAV=[["dashboard","Dashboard"],["ask","Ask Compass"],["map","Explore and Map"],
+  ["browse","Ecosystem Directory"],["discovery","Discovery"],["datafeed","Data Feed"],["review","Review"]];
+const svg=(d)=>html`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const NAV_ICONS={
+  dashboard:svg(html`<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>`),
+  ask:svg(html`<path d="M4 18.5V6.5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8.5L4 20z"/>`),
+  map:svg(html`<path d="M3.5 6.5 9 4l6 2.5L20.5 4v13.5L15 20l-6-2.5L3.5 20z"/><path d="M9 4v13.5M15 6.5V20"/>`),
+  browse:svg(html`<path d="M4 20.5h16M6 20.5V9h4v11.5M10 20.5V4h4v16.5M14 20.5V12h4v8.5"/>`),
+  discovery:svg(html`<path d="M4 19.5l5-6 4 3 7-9"/><path d="M15 7.5h5v5"/>`),
+  datafeed:svg(html`<path d="M12 15.5V4M7.5 8.5 12 4l4.5 4.5M4.5 15.5v4h15v-4"/>`),
+  review:svg(html`<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M10 12.5h5M10 16h5"/>`),
+};
+const COMPASS_MARK=html`<svg class="compass-mark" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
+  <circle cx="22" cy="22" r="20" fill="none" stroke="currentColor" stroke-width="2.2"/>
+  <path d="M29.5 14.5 24.6 24.6 14.5 29.5 19.4 19.4z" fill="var(--accent)"/>
+  <path d="M19.4 19.4 24.6 24.6 14.5 29.5z" fill="currentColor" opacity=".9"/></svg>`;
 function App(){
   const [tab,setTab]=useState("ask");
   // Discovery's Run now opens the actor's profile in Review (discovery.js openInReview).
@@ -2041,18 +2184,18 @@ function App(){
   return html`
   <aside class="sidebar">
     <div class="workspace-brand"><div class="brand-name">UM6P</div><div class="brand-caption">GLOBAL HUBS · UNITED STATES</div></div>
-    <div class="nav-label">Intelligence platform</div>
+    <div class="compass-brand">${COMPASS_MARK}<div><div class="compass-name">COMPASS</div>
+      <div class="compass-tag">Ecosystem Intelligence</div></div></div>
     <nav class="workspace-nav" aria-label="Main navigation">
-      ${[["dashboard","Dashboard","◫"],["ask","Ask","⌕"],["map","Build the Map","⊕"],["browse","Browse","▦"],["discovery","Discovery","◎"],["datafeed","Data Feed","⇪"],["review","Review","✓"]].map(([id,label,symbol])=>html`
-        <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${symbol}</span>${label}${id==="dashboard"&&unseen>0&&html`<span class="nav-badge" aria-label=${`${unseen} new completed runs`}>${unseen}</span>`}</button>`)}
+      ${NAV.map(([id,label])=>html`
+        <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${NAV_ICONS[id]}</span>${label}${id==="dashboard"&&unseen>0&&html`<span class="nav-badge" aria-label=${`${unseen} new completed runs`}>${unseen}</span>`}</button>`)}
     </nav>
-    <div class="sidebar-foot"><strong>Connected intelligence</strong>Organizations, people,<br/>and innovation ecosystems.</div>
   </aside>
   <div class="workspace-main">
-  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${{dashboard:"Dashboard",ask:"Ask",browse:"Browse",map:"Build the Map",discovery:"Discovery",datafeed:"Data Feed",review:"Review"}[tab]}</strong></div><div class="workspace-tag">UM6P Intelligence</div></header>
+  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${Object.fromEntries(NAV)[tab]}</strong></div></header>
   <main class="wrap">
     <div style=${{display:tab==="dashboard"?"block":"none"}}><${Dashboard}/></div>
-    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask}
+    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask} onExplore=${()=>setTab("map")}
       onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/></div>
     <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
     <div style=${{display:tab==="discovery"?"block":"none"}}><${Discovery}
