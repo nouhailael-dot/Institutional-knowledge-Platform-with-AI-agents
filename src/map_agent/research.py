@@ -585,6 +585,20 @@ def _collect(sources, query, gaps, max_pages=3):
 _judged_key = entity_key
 
 
+def round_types(state):
+    """The type each search of this map looked for. A follow-up may look for
+    another type than the first search (28 Oct 2026): organizations first, then
+    the experts and events around them, each under its own message."""
+    rounds = state.get("rounds") or [state.get("description")]
+    first = state.get("map_type", "organizations")
+    types = list(state.get("round_types") or [])
+    return (types + [first] * len(rounds))[:len(rounds)] if types else [first] * len(rounds)
+
+
+def _current_type(state):
+    return round_types(state)[-1]
+
+
 def _follow_up_summary(found, selection, new_count, prior_outcome, map_type="organizations"):
     """(note, outcome) for the whole map after a follow-up judged its newcomers."""
     if selection["outcome"] == FAILED:
@@ -611,11 +625,13 @@ def _visible(state):
                                    f"Follow-up {number - 1}: {rounds[number - 1] if number <= len(rounds) else ''}".strip())
         grouped[entity["_entity_type"]].append(entity)
     map_type = state.get("map_type", "organizations")
-    # On an organization map a person counts through their organization; on a
-    # people map each person was judged directly against the request.
-    if map_type != "people":
-        selected = {a["name"].casefold() for a in grouped["actor"] if a.get("_selected", True)}
-        for person in grouped["person"]:
+    types = round_types(state)
+    # A person found inside an organization counts through that organization; a
+    # person found by a people search was judged directly against the request.
+    selected = {a["name"].casefold() for a in grouped["actor"] if a.get("_selected", True)}
+    for person in grouped["person"]:
+        number = person.get("_round") or 1
+        if (types[number - 1] if number <= len(types) else map_type) != "people":
             person["_selected"] = any(o["actor_name"].casefold() in selected for o in person["organizations"])
     gaps = list(dict.fromkeys(state["gaps"]))
     pending = []
@@ -636,7 +652,8 @@ def _visible(state):
     if map_type == "organizations":
         coverage += (" Selected whole universities also receive official-site ranking lookups within the map allowance. "
                      "Deeper people research starts only when requested on an organization card.")
-    return {"map_type": map_type, "rounds": rounds, "round_after": state.get("round_after") or [None] * len(rounds),
+    return {"map_type": map_type, "rounds": rounds, "round_types": types,
+            "round_after": state.get("round_after") or [None] * len(rounds),
             "tasks": state["tasks"], "requirements": state["requirements"],
             "entities": grouped, "counts": {k: len(v) for k, v in grouped.items()},
             "partial": state["phase"] != "done", "coverage_gaps": gaps + pending,
@@ -667,6 +684,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                  "requirements": requirements,
                  "phase": "organizations", "task_index": 0, "found": [], "gaps": [],
                  "rounds": [description], "round_after": [plan.get("after_message")],
+                 "round_types": [map_type],
                  "people_targets": [], "people_index": 0}
         _note_dropped(state, dropped)
         if len(plan["tasks"]) > len(tasks):
@@ -684,9 +702,12 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
     # follow-up. Re-judging everything against "also find national labs" would
     # mark every earlier university as not matching.
     elif plan and plan.get("tasks") and state.get("phase") == "done":
-        kind = MAP_TYPES[state.get("map_type", "organizations")]
+        earlier = round_types(state)
+        kind_name = plan.get("map_type") if plan.get("map_type") in MAP_TYPES else earlier[-1]
+        kind = MAP_TYPES[kind_name]
         state["tasks"] = state["tasks"] + [t for t in _bounded_tasks(plan["tasks"])
                                            if t["entity_type"] == kind]
+        state["round_types"] = earlier + [kind_name]
         state["judged"] = [_judged_key(e) for e in state["found"]]
         state["round_description"] = description or state["description"]
         state["rounds"] = (state.get("rounds") or [state["description"]]) + [state["round_description"]]
@@ -726,7 +747,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state["task_index"] += 1
         save()  # Includes late evidence if the user stopped during extraction.
     if state["phase"] == "organizations":
-        state["phase"] = "editions" if state.get("map_type") == "events" else "selection"
+        state["phase"] = "editions" if _current_type(state) == "events" else "selection"
         state["edition_queue"] = None
         save()
     if state["phase"] == "editions":
@@ -753,7 +774,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
             state["found"] = earlier + selection["selected"] + selection["rest"]
             state["selection_note"], state["selection_outcome"] = _follow_up_summary(
                 state["found"], selection, len(newcomers), state.get("selection_outcome"),
-                state.get("map_type", "organizations"))
+                _current_type(state))
         else:
             candidates, too_old = window_split(state["found"], state["description"], state["requirements"])
             selection = apply_request(candidates, state["description"], state["requirements"], run=run)
@@ -763,7 +784,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
                 "as left out." if too_old else "")).strip()
             state["selection_outcome"] = selection["outcome"]
         state["found"] = sort_events(state["found"])
-        state["phase"] = "profiles" if state.get("map_type") == "people" else "rankings"
+        state["phase"] = "profiles" if _current_type(state) == "people" else "rankings"
         state["profile_queue"] = None
         save()
     if state["phase"] == "profiles":

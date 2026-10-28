@@ -153,3 +153,43 @@ class ProfileTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TypeSwitchTests(FollowUpTests):
+    """Organizations first, then the experts around them (28 Oct 2026)."""
+
+    def respond(self, **kwargs):
+        if kwargs["tools"][0]["name"] == "submit_selection":
+            return reply("submit_selection", {"selected": [{"id": 1, "why": "Fits"}], "excluded": []})
+        return reply("submit_entities", {"entities": self.people})
+
+    def test_a_follow_up_can_look_for_people_on_an_organization_map(self):
+        self.people = [{"name": "FIPR Institute", "website": "https://fipr.floridapoly.edu",
+                        "sources": [{"url": URL, "supports": "Name"}]}]
+        first = self.build("phosphogypsum research in Florida", {
+            "map_type": "organizations", "requirements": {"hard_filters": ["Florida"]},
+            "tasks": [{"entity_type": "actor", "query": "phosphogypsum research Florida"}]})
+        self.assertEqual(first["round_types"], ["organizations"])
+        self.people = [person("Lee Newcomer", "Texas A&M University")]
+        second = self.build("yes, look for the experts", {
+            "map_type": "people", "requirements": {"hard_filters": ["expert"]},
+            "tasks": [{"entity_type": "person", "query": "phosphogypsum experts"}]})
+        self.assertEqual(second["round_types"], ["organizations", "people"])
+        self.assertEqual(second["map_type"], "organizations")          # the map keeps its name
+        [lee] = [p for p in second["entities"]["person"] if p["full_name"] == "Lee Newcomer"]
+        self.assertEqual(lee["_round"], 2)
+        # Judged by the people search itself, not through an organization on the map.
+        self.assertTrue(lee["_selected"])
+        self.assertEqual([a["name"] for a in second["entities"]["actor"]], ["FIPR Institute"])
+
+    def test_a_map_saved_before_type_switching_reads_one_type_per_search(self):
+        self.assertEqual(research.round_types({"map_type": "events", "rounds": ["a", "b"]}),
+                         ["events", "events"])
+        self.assertEqual(research.round_types({"map_type": "organizations", "rounds": ["a", "b"],
+                                               "round_types": ["organizations"]}),
+                         ["organizations", "organizations"])
+
+    # The inherited people-map tests run under FollowUpTests already.
+    test_a_follow_up_keeps_its_own_list_and_the_original_is_untouched = None
+    test_each_search_is_placed_after_the_message_that_started_it = None
+    test_a_map_saved_without_positions_keeps_its_results_together = None

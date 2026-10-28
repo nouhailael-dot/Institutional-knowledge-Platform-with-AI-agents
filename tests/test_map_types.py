@@ -47,18 +47,29 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(out["map_type"], "people")
         self.assertEqual([t["entity_type"] for t in out["tasks"]], ["person"])
 
-    def test_a_built_map_keeps_its_type(self):
+    def test_a_follow_up_may_look_for_another_type(self):
+        # Organizations first, then the experts around them (28 Oct 2026).
+        built = {"map_type": "organizations", "round_types": ["organizations"],
+                 "entities": {"actor": [{"name": "FIPR Institute"}]}}
+        out = self.chat(reply("submit_plan", {
+            "map_type": "people", "summary": "Experts.", "requirements": {},
+            "tasks": [{"entity_type": "person", "query": "phosphogypsum experts", "focus": ""}]}), built)
+        self.assertEqual((out["status"], out["map_type"]), ("plan", "people"))
+        self.assertEqual([t["entity_type"] for t in out["tasks"]], ["person"])
+
+    def test_a_follow_up_without_a_type_keeps_the_map_type(self):
         built = {"map_type": "people", "entities": {"person": [{"full_name": "Sam Example"}]}}
         out = self.chat(reply("submit_plan", {
-            "map_type": "organizations", "summary": "Labs.", "requirements": {},
-            "tasks": [{"entity_type": "actor", "query": "phosphogypsum labs", "focus": ""}]}), built)
-        self.assertEqual(out["status"], "reply")
-        self.assertIn("covers people", out["message"])
+            "summary": "More.", "requirements": {},
+            "tasks": [{"entity_type": "person", "query": "phosphogypsum experts Texas", "focus": ""}]}), built)
+        self.assertEqual(out["map_type"], "people")
 
-    def test_asking_which_type_is_a_reply_not_a_plan(self):
+    def test_several_types_at_once_start_with_one_and_offer_the_rest(self):
         self.assertEqual(self.chat(PLAN_TEXT)["status"], "reply")
-        self.assertIn("Ask which single type the map should be about ONLY when",
-                      " ".join(planner._SYSTEM.split()))
+        rule = " ".join(planner._SYSTEM.split())
+        self.assertIn("Ask which type to start with ONLY when none of these is named", rule)
+        self.assertIn("plan the first one now, in this order — organizations, then people, then events", rule)
+        self.assertIn("plan that type now", " ".join(planner._FOUND_RULE.split()))
 
     def test_named_types_are_planned_without_asking(self):
         rule = " ".join(planner._SYSTEM.split())

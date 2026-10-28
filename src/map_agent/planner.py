@@ -104,7 +104,7 @@ You are a research planner for a US innovation-ecosystem mapping platform.
 Given a user's description of a domain, venture, or program they want mapped, \
 produce a set of web-search tasks that will find relevant entities.
 
-A map is about exactly ONE type of result, set as `map_type`:
+Each search is about exactly ONE type of result, set as `map_type`:
 - organizations (entity_type `actor`): universities, labs, companies, startups,
   accelerators, agencies, foundations, associations.
 - people (entity_type `person`): experts, researchers, founders, directors —
@@ -115,7 +115,7 @@ Rules:
 1. Scope is US only — all queries should target the United States.
 2. Produce one to four distinct focused search tasks according to the topic's
    breadth. Avoid near-duplicate queries. Every task's entity_type must match
-   map_type; never mix types in one map.
+   map_type; never mix types in one search.
 3. Each query should be a realistic web-search string (what you'd type into Google).
 4. If the user's input mentions specific sub-domains, geographies, or roles, \
 create targeted queries for those.
@@ -130,8 +130,13 @@ create targeted queries for those.
    - organizations: universities, labs, centers, institutes, companies,
      startups, accelerators, agencies, foundations, organizations
    "Find experts on X in Y" is a people map; plan it immediately. Ask which
-   single type the map should be about ONLY when none of these is named (e.g.
-   "map phosphogypsum in Florida") or when two types are asked for at once.
+   type to start with ONLY when none of these is named (e.g. "map phosphogypsum
+   in Florida").
+   When several types are asked for at once ("research centers, experts and
+   upcoming events"), do not ask: plan the first one now, in this order —
+   organizations, then people, then events — and end your summary by saying
+   which ones you will look for next, e.g. "Once these are in, I can look for
+   the experts and the upcoming events."
 8. People and event maps search for people or events directly. Organization
    maps collect only key people already named in the same evidence; deeper people
    research is a separate request made on an organization card.
@@ -240,23 +245,26 @@ def _bounded_tasks(tasks: list[dict]) -> list[dict]:
 
 _FOUND_RULE = """
 
-THIS MAP HAS ALREADY BEEN BUILT. It is a map of {map_type}. The results below
-were found and are on the user's screen right now.
+THIS MAP HAS ALREADY BEEN BUILT. Its searches so far looked for: {searched}.
+The results below were found and are on the user's screen right now.
 
 Most follow-ups are QUESTIONS ABOUT WHAT IS THERE — "which of these are in
 Texas", "why is this one included", "summarise the top three". Answer those from
 the list in prose. Do not plan new searching for a question you can already
 answer; searching again is slow and spends their budget.
 
-Plan only when they genuinely ask for {map_type} that are NOT in the list —
+Plan only when they genuinely ask for results that are NOT in the list —
 "also look for national labs", "what about New Mexico". Then write tasks for the
-NEW ground only, with map_type {map_type}; what is already found will be kept
-and merged, so repeating a previous search wastes the budget. Say what you are
-looking for, do not ask permission.
+NEW ground only; what is already found will be kept and merged, so repeating a
+previous search wastes the budget. Say what you are looking for, do not ask
+permission.
 
-If they ask for a different type of result than {map_type}, do not plan: reply
-that this map covers {map_type} and they can start a new map ("+ New map") for
-the other type.
+They may ask for another type than {map_type} — the experts or the events
+around these results, or a type you offered to look for next. Plan it: set
+map_type to that type (one type per search) and write tasks for it; its results
+appear under their message. A short "yes" or "go ahead" after you offered the
+next type means: plan that type now. If more types remain after it, end your
+summary by offering the next one.
 
 RESULTS ALREADY FOUND:
 {found}"""
@@ -307,7 +315,8 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
     found = _found_summary(result)
     built_type = (result or {}).get("map_type") or "organizations"
     if found:
-        system += _FOUND_RULE.format(found=found, map_type=built_type)
+        searched = ", ".join(dict.fromkeys((result or {}).get("round_types") or [built_type]))
+        system += _FOUND_RULE.format(found=found, map_type=built_type, searched=searched)
     msgs = list(messages or [])
     if doc_text and msgs:
         msgs = [{"role": "user",
@@ -347,16 +356,17 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
     for block in resp.content:
         if block.type == "tool_use" and block.name == "submit_plan":
             reqs = block.input.get("requirements") or {}
-            # A built map keeps its type; a new one takes what the planner chose.
-            map_type = built_type if found else block.input.get("map_type")
+            # Each search looks for one type. A follow-up on a built map may look
+            # for another type than the first search did (28 Oct 2026).
+            map_type = block.input.get("map_type")
             if map_type not in MAP_TYPES:
-                map_type = "organizations"
+                map_type = built_type if found else "organizations"
             tasks = [t for t in _bounded_tasks(block.input.get("tasks", []))
                      if t["entity_type"] == MAP_TYPES[map_type]]
             if not tasks:
                 return {"status": "reply", "message":
-                        f"This map covers {map_type}. To look for something else, "
-                        f"start a new map with “+ New map”."}
+                        "I couldn't turn that into a search. Say which organizations, "
+                        "people or events you'd like me to look for."}
             return {"status": "plan", "map_type": map_type,
                     "summary": block.input.get("summary", ""),
                     "tasks": tasks,
