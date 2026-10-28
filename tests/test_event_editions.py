@@ -37,13 +37,15 @@ class EditionTests(unittest.TestCase):
     def test_a_newer_edition_replaces_the_card_and_keeps_the_old_date(self):
         old = event("TechConnect World 2025", date(2025, 6, 9), location="Austin, TX",
                     sources=[{"url": "https://techconnect.org/2025"}])
-        newer = {"name": "TechConnect World Innovation Conference 2026", "next_date": "2026-06-08",
-                 "date_status": "upcoming", "location": "Washington, DC",
+        soon = (TODAY + timedelta(days=60)).isoformat()
+        newer = {"name": "TechConnect World Innovation Conference 2026", "next_date": soon,
+                 "date_status": "past", "location": "Washington, DC",
                  "sources": [{"url": "https://techconnect.org/2026"}]}
         state, collect = self.run_checks([old], lambda q: [newer])
         self.assertIn('"TechConnect World"', collect.call_args.args[1])
+        # The status comes from the date, not from the extracted word.
         self.assertEqual((old["next_date"], old["date_status"], old["location"]),
-                         ("2026-06-08", "upcoming", "Washington, DC"))
+                         (soon, "upcoming", "Washington, DC"))
         self.assertEqual(old["previous_edition"], "2025-06-09")
         self.assertEqual(len(old["sources"]), 2)
         self.assertTrue(old["_edition_checked"])

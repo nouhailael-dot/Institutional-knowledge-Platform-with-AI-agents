@@ -151,9 +151,13 @@ _EVENT_ITEM = {
                                 "'critical minerals, national security'."},
         "location":            {"type": "string", "description": "City, State or venue."},
         "website":             {"type": "string", "description": "Event website URL."},
-        "next_date":           {"type": "string", "description": "Date of the edition found (YYYY-MM-DD if known)."},
+        "next_date":           {"type": "string", "description": "First day of the edition found: YYYY-MM-DD, "
+                                "or YYYY-MM / YYYY when the source gives only the month or year."},
+        "end_date":            {"type": "string", "description": "Last day of the same edition (YYYY-MM-DD). "
+                                "Empty for a one-day event or when no source gives it."},
         "date_status":         {"type": "string", "enum": ["upcoming", "past", "date unconfirmed"],
-                                "description": "Whether that edition is upcoming, past, or its date is unconfirmed."},
+                                "description": "Whether that edition is upcoming, past, or its date is unconfirmed. "
+                                "The platform recomputes this from the dates."},
         "recurring_pattern":   {"type": "string", "enum": FREQUENCIES,
                                 "description": "How often the event takes place: one-time, annual, every two "
                                 "years, twice a year, quarterly, monthly, irregular, or Not found."},

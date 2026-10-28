@@ -1098,6 +1098,19 @@ const MFIELDS={
 // Short list values read better capitalized ("conference" -> "Conference").
 const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector"]);
 const capFirst=v=>typeof v==="string"&&v?v.charAt(0).toUpperCase()+v.slice(1):v;
+// An edition's dates as src/map_agent/event_dates.py dates_text writes them:
+// "11/16/2026", "11/16/2026 – 11/19/2026", "02/2026", "2026 (exact date not found)".
+const eventDates=(start,end)=>{
+  const s=String(start||"").trim(), e=String(end||"").trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)){
+    const first=s.slice(0,10), last=/^\d{4}-\d{2}-\d{2}/.test(e)?e.slice(0,10):"";
+    return last&&last>first?`${usDate(first)} – ${usDate(last)}`:usDate(first);
+  }
+  const month=s.match(/^(\d{4})-(\d{2})$/);
+  if(month) return `${month[2]}/${month[1]}`;
+  if(/^\d{4}$/.test(s)) return `${s} (exact date not found)`;
+  return s;
+};
 // Architecture V2 §5.5 states; records from before the check show nothing.
 const um6pOcp=e=>e.um6p_ocp_status==="found"
   ? "Found — "+(e.um6p_ocp_detail||"details not recorded")
@@ -1335,7 +1348,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
     ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
     <div class="mrow">
       ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):
-          (k==="next_date"||k==="previous_edition")&&e[k]?usDate(e[k]):
+          k==="next_date"&&e[k]?eventDates(e[k],e.end_date):k==="previous_edition"&&e[k]?eventDates(e[k]):
           CAPITALIZED.has(k)&&e._entity_type==="event"?capFirst(e[k]):e[k]])
         .filter(([,,v])=>v).map(([k,label,v])=>
         html`<span key=${k}>${label}: <b>${v}</b></span>`)}

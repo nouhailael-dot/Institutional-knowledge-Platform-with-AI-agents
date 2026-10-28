@@ -12,6 +12,7 @@ import re
 import unicodedata
 
 from src.map_agent.dedup import deduplicate
+from src.map_agent.event_dates import date_status, event_span
 from src.map_agent.client import get_client
 from src.map_agent.entity_schemas import EVENT_FORMATS, FREQUENCIES, submit_entities_tool
 from src.map_agent.costs import paid_message
@@ -72,14 +73,16 @@ information only, never private details. Give contact details only if the reques
 explicitly asks for them, and only official public contacts."""
 
 EVENT_GUIDANCE = """This is a map of EVENTS. Use the Architecture V2 light pull:
-name and type, sector (one of the listed sectors) and specific topic, date and
-location, format (in-person, virtual or hybrid), organizer, website, frequency, typical
+name and type, sector (one of the listed sectors) and specific topic, first and
+last day and location, format (in-person, virtual or hybrid), organizer, website, frequency, typical
 attendance with its edition and source, who usually attends, whether the edition found
 is upcoming, past or its date is unconfirmed, any visible UM6P/OCP involvement and its
 role (sponsor, speaker, partner, organizer, attendee), and a description of what the
 event covers. Put the event's substance in the description and keep "why it matches"
 to one sentence. Keep past events; they are historical evidence. Do not collect lists
-of speakers, sponsors, agendas or participants."""
+of speakers, sponsors, agendas or participants. Every detail on one record must
+belong to the same edition: never combine the date, city or venue of one year with
+another's. When the sources show two editions, give each its own record."""
 
 
 def event_sectors():
@@ -133,10 +136,14 @@ _PERIOD = re.compile(r"\b(19|20)\d{2}\b|\b(day|week|month|quarter|year|upcoming|
 
 
 def _event_date(event):
-    try:
-        return date.fromisoformat(str(event.get("next_date") or "")[:10])
-    except ValueError:
-        return None
+    """The first day the edition can be on ("2026-02" -> 1 February), or None."""
+    span = event_span(event.get("next_date"), event.get("end_date"))
+    return span[0] if span else None
+
+
+def _event_last_day(event):
+    span = event_span(event.get("next_date"), event.get("end_date"))
+    return span[1] if span else None
 
 
 def _needs_edition_check(event):
@@ -161,25 +168,44 @@ def _same_event(a, b):
     return len(left & right) / len(left | right) >= 0.6 or (len(shorter) >= 2 and shorter <= longer)
 
 
+# An edition of an annual event weeks after the one we have is a different event
+# with a similar name, not its next edition (RE+ "moving" from September to
+# November 2026 in a 26 Oct test map).
+_MIN_GAP_DAYS = {"Annual": 180, "Every two years": 180, "Twice a year": 60}
+
+
 def _newer_edition(event, rows):
     """The extracted row that is the same event with a later date, if any."""
     known = _event_date(event)
+    least = timedelta(days=_MIN_GAP_DAYS.get(event.get("recurring_pattern"), 1))
     best = None
     for row in rows:
         when = _event_date(row)
         if (_same_event(event.get("name"), row.get("name")) and when
-                and (known is None or when > known) and (best is None or when > _event_date(best))):
+                and (known is None or when - known >= least) and (best is None or when > _event_date(best))):
             best = row
     return best
 
 
 def _adopt_edition(event, newer):
-    """Move the card to the newer edition; the previous date stays as a note."""
+    """Move the card to the newer edition; the previous date stays as a note.
+    The edition's own details are replaced together, so the card never keeps
+    the old city next to the new date; what the newer edition does not say is
+    left empty ("Not found"). Details about the event itself (description,
+    organizer, website, attendance) keep the old value when the newer edition
+    has none."""
     previous = event.get("next_date") or "date not recorded"
-    for field in ("name", "next_date", "date_status", "location", "website", "event_format",
-                  "expected_attendance", "description", "organizer"):
+    for field in ("next_date", "end_date", "location", "event_format"):
         if newer.get(field):
             event[field] = newer[field]
+        elif field == "event_format":
+            event[field] = "Not found"
+        else:
+            event.pop(field, None)
+    for field in ("name", "website", "expected_attendance", "description", "organizer"):
+        if newer.get(field):
+            event[field] = newer[field]
+    event["date_status"] = date_status(event.get("next_date"), event.get("end_date"))
     sources = {s.get("url"): s for s in (event.get("sources") or []) + (newer.get("sources") or [])}
     event["sources"] = list(sources.values())
     event["previous_edition"] = previous
@@ -215,6 +241,32 @@ def check_event_editions(state, run, sources, client=None):
         yield
 
 
+# A requirement about when, in the planner's words ("2026-2027 timeframe", "must
+# be upcoming"). Narrower than _PERIOD: a filter like "must focus on past mining
+# sites" is about the topic, not the date.
+_DATE_FILTER = re.compile(r"\b(19|20)\d{2}\b|\b(upcoming|future|time ?frame|dates?)\b|"
+                          r"\bnext \d+ (days?|weeks?|months?|years?)\b", re.I)
+
+
+def drop_unasked_periods(requirements, request_text):
+    """The planner sometimes adds a period the user never named ("2026-2027
+    timeframe"), which turned off the default window and excluded events with
+    unconfirmed dates (27 Oct 2026). Returns the requirements without such
+    filters, and the filters dropped."""
+    requirements = dict(requirements or {})
+    if _PERIOD.search(request_text or ""):
+        return requirements, []
+    filters = requirements.get("hard_filters") or []
+    dropped = [f for f in filters if _DATE_FILTER.search(str(f))]
+    requirements["hard_filters"] = [f for f in filters if f not in dropped]
+    return requirements, dropped
+
+
+def _note_dropped(state, dropped):
+    for f in dropped:
+        state["gaps"].append(f'Left out the requirement "{f}": the request does not name a period.')
+
+
 def names_a_period(request_text, requirements):
     """Whether the user said anything about when (a year, month, "upcoming", ...)."""
     filters = " ".join(str(f) for f in (requirements or {}).get("hard_filters") or [])
@@ -229,7 +281,7 @@ def window_split(entities, request_text, requirements, today=None):
     cutoff = (today or date.today()) - timedelta(days=WINDOW_DAYS)
     keep, old = [], []
     for e in entities:
-        when = _event_date(e)
+        when = _event_last_day(e)
         if e.get("_entity_type") == "event" and e.get("date_status") == "past" and when and when < cutoff:
             e["_selected"], e["_why_not"] = False, "Last edition more than 12 months ago."
             e.pop("_rank", None)
@@ -258,17 +310,9 @@ def sort_events(found):
 
 
 def _date_status(event, today=None):
-    """A full date is checked against today; the model's word is kept otherwise."""
-    raw = str(event.get("next_date") or "").strip()
-    if not raw:
-        event["date_status"] = "date unconfirmed"
-        return
-    try:
-        day = date.fromisoformat(raw[:10])
-    except ValueError:
-        event.setdefault("date_status", "date unconfirmed")
-        return
-    event["date_status"] = "upcoming" if day >= (today or date.today()) else "past"
+    """Computed from the edition's dates, whole or partial, never the model's
+    word: "2026-02" is past once February is over (27 Oct 2026)."""
+    event["date_status"] = date_status(event.get("next_date"), event.get("end_date"), today)
 
 
 _TITLES = {"dr", "prof", "professor", "mr", "mrs", "ms", "mx", "sir"}
@@ -616,11 +660,14 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
             for task in tasks:
                 if task["entity_type"] == "person":
                     task["entity_type"] = "actor"
+        requirements, dropped = drop_unasked_periods(
+            {**_EMPTY_REQS, **(plan.get("requirements") or {})}, description)
         state = {"version": 1, "map_type": map_type, "description": description, "tasks": tasks,
-                 "requirements": {**_EMPTY_REQS, **(plan.get("requirements") or {})},
+                 "requirements": requirements,
                  "phase": "organizations", "task_index": 0, "found": [], "gaps": [],
                  "rounds": [description],
                  "people_targets": [], "people_index": 0}
+        _note_dropped(state, dropped)
         if len(plan["tasks"]) > len(tasks):
             state["gaps"].append("Duplicate or excess planned queries were omitted from this focused pass.")
     if state.get("version") != 1:
@@ -642,7 +689,9 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state["judged"] = [_judged_key(e) for e in state["found"]]
         state["round_description"] = description or state["description"]
         state["rounds"] = (state.get("rounds") or [state["description"]]) + [state["round_description"]]
-        state["round_requirements"] = {**_EMPTY_REQS, **(plan.get("requirements") or {})}
+        state["round_requirements"], dropped = drop_unasked_periods(
+            {**_EMPTY_REQS, **(plan.get("requirements") or {})}, state["round_description"])
+        _note_dropped(state, dropped)
         state["phase"] = "organizations"
         state["ranking_index"] = 0
 
