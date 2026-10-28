@@ -301,7 +301,9 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
         f"{today.year} or {today.year + 1}, never earlier years, unless the user asked "
         "about the past. For events, search for upcoming editions. When the user names a "
         "period (a year, months, 'next 12 months'), put that period's year or years in "
-        "every event query, so the search starts from the dates.")
+        "every event query, so the search starts from the dates. Put a date or period "
+        "in hard_filters ONLY when the user named one; years in queries are not a "
+        "requirement. Keep a period as its own filter, never inside another one.")
     found = _found_summary(result)
     built_type = (result or {}).get("map_type") or "organizations"
     if found:

@@ -18,6 +18,7 @@ Two deliberate choices:
 """
 
 import os
+from datetime import date
 
 import anthropic
 from dotenv import load_dotenv
@@ -102,7 +103,8 @@ something the user asked for — the raw text is authoritative.
 candidate's fields.
 6. An event whose date status is "date unconfirmed" does not meet a requirement \
 about when it takes place (for example "in the next 12 months"); exclude it \
-with that reason.
+with that reason. An event's date status was computed from its dates against \
+today's date: trust it, and never exclude an event for its year alone.
 7. A person whose affiliation is marked "unconfirmed" is not established as \
 working there now, so a requirement about their current organization or \
 location is not met; exclude them with that reason.
@@ -131,7 +133,7 @@ def _render(entity: dict, idx: int) -> str:
     bits = [f"{idx}. {name}"]
     for k in ("actor_type", "category_type", "location_city", "state", "location", "title",
               "organization_name", "organization_location", "affiliation_note", "expertise",
-              "primary_technical_focus", "event_type", "next_date", "date_status"):
+              "primary_technical_focus", "event_type", "next_date", "end_date", "date_status"):
         v = entity.get(k)
         if v:
             bits.append(str(v))
@@ -176,7 +178,8 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
 
     reqs = requirements or {}
     listing = "\n".join(_render(e, i) for i, e in enumerate(entities, 1))
-    parts = [f"USER'S ORIGINAL REQUEST (verbatim — authoritative):\n{request}"]
+    parts = [f"TODAY'S DATE: {date.today().isoformat()}",
+             f"USER'S ORIGINAL REQUEST (verbatim — authoritative):\n{request}"]
     if doc_text:
         parts.append(f"\nATTACHED DOCUMENT (excerpt):\n{doc_text[:4000]}")
     parts.append(
