@@ -468,7 +468,7 @@ const TIMING_WORDS = {
 const CHECK_WORDS = {
   identity: "Identity", source: "Official source", affiliation: "Current affiliation",
   relevance: "GHUS relevance", completeness: "Completeness", freshness: "Date",
-  location: "Place or format",
+  location: "Place or format", profile: "Bio or LinkedIn",
 };
 
 /**
