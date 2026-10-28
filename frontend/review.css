@@ -212,8 +212,6 @@
 .review-card{margin:0 0 14px;padding:24px 26px}
 .review-card .mh{flex-wrap:wrap;gap:10px;margin-bottom:6px}
 .review-card .mn{font-size:18px}
-.review-card-actions{margin-left:auto;display:inline-flex;gap:6px}
-.review-card-actions .example.active{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
 .review-card-sub{font-size:13px;color:var(--muted);margin:0 0 12px;overflow-wrap:anywhere}
 .review-card-sub a{color:var(--accent-ink)}
 
@@ -285,7 +283,6 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 @media (max-width:900px){.review-facts-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:640px){
   .review-card{padding:18px 16px}
-  .review-card-actions{margin-left:0}
   .review-facts-row{grid-template-columns:1fr}
   .review-line{grid-template-columns:1fr;row-gap:4px}
   .review-line>b,.review-line.read>b{padding-top:0}
@@ -296,3 +293,10 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 .review-fact-lines .review-proposed{margin-top:8px}
 .review-fact-lines .review-proposed p{margin:2px 0;color:var(--ink)}
 .review-not-found{margin:10px 0 0}
+
+/* The reviewer's name: typed once at the top of Review (2026-10-28). */
+.review-whoami{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-right:auto}
+.review-whoami input{border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:inherit;font-size:14px;
+  font-weight:600;color:var(--ink);background:var(--surface);min-width:180px}
+.review-whoami.invalid input{border-color:#b42318}
+.review-status.parked{background:#eef2f7;color:#334155}

@@ -24,16 +24,17 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028d";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028e";
 
 export const REVIEW_STATUS_LABELS = {
-  pending_review: BADGES.parked,
+  pending_review: BADGES.pending,
   approved: BADGES.verified,
   rejected_by_reviewer: BADGES.rejected,
 };
+// A discovered record is stored "parked" until someone decides; that is the
+// agent's default, not a decision, so it reads Pending (see waitingLabel).
 export const RECORD_STATUS_LABELS = {
   imported: BADGES.imported,
-  parked: BADGES.parked,
   verified: BADGES.verified,
   rejected: BADGES.rejected,
 };
@@ -162,6 +163,20 @@ export const REJECTION_REASONS = [
 
 export function reviewStatusLabel(value) {
   return REVIEW_STATUS_LABELS[value] || String(value || "").replaceAll("_", " ");
+}
+
+/**
+ * Whether a person parked this record: Park in Review (decision "defer"), or
+ * Park on its Build the Map card. Anything else still waiting is Pending.
+ */
+export function isParkedByReviewer(candidate) {
+  return candidate?.status === "pending_review"
+    && (candidate.decision_kind === "defer" || candidate.agent_metadata?._review === "parked");
+}
+
+/** The status word of a record still waiting: Parked when a person parked it, else Pending. */
+export function waitingLabel(candidate) {
+  return isParkedByReviewer(candidate) ? BADGES.parked : BADGES.pending;
 }
 
 export function reviewReasonLabel(value) {
@@ -799,9 +814,8 @@ function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewe
   return html`<section class="review-section review-changes">
     <h3>Changes to Review ${rows.length > 0 && html`<span class="review-chip">${rows.length}</span>`}</h3>
     ${!rows.length && html`<p class="review-hint">Every change has been decided.</p>`}
-    ${rows.length > 0 && pending && html`<label class="review-field review-changes-reviewer">
-      <span>Reviewer</span>
-      <input value=${reviewer} onInput=${e => setReviewer(e.target.value)} placeholder="Your name"/></label>`}
+    ${rows.length > 0 && pending && !reviewer.trim() && html`<p class="review-hint">Type your name in
+      Reviewer at the top of Review to decide these changes.</p>`}
     ${rows.map(row => html`<div class="review-change" key=${row.id}>
       <div class="review-change-head"><strong>${row.label}</strong>
         ${row.topic && html`<span class="review-chip">${row.topic}</span>`}</div>
@@ -1362,7 +1376,9 @@ export function headerBadges(candidate) {
   if (!candidate) return [];
   const badges = [{tone: "kind", label: RECORD_KIND_LABELS[candidate.entity_type] || candidate.entity_type}];
   const recordStatus = RECORD_STATUS_LABELS[String(candidate.record_status || "").toLocaleLowerCase()];
-  badges.push({tone: candidate.status, label: recordStatus || reviewStatusLabel(candidate.status)});
+  badges.push(candidate.status === "pending_review" && !recordStatus
+    ? {tone: isParkedByReviewer(candidate) ? "parked" : "pending_review", label: waitingLabel(candidate)}
+    : {tone: candidate.status, label: recordStatus || reviewStatusLabel(candidate.status)});
   if (candidate.review_reason) {
     badges.push({tone: "reason", label: reviewReasonLabel(candidate.review_reason),
       hint: reviewReasonHint(candidate.review_reason)});
@@ -1752,6 +1768,11 @@ function sourceLink(html, url) {
   return url ? html`<small><a href=${url} target="_blank" rel="noreferrer">Source</a></small>` : null;
 }
 
+/** The reviewer's name as typed earlier in this browser, or empty. */
+function storedReviewer() {
+  try { return localStorage.getItem("ghus.review.reviewer") || ""; } catch { return ""; }
+}
+
 export function createReviewPage({html, useEffect, useRef, useState}) {
   return function Review() {
     const [filters, setFilters] = useState({
@@ -1768,7 +1789,13 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [selectedId, setSelectedId] = useState(null);
     const [selected, setSelected] = useState(null);
     const [draft, setDraft] = useState({});
-    const [reviewer, setReviewer] = useState("");
+    // Typed once at the top of Review and remembered in this browser, so each
+    // record does not ask again. Never defaulted: empty until a person types it.
+    const [reviewer, setReviewerState] = useState(storedReviewer());
+    const setReviewer = value => {
+      setReviewerState(value);
+      try { localStorage.setItem("ghus.review.reviewer", value); } catch { /* not kept */ }
+    };
     const [notes, setNotes] = useState("");
     // GHUS analyst notes, kept on the actor or event when it is verified.
     const [analystNotes, setAnalystNotes] = useState("");
@@ -2263,12 +2290,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const mapDetails = fromMap ? (mapProfile.category_details || []).filter(d => d && d.label) : [];
     const mapSector = fromMap ? mapProfile.sector : "";
     const sources = (selected?.evidence || []).filter(item => item && item.url);
-    const admitKind = selected?.duplicate_state === "already_exists" ? "same_existing" : "new";
-    function chooseDecision(kind) {
-      setDecisionKind(kind);
-      setTimeout(() => document.querySelector(".review-decision")
-        ?.scrollIntoView({behavior: "smooth", block: "center"}), 0);
-    }
     const editableHere = (selected?.editable_fields || []).filter(field =>
       !DERIVED_FIELDS.has(field) && !AUDIT_ONLY_FIELDS.has(field)
       && !["actor_category", "category_type", "category_note", "name", "website", "description",
@@ -2289,6 +2310,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           </button>`)}
       </div>
       <div class="review-sync">
+        <label class=${"review-whoami" + (reviewer.trim() ? "" : " invalid")}>
+          <span>${FIELDS.reviewer}</span>
+          <input value=${reviewer} placeholder="Your name" onInput=${e => setReviewer(e.target.value)}/>
+        </label>
         <span>Last PostgreSQL sync: ${formatSync(data.last_sync)}</span>
         <button class="btn ghost" disabled=${loading} onClick=${() => load(undefined, true)}>
           ${BUTTONS.refresh}
@@ -2433,11 +2458,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     <strong>${candidate.display_name}</strong>
                     <small>${recordRowNote(candidate)}</small>
                   </span>
-                  <span class=${"review-status " + candidate.status}>${
+                  <span class=${"review-status " + (isParkedByReviewer(candidate) ? "parked" : candidate.status)}>${
                     candidate.status !== "pending_review" ? reviewStatusLabel(candidate.status)
                       : (candidate.agent_metadata?.changes || []).length ? "To decide"
                       : candidate.agent_metadata?.source_table === "actor_update" ? "To check"
-                      : reviewStatusLabel(candidate.status)}</span>
+                      : waitingLabel(candidate)}</span>
                 </button></li>`)}
             </ul>`}
         </section>`}
@@ -2455,14 +2480,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ${headerBadges(selected).map((badge, index) => html`
                 <span key=${index} class=${"review-status " + badge.tone}
                   title=${badge.hint || ""}>${badge.label}</span>`)}
-              ${pending && !reviewItemKind(selected) && !twoWayKind(selected) && html`
-                <span class="review-card-actions">
-                  ${[[admitKind, BUTTONS.verify], ["defer", BUTTONS.park], ["reject", BUTTONS.reject]]
-                    .map(([kind, label]) => html`<button key=${kind} type="button"
-                      class=${"example" + (decisionKind === kind ? " active" : "")}
-                      aria-pressed=${decisionKind === kind} disabled=${busy || writerDown}
-                      onClick=${() => chooseDecision(kind)}>${label}</button>`)}
-                </span>`}
             </div>
             <p class="review-card-sub">
               ${present(draft.website)
@@ -2802,10 +2819,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     onInput=${e => setRejectionOther(e.target.value)}/></label>`}
             </div>
             <p class="review-reason">${SENTENCES.noDeletion}</p>`}
-            ${isActor && !twoWayKind(selected) && ["same_existing", "new"].includes(decisionKind) && html`
-              <label class="review-field"><span>${BUTTONS.chooseHub}</span>
-                <input type="checkbox" checked=${proposeHub} disabled=${!pending || busy}
-                  onChange=${e => setProposeHub(e.target.checked)}/></label>`}
             ${proposeHub && html`<div class="review-field-grid">
               <label class="review-field"><span>Proposed hub name</span>
                 <input value=${proposedHub.name} disabled=${!pending || busy}
@@ -2814,15 +2827,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <input value=${proposedHub.rationale} disabled=${!pending || busy}
                   onInput=${e => setProposedHub(current => ({...current, rationale: e.target.value}))}/></label>
             </div>`}
-            <div class="review-field-grid">
-              <label class=${"review-field " + (pending && !reviewer.trim() ? "invalid" : "")}>
-                <span>${FIELDS.reviewer}</span>
-                <input value=${reviewer} disabled=${!pending || busy} required
-                  onInput=${e => setReviewer(e.target.value)}/></label>
-              <label class="review-field"><span>${FIELDS.notes}</span>
-                <input value=${notes} disabled=${!pending || busy}
-                  onInput=${e => setNotes(e.target.value)}/></label>
-            </div>
+            ${pending && !reviewer.trim() && html`<p class="review-hint">Type your name in Reviewer at the
+              top of Review to decide.</p>`}
           </section>
 
           <footer class="review-footer">

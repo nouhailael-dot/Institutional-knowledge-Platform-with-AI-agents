@@ -116,6 +116,7 @@ export const BADGES = {
   person: "Person",
   imported: "Imported",
   parked: "Parked",
+  pending: "Pending",
   verified: "Verified",
   rejected: "Rejected",
   migratedBaseline: "Verified · Migrated Baseline",
@@ -224,7 +225,7 @@ export const SENTENCES = {
   pageEyebrow: "Human admission control",
   pageTitle: "Review agent discoveries.",
   pageLead:
-    "Every record below was found by an agent and parked. Claude proposes; GHUS decides. " +
+    "Every record below was found by an agent and waits, Pending, for a decision. Claude proposes; GHUS decides. " +
     "Verify authorises the topic-scoped Deep Pull, Park leaves the record for later, and " +
     "Reject keeps the record with its reason. Nothing here is ever deleted.",
   failClosed:

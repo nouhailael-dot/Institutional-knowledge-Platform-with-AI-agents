@@ -401,8 +401,20 @@ test('header badges carry the record kind, the review state and every reason', (
     entity_type: 'actor', status: 'pending_review', record_status: 'parked',
     review_reason: 'geocode_failed', duplicate_state: 'possible_duplicate',
   });
+  // Stored "parked" by the agent is not a decision: it reads Pending.
   assert.deepEqual(badges.map(badge => badge.label),
-    ['Actor', 'Parked', 'Geocode Failed', 'Possible Duplicate']);
+    ['Actor', 'Pending', 'Geocode Failed', 'Possible Duplicate']);
+  // Parked only when a person parked it - in Review, or on its Build the Map card.
+  assert.equal(headerBadges({entity_type: 'actor', status: 'pending_review', record_status: 'parked',
+    decision_kind: 'defer'})[1].label, 'Parked');
+  assert.equal(headerBadges({entity_type: 'event', status: 'pending_review',
+    agent_metadata: {_review: 'parked'}})[1].label, 'Parked');
+  assert.equal(reviewStatusLabel('pending_review'), 'Pending');
+  // One decision bar, at the bottom: none beside the name, and no hub checkbox,
+  // reviewer or notes in each record; the reviewer is named once at the top.
+  assert.doesNotMatch(component, /review-card-actions|checked=\$\{proposeHub\}/);
+  assert.match(component, /class=\$\{"review-whoami"/);
+  assert.match(component, /localStorage\.getItem\("ghus\.review\.reviewer"\)/);
   assert.equal(reviewReasonLabel('hub_member_outside_radius'), 'Hub Member Outside Radius');
   assert.equal(reviewReasonLabel(''), '');
   assert.equal(reviewStatusLabel('rejected_by_reviewer'), 'Rejected');
@@ -467,7 +479,7 @@ test('a record reads like a Build the Map result card, and the IDs live only in 
   // One card per record (organization, event or person): number, name, status
   // and Verify / Park / Reject on top; description; a profile that folds open;
   // the inline facts; its web sources; analyst notes at the bottom.
-  for (const marker of ['class=${"mcard review-card"', '<span class="rank">', 'class="review-card-actions"',
+  for (const marker of ['class=${"mcard review-card"', '<span class="rank">',
     'class=${"review-desc"', 'class="mpeople review-profile"', '>Actor profile<', '"Event profile" : "Person profile"',
     'class="review-facts-row"', 'web source${sources.length > 1', 'class="review-analyst-notes"',
     'class="why"']) {
