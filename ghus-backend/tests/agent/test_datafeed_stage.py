@@ -76,6 +76,20 @@ def test_header_refusals(change, message):
         feed.check_header(batch(**change))
 
 
+def test_a_verified_map_result_keeps_its_ai_mapped_origin():
+    # Explore and Map's Verify sends checked results through the Data Feed
+    # (28 Oct 2026); they were found by the mapping pipeline, not imported.
+    assert feed.METHODS["map"] == "claude_discovered"
+    assert feed.FACT_ORIGINS["map"] == "newly_found"
+    mapped = batch(method="map", file_name=None, file_sha256=None, admission="verified",
+                   attestation={"source": True, "authorized": True},
+                   import_name="Explore and Map: water reuse in California")
+    feed.check_header(mapped)
+    reason = feed.import_reason(mapped, 3)
+    assert "Explore and Map result" in reason and "record 3" in reason
+    assert "GHUS source" not in reason
+
+
 def test_actor_checks_use_the_catalog_and_the_light_pull_rules():
     ok = actor_row()["payload"]
     assert feed.check_actor(ok, method="upload", submitted_at=NOW) == []

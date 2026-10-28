@@ -370,6 +370,11 @@
   .dir-results .dir-count{margin:0;padding:14px 18px;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink)}
   .dir-results .empty{margin:0;border:0}
   .row-go{color:var(--muted);font-size:20px;width:24px;text-align:right}
+  .save-panel{margin-top:16px}
+  .save-list td{vertical-align:top}
+  .save-list .field{min-width:180px}
+  .save-list .bad{color:var(--violet);font-weight:600}
+  .example.on{background:var(--green-soft);color:var(--green);border-color:var(--green)}
   .workspace-main{margin-left:236px;min-width:0}
   .workspace-header{height:72px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;padding:0 42px;background:var(--surface);gap:15px}
   .breadcrumb{color:var(--muted);font-size:12px}.breadcrumb span{margin:0 12px;color:#a4acb7}.breadcrumb strong{color:var(--ink);font-weight:550}
@@ -1397,23 +1402,10 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
     setReviewing(false);
   }
 
-  async function verify(){
-    if(disabled||busy) return;
-    if(onBusy) onBusy(true);
-    setBusy(true);
-    try{
-      const r=await fetch("/api/map/verify",{method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({entities:[e],request,job_id:jobId})});
-      const d=await r.json();
-      if(!r.ok) throw new Error(d.detail||"Verification failed.");
-      if(d.cost&&onCost) onCost(d.cost);
-      if(d.error&&onError) onError(d.error);
-      if(d.entities&&d.entities[0]) onUpdate(d.entities[0]);
-    }catch(err){ if(onError) onError(err.message); }
-    setBusy(false);
-    if(onBusy) onBusy(false);
-  }
+  // Verify marks the card checked and ready to save (free). "Save verified to
+  // Compass" then sends every ready card to the database (28 Oct 2026).
+  const ready=e._review==="ready";
+  const saved=e._saved||null, savedDone=!!saved&&saved.outcome!=="not_saved";
 
   const badge = j && j.relevance_score!=null
     ? html`<span class=${"chip "+(j.is_relevant?"teal":"violet")}>
@@ -1431,18 +1423,24 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       ${badge}
       ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
       ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
-      ${parked?html`<span class="chip slate">Parked</span>`:html`<span class="chip amber">Pending review</span>`}
-      <span style=${{marginLeft:"auto",display:"inline-flex",gap:"6px"}}>
-        <button class="example" type="button" disabled=${busy||disabled} onClick=${verify}>
-          ${busy?html`<span class="spin"></span>`:(j?"Re-verify":"Verify")}</button>
-        ${onReviewed&&html`
+      ${savedDone?html`<span class=${"chip "+(saved.outcome==="directory"?"green":"amber")}>${saved.outcome==="directory"?"✓ In the directory":"In Review Results"}</span>`
+        :ready?html`<span class="chip green">Ready to save</span>`
+        :parked?html`<span class="chip slate">Parked</span>`:html`<span class="chip amber">Pending review</span>`}
+      ${!savedDone&&onReviewed&&html`<span style=${{marginLeft:"auto",display:"inline-flex",gap:"6px"}}>
+        <button class=${"example"+(ready?" on":"")} type="button" disabled=${reviewing||reviewDisabled||confirmReject}
+          title=${ready?"Undo: not checked yet":"You checked it and its sources; save it with “Save verified to Compass”"}
+          onClick=${()=>review(ready?"unready":"ready")}>${ready?"✓ Verified":"Verify"}</button>
           <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
             title=${parked?"Back to not reviewed":"Set aside to decide later; Ask can still find it"}
             onClick=${()=>review(parked?"unpark":"park")}>${parked?"Unpark":"Park"}</button>
           <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
-            title="Remove from this map for good" onClick=${()=>setConfirmReject(true)}>Reject</button>`}
-      </span>
+            title="Remove from this map for good" onClick=${()=>setConfirmReject(true)}>Reject</button>
+      </span>`}
     </div>
+    ${saved&&html`<div class=${saved.outcome==="not_saved"?"whynot":"hint"} style=${{margin:"0 0 8px"}}>
+      ${saved.outcome==="directory"?`Saved to Compass by ${saved.by}.`
+        :saved.outcome==="review"?`Sent to Review Results by ${saved.by}. ${saved.reason||""}`
+        :`Not saved. ${saved.reason||""}`}</div>`}
     ${confirmReject&&html`<div class="whynot" role="alert" style=${{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"8px"}}>
       Remove ${ename(e)} from this map? This can't be undone.
       <button class="example" type="button" disabled=${reviewing} onClick=${()=>review("reject")}>Yes, reject</button>
@@ -1563,6 +1561,86 @@ function CarriedRows({rows,onChange,onDismiss}){
   </div>`;
 }
 
+/* Save verified to Compass (28 Oct 2026). The ready cards go to the database
+   through the Data Feed and the backend's admission: a new organization with a
+   category type is added Verified under the reviewer's name; the rest wait in
+   Review Results. A check that writes nothing runs first and on every change. */
+const KIND_LABEL={actor:"Organization",event:"Event",person:"Person"};
+const OUTCOME_TEXT={directory:"Will be added to the directory",review:"Will go to Review Results",
+  not_saved:"Can't be saved yet"};
+function SavePanel({jobId,items,onSaved,onClose}){
+  const [sectors,setSectors]=useState([]);
+  const [picked,setPicked]=useState({});
+  const [checked,setChecked]=useState(null);
+  const [name,setName]=useState(()=>{try{return localStorage.getItem("compass.verifierName")||"";}catch(e){return "";}});
+  const [attest,setAttest]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState(null);
+  const keyOf=e=>e._entity_type+"|"+ename(e);
+  useEffect(()=>{(async()=>{try{
+    const d=await (await fetch("/api/datafeed/catalog")).json();
+    const list=(d.vocabularies&&d.vocabularies.sectors||[]).map(x=>x.label);
+    setSectors(list);
+    // The map's own sector when it names one of the database's sectors.
+    const guess=e=>{const own=String(e.sector||"").toLowerCase();
+      return list.find(l=>own===l.toLowerCase())||list.find(l=>own&&own.includes(l.toLowerCase()))||"";};
+    setPicked(Object.fromEntries(items.map(e=>[keyOf(e),guess(e)])));
+  }catch(e){setErr("Could not load the sector list.");}})();},[]);
+  const records=()=>items.map(e=>({name:ename(e),website:e.website||null,kind:e._entity_type||"actor",
+    sector:picked[keyOf(e)]||""}));
+  useEffect(()=>{ if(!sectors.length) return; (async()=>{
+    setChecked(null); setErr(null);
+    try{
+      const r=await fetch(`/api/map/${jobId}/save-check`,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({records:records()})});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Could not check these results.");
+      setChecked(d.records);
+    }catch(e){setErr(e.message);}
+  })();},[sectors,JSON.stringify(picked)]);
+  async function save(){
+    if(busy) return;
+    setBusy(true); setErr(null);
+    try{ localStorage.setItem("compass.verifierName",name.trim()); }catch(e){}
+    try{
+      const r=await fetch(`/api/map/${jobId}/save`,{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({records:records(),uploaded_by:name,attest})});
+      const d=await r.json();
+      if(!r.ok) throw new Error(d.detail||"Could not save.");
+      onSaved(d);
+    }catch(e){setErr(e.message);}
+    setBusy(false);
+  }
+  const savable=(checked||[]).filter(c=>c.outcome!=="not_saved").length;
+  return html`<div class="card pad save-panel">
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <strong>Save verified to Compass</strong>
+      <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
+    </div>
+    <p class="hint">New organizations are added to the Ecosystem Directory as Verified, under your
+      name. Events, people, and anything that may already be there go to Review Results.</p>
+    <table class="grid save-list"><thead><tr><th>Result</th><th>Sector</th><th>What happens</th></tr></thead>
+      <tbody>${items.map((e,i)=>{const c=(checked||[])[i];return html`<tr key=${keyOf(e)}>
+        <td><div class="name-link">${ename(e)}</div><span class="hint" style=${{margin:0}}>${KIND_LABEL[e._entity_type||"actor"]}</span></td>
+        <td><select class="field" value=${picked[keyOf(e)]||""} aria-label=${"Sector for "+ename(e)}
+          onChange=${ev=>setPicked(x=>({...x,[keyOf(e)]:ev.target.value}))}>
+          <option value="">Choose a sector…</option>
+          ${sectors.map(l=>html`<option key=${l} value=${l}>${l}</option>`)}</select></td>
+        <td>${!c?html`<span class="spin"></span>`:html`<div class=${c.outcome==="not_saved"?"bad":""}>${OUTCOME_TEXT[c.outcome]}</div>
+          ${c.reason&&html`<div class="hint" style=${{margin:0}}>${c.reason}</div>`}`}</td></tr>`;})}</tbody></table>
+    <div class="edit-field" style=${{marginTop:"14px",maxWidth:"360px"}}><label>Your name</label>
+      <input class="field" value=${name} onInput=${ev=>setName(ev.target.value)} placeholder="First and last name"/></div>
+    <label class="check" style=${{display:"flex",gap:"8px",alignItems:"flex-start",fontSize:"14px"}}>
+      <input type="checkbox" checked=${attest} onChange=${ev=>setAttest(ev.target.checked)}/>
+      I'm authorized GHUS staff, I checked these results and their sources, and I verify them.</label>
+    ${err&&html`<div class="whynot" role="alert" style=${{marginTop:"10px"}}>${err}</div>`}
+    <div class="attach-row" style=${{marginTop:"12px"}}>
+      <button class="btn" type="button" disabled=${busy||!checked||!savable||!name.trim()||!attest} onClick=${save}>
+        ${busy?html`<span class="spin"></span> Saving…`:`Save ${savable} to Compass`}</button>
+    </div>
+  </div>`;
+}
+
 function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [jobId,setJobId]=useState(null);
   const [proposing,setProposing]=useState(false);
@@ -1572,7 +1650,9 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [researchReason,setResearchReason]=useState("Live research is disabled until a controlled test is approved.");
   const [runStatus,setRunStatus]=useState("draft");
   // Result filters for the whole conversation (Fatima's redesign, 27 Oct 2026).
-  const [statusFilter,setStatusFilter]=useState("all");   // all | pending | parked
+  const [statusFilter,setStatusFilter]=useState("all");   // all | pending | ready | parked | saved
+  const [saving,setSaving]=useState(false);
+  const [saveSummary,setSaveSummary]=useState(null);
   const [matchFilter,setMatchFilter]=useState("all");     // all | matches | leftout
   const [whenFilter,setWhenFilter]=useState("all");       // all | upcoming | past
   const boxRef=useRef(null);
@@ -1588,7 +1668,6 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [file,setFile]=useState(null);
   const [docId,setDocId]=useState(null);
   const [verifying,setVerifying]=useState(false);
-  const [summary,setSummary]=useState(null);
   // The planning conversation: [{role,content}]. The agent asks what it needs,
   // then decides on its own when to start searching.
   const [msgs,setMsgs]=useState([]);
@@ -1651,7 +1730,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       if(r.status===404){ remember(null); return; }
       if(!r.ok) throw new Error(d.detail||"Could not load the saved map.");
       remember(id); setMsgs(d.messages||[]); setRequest(d.description||"");
-      setDesc(""); setFile(null); setDocId(null); setSummary(null);
+      setDesc(""); setFile(null); setDocId(null); setSaving(false); setSaveSummary(null);
       setRes(d.result); setCost(d.cost); setErr(d.error); setRunStatus(d.status);
       const running=["running","planning","verifying"].includes(d.status);
       setBusy(running); setPhase(running?d.stage:"");
@@ -1807,7 +1886,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     if(busy||verifying) return;
     generation.current++; remember(null); setCost(null); setRunStatus("draft");
     clearTimeout(pollRef.current);
-    setMsgs([]); setDesc(""); setRes(null); setSummary(null); setErr(null);
+    setMsgs([]); setDesc(""); setRes(null); setErr(null); setSaving(false); setSaveSummary(null);
     setFile(null); setDocId(null); setBusy(false); setPhase("");
     if(fileRef.current) fileRef.current.value="";
   }
@@ -1856,29 +1935,6 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       URL.revokeObjectURL(url);
     }catch(e){ setErr("Could not export the file."); }
     setExporting("");
-  }
-
-  async function verifyAll(){
-    const items=all();
-    if(!items.length||verifying) return;
-    setVerifying(true);
-    poll(jobId);
-    try{
-      const r=await fetch("/api/map/verify",{method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({entities:items,request,job_id:jobId})});
-      const d=await r.json();
-      if(!r.ok) throw new Error(d.detail||"Verification failed.");
-      if(d.cost) setCost(d.cost);
-      if(d.error) setErr(d.error);
-      const byKey={}; (d.entities||[]).forEach(x=>{byKey[x._entity_type+"|"+ename(x)]=x;});
-      const next={}; MGROUPS.forEach(([k])=>{
-        next[k]=((res.entities&&res.entities[k])||[]).map(x=>byKey[k+"|"+ename(x)]||x);
-      });
-      setRes({...res,entities:next}); setSummary(d.summary);
-    }catch(e){ setErr(e.message); }
-    setVerifying(false);
-    poll(jobId);
   }
 
   function updateOne(updated){
@@ -1944,7 +2000,9 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     return Array.from({length:roundCount},(_,i)=>i+1).flatMap(r=>groupsFor(r).flatMap(([k])=>
       ((res.entities&&res.entities[k])||[]).filter(e=>(e._round||1)===r)));
   }
-  const passes=e=>(statusFilter==="all"||(statusFilter==="parked")===(e._review==="parked"))
+  const statusOf=e=>e._saved&&e._saved.outcome!=="not_saved"?"saved":e._review==="ready"?"ready"
+    :e._review==="parked"?"parked":"pending";
+  const passes=e=>(statusFilter==="all"||statusOf(e)===statusFilter)
     &&(matchFilter==="all"||(matchFilter==="matches")===(e._selected!==false))
     &&(whenFilter==="all"||e._entity_type!=="event"||e.date_status===whenFilter);
 
@@ -1999,6 +2057,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const chip=(value,current,set,label)=>html`<button type="button" key=${value}
     class=${"fchip"+(current===value?" on":"")} onClick=${()=>set(value)}>${label}</button>`;
   const shown=visibleItems();
+  const readyItems=shown.filter(e=>statusOf(e)==="ready");
   const hasEvents=shown.some(e=>e._entity_type==="event");
 
   // Before the first prompt: Fatima's start screen (27 Oct 2026 mockup).
@@ -2047,8 +2106,10 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 
     ${total>0&&html`<div class="filter-bar" role="group" aria-label="Filter results">
       ${chip("all",statusFilter,setStatusFilter,`All ${shown.length}`)}
-      ${chip("pending",statusFilter,setStatusFilter,`Pending review ${shown.filter(e=>e._review!=="parked").length}`)}
-      ${chip("parked",statusFilter,setStatusFilter,`Parked ${shown.filter(e=>e._review==="parked").length}`)}
+      ${chip("pending",statusFilter,setStatusFilter,`Pending review ${shown.filter(e=>statusOf(e)==="pending").length}`)}
+      ${chip("ready",statusFilter,setStatusFilter,`Ready to save ${shown.filter(e=>statusOf(e)==="ready").length}`)}
+      ${chip("parked",statusFilter,setStatusFilter,`Parked ${shown.filter(e=>statusOf(e)==="parked").length}`)}
+      ${chip("saved",statusFilter,setStatusFilter,`Saved ${shown.filter(e=>statusOf(e)==="saved").length}`)}
       <span class="fsep" aria-hidden="true"></span>
       ${chip("all",matchFilter,setMatchFilter,"Everything")}
       ${chip("matches",matchFilter,setMatchFilter,"Matches")}
@@ -2086,8 +2147,8 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
         : html`
           <div class="mbar">
             <span class="chip slate">${total} found in this map</span>
-            <button class="example" type="button" disabled=${verifying||busy||!["done","error"].includes(runStatus)} onClick=${verifyAll}>
-              ${verifying?html`<span class="spin"></span> Verifying…`:"Verify all"}</button>
+            <button class="btn" type="button" disabled=${busy||!readyItems.length||!["done","error"].includes(runStatus)}
+              onClick=${()=>{setSaveSummary(null);setSaving(true);}}>Save verified to Compass (${readyItems.length})</button>
             <button class="example" type="button" disabled=${!!exporting}
               onClick=${()=>download("xlsx")}>
               ${exporting==="xlsx"?html`<span class="spin"></span> Excel…`:"⤓ Excel"}</button>
@@ -2095,6 +2156,13 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
               onClick=${()=>download("pptx")}>
               ${exporting==="pptx"?html`<span class="spin"></span> PowerPoint…`:"⤓ PowerPoint"}</button>
           </div>`}
+      ${saving&&html`<${SavePanel} jobId=${jobId} items=${readyItems} onClose=${()=>setSaving(false)}
+        onSaved=${d=>{setRes(d.result);setCost(d.cost);setSaving(false);
+          const n=k=>d.saved.filter(x=>x.outcome===k).length;
+          setSaveSummary([n("directory")&&`${n("directory")} added to the directory`,
+            n("review")&&`${n("review")} sent to Review Results`,n("not_saved")&&`${n("not_saved")} not saved`]
+            .filter(Boolean).join(" · "));}}/>`}
+      ${saveSummary&&html`<div class="selnote" role="status" style=${{marginTop:"14px"}}>${saveSummary}</div>`}
       ${res.partial&&!busy&&html`<div class="selnote" style=${{marginTop:"14px"}}>Research is unfinished.</div>`}
       ${(res.failures||[]).length>0&&html`<div class="selnote" style=${{color:"var(--violet)"}}>
         Some searches failed, so this map may be incomplete.</div>`}
