@@ -55,6 +55,11 @@ ORIGIN_LABELS = {
 }
 
 
+# Every record has an owner column on the page; there are no accounts yet, so
+# it reads "Not recorded" until logins exist (decided 28 Oct 2026).
+OWNER_NOT_RECORDED = None
+
+
 def origin_label(origin: str | None) -> str | None:
     return ORIGIN_LABELS.get(str(origin or "").strip()) if origin else None
 
@@ -159,6 +164,19 @@ def load_actors() -> list[dict]:
                CASE WHEN to_jsonb(a)->>'estimated_trl' ~ '^[0-9]+$'
                     THEN (to_jsonb(a)->>'estimated_trl')::smallint END AS trl,
                a.website, a.description,
+               -- Every field the edit form shows (asked for on 27 Oct 2026),
+               -- read through to_jsonb so a schema rename never breaks Browse.
+               NULLIF(to_jsonb(a)->>'region_code', '') AS region_code,
+               rd.display_name AS region,
+               NULLIF(to_jsonb(a)->>'primary_technical_focus', '') AS primary_technical_focus,
+               NULLIF(to_jsonb(a)->>'technical_approach', '') AS technical_approach,
+               NULLIF(to_jsonb(a)->>'current_activities', '') AS current_activities,
+               NULLIF(to_jsonb(a)->>'technology_ip_notes', '') AS technology_ip_notes,
+               NULLIF(to_jsonb(a)->>'key_constraints', '') AS key_constraints,
+               NULLIF(to_jsonb(a)->>'funding_summary', '') AS funding_summary,
+               NULLIF(to_jsonb(a)->>'primary_lifecycle_role', '') AS primary_lifecycle_role,
+               to_jsonb(a)->'alt_names' AS alt_names,
+               NULLIF(to_jsonb(ac)->>'ghus_notes', '') AS ghus_notes,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,
                (SELECT string_agg(h.name, '{_HUB_SEP}')
@@ -168,6 +186,8 @@ def load_actors() -> list[dict]:
         LEFT JOIN actor_category_definition cd ON cd.category_code = a.actor_category
         LEFT JOIN region_state rs ON rs.state_code = a.state_code
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
+        LEFT JOIN region_definition rd ON rd.region_code = to_jsonb(a)->>'region_code'
+        LEFT JOIN actor ac ON ac.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
           -- GHUS-rejected records (e.g. collections of organizations) are not on the map.
           AND COALESCE(to_jsonb(a)->>'status', '') <> 'rejected'
@@ -198,6 +218,17 @@ def load_actors() -> list[dict]:
                 "description": r["description"],
                 "has_profile": bool(r["has_profile"]),
                 "hubs": hubs,
+                "region": r["region"],
+                "primary_technical_focus": r["primary_technical_focus"],
+                "technical_approach": r["technical_approach"],
+                "current_activities": r["current_activities"],
+                "technology_ip_notes": r["technology_ip_notes"],
+                "key_constraints": r["key_constraints"],
+                "funding_summary": r["funding_summary"],
+                "primary_lifecycle_role": r["primary_lifecycle_role"],
+                "alt_names": ", ".join(r["alt_names"]) if isinstance(r["alt_names"], list) else "",
+                "ghus_notes": r["ghus_notes"],
+                "owner": OWNER_NOT_RECORDED,
             })
     return out
 
@@ -209,11 +240,12 @@ def load_hubs() -> list[dict]:
     Array columns (primary_sectors, secondary_sectors) are joined to a string for
     display; everything else is returned as-is."""
     sql = """
-        SELECT h.*,
+        SELECT h.*, t.name AS sector,
                (SELECT count(*) FROM hub_actor ha JOIN actor a
                   ON a.actor_id = ha.actor_id AND a.merged_into_actor_id IS NULL
                  WHERE ha.hub_id = h.hub_id) AS actor_count
-        FROM hub h ORDER BY h.name
+        FROM hub h LEFT JOIN topic t ON t.topic_id = h.topic_id
+        ORDER BY h.name
     """
     out = []
     with _readonly() as conn, conn.cursor() as cur:
@@ -226,6 +258,8 @@ def load_hubs() -> list[dict]:
                     r[k] = ", ".join(str(x) for x in v)
                 elif isinstance(v, UUID):        # else Arrow renders it as junk
                     r[k] = str(v)
+            r["origin"] = origin_label(r.get("source_origin"))
+            r["owner"] = OWNER_NOT_RECORDED
             out.append(r)
     return out
 
@@ -240,9 +274,20 @@ def hub_columns() -> list[str]:
 
 def load_events() -> list[dict]:
     sql = """
-        SELECT event_id, name, event_type, location, next_date, website,
-               recurring_pattern, description, record_status
-        FROM event ORDER BY name
+        SELECT e.event_id, e.name, e.event_type, e.location, e.next_date, e.website,
+               e.recurring_pattern, e.description, e.record_status,
+               NULLIF(to_jsonb(e)->>'start_date', '') AS start_date,
+               NULLIF(to_jsonb(e)->>'end_date', '') AS end_date,
+               NULLIF(to_jsonb(e)->>'thematic_focus', '') AS thematic_focus,
+               NULLIF(to_jsonb(e)->>'expected_attendance', '') AS expected_attendance,
+               NULLIF(to_jsonb(e)->>'access_type', '') AS access_type,
+               NULLIF(to_jsonb(e)->>'sponsoring_orgs', '') AS sponsoring_orgs,
+               NULLIF(to_jsonb(e)->>'source_origin', '') AS source_origin,
+               NULLIF(to_jsonb(e)->>'ghus_notes', '') AS ghus_notes,
+               host.name AS organizer
+        FROM event e
+        LEFT JOIN actor_read host ON host.actor_id::text = to_jsonb(e)->>'host_actor_id'
+        ORDER BY e.name
     """
     out = []
     with _readonly() as conn, conn.cursor() as cur:
@@ -260,6 +305,16 @@ def load_events() -> list[dict]:
                 "recurring_pattern": r["recurring_pattern"],
                 "description": r["description"],
                 "status": r["record_status"],
+                "start_date": r["start_date"] or (str(r["next_date"]) if r["next_date"] else None),
+                "end_date": r["end_date"],
+                "thematic_focus": r["thematic_focus"],
+                "expected_attendance": r["expected_attendance"],
+                "access_type": r["access_type"],
+                "sponsoring_orgs": r["sponsoring_orgs"],
+                "organizer": r["organizer"],
+                "origin": origin_label(r["source_origin"]),
+                "ghus_notes": r["ghus_notes"],
+                "owner": OWNER_NOT_RECORDED,
             })
     return out
 
@@ -273,6 +328,7 @@ def load_people() -> list[dict]:
     sql = f"""
         SELECT p.person_id, p.full_name, p.title, p.orcid, p.linkedin_url,
                COALESCE(NULLIF(p.record_status, ''), p.verification_status) AS status,
+               p.source_origin,
                (SELECT string_agg(DISTINCT a.name, '{_HUB_SEP}')
                   FROM actor_person ap JOIN actor_read a ON a.actor_id = ap.actor_id
                  WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
@@ -314,6 +370,8 @@ def load_people() -> list[dict]:
                 "research_areas": split(r["research_areas"]),
                 "profile_url": r["profile_url"] or r["linkedin_url"],
                 "orcid": r["orcid"],
+                "origin": origin_label(r["source_origin"]),
+                "owner": OWNER_NOT_RECORDED,
             })
     return out
 
