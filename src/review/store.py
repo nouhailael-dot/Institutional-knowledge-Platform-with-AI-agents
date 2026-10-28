@@ -1453,6 +1453,7 @@ class ReviewStore:
         rejection_reason: str | None = None,
         rejection_reason_other: str | None = None,
         confirmed: bool = False,
+        ghus_notes: str | None = None,
     ) -> dict[str, Any]:
         """Validate and shape the authoritative admission request without writing it."""
         if decision_kind not in DECISION_KINDS:
@@ -1460,12 +1461,19 @@ class ReviewStore:
         reviewer = _clean_text(reviewer, required=True, max_length=120)
         idempotency_key = _clean_text(idempotency_key, required=True, max_length=200)
         notes = _clean_text(notes, max_length=5000)
+        # GHUS analyst notes ("written only by GHUS"): kept on the actor or event
+        # it admits, by the backend's approved writer. People have no notes yet.
+        ghus_notes = _clean_text(ghus_notes, max_length=5000)
         if confirmed is not True:
             raise ReviewValidationError("Explicit confirmation is required.")
         candidate = self.get(candidate_id)
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This candidate has already been decided.")
         metadata = candidate["agent_metadata"]
+        if ghus_notes and candidate["entity_type"] not in {"actor", "event"}:
+            raise ReviewValidationError("Analyst notes are kept for organizations and events only.")
+        if ghus_notes and decision_kind not in {"new", "same_existing"}:
+            raise ReviewValidationError("Analyst notes are saved when the record is verified.")
         if candidate.get("folded_into"):
             raise ReviewConflict("This card is now part of the actor's update profile; "
                                  "decide it there.")
@@ -1571,6 +1579,7 @@ class ReviewStore:
                 "rejection_reason": rejection_reason if decision_kind == "reject" else None,
                 "reviewer": reviewer,
                 "notes": notes,
+                "ghus_notes": ghus_notes,
                 "idempotency_key": idempotency_key,
             }
         payload = edited_payload if edited_payload is not None else candidate["reviewed_payload"]
@@ -1600,6 +1609,7 @@ class ReviewStore:
             "rejection_reason": rejection_reason,
             "rejection_reason_other": _clean_text(rejection_reason_other, max_length=5000),
             "notes": notes,
+            "ghus_notes": ghus_notes,
             "idempotency_key": idempotency_key,
         }
 

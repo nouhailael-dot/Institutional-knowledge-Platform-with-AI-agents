@@ -18,13 +18,13 @@ import {
   NO_PARENT_TOOLTIP, RETIRED_CATCH_ALL, THEMATIC_SECTORS,
   categoryLabel, categoryOptions, countryOptions, isParentLink, isValidPair,
   linkTypeLabel, normalizeCountry, regionForState, sectorLabel, sectorOptions, setSectors,
-  showsRankings, showsTrl, stateOptions, typeLabel, typeOptions,
+  showsRankings, showsTrl, stateCode, stateOptions, typeLabel, typeOptions,
 } from "./taxonomy.js?v=20261019";
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261027b";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028a";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.parked,
@@ -1598,6 +1598,96 @@ function textField(html, candidate, field, value, onChange, disabled, error) {
   </label>`;
 }
 
+/**
+ * A record's draft with Build the Map's display labels as the codes Review's
+ * dropdowns hold: "National Laboratory" -> national_laboratory,
+ * "Government-Direct" -> government_direct, "Colorado" -> CO, and its first
+ * sector ("Energy; Government research") as the primary sector when none is
+ * set. Only exact catalog labels are converted; anything else is left as it is.
+ */
+export function normalizeMapDraft(payload = {}, original = {}) {
+  const draft = {...payload};
+  const byLabel = (options, value) => {
+    const text = String(value ?? "").trim().toLocaleLowerCase();
+    return options.find(o => o.value === value || String(o.label).toLocaleLowerCase() === text)?.value;
+  };
+  if (draft.actor_category) {
+    draft.actor_category = byLabel(categoryOptions(), draft.actor_category) || draft.actor_category;
+    if (draft.category_type) {
+      draft.category_type = byLabel(typeOptions(draft.actor_category), draft.category_type)
+        || draft.category_type;
+    }
+  }
+  if (draft.state && !stateOptions().some(o => o.value === draft.state)) {
+    draft.state = stateCode(draft.state) || draft.state;
+  }
+  if (!draft.primary_sector && original?.sector) {
+    // The map names sectors in plain words ("Energy"); the database may name the
+    // same sector differently ("Energy Transition"), so its code counts too.
+    const first = String(original.sector).split(/[;,]/).map(s => s.trim()).find(Boolean) || "";
+    const options = sectorOptions();
+    const code = options.find(o => o.value.toLocaleLowerCase() === first.toLocaleLowerCase())?.value
+      || byLabel(options, first);
+    if (code) draft.primary_sector = code;
+  }
+  return draft;
+}
+
+/** Map-card labels for a record's own fields, in the order a Build the Map result shows them. */
+const CARD_FIELDS = {
+  event: [["event_type", "Type"], ["next_date", "Date"], ["location", "Location"],
+    ["recurring_pattern", "Frequency"], ["sponsoring_orgs", "Organizer"], ["thematic_focus", "Topic"],
+    ["expected_attendance", "Scale"], ["access_type", "Access"]],
+  person: [["role", "Title"], ["affiliation", "Organization"], ["research_area", "Expertise"],
+    ["public_profile_url", "Public profile"]],
+};
+// Read by Build the Map but not (yet) fields a reviewer edits; shown when present.
+const CARD_EXTRA_FIELDS = {
+  event: [["event_format", "Format"], ["audience", "Audience"], ["previous_edition", "Previous edition"]],
+  person: [["linkedin_url", "LinkedIn"], ["orcid", "ORCID"]],
+};
+
+/**
+ * One "Label: value" line of a record card - the value editable in place when
+ * Review may change it, read-only otherwise. A calendar day reads MM/DD/YYYY.
+ */
+export function cardField(html, candidate, field, value, onChange, disabled, error, label) {
+  const name = label || reviewFieldLabel(field);
+  if (!(candidate?.editable_fields || []).includes(field)) {
+    return cardLine(html, name, DATE_FIELDS.has(field) ? usDate(value ?? "") : formatCardValue(value));
+  }
+  const long = LONG_FIELDS.test(field);
+  const isDate = DATE_FIELDS.has(field);
+  const limit = candidate?.field_constraints?.[field]?.max_length;
+  const set = event => onChange(field, isDate
+    ? (isoFromUs(event.target.value) || event.target.value) : event.target.value);
+  return html`<label key=${field} class=${"review-line" + (long ? " long" : "") + (error ? " invalid" : "")}>
+    <b>${name}:</b>
+    ${long
+      ? html`<textarea class="review-inline" rows="2" value=${value ?? ""} maxlength=${limit}
+          disabled=${disabled} placeholder=${MISSING.notFound} onInput=${set}></textarea>`
+      : html`<input class="review-inline" value=${isDate ? usDate(value ?? "") : value ?? ""}
+          maxlength=${limit} disabled=${disabled} inputMode=${isDate ? "numeric" : undefined}
+          placeholder=${isDate ? "MM/DD/YYYY" : MISSING.notFound} onInput=${set}/>`}
+    ${error && html`<small class="field-error">${error}</small>`}
+  </label>`;
+}
+
+/** A read-only "Label: value" line; an empty value says Not Found, never blank. */
+export function cardLine(html, label, value, extra = null) {
+  return html`<div class="review-line read" key=${label}><b>${label}:</b>
+    <span>${value || MISSING.notFound}</span>${extra || ""}</div>`;
+}
+
+function formatCardValue(value) {
+  if (value === null || value === undefined || value === "") return "";
+  return Array.isArray(value) ? value.filter(Boolean).join(", ") : formatFactValue(value);
+}
+
+function sourceLink(html, url) {
+  return url ? html` · <a href=${url} target="_blank" rel="noreferrer">Source</a>` : null;
+}
+
 export function createReviewPage({html, useEffect, useRef, useState}) {
   return function Review() {
     const [filters, setFilters] = useState({
@@ -1616,6 +1706,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [draft, setDraft] = useState({});
     const [reviewer, setReviewer] = useState("");
     const [notes, setNotes] = useState("");
+    // GHUS analyst notes, kept on the actor or event when it is verified.
+    const [analystNotes, setAnalystNotes] = useState("");
     const [decisionKind, setDecisionKind] = useState("same_existing");
     const [targetId, setTargetId] = useState("");
     const [rejectionReason, setRejectionReason] = useState("");
@@ -1710,7 +1802,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       request(`/api/review/candidates/${selectedId}`).then(candidate => {
         if (!active) return;
         setSelected(candidate);
-        setDraft({...candidate.reviewed_payload});
+        setDraft(normalizeMapDraft(candidate.reviewed_payload, candidate.original_payload));
         setItemCity(candidate.reviewed_payload?.location_city || "");
         setItemState(candidate.reviewed_payload?.state_code || candidate.reviewed_payload?.state || "");
         setKeepUnlocated(false);
@@ -1726,6 +1818,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         setHubIds([]);
         setProposeHub(false);
         setFactView("current");
+        setAnalystNotes(candidate.agent_metadata?.ghus_notes || "");
       }).catch(exception => { if (active) setError(exception.message); });
       return () => { active = false; };
     }, [selectedId]);
@@ -1904,6 +1997,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           rejection_reason: decisionKind === "reject" ? rejectionReason : null,
           rejection_reason_other: decisionKind === "reject" && rejectionReason === "Other"
             ? rejectionOther.trim() : null,
+          // Saved on the record only when it is verified, and only for actors and events.
+          ghus_notes: ["new", "same_existing"].includes(decisionKind)
+            && ["actor", "event"].includes(selected.entity_type) && analystNotes.trim()
+            ? analystNotes.trim() : null,
         };
         const updated = await request(
           `/api/review/candidates/${selected.candidate_id}/decision`,
@@ -2075,10 +2172,43 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const historyRows = isActor ? factHistoryRows(selected) : [];
     const deepFacts = deepPullFacts(selected);
     const writerDown = !data.admission_configured;
+    // The record card (Build the Map's form): its number in the run, why it
+    // matched, its other names and connections, and the pages it came from.
+    const position = selected ? records.findIndex(item => item.candidate_id === selected.candidate_id) + 1 : 0;
+    // A Build the Map result carries its own profile; Review shows it where the
+    // map database has nothing of its own for the record yet.
+    const mapProfile = selected?.original_payload || {};
+    const fromMap = mapProfile.profile_version === 2 || Boolean(selected?.agent_metadata?._why);
+    const why = isActor ? (selected?.agent_metadata?.why_matched || whyMatchedFact(selected)
+      || (fromMap && (mapProfile.match_explanation || mapProfile.match_strength)
+        ? {reason: mapProfile.match_explanation, strength: mapProfile.match_strength} : null)) : null;
+    const otherNames = isActor ? [].concat(draft.alt_names || draft.alternate_names
+      || selected?.agent_metadata?.alt_names || mapProfile.other_names || []).filter(Boolean) : [];
+    const mappedTopic = selected?.agent_metadata?.topic_name || mapProfile.mapped_topic
+      || (selected?.agent_metadata?.sector_codes || []).map(sectorLabel).join(", ");
+    const lightConnections = lightBoxes.common.filter(row =>
+      ["international_connection", "um6p_ocp_connection"].includes(row.key));
+    const connections = fromMap && lightConnections.every(row => row.state)
+      ? [{key: "map-connections", label: "Africa / Morocco connections",
+        value: mapProfile.international_connections}]
+      : lightConnections;
+    const mapRelationships = fromMap ? (mapProfile.actor_relationships || []).filter(r => r && r.organization_name) : [];
+    const mapDetails = fromMap ? (mapProfile.category_details || []).filter(d => d && d.label) : [];
+    const mapSector = fromMap ? mapProfile.sector : "";
+    const sources = (selected?.evidence || []).filter(item => item && item.url);
+    const admitKind = selected?.duplicate_state === "already_exists" ? "same_existing" : "new";
+    function chooseDecision(kind) {
+      setDecisionKind(kind);
+      setTimeout(() => document.querySelector(".review-decision")
+        ?.scrollIntoView({behavior: "smooth", block: "center"}), 0);
+    }
     const editableHere = (selected?.editable_fields || []).filter(field =>
       !DERIVED_FIELDS.has(field) && !AUDIT_ONLY_FIELDS.has(field)
       && !["actor_category", "category_type", "category_note", "name", "website", "description",
-           "location_city", "state", "country"].includes(field));
+           "location_city", "state", "country", "primary_sector", "primary_technical_focus",
+           "funding_summary", "current_activities"].includes(field)
+      // Already on the record card.
+      && !(CARD_FIELDS[selected?.entity_type] || []).some(([cardField]) => cardField === field));
 
     return html`<section class="review-page" aria-labelledby="review-title">
       <div class="eyebrow">${SENTENCES.pageEyebrow}</div>
@@ -2250,39 +2380,117 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         ${selectedId && html`<article class="review-detail" aria-live="polite">
           ${!selected && html`<div class="review-empty" role="status">${SENTENCES.queueLoading}</div>`}
           ${selected && html`
-          <!-- HEADER -->
-          <header class="review-detail-head">
-            <div>
-              <h2>${selected.display_name}</h2>
-              <p class="review-subhead">
-                ${present(draft.website) || MISSING.notProvided} · ${runChip(selected)}
-              </p>
-            </div>
-            <div class="review-badges">
+          <!-- RECORD CARD: the same form as a Build the Map result -->
+          <div class=${"mcard review-card" + (pending ? " pick" : "")}>
+            <div class="mh">
+              ${position > 0 && html`<span class="rank">${position}</span>`}
+              <span class="mn">${draft.name || selected.display_name}</span>
               ${headerBadges(selected).map((badge, index) => html`
                 <span key=${index} class=${"review-status " + badge.tone}
                   title=${badge.hint || ""}>${badge.label}</span>`)}
+              ${pending && !reviewItemKind(selected) && !twoWayKind(selected) && html`
+                <span class="review-card-actions">
+                  ${[[admitKind, BUTTONS.verify], ["defer", BUTTONS.park], ["reject", BUTTONS.reject]]
+                    .map(([kind, label]) => html`<button key=${kind} type="button"
+                      class=${"example" + (decisionKind === kind ? " active" : "")}
+                      aria-pressed=${decisionKind === kind} disabled=${busy || writerDown}
+                      onClick=${() => chooseDecision(kind)}>${label}</button>`)}
+                </span>`}
             </div>
-          </header>
-          ${isMigratedBaseline(selected) && html`<div class="review-notice" role="status">
-            <strong>${BADGES.migratedBaseline}.</strong> ${SENTENCES.migratedBaseline}
-          </div>`}
-          ${selected.admission_error && html`<div class="review-message error">
-            <strong>Last admission failed:</strong> ${selected.admission_error}
-          </div>`}
+            <p class="review-card-sub">
+              ${present(draft.website)
+                ? html`<a href=${draft.website} target="_blank" rel="noreferrer">${draft.website}</a>`
+                : MISSING.notProvided} · ${runChip(selected)}
+            </p>
+            ${isMigratedBaseline(selected) && html`<div class="review-notice" role="status">
+              <strong>${BADGES.migratedBaseline}.</strong> ${SENTENCES.migratedBaseline}
+            </div>`}
+            ${selected.admission_error && html`<div class="review-message error">
+              <strong>Last admission failed:</strong> ${selected.admission_error}
+            </div>`}
+            <textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")} rows="3"
+              aria-label=${reviewFieldLabel("description")} placeholder="Description"
+              value=${draft.description ?? ""} disabled=${!pending || busy}
+              onInput=${e => edit("description", e.target.value)}></textarea>
+            ${draftErrors.description && html`<small class="field-error">${draftErrors.description}</small>`}
+            ${cardField(html, selected, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
+            ${cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
 
-          <!-- 1 IDENTITY & CLASSIFICATION -->
-          <section class="review-section">
-            <h3><span class="review-step">1</span>${SECTIONS.identity}</h3>
-            <div class="review-field-grid">
-              ${textField(html, selected, "name", draft.name, edit, !pending || busy, draftErrors.name)}
-              ${textField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website)}
-            </div>
-            ${textField(html, selected, "description", draft.description, edit, !pending || busy, draftErrors.description)}
-            ${isActor && html`<div class="review-field-grid">
-              <label class=${"review-field " + (draftErrors.actor_category ? "invalid" : "")}>
-                <span>${FIELDS.actorCategory}</span>
-                <select value=${draft.actor_category ?? ""} disabled=${!pending || busy}
+            ${isActor ? html`
+            <details class="mpeople review-profile" open>
+              <summary>Actor profile</summary>
+              ${cardField(html, selected, "category_note", draft.category_note, edit, !pending || busy,
+                draftErrors.category_note, "Category note")}
+              ${String(draft.category_type ?? "") === NOT_APPLICABLE && html`
+                <p class="review-hint">${SENTENCES.notApplicableNeedsNote}</p>`}
+              ${cardLine(html, "Other names", otherNames.join(", "))}
+              <label class="review-line"><b>${FIELDS.primarySector}:</b>
+                <span class="review-chip">${BADGES.hubDimension}</span>
+                <select class="review-inline" value=${draft.primary_sector ?? ""} disabled=${!pending || busy}
+                  data-sectors=${sectorState.version}
+                  onChange=${e => e.target.value === NEW_SECTOR
+                    ? startNewSector(selected.agent_metadata?.unmatched_sector_suggestion)
+                    : edit("primary_sector", e.target.value)}>
+                  <option value="">${MISSING.notApplicable}</option>
+                  ${sectorOptions(selected.agent_metadata?.sector_codes || []).map(option => html`
+                    <option key=${option.value} value=${option.value}>${option.label}</option>`)}
+                  ${sectorState.canCreate && pending && html`
+                    <option value=${NEW_SECTOR}>${BUTTONS.addSector}</option>`}
+                </select></label>
+              ${!(selected.agent_metadata?.sector_codes || []).length
+                && selected.agent_metadata?.unmatched_sector_suggestion && html`
+                <p class="review-notice">${SENTENCES.noSectorMatched(
+                  selected.agent_metadata.unmatched_sector_suggestion)}</p>`}
+              ${newSector && html`<div class="review-new-sector">
+                <label class="review-field"><span>${FIELDS.newSectorName}</span>
+                  <input value=${newSector.name} maxLength="80"
+                    onInput=${e => setNewSector({...newSector, name: e.target.value})}/></label>
+                <label class="review-field"><span>${FIELDS.newSectorDescription}</span>
+                  <textarea rows="2" maxLength="500" value=${newSector.description}
+                    onInput=${e => setNewSector({...newSector, description: e.target.value})}></textarea></label>
+                ${newSector.error && html`<p class="field-error">${newSector.error}</p>`}
+                <div class="review-new-sector-actions">
+                  <button class="btn" disabled=${newSector.busy || newSector.name.trim().length < 2}
+                    onClick=${createSector}>${newSector.busy ? BUTTONS.addingSector : BUTTONS.createSector}</button>
+                  <button class="btn ghost" disabled=${newSector.busy}
+                    onClick=${() => setNewSector(null)}>${BUTTONS.cancel}</button>
+                </div>
+              </div>`}
+              ${(selected.agent_metadata?.sector_codes || []).length > 0 && html`
+                <p class="review-hint">${FIELDS.otherSectors}:
+                  ${(selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · ")}
+                  <span class="review-chip">${BADGES.readOnly}</span></p>`}
+              ${mapSector && html`<p class="review-hint">Sector from Build the Map: ${mapSector}</p>`}
+              ${cardLine(html, "Mapped topic", mappedTopic)}
+              ${cardLine(html, "Topic match", why ? matchStrengthLabel(why.strength) : "")}
+              ${cardLine(html, FIELDS.whyItMatched, why?.reason || "", sourceLink(html, why?.source_url))}
+              ${connections.map(row => cardLine(html, row.label,
+                row.state ? missingWithPages(row) : formatCardValue(row.value), sourceLink(html, row.source)))}
+              <div class="review-line read"><b>Organization relationships:</b>
+                ${!parent.hasParent && !relationships.length && !mapRelationships.length
+                  ? html`<span title=${parent.tooltip}>${parent.missing} — no parent is assumed</span>` : ""}</div>
+              ${mapRelationships.map((r, index) => html`<div key=${"m" + index} class="review-line read sub">
+                ${r.relationship}: ${r.organization_name}${sourceLink(html, r.source_url)}</div>`)}
+              ${parent.hasParent && html`<div class="review-line read sub">
+                ${parent.linkType}: ${parent.name}${sourceLink(html, parent.source)}</div>`}
+              ${relationships.map((edge, index) => html`<div key=${"r" + index} class="review-line read sub">
+                ${edge.label} ${edge.direction} ${edge.counterpart}${edge.counterpartType
+                  ? ` (${edge.counterpartType})` : ""}${edge.source
+                  ? sourceLink(html, edge.source) : html` · ${MISSING.notFound}`}</div>`)}
+              <div class="review-line read"><b>Category-specific information${categoryLabel(draft.actor_category)
+                ? ` (${categoryLabel(draft.actor_category)})` : ""}:</b>
+                ${!lightBoxes.specific.length && !mapDetails.length
+                  ? html`<span>${SENTENCES.chooseCategoryForBoxes}</span>` : ""}</div>
+              ${mapDetails.map((d, index) => html`<div key=${"d" + index} class="review-line read sub">
+                <b>${d.label}:</b> <span>${formatCardValue(d.value)}</span></div>`)}
+              ${(mapDetails.length ? [] : lightBoxes.specific).map(row => html`<div key=${row.key} class="review-line read sub">
+                <b>${row.label}:</b> <span>${row.state ? missingWithPages(row) : formatFactValue(row.value)}</span>
+                ${sourceLink(html, row.source)}</div>`)}
+            </details>
+
+            <div class="review-facts-row">
+              <label class=${"review-line" + (draftErrors.actor_category ? " invalid" : "")}><b>${FIELDS.actorCategory}:</b>
+                <select class="review-inline" value=${draft.actor_category ?? ""} disabled=${!pending || busy}
                   onChange=${e => editCategory(e.target.value)}>
                   <option value="">Choose a category</option>
                   ${categoryOptions().map(option => html`
@@ -2290,34 +2498,21 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 </select>
                 ${draftErrors.actor_category && html`<small class="field-error">${draftErrors.actor_category}</small>`}
               </label>
-              <label class=${"review-field " + (draftErrors.category_type ? "invalid" : "")}>
-                <span>${FIELDS.categoryType}</span>
-                <select value=${draft.category_type ?? ""} disabled=${!pending || busy || !draft.actor_category}
+              <label class=${"review-line" + (draftErrors.category_type ? " invalid" : "")}><b>${FIELDS.categoryType}:</b>
+                <select class="review-inline" value=${draft.category_type ?? ""}
+                  disabled=${!pending || busy || !draft.actor_category}
                   onChange=${e => edit("category_type", e.target.value)}>
                   <option value="">${summary?.pending_classification ? MISSING.pending : "Choose a type"}</option>
                   ${typeOptions(draft.actor_category).map(option => html`
-                    <option key=${option.value} value=${option.value} title=${option.meaning}>
-                      ${option.label}
-                    </option>`)}
+                    <option key=${option.value} value=${option.value} title=${option.meaning}>${option.label}</option>`)}
                 </select>
                 ${draftErrors.category_type && html`<small class="field-error">${draftErrors.category_type}</small>`}
-                ${summary?.pending_classification && html`
-                  <small class="review-hint">${SENTENCES.pendingClassification}</small>`}
+                ${summary?.pending_classification && html`<small class="review-hint">${SENTENCES.pendingClassification}</small>`}
                 ${summary?.category_type_retired && html`
                   <small class="review-hint">${typeLabel(draft.actor_category, RETIRED_CATCH_ALL)}</small>`}
               </label>
-            </div>
-            ${textField(html, selected, "category_note", draft.category_note, edit, !pending || busy, draftErrors.category_note)}
-            ${String(draft.category_type ?? "") === NOT_APPLICABLE && html`
-              <p class="review-hint">${SENTENCES.notApplicableNeedsNote}</p>`}`}
-          </section>
-
-          <!-- 2 LOCATION & PARENT -->
-          ${isActor && html`<section class="review-section">
-            <h3><span class="review-step">2</span>${SECTIONS.location}</h3>
-            <div class="review-field-grid">
-              <label class="review-field"><span>${FIELDS.country}</span>
-                <select value=${normalizeCountry(draft.country) || ""} disabled=${!pending || busy}
+              <label class="review-line"><b>${FIELDS.country}:</b>
+                <select class="review-inline" value=${normalizeCountry(draft.country) || ""} disabled=${!pending || busy}
                   onChange=${e => editCountry(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
                   ${countryOptions().map(option => html`
@@ -2325,151 +2520,68 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   ${draft.country && !countryOptions().some(o => o.value === normalizeCountry(draft.country))
                     && html`<option value=${draft.country}>${draft.country}</option>`}
                 </select></label>
-              <label class="review-field"><span>${FIELDS.state}</span>
-                <select value=${draft.state ?? ""} disabled=${!pending || busy}
+              ${cardField(html, selected, "location_city", draft.location_city, edit, !pending || busy,
+                draftErrors.location_city, "City")}
+              <label class="review-line"><b>${FIELDS.state}:</b>
+                <select class="review-inline" value=${draft.state ?? ""} disabled=${!pending || busy}
                   onChange=${e => editState(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
                   ${stateOptions().map(option => html`
                     <option key=${option.value} value=${option.value}>${option.label}</option>`)}
                 </select></label>
-              <label class="review-field"><span>${FIELDS.region}</span>
-                <input value=${summary.region} readonly disabled aria-readonly="true"/>
-</label>
-              ${textField(html, selected, "location_city", draft.location_city, edit, !pending || busy, draftErrors.location_city)}
+              <label class="review-line"><b>${FIELDS.region}:</b>
+                <input class="review-inline" value=${summary.region} readonly disabled aria-readonly="true"/></label>
+            </div>
+            <div class="review-facts-row compact">
+              ${cardLine(html, FIELDS.coordinates, selected.agent_metadata?.coordinates ? "Geocoded" : "")}
+              ${cardLine(html, FIELDS.multiLocation, selected.agent_metadata?.multi_location ? "Yes" : "No")}
             </div>
             ${twoWayKind(selected) === "update" && (() => {
               const row = factRows.find(item => item.key === "location");
               return row && (row.value || row.update || row.pending) && html`<div class="review-boxes">
                 ${lightBox(html, {...row, label: "Location read from its pages"})}</div>`;
             })()}
-            <dl class="review-facts">
-              <div><dt>${FIELDS.coordinates}</dt><dd>
-                ${selected.agent_metadata?.coordinates ? "Geocoded" : MISSING.notFound}
-              </dd></div>
-              <div><dt>${FIELDS.multiLocation}</dt><dd>
-                ${selected.agent_metadata?.multi_location ? "Yes" : "No"}
-              </dd></div>
-            </dl>
-            <h4>${FIELDS.parentOrganization}</h4>
-            ${parent.hasParent
-              ? html`<dl class="review-facts">
-                  <div><dt>${FIELDS.parentOrganization}</dt><dd>${parent.name}</dd></div>
-                  <div><dt>${FIELDS.parentLinkType}</dt><dd>${parent.linkType}</dd></div>
-                  <div><dt>${FIELDS.parentSource}</dt><dd>${parent.source
-                    ? html`<a href=${parent.source} target="_blank" rel="noreferrer">${parent.source}</a>`
-                    : MISSING.notFound}</dd></div>
-                </dl>`
-              : html`<p class="review-complete" title=${parent.tooltip}>
-                  <strong>${parent.missing}</strong> — ${parent.tooltip}
-                </p>`}
-            <h4>${FIELDS.otherRelationships} <span class="review-chip">${BADGES.readOnly}</span></h4>
-            ${!relationships.length && html`<p class="muted">${MISSING.notFound}</p>`}
-            <ul class="review-evidence">
-              ${relationships.map((edge, index) => html`<li key=${index}>
-                <strong>${edge.label}</strong> ${edge.direction} ${edge.counterpart}
-                ${edge.counterpartType && html`<span>${edge.counterpartType}</span>`}
-                ${edge.source
-                  ? html`<a href=${edge.source} target="_blank" rel="noreferrer">${edge.source}</a>`
-                  : html`<span>${MISSING.notFound}</span>`}
-              </li>`)}
-            </ul>
-          </section>`}
+            ${cardField(html, selected, "primary_technical_focus", draft.primary_technical_focus, edit,
+              !pending || busy, draftErrors.primary_technical_focus, "Focus")}
+            ${cardField(html, selected, "funding_summary", draft.funding_summary, edit,
+              !pending || busy, draftErrors.funding_summary, "Funding")}
+            ${cardField(html, selected, "current_activities", draft.current_activities, edit,
+              !pending || busy, draftErrors.current_activities, "Activity")}
 
-          <!-- 3 SECTOR, TOPIC & HUB -->
-          ${isActor && html`<section class="review-section">
-            <h3><span class="review-step">3</span>${SECTIONS.sector}</h3>
-            <div class="review-two-up">
-              <div class="review-box">
-                <h4>${FIELDS.sector} <span class="review-chip">${BADGES.hubDimension}</span></h4>
-                <label class="review-field">
-                  <span>${FIELDS.primarySector}</span>
-                  <select value=${draft.primary_sector ?? ""} disabled=${!pending || busy}
-                    data-sectors=${sectorState.version}
-                    onChange=${e => e.target.value === NEW_SECTOR
-                      ? startNewSector(selected.agent_metadata?.unmatched_sector_suggestion)
-                      : edit("primary_sector", e.target.value)}>
-                    <option value="">${MISSING.notApplicable}</option>
-                    ${sectorOptions(selected.agent_metadata?.sector_codes || []).map(option => html`
-                      <option key=${option.value} value=${option.value}>${option.label}</option>`)}
-                    ${sectorState.canCreate && pending && html`
-                      <option value=${NEW_SECTOR}>${BUTTONS.addSector}</option>`}
-                  </select></label>
-                ${!(selected.agent_metadata?.sector_codes || []).length
-                  && selected.agent_metadata?.unmatched_sector_suggestion && html`
-                  <p class="review-notice">${SENTENCES.noSectorMatched(
-                    selected.agent_metadata.unmatched_sector_suggestion)}</p>`}
-                ${newSector && html`<div class="review-new-sector">
-                  <label class="review-field"><span>${FIELDS.newSectorName}</span>
-                    <input value=${newSector.name} maxLength="80"
-                      onInput=${e => setNewSector({...newSector, name: e.target.value})}/></label>
-                  <label class="review-field"><span>${FIELDS.newSectorDescription}</span>
-                    <textarea rows="2" maxLength="500" value=${newSector.description}
-                      onInput=${e => setNewSector({...newSector, description: e.target.value})}></textarea></label>
-                  ${newSector.error && html`<p class="field-error">${newSector.error}</p>`}
-                  <div class="review-new-sector-actions">
-                    <button class="btn" disabled=${newSector.busy || newSector.name.trim().length < 2}
-                      onClick=${createSector}>${newSector.busy ? BUTTONS.addingSector : BUTTONS.createSector}</button>
-                    <button class="btn ghost" disabled=${newSector.busy}
-                      onClick=${() => setNewSector(null)}>${BUTTONS.cancel}</button>
-                  </div>
-                </div>`}
-                ${(selected.agent_metadata?.sector_codes || []).length > 0 && html`
-                  <p class="review-hint">${FIELDS.otherSectors}:
-                    ${(selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · ")}
-                    <span class="review-chip">${BADGES.readOnly}</span></p>`}
-              </div>
-              <div class="review-box">
-                <h4>${FIELDS.whyItMatched}</h4>
-                ${(() => {
-                  // Two sources say this, and the dedicated one is often empty:
-                  // discovery records the explanation as a Light Pull fact, while
-                  // agent_metadata.why_matched is only set on some paths. Reading
-                  // both means one box instead of a populated box beside an empty
-                  // one claiming Not Yet Collected.
-                  const why = selected.agent_metadata?.why_matched || whyMatchedFact(selected);
-                  if (!why) return html`<p class="muted">${MISSING.notYetChecked}</p>`;
-                  return html`<dl class="review-facts">
-                    <div><dt>${FIELDS.strength}</dt><dd>${matchStrengthLabel(why.strength)}</dd></div>
-                  </dl>
-                  <p>${why.reason || MISSING.notFound}</p>
-                  ${why.source_url && html`
-                    <a href=${why.source_url} target="_blank" rel="noreferrer">${why.source_url}</a>`}`;
-                })()}
-              </div>
+            <div class="review-hubs">
+              ${cardLine(html, FIELDS.currentHubs, memberships.map(hub => `${hub.name || hub.hub_id}${
+                hub.distance_miles != null ? ` (${hub.distance_miles} mi)` : ""}${hub.outside_radius
+                ? ` — ${BADGES.hubMemberOutsideRadius}` : ""}`).join(" · "))}
+              ${cardLine(html, FIELDS.suggestedHubs, suggestions.map(hub => `${hub.name || hub.hub_id}${
+                hub.distance_miles != null ? ` (${hub.distance_miles} mi)` : ""}${hub.reason
+                ? ` — ${hub.reason}` : ""}`).join(" · ") || MISSING.notYetChecked)}
+              <label class="review-line"><b>${BUTTONS.chooseHub}:</b>
+                <select class="review-inline" value=${hubIds[0] ?? ""} disabled=${!pending || busy}
+                  onChange=${e => setHubIds(e.target.value ? [e.target.value] : [])}>
+                  <option value="">${SENTENCES.noHubOption}</option>
+                  ${hubOptions.map(option => html`
+                    <option key=${option.hub_id} value=${option.hub_id}>${option.label}</option>`)}
+                </select></label>
             </div>
-            <h4>${FIELDS.currentHubs}</h4>
-            ${!memberships.length && html`<p class="muted">${MISSING.notFound}</p>`}
-            <ul class="review-evidence">
-              ${memberships.map((hub, index) => html`<li key=${"m" + index}>
-                <strong>${hub.name || hub.hub_id}</strong>
-                <span>${FIELDS.distance}: ${hub.distance_miles != null
-                  ? `${hub.distance_miles} mi` : MISSING.notFound}</span>
-                ${hub.outside_radius && html`<span class="review-status reason">
-                  ${BADGES.hubMemberOutsideRadius}</span>`}
-              </li>`)}
-            </ul>
-            <h4>${FIELDS.suggestedHubs}</h4>
-            ${!suggestions.length && html`<p class="muted">${MISSING.notYetChecked}</p>`}
-            <ul class="review-evidence">
-              ${suggestions.map((hub, index) => html`<li key=${"s" + index}>
-                <strong>${hub.name || hub.hub_id}</strong>
-                <span>${FIELDS.distance}: ${hub.distance_miles != null
-                  ? `${hub.distance_miles} mi` : MISSING.notFound}</span>
-                <span>${FIELDS.suggestion}: ${hub.reason || MISSING.notFound}</span>
-              </li>`)}
-            </ul>
-            <label class="review-field"><span>${BUTTONS.chooseHub}</span>
-              <select value=${hubIds[0] ?? ""} disabled=${!pending || busy}
-                onChange=${e => setHubIds(e.target.value ? [e.target.value] : [])}>
-                <option value="">${SENTENCES.noHubOption}</option>
-                ${hubOptions.map(option => html`
-                  <option key=${option.hub_id} value=${option.hub_id}>${option.label}</option>`)}
-              </select></label>
-          </section>`}
+            ` : html`
+            <details class="mpeople review-profile" open>
+              <summary>${selected.entity_type === "event" ? "Event profile" : "Person profile"}</summary>
+              ${(CARD_FIELDS[selected.entity_type] || []).map(([field, label]) =>
+                cardField(html, selected, field, draft[field], edit, !pending || busy, draftErrors[field], label))}
+              ${(CARD_EXTRA_FIELDS[selected.entity_type] || []).filter(([field]) => present(draft[field]))
+                .map(([field, label]) => cardLine(html, label, field === "previous_edition"
+                  ? usDate(draft[field]) : formatCardValue(draft[field])))}
+            </details>`}
 
-          <!-- 4 LIGHT PULL INFORMATION -->
-          ${isActor && html`<section class="review-section">
-            <h3><span class="review-step">4</span>${SECTIONS.facts}</h3>
+            ${sources.length > 0 && html`<details class="msrc">
+              <summary>${sources.length} web source${sources.length > 1 ? "s" : ""}</summary>
+              ${sources.map((item, index) => html`<div key=${index} class="review-source">
+                <a href=${item.url} target="_blank" rel="noreferrer">${item.url}</a>
+                ${item.supports && html`<span class="dash"> — ${item.supports}</span>`}</div>`)}
+            </details>`}
+
+            ${isActor && html`<details class="mpeople review-collected">
+              <summary>${SECTIONS.facts}</summary>
             ${twoWayKind(selected) === "update" && html`<p class="review-hint">${[
               selected.agent_metadata?.topic_name && `Sector: ${selected.agent_metadata.topic_name}.`,
               "Values in the boxes are on the map, each marked with what the latest update found.",
@@ -2510,22 +2622,23 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <span>${formatFactValue(fact.value)}</span>
               </li>`)}</ul>
             </details>`}
-          </section>`}
+            </details>`}
 
-          <!-- Event and person records use their own field sets -->
-          ${!isActor && html`<section class="review-section">
-            <h3><span class="review-step">2</span>${selected.entity_type === "event"
-              ? "Event Fields" : "Person Fields"}</h3>
-            <div class="review-field-grid">
-              ${(selected.editable_fields || [])
-                .filter(field => !["name", "description", "website"].includes(field))
-                .map(field => textField(html, selected, field, draft[field], edit, !pending || busy, draftErrors[field]))}
+            <div class="review-card-foot">
+              ${["actor", "event"].includes(selected.entity_type) ? html`<label class="review-analyst-notes">
+                <b>Analyst notes</b>
+                <textarea rows="3" maxlength="5000" value=${analystNotes} disabled=${!pending || busy}
+                  placeholder=${selected.entity_type === "event"
+                    ? "Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
+                    : "Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}
+                  onInput=${e => setAnalystNotes(e.target.value)}></textarea>
+                <small class="muted">Kept on the record when you verify it, as written by GHUS; agents never write here.</small>
+              </label>`
+              : html`<p class="muted">Analyst notes are kept for organizations and events; people have no notes field yet.</p>`}
             </div>
-            ${selected.entity_type === "event" && html`<div class="review-box">
-              <h4>${FIELDS.ghusEventNotes}</h4>
-              <p class="muted">${SENTENCES.eventNotesEmpty}</p>
-            </div>`}
-          </section>`}
+            ${(selected.agent_metadata?._why || (isActor && why?.reason)) && html`<div class="why">
+              ${selected.agent_metadata?._why || why.reason}</div>`}
+          </div>
 
           ${!isActor && collectedBlock(html, selected)}
           ${isFactReview(selected) && factChangeBlock(html, selected)}

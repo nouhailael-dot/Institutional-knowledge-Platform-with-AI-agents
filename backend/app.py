@@ -1020,6 +1020,8 @@ class ReviewAdmissionRequest(ReviewDecisionRequest):
     proposed_hub: dict | None = None
     rejection_reason: str | None = None
     rejection_reason_other: str | None = Field(default=None, max_length=5000)
+    # GHUS analyst notes, kept on the actor or event when it is verified.
+    ghus_notes: str | None = Field(default=None, max_length=5000)
 
 
 @app.get("/api/review/catalog")
@@ -1230,6 +1232,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
             rejection_reason=payload.rejection_reason,
             rejection_reason_other=payload.rejection_reason_other,
             confirmed=payload.confirmed,
+            ghus_notes=payload.ghus_notes,
         )
         if decision.get("local_only"):
             # An actor update's card: what it wrote is already on the map.

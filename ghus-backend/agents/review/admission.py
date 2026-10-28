@@ -137,6 +137,14 @@ def _normalise_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
             raise AdmissionValidationError("Other rejection reason requires free text")
     elif reason or reason_other:
         raise AdmissionValidationError("rejection fields are valid only for reject")
+    ghus_notes = str(decision.get("ghus_notes") or "").strip() or None
+    if ghus_notes is not None:
+        if entity_type == "person":
+            raise AdmissionValidationError("GHUS notes exist only for actors and events")
+        if kind not in {"same_existing", "new"}:
+            raise AdmissionValidationError("GHUS notes are saved with an admitted record")
+        if len(ghus_notes) > 5000:
+            raise AdmissionValidationError("GHUS notes are at most 5000 characters")
     return {
         **decision,
         "entity_type": entity_type,
@@ -152,6 +160,7 @@ def _normalise_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
         "rejection_reason": reason,
         "rejection_reason_other": reason_other,
         "notes": str(decision.get("notes") or "").strip() or None,
+        "ghus_notes": ghus_notes,
     }
 
 
@@ -526,6 +535,7 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
             raise AdmissionValidationError("source entity type does not match decision")
         result = None
         proposed_hub_id = None
+        ghus_notes_saved = False
         if clean["decision_kind"] in {"same_existing", "new"}:
             staged = _staged(source, clean["entity_type"], clean["edited_payload"])
             staged.normalized_payload.pop(IMPORT_VERIFICATION_PAYLOAD_KEY, None)
@@ -540,6 +550,13 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
                 manage_transaction=False,
             )
             proposed_hub_id = _insert_proposed_hub(session, clean)
+            if clean["ghus_notes"] and result is not None and result.entity_id:
+                # Last in the transaction: the GHUS-only notes, by the reviewer.
+                from agents.enrichment.decisions import record_ghus_notes
+
+                ghus_notes_saved = record_ghus_notes(
+                    session, entity_type=clean["entity_type"], entity_id=str(result.entity_id),
+                    notes=clean["ghus_notes"], decided_by=clean["reviewer"], live=True)
             source_status = "approved"
         elif clean["decision_kind"] == "reject":
             source_status = "rejected"
@@ -555,6 +572,7 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
             "promotion_action": result.action if result is not None else None,
             "fields_absorbed": result.fields_absorbed if result is not None else [],
             "proposed_hub_id": proposed_hub_id,
+            "ghus_notes_saved": ghus_notes_saved,
             "idempotent_replay": False,
         }
         decision_id = str(uuid.uuid4())
@@ -647,6 +665,7 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
     from agents.enrichment.decisions import (
         record_actor_verification_review_decision,
         record_fact_review_decision,
+        record_ghus_notes,
         record_geocode_review_decision,
         record_hub_membership_decision,
         record_relationship_review_decision,
@@ -667,6 +686,11 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
                 verified=bool(decision.get("verified")),
                 rejection_reason=decision.get("rejection_reason"), notes=notes, live=True,
             )
+            ghus_notes = str(decision.get("ghus_notes") or "").strip()
+            if ghus_notes and decision.get("verified") and result.get("actor_id"):
+                result["ghus_notes_saved"] = record_ghus_notes(
+                    session, entity_type="actor", entity_id=result["actor_id"],
+                    notes=ghus_notes, decided_by=reviewer, live=True)
         elif kind == "resolve_fact":
             # A fact conflict or pending update: use the proposed value or keep
             # the current one. Both facts stay in the ledger either way.

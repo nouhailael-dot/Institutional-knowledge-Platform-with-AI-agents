@@ -532,7 +532,7 @@ def test_verifying_a_parked_actor_is_the_ghus_topic_decision(store):
     assert decision == {
         "decision_kind": "verify_actor", "verified": True, "rejection_reason": None,
         "review_item_id": "11111111-2222-3333-4444-555555555555", "reviewer": "Reviewer",
-        "notes": None, "idempotency_key": "k-1",
+        "notes": None, "ghus_notes": None, "idempotency_key": "k-1",
     }
     rejected = store.admission_request(
         "item-1", decision_kind="reject", reviewer="Reviewer", idempotency_key="k-2",
@@ -804,3 +804,48 @@ def test_every_run_carries_its_type_name_date_and_counts(store):
     listing = store.list(status="all")
     keys = {g["key"] for g in listing["run_groups"]}
     assert all(item["run_group_key"] in keys for item in listing["candidates"])
+
+
+def _insert_event(store: ReviewStore, candidate_id: str) -> None:
+    import json as _json
+
+    with store.connect() as db:
+        db.execute(
+            "INSERT INTO review_candidate"
+            "(candidate_id,source_run_id,source_description,source_index,entity_type,"
+            " display_name,status,created_at,original_payload,reviewed_payload,evidence,"
+            " agent_metadata,duplicate_state)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (candidate_id, "discovery:events", "Open-web event discovery", candidate_id, "event",
+             "Water Summit", "pending_review", CUTOFF_TS + 10, "{}",
+             _json.dumps({"name": "Water Summit", "next_date": "2027-04-02"}), "[]",
+             _json.dumps({"source_table": "search_candidate",
+                          "source_candidate_id": "22222222-3333-4444-5555-666666666666"}), "new"),
+        )
+
+
+def test_analyst_notes_travel_with_a_verified_event_or_actor(store):
+    """GHUS analyst notes go to the backend's writer with the decision that admits the record."""
+    _insert_event(store, "event-notes")
+    decision = store.admission_request(
+        "event-notes", decision_kind="new", reviewer="Ana", idempotency_key="notes-1",
+        confirmed=True, ghus_notes="  Went in 2026; worth it. Report: https://onedrive.example/r  ")
+    assert decision["ghus_notes"] == "Went in 2026; worth it. Report: https://onedrive.example/r"
+    # An existing actor verified for a sector carries them on its verification.
+    _insert_item(store, "verify-notes", "verify_actor", {})
+    decision = store.admission_request(
+        "verify-notes", decision_kind="new", reviewer="Ana", idempotency_key="notes-2",
+        confirmed=True, ghus_notes="Met their CTO at CES.")
+    assert decision["decision_kind"] == "verify_actor" and decision["ghus_notes"] == "Met their CTO at CES."
+
+
+def test_analyst_notes_are_refused_where_they_cannot_be_kept(store):
+    _insert_event(store, "event-park")
+    with pytest.raises(ReviewValidationError, match="saved when the record is verified"):
+        store.admission_request("event-park", decision_kind="defer", reviewer="Ana",
+                                idempotency_key="notes-3", confirmed=True, ghus_notes="later")
+    _insert(store, "person-notes", created_at=CUTOFF_TS + 10, source_run_id="discovery:people",
+            description="Open-web person discovery", entity_type="person")
+    with pytest.raises(ReviewValidationError, match="organizations and events only"):
+        store.admission_request("person-notes", decision_kind="new", reviewer="Ana",
+                                idempotency_key="notes-4", confirmed=True, ghus_notes="x")

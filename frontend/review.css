@@ -231,3 +231,41 @@
 .review-checks li.ok::before{content:"✓ ";color:#2f7d4f}
 .review-checks li.missing::before{content:"✕ ";color:#b42318}
 
+
+/* Record card: the same form as a Build the Map result (index.html .mcard,
+   .mh, .rank, .mpeople, .msrc, .why), with every value editable in place. */
+.review-card{margin:0 0 14px}
+.review-card .mh{flex-wrap:wrap}
+.review-card-actions{margin-left:auto;display:inline-flex;gap:6px}
+.review-card-actions .example.active{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
+.review-card-sub{font-size:12.5px;color:var(--muted);margin:-2px 0 6px;overflow-wrap:anywhere}
+.review-desc{display:block;width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:7px;
+  background:transparent;color:var(--muted);font:inherit;font-size:13.5px;line-height:1.55;padding:5px 7px;
+  margin:2px 0 8px;resize:vertical}
+.review-desc:hover:not(:disabled),.review-desc:focus{border-color:var(--line-strong);background:var(--surface);color:var(--ink);outline:none}
+.review-desc.invalid{border-color:#b42318}
+.review-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px;font-size:12.5px;color:var(--muted);margin:4px 0;min-width:0}
+.review-line>b{color:var(--ink);font-weight:600;white-space:nowrap}
+.review-line.read>span{overflow-wrap:anywhere}
+.review-line.sub{padding-left:14px}
+.review-line.long{align-items:flex-start}
+.review-line.invalid .review-inline{border-color:#b42318}
+.review-inline{flex:1;min-width:150px;box-sizing:border-box;border:1px solid transparent;border-radius:6px;
+  background:transparent;color:var(--ink);font:inherit;font-size:12.5px;padding:3px 6px;margin:-3px 0}
+.review-inline:hover:not(:disabled),.review-inline:focus{border-color:var(--line-strong);background:var(--surface);outline:none}
+select.review-inline{border-color:var(--line);background:var(--surface);cursor:pointer;flex:0 1 auto}
+textarea.review-inline{resize:vertical;line-height:1.5}
+.review-inline::placeholder{color:var(--muted);opacity:.75}
+.review-profile .review-new-sector{margin:8px 0}
+.review-facts-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 18px;margin:12px 0 2px;
+  padding-top:10px;border-top:1px solid var(--line)}
+.review-facts-row.compact{border-top:0;padding-top:0;margin-top:0}
+.review-hubs{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.review-source{margin-top:5px;overflow-wrap:anywhere}
+.review-collected .review-boxes{margin-top:8px}
+.review-card-foot{background:var(--surface-2);border-radius:7px;margin:12px -8px 0;padding:12px}
+.review-analyst-notes{display:grid;gap:6px;font-size:13px}
+.review-analyst-notes textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:8px;
+  padding:8px 10px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;resize:vertical}
+.review-analyst-notes small{font-size:11.5px}
+@media (max-width:700px){.review-card-actions{margin-left:0}.review-facts-row{grid-template-columns:1fr}}

@@ -322,6 +322,51 @@ def record_verification_decision(
     return count
 
 
+# GHUS notes: "free text, written only by GHUS" (Architecture V2 5.1). Only
+# actors and events have the column; people have none yet.
+GHUS_NOTES_KEYS = {"actor": "actor_id", "event": "event_id"}
+GHUS_NOTES_MAX_LENGTH = 5000
+
+
+def record_ghus_notes(
+    session,
+    *,
+    entity_type: str,
+    entity_id: str,
+    notes: str | None,
+    decided_by: str,
+    live: bool = False,
+) -> bool:
+    """Set an actor's or event's GHUS notes, written by the GHUS person deciding it.
+
+    Migration 530 refuses any change to ``ghus_notes`` from a session that has
+    not declared itself human; this declares it for the current transaction
+    only, and only here. Empty notes leave what is recorded. Returns whether
+    the notes were written.
+    """
+    key = GHUS_NOTES_KEYS.get(entity_type)
+    if key is None:
+        raise ValueError("GHUS notes exist only for actors and events")
+    value = str(notes or "").strip()
+    if not value:
+        return False
+    if len(value) > GHUS_NOTES_MAX_LENGTH:
+        raise ValueError(f"GHUS notes are at most {GHUS_NOTES_MAX_LENGTH} characters")
+    if not str(decided_by or "").strip():
+        raise ValueError("GHUS notes require the GHUS person writing them")
+    entity_id = str(uuid.UUID(str(entity_id)))
+    if not live:
+        return False
+    session.execute(text("SET LOCAL ghus.actor_is_human = 'on'"))
+    updated = session.execute(
+        text(f"UPDATE {entity_type} SET ghus_notes = :notes WHERE {key} = CAST(:id AS uuid)"),
+        {"notes": value, "id": entity_id},
+    ).rowcount
+    if updated != 1:
+        raise ValueError(f"{entity_type} {entity_id} was not found for its GHUS notes")
+    return True
+
+
 SECTOR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
 
 

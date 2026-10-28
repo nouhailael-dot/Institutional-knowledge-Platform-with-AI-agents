@@ -1173,6 +1173,8 @@ class PostgresReviewSource:
             "a.name, NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
             "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
             "NULLIF(to_jsonb(a)->>'category_note','') AS category_note, "
+            # GHUS analyst notes already on the actor, shown and extended in Review.
+            "NULLIF(to_jsonb(a)->>'ghus_notes','') AS ghus_notes, "
             "NULLIF(to_jsonb(a)->>'actor_type','') AS actor_type, a.description, "
             "a.website, a.country, "
             # The V2 contract migration renames location_city -> city and
@@ -1929,6 +1931,7 @@ class PostgresReviewSource:
                 "related_actor_name": row.get("related_actor_name"),
                 "topic_id": row.get("topic_id"),
                 "topic_code": row.get("topic_code"),
+                "ghus_notes": row.get("ghus_notes"),
                 "record_status": row.get("record_status"),
                 "priority": row.get("priority"),
                 "pipeline": payload,

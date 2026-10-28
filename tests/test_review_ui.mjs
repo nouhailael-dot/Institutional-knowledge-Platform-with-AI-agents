@@ -463,14 +463,17 @@ test('inline length validation and explicit duplicate differences', () => {
 
 // ----------------------------------------------------------------- layout
 
-test('the six numbered boxes are present and the IDs live only in Audit', () => {
-  for (const title of Object.values(SECTIONS)) {
-    assert.ok(component.includes(title) || component.includes(`SECTIONS.${Object.keys(SECTIONS).find(k => SECTIONS[k] === title)}`),
-      `missing section: ${title}`);
+test('a record reads like a Build the Map result card, and the IDs live only in Audit', () => {
+  // One card per record (organization, event or person): number, name, status
+  // and Verify / Park / Reject on top; description; a profile that folds open;
+  // the inline facts; its web sources; analyst notes at the bottom.
+  for (const marker of ['class=${"mcard review-card"', '<span class="rank">', 'class="review-card-actions"',
+    'class=${"review-desc"', 'class="mpeople review-profile"', '>Actor profile<', '"Event profile" : "Person profile"',
+    'class="review-facts-row"', 'web source${sources.length > 1', 'class="review-analyst-notes"',
+    'class="why"']) {
+    assert.ok(component.includes(marker), `missing on the card: ${marker}`);
   }
-  assert.match(component, /SECTIONS\.identity/);
-  assert.match(component, /SECTIONS\.location/);
-  assert.match(component, /SECTIONS\.sector/);
+  // Everything collected stays one click away, then duplicates and the audit.
   assert.match(component, /SECTIONS\.facts/);
   assert.match(component, /SECTIONS\.duplicates/);
   assert.match(component, /SECTIONS\.audit/);
@@ -1326,4 +1329,32 @@ test('modern relationship proposals retain their two-way decision workflow',()=>
   assert.equal(twoWayKind(candidate),"relationship");
   assert.equal(canSubmitReview({candidate,reviewer:"Reviewer",decisionKind:"new",
     busy:false,admissionConfigured:true}),true);
+});
+
+test('a Build the Map result opens with its labels as the codes the dropdowns hold', async () => {
+  const {normalizeMapDraft} = await import('../frontend/review.js');
+  assert.deepEqual(normalizeMapDraft(
+    {actor_category: 'National Laboratory', category_type: 'Government-Direct', state: 'Colorado'},
+    {sector: 'Energy; Government research'}),
+  {actor_category: 'national_laboratory', category_type: 'government_direct', state: 'CO',
+    primary_sector: 'ENERGY'});
+  // Only exact catalog labels change; a reviewer's own sector is never replaced.
+  assert.deepEqual(normalizeMapDraft({actor_category: 'company', category_type: 'Weird', state: 'KS',
+    primary_sector: 'WATER'}, {sector: 'Energy'}),
+  {actor_category: 'company', category_type: 'Weird', state: 'KS', primary_sector: 'WATER'});
+});
+
+test('a card line is editable in place only where Review may change it', async () => {
+  const {cardField, cardLine} = await import('../frontend/review.js');
+  const html = (strings, ...values) => strings.reduce((out, s, i) => out + s + (values[i] ?? ''), '');
+  const candidate = {editable_fields: ['next_date', 'location']};
+  const date = cardField(html, candidate, 'next_date', '2027-04-02', () => {}, false, null, 'Date');
+  assert.match(date, /<b>Date:<\/b>/);
+  assert.match(date, /value=04\/02\/2027/);
+  assert.match(date, /placeholder=MM\/DD\/YYYY/);
+  // Not editable here: shown as text, never as an input.
+  const audience = cardField(html, candidate, 'audience', 'Utilities', () => {}, false, null, 'Audience');
+  assert.doesNotMatch(audience, /<input/);
+  assert.match(audience, /Utilities/);
+  assert.match(cardLine(html, 'Other names', ''), /Not Found/);
 });
