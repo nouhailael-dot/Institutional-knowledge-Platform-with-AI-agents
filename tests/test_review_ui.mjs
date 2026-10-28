@@ -180,11 +180,11 @@ test('Not Applicable requires a one-line note, and a cross-category pair is refu
   );
   assert.deepEqual(
     validateReviewDraft(candidate, {name: 'X', actor_category: 'company', category_type: 'medical_school'}),
-    {category_type: 'This type belongs to a different Actor Category.'},
+    {category_type: 'This type belongs to a different Category.'},
   );
   assert.deepEqual(
     validateReviewDraft(candidate, {name: 'X', category_type: 'medical_school'}),
-    {actor_category: 'Choose the Actor Category first.'},
+    {actor_category: 'Choose the Category first.'},
   );
 });
 
@@ -268,7 +268,7 @@ test('Light Pull is Layer 1 only and Deep Pull evidence stays separate', () => {
   // `{ "reason": "Found by open-web discovery ..." }` on screen instead of the
   // sentence. A single meaningful sentence renders as itself; a small object
   // renders as labelled lines.
-  assert.equal(formatFactValue({actor_category: 'company'}), 'Actor Category: company');
+  assert.equal(formatFactValue({actor_category: 'company'}), 'Category: company');
   assert.equal(formatFactValue({reason: 'Found by open-web discovery for hub X'}),
     'Found by open-web discovery for hub X');
   assert.equal(formatFactValue({state: 'not_yet_checked'}), 'State: not_yet_checked');
@@ -574,7 +574,7 @@ test('the six missingness words are distinct and never substituted for each othe
 });
 
 test('field labels come from the dictionary', () => {
-  assert.equal(reviewFieldLabel('actor_category'), 'Actor Category');
+  assert.equal(reviewFieldLabel('actor_category'), 'Category');
   assert.equal(reviewFieldLabel('category_type'), 'Category Type');
   assert.equal(reviewFieldLabel('category_note'), 'Classification Note');
   assert.equal(reviewFieldLabel('actor_type'), 'Legacy Actor Type');
@@ -1213,7 +1213,7 @@ test('a box read from another site names that site', async () => {
   assert.equal(rows.location.sourceHost, null);       // its own site: just "Source"
 });
 
-test('a discovered person or event shows its checks and the facts read from its page', async () => {
+test('a discovered person or event keeps its checks and page facts as data, not as a box', async () => {
   const {qualityOf, pageFactBoxes, recordRowNote} = await import('../frontend/review.js');
   const person = {entity_type: 'person', agent_metadata: {
     quality: {decision: 'review', completeness: 'incomplete',
@@ -1235,7 +1235,8 @@ test('a discovered person or event shows its checks and the facts read from its 
   assert.equal(boxes.expertise.dateRead, '10/22/2026');
   assert.equal(boxes.linkedin_url.link, 'https://www.linkedin.com/in/maria-lopez');
   assert.equal(boxes.department.state, 'Not Found');          // read, not stated
-  assert.equal(recordRowNote(person), 'Person · Incomplete');
+  // The list says what the record is, not how complete the agent judged it.
+  assert.equal(recordRowNote(person), 'Person');
   const event = {entity_type: 'event', agent_metadata: {page_facts: {format: 'online', organizer: 'Health AI Alliance'}}};
   const eventBoxes = Object.fromEntries(pageFactBoxes(event).map(b => [b.key, b]));
   assert.equal(eventBoxes.format.value, 'Online');
@@ -1243,8 +1244,8 @@ test('a discovered person or event shows its checks and the facts read from its 
   assert.equal(qualityOf({agent_metadata: {}}), null);
 });
 
-test('a person reads what they do; an event its fuller description; checks read US dates', async () => {
-  const {personDescription, usDatesIn} = await import('../frontend/review.js');
+test('a person reads what they do; an event its fuller description; no qualification box', async () => {
+  const {personDescription} = await import('../frontend/review.js');
   const page = 'https://cee.example.edu/p';
   const bio = {agent_metadata: {page_facts: {bio: 'Maria Lopez joined Rice in 2019.',
     description: 'Maria Lopez is a professor.',
@@ -1254,12 +1255,12 @@ test('a person reads what they do; an event its fuller description; checks read 
   const summary = {agent_metadata: {page_facts: {description: 'Maria Lopez is a professor.'}}};
   assert.equal(personDescription(summary).kind, 'Summary of its page');
   assert.equal(personDescription({agent_metadata: {}}), null);
-  assert.equal(usDatesIn('Took place on 2026-09-15.'), 'Took place on 09/15/2026.');
-  // The Collected information section is gone: the checks and the page's facts
-  // read as lines inside the record card, under its profile.
-  assert.doesNotMatch(component, /Collected information|collectedBlock/);
-  assert.match(component, /<\/details>\s*\$\{readoutBlock\(html, selected\)\}/);
-  assert.match(component, /Not found on its page:/);
+  // A person found by Build the Map reads its bio.
+  assert.equal(personDescription({agent_metadata: {}, original_payload: {bio: 'Leads grid research.'}}).kind,
+    'Biography from Build the Map');
+  // No qualification box, no "read from its page" list, anywhere.
+  assert.doesNotMatch(component, /Collected information|collectedBlock|readoutBlock|Read from its page|Not found on its page:/);
+  assert.doesNotMatch(component, /review-checks|review-quality/);
   assert.match(component, /personDescription\(selected\)/);
   // An event's description - and any long text - is shown whole.
   assert.match(component, /rows=\$\{Math\.max\(3, textRows\(draft\.description\)\)\}/);
@@ -1268,6 +1269,31 @@ test('a person reads what they do; an event its fuller description; checks read 
   assert.equal(textRows('x'.repeat(400)), 5);
   assert.equal(textRows('a\nb\nc'), 3);
   assert.equal(textRows('x'.repeat(5000)), 24);
+});
+
+test('an event and a person read with the names Build the Map uses, filled from its page', async () => {
+  const {profileValue} = await import('../frontend/review.js');
+  const event = {entity_type: 'event', editable_fields: ['next_date'],
+    original_payload: {um6p_ocp_status: 'found', um6p_ocp_detail: 'OCP sponsors it', previous_edition: '2026-03-01'},
+    agent_metadata: {sector_codes: [], quality: {why_matched: 'A water reuse summit.'},
+      page_facts: {format: 'in_person', organizer: 'National Association of Water Companies (NAWC)',
+        event_status: 'scheduled'}}};
+  assert.equal(profileValue(event, {}, 'organizer', ['organizer']), 'National Association of Water Companies (NAWC)');
+  assert.equal(profileValue(event, {}, 'event_format', ['format']), 'In person');
+  assert.equal(profileValue(event, {}, 'date_status', ['event_status']), 'Scheduled');
+  assert.equal(profileValue(event, {}, 'match_explanation'), 'A water reuse summit.');
+  assert.equal(profileValue(event, {}, '_um6p_ocp', ['um6p_ocp_involvement']), 'Found — OCP sponsors it');
+  assert.equal(profileValue(event, {}, 'previous_edition'), '03/01/2026');
+  assert.equal(profileValue(event, {event_type: 'conference'}, 'event_type'), 'Conference');
+  assert.equal(profileValue(event, {}, 'audience'), null);          // nothing: the row is left out
+  // Sponsors is its own row; it is not shown as the organizer.
+  assert.match(component, /\["sponsoring_orgs", "Sponsors"\]/);
+  assert.match(component, /\["organizer", "Organizer", \["organizer"\]\]/);
+  const person = {entity_type: 'person', agent_metadata: {page_facts: {expertise: ['groundwater'],
+    work_location: 'Tucson, AZ', relevant_work: ['Indige-FEWSS']}}};
+  assert.equal(profileValue(person, {}, 'research_area', ['expertise']), 'groundwater');
+  assert.equal(profileValue(person, {}, 'organization_location', ['work_location']), 'Tucson, AZ');
+  assert.equal(profileValue(person, {}, 'work_evidence', ['relevant_work']), 'Indige-FEWSS');
 });
 
 test('a discovered event shows its outcome, timing and why it matched', async () => {

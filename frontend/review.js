@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028c";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028d";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.parked,
@@ -349,8 +349,6 @@ export function recordRowNote(candidate) {
   if (meta.source_table === "actor_update") return "Update result · check what it wrote";
   const kind = RECORD_KIND_LABELS[candidate?.entity_type] || candidate?.entity_type || "";
   const origin = originLabel(candidate);
-  const quality = qualityOf(candidate);
-  if (quality?.completeness) return [kind, origin, quality.label].filter(Boolean).join(" · ");
   const reason = candidate?.review_reason ? reviewReasonLabel(candidate.review_reason) : "";
   return [kind, origin, reason].filter(Boolean).join(" · ");
 }
@@ -568,12 +566,8 @@ export function personDescription(candidate) {
     const text = String(facts[key] ?? "").trim();
     if (text) return {text, kind, source: evidence[key]?.source_url || null};
   }
-  return null;
-}
-
-/** ISO days inside a sentence ("Took place on 2026-09-15.") read MM/DD/YYYY. */
-export function usDatesIn(text) {
-  return String(text ?? "").replace(/\b\d{4}-\d{2}-\d{2}\b/g, day => usDate(day));
+  const mapBio = String(candidate?.original_payload?.bio ?? "").trim();
+  return mapBio ? {text: mapBio, kind: "Biography from Build the Map", source: null} : null;
 }
 
 /** The event Discovery sends to open an actor's update profile here. */
@@ -797,40 +791,6 @@ function updateHistoryBlock(html, candidate) {
   </section>`;
 }
 
-/**
- * What the agent checked and read for a discovered person or event, as lines:
- * the outcome, why it matched, each check, then each fact its page states with
- * its source. Facts the page does not state are named once, together.
- */
-function readoutBlock(html, candidate) {
-  const quality = qualityOf(candidate);
-  const facts = pageFactBoxes(candidate);
-  const found = facts.filter(fact => !fact.state);
-  const notFound = facts.filter(fact => fact.state === MISSING.notFound);
-  if (!quality && !found.length && !notFound.length) return null;
-  return html`<div class=${"review-quality review-readout " + (quality?.completeness || "")}>
-    ${quality && html`<div class="review-quality-head"><strong>${quality.outcome
-      ? `${quality.outcome} · ${quality.label}` : quality.label}</strong>
-      ${quality.timing && html`<span class="review-chip">${quality.timing}</span>`}
-      <span>${quality.reasons.join(" ")}</span></div>`}
-    ${quality?.whyMatched && html`<p class="review-readout-why"><b>Why it matched:</b> ${quality.whyMatched}</p>`}
-    ${quality?.checks.length > 0 && html`<ul class="review-checks">${quality.checks.map(check => html`<li
-      key=${check.name} class=${check.state}><strong>${check.name}</strong> ${usDatesIn(check.detail)}</li>`)}</ul>`}
-    ${quality?.missing.length > 0 && html`<p class="review-hint">Not confirmed: ${quality.missing.join(", ")}.</p>`}
-    ${(quality?.conflicts || []).map((conflict, index) => html`<p class="review-message error" key=${index}>${conflict}</p>`)}
-    ${found.length > 0 && html`<p class="review-readout-label">Read from its page</p>
-      <ul class="review-checks review-page-facts">${found.map(fact => html`<li key=${fact.key} class="ok">
-        <strong>${fact.label}</strong>${" "}${fact.link
-          ? html`<a href=${fact.link} target="_blank" rel="noreferrer">${fact.value}</a>` : fact.value}
-        ${fact.source && html`<span class="review-fact-source"> · <a href=${fact.source} target="_blank"
-          rel="noreferrer">Source</a>${fact.dateRead ? ` · read ${fact.dateRead}` : ""}</span>`}
-        ${fact.quote && html`<small class="review-quote">“${fact.quote}”</small>`}
-      </li>`)}</ul>`}
-    ${notFound.length > 0 && html`<p class="review-hint"><b>Not found on its page:</b>${" "}
-      ${notFound.map(fact => fact.label).join(", ")}.</p>`}
-  </div>`;
-}
-
 function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewer}) {
   const rows = changeRows(candidate);
   const decided = decidedChangeRows(candidate);
@@ -963,9 +923,9 @@ export function validateReviewDraft(candidate, draft) {
     const type = String(payload.category_type ?? "").trim();
     // A type always belongs to exactly one category. An incompatible pair can
     // never be saved, in the browser or on the server.
-    if (type && !category) errors.actor_category = "Choose the Actor Category first.";
+    if (type && !category) errors.actor_category = "Choose the Category first.";
     if (type && category && !isValidPair(category, type)) {
-      errors.category_type = "This type belongs to a different Actor Category.";
+      errors.category_type = "This type belongs to a different Category.";
     }
     // Not Applicable is a decision, so it carries a reason.
     if (type === NOT_APPLICABLE && !String(payload.category_note ?? "").trim()) {
@@ -1667,19 +1627,75 @@ export function normalizeMapDraft(payload = {}, original = {}) {
   return draft;
 }
 
-/** Map-card labels for a record's own fields, in the order a Build the Map result shows them. */
+/**
+ * An event's and a person's card rows: named and ordered as a Build the Map
+ * result shows them (index.html MFIELDS), with Review's capitalisation. Each is
+ * [field, label, page facts that can stand for it]. A field Review may edit is
+ * always shown, to be filled in; any other only when it has a value - the
+ * record's own, else Build the Map's, else what the agent read from its page.
+ */
 const CARD_FIELDS = {
-  event: [["event_type", "Type"], ["next_date", "Date"], ["location", "Location"],
-    ["recurring_pattern", "Frequency"], ["sponsoring_orgs", "Organizer"], ["thematic_focus", "Topic"],
-    ["expected_attendance", "Scale"], ["access_type", "Access"]],
-  person: [["role", "Title"], ["affiliation", "Organization"], ["research_area", "Expertise"],
-    ["public_profile_url", "Public Profile"]],
+  event: [["event_type", "Type"], ["next_date", "Date"], ["date_status", "Status", ["event_status"]],
+    ["event_format", "Format", ["format"]], ["location", "Location"], ["organizer", "Organizer", ["organizer"]],
+    ["recurring_pattern", "Frequency"], ["previous_edition", "Previous Edition"],
+    ["expected_attendance", "Scale"], ["audience", "Audience"], ["sector", "Sector"],
+    ["thematic_focus", "Topic"], ["match_explanation", "Why It Matched"],
+    ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_involvement"]], ["sponsoring_orgs", "Sponsors"],
+    ["access_type", "Access"]],
+  person: [["role", "Title"], ["affiliation", "Organization"],
+    ["organization_location", "Location", ["work_location"]],
+    ["affiliation_note", "Affiliation", ["department", "other_affiliations"]],
+    ["research_area", "Expertise", ["expertise"]], ["work_evidence", "Relevant Work", ["relevant_work"]],
+    ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_connection"]], ["public_profile_url", "Public Profile"],
+    ["linkedin_url", "LinkedIn", ["linkedin_url"]], ["orcid", "ORCID"]],
 };
-// Read by Build the Map but not (yet) fields a reviewer edits; shown when present.
-const CARD_EXTRA_FIELDS = {
-  event: [["event_format", "Format"], ["audience", "Audience"], ["previous_edition", "Previous Edition"]],
-  person: [["linkedin_url", "LinkedIn"], ["orcid", "ORCID"]],
-};
+const CARD_DATE_FIELDS = new Set(["next_date", "previous_edition"]);
+const CARD_CAPITALIZED = new Set(["event_type", "date_status", "event_format", "recurring_pattern", "sector"]);
+
+/**
+ * The value a card row shows when Review does not edit it: the record's own,
+ * else Build the Map's (its UM6P/OCP state as Build the Map words it), else the
+ * fact the discovery agent read from the page, else - for Why It Matched - the
+ * agent's own reason. Null when none has one; nothing is composed.
+ */
+export function profileValue(candidate, draft, field, factKeys = []) {
+  const original = candidate?.original_payload || {};
+  const has = value => value !== null && value !== undefined && value !== ""
+    && !(Array.isArray(value) && !value.length);
+  if (field === "_um6p_ocp" && original.um6p_ocp_status) {
+    return original.um6p_ocp_status === "found"
+      ? `Found — ${original.um6p_ocp_detail || "details not recorded"}` : original.um6p_ocp_status;
+  }
+  for (const value of [draft?.[field], original[field]]) {
+    if (has(value)) {
+      const text = Array.isArray(value) ? value.filter(Boolean).join(", ") : value;
+      if (CARD_DATE_FIELDS.has(field)) return usDate(text);
+      return CARD_CAPITALIZED.has(field) && typeof text === "string"
+        ? text.charAt(0).toUpperCase() + text.slice(1) : formatCardValue(text);
+    }
+  }
+  const facts = Object.fromEntries(pageFactBoxes(candidate).map(box => [box.key, box]));
+  for (const key of factKeys) {
+    if (facts[key] && !facts[key].state) return facts[key].value;
+  }
+  if (field === "match_explanation") return qualityOf(candidate)?.whyMatched || null;
+  if (field === "sector") {
+    return (candidate?.agent_metadata?.sector_codes || []).map(sectorLabel).join(", ") || null;
+  }
+  return null;
+}
+
+/** One row of an event's or person's card (CARD_FIELDS). */
+function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors}) {
+  if ((candidate?.editable_fields || []).includes(field)) {
+    return cardField(html, candidate, field, draft[field], edit, disabled, errors[field], label);
+  }
+  const value = profileValue(candidate, draft, field, factKeys);
+  if (!value) return null;
+  return /^https?:\/\//.test(String(value))
+    ? cardLine(html, label, html`<a href=${value} target="_blank" rel="noreferrer">${value}</a>`)
+    : cardLine(html, label, value);
+}
 
 /**
  * One "Label: value" line of a record card - the value editable in place when
@@ -2236,10 +2252,13 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       || (selected?.agent_metadata?.sector_codes || []).map(sectorLabel).join(", ");
     const lightConnections = lightBoxes.common.filter(row =>
       ["international_connection", "um6p_ocp_connection"].includes(row.key));
+    // Build the Map's names for the two connection boxes.
+    const CONNECTION_LABELS = {international_connection: "Africa / Morocco Connections",
+      um6p_ocp_connection: "UM6P/OCP"};
     const connections = fromMap && lightConnections.every(row => row.state)
-      ? [{key: "map-connections", label: "Africa / Morocco connections",
+      ? [{key: "map-connections", label: CONNECTION_LABELS.international_connection,
         value: mapProfile.international_connections}]
-      : lightConnections;
+      : lightConnections.map(row => ({...row, label: CONNECTION_LABELS[row.key] || row.label}));
     const mapRelationships = fromMap ? (mapProfile.actor_relationships || []).filter(r => r && r.organization_name) : [];
     const mapDetails = fromMap ? (mapProfile.category_details || []).filter(d => d && d.label) : [];
     const mapSector = fromMap ? mapProfile.sector : "";
@@ -2492,7 +2511,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   ${sectorState.canCreate && pending && html`
                     <option value=${NEW_SECTOR}>${BUTTONS.addSector}</option>`}
                 </select>
-                <span class="review-chip">${BADGES.hubDimension}</span></span></label>
+                <span class="review-chip">${BADGES.hubDimension}</span>
+                ${mapSector && html`<small>From Build the Map: ${mapSector}</small>`}</span></label>
               ${!(selected.agent_metadata?.sector_codes || []).length
                 && selected.agent_metadata?.unmatched_sector_suggestion && html`
                 <p class="review-notice">${SENTENCES.noSectorMatched(
@@ -2514,7 +2534,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               </div>`}
               ${(selected.agent_metadata?.sector_codes || []).length > 0 && cardLine(html, FIELDS.otherSectors,
                 (selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · "))}
-              ${mapSector && cardLine(html, "Build the Map Sector", mapSector)}
               ${cardLine(html, "Mapped Topic", mappedTopic)}
               ${cardLine(html, "Topic Match", why ? matchStrengthLabel(why.strength) : "")}
               ${cardLine(html, FIELDS.whyItMatched, why?.reason || "", sourceLink(html, why?.source_url))}
@@ -2628,13 +2647,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ` : html`
             <details class="mpeople review-profile" open>
               <summary>${selected.entity_type === "event" ? "Event profile" : "Person profile"}</summary>
-              ${(CARD_FIELDS[selected.entity_type] || []).map(([field, label]) =>
-                cardField(html, selected, field, draft[field], edit, !pending || busy, draftErrors[field], label))}
-              ${(CARD_EXTRA_FIELDS[selected.entity_type] || []).filter(([field]) => present(draft[field]))
-                .map(([field, label]) => cardLine(html, label, field === "previous_edition"
-                  ? usDate(draft[field]) : formatCardValue(draft[field])))}
-            </details>
-            ${readoutBlock(html, selected)}`}
+              ${(CARD_FIELDS[selected.entity_type] || []).map(row => profileRow(html, selected, draft, row,
+                {edit, disabled: !pending || busy, errors: draftErrors}))}
+            </details>`}
 
             ${sources.length > 0 && html`<details class="msrc">
               <summary>${sources.length} web source${sources.length > 1 ? "s" : ""}</summary>

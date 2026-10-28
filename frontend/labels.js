@@ -50,7 +50,7 @@ export const FIELDS = {
   otherNames: "Other Names",
   website: "Website",
   description: "Description",
-  actorCategory: "Actor Category",
+  actorCategory: "Category",
   categoryType: "Category Type",
   classificationNote: "Classification Note",
   country: "Country",
@@ -64,8 +64,8 @@ export const FIELDS = {
   parentSource: "Source",
   otherRelationships: "Other Relationships",
   sector: "Sector",
-  primarySector: "Primary Sector",
-  otherSectors: "Also Recorded",
+  primarySector: "Sector",
+  otherSectors: "Other Sectors",
   commonLightPull: "Common Light Pull Fields",
   categoryLightPull: "Category-Specific Fields",
   whyItMatched: "Why It Matched",
@@ -267,7 +267,7 @@ export const SENTENCES = {
     "Every box for this actor category stays visible, including the ones with nothing " +
     "in them, because an empty field is itself an answer.",
   chooseCategoryForBoxes:
-    "Choose an Actor Category to see the fields collected for it.",
+    "Choose a Category to see the fields collected for it.",
   deepIsSeparate:
     "Deep Pull evidence, collected only after a GHUS verification. It is not Light Pull.",
   sectorDecidesHub:
@@ -277,7 +277,7 @@ export const SENTENCES = {
     "Topic is the specific thing this actor was found for. It is recorded on the record and " +
     "on any hub proposal, but it no longer decides hub membership.",
   categoryChangeWarning:
-    "Changing the Actor Category clears the Category Type, because a type belongs to " +
+    "Changing the Category clears the Category Type, because a type belongs to " +
     "exactly one category. Choose a new type before saving.",
   notApplicableNeedsNote:
     "Not Applicable is a deliberate choice, never a stand-in for missing data. " +

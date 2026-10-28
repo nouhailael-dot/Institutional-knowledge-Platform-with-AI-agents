@@ -203,16 +203,6 @@
 .review-record-value span{display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .review-record-value p{margin:4px 0 0;font-size:13px;white-space:pre-wrap;overflow-wrap:anywhere}
 
-/* Discovered people and events: completeness and checks. */
-.review-quality{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px;background:var(--surface)}
-.review-quality.complete{border-color:#86c79d}
-.review-quality.insufficient{border-color:#e5a3a3}
-.review-quality-head{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
-.review-quality-head span{color:var(--muted);font-size:13px}
-.review-checks{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px;font-size:13px}
-.review-checks li::before{content:"○ ";color:var(--muted)}
-.review-checks li.ok::before{content:"✓ ";color:#2f7d4f}
-.review-checks li.missing::before{content:"✕ ";color:#b42318}
 
 
 /* Record card: the same form as a Build the Map result (index.html .mcard,
@@ -301,17 +291,7 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
   .review-line>b,.review-line.read>b{padding-top:0}
 }
 
-/* What the agent checked and read for a person or event, in the card. */
-.review-readout{margin:18px 0 4px;font-size:14px;line-height:1.55}
-.review-readout .review-checks{font-size:14px;gap:6px}
-.review-readout-why{margin:8px 0 0;color:var(--ink)}
-.review-readout-why b{font-weight:600}
-.review-readout-label{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
-.review-checks li{overflow-wrap:anywhere}
-.review-checks a,.review-not-found a{color:var(--accent-ink)}
-.review-fact-source{color:var(--muted);font-size:12px}
-.review-quote{display:block;margin:2px 0 0 16px;color:var(--muted);font-style:italic;font-size:12.5px}
+/* Light Pull facts, as rows. */
 .review-fact-lines{margin:0 0 8px}
 .review-fact-lines .review-proposed{margin-top:8px}
 .review-fact-lines .review-proposed p{margin:2px 0;color:var(--ink)}
