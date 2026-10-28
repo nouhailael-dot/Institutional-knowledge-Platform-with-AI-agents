@@ -83,7 +83,8 @@ def to_record(kind: str, entity: dict, sector: str) -> dict:
             "state_code": _clean(entity.get("state")),
             "country": _clean(entity.get("country")),
             "source_url": _source(entity),
-            "recent_activity": _clean(entity.get("current_activities")),
+            # Not "recent_activity": the Data Feed needs its date, and the map
+            # records none (a date is never guessed).
             "funding_signal": _clean(entity.get("funding_summary")),
             "um6p_ocp_connection": _clean(entity.get("um6p_ocp_detail")),
         }.items() if v}
