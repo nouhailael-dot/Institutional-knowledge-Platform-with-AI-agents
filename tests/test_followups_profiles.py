@@ -78,6 +78,32 @@ class FollowUpTests(unittest.TestCase):
         self.assertEqual(by_name["Lee Newcomer"]["_found_by"], "Follow-up 1: what about Texas?")
         self.assertEqual(by_name["Ana Other"]["_found_by"], "Original request")
 
+    def test_each_search_is_placed_after_the_message_that_started_it(self):
+        # The page reads like a chat (28 Oct 2026): results sit after their message,
+        # and a follow-up can name what it found again.
+        plan = {"map_type": "people", "requirements": {"hard_filters": ["expert"]},
+                "tasks": [{"entity_type": "person", "query": "phosphogypsum experts"}]}
+        first = self.build("phosphogypsum experts", {**plan, "after_message": 4})
+        self.assertEqual(first["round_after"], [4])
+        self.people = [person("Sam Example"), person("Lee Newcomer", "Texas A&M University")]
+        second = self.build("what about Texas?", {**plan, "after_message": 8,
+                            "tasks": [{"entity_type": "person", "query": "phosphogypsum experts Texas"}]})
+        self.assertEqual(second["round_after"], [4, 8])
+        by_name = {p["full_name"]: p for p in second["entities"]["person"]}
+        self.assertEqual(by_name["Sam Example"]["_seen_in"], [1, 2])
+        self.assertEqual(by_name["Ana Other"]["_seen_in"], [1])
+        self.assertEqual(by_name["Lee Newcomer"]["_seen_in"], [2])
+
+    def test_a_map_saved_without_positions_keeps_its_results_together(self):
+        plan = {"map_type": "people", "requirements": {"hard_filters": ["expert"]},
+                "tasks": [{"entity_type": "person", "query": "phosphogypsum experts"}]}
+        self.build("phosphogypsum experts", plan)
+        state = self.store.cached(self.run_id, "workflow")
+        state.pop("round_after")                     # as saved before 28 Oct 2026
+        self.store.checkpoint_workflow(self.run_id, state, research._visible(state))
+        second = self.build("what about Texas?", {**plan, "after_message": 6})
+        self.assertEqual(second["round_after"], [None, 6])
+
 
 class ProfileTests(unittest.TestCase):
     HITS = [{"url": "https://www.linkedin.com/in/timothy-townsend", "title": "Timothy Townsend - University of Florida"},

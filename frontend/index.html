@@ -233,6 +233,7 @@
 
   /* ---- Build the Map ---- */
   .mgroup{margin-bottom:30px}
+  .mround{margin:4px 0 8px}
   .mgroup-h{display:flex;align-items:center;gap:10px;margin:0 0 12px;font-family:var(--serif);
     font-size:19px;font-weight:600}
   .mgroup-h .n{color:var(--muted);font-size:13px;font-family:var(--sans);font-weight:500}
@@ -1789,6 +1790,69 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const total=all().length;
   const parkedCount=all().filter(e=>e._review==="parked").length;
 
+  // The page reads like a chat: each search's results sit right after the message
+  // that started it, not in one block under the conversation (asked for on
+  // 28 Oct 2026). Maps saved before then have no positions: their results come
+  // before the first positioned search, or after the whole conversation.
+  const roundCount=res?Math.max((res.rounds||[]).length,1):0;
+  function anchorOf(r){
+    const after=(res&&res.round_after)||[];
+    if(after[r-1]!=null) return Math.min(after[r-1],msgs.length);
+    const known=after.filter(a=>a!=null);
+    return Math.min(...known,msgs.length);
+  }
+  const roundsAt=at=>Array.from({length:roundCount},(_,i)=>i+1).filter(r=>anchorOf(r)===at);
+
+  function selectionNote(){
+    const outcome=selectionOutcome(res);
+    // Newer maps store an exact sentence (it differs after a follow-up);
+    // older ones only stored marks, so they get a fixed wording.
+    const said=res.selection_outcome&&res.selection_note;
+    if(outcome==="failed") return html`<div class="selnote">${said||"Your filters could not be applied to this map — these results are unfiltered."}</div>`;
+    if(outcome==="none_matched") return html`<div class="selnote">${said||"None of these organizations matched your filters. They are all shown below, marked as left out."}</div>`;
+    if(outcome==="applied") return html`<div class="selnote quiet">${said||matchCount(res)}</div>`;
+    return null;
+  }
+
+  // One search's results: matches in rank order, then anything selection did not
+  // judge, then the exclusions with their reasons. A follow-up lists only what it
+  // added, and names what it found again that is already shown above.
+  function roundResults(r){
+    const order=e=>e._rank?e._rank:(e._selected===false?1e6:5e5);
+    // A people or events map shows only that group; organization maps
+    // (and maps saved before map types) keep people under their organizations.
+    const only={people:"person",events:"event"}[res.map_type];
+    const groups=only?MGROUPS.filter(([k])=>k===only):MDISPLAY_GROUPS;
+    const parts=groups.map(([k,label,tone])=>{
+      const every=(res.entities&&res.entities[k])||[];
+      const items=every.filter(e=>(e._round||1)===r)
+        .filter(e=>!(parkedOnly&&parkedCount>0)||e._review==="parked").sort((a,b)=>order(a)-order(b));
+      const again=r>1?every.filter(e=>(e._round||1)<r&&(e._seen_in||[]).includes(r)):[];
+      return {k,label,tone,items,again};
+    }).filter(p=>p.items.length||p.again.length);
+    const added=parts.reduce((n,p)=>n+p.items.length,0);
+    const latest=r===roundCount;
+    const card=(e,i)=>html`<${MapCard} key=${r+"-"+i} e=${e} request=${request}
+        jobId=${jobId} onCost=${setCost} onError=${setErr}
+        onBusy=${v=>{setVerifying(v);poll(jobId);}}
+        disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}
+        onReviewed=${d=>{setRes(d.result);setCost(d.cost);}}
+        reviewDisabled=${busy||verifying||["running","planning","verifying"].includes(runStatus)}/>`;
+    return html`<div class="mround" key=${"round"+r}>
+      ${roundCount>1&&html`<div class="mgroup-h">
+        <span class="chip slate">${r===1?"Results":"Follow-up "+(r-1)}</span>
+        <span class="n">${added} ${r===1?"":"new "}result${added===1?"":"s"}</span></div>`}
+      ${latest&&selectionNote()}
+      ${parts.map(p=>html`<div class="mgroup" key=${p.k}>
+        ${p.items.length>0&&html`<div class="mgroup-h"><span class=${"chip "+p.tone}>${p.label}</span>
+          <span class="n">${p.items.length}</span></div>`}
+        ${p.items.map(card)}
+        ${p.again.length>0&&html`<div class="hint">${"Also found again, shown above: "+p.again.map(ename).join(", ")+"."}</div>`}
+      </div>`)}
+      ${r>1&&!parts.length&&html`<div class="hint">This search found nothing new.</div>`}
+    </div>`;
+  }
+
   return html`<div>
     <h1 class="hero-h">Build the map.</h1>
     <p class="lead">Describe a domain, venture, or program. An agent searches the web for
@@ -1833,74 +1897,33 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       </details>
     </div>`}
 
-    <div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>
-      ${file
-        ? html`<span class="chip accent">📎 ${file.name}</span>
-            <button class="example" type="button" onClick=${()=>{setFile(null);
-              if(fileRef.current)fileRef.current.value="";}}>Remove</button>
-            <span class="hint" style=${{margin:0}}>Used as extra context for the search.</span>`
-        : html`<label class="example" style=${{display:"inline-flex",gap:"7px",alignItems:"center"}}>
-            📎 Attach a strategy or program document (PDF, .txt, .md)
-            <input ref=${fileRef} type="file" accept=".pdf,.txt,.md" style=${{display:"none"}}
-              onChange=${e=>setFile(e.target.files[0]||null)}/>
-          </label>`}
-    </div>
-
-    ${msgs.length>0&&html`<div class="thread">
-      ${msgs.map((m,i)=> m.role==="user"
-        ? html`<div class="msg user" key=${i}><div class="bubble user">${m.content}</div></div>`
-        : html`<div class="msg bot" key=${i}>
-            <div class="avatar">${AVATAR}</div>
-            <div class="bubble bot"><div class="answer" ...${md(m.content)}></div></div>
-          </div>`)}
+    ${(msgs.length>0||res||busy)&&html`<div class="thread">
+      ${msgs.map((m,i)=>html`<${React.Fragment} key=${i}>
+        ${m.role==="user"
+          ? html`<div class="msg user"><div class="bubble user">${m.content}</div></div>`
+          : html`<div class="msg bot">
+              <div class="avatar">${AVATAR}</div>
+              <div class="bubble bot"><div class="answer" ...${md(m.content)}></div></div>
+            </div>`}
+        ${roundsAt(i+1).map(roundResults)}
+      </${React.Fragment}>`)}
+      ${msgs.length===0&&roundsAt(0).map(roundResults)}
+      ${busy&&html`<div class="mprog" style=${{margin:0}}><span class="spin"></span> ${phase}
+        ${jobId&&html`<button class="example" type="button" style=${{marginLeft:"auto"}} onClick=${stop}>Stop</button>`}</div>`}
+      ${verifying&&jobId&&html`<button class="example" type="button" onClick=${stop}>Stop</button>`}
       <div ref=${bottomRef}></div>
     </div>`}
 
-    ${carried&&!msgs.length&&html`<${CarriedRows} rows=${carried} onChange=${onCarriedChange}
-      onDismiss=${()=>{onCarriedChange(null); setDesc("");}}/>`}
-
-    <form class="ask-form" onSubmit=${e=>{e.preventDefault();send();}}>
-      <div class="input-shell">
-        ${ICON_SEARCH}
-        <textarea class="field" rows="1" readOnly=${!!(carried&&!carried.raw&&!msgs.length)}
-          placeholder=${msgs.length?"Reply…":"Describe the map you want to build…"}
-          value=${desc} onInput=${e=>setDesc(e.target.value)}
-          onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}></textarea>
-      </div>
-      <button class="btn" disabled=${busy||verifying||!researchAvailable||!["draft","awaiting_reply","done","error"].includes(runStatus)}>${busy?html`<span class="spin"></span>`:"Send"}</button>
-    </form>
-    ${!busy&&!verifying&&sendBlockedNote()&&html`<div class="hint" role="status" style=${{marginTop:"8px"}}>${sendBlockedNote()}</div>`}
-
-    ${!msgs.length&&!busy&&!err&&html`<div class="attach-row">
-      ${examples.map(x=>html`<button key=${x} class="example" type="button"
-        onClick=${()=>setDesc(x)}>${x}</button>`)}
-    </div>`}
-
-    ${(msgs.length>0||res||jobId)&&!busy&&!verifying&&html`<div class="attach-row">
-      <button class="example" type="button" onClick=${reset}>+ New map</button>
-    </div>`}
-
-    ${busy&&html`<div class="mprog"><span class="spin"></span> ${phase}</div>`}
-    ${(busy||verifying)&&jobId&&html`<button class="example" type="button" onClick=${stop}>Stop</button>`}
     ${err&&html`<div class="mprog" style=${{color:"var(--violet)"}}>${err}</div>`}
 
-    ${res&&html`<div style=${{marginTop:"26px"}}>
-      ${res.coverage_note&&html`<div class="selnote">${res.partial?"Research is unfinished. ":""}${res.coverage_note}</div>`}
-      ${(res.coverage_gaps||[]).length>0&&html`<details class="selnote" open=${!!res.partial}>
-        <summary>Coverage gaps and remaining work (${res.coverage_gaps.length})</summary>
-        <ul>${res.coverage_gaps.map((gap,i)=>html`<li key=${i}>${gap}</li>`)}</ul>
-      </details>`}
-      ${(res.failures||[]).length>0&&html`<div class="selnote"
-        style=${{color:"var(--violet)"}}>
-        ${res.failures.length} of the searches failed, so this map may be incomplete.
-        Any collected results are saved.</div>`}
+    ${res&&html`<div>
       ${total===0
         ? html`<div class="mprog">${(res.failures||[]).length>0
             ? "The searches failed. Check the saved status and cost before starting another map."
             : "No entities found for that description. Try being more specific, or naming the technology and geography."}</div>`
         : html`
           <div class="mbar">
-            <span class="chip slate">${total} found</span>
+            <span class="chip slate">${total} found in this map</span>
             ${parkedCount>0&&html`<label class="hint" style=${{margin:0,display:"inline-flex",gap:"6px",alignItems:"center"}}>
               <input type="checkbox" checked=${parkedOnly} onChange=${ev=>setParkedOnly(ev.target.checked)}/>
               Parked only (${parkedCount})</label>`}
@@ -1916,70 +1939,68 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
               ${summary.strong} strong · ${summary.weak} weak
               ${summary.dead_links>0?" · "+summary.dead_links+" dead link(s)":""}
               ${summary.avg_score!=null?" · avg "+summary.avg_score:""}</span>`}
-          </div>
-          ${(()=>{
-            const outcome=selectionOutcome(res);
-            // Newer maps store an exact sentence (it differs after a follow-up);
-            // older ones only stored marks, so they get a fixed wording.
-            const said=res.selection_outcome&&res.selection_note;
-            if(outcome==="failed") return html`<div class="selnote">${said||"Your filters could not be applied to this map — these results are unfiltered."}</div>`;
-            if(outcome==="none_matched") return html`<div class="selnote">${said||"None of these organizations matched your filters. They are all shown below, marked as left out."}</div>`;
-            if(outcome==="applied") return html`<div class="selnote quiet">${said||matchCount(res)}</div>`;
-            return null;
-          })()}
-
-          ${(()=>{
-            // One list, nothing folded away: matches in rank order, then anything
-            // selection did not judge, then the exclusions with their reasons.
-            const order=e=>e._rank?e._rank:(e._selected===false?1e6:5e5);
-            // A people or events map shows only that group; organization maps
-            // (and maps saved before map types) keep people under their organizations.
-            const only={people:"person",events:"event"}[res.map_type];
-            const groups=only?MGROUPS.filter(([k])=>k===only):MDISPLAY_GROUPS;
-            return groups.map(([k,label,tone])=>{
-              const items=[...((res.entities&&res.entities[k])||[])]
-                .filter(e=>!(parkedOnly&&parkedCount>0)||e._review==="parked").sort((a,b)=>order(a)-order(b));
-              if(!items.length) return null;
-              const card=(e,i)=>html`<${MapCard} key=${k+(e._round||1)+"-"+i} e=${e} request=${request}
-                  jobId=${jobId} onCost=${setCost} onError=${setErr}
-                  onBusy=${v=>{setVerifying(v);poll(jobId);}}
-                  disabled=${busy||verifying||!["done","error"].includes(runStatus)} onUpdate=${updateOne}
-                  onReviewed=${d=>{setRes(d.result);setCost(d.cost);}}
-                  reviewDisabled=${busy||verifying||["running","planning","verifying"].includes(runStatus)}/>`;
-              // Each follow-up that found something new keeps its own list, under its own
-              // words, after the original results — never mixed into them.
-              const rounds=res.rounds||[];
-              const sections=[...new Set(items.map(e=>e._round||1))].sort((a,b)=>a-b);
-              return html`<div class="mgroup" key=${k}>
-                <div class="mgroup-h"><span class=${"chip "+tone}>${label}</span>
-                  <span class="n">${items.length}</span></div>
-                ${sections.map(r=>{
-                  const part=items.filter(e=>(e._round||1)===r);
-                  return html`<div key=${"round"+r}>
-                    ${r>1&&html`<div class="mgroup-h" style=${{marginTop:"22px"}}>
-                      <span class="chip slate">Follow-up ${r-1}</span>
-                      <span class="hint" style=${{margin:0}}>${rounds[r-1]||""} · ${part.length} result${part.length===1?"":"s"}</span></div>`}
-                    ${part.map(card)}</div>`;
-                })}
-              </div>`;
-            });
-          })()}
-          ${res.tasks&&res.tasks.length>0&&html`<details class="msrc" style=${{marginTop:"6px"}}>
-            <summary>What the agent searched for</summary>
-            ${res.tasks.map((t,i)=>html`<div key=${i} style=${{marginTop:"5px"}}>
-              <span class="dash">${t.entity_type}</span> ${t.query}</div>`)}
-          </details>`}
-          ${(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>
-            <strong>Keep finding organizations like these</strong>
-            <div>Discovery can keep searching for more of them, every month for as long as
-              you choose. One short call (under $0.01, on this map's budget) proposes the request
-              from what you asked, then opens it in Discovery, where you edit it before anything is saved.</div>
-            <button class="example" type="button" style=${{marginTop:"8px"}}
-              disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
-              onClick=${proposeDiscovery}>
-              ${proposing?html`<span class="spin"></span> Proposing…`:"Continue discovery"}</button>
-          </div>`}`}
+          </div>`}
+      ${res.coverage_note&&html`<div class="selnote" style=${{marginTop:"14px"}}>${res.partial?"Research is unfinished. ":""}${res.coverage_note}</div>`}
+      ${(res.coverage_gaps||[]).length>0&&html`<details class="selnote" open=${!!res.partial}>
+        <summary>Coverage gaps and remaining work (${res.coverage_gaps.length})</summary>
+        <ul>${res.coverage_gaps.map((gap,i)=>html`<li key=${i}>${gap}</li>`)}</ul>
+      </details>`}
+      ${(res.failures||[]).length>0&&html`<div class="selnote"
+        style=${{color:"var(--violet)"}}>
+        ${res.failures.length} of the searches failed, so this map may be incomplete.
+        Any collected results are saved.</div>`}
+      ${res.tasks&&res.tasks.length>0&&html`<details class="msrc" style=${{marginTop:"6px"}}>
+        <summary>What the agent searched for</summary>
+        ${res.tasks.map((t,i)=>html`<div key=${i} style=${{marginTop:"5px"}}>
+          <span class="dash">${t.entity_type}</span> ${t.query}</div>`)}
+      </details>`}
+      ${total>0&&(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>
+        <strong>Keep finding organizations like these</strong>
+        <div>Discovery can keep searching for more of them, every month for as long as
+          you choose. One short call (under $0.01, on this map's budget) proposes the request
+          from what you asked, then opens it in Discovery, where you edit it before anything is saved.</div>
+        <button class="example" type="button" style=${{marginTop:"8px"}}
+          disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
+          onClick=${proposeDiscovery}>
+          ${proposing?html`<span class="spin"></span> Proposing…`:"Continue discovery"}</button>
+      </div>`}
     </div>`}
+
+    ${carried&&!msgs.length&&html`<${CarriedRows} rows=${carried} onChange=${onCarriedChange}
+      onDismiss=${()=>{onCarriedChange(null); setDesc("");}}/>`}
+
+    <div class="composer">
+      ${(!msgs.length||file)&&html`<div class="attach-row" style=${{marginTop:0,marginBottom:"10px"}}>
+        ${file
+          ? html`<span class="chip accent">📎 ${file.name}</span>
+              <button class="example" type="button" onClick=${()=>{setFile(null);
+                if(fileRef.current)fileRef.current.value="";}}>Remove</button>
+              <span class="hint" style=${{margin:0}}>Used as extra context for the search.</span>`
+          : html`<label class="example" style=${{display:"inline-flex",gap:"7px",alignItems:"center"}}>
+              📎 Attach a strategy or program document (PDF, .txt, .md)
+              <input ref=${fileRef} type="file" accept=".pdf,.txt,.md" style=${{display:"none"}}
+                onChange=${e=>setFile(e.target.files[0]||null)}/>
+            </label>`}
+      </div>`}
+      <form class="ask-form" onSubmit=${e=>{e.preventDefault();send();}}>
+        <div class="input-shell">
+          ${ICON_SEARCH}
+          <textarea class="field" rows="1" readOnly=${!!(carried&&!carried.raw&&!msgs.length)}
+            placeholder=${msgs.length?"Reply, ask about these results, or ask for more…":"Describe the map you want to build…"}
+            value=${desc} onInput=${e=>setDesc(e.target.value)}
+            onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}></textarea>
+        </div>
+        <button class="btn" disabled=${busy||verifying||!researchAvailable||!["draft","awaiting_reply","done","error"].includes(runStatus)}>${busy?html`<span class="spin"></span>`:"Send"}</button>
+      </form>
+      ${!busy&&!verifying&&sendBlockedNote()&&html`<div class="hint" role="status" style=${{marginTop:"8px"}}>${sendBlockedNote()}</div>`}
+      ${!msgs.length&&!busy&&!err&&html`<div class="attach-row">
+        ${examples.map(x=>html`<button key=${x} class="example" type="button"
+          onClick=${()=>setDesc(x)}>${x}</button>`)}
+      </div>`}
+      ${(msgs.length>0||res||jobId)&&!busy&&!verifying&&html`<div class="attach-row">
+        <button class="example" type="button" onClick=${reset}>+ New map</button>
+      </div>`}
+    </div>
   </div>`;
 }
 

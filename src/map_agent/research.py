@@ -636,7 +636,8 @@ def _visible(state):
     if map_type == "organizations":
         coverage += (" Selected whole universities also receive official-site ranking lookups within the map allowance. "
                      "Deeper people research starts only when requested on an organization card.")
-    return {"map_type": map_type, "rounds": rounds, "tasks": state["tasks"], "requirements": state["requirements"],
+    return {"map_type": map_type, "rounds": rounds, "round_after": state.get("round_after") or [None] * len(rounds),
+            "tasks": state["tasks"], "requirements": state["requirements"],
             "entities": grouped, "counts": {k: len(v) for k, v in grouped.items()},
             "partial": state["phase"] != "done", "coverage_gaps": gaps + pending,
             "selection_note": state.get("selection_note", "Selection has not completed."),
@@ -665,7 +666,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state = {"version": 1, "map_type": map_type, "description": description, "tasks": tasks,
                  "requirements": requirements,
                  "phase": "organizations", "task_index": 0, "found": [], "gaps": [],
-                 "rounds": [description],
+                 "rounds": [description], "round_after": [plan.get("after_message")],
                  "people_targets": [], "people_index": 0}
         _note_dropped(state, dropped)
         if len(plan["tasks"]) > len(tasks):
@@ -689,6 +690,9 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         state["judged"] = [_judged_key(e) for e in state["found"]]
         state["round_description"] = description or state["description"]
         state["rounds"] = (state.get("rounds") or [state["description"]]) + [state["round_description"]]
+        # Maps saved before 28 Oct 2026 have no positions: their results stay together.
+        after = state.get("round_after") or [None] * (len(state["rounds"]) - 1)
+        state["round_after"] = after + [plan.get("after_message")]
         state["round_requirements"], dropped = drop_unasked_periods(
             {**_EMPTY_REQS, **(plan.get("requirements") or {})}, state["round_description"])
         _note_dropped(state, dropped)
@@ -713,6 +717,7 @@ def build_controlled_map(description, plan, run, sources=None, client=None):
         rows = [r for r in rows if entity_key(r) not in rejected]
         for r in rows:
             r["_round"] = len(state.get("rounds") or [None])
+            r["_seen_in"] = [r["_round"]]
         state["found"] = deduplicate(state["found"] + rows)
         if gap:
             state["gaps"].append(task["query"] + ": " + gap)

@@ -307,7 +307,11 @@ def deduplicate(entities: list[dict]) -> list[dict]:
         for i, group in enumerate(groups):
             if _is_duplicate(group, entity):
                 merge = _merge_event if entity.get("_entity_type") == "event" else _merge_pair
+                # Every search that found it, so a follow-up can say "also found".
+                seen = sorted(set((group.get("_seen_in") or []) + (entity.get("_seen_in") or [])))
                 groups[i] = merge(group, entity)
+                if seen:
+                    groups[i]["_seen_in"] = seen
                 matched = True
                 break
         if not matched:

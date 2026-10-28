@@ -659,7 +659,10 @@ def map_start(payload: MapRequest):
     except MapStopped as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     doc_text = record["doc_text"] or doc_text
-    approved_plan = record["plan"] or payload.plan
+    # The conversation reads like a chat: this search's results are shown right
+    # after the message that started it (the plan's announcement).
+    approved_plan = {**(record["plan"] or payload.plan),
+                     "after_message": len(record["messages"] or [])}
     # A follow-up on a built map searches new ground; its message is that round's
     # request, not the map's. Keep the original as the map's name and request.
     fields = {"doc_text": doc_text, "plan": approved_plan}
