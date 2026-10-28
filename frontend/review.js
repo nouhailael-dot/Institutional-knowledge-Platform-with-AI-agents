@@ -1526,7 +1526,9 @@ function lightLine(html, row) {
  * the pages that were checked for them.
  */
 function lightLines(html, rows) {
-  const shown = rows.filter(row => !row.state || row.pending || row.update);
+  // A fact an update looked for and did not find joins the others not found.
+  const shown = rows.filter(row => !row.state || row.pending
+    || (row.update && row.update.outcome !== "not_found"));
   const missing = rows.filter(row => !shown.includes(row));
   const states = [...new Set(missing.map(row => row.state))];
   const pages = [...new Set(missing.flatMap(row => row.pagesRead || []))];
