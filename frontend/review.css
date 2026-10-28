@@ -216,66 +216,103 @@
 
 
 /* Record card: the same form as a Build the Map result (index.html .mcard,
-   .mh, .rank, .mpeople, .msrc, .why), with every value editable in place. */
-.review-card{margin:0 0 14px}
-.review-card .mh{flex-wrap:wrap}
+   .mh, .rank, .mpeople, .msrc, .why), laid out for reading (2026-10-28): every
+   row is a grey label in its own column and a black value beside it, the
+   location fields an even grid, and a long text shown whole. */
+.review-card{margin:0 0 14px;padding:24px 26px}
+.review-card .mh{flex-wrap:wrap;gap:10px;margin-bottom:6px}
+.review-card .mn{font-size:18px}
 .review-card-actions{margin-left:auto;display:inline-flex;gap:6px}
 .review-card-actions .example.active{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-soft)}
-.review-card-sub{font-size:12.5px;color:var(--muted);margin:-2px 0 6px;overflow-wrap:anywhere}
-.review-desc{display:block;width:100%;box-sizing:border-box;border:1px solid transparent;border-radius:7px;
-  background:transparent;color:var(--muted);font:inherit;font-size:13.5px;line-height:1.55;padding:5px 7px;
-  margin:2px 0 8px;resize:vertical}
-.review-desc:hover:not(:disabled),.review-desc:focus{border-color:var(--line-strong);background:var(--surface);color:var(--ink);outline:none}
-.review-desc.invalid{border-color:#b42318}
-.review-line{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 7px;font-size:12.5px;color:var(--muted);margin:4px 0;min-width:0}
-.review-line>b{color:var(--ink);font-weight:600;white-space:nowrap}
-.review-line.read>span{overflow-wrap:anywhere}
-.review-line.sub{padding-left:14px}
-.review-line.long{align-items:flex-start}
-.review-line.invalid .review-inline{border-color:#b42318}
-.review-inline{flex:1;min-width:150px;box-sizing:border-box;border:1px solid transparent;border-radius:6px;
-  background:transparent;color:var(--ink);font:inherit;font-size:12.5px;padding:3px 6px;margin:-3px 0}
-.review-inline:hover:not(:disabled),.review-inline:focus{border-color:var(--line-strong);background:var(--surface);outline:none}
-select.review-inline{border-color:var(--line);background:var(--surface);cursor:pointer;flex:0 1 auto}
-textarea.review-inline{resize:vertical;line-height:1.5}
-.review-inline::placeholder{color:var(--muted);opacity:.75}
-.review-profile .review-new-sector{margin:8px 0}
-.review-facts-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 18px;margin:12px 0 2px;
-  padding-top:10px;border-top:1px solid var(--line)}
-.review-facts-row.compact{border-top:0;padding-top:0;margin-top:0}
-.review-hubs{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
-.review-source{margin-top:5px;overflow-wrap:anywhere}
-.review-card-foot{background:var(--surface-2);border-radius:7px;margin:12px -8px 0;padding:12px}
-.review-analyst-notes{display:grid;gap:6px;font-size:13px}
-.review-analyst-notes textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:8px;
-  padding:8px 10px;background:var(--surface);color:var(--ink);font:inherit;font-size:13px;resize:vertical}
-.review-analyst-notes small{font-size:11.5px}
-@media (max-width:700px){.review-card-actions{margin-left:0}.review-facts-row{grid-template-columns:1fr}}
+.review-card-sub{font-size:13px;color:var(--muted);margin:0 0 12px;overflow-wrap:anywhere}
+.review-card-sub a{color:var(--accent-ink)}
 
-/* Facts as lines (2026-10-28): what the agent checked and read, in the card. */
-.review-readout{margin:14px 0 4px;font-size:13.5px;line-height:1.5}
-.review-readout .review-checks{font-size:13.5px}
-.review-readout-why{margin:6px 0 0;color:var(--ink)}
+/* The description: the first thing read, in a box that shows all of it. */
+.review-desc{display:block;width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:9px;
+  background:var(--surface-2);color:var(--ink);font:inherit;font-size:14.5px;font-weight:500;line-height:1.65;
+  padding:12px 14px;margin:4px 0 16px;resize:vertical;field-sizing:content;min-height:84px}
+.review-desc:hover:not(:disabled),.review-desc:focus{border-color:var(--line-strong);background:var(--surface);outline:none}
+.review-desc:disabled{-webkit-text-fill-color:var(--ink);opacity:1}
+.review-desc.invalid{border-color:#b42318}
+.review-desc.read{white-space:normal;cursor:default;min-height:0}
+.review-desc.read small{display:block;margin-top:6px;color:var(--muted);font-size:12px;font-weight:400}
+.review-desc.read a{color:var(--accent-ink)}
+
+/* A row: the label column, then the value. */
+.review-line{display:grid;grid-template-columns:minmax(130px,200px) minmax(0,1fr);column-gap:22px;align-items:start;
+  padding:10px 0;margin:0;border-bottom:1px solid var(--line);font-size:14px;color:var(--ink);min-width:0}
+.review-line>b{color:var(--muted);font-weight:500;font-size:13px;line-height:1.5;padding-top:7px;overflow-wrap:anywhere}
+.review-line.read>b{padding-top:1px}
+.review-value{display:block;min-width:0;color:var(--ink);font-weight:600;line-height:1.55;overflow-wrap:anywhere}
+.review-value small{display:block;margin-top:3px;color:var(--muted);font-size:12px;font-weight:400}
+.review-value a{color:var(--accent-ink);font-weight:500}
+.review-value .review-missing{font-weight:400}
+.review-value-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.review-value-item{display:block;padding:1px 0 5px}
+.review-value-item small{display:inline;margin-left:6px}
+.review-line.invalid .review-inline{border-color:#b42318}
+.review-missing{color:var(--muted);font-style:italic;font-weight:400}
+
+/* Editable values: boxed while they can change, plain text once decided. */
+.review-inline{width:100%;min-height:36px;box-sizing:border-box;border:1px solid var(--line);border-radius:7px;
+  background:var(--surface);color:var(--ink);font:inherit;font-size:14px;font-weight:600;padding:6px 10px}
+.review-inline:hover:not(:disabled){border-color:var(--line-strong)}
+.review-inline:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.review-inline:disabled{border-color:transparent;background:transparent;padding-left:0;opacity:1;
+  -webkit-text-fill-color:var(--ink);cursor:default}
+select.review-inline{width:auto;min-width:220px;max-width:100%;cursor:pointer}
+select.review-inline:disabled{appearance:none}
+textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height:1.6;field-sizing:content;min-height:64px}
+.review-inline::placeholder{color:var(--muted);font-weight:400;font-style:italic;opacity:.8}
+
+/* Section titles. */
+.review-card .mpeople{background:transparent;margin:22px 0 0;padding:16px 0 0;border-radius:0;border-top:1px solid var(--line)}
+.review-card .mpeople>summary{font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ink);margin-bottom:4px}
+.review-group-title{margin:20px 0 2px;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted)}
+.review-card .mpeople>.review-hint,.review-card .review-group-title+.review-hint{margin:8px 0}
+.review-profile .review-new-sector{margin:8px 0}
+
+/* Classification and location: an even grid, each label above its value. */
+.review-facts-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px 26px;margin:22px 0 6px;
+  padding:20px 0 4px;border-top:1px solid var(--line)}
+.review-stack{display:flex;flex-direction:column;gap:6px;min-width:0}
+.review-stack>span{color:var(--muted);font-size:13px;font-weight:500}
+.review-stack .review-inline,.review-stack select.review-inline{width:100%;min-width:0}
+.review-stack.invalid .review-inline{border-color:#b42318}
+.review-static{min-height:36px;display:flex;align-items:center;font-size:14px;font-weight:600;color:var(--ink)}
+
+.review-hubs{margin-top:18px;padding-top:4px;border-top:1px solid var(--line)}
+.review-source{margin-top:5px;overflow-wrap:anywhere}
+.review-card-foot{background:var(--surface-2);border-radius:9px;margin:22px 0 0;padding:16px}
+.review-analyst-notes{display:grid;gap:8px;font-size:13px}
+.review-analyst-notes b{font-size:12px;letter-spacing:.07em;text-transform:uppercase}
+.review-analyst-notes textarea{width:100%;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:8px;
+  padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;font-size:14px;line-height:1.6;
+  resize:vertical;field-sizing:content;min-height:84px}
+.review-analyst-notes small{font-size:12px}
+@media (max-width:900px){.review-facts-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){
+  .review-card{padding:18px 16px}
+  .review-card-actions{margin-left:0}
+  .review-facts-row{grid-template-columns:1fr}
+  .review-line{grid-template-columns:1fr;row-gap:4px}
+  .review-line>b,.review-line.read>b{padding-top:0}
+}
+
+/* What the agent checked and read for a person or event, in the card. */
+.review-readout{margin:18px 0 4px;font-size:14px;line-height:1.55}
+.review-readout .review-checks{font-size:14px;gap:6px}
+.review-readout-why{margin:8px 0 0;color:var(--ink)}
 .review-readout-why b{font-weight:600}
-.review-readout-label{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line);font-size:11px;font-weight:700;
+.review-readout-label{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:11.5px;font-weight:700;
   text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
 .review-checks li{overflow-wrap:anywhere}
-.review-checks a,.review-fact-line a,.review-desc.read a,.review-not-found a{color:var(--accent-ink)}
+.review-checks a,.review-not-found a{color:var(--accent-ink)}
 .review-fact-source{color:var(--muted);font-size:12px}
-.review-quote{display:block;margin:2px 0 0 16px;color:var(--muted);font-style:italic;font-size:12px}
-.review-fact-lines{margin:4px 0 10px}
-.review-fact-line{margin:7px 0}
-.review-fact-line .review-line{font-size:13.5px;color:var(--ink);margin:0}
-.review-fact-line .review-line small{color:var(--muted);font-size:11.5px}
-.review-fact-line>small{display:block;padding-left:14px;color:var(--muted);font-size:12px;margin-top:2px}
-.review-fact-line .review-update-note{margin:5px 0 0 14px;padding:6px 9px;border-radius:7px;
-  font-size:12px;line-height:1.45;color:var(--muted);background:var(--surface-2);border:1px solid var(--line)}
-.review-fact-line .review-update-note span{display:block;font-size:10px;font-weight:700;
-  text-transform:uppercase;letter-spacing:.06em}
-.review-fact-line .review-proposed{margin:5px 0 0 14px}
-.review-fact-line .review-update-note.new,.review-fact-line .review-update-note.changed,
-.review-fact-line .review-update-note.additional{color:var(--accent-ink);background:var(--accent-soft);border-color:var(--accent)}
-.review-fact-line .review-proposed p{margin:2px 0;color:var(--ink)}
-.review-not-found{margin:8px 0 0}
-.review-desc.read{color:var(--ink);white-space:normal;cursor:default}
-.review-desc.read small{display:block;margin-top:4px;color:var(--muted);font-size:11.5px}
+.review-quote{display:block;margin:2px 0 0 16px;color:var(--muted);font-style:italic;font-size:12.5px}
+.review-fact-lines{margin:0 0 8px}
+.review-fact-lines .review-proposed{margin-top:8px}
+.review-fact-lines .review-proposed p{margin:2px 0;color:var(--ink)}
+.review-not-found{margin:10px 0 0}

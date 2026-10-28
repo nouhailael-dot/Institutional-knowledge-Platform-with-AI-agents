@@ -1261,8 +1261,13 @@ test('a person reads what they do; an event its fuller description; checks read 
   assert.match(component, /<\/details>\s*\$\{readoutBlock\(html, selected\)\}/);
   assert.match(component, /Not found on its page:/);
   assert.match(component, /personDescription\(selected\)/);
-  // An event's description box grows with its text.
-  assert.match(component, /String\(draft\.description \?\? ""\)\.length \/ 95/);
+  // An event's description - and any long text - is shown whole.
+  assert.match(component, /rows=\$\{Math\.max\(3, textRows\(draft\.description\)\)\}/);
+  const {textRows} = await import('../frontend/review.js');
+  assert.equal(textRows(''), 2);
+  assert.equal(textRows('x'.repeat(400)), 5);
+  assert.equal(textRows('a\nb\nc'), 3);
+  assert.equal(textRows('x'.repeat(5000)), 24);
 });
 
 test('a discovered event shows its outcome, timing and why it matched', async () => {
@@ -1374,7 +1379,7 @@ test('a card line is editable in place only where Review may change it', async (
   const html = (strings, ...values) => strings.reduce((out, s, i) => out + s + (values[i] ?? ''), '');
   const candidate = {editable_fields: ['next_date', 'location']};
   const date = cardField(html, candidate, 'next_date', '2027-04-02', () => {}, false, null, 'Date');
-  assert.match(date, /<b>Date:<\/b>/);
+  assert.match(date, /<b>Date<\/b>/);
   assert.match(date, /value=04\/02\/2027/);
   assert.match(date, /placeholder=MM\/DD\/YYYY/);
   // Not editable here: shown as text, never as an input.

@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028b";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261028c";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.parked,
@@ -1490,33 +1490,30 @@ function pageLabel(url) {
 }
 
 /**
- * One Light Pull fact as a line - "Funding: $2M from DOE · Source: doe.gov" -
- * with what the latest update found, or a proposed value, beneath it.
+ * One Light Pull fact as a row: its name in the label column, the value - and
+ * its source - in the value column. What an update found is in Fact History;
+ * a value waiting for a decision is shown with it.
  */
 function lightLine(html, row) {
-  // The date a page was read is provenance, kept in Fact History; the source
-  // link and the confidence stay on the line.
-  return html`<div class="review-fact-line" key=${row.key}>
-    <div class="review-line read"><b>${row.label}:</b>
-      <span>${row.state ? html`<span class="review-missing">${missingWithPages(row)}</span>`
+  return html`<div class="review-line read" key=${row.key}><b>${row.label}</b>
+    <span class="review-value">
+      ${row.state ? html`<span class="review-missing">${missingWithPages(row)}</span>`
         : row.kept ? html`<span class="review-missing">The value on the map was kept (see Fact History)</span>`
-        : formatFactValue(row.value)}</span>
-      ${row.source && html`<a href=${row.source} target="_blank" rel="noreferrer">${row.sourceHost
-        ? `Source: ${row.sourceHost}` : "Source"}</a>`}
-      ${row.confidence && html`<small>${row.confidence}</small>`}
-    </div>
-    ${row.fromSector && html`<small>From its ${row.fromSector} facts.</small>`}
-    ${row.fromRecord && html`<small>From the ${row.fromRecord} (not re-read from its pages).</small>`}
-    ${row.recordValue != null && html`<small>On the earlier GHUS profile: ${formatFactValue(row.recordValue)}</small>`}
-    ${row.carriedOver?.length > 0 && html`<small>Kept from an earlier reading:
-      ${row.carriedOver.map(fieldLabel).join(", ")}.</small>`}
-    ${row.update && !row.pending && html`<div class=${"review-update-note " + row.update.outcome}>
-      <span>This update</span>${updateNote(row.update, row.value)}</div>`}
-    ${row.pending && html`<div class="review-proposed">
-      <span>Proposed — Not Yet Approved</span>
-      <p>${formatFactValue(row.pending.proposed?.value)}</p>
-      <small>Decide under Changes to Review.</small>
-    </div>`}
+        : formatFactValue(row.value)}
+      ${(row.source || row.confidence) && html`<small>${row.source && html`<a href=${row.source}
+        target="_blank" rel="noreferrer">${row.sourceHost ? `Source: ${row.sourceHost}` : "Source"}</a>`}${
+        row.source && row.confidence ? " · " : ""}${row.confidence || ""}</small>`}
+      ${row.fromSector && html`<small>From its ${row.fromSector} facts.</small>`}
+      ${row.fromRecord && html`<small>From the ${row.fromRecord} (not re-read from its pages).</small>`}
+      ${row.recordValue != null && html`<small>On the earlier GHUS profile: ${formatFactValue(row.recordValue)}</small>`}
+      ${row.carriedOver?.length > 0 && html`<small>Kept from an earlier reading:
+        ${row.carriedOver.map(fieldLabel).join(", ")}.</small>`}
+      ${row.pending && html`<div class="review-proposed">
+        <span>Proposed — Not Yet Approved</span>
+        <p>${formatFactValue(row.pending.proposed?.value)}</p>
+        <small>Decide under Changes to Review.</small>
+      </div>`}
+    </span>
   </div>`;
 }
 
@@ -1526,9 +1523,7 @@ function lightLine(html, row) {
  * the pages that were checked for them.
  */
 function lightLines(html, rows) {
-  // A fact an update looked for and did not find joins the others not found.
-  const shown = rows.filter(row => !row.state || row.pending
-    || (row.update && row.update.outcome !== "not_found"));
+  const shown = rows.filter(row => !row.state || row.pending);
   const missing = rows.filter(row => !shown.includes(row));
   const states = [...new Set(missing.map(row => row.state))];
   const pages = [...new Set(missing.flatMap(row => row.pagesRead || []))];
@@ -1678,11 +1673,11 @@ const CARD_FIELDS = {
     ["recurring_pattern", "Frequency"], ["sponsoring_orgs", "Organizer"], ["thematic_focus", "Topic"],
     ["expected_attendance", "Scale"], ["access_type", "Access"]],
   person: [["role", "Title"], ["affiliation", "Organization"], ["research_area", "Expertise"],
-    ["public_profile_url", "Public profile"]],
+    ["public_profile_url", "Public Profile"]],
 };
 // Read by Build the Map but not (yet) fields a reviewer edits; shown when present.
 const CARD_EXTRA_FIELDS = {
-  event: [["event_format", "Format"], ["audience", "Audience"], ["previous_edition", "Previous edition"]],
+  event: [["event_format", "Format"], ["audience", "Audience"], ["previous_edition", "Previous Edition"]],
   person: [["linkedin_url", "LinkedIn"], ["orcid", "ORCID"]],
 };
 
@@ -1701,21 +1696,35 @@ export function cardField(html, candidate, field, value, onChange, disabled, err
   const set = event => onChange(field, isDate
     ? (isoFromUs(event.target.value) || event.target.value) : event.target.value);
   return html`<label key=${field} class=${"review-line" + (long ? " long" : "") + (error ? " invalid" : "")}>
-    <b>${name}:</b>
-    ${long
-      ? html`<textarea class="review-inline" rows="2" value=${value ?? ""} maxlength=${limit}
-          disabled=${disabled} placeholder=${MISSING.notFound} onInput=${set}></textarea>`
-      : html`<input class="review-inline" value=${isDate ? usDate(value ?? "") : value ?? ""}
-          maxlength=${limit} disabled=${disabled} inputMode=${isDate ? "numeric" : undefined}
-          placeholder=${isDate ? "MM/DD/YYYY" : MISSING.notFound} onInput=${set}/>`}
-    ${error && html`<small class="field-error">${error}</small>`}
+    <b>${name}</b>
+    <span class="review-value">
+      ${long
+        ? html`<textarea class="review-inline" rows=${textRows(value)} value=${value ?? ""} maxlength=${limit}
+            disabled=${disabled} placeholder=${MISSING.notFound} onInput=${set}></textarea>`
+        : html`<input class="review-inline" value=${isDate ? usDate(value ?? "") : value ?? ""}
+            maxlength=${limit} disabled=${disabled} inputMode=${isDate ? "numeric" : undefined}
+            placeholder=${isDate ? "MM/DD/YYYY" : MISSING.notFound} onInput=${set}/>`}
+      ${error && html`<small class="field-error">${error}</small>`}
+    </span>
   </label>`;
 }
 
-/** A read-only "Label: value" line; an empty value says Not Found, never blank. */
+/**
+ * Rows for a text box that shows all of its text: about 80 characters a line,
+ * never fewer than two. Browsers that size a box to its content
+ * (field-sizing, review.css) grow it as the reviewer types.
+ */
+export function textRows(value) {
+  const text = String(value ?? "");
+  const lines = text.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / 80)), 0);
+  return Math.min(24, Math.max(2, lines));
+}
+
+/** A read-only label / value row; an empty value says Not Found, never blank. */
 export function cardLine(html, label, value, extra = null) {
-  return html`<div class="review-line read" key=${label}><b>${label}:</b>
-    <span>${value || MISSING.notFound}</span>${extra || ""}</div>`;
+  return html`<div class="review-line read" key=${label}><b>${label}</b>
+    <span class="review-value">${value || html`<span class="review-missing">${MISSING.notFound}</span>`}${
+      extra || ""}</span></div>`;
 }
 
 function formatCardValue(value) {
@@ -1724,7 +1733,7 @@ function formatCardValue(value) {
 }
 
 function sourceLink(html, url) {
-  return url ? html` · <a href=${url} target="_blank" rel="noreferrer">Source</a>` : null;
+  return url ? html`<small><a href=${url} target="_blank" rel="noreferrer">Source</a></small>` : null;
 }
 
 export function createReviewPage({html, useEffect, useRef, useState}) {
@@ -2454,7 +2463,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 ${about && html`<small>${about.kind}${about.source && html` · <a href=${about.source}
                   target="_blank" rel="noreferrer">Source</a>`}</small>`}</div>`;
             })() : html`<textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")}
-              rows=${Math.min(10, Math.max(3, Math.ceil(String(draft.description ?? "").length / 95)))}
+              rows=${Math.max(3, textRows(draft.description))}
               aria-label=${reviewFieldLabel("description")} placeholder="Description"
               value=${draft.description ?? ""} disabled=${!pending || busy}
               onInput=${e => edit("description", e.target.value)}></textarea>`}
@@ -2466,12 +2475,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <details class="mpeople review-profile" open>
               <summary>Actor profile</summary>
               ${cardField(html, selected, "category_note", draft.category_note, edit, !pending || busy,
-                draftErrors.category_note, "Category note")}
+                draftErrors.category_note, "Category Note")}
               ${String(draft.category_type ?? "") === NOT_APPLICABLE && html`
                 <p class="review-hint">${SENTENCES.notApplicableNeedsNote}</p>`}
-              ${cardLine(html, "Other names", otherNames.join(", "))}
-              <label class="review-line"><b>${FIELDS.primarySector}:</b>
-                <span class="review-chip">${BADGES.hubDimension}</span>
+              ${cardLine(html, "Other Names", otherNames.join(", "))}
+              <label class="review-line"><b>${FIELDS.primarySector}</b>
+                <span class="review-value review-value-row">
                 <select class="review-inline" value=${draft.primary_sector ?? ""} disabled=${!pending || busy}
                   data-sectors=${sectorState.version}
                   onChange=${e => e.target.value === NEW_SECTOR
@@ -2482,7 +2491,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     <option key=${option.value} value=${option.value}>${option.label}</option>`)}
                   ${sectorState.canCreate && pending && html`
                     <option value=${NEW_SECTOR}>${BUTTONS.addSector}</option>`}
-                </select></label>
+                </select>
+                <span class="review-chip">${BADGES.hubDimension}</span></span></label>
               ${!(selected.agent_metadata?.sector_codes || []).length
                 && selected.agent_metadata?.unmatched_sector_suggestion && html`
                 <p class="review-notice">${SENTENCES.noSectorMatched(
@@ -2502,40 +2512,39 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     onClick=${() => setNewSector(null)}>${BUTTONS.cancel}</button>
                 </div>
               </div>`}
-              ${(selected.agent_metadata?.sector_codes || []).length > 0 && html`
-                <p class="review-hint">${FIELDS.otherSectors}:
-                  ${(selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · ")}
-                  <span class="review-chip">${BADGES.readOnly}</span></p>`}
-              ${mapSector && html`<p class="review-hint">Sector from Build the Map: ${mapSector}</p>`}
-              ${cardLine(html, "Mapped topic", mappedTopic)}
-              ${cardLine(html, "Topic match", why ? matchStrengthLabel(why.strength) : "")}
+              ${(selected.agent_metadata?.sector_codes || []).length > 0 && cardLine(html, FIELDS.otherSectors,
+                (selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · "))}
+              ${mapSector && cardLine(html, "Build the Map Sector", mapSector)}
+              ${cardLine(html, "Mapped Topic", mappedTopic)}
+              ${cardLine(html, "Topic Match", why ? matchStrengthLabel(why.strength) : "")}
               ${cardLine(html, FIELDS.whyItMatched, why?.reason || "", sourceLink(html, why?.source_url))}
               ${connections.map(row => cardLine(html, row.label,
                 row.state ? missingWithPages(row) : formatCardValue(row.value), sourceLink(html, row.source)))}
-              <div class="review-line read"><b>Organization relationships:</b>
-                ${!parent.hasParent && !relationships.length && !mapRelationships.length
-                  ? html`<span title=${parent.tooltip}>${parent.missing} — no parent is assumed</span>` : ""}</div>
-              ${mapRelationships.map((r, index) => html`<div key=${"m" + index} class="review-line read sub">
-                ${r.relationship}: ${r.organization_name}${sourceLink(html, r.source_url)}</div>`)}
-              ${parent.hasParent && html`<div class="review-line read sub">
-                ${parent.linkType}: ${parent.name}${sourceLink(html, parent.source)}</div>`}
-              ${relationships.map((edge, index) => html`<div key=${"r" + index} class="review-line read sub">
-                ${edge.label} ${edge.direction} ${edge.counterpart}${edge.counterpartType
-                  ? ` (${edge.counterpartType})` : ""}${edge.source
-                  ? sourceLink(html, edge.source) : html` · ${MISSING.notFound}`}</div>`)}
-              <div class="review-line read"><b>Category-specific information${categoryLabel(draft.actor_category)
-                ? ` (${categoryLabel(draft.actor_category)})` : ""}:</b>
-                ${!lightBoxes.specific.length && !mapDetails.length
-                  ? html`<span>${SENTENCES.chooseCategoryForBoxes}</span>` : ""}</div>
-              ${mapDetails.map((d, index) => html`<div key=${"d" + index} class="review-line read sub">
-                <b>${d.label}:</b> <span>${formatCardValue(d.value)}</span></div>`)}
-              ${(mapDetails.length ? [] : lightBoxes.specific).map(row => html`<div key=${row.key} class="review-line read sub">
-                <b>${row.label}:</b> <span>${row.state ? missingWithPages(row) : formatFactValue(row.value)}</span>
-                ${sourceLink(html, row.source)}</div>`)}
+              <div class="review-line read"><b>Organization Relationships</b>
+                <span class="review-value">
+                  ${!parent.hasParent && !relationships.length && !mapRelationships.length
+                    ? html`<span class="review-missing" title=${parent.tooltip}>${parent.missing} — no parent is assumed</span>` : ""}
+                  ${mapRelationships.map((r, index) => html`<span key=${"m" + index} class="review-value-item">
+                    ${r.relationship}: ${r.organization_name}${sourceLink(html, r.source_url)}</span>`)}
+                  ${parent.hasParent && html`<span class="review-value-item">
+                    ${parent.linkType}: ${parent.name}${sourceLink(html, parent.source)}</span>`}
+                  ${relationships.map((edge, index) => html`<span key=${"r" + index} class="review-value-item">
+                    ${edge.label} ${edge.direction} ${edge.counterpart}${edge.counterpartType
+                      ? ` (${edge.counterpartType})` : ""}${edge.source
+                      ? sourceLink(html, edge.source) : html`<small>${MISSING.notFound}</small>`}</span>`)}
+                </span></div>
+              <p class="review-group-title">Category-specific information${categoryLabel(draft.actor_category)
+                ? ` · ${categoryLabel(draft.actor_category)}` : ""}</p>
+              ${!lightBoxes.specific.length && !mapDetails.length
+                && html`<p class="review-hint">${SENTENCES.chooseCategoryForBoxes}</p>`}
+              ${mapDetails.map((d, index) => cardLine(html, d.label, formatCardValue(d.value)))}
+              ${(mapDetails.length ? [] : lightBoxes.specific).map(row => cardLine(html, row.label,
+                row.state ? "" : formatFactValue(row.value), sourceLink(html, row.source)))}
             </details>
 
             <div class="review-facts-row">
-              <label class=${"review-line" + (draftErrors.actor_category ? " invalid" : "")}><b>${FIELDS.actorCategory}:</b>
+              <label class=${"review-stack" + (draftErrors.actor_category ? " invalid" : "")}>
+                <span>${FIELDS.actorCategory}</span>
                 <select class="review-inline" value=${draft.actor_category ?? ""} disabled=${!pending || busy}
                   onChange=${e => editCategory(e.target.value)}>
                   <option value="">Choose a category</option>
@@ -2544,7 +2553,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 </select>
                 ${draftErrors.actor_category && html`<small class="field-error">${draftErrors.actor_category}</small>`}
               </label>
-              <label class=${"review-line" + (draftErrors.category_type ? " invalid" : "")}><b>${FIELDS.categoryType}:</b>
+              <label class=${"review-stack" + (draftErrors.category_type ? " invalid" : "")}>
+                <span>${FIELDS.categoryType}</span>
                 <select class="review-inline" value=${draft.category_type ?? ""}
                   disabled=${!pending || busy || !draft.actor_category}
                   onChange=${e => edit("category_type", e.target.value)}>
@@ -2557,7 +2567,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 ${summary?.category_type_retired && html`
                   <small class="review-hint">${typeLabel(draft.actor_category, RETIRED_CATCH_ALL)}</small>`}
               </label>
-              <label class="review-line"><b>${FIELDS.country}:</b>
+              <label class="review-stack"><span>${FIELDS.country}</span>
                 <select class="review-inline" value=${normalizeCountry(draft.country) || ""} disabled=${!pending || busy}
                   onChange=${e => editCountry(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
@@ -2566,21 +2576,26 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   ${draft.country && !countryOptions().some(o => o.value === normalizeCountry(draft.country))
                     && html`<option value=${draft.country}>${draft.country}</option>`}
                 </select></label>
-              ${cardField(html, selected, "location_city", draft.location_city, edit, !pending || busy,
-                draftErrors.location_city, "City")}
-              <label class="review-line"><b>${FIELDS.state}:</b>
+              <label class=${"review-stack" + (draftErrors.location_city ? " invalid" : "")}><span>City</span>
+                <input class="review-inline" value=${draft.location_city ?? ""} placeholder=${MISSING.notFound}
+                  disabled=${!pending || busy || !(selected.editable_fields || []).includes("location_city")}
+                  onInput=${e => edit("location_city", e.target.value)}/>
+                ${draftErrors.location_city && html`<small class="field-error">${draftErrors.location_city}</small>`}
+              </label>
+              <label class="review-stack"><span>${FIELDS.state}</span>
                 <select class="review-inline" value=${draft.state ?? ""} disabled=${!pending || busy}
                   onChange=${e => editState(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
                   ${stateOptions().map(option => html`
                     <option key=${option.value} value=${option.value}>${option.label}</option>`)}
                 </select></label>
-              <label class="review-line"><b>${FIELDS.region}:</b>
+              <label class="review-stack"><span>${FIELDS.region}</span>
                 <input class="review-inline" value=${summary.region} readonly disabled aria-readonly="true"/></label>
-            </div>
-            <div class="review-facts-row compact">
-              ${cardLine(html, FIELDS.coordinates, selected.agent_metadata?.coordinates ? "Geocoded" : "")}
-              ${cardLine(html, FIELDS.multiLocation, selected.agent_metadata?.multi_location ? "Yes" : "No")}
+              <div class="review-stack"><span>${FIELDS.coordinates}</span>
+                <div class="review-static">${selected.agent_metadata?.coordinates ? "Geocoded"
+                  : html`<span class="review-missing">${MISSING.notFound}</span>`}</div></div>
+              <div class="review-stack"><span>${FIELDS.multiLocation}</span>
+                <div class="review-static">${selected.agent_metadata?.multi_location ? "Yes" : "No"}</div></div>
             </div>
             ${twoWayKind(selected) === "update" && (() => {
               const row = factRows.find(item => item.key === "location");
@@ -2601,13 +2616,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ${cardLine(html, FIELDS.suggestedHubs, suggestions.map(hub => `${hub.name || hub.hub_id}${
                 hub.distance_miles != null ? ` (${hub.distance_miles} mi)` : ""}${hub.reason
                 ? ` — ${hub.reason}` : ""}`).join(" · ") || MISSING.notYetChecked)}
-              <label class="review-line"><b>${BUTTONS.chooseHub}:</b>
+              <label class="review-line"><b>${BUTTONS.chooseHub}</b>
+                <span class="review-value">
                 <select class="review-inline" value=${hubIds[0] ?? ""} disabled=${!pending || busy}
                   onChange=${e => setHubIds(e.target.value ? [e.target.value] : [])}>
                   <option value="">${SENTENCES.noHubOption}</option>
                   ${hubOptions.map(option => html`
                     <option key=${option.hub_id} value=${option.hub_id}>${option.label}</option>`)}
-                </select></label>
+                </select></span></label>
             </div>
             ` : html`
             <details class="mpeople review-profile" open>
@@ -2631,13 +2647,13 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <summary>${SECTIONS.facts}</summary>
             ${twoWayKind(selected) === "update" && html`<p class="review-hint">${[
               selected.agent_metadata?.topic_name && `Sector: ${selected.agent_metadata.topic_name}.`,
-              "Each value below is on the map, marked with what the latest update found.",
+              "Each value below is on the map; earlier readings are in Fact History.",
               (selected.agent_metadata?.changes || []).some(change => change.kind === "fact")
                 && "A value marked Proposed has a change waiting below."].filter(Boolean).join(" ")}</p>`}
-            <h4>${FIELDS.commonLightPull}</h4>
+            <p class="review-group-title">${FIELDS.commonLightPull}</p>
             ${lightLines(html, lightBoxes.common)}
 
-            <h4>${categoryLabel(draft.actor_category) || FIELDS.categoryLightPull}</h4>
+            <p class="review-group-title">${categoryLabel(draft.actor_category) || FIELDS.categoryLightPull}</p>
             ${!lightBoxes.specific.length && html`
               <p class="muted">${SENTENCES.chooseCategoryForBoxes}</p>`}
             ${lightLines(html, lightBoxes.specific)}
