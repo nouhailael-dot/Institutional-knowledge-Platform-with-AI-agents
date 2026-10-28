@@ -63,6 +63,10 @@ HEADER_FILL = PatternFill("solid", fgColor="D7410B")      # UM6P orange, as the 
 INPUT_FILL = PatternFill("solid", fgColor="FFFF00")       # cells the reviewer fills in
 THIN = Side(style="thin", color="D9D4CA")
 REGION_NAMES = {code: label for code, label, _states in REGIONS}
+# Written by migration 491 on the 58 organizations GHUS confirmed on 2026-10-06;
+# GHUS removed it on 2026-10-28 (proposed migration 596). Not shown to a reviewer
+# while the live map still holds it.
+REMOVED_NOTES = {"Category confirmed by GHUS on 2026-10-06 (Phase 12 proposal)."}
 
 
 def fetch(database_url: str) -> tuple[list[dict], int, datetime]:
@@ -92,6 +96,7 @@ def shape(row: dict) -> dict:
         "region": REGION_NAMES.get(row.get("region_code") or "", row.get("region_code") or ""),
         "other_names": "; ".join(alt) if isinstance(alt, list) else (alt or ""),
         "status": str(row.get("status") or "").capitalize(),
+        "category_note": None if row.get("category_note") in REMOVED_NOTES else row.get("category_note"),
     }
 
 
