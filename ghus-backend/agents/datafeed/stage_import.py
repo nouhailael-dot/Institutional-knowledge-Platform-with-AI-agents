@@ -64,9 +64,12 @@ CONTRACT = "ghus-datafeed-batch/1"
 SOURCE_NAME = "ghus_data_feed"
 RECORD_TYPES = ("actor", "event", "person")
 ADMISSIONS = ("review", "verified")
-METHODS = {"upload": "ghus_uploaded_doc", "manual": "ghus_manual"}
+# "map": a result of the platform's Explore and Map that a GHUS reviewer checked
+# and verified (28 Oct 2026). It was found by the mapping pipeline, so it keeps
+# that origin (claude_discovered, shown as AI mapped), never "imported".
+METHODS = {"upload": "ghus_uploaded_doc", "manual": "ghus_manual", "map": "claude_discovered"}
 # Per-fact origin vocabulary (source_origin_definition, Architecture V2 190).
-FACT_ORIGINS = {"upload": "uploaded_document", "manual": "ghus_manual"}
+FACT_ORIGINS = {"upload": "uploaded_document", "manual": "ghus_manual", "map": "newly_found"}
 MAX_ROWS = 1000
 MAX_TEXT = 4000
 REJECT_KEYS = re.compile(r"^_")          # no pipeline-internal key from outside
@@ -174,7 +177,7 @@ def check_header(batch: Mapping[str, Any]) -> None:
     if batch.get("record_type") not in RECORD_TYPES:
         raise DataFeedRefused("record_type must be actor, event or person")
     if batch.get("method") not in METHODS:
-        raise DataFeedRefused("method must be upload or manual")
+        raise DataFeedRefused("method must be upload, manual or map")
     if not _clean(batch.get("template_version")):
         raise DataFeedRefused("template_version is required")
     if not _clean(batch.get("import_name")) or len(_clean(batch.get("import_name"))) > 120:
@@ -671,6 +674,10 @@ def _stage_person(session, run_id: str, payload: dict, nkey: str, match: dict, m
 
 # ------------------------------------------------------------------ command
 def import_reason(batch: Mapping[str, Any], row_number: Any) -> str:
+    if batch.get("method") == "map":
+        return (f"Verified by {_clean(batch.get('uploaded_by'))} from an Explore and Map result "
+                f"(map '{_clean(batch.get('import_name'))}', record {row_number}). The verifier "
+                "attested that they are authorized GHUS staff and checked the record's sources.")
     where = (f"file {_clean(batch.get('file_name'))}, row {row_number}, SHA-256 "
              f"{str(batch.get('file_sha256') or '')[:12]}" if batch.get("file_name")
              else f"manual entry, record {row_number}")
