@@ -268,7 +268,7 @@ export const MISSING = {
 };
 
 export const NO_PARENT_TOOLTIP =
-  "No parent organization recorded. Standalone actors are complete records.";
+  "No parent organization recorded. A standalone organization is a complete record.";
 
 // --------------------------------------------------- Light Pull fact rows
 // Architecture V2 §5.1 common rows, then §5.2 per-category rows (Appendix D).
