@@ -277,6 +277,53 @@ def load_removed_actors() -> list[dict]:
     return out
 
 
+def load_actor_profile(actor_id: str) -> dict:
+    """What an organization's profile adds to the list (29 Oct 2026): the sources
+    behind its facts, its latest verification, the events it organizes and its
+    sourced relationships. Read-only; unknown ids give empty lists."""
+    try:
+        actor_id = str(UUID(str(actor_id)))
+    except ValueError:
+        return {"sources": [], "verification": None, "events": [], "relationships": []}
+    with _readonly() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT s.url, array_agg(DISTINCT f.fact_key ORDER BY f.fact_key), max(s.retrieved_at)
+              FROM actor_fact f JOIN source s ON s.source_id = f.source_id
+             WHERE f.actor_id = %s::uuid AND s.url IS NOT NULL AND s.url <> ''
+             GROUP BY s.url ORDER BY count(*) DESC LIMIT 12""", (actor_id,))
+        sources = [{"url": url, "supports": keys or [],
+                    "retrieved_at": when.isoformat() if when else None}
+                   for url, keys, when in cur.fetchall()]
+        cur.execute("""
+            SELECT decision, decided_by, decided_at, recorded_at, decision_origin
+              FROM actor_verification_event WHERE actor_id = %s::uuid
+             ORDER BY recorded_at DESC NULLS LAST LIMIT 1""", (actor_id,))
+        row = cur.fetchone()
+        verification = None if row is None else {
+            "decision": row[0], "decided_by": row[1], "origin": row[4],
+            "at": (row[2] or row[3]).isoformat() if (row[2] or row[3]) else None}
+        cur.execute("""
+            SELECT DISTINCT e.event_id::text, e.name, e.next_date
+              FROM event e
+              LEFT JOIN entity_edge g ON g.object_type = 'event' AND g.object_id = e.event_id
+                   AND g.subject_type = 'actor' AND g.relationship_type = 'organizes'
+             WHERE e.host_actor_id = %s::uuid OR g.subject_id = %s::uuid
+             ORDER BY e.next_date DESC NULLS LAST LIMIT 20""", (actor_id, actor_id))
+        events = [{"id": i, "name": n, "start_date": d.isoformat() if d else None}
+                  for i, n, d in cur.fetchall()]
+        cur.execute("""
+            SELECT g.relationship_type, (g.subject_id = %s::uuid) AS outgoing, o.name
+              FROM entity_edge g
+              JOIN actor o ON o.actor_id = CASE WHEN g.subject_id = %s::uuid
+                                                THEN g.object_id ELSE g.subject_id END
+             WHERE g.subject_type = 'actor' AND g.object_type = 'actor'
+               AND (g.subject_id = %s::uuid OR g.object_id = %s::uuid)
+             LIMIT 30""", (actor_id,) * 4)
+        relationships = [{"type": t, "outgoing": bool(out), "name": n} for t, out, n in cur.fetchall()]
+    return {"sources": sources, "verification": verification, "events": events,
+            "relationships": relationships}
+
+
 def load_hubs() -> list[dict]:
     """Every hub with EVERY column from the hub table (plus a live-actor count).
 

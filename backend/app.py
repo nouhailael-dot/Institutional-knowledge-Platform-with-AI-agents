@@ -458,6 +458,11 @@ def directory_restore(actor_id: str, payload: DirectoryDecision):
     return _directory_decision("restore_to_directory", actor_id, payload)
 
 
+@app.get("/api/browse/actors/{actor_id}/profile")
+def browse_actor_profile(actor_id: str):
+    return JSONResponse(jsonable_encoder(browse.load_actor_profile(actor_id)))
+
+
 @app.get("/api/browse/actors/removed")
 def browse_removed_actors():
     return JSONResponse(jsonable_encoder({"actors": browse.load_removed_actors()}))

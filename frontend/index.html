@@ -380,6 +380,22 @@
   .example.danger{color:#b3261e;border-color:#e6b8b3}
   .delete-panel{margin-top:14px;border-color:#e6b8b3}
   .delete-warning{color:#b3261e;font-weight:600}
+  .pf-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(240px,1fr);gap:18px;margin-top:6px}
+  .pf-main{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .pf-section{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--surface)}
+  .pf-section h3,.pf-side-box h3{font-family:var(--serif);font-size:16px;font-weight:600;margin:0 0 10px;color:var(--ink)}
+  .pf-rows{display:grid;grid-template-columns:150px minmax(0,1fr);gap:8px 14px;font-size:14px;line-height:1.5}
+  .pf-k{color:var(--muted);font-size:13px}
+  .pf-v{color:var(--ink);overflow-wrap:anywhere}
+  .pf-side{display:flex;flex-direction:column;gap:12px}
+  .pf-side-box{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;font-size:14px}
+  .pf-glance{display:flex;flex-direction:column;gap:2px;margin-bottom:10px;overflow-wrap:anywhere}
+  .pf-source{margin-bottom:8px;overflow-wrap:anywhere}
+  .pf-history{color:var(--muted);font-size:13px;margin-top:6px}
+  .rich p{margin:0 0 8px;line-height:1.6}.rich ul{margin:0 0 8px;padding-left:20px}.rich li{margin-bottom:4px}
+  details.pf-narr{border-top:1px solid var(--line);padding:8px 0}
+  details.pf-narr summary{cursor:pointer;font-weight:600;color:var(--ink)}
+  @media(max-width:900px){.pf-grid{grid-template-columns:1fr}.pf-rows{grid-template-columns:1fr}}
   .workspace-main{margin-left:236px;min-width:0}
   .workspace-header{height:72px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;padding:0 42px;background:var(--surface);gap:15px}
   .breadcrumb{color:var(--muted);font-size:12px}.breadcrumb span{margin:0 12px;color:#a4acb7}.breadcrumb strong{color:var(--ink);font-weight:550}
@@ -988,10 +1004,73 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
 }
 
 /* A record's page: what we hold, then the Edit form for every field. */
-function RecordPage({kind,r,onBack,onChanged,subtitle,facts=[],children,options}){
+/* A record's profile (29 Oct 2026): one layout for every type. Header with the
+   name, a one-line summary and badges; a main column of titled sections, where an
+   empty field reads "Not found" (an empty field is itself an answer); a side
+   column with the key facts and the sources and history. */
+const NOT_FOUND=html`<span class="dash">Not found</span>`;
+const isEmpty=v=>v==null||v===""||(Array.isArray(v)&&!v.length);
+// Long text keeps its paragraphs and bullet points; a long one opens with Show more.
+function RichText({text,limit=420}){
+  const [open,setOpen]=useState(false);
+  const raw=String(text||"").trim();
+  if(!raw) return NOT_FOUND;
+  const lines=raw.split(/\n+/).map(l=>l.trim()).filter(Boolean);
+  const blocks=[]; let list=[];
+  const flush=()=>{ if(list.length){ blocks.push(html`<ul key=${blocks.length}>${list.map((x,i)=>html`<li key=${i}>${x}</li>`)}</ul>`); list=[]; } };
+  for(const line of lines){
+    const item=line.match(/^(?:[-•*·]|\d+[.)])\s+(.*)$/);
+    if(item) list.push(item[1]); else { flush(); blocks.push(html`<p key=${blocks.length}>${line}</p>`); }
+  }
+  flush();
+  if(raw.length<=limit||open) return html`<div class="rich">${blocks}
+    ${open&&html`<button class="linkbtn" type="button" onClick=${()=>setOpen(false)}>Show less</button>`}</div>`;
+  const cut=raw.slice(0,limit), end=Math.max(cut.lastIndexOf(". "),cut.lastIndexOf("; "));
+  return html`<div class="rich"><p>${(end>limit/2?cut.slice(0,end+1):cut+"…")}</p>
+    <button class="linkbtn" type="button" onClick=${()=>setOpen(true)}>Show more</button></div>`;
+}
+function Section({title,rows,children}){
+  return html`<section class="pf-section"><h3>${title}</h3>
+    ${rows&&html`<div class="pf-rows">${rows.map(([k,v])=>html`<${React.Fragment} key=${k}>
+      <span class="pf-k">${k}</span><span class="pf-v">${isEmpty(v)?NOT_FOUND:v}</span></${React.Fragment}>`)}</div>`}
+    ${children}</section>`;
+}
+const link=(url,label)=>url?html`<a href=${url} target="_blank" rel="noopener noreferrer">${label||url.replace(/^https?:\/\/(www\.)?/,"").replace(/\/$/,"")}</a>`:null;
+const FACT_LABELS={description:"description",primary_technical_focus:"technical focus",technical_approach:"approach",
+  current_activities:"current activities",technology_ip_notes:"technology and IP",key_constraints:"constraints",
+  funding_summary:"funding",primary_lifecycle_role:"lifecycle role"};
+const RELATION_LABELS={unit_of:["Unit of","Has unit"],operated_by:["Operated by","Operates"],member_of:["Member of","Has member"],
+  portfolio_of:["In the portfolio of","Has in its portfolio"],spinout_of:["Spinout of","Spun out"],funded_by:["Funded by","Funds"],
+  collaborates_with:["Collaborates with","Collaborates with"]};
+
+function SourcesHistory({kind,r,profile}){
+  const lines=[];
+  const origin=r.origin==="AI-Mapped"?"Found by Explore and Map or monitoring":r.origin==="Imported"?"Imported from the Phase 1 map":null;
+  if(origin) lines.push(origin);
+  const v=profile&&profile.verification;
+  if(v&&v.decision==="verified"&&v.at) lines.push(`Verified ${usDate(v.at.slice(0,10))}${byWhom(v.decided_by)}`);
+  if(statusOf(r)==="Removed"&&r.removed_at) lines.push(`Removed ${usDate(r.removed_at.slice(0,10))}${byWhom(r.removed_by)}: ${r.removed_reason||""}`);
+  if(kind==="hub"&&r.approved_at) lines.push(`Approved ${usDate(String(r.approved_at).slice(0,10))}${byWhom(r.approved_by)}`);
+  const sources=(profile&&profile.sources)||[];
+  return html`<div class="pf-side-box"><h3>Sources and history</h3>
+    ${kind==="actor"&&!profile?html`<div class="hint" style=${{margin:0}}><span class="spin"></span> Loading…</div>`:null}
+    ${sources.map(s=>html`<div class="pf-source" key=${s.url}>${link(s.url)}
+      ${(s.supports||[]).some(k=>FACT_LABELS[k])&&html`<div class="hint" style=${{margin:0}}>${s.supports.filter(k=>FACT_LABELS[k]).map(k=>FACT_LABELS[k]).join(", ")}</div>`}</div>`)}
+    ${kind!=="actor"&&r.website&&html`<div class="pf-source">${link(r.website)}</div>`}
+    ${kind==="actor"&&profile&&!sources.length&&html`<div class="dash">No source pages recorded</div>`}
+    ${lines.map(l=>html`<div class="pf-history" key=${l}>${l}</div>`)}
+  </div>`;
+}
+
+function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],children,options}){
   const [editing,setEditing]=useState(false);
   const [deleting,setDeleting]=useState(false);
+  const [profile,setProfile]=useState(null);
   const removed=statusOf(r)==="Removed";
+  useEffect(()=>{ if(kind!=="actor") return; let live=true;
+    api(`/api/browse/actors/${r.id}/profile`).then(d=>live&&setProfile(d)).catch(()=>live&&setProfile({sources:[],events:[],relationships:[]}));
+    return ()=>{live=false;}; },[r.id]);
+  const body=typeof sections==="function"?sections(profile):(sections||[]);
   return html`<div class="card pad detail fade">
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <button class="backlink" onClick=${onBack}>← Back to results</button>
@@ -1005,13 +1084,19 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,facts=[],children,options}
       onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
     <h2>${r.name}</h2>
     ${subtitle&&html`<div class="loc">${subtitle}</div>`}
-    <div class="badges"><${RecordBadges} r=${r}/><span class="chip slate">Owner: ${ownerOf(r)}</span></div>
-    ${r.website&&html`<p>🔗 <a href=${r.website} target="_blank" rel="noopener">${r.website}</a></p>`}
-    ${r.description&&html`<p>${r.description}</p>`}
-    ${facts.filter(([,v])=>v&&String(v).trim()).length>0&&html`<div class="kv">
-      ${facts.filter(([,v])=>v&&String(v).trim()).map(([k,v])=>html`<div key=${k}><div class="k">${k}</div><div class="v">${v}</div></div>`)}</div>`}
-    ${children}
-    ${editing&&html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}/>`}
+    <div class="badges"><${RecordBadges} r=${r}/></div>
+    ${editing
+      ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}/>`
+      : html`<div class="pf-grid">
+          <div class="pf-main">${body}${children}</div>
+          <aside class="pf-side">
+            <div class="pf-side-box"><h3>At a glance</h3>
+              ${[...glance,["Owner",ownerOf(r)]].map(([k,v])=>html`<div class="pf-glance" key=${k}>
+                <span class="pf-k">${k}</span><span>${isEmpty(v)?NOT_FOUND:v}</span></div>`)}
+            </div>
+            <${SourcesHistory} kind=${kind} r=${r} profile=${profile}/>
+          </aside>
+        </div>`}
   </div>`;
 }
 
@@ -1132,10 +1217,24 @@ function Actors(){
   const typeOf=a=>a.actor_category||a.actor_type||"";
   const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
-    subtitle=${[typeOf(sel),[sel.city,sel.state,sel.country_raw].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
-    facts=${[["Hubs",sel.hubs.join(" · ")],["Sector",(sel.sectors||[]).join(" · ")],["Region",sel.region],
-      ["Primary technical focus",sel.primary_technical_focus],["Current activities",sel.current_activities],
-      ["Lifecycle role",sel.primary_lifecycle_role]]}/>`;
+    subtitle=${[shortType(typeOf(sel)),[sel.city,sel.state].filter(Boolean).join(", "),(sel.sectors||[]).join(", ")].filter(Boolean).join("  ·  ")}
+    glance=${[["Type",[typeOf(sel),sel.category_type&&sel.category_type!=="Not classified"?sel.category_type:null].filter(Boolean).join(" · ")],
+      ["Location",[sel.city,sel.state,sel.country_raw].filter(Boolean).join(", ")],["Region",sel.region],
+      ["Lifecycle role",sel.primary_lifecycle_role],["Website",link(sel.website)],["Other names",sel.alt_names]]}
+    sections=${profile=>[
+      html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
+      html`<${Section} key="does" title="What it does" rows=${[["Technical focus",sel.primary_technical_focus],
+        ["Approach",sel.technical_approach],["Current activities",sel.current_activities],["Technology and IP",sel.technology_ip_notes]]}/>`,
+      html`<${Section} key="funding" title="Funding and constraints" rows=${[["Funding",sel.funding_summary],["Constraints",sel.key_constraints]]}/>`,
+      html`<${Section} key="links" title="Connections" rows=${[
+        ["Hub",sel.hubs.length?sel.hubs.join(" · "):html`<span class="dash">Not in a hub</span>`],
+        ["Sector",(sel.sectors||[]).join(", ")],
+        ...((profile&&profile.relationships)||[]).map(x=>[(RELATION_LABELS[x.type]||[x.type,x.type])[x.outgoing?0:1],x.name]),
+        ["Events it organizes",!profile?"…":profile.events.length?profile.events.map(e=>e.name+(e.start_date?` (${usDate(e.start_date)})`:"")).join(" · ")
+          :html`<span class="dash">None recorded</span>`],
+        ["People",html`<span class="dash">None recorded</span>`]]}/>`,
+      html`<${Section} key="notes" title="GHUS notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
+        :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
   return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="organization" plural="organizations" nameLabel="Organization" rows=${actors} exportName="organizations"
     onOpen=${setSel} empty="No organizations in the database yet."
     search=${{placeholder:"Search name, description, technical focus…",
@@ -1170,15 +1269,27 @@ function Hubs(){
   if(sel){
     const related=(actorsData?actorsData.actors:[]).filter(a=>a.hubs.includes(sel.name));
     return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)}
-      subtitle=${[sectorOf(sel),[sel.primary_city,sel.state,sel.country].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
-      facts=${[["Organizations",String(sel.actor_count)],["Strategic value",sel.strategic_value_summary],
-        ["Core strengths",sel.core_topic_strengths]]}>
-      <h3 style=${{fontFamily:"var(--serif)",marginTop:"22px",marginBottom:"8px"}}>Organizations in this hub</h3>
-      ${related.length===0? html`<div class="empty">No organizations linked yet.</div>` : html`
-        <div class="card" style=${{overflow:"hidden"}}>
-        <table class="grid"><thead><tr><th>Name</th><th>Type</th><th>Location</th></tr></thead>
+      subtitle=${[sectorOf(sel),[sel.primary_city,sel.state].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
+      glance=${[["Sector",sectorOf(sel)],["Organizations",String(sel.actor_count??related.length)],
+        ["Center",[sel.primary_city,sel.state,sel.country].filter(Boolean).join(", ")],
+        ["Websites",sel.official_websites?String(sel.official_websites).split(/[,\s]+/).filter(u=>u.startsWith("http")).slice(0,3)
+          .map(u=>html`<div key=${u}>${link(u)}</div>`):null]]}
+      sections=${[
+        html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
+        html`<${Section} key="value" title="Strategic value and strengths" rows=${[["Strategic value",sel.strategic_value_summary&&html`<${RichText} text=${sel.strategic_value_summary} limit=${300}/>`],
+          ["Core strengths",sel.core_topic_strengths],["Funding",sel.funding_summary],["Constraints",sel.constraints_summary]]}/>`,
+        html`<${Section} key="narr" title="In depth">
+          ${[["composition_narrative","Composition"],["programs_and_labs_narrative","Programs and labs"],["talent_narrative","Talent"],
+            ["research_infrastructure_narrative","Research infrastructure"],["industry_integration_narrative","Industry integration"],
+            ["international_engagement_narrative","International engagement"]].map(([k,label])=>html`<details class="pf-narr" key=${k}>
+              <summary>${label}</summary><${RichText} text=${sel[k]} limit=${100000}/></details>`)}
+        </${Section}>`]}>
+      <${Section} title=${`Organizations in this hub (${related.length})`}>
+      ${related.length===0? html`<span class="dash">No organizations linked yet.</span>` : html`
+        <table class="grid"><thead><tr><th>Organization</th><th>Type</th><th>Location</th></tr></thead>
         <tbody>${related.map(a=>html`<tr key=${a.id}><td><div class="name-link">${a.name}</div><${RecordBadges} r=${a}/></td>
-          <td>${dash(a.actor_category||a.actor_type)}</td><td>${dash([a.city,a.state].filter(Boolean).join(", "))}</td></tr>`)}</tbody></table></div>`}
+          <td>${dash(shortType(a.actor_category||a.actor_type))}</td><td>${dash([a.city,a.state].filter(Boolean).join(", "))}</td></tr>`)}</tbody></table>`}
+      </${Section}>
     </${RecordPage}>`;
   }
   return html`<${Directory} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
@@ -1211,9 +1322,17 @@ function Events(){
   const when=e=>{const d=(e.end_date||e.start_date||"").slice(0,10);return !d?"No date":d>=today()?"Upcoming":"Past";};
   const dated=events.filter(e=>e.start_date).length;
   if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)}
-    subtitle=${[sel.event_type,sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location,sel.recurring_pattern].filter(Boolean).join("  ·  ")}
-    facts=${[["Organizer",sel.organizer],["Topic",sel.thematic_focus],["Scale",sel.expected_attendance],
-      ["Access",sel.access_type],["Sponsors",sel.sponsoring_orgs]]}/>`;
+    subtitle=${[capFirst(sel.event_type),sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
+    glance=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],["When",when(sel)==="No date"?null:when(sel)],
+      ["Location",sel.location],["Frequency",sel.recurring_pattern],["Website",link(sel.website)]]}
+    sections=${[
+      html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/>
+        ${sel.thematic_focus&&html`<div class="pf-rows" style=${{marginTop:"8px"}}><span class="pf-k">Topic</span><span class="pf-v">${sel.thematic_focus}</span></div>`}</${Section}>`,
+      html`<${Section} key="when" title="When and where" rows=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],
+        ["Frequency",sel.recurring_pattern],["Location",sel.location],["Access",sel.access_type]]}/>`,
+      html`<${Section} key="who" title="Who" rows=${[["Organizer",sel.organizer],["Sponsors",sel.sponsoring_orgs],["Scale",sel.expected_attendance]]}/>`,
+      html`<${Section} key="ghus" title="GHUS engagement" rows=${[["Attended",html`<span class="dash">Not recorded yet</span>`],
+        ["Notes",sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`:html`<span class="dash">No notes yet. Add them with Edit.</span>`]]}/>`]}/>`;
   return html`<${Directory} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
     onOpen=${setSel} empty="No events in the database yet."
     note=${`Upcoming events first, then those without a date, then past ones. ${dated} of ${events.length} events have a date.`}
@@ -1242,7 +1361,11 @@ function People(){
   const {people,options}=data;
   if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)}
     subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
-    facts=${[["Topics",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")],["ORCID",sel.orcid]]}/>`;
+    glance=${[["Title",sel.title],["Organization",sel.organizations.join(", ")],["State",sel.states.join(", ")]]}
+    sections=${[
+      html`<${Section} key="role" title="Role" rows=${[["Title",sel.title],["Organization",sel.organizations.join(", ")]]}/>`,
+      html`<${Section} key="exp" title="Expertise" rows=${[["Topics",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")]]}/>`,
+      html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`]}/>`;
   return html`<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
     onOpen=${setSel}
     empty="No people in the database yet. People found in Build the Map appear here once they are verified into the database."
