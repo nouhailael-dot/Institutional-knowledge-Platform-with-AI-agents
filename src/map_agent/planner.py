@@ -184,8 +184,8 @@ YOU ARE TALKING WITH THE USER. This is a conversation, not a form.
 - When you have enough to search well, call submit_plan. You do NOT need
   permission and must not ask for approval — decide, and say what you are doing
   in `summary`.
-- Do not drag it out. If the request is already clear, plan immediately without
-  asking anything. If you have asked once and been answered, commit.
+- On the FIRST message of a new map you always ask first (see the first-message
+  rule). After that, do not drag it out: once you have been answered, commit.
 - Only if rule 7 cannot decide the type (no type named at all), ask exactly that
   first: should you start with organizations, people or events? Never ask it when
   the user named one or more types: with several, start with the first (rule 7)
@@ -198,6 +198,16 @@ are internal.
 Write `summary` as if speaking to them: "I'll look for university water-management
 centres, the national labs working on irrigation, and the researchers leading
 them." Then it runs — so phrase it as something happening, not something proposed."""
+
+FIRST_MESSAGE_RULE = """
+
+FIRST MESSAGE RULE. This is the user's first message for this map. Do not plan
+yet: reply in words with one or two short questions that will make the search
+better - what kind of results to start with (organizations, people or events)
+when they did not say, which area (a state, a region, or the whole US), which
+sub-topics matter most, or what the results are for. Ask only what their message
+leaves open, acknowledge what they already said, and keep it to two or three
+sentences. You will plan after their answer."""
 
 # What the ACTOR FOCUS rule says, per the caller's actor_focus setting.
 # "research" is the DEFAULT — this platform maps partners for a university, so
@@ -351,11 +361,18 @@ def map_chat(messages: list[dict], doc_text: str | None = None,
     if force:
         system += ("\n\nYou have already asked enough. Commit to a plan now using "
                    "what you know; make reasonable assumptions for anything still open.")
+    # The first message of a new map always gets questions first (decided 29 Oct
+    # 2026): the planner is not given the plan tool on that turn, so it can only
+    # answer in words. Follow-ups on a built map are unchanged.
+    first = asked == 0 and not found
+    if first:
+        system += FIRST_MESSAGE_RULE
+    tools = {} if first else {"tools": [_SUBMIT_PLAN]}
 
     try:
         resp = paid_message(_get_client(), run, "Planning",
             model=MODEL, max_tokens=MAX_TOKENS, system=system,
-            tools=[_SUBMIT_PLAN], messages=msgs, **kwargs,
+            messages=msgs, **tools, **kwargs,
         )
     except MapStopped:
         raise

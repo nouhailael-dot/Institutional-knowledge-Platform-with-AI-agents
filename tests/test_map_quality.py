@@ -43,3 +43,34 @@ class BudgetMessageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FirstMessageTests(unittest.TestCase):
+    """The first message of a new map always gets questions first (29 Oct 2026)."""
+
+    def call(self, messages, result=None):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        reply = SimpleNamespace(content=[SimpleNamespace(type="text", text="Which region should I cover?")])
+        with patch.object(planner, "paid_message", return_value=reply) as paid:
+            out = planner.map_chat(messages, result=result)
+        return out, paid.call_args.kwargs
+
+    def test_the_first_message_can_only_be_answered_with_questions(self):
+        out, kwargs = self.call([{"role": "user", "content": "Research centers on phosphate in Florida"}])
+        self.assertNotIn("tools", kwargs)
+        self.assertIn("FIRST MESSAGE RULE", kwargs["system"])
+        self.assertEqual(out, {"status": "reply", "message": "Which region should I cover?"})
+
+    def test_after_an_answer_it_plans_as_usual(self):
+        _, kwargs = self.call([{"role": "user", "content": "Partners on phosphate"},
+                               {"role": "assistant", "content": "Which region?"},
+                               {"role": "user", "content": "Florida, research centers"}])
+        self.assertEqual(kwargs["tools"][0]["name"], "submit_plan")
+        self.assertNotIn("FIRST MESSAGE RULE", kwargs["system"])
+
+    def test_a_follow_up_on_a_built_map_is_unchanged(self):
+        built = {"map_type": "organizations", "entities": {"actor": [{"name": "FIPR Institute"}]}}
+        _, kwargs = self.call([{"role": "user", "content": "Which of these are in Florida?"}], result=built)
+        self.assertEqual(kwargs["tools"][0]["name"], "submit_plan")
+        self.assertNotIn("FIRST MESSAGE RULE", kwargs["system"])
