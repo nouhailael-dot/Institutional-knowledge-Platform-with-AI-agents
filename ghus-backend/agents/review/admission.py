@@ -790,11 +790,17 @@ def apply_directory_decision(session, decision: Mapping[str, Any]) -> dict[str, 
     transaction = session.begin()
     try:
         row = session.execute(
-            text("SELECT name, status FROM actor WHERE actor_id = CAST(:id AS uuid) FOR UPDATE"),
+            text("SELECT name, status, merged_into_actor_id FROM actor "
+                 "WHERE actor_id = CAST(:id AS uuid) FOR UPDATE"),
             {"id": entity_id},
         ).mappings().first()
         if row is None:
             raise AdmissionValidationError("that organization is not in the directory")
+        if row.get("merged_into_actor_id"):
+            # A merged duplicate is not in the directory; remove the record it
+            # was merged into instead.
+            raise AdmissionValidationError(
+                "that record was merged into another organization; remove that one instead")
         already = (row["status"] == "rejected") if removing else (row["status"] != "rejected")
         if already:
             transaction.rollback()

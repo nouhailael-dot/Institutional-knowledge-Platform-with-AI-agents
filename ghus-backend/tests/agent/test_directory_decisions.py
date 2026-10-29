@@ -59,6 +59,19 @@ def test_refusals(change, message):
         decide("remove_from_directory", **change)
 
 
+def test_a_merged_duplicate_is_refused():
+    session = session_with("verified")
+    session.execute.return_value.mappings.return_value.first.return_value = {
+        "name": "AI-in-health research labs", "status": "verified",
+        "merged_into_actor_id": "30229be3-031b-489b-9be5-23193e1ebad6"}
+    with patch("agents.enrichment.decisions.record_verification_decision") as writer, \
+            pytest.raises(admission.AdmissionValidationError, match="merged into another"):
+        admission.apply_directory_decision(session, {
+            "decision_kind": "remove_from_directory", "entity_type": "actor", "entity_id": ACTOR,
+            "reviewer": "N", "reason": "x"})
+    writer.assert_not_called()
+
+
 def test_a_missing_organization_is_refused():
     with pytest.raises(admission.AdmissionValidationError, match="not in the directory"):
         decide("remove_from_directory", status=None)
