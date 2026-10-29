@@ -529,7 +529,9 @@ test('every action is disabled while the canonical writer is unavailable', () =>
 
 test('Review is mounted and its navigation entry is present', () => {
   const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
-  assert.match(page, /\["review","Review","✓"\]/);
+  // The COMPASS navigation (2026-10-29): [id, label], an icon per id.
+  assert.match(page, /\["review","Review"\]/);
+  assert.match(page, /review:svg\(/);
   assert.match(page, /display:tab==="review"/);
 });
 

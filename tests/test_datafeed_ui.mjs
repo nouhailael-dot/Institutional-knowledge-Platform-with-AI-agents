@@ -182,7 +182,9 @@ test('the page never writes records itself and confirms explicitly', () => {
 
 test('the page is in the navigation, between Discovery and Review', () => {
   const index = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
-  assert.match(index, /\["discovery","Discovery","◎"\],\["datafeed","Data Feed","⇪"\],\["review","Review","✓"\]/);
+  // The COMPASS navigation (2026-10-29): [id, label], an icon per id.
+  assert.match(index, /\["discovery","Discovery"\],\["datafeed","Data Feed"\],\["review","Review"\]/);
+  assert.match(index, /datafeed:svg\(/);
   assert.match(index, /import \{createDataFeedPage\} from "\.\/datafeed\.js\?v=\d+[a-z]";/);
   assert.match(index, /<link rel="stylesheet" href="\/datafeed\.css\?v=\d+[a-z]"\/>/);
   // datafeed.js imports review.js under the same version as the page, so it loads once.

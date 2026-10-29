@@ -99,8 +99,10 @@ test('the page writes nothing itself: every call goes to /api/discovery', () => 
 
 test('Discovery is in the main navigation', () => {
   const index = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
-  assert.match(index, /\["discovery","Discovery",/);
-  assert.match(index, /discovery:"Discovery"/);
+  // The COMPASS navigation (2026-10-29): [id, label], an icon per id.
+  assert.match(index, /\["discovery","Discovery"\]/);
+  assert.match(index, /discovery:svg\(/);
+  assert.match(index, /display:tab==="discovery"/);
   assert.match(index, /createDiscoveryPage/);
 });
 
