@@ -233,6 +233,50 @@ def load_actors() -> list[dict]:
     return out
 
 
+# What a Directory removal records (backend agents/review/admission.py); the
+# "Removed" view lists only these, not the placeholders rejected in September.
+REMOVED_REASON_PREFIX = "Removed from the Ecosystem Directory"
+
+
+def load_removed_actors() -> list[dict]:
+    """Organizations removed from the Directory with its Delete, newest first,
+    with who removed them, when and why (29 Oct 2026). Read-only."""
+    sql = """
+        SELECT a.actor_id, a.name, coalesce(cd.display_name, a.actor_category) AS category,
+               COALESCE(NULLIF(to_jsonb(a)->>'city', ''), NULLIF(to_jsonb(a)->>'location_city', '')) AS city,
+               coalesce(rs.state_name, NULLIF(to_jsonb(a)->>'state_code', '')) AS state,
+               a.website, a.description, a.source_origin,
+               e.decided_by, e.decided_at, e.rejection_reason
+        FROM actor a
+        JOIN LATERAL (
+            SELECT decided_by, decided_at, rejection_reason, reason
+              FROM actor_verification_event v
+             WHERE v.actor_id = a.actor_id
+             ORDER BY v.recorded_at DESC NULLS LAST, v.decided_at DESC NULLS LAST
+             LIMIT 1) e ON true
+        LEFT JOIN actor_category_definition cd ON cd.category_code = a.actor_category
+        LEFT JOIN region_state rs ON rs.state_code = to_jsonb(a)->>'state_code'
+        WHERE a.status = 'rejected' AND a.merged_into_actor_id IS NULL
+          AND e.reason LIKE %s
+        ORDER BY e.decided_at DESC
+    """
+    out = []
+    with _readonly() as conn, conn.cursor() as cur:
+        cur.execute(sql, (REMOVED_REASON_PREFIX + "%",))
+        cols = [c.name for c in cur.description]
+        for row in cur.fetchall():
+            r = dict(zip(cols, row))
+            out.append({
+                "id": str(r["actor_id"]), "name": r["name"], "actor_type": r["category"],
+                "city": r["city"], "state": r["state"], "website": r["website"],
+                "description": r["description"], "origin": origin_label(r["source_origin"]),
+                "status": "removed", "hubs": [], "sectors": [], "owner": OWNER_NOT_RECORDED,
+                "removed_by": r["decided_by"], "removed_reason": r["rejection_reason"],
+                "removed_at": r["decided_at"].isoformat() if r["decided_at"] else None,
+            })
+    return out
+
+
 def load_hubs() -> list[dict]:
     """Every hub with EVERY column from the hub table (plus a live-actor count).
 

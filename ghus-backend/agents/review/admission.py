@@ -757,6 +757,64 @@ def apply_create_sector(session, decision: Mapping[str, Any]) -> dict[str, Any]:
     return {"decision_kind": "create_sector", "status": "applied", **result}
 
 
+DIRECTORY_DECISION_KINDS = {"remove_from_directory", "restore_to_directory"}
+
+
+def apply_directory_decision(session, decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Remove an organization from the Ecosystem Directory, or restore it (29 Oct 2026).
+
+    Nothing is deleted. A GHUS decision is appended through
+    ``decisions.record_verification_decision`` - "rejected" to remove (a reason is
+    required), "verified" to restore - and the database projects it onto the
+    actor's status, which the directory reads. The history keeps who decided,
+    when and why. Organizations only for now: events, hubs and people have no
+    verification path yet.
+    """
+    from agents.enrichment.decisions import record_verification_decision
+
+    kind = str(decision.get("decision_kind") or "")
+    if kind not in DIRECTORY_DECISION_KINDS:
+        raise AdmissionValidationError("unsupported directory decision")
+    if str(decision.get("entity_type") or "actor") != "actor":
+        raise AdmissionValidationError("only organizations can be removed from the directory for now")
+    reviewer = _clean_required(decision.get("reviewer"), "reviewer", 120)
+    raw_id = _clean_required(decision.get("entity_id"), "entity_id", 80)
+    try:
+        entity_id = str(uuid.UUID(raw_id))
+    except ValueError as exc:
+        raise AdmissionValidationError("entity_id must be a UUID") from exc
+    reason = " ".join(str(decision.get("reason") or "").split())[:500]
+    removing = kind == "remove_from_directory"
+    if removing and not reason:
+        raise AdmissionValidationError("a reason is required to remove a record from the directory")
+    transaction = session.begin()
+    try:
+        row = session.execute(
+            text("SELECT name, status FROM actor WHERE actor_id = CAST(:id AS uuid) FOR UPDATE"),
+            {"id": entity_id},
+        ).mappings().first()
+        if row is None:
+            raise AdmissionValidationError("that organization is not in the directory")
+        already = (row["status"] == "rejected") if removing else (row["status"] != "rejected")
+        if already:
+            transaction.rollback()
+            return {"decision_kind": kind, "status": "unchanged", "entity_id": entity_id,
+                    "name": row["name"], "current_status": row["status"]}
+        record_verification_decision(
+            session, entity_type="actor", entity_ids=[entity_id],
+            decision="rejected" if removing else "verified", decided_by=reviewer,
+            notes=("Removed from the Ecosystem Directory" if removing
+                   else "Restored to the Ecosystem Directory") + (f": {reason}" if reason else "."),
+            rejection_reason=reason if removing else None,
+        )
+        transaction.commit()
+    except Exception:
+        transaction.rollback()
+        raise
+    return {"decision_kind": kind, "status": "applied", "entity_id": entity_id,
+            "name": row["name"], "current_status": "rejected" if removing else "verified"}
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply one reviewed GHUS discovery decision")
     parser.add_argument("--decision", required=True, type=Path)
@@ -773,6 +831,8 @@ def _main(argv: list[str] | None = None) -> int:
             outcome = apply_category_decisions(session, raw)
         elif raw.get("decision_kind") in REVIEW_ITEM_DECISION_KINDS:
             outcome = apply_review_item_decision(session, raw)
+        elif raw.get("decision_kind") in DIRECTORY_DECISION_KINDS:
+            outcome = apply_directory_decision(session, raw)
         else:
             outcome = apply_review_decision(session, raw)
     json.dump(outcome, sys.stdout, sort_keys=True, default=str)

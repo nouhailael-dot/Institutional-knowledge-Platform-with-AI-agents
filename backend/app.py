@@ -408,6 +408,54 @@ def browse_actors():
     return JSONResponse(jsonable_encoder({"actors": enriched, "options": options}))
 
 
+# --- Delete in the Ecosystem Directory (29 Oct 2026). Removable, never wiped: the
+# backend appends a GHUS decision ("rejected" to remove, "verified" to restore)
+# through its own writer, and the database hides a rejected organization.
+class DirectoryDecision(BaseModel):
+    reviewer: str = ""
+    reason: str = ""
+    confirm: bool = False
+
+
+def _directory_decision(kind: str, actor_id: str, payload: DirectoryDecision):
+    reviewer = " ".join(payload.reviewer.split())
+    reason = " ".join(payload.reason.split())
+    if not 1 <= len(reviewer) <= 120:
+        raise HTTPException(status_code=400, detail="Give your name: every removal records who did it.")
+    if kind == "remove_from_directory" and not reason:
+        raise HTTPException(status_code=400, detail="Give a reason: it is kept with the record.")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=400, detail="Confirm the removal first.")
+    bridge = review_admission_bridge()
+    if not bridge.configured:
+        raise HTTPException(status_code=503, detail=(
+            "Deleting isn't set up on this computer: Review's decision writer is not configured."))
+    try:
+        outcome = bridge.apply({
+            "decision_kind": kind, "entity_type": "actor", "entity_id": actor_id,
+            "reviewer": reviewer, "reason": reason[:500],
+            "idempotency_key": f"directory:{kind}:{actor_id}:{int(time.time())}"})
+    except AdmissionBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _actors.cache_clear()
+    return outcome
+
+
+@app.post("/api/browse/actors/{actor_id}/remove")
+def directory_remove(actor_id: str, payload: DirectoryDecision):
+    return _directory_decision("remove_from_directory", actor_id, payload)
+
+
+@app.post("/api/browse/actors/{actor_id}/restore")
+def directory_restore(actor_id: str, payload: DirectoryDecision):
+    return _directory_decision("restore_to_directory", actor_id, payload)
+
+
+@app.get("/api/browse/actors/removed")
+def browse_removed_actors():
+    return JSONResponse(jsonable_encoder({"actors": browse.load_removed_actors()}))
+
+
 @app.get("/api/browse/hubs")
 def browse_hubs():
     return JSONResponse(jsonable_encoder(

@@ -376,6 +376,10 @@
   .save-list .field{min-width:180px}
   .save-list .bad{color:var(--violet);font-weight:600}
   .example.on{background:var(--green-soft);color:var(--green);border-color:var(--green)}
+  .btn.danger{background:#b3261e;border-color:#b3261e;color:#fff}
+  .example.danger{color:#b3261e;border-color:#e6b8b3}
+  .delete-panel{margin-top:14px;border-color:#e6b8b3}
+  .delete-warning{color:#b3261e;font-weight:600}
   .workspace-main{margin-left:236px;min-width:0}
   .workspace-header{height:72px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;padding:0 42px;background:var(--surface);gap:15px}
   .breadcrumb{color:var(--muted);font-size:12px}.breadcrumb span{margin:0 12px;color:#a4acb7}.breadcrumb strong{color:var(--ink);font-weight:550}
@@ -838,9 +842,66 @@ function statusOf(r){
   if(s==="verified"||s==="phase_1") return "Verified";
   if(s==="parked") return "Parked";
   if(s==="rejected") return "Rejected";
+  if(s==="removed") return "Removed";
   return "Pending review";
 }
-const STATUS_CHIP={"Verified":"green","Pending review":"amber","Parked":"slate","Rejected":"slate"};
+const STATUS_CHIP={"Verified":"green","Pending review":"amber","Parked":"slate","Rejected":"slate","Removed":"slate"};
+
+/* Delete in the Ecosystem Directory (29 Oct 2026): a warning, a reason, the
+   person's name and a second confirmation. Removable, never wiped - the backend
+   records a GHUS decision and the directory hides the record; Status -> Removed
+   lists it with Restore. Organizations only for now; events, hubs and people
+   show the same panel, switched off, until the backend has the same path. */
+function DeletePanel({kind,r,onDone,onClose}){
+  const restoring=statusOf(r)==="Removed", works=kind==="actor";
+  const [name,setName]=useState(()=>{try{return localStorage.getItem("compass.verifierName")||"";}catch(e){return "";}});
+  const [reason,setReason]=useState("");
+  const [sure,setSure]=useState(false);
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState(null);
+  const ready=works&&name.trim()&&(restoring||reason.trim());
+  async function send(){
+    if(busy||!ready) return;
+    setBusy(true); setErr(null);
+    try{ localStorage.setItem("compass.verifierName",name.trim()); }catch(e){}
+    try{
+      const res=await fetch(`/api/browse/actors/${r.id}/${restoring?"restore":"remove"}`,{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({reviewer:name,reason,confirm:true})});
+      const d=await res.json();
+      if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not save that.");
+      onDone(restoring?`${r.name} is back in the directory.`:`${r.name} was removed from the directory.`);
+    }catch(e){ setErr(String(e.message||e)); setBusy(false); }
+  }
+  return html`<div class="card pad fade delete-panel">
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <strong>${restoring?`Restore ${r.name}`:`Delete ${r.name}`}</strong>
+      <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
+    </div>
+    ${restoring
+      ? html`<p>Removed by <b>${r.removed_by||"someone"}</b>${r.removed_at?` on ${usDate(r.removed_at.slice(0,10))}`:""}:
+          ${r.removed_reason||"no reason recorded"}. Restoring puts it back in the Ecosystem Directory for everyone.</p>`
+      : html`<p class="delete-warning">This removes ${r.name} from the Ecosystem Directory for everyone.</p>
+          <p class="hint" style=${{margin:"0 0 10px"}}>It stays in the history with your name and reason, and a
+            GHUS reviewer can restore it from Status → Removed.</p>`}
+    ${!works&&html`<p class="hint">Deleting ${kind==="event"?"events":kind==="hub"?"hubs":"people"} connects once the
+      backend has the same path; organizations can be deleted now.</p>`}
+    ${!restoring&&html`<div class="edit-field"><label>Reason</label>
+      <textarea class="field edit-long" rows="2" disabled=${!works} value=${reason} onInput=${e=>setReason(e.target.value)}
+        placeholder="Why it should not be in the directory, e.g. a duplicate of another record, closed, not relevant to GHUS."></textarea></div>`}
+    <div class="edit-field" style=${{maxWidth:"360px"}}><label>Your name</label>
+      <input class="field" disabled=${!works} value=${name} onInput=${e=>setName(e.target.value)} placeholder="First and last name"/></div>
+    ${err&&html`<div class="whynot" role="alert">${err}</div>`}
+    <div class="attach-row" style=${{marginTop:"10px"}}>
+      ${restoring
+        ? html`<button class="btn" type="button" disabled=${busy||!ready} onClick=${send}>${busy?"Restoring…":"Restore"}</button>`
+        : !sure
+          ? html`<button class="btn danger" type="button" disabled=${!ready} onClick=${()=>setSure(true)}>Delete</button>`
+          : html`<span class="delete-warning" style=${{margin:0}}>Are you sure? ${r.name} disappears for everyone.</span>
+              <button class="btn danger" type="button" disabled=${busy} onClick=${send}>${busy?"Deleting…":"Yes, delete"}</button>
+              <button class="example" type="button" disabled=${busy} onClick=${()=>setSure(false)}>No, keep it</button>`}
+    </div>
+  </div>`;
+}
 function RecordBadges({r}){
   const status=statusOf(r), origin=r.origin==="AI-Mapped"?"AI mapped":r.origin;
   return html`<span class="badges inline">
@@ -877,6 +938,7 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
   const all=[...filters,...common,...more];
   const needle=q.trim().toLowerCase();
   const matches=rows.filter(r=>
+    (statusOf(r)!=="Removed"||vals._status==="Removed") &&
     (!needle||search.text(r).toLowerCase().includes(needle)) &&
     (!verifiedOnly||statusOf(r)==="Verified") &&
     all.every(f=>!vals[f.key]||f.test(r,vals[f.key])));
@@ -929,13 +991,21 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
 }
 
 /* A record's page: what we hold, then the Edit form for every field. */
-function RecordPage({kind,r,onBack,subtitle,facts=[],children,options}){
+function RecordPage({kind,r,onBack,onChanged,subtitle,facts=[],children,options}){
   const [editing,setEditing]=useState(false);
+  const [deleting,setDeleting]=useState(false);
+  const removed=statusOf(r)==="Removed";
   return html`<div class="card pad detail fade">
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <button class="backlink" onClick=${onBack}>← Back to results</button>
-      ${!editing&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
+      <span style=${{display:"inline-flex",gap:"8px"}}>
+        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
+        ${!editing&&!deleting&&html`<button class=${removed?"example":"example danger"} type="button"
+          onClick=${()=>setDeleting(true)}>${removed?"Restore":"Delete"}</button>`}
+      </span>
     </div>
+    ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
+      onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
     <h2>${r.name}</h2>
     ${subtitle&&html`<div class="loc">${subtitle}</div>`}
     <div class="badges"><${RecordBadges} r=${r}/><span class="chip slate">Owner: ${ownerOf(r)}</span></div>
@@ -1053,18 +1123,23 @@ function RecordEditor({kind,record,options,onClose}){
 
 /* ------------------------------------------------- The four tabs */
 function Actors(){
-  const data=useOnce(()=>api("/api/browse/actors"));
+  const [version,setVersion]=useState(0);
+  const [notice,setNotice]=useState(null);
+  const data=useOnce(()=>api("/api/browse/actors"),[version]);
+  const removedData=useOnce(()=>api("/api/browse/actors/removed").catch(()=>({actors:[]})),[version]);
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
-  const {actors,options}=data;
+  const {options}=data;
+  const actors=[...data.actors,...((removedData&&removedData.actors)||[])];
+  const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
   const typeOf=a=>a.actor_category||a.actor_type||"";
   const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
-  if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)}
+  if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
     subtitle=${[typeOf(sel),[sel.city,sel.state,sel.country_raw].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
     facts=${[["Hubs",sel.hubs.join(" · ")],["Sector",(sel.sectors||[]).join(" · ")],["Region",sel.region],
       ["Primary technical focus",sel.primary_technical_focus],["Current activities",sel.current_activities],
       ["Lifecycle role",sel.primary_lifecycle_role]]}/>`;
-  return html`<${Directory} noun="organization" plural="organizations" nameLabel="Organization" rows=${actors} exportName="organizations"
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="organization" plural="organizations" nameLabel="Organization" rows=${actors} exportName="organizations"
     onOpen=${setSel} empty="No organizations in the database yet."
     search=${{placeholder:"Search name, description, technical focus…",
       text:a=>[a.name,a.description,a.primary_technical_focus,a.alt_names].join(" ")}}
