@@ -959,7 +959,7 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
     ${f.kind==="text"
       ? html`<input class="field" placeholder=${f.placeholder||""} value=${vals[f.key]||""}
           onInput=${e=>set(f.key,e.target.value)}/>`
-      : html`<${Sel} v=${vals[f.key]||""} set=${v=>set(f.key,v)} opts=${f.options}/>`}</div>`;
+      : html`<${Sel} v=${vals[f.key]||""} set=${v=>set(f.key,v)} opts=${typeof f.options==="function"?f.options(vals):f.options}/>`}</div>`;
   const exportColumns=[{label:"Name",text:r=>r.name},{label:"Status",text:statusOf},
     {label:"Source",text:r=>r.origin||""},...columns,{label:"Owner",text:ownerOf}];
   return html`<div class="fade">
@@ -1245,6 +1245,8 @@ function Actors(){
       {key:"hub",label:"Hub",options:options.hubs,test:(a,v)=>a.hubs.includes(v)},
       {key:"region",label:"Region",options:distinct(actors.map(a=>a.region)),test:(a,v)=>a.region===v},
       {key:"state",label:"State",options:options.states,test:(a,v)=>a.state===v},
+      {key:"city",label:"City",options:vals=>distinct(actors.filter(a=>!vals.state||a.state===vals.state).map(a=>a.city)),
+        test:(a,v)=>a.city===v},
     ]}
     more=${[
       {key:"country",label:"Country",options:options.countries,test:(a,v)=>a.country===v},
@@ -1299,6 +1301,8 @@ function Hubs(){
     filters=${[
       {key:"sector",label:"Sector",options:distinct(hubs.map(sectorOf)),test:(h,v)=>sectorOf(h)===v},
       {key:"state",label:"State",options:distinct(hubs.map(h=>h.state)),test:(h,v)=>h.state===v},
+      {key:"city",label:"City",kind:"text",placeholder:"Phoenix, Baltimore…",
+        test:(h,v)=>(h.primary_city||"").toLowerCase().includes(v.toLowerCase())},
     ]}
     columns=${[
       {label:"Sector",text:sectorOf},
@@ -1341,7 +1345,7 @@ function Events(){
     filters=${[
       {key:"when",label:"When",options:["Upcoming","Past","No date"],test:(e,v)=>when(e)===v},
       {key:"type",label:"Type",options:data.event_types||[],test:(e,v)=>e.event_type===v},
-      {key:"location",label:"Location",kind:"text",placeholder:"New York, Texas…",
+      {key:"location",label:"City or place",kind:"text",placeholder:"Houston, Geneva, Texas…",
         test:(e,v)=>(e.location||"").toLowerCase().includes(v.toLowerCase())},
       {key:"frequency",label:"Frequency",options:distinct(events.map(e=>e.recurring_pattern)),test:(e,v)=>e.recurring_pattern===v},
     ]}
