@@ -82,8 +82,10 @@
       "max_candidates_triaged": 200,
       "fetch_enabled": true,
       "fetch_fit_floor": { "event": 0.60 },
-      "max_pages_fetched": 40,
-      "max_new_domains": 40,
+      # 2026-10-29: 40 / 40 cut a request run short ("max_pages_fetched cap
+      # hit: 43 eligible, 40 selected"); 80 leaves room for a full run.
+      "max_pages_fetched": 80,
+      "max_new_domains": 80,
       "raw_storage_dir": "agents/raw_documents",
       "rate_limit_s": 1.0,
       "timeout_s": 20.0,
@@ -97,18 +99,22 @@
         { "input_usd_per_million": 2.0, "output_usd_per_million": 10.0 },
       # Light Pull for kept candidates and existing actors (agents/collection/
       # light_pull_candidates.py): home + About + one topic page, one Sonnet call
-      # per organisation. Its own cap, separate from the $1 discovery budget.
+      # per organisation. Its own cap, separate from the discovery budget;
+      # 2.50 (2026-10-29) covers up to 50 kept organisations at ~$0.05 each.
       "light_pull_model": "claude-sonnet-5",
-      "light_pull_max_usd_per_run": 0.50,
+      "light_pull_max_usd_per_run": 2.50,
       # Actor updates (agents/collection/actor_updates.py): one Light Refresh
       # of an actor already on the map. The freshness windows decide which
       # boxes a "missing" or "outdated" update re-reads; values pending GHUS
       # sign-off, so they live here rather than in code.
+      # 2026-10-29: each actor now also gets a Category Type proposal when it
+      # has none, and may need a fallback search; the per-actor cap doubles
+      # (past reads cost $0.02-$0.13) and a request may cover 20 actors.
       "actor_updates":
         {
-          "max_usd_per_actor": 0.15,
-          "max_actors_per_request": 10,
-          "max_usd_per_request_run": 1.50,
+          "max_usd_per_actor": 0.30,
+          "max_actors_per_request": 20,
+          "max_usd_per_request_run": 5.00,
           "stale_after_days": 365,
           "time_sensitive_stale_after_days": 180,
           "recheck_not_found_after_days": 90,
@@ -116,7 +122,7 @@
           # When an organisation's own site refuses the agent (403, 429, robots,
           # timeout): its parent's official pages that name it, free; then at
           # most this many paid web searches, inside max_usd_per_actor.
-          "fallback_web_searches": 1,
+          "fallback_web_searches": 2,
         },
       "actor_rubric_max_tokens": 4096,
       "actor_rubric_content_max_chars": 8000,
@@ -126,7 +132,9 @@
       # Classify only pages that are kept (a second model call per page).
       "actor_lazy_classification": true,
       # Strict budget per requested run, stopped gracefully (see phase2).
-      "request_max_usd_per_run": 1.00,
+      # 2026-10-29: $1.00 stopped request runs mid-way ("agent run cost
+      # $1.0132 exceeded ceiling $1.0000"); $3.00 lets one finish.
+      "request_max_usd_per_run": 3.00,
       "actor_est_page_usd": 0.03,
       "actor_budget_reserve_usd": 0.05,
       # Official-site reads and leads (agents/discovery/search/actor_official.py).
@@ -230,8 +238,9 @@
       # The automatic weekly event run (2026-10-23): every recorded live event
       # run cost $0.13-$2.36 (mean $1.46), so $3.00 leaves headroom for the
       # follow-up and participant reads; a run that does reach it is picked up
-      # where it stopped by the next run. Actor and people runs keep 5.00.
-      "event_max_usd_per_run": 3.00,
+      # where it stopped by the next run. Raised to 5.00 on 2026-10-29, the
+      # same room as actor and people runs.
+      "event_max_usd_per_run": 5.00,
       # Event and people searches repeated within this many hours are answered
       # from disk (agents/discovery/search/search_cache.py). Shorter than the
       # weekly cadence, so the weekly run always searches fresh.

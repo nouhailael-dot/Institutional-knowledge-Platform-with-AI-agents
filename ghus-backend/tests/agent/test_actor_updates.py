@@ -297,7 +297,7 @@ def test_a_request_is_normalised_into_what_the_table_stores():
     ({"max_usd_per_run": 9}, "spend ceiling"),
     ({"max_usd_per_run": -1}, "spend ceiling"),
     ({"max_actors_per_run": 99}, "Actors per run"),
-    ({"actor_ids": [str(uuid.uuid4()) for _ in range(11)]}, "at most 10"),
+    ({"actor_ids": [str(uuid.uuid4()) for _ in range(21)]}, "at most 20"),
     ({"end_date": None}, "end date"),
     ({"start_date": "2026-10-01"}, "past"),
     ({"end_date": "2030-01-01"}, "at most"),

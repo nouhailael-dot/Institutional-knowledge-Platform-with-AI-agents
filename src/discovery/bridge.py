@@ -189,7 +189,7 @@ class DiscoveryBridge:
         arguments = _update_arguments(actor_id, options)   # a bad value is refused first
         _require_contact()
         return self._call(["check", *arguments],
-                          module="agents.collection.actor_updates", timeout=300)
+                          module="agents.collection.actor_updates", timeout=600)
 
     # Update requests: one actor or a bounded group, once or on a frequency.
     # They are saved as requests and run by the backend's request runner -
@@ -221,7 +221,7 @@ class DiscoveryBridge:
         if not _CHECK_ID.match(check_id or ""):
             raise DiscoveryBridgeError("unknown check", rejected=True)
         return self._call(["apply", "--check-id", check_id],
-                          module="agents.collection.actor_updates", timeout=300,
+                          module="agents.collection.actor_updates", timeout=600,
                           extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"})
 
     # ------------------------------------------------------------- plumbing

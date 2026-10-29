@@ -167,16 +167,16 @@ WRITTEN = frozenset({"new", "changed", "additional", "corroborated", "conflict",
                      "not_found"})
 
 DEFAULT_SETTINGS = {
-    "max_usd_per_actor": 0.15,
-    "max_actors_per_request": 10,
-    "max_usd_per_request_run": 1.50,
+    "max_usd_per_actor": 0.30,
+    "max_actors_per_request": 20,
+    "max_usd_per_request_run": 5.00,
     "stale_after_days": 365,
     "time_sensitive_stale_after_days": 180,
     "recheck_not_found_after_days": 90,
     "check_valid_hours": 24,
     # When its own site refuses: its parent's official site (free), then at
     # most this many paid web searches - inside max_usd_per_actor.
-    "fallback_web_searches": 1,
+    "fallback_web_searches": 2,
     "web_search_usd_per_request": 0.01,
 }
 
