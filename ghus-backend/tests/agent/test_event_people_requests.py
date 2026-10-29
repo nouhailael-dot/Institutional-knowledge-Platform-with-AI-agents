@@ -455,13 +455,12 @@ def test_the_analysis_cache_is_keyed_by_address_and_readable_text(tmp_path):
         _text_cache_path(store, "event_analysis", other, "v5")
 
 
-def test_the_automatic_event_run_has_its_own_ceiling():
+def test_the_automatic_event_run_has_its_own_lower_ceiling():
     from agents.common.config import load_sources_config
 
     config = load_sources_config(ROOT)["open_web_discovery"]
-    # Raised from 3.00 on 2026-10-29: the same room as actor and people runs.
-    assert config["event_max_usd_per_run"] == 5.00
-    assert config["max_usd_per_run"] == 5.00
+    assert config["event_max_usd_per_run"] == 3.00
+    assert config["max_usd_per_run"] == 5.00                   # actors and people unchanged
     assert config["request_max_usd_per_run"] == 3.00           # a requested run finishes
     assert config["search_cache_ttl_hours"] < 7 * 24           # never spans a weekly run
 

@@ -100,21 +100,22 @@
       # Light Pull for kept candidates and existing actors (agents/collection/
       # light_pull_candidates.py): home + About + one topic page, one Sonnet call
       # per organisation. Its own cap, separate from the discovery budget;
-      # 2.50 (2026-10-29) covers up to 50 kept organisations at ~$0.05 each.
+      # 1.00 (GHUS, 2026-10-29) covers about 20 kept organisations at ~$0.05.
       "light_pull_model": "claude-sonnet-5",
-      "light_pull_max_usd_per_run": 2.50,
+      "light_pull_max_usd_per_run": 1.00,
       # Actor updates (agents/collection/actor_updates.py): one Light Refresh
       # of an actor already on the map. The freshness windows decide which
       # boxes a "missing" or "outdated" update re-reads; values pending GHUS
       # sign-off, so they live here rather than in code.
       # 2026-10-29: each actor now also gets a Category Type proposal when it
       # has none, and may need a fallback search; the per-actor cap doubles
-      # (past reads cost $0.02-$0.13) and a request may cover 20 actors.
+      # (past reads cost $0.02-$0.13) and a request may cover 20 actors,
+      # within $3.00 a run (GHUS, 2026-10-29).
       "actor_updates":
         {
           "max_usd_per_actor": 0.30,
           "max_actors_per_request": 20,
-          "max_usd_per_request_run": 5.00,
+          "max_usd_per_request_run": 3.00,
           "stale_after_days": 365,
           "time_sensitive_stale_after_days": 180,
           "recheck_not_found_after_days": 90,
@@ -238,9 +239,8 @@
       # The automatic weekly event run (2026-10-23): every recorded live event
       # run cost $0.13-$2.36 (mean $1.46), so $3.00 leaves headroom for the
       # follow-up and participant reads; a run that does reach it is picked up
-      # where it stopped by the next run. Raised to 5.00 on 2026-10-29, the
-      # same room as actor and people runs.
-      "event_max_usd_per_run": 5.00,
+      # where it stopped by the next run. Actor and people runs keep 5.00.
+      "event_max_usd_per_run": 3.00,
       # Event and people searches repeated within this many hours are answered
       # from disk (agents/discovery/search/search_cache.py). Shorter than the
       # weekly cadence, so the weekly run always searches fresh.

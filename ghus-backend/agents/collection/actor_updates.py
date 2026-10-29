@@ -169,7 +169,7 @@ WRITTEN = frozenset({"new", "changed", "additional", "corroborated", "conflict",
 DEFAULT_SETTINGS = {
     "max_usd_per_actor": 0.30,
     "max_actors_per_request": 20,
-    "max_usd_per_request_run": 5.00,
+    "max_usd_per_request_run": 3.00,
     "stale_after_days": 365,
     "time_sensitive_stale_after_days": 180,
     "recheck_not_found_after_days": 90,
