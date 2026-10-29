@@ -411,17 +411,24 @@ def browse_actors():
 # --- Delete in the Ecosystem Directory (29 Oct 2026). Removable, never wiped: the
 # backend appends a GHUS decision ("rejected" to remove, "verified" to restore)
 # through its own writer, and the database hides a rejected organization.
+# Who is acting. There are no accounts yet, so nobody types a name: decisions
+# record this placeholder, as the Owner column does. When logins exist, this is
+# the one place that returns the signed-in user (decided 29 Oct 2026).
+NO_SIGN_IN_YET = "Not recorded (no sign-in yet)"
+
+
+def current_user(request=None) -> str:
+    return NO_SIGN_IN_YET
+
+
 class DirectoryDecision(BaseModel):
-    reviewer: str = ""
     reason: str = ""
     confirm: bool = False
 
 
 def _directory_decision(kind: str, actor_id: str, payload: DirectoryDecision):
-    reviewer = " ".join(payload.reviewer.split())
+    reviewer = current_user()
     reason = " ".join(payload.reason.split())
-    if not 1 <= len(reviewer) <= 120:
-        raise HTTPException(status_code=400, detail="Give your name: every removal records who did it.")
     if kind == "remove_from_directory" and not reason:
         raise HTTPException(status_code=400, detail="Give a reason: it is kept with the record.")
     if payload.confirm is not True:
@@ -849,11 +856,9 @@ def map_save_check(job_id: str, payload: SaveRequest):
 @app.post("/api/map/{job_id}/save")
 def map_save_verified(job_id: str, payload: SaveRequest):
     """Verify -> the database, through the Data Feed and the backend's admission
-    (28 Oct 2026). New organizations are added Verified under the reviewer's name;
-    the rest wait in Review Results."""
-    uploader = " ".join(payload.uploaded_by.split())
-    if not 1 <= len(uploader) <= 120:
-        raise HTTPException(status_code=400, detail="Give your name: every save records who verified it.")
+    (28 Oct 2026). New organizations are added Verified; the rest wait in Review
+    Results. Who verified is the current user (no typed name; accounts will fill it)."""
+    uploader = current_user()
     if payload.attest is not True:
         raise HTTPException(status_code=400, detail="Confirm that you're authorized GHUS staff and checked the sources.")
     record = map_record(job_id)

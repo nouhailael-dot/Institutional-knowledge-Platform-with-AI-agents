@@ -854,19 +854,18 @@ const STATUS_CHIP={"Verified":"green","Pending review":"amber","Parked":"slate",
    show the same panel, switched off, until the backend has the same path. */
 function DeletePanel({kind,r,onDone,onClose}){
   const restoring=statusOf(r)==="Removed", works=kind==="actor";
-  const [name,setName]=useState(()=>{try{return localStorage.getItem("compass.verifierName")||"";}catch(e){return "";}});
   const [reason,setReason]=useState("");
   const [sure,setSure]=useState(false);
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
-  const ready=works&&name.trim()&&(restoring||reason.trim());
+  // Who deleted it is recorded by the server: the signed-in user once accounts exist.
+  const ready=works&&(restoring||reason.trim());
   async function send(){
     if(busy||!ready) return;
     setBusy(true); setErr(null);
-    try{ localStorage.setItem("compass.verifierName",name.trim()); }catch(e){}
     try{
       const res=await fetch(`/api/browse/actors/${r.id}/${restoring?"restore":"remove"}`,{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({reviewer:name,reason,confirm:true})});
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({reason,confirm:true})});
       const d=await res.json();
       if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not save that.");
       onDone(restoring?`${r.name} is back in the directory.`:`${r.name} was removed from the directory.`);
@@ -878,18 +877,16 @@ function DeletePanel({kind,r,onDone,onClose}){
       <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
     </div>
     ${restoring
-      ? html`<p>Removed by <b>${r.removed_by||"someone"}</b>${`${r.removed_at?` on ${usDate(r.removed_at.slice(0,10))}`:""}: `
+      ? html`<p>Removed${r.removed_by&&!r.removed_by.startsWith("Not recorded")?html` by <b>${r.removed_by}</b>`:""}${`${r.removed_at?` on ${usDate(r.removed_at.slice(0,10))}`:""}: `
           + `${r.removed_reason||"no reason recorded"}. Restoring puts it back in the Ecosystem Directory for everyone.`}</p>`
       : html`<p class="delete-warning">This removes ${r.name} from the Ecosystem Directory for everyone.</p>
-          <p class="hint" style=${{margin:"0 0 10px"}}>It stays in the history with your name and reason, and a
-            GHUS reviewer can restore it from Status → Removed.</p>`}
+          <p class="hint" style=${{margin:"0 0 10px"}}>It stays in the history with its reason, and a GHUS
+            reviewer can restore it from Status → Removed.</p>`}
     ${!works&&html`<p class="hint">Deleting ${kind==="event"?"events":kind==="hub"?"hubs":"people"} connects once the
       backend has the same path; organizations can be deleted now.</p>`}
     ${!restoring&&html`<div class="edit-field"><label>Reason</label>
       <textarea class="field edit-long" rows="2" disabled=${!works} value=${reason} onInput=${e=>setReason(e.target.value)}
         placeholder="Why it should not be in the directory, e.g. a duplicate of another record, closed, not relevant to GHUS."></textarea></div>`}
-    <div class="edit-field" style=${{maxWidth:"360px"}}><label>Your name</label>
-      <input class="field" disabled=${!works} value=${name} onInput=${e=>setName(e.target.value)} placeholder="First and last name"/></div>
     ${err&&html`<div class="whynot" role="alert">${err}</div>`}
     <div class="attach-row" style=${{marginTop:"10px"}}>
       ${restoring
@@ -1514,8 +1511,8 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       </span>`}
     </div>
     ${saved&&html`<div class=${saved.outcome==="not_saved"?"whynot":"hint"} style=${{margin:"0 0 8px"}}>
-      ${saved.outcome==="directory"?`Saved to Compass by ${saved.by}.`
-        :saved.outcome==="review"?`Sent to Review Results by ${saved.by}. ${saved.reason||""}`
+      ${saved.outcome==="directory"?`Saved to Compass${byWhom(saved.by)}.`
+        :saved.outcome==="review"?`Sent to Review Results${byWhom(saved.by)}. ${saved.reason||""}`
         :`Not saved. ${saved.reason||""}`}</div>`}
     ${confirmReject&&html`<div class="whynot" role="alert" style=${{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"8px"}}>
       Remove ${ename(e)} from this map? This can't be undone.
@@ -1642,13 +1639,14 @@ function CarriedRows({rows,onChange,onDismiss}){
    category type is added Verified under the reviewer's name; the rest wait in
    Review Results. A check that writes nothing runs first and on every change. */
 const KIND_LABEL={actor:"Organization",event:"Event",person:"Person"};
+// " by Name" once accounts record who acted; nothing while it reads "Not recorded".
+const byWhom=by=>by&&!String(by).startsWith("Not recorded")?` by ${by}`:"";
 const OUTCOME_TEXT={directory:"Will be added to the directory",review:"Will go to Review Results",
   not_saved:"Can't be saved yet"};
 function SavePanel({jobId,items,onSaved,onClose}){
   const [sectors,setSectors]=useState([]);
   const [picked,setPicked]=useState({});
   const [checked,setChecked]=useState(null);
-  const [name,setName]=useState(()=>{try{return localStorage.getItem("compass.verifierName")||"";}catch(e){return "";}});
   const [attest,setAttest]=useState(false);
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
@@ -1677,10 +1675,9 @@ function SavePanel({jobId,items,onSaved,onClose}){
   async function save(){
     if(busy) return;
     setBusy(true); setErr(null);
-    try{ localStorage.setItem("compass.verifierName",name.trim()); }catch(e){}
     try{
       const r=await fetch(`/api/map/${jobId}/save`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({records:records(),uploaded_by:name,attest})});
+        body:JSON.stringify({records:records(),attest})});
       const d=await r.json();
       if(!r.ok) throw new Error(d.detail||"Could not save.");
       onSaved(d);
@@ -1693,8 +1690,8 @@ function SavePanel({jobId,items,onSaved,onClose}){
       <strong>Save verified to Compass</strong>
       <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
     </div>
-    <p class="hint">New organizations are added to the Ecosystem Directory as Verified, under your
-      name. Events, people, and anything that may already be there go to Review Results.</p>
+    <p class="hint">New organizations are added to the Ecosystem Directory as Verified.
+      Events, people, and anything that may already be there go to Review Results.</p>
     <table class="grid save-list"><thead><tr><th>Result</th><th>Sector</th><th>What happens</th></tr></thead>
       <tbody>${items.map((e,i)=>{const c=(checked||[])[i];return html`<tr key=${keyOf(e)}>
         <td><div class="name-link">${ename(e)}</div><span class="hint" style=${{margin:0}}>${KIND_LABEL[e._entity_type||"actor"]}</span></td>
@@ -1704,14 +1701,12 @@ function SavePanel({jobId,items,onSaved,onClose}){
           ${sectors.map(l=>html`<option key=${l} value=${l}>${l}</option>`)}</select></td>
         <td>${!c?html`<span class="spin"></span>`:html`<div class=${c.outcome==="not_saved"?"bad":""}>${OUTCOME_TEXT[c.outcome]}</div>
           ${c.reason&&html`<div class="hint" style=${{margin:0}}>${c.reason}</div>`}`}</td></tr>`;})}</tbody></table>
-    <div class="edit-field" style=${{marginTop:"14px",maxWidth:"360px"}}><label>Your name</label>
-      <input class="field" value=${name} onInput=${ev=>setName(ev.target.value)} placeholder="First and last name"/></div>
     <label class="check" style=${{display:"flex",gap:"8px",alignItems:"flex-start",fontSize:"14px"}}>
       <input type="checkbox" checked=${attest} onChange=${ev=>setAttest(ev.target.checked)}/>
       I'm authorized GHUS staff, I checked these results and their sources, and I verify them.</label>
     ${err&&html`<div class="whynot" role="alert" style=${{marginTop:"10px"}}>${err}</div>`}
     <div class="attach-row" style=${{marginTop:"12px"}}>
-      <button class="btn" type="button" disabled=${busy||!checked||!savable||!name.trim()||!attest} onClick=${save}>
+      <button class="btn" type="button" disabled=${busy||!checked||!savable||!attest} onClick=${save}>
         ${busy?html`<span class="spin"></span> Saving…`:`Save ${savable} to Compass`}</button>
     </div>
   </div>`;

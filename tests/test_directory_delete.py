@@ -26,26 +26,25 @@ class FakeBridge:
 
 
 def call(kind="remove_from_directory", bridge=None, **body):
-    payload = app.DirectoryDecision(**{"reviewer": "Nouhaila El Hail", "reason": "Duplicate",
-                                       "confirm": True, **body})
+    payload = app.DirectoryDecision(**{"reason": "Duplicate", "confirm": True, **body})
     with patch.object(app, "review_admission_bridge", return_value=bridge or FakeBridge()):
         return app._directory_decision(kind, ACTOR, payload)
 
 
 class DirectoryDeleteTests(unittest.TestCase):
-    def test_a_removal_goes_to_the_backend_with_its_reason_and_name(self):
+    def test_a_removal_goes_to_the_backend_with_its_reason_and_the_current_user(self):
         bridge = FakeBridge()
         with patch.object(app._actors, "cache_clear") as cleared:
             call(bridge=bridge)
         sent = bridge.sent[0]
         self.assertEqual((sent["decision_kind"], sent["entity_type"], sent["entity_id"]),
                          ("remove_from_directory", "actor", ACTOR))
-        self.assertEqual((sent["reviewer"], sent["reason"]), ("Nouhaila El Hail", "Duplicate"))
+        # Nobody types a name: no accounts yet, so the placeholder; later the signed-in user.
+        self.assertEqual((sent["reviewer"], sent["reason"]), ("Not recorded (no sign-in yet)", "Duplicate"))
         cleared.assert_called_once()   # the Directory list is read again
 
-    def test_name_reason_and_confirmation_are_required(self):
-        for body, word in (({"reviewer": ""}, "name"), ({"reason": ""}, "reason"),
-                           ({"confirm": False}, "Confirm")):
+    def test_reason_and_confirmation_are_required(self):
+        for body, word in (({"reason": ""}, "reason"), ({"confirm": False}, "Confirm")):
             with self.subTest(body=body), self.assertRaises(HTTPException) as raised:
                 call(**body)
             self.assertIn(word, raised.exception.detail)
