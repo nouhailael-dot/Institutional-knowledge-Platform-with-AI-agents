@@ -1690,6 +1690,37 @@ class ReviewStore:
             )
         return self.get(candidate_id)
 
+    SET_ASIDE_PREFIX = "set_aside:"
+
+    def set_aside(self, candidate_ids: list[str], *, reason: str) -> int:
+        """Take pending items off the Review page without deciding them.
+
+        Nothing is decided or deleted: each row stays pending, with its
+        history, under ``set_aside:<reason>`` - folded away like a retired
+        card, so no list or count shows it. ``restore_set_aside`` lists them
+        again. Only the local review queue changes; no canonical record does.
+        """
+        label = self.SET_ASIDE_PREFIX + _clean_text(reason, required=True, max_length=80)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            changed = 0
+            for candidate_id in candidate_ids:
+                changed += db.execute(
+                    "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
+                    "AND status='pending_review' AND folded_into IS NULL",
+                    (label, str(candidate_id)),
+                ).rowcount
+        return changed
+
+    def restore_set_aside(self, reason: str) -> int:
+        """List again every item set aside under ``reason``."""
+        label = self.SET_ASIDE_PREFIX + _clean_text(reason, required=True, max_length=80)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return db.execute(
+                "UPDATE review_candidate SET folded_into=NULL WHERE folded_into=?", (label,),
+            ).rowcount
+
     def record_admission_failure(
         self, candidate_id: str, *, idempotency_key: str,
         decision_kind: str, error: str,

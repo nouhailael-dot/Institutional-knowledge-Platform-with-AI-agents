@@ -285,3 +285,39 @@ def test_a_category_type_proposal_reads_as_a_change_with_its_labels():
     # A category doubt from discovery is not a profile change: it keeps its own card.
     item["agent_metadata"]["pipeline"] = {"issue": "category_doubt"}
     assert PostgresReviewSource._change_of(object.__new__(PostgresReviewSource), item, {}) is None
+
+
+def test_old_items_are_set_aside_off_the_page_and_can_be_listed_again(store):
+    old_item, recent = "postgres:review_item:old", "postgres:actor_update:recent:a"
+    store.sync_external_candidates([_card(old_item, "r0", kind="review_item"), _card(recent, "r1")])
+    old_id = _external_candidate_id(old_item)
+    assert store.set_aside([old_id], reason="old_items") == 1
+    assert _listed(store) == [recent]
+    assert store.list(status="all")["counts"]["pending_review"] == 1
+    kept = store.get(old_id)                       # still stored, still pending, undecided
+    assert (kept["status"], kept["folded_into"]) == ("pending_review", "set_aside:old_items")
+    # A later sync does not bring it back; restoring does.
+    store.sync_external_candidates([_card(old_item, "r0", kind="review_item")])
+    assert _listed(store) == [recent]
+    assert store.restore_set_aside("old_items") == 1
+    assert set(_listed(store)) == {old_item, recent}
+
+
+def test_the_old_item_rules_pick_only_old_work():
+    import json as _json
+    from datetime import UTC, datetime
+
+    from scripts.set_aside_old_review_items import group_of
+
+    def row(run, description="", kind=None, day=(2026, 10, 28)):
+        return {"source_run_id": run, "source_description": description,
+                "agent_metadata": _json.dumps({"review_kind": kind}),
+                "created_at": datetime(*day, tzinfo=UTC).timestamp()}
+
+    assert group_of(row("v2-review:x", kind="geocode_failed", day=(2026, 10, 9))) == "migration"
+    assert group_of(row("v2-review:x", kind="fact_conflict", day=(2026, 10, 20))) == "early_update"
+    assert group_of(row("v2-review:x", kind="fact_conflict", day=(2026, 10, 28))) is None
+    assert group_of(row("discovery:r", "Open-web actor discovery - dry_run - 38e8")) == "test_run"
+    assert group_of(row("datafeed:r", "Data Feed import: Admission E2E actors")) == "test_import"
+    assert group_of(row("datafeed:r", "Data Feed import: Verified example")) is None
+    assert group_of(row("actor-update:r", "Actor update: General update")) is None
