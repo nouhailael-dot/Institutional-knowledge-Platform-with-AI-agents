@@ -2052,6 +2052,9 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     : html`<label class="attach-btn">📎 Attach a document
         <input ref=${fileRef} type="file" accept=".pdf,.txt,.md" style=${{display:"none"}}
           onChange=${e=>setFile(e.target.files[0]||null)}/></label>`}`;
+  // The extra $1 is offered when a map stopped at its budget or has used most of
+  // it - not on every map (it read "reached its budget" at $0.95 of $2).
+  const needsMore=!!cost&&cost.can_extend&&(runStatus==="budget_stopped"||cost.estimated_usd>=cost.budget_usd*0.8);
   const sendDisabled=busy||verifying||!researchAvailable||!["draft","awaiting_reply","done","error"].includes(runStatus);
   const started=msgs.length>0||!!res||busy;
   const chip=(value,current,set,label)=>html`<button type="button" key=${value}
@@ -2093,9 +2096,9 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       </div>
     </div>
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
-    ${cost&&(!cost.usage_complete||cost.can_extend||cost.can_resume||runStatus==="ready"||cost.can_reopen)&&html`<div class="selnote" aria-live="polite">
+    ${cost&&(!cost.usage_complete||needsMore||cost.can_resume||runStatus==="ready"||cost.can_reopen)&&html`<div class="selnote" aria-live="polite">
       ${!cost.usage_complete&&html`<div>Some costs are still being confirmed, so new searches are paused.</div>`}
-      ${cost.can_extend&&html`<div>This map has reached its budget.
+      ${needsMore&&html`<div>${runStatus==="budget_stopped"?"This map has reached its budget.":"This map is close to its budget."}
         <button class="example" type="button" disabled=${busy||verifying} onClick=${extendBudget}>Approve $1 more</button></div>`}
       ${(cost.can_resume||runStatus==="ready")&&html`<div>
         <button class="example" type="button" disabled=${busy||verifying||!researchAvailable} onClick=${continueResearch}>

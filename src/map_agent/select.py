@@ -108,6 +108,10 @@ today's date: trust it, and never exclude an event for its year alone.
 7. A person whose affiliation is marked "unconfirmed" is not established as \
 working there now, so a requirement about their current organization or \
 location is not met; exclude them with that reason.
+8. A candidate matches the topic only when its own fields show work on that \
+topic. A general field that could relate to it does not match: an environmental \
+engineering degree program is not a sustainable-mining research group unless \
+its fields mention mining. Exclude it with that reason.
 
 Be decisive. Every candidate goes in exactly one list: `selected` or \
 `excluded`. Give each excluded one a short reason naming the requirement it \
