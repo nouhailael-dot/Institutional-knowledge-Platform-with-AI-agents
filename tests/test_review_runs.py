@@ -99,10 +99,10 @@ def test_runs_are_listed_newest_first_each_with_its_own_label(store):
     # Runs newest first; the map's own checks are ongoing, so they come last.
     assert [group["key"] for group in groups] == ["run-d", "run-c", "run-a", "map-checks"]
     labels = {group["key"]: group["label"] for group in groups}
-    assert labels["run-c"].startswith("Discovery request · Water technology in the Great Lakes · ")
+    assert labels["run-c"].startswith("Monitoring request · Water technology in the Great Lakes · ")
     assert labels["run-a"].startswith("Actor discovery · test run · ")
     assert labels["map-checks"] == "Map checks"
-    assert labels["run-d"].startswith("Build the Map · find companies in the US that focus on")
+    assert labels["run-d"].startswith("Explore and Map · find companies in the US that focus on")
     assert not any(group["is_backlog"] for group in groups)
     # No authenticated identity exists yet, so it is reported as unrecorded and
     # never invented.
@@ -701,10 +701,10 @@ def test_an_actor_update_run_is_labelled_with_its_actor_and_date():
     from src.review.store import _run_label
 
     label = _run_label("Actor update: CPower Energy", "actor-update:3f2a", CUTOFF_TS + 5)
-    assert label.startswith("Actor update · CPower Energy · ")
+    assert label.startswith("Organization update · CPower Energy · ")
     request = _run_label("Actor update: Fill missing boxes: California water organizations",
                          "actor-update:9b1c", CUTOFF_TS + 5)
-    assert request.startswith("Actor update · Fill missing boxes: California water organizations")
+    assert request.startswith("Organization update · Fill missing boxes: California water organizations")
 
 
 def test_an_update_card_is_acknowledged_in_review_only(store):

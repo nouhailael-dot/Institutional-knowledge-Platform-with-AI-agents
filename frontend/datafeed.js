@@ -20,7 +20,7 @@ export const STATUS = {
   new: {label: "New record", tone: "ok"},
   existing: {label: "Matches an existing record", tone: "info"},
   possible: {label: "Possible duplicate", tone: "warn"},
-  waiting: {label: "Already waiting in Review", tone: "muted"},
+  waiting: {label: "Already waiting in Review Results", tone: "muted"},
 };
 
 export const FILTERS = [
@@ -29,7 +29,7 @@ export const FILTERS = [
   {id: "new", label: "New"},
   {id: "existing", label: "Existing matches"},
   {id: "possible", label: "Possible duplicates"},
-  {id: "waiting", label: "Already in Review"},
+  {id: "waiting", label: "Already in Review Results"},
 ];
 
 export function typeInfo(recordType) {
@@ -48,7 +48,7 @@ export function summaryTiles(counts = {}) {
       tone: counts.existing_matches ? "info" : ""},
     {key: "possible_duplicates", label: "Possible duplicates",
       value: counts.possible_duplicates ?? 0, tone: counts.possible_duplicates ? "warn" : ""},
-    {key: "already_waiting", label: "Already in Review", value: counts.already_waiting ?? 0,
+    {key: "already_waiting", label: "Already in Review Results", value: counts.already_waiting ?? 0,
       tone: ""},
     {key: "missing_optional", label: "Missing optional info",
       value: counts.missing_optional ?? 0, tone: ""},
@@ -66,7 +66,7 @@ export function filterCount(rows = [], filter = "all") {
 /** What gets sent, said before the button is pressed. */
 export function confirmLabel(counts = {}) {
   const send = Math.max(0, (counts.valid ?? 0) - (counts.already_waiting ?? 0));
-  return send === 1 ? "Send 1 record to Review" : `Send ${send} records to Review`;
+  return send === 1 ? "Send 1 record to Review Results" : `Send ${send} records to Review Results`;
 }
 
 export function stageable(counts = {}) {
@@ -232,7 +232,7 @@ export function historyLine(item) {
     c.matched_existing ? `${c.matched_existing} matched to existing` : null,
     c.rejected ? `${c.rejected} rejected` : null,
     c.deferred ? `${c.deferred} deferred` : null,
-    item?.already_awaiting_review ? `${item.already_awaiting_review} already in Review` : null,
+    item?.already_awaiting_review ? `${item.already_awaiting_review} already in Review Results` : null,
     item?.rows_invalid ? `${item.rows_invalid} failed validation` : null,
   ].filter(Boolean).join(" · ");
 }
@@ -271,18 +271,18 @@ export function doneLine(done = {}) {
   if (done.admission === "verified") {
     const verified = done.verified || 0;
     const held = (done.held_for_review || []).length;
-    const parts = [`${plural(verified, "organization was", "organizations were")} added to the map `
+    const parts = [`${plural(verified, "organization was", "organizations were")} added to the directory `
       + `as Verified, on ${done.uploaded_by || "the uploader"}'s attestation.`];
-    if (held) parts.push(`${plural(held, "record waits", "records wait")} in Review.`);
+    if (held) parts.push(`${plural(held, "record waits", "records wait")} in Review Results.`);
     const left = done.left_out || 0;
     if (left) parts.push(`${left} needed correction and ${left === 1 ? "was" : "were"} left out.`);
     return parts.join(" ");
   }
-  const parts = [`${plural(done.staged ?? 0, "record now waits", "records now wait")} in Review `
+  const parts = [`${plural(done.staged ?? 0, "record now waits", "records now wait")} in Review Results `
     + `as “Data Feed import · ${done.import_name}”.`];
   const waiting = done.already_awaiting_review || 0;
   if (waiting) {
-    parts.push(`${waiting} ${waiting === 1 ? "was" : "were"} already waiting in Review and not `
+    parts.push(`${waiting} ${waiting === 1 ? "was" : "were"} already waiting in Review Results and not `
       + "sent again.");
   }
   const left = done.left_out || 0;
@@ -297,7 +297,7 @@ export function historyMeta(item = {}) {
     formatDateTime(item.uploaded_at),
     `Uploaded by ${item.uploaded_by ? `${item.uploaded_by} (as typed; no sign-in yet)`
       : "Not recorded"}`,
-    item.admission === "verified" ? "Imported as Verified" : "Sent to Review",
+    item.admission === "verified" ? "Imported as Verified" : "Sent to Review Results",
   ].filter(Boolean).join(" · ");
 }
 
@@ -583,7 +583,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
         <div class="df-preview-head">
           <div>
             <h3>Preview${preview.file ? ` · ${preview.file.name}` : " · manual entry"}</h3>
-            <p class="df-muted">Nothing has been saved. Check the records, then send them to Review.</p>
+            <p class="df-muted">Nothing has been saved. Check the records, then send them to Review Results.</p>
           </div>
           <button type="button" class="btn ghost" onClick=${onBack}>
             ${preview.file ? "Upload a corrected file" : "Edit the records"}</button>
@@ -635,7 +635,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
         <div class="discovery-field">
           <label class="discovery-label" for="df-import-name">Import name</label>
           <input id="df-import-name" value=${name} maxlength="120" onInput=${e => setName(e.target.value)}/>
-          <small class="df-hint">Shown in Review as “Data Feed import · ${name || "…"}” and in Import history.</small>
+          <small class="df-hint">Shown in Review Results as “Data Feed import · ${name || "…"}” and in Import history.</small>
         </div>
         ${counts.needs_correction > 0 && html`<label class="df-check">
           <input type="checkbox" checked=${accept} onChange=${e => setAccept(e.target.checked)}/>
@@ -651,18 +651,18 @@ export function createDataFeedPage({html, useState, useEffect}) {
           onChange=${e => setAttestSource(e.target.checked)}/> ${ATTEST_SOURCE}</label>
         <div class="discovery-segment df-admission" role="group" aria-label="What happens to the records">
           <button type="button" class=${admission === "review" ? "active" : ""} aria-pressed=${admission === "review"}
-            onClick=${() => setAdmission("review")}>Send to Review</button>
+            onClick=${() => setAdmission("review")}>Send to Review Results</button>
           ${recordType === "actor" && html`<button type="button" class=${admission === "verified" ? "active" : ""}
             aria-pressed=${admission === "verified"} onClick=${() => setAdmission("verified")}>Add as Verified</button>`}
         </div>
-        ${admission === "review" ? html`<p class="df-muted">The records wait in Review. A GHUS reviewer adds
+        ${admission === "review" ? html`<p class="df-muted">The records wait in Review Results. A GHUS reviewer adds
           each one, matches it to an existing record, or rejects it. Nothing is verified because it was
           imported; your values are kept as entered and labelled Imported.</p>`
         : html`<div class="df-verified">
-          <p>New organizations are added to the map as <strong>Verified</strong> at once, through the same
+          <p>New organizations are added to the directory as <strong>Verified</strong> at once, through the same
             admission checks as Review, and labelled as an import made on your attestation (your name, the
-            file and the row). Records that may already be on the map, or have no Category Type, still go
-            to Review. A reviewer can reject any of them later. Deep Pull still needs a reviewer's
+            file and the row). Records that may already be in the directory, or have no Category Type, still go
+            to Review Results. A reviewer can reject any of them later. Deep Pull still needs a reviewer's
             verification.</p>
           <label class="df-check"><input type="checkbox" checked=${attestAuthorized}
             onChange=${e => setAttestAuthorized(e.target.checked)}/> ${ATTEST_AUTHORIZED}</label>
@@ -671,7 +671,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
           <button type="button" class="btn" disabled=${busy || !canSend({preview, name, uploader,
             attestSource, admission, attestAuthorized, accept})} onClick=${confirm}>
             ${busy ? (admission === "verified" ? "Adding… (this can take a few minutes)" : "Sending…")
-              : admission === "verified" ? "Add to the map as Verified" : confirmLabel(counts)}</button>
+              : admission === "verified" ? "Add to the directory as Verified" : confirmLabel(counts)}</button>
         </div>
         ${send === 0 && html`<p class="df-muted">There is nothing new to send.</p>`}
       </section>
@@ -704,7 +704,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
       <h4>Complete missing information with AI</h4>
       <p class="df-muted">The Light Pull reads each organization's own homepage, About page and one
         topic page, and fills only the boxes that are empty. Values you supplied are never replaced;
-        new findings show their sources in Review, where any conflict is decided.</p>
+        new findings show their sources in Review Results, where any conflict is decided.</p>
       ${state.busy && !estimate && html`<p>Estimating…</p>`}
       ${state.error && html`<p class="discovery-message error">${state.error}</p>`}
       ${estimate && html`<p><strong>${costLine(estimate)}</strong></p>
@@ -722,7 +722,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
         </div>`}
       ${state.started && html`<p class="discovery-message success">Started for
         ${state.started.organisations} organization${state.started.organisations === 1 ? "" : "s"}
-        (cap $${Number(state.started.max_usd).toFixed(2)}). The boxes appear in Review as each one is read.</p>
+        (cap $${Number(state.started.max_usd).toFixed(2)}). The boxes appear in Review Results as each one is read.</p>
         <button class="btn ghost" onClick=${onClose}>Close</button>`}
     </div>`;
   }
@@ -800,10 +800,10 @@ export function createDataFeedPage({html, useState, useEffect}) {
     const openReview = () => window.dispatchEvent(new Event("ghus:open-review"));
     const reset = () => { setPreview(null); setDone(null); setMessage(null); };
     return html`<div class="discovery-page datafeed-page">
-      <div class="eyebrow">Data Feed</div>
-      <h1 class="hero-h">Add actors, people and events to the map.</h1>
-      <p class="lead">Upload the GHUS template or enter records by hand. Every record is checked
-        and previewed, then sent to Review - nothing is added or verified without a GHUS decision.</p>
+      <h1 class="hero-h">Data Feed</h1>
+      <p class="lead">Add organizations, people and events to Compass from the GHUS template or by
+        hand. Every record is checked and previewed, then sent to Review Results — nothing is added
+        or verified without a GHUS decision.</p>
       ${message && html`<p class=${"discovery-message " + message.kind} role="alert">${message.text}</p>`}
       ${catalog && html`
       <div class="subnav">
@@ -815,7 +815,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
         ${!catalog.staging_configured && html`<p class="discovery-message error">Sending records to
           Review is not configured on this instance; files and forms can still be checked.</p>`}
         ${done ? html`<section class="discovery-card df-done">
-            <h3>${done.status === "already_imported" ? "Already imported" : "Sent to Review"}</h3>
+            <h3>${done.status === "already_imported" ? "Already imported" : "Sent to Review Results"}</h3>
             <p>${doneLine(done)}</p>
             ${(done.held_for_review || []).length > 0 && html`<ul class="df-notes">
               ${done.held_for_review.map(h => html`<li key=${h.row_number}>Row ${h.row_number}: ${h.reason}</li>`)}</ul>`}

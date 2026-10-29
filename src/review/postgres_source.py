@@ -483,7 +483,7 @@ class PostgresReviewSource:
     FACT_REASONS = {
         "conflict_flagged": "The new reading is older or less confident than the value on the "
                             "map, so the map kept its value and the difference waits here.",
-        "pending_update": "The value on the map was set by GHUS, so an update never replaces "
+        "pending_update": "The value in the directory was set by GHUS, so an update never replaces "
                           "it on its own.",
     }
 

@@ -48,8 +48,8 @@ export const STATUS_LABELS = {
 };
 
 export const RESULT_LABELS = {
-  auto_high: "Added to the map · verified by the agent",
-  review: "Sent to Review",
+  auto_high: "Added to the directory · verified by Compass",
+  review: "Sent to Review Results",
 };
 
 // Why a candidate was not added. Every exclusion carries its recorded reason.
@@ -243,7 +243,7 @@ export function updateRunList(listing = {}, sectors = []) {
           + (live && r.next_run ? ` · next ${formatDay(r.next_run)}` : ""),
       status: requestStatus(r),
       statusLabel: STATUS_LABELS[requestStatus(r)] || r.status,
-      result: last ? `${last.found_count ?? 0} new or updated · ${last.review_item_count ?? 0} to Review`
+      result: last ? `${last.found_count ?? 0} new or updated · ${last.review_item_count ?? 0} to Review Results`
         : "Not run yet",
       runs: r.runs || [],
     });
@@ -338,7 +338,7 @@ export function requestSummary(request, options) {
   const cap = request.max_new_actors_per_run
     ? ` At most ${request.max_new_actors_per_run} new organizations per run.` : "";
   const depth = (request.discovery_options || {}).pull_depth;
-  const read = depth === "light" ? " Each organization kept is read on its own site (Light Pull)."
+  const read = depth === "light" ? " Each organization kept is read on its own site."
     : depth === "none" ? " Organizations are not read beyond the search page." : "";
   return `${when}: find ${topicLabel(request, options)} organizations in ${areaLabel(request, options)}${focus}.${cap}${read}`;
 }
@@ -667,16 +667,16 @@ export function hubSummary(hubs) {
   if (hubs.proposals?.length) {
     parts.push("Newly fits " + hubs.proposals.map((p) => `${p.name}`
       + (p.distance_miles != null ? ` (${p.distance_miles} mi)` : "")).join(", ")
-      + " — proposed to Review when written, never assigned directly");
+      + " — proposed to Review Results when written, never assigned directly");
   }
   if (hubs.note) parts.push(hubs.note);
   return parts.join(" · ") || "In no hub.";
 }
 
 const RELATED_STATUS = {
-  on_map: "On the map — the link goes to Review when written",
+  on_map: "In the directory — the link goes to Review Results when written",
   ambiguous: "Several records match — nothing is written; a person decides",
-  not_on_map: "Not on the map",
+  not_on_map: "Not in the directory",
 };
 
 /** One organisation the pages name: "Acme Water · funder · On the map — ...". */
@@ -693,7 +693,7 @@ export function actorResultLine(result) {
   const counts = result.counts || {};
   const parts = [["new", "new"], ["changed", "changed"], ["additional", "more detail"], ["corroborated", "confirmed"],
     ["not_found", "not found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
-  if (result.review_items) parts.push(`${result.review_items} to Review`);
+  if (result.review_items) parts.push(`${result.review_items} to Review Results`);
   if (!parts.length) parts.push("nothing new");
   return `${result.name}: ${parts.join(" · ")} · ${formatUsd(result.spent_usd)}`;
 }
@@ -824,7 +824,7 @@ export function outcomeSummary(counts = {}) {
 
 // What the form sends. Empty optional fields are left out, never sent blank.
 export const PULL_DEPTH_LABELS = {
-  light: "Light Pull: read each organization's own pages (recommended)",
+  light: "Read each organization's own pages (recommended)",
   none: "Search page only: do not read the organizations' sites",
 };
 
@@ -886,7 +886,7 @@ export function draftProblems(rawForm, options) {
 // people search needs, and use the same request storage, scheduler and Review.
 
 export const DISCOVERY_KINDS = [
-  {id: "actor", label: "Organizations / Actors"},
+  {id: "actor", label: "Organizations"},
   {id: "event", label: "Events"},
   {id: "person", label: "People"},
 ];
@@ -1227,7 +1227,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     async function runNow() {
       if (mode === "one") { runOne(); return; }
       if (!window.confirm(`Check ${count} organization(s) now, once? It reads their own websites `
-        + "and writes what changed; conflicts and changes to GHUS values go to Review.")) return;
+        + "and writes what changed; conflicts and changes to GHUS values go to Review Results.")) return;
       setBusy("run"); setError(""); setNotice("");
       try {
         const made = await api("/api/discovery/update-requests", {
@@ -1242,7 +1242,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     async function requestAction(request, action) {
       if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
       if (action === "run" && !window.confirm(`Run “${request.title}” now? It reads the actors' `
-        + "websites and writes what changed; conflicts go to Review.")) return;
+        + "websites and writes what changed; conflicts go to Review Results.")) return;
       setBusy(`${action}:${request.subscription_id}`); setError("");
       try {
         await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
@@ -1262,9 +1262,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       if (deep) {
         lines.push(`Deep Pull: ${deepPlan.fields.map(boxLabel).join(", ")}. ${estimateLine(deepPlan.cost)}`, "");
       }
-      lines.push("The agent reads its pages and writes what they state to the map, each with its "
+      lines.push("Compass reads its pages and writes what they state to the directory, each with its "
         + "source; earlier values stay in the history. Values set by GHUS and conflicting readings "
-        + "are not written over: they wait for you in Review. The result opens in Review.");
+        + "are not written over: they wait for you in Review Results. The result opens in Review Results.");
       if (!window.confirm(lines.join("\n"))) return;
       setBusy("check"); setError(""); setResult(null); setApplied(null); setDeepResult(null);
       let wrote = false;
@@ -1369,7 +1369,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               <small class="muted">With Run now only; a saved schedule is a Light Refresh.</small></span>
           </label>`}
           ${mode === "one" && plan && !deepPermitted && plan.topic && html`<p class="muted">A Deep Pull becomes
-            available here once GHUS verifies this organization for ${plan.topic.name} in Review.</p>`}
+            available here once GHUS verifies this organization for ${plan.topic.name} in Review Results.</p>`}
           ${mode === "one" && plan?.error && html`<p class="discovery-message error">${plan.error}</p>`}
           ${mode === "one" && plan?.fields && html`<details><summary>What will be checked: ${plan.fields.length} of ${plan.schema_size} items</summary>
             <p class="muted">${plan.fields.map(boxLabel).join(", ") || "Nothing needs checking."}</p>
@@ -1433,7 +1433,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               <summary>${row.runs.length === 1 ? "1 run" : `${row.runs.length} runs`}</summary>
               ${row.runs.map((run) => html`<div key=${run.collection_run_id} class="update-run">
                 <p><strong>${formatDay(run.started_at)}</strong> · ${RUN_STATUS[run.status] || run.status}
-                  · ${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review</p>
+                  · ${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review Results</p>
                 ${run.status_reason && html`<p class="muted">${run.status_reason}</p>`}
                 ${(run.actor_results || []).length > 0 && html`<ul class="skipped">${run.actor_results.map((a) =>
                   html`<li key=${a.actor_id} class=${a.ok ? "" : "warn"}>${actorResultLine(a)}</li>`)}</ul>`}
@@ -1446,7 +1446,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     }
 
     return html`<section class="discovery-card actor-updates">
-      <p class="muted actor-updates-lead">Pick an organization already on the map. The agent
+      <p class="muted actor-updates-lead">Pick an organization already in the directory. Compass
         reads available sources and tells you what changed — nothing is written until you say so.</p>
 
       <div class="discovery-segment actor-mode" role="group" aria-label="How many actors">
@@ -1516,7 +1516,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       </div>`}
 
       ${!selected && searched !== null && results.length === 0 && html`<div class="actor-none">
-        <span>${searched ? `“${searched}” is not on the map${grouped ? " in this group" : ""}.` : "No actor on the map in this group."}</span>
+        <span>${searched ? `“${searched}” is not in the directory${grouped ? " in this group" : ""}.` : "No organization in the directory in this group."}</span>
         ${searched && html`<button type="button" class="btn ghost" onClick=${() => onFindNew(searched)}>Find it with Discovery</button>`}
       </div>`}
 
@@ -1572,27 +1572,27 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       ${error && html`<p class="discovery-message error">${error}</p>`}
 
       ${result && html`<div class="actor-result">
-        <p class="actor-result-head"><strong>${applied ? "Written to the map"
+        <p class="actor-result-head"><strong>${applied ? "Written to the directory"
           : result.ok === false ? "Could not check" : "Nothing new to write"}</strong>
           · ${selected?.name} · ${result.topic?.name} · ${formatUsd(result.cost_usd)}</p>
         <p>${applied ? writtenLine(applied.counts) : result.ok === false
           ? result.error || "Its pages could not be read. Nothing was written."
           : result.note || "Its pages state nothing new, so nothing was written."}
-          ${applied?.review_items > 0 ? ` · ${applied.review_items} change(s) wait for you in Review.` : ""}
+          ${applied?.review_items > 0 ? ` · ${applied.review_items} change(s) wait for you in Review Results.` : ""}
           ${applied?.failed > 0 ? ` · ${applied.failed} box(es) could not be written; run it again to retry.` : ""}</p>
         <p class="muted">Read from: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url}
           target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>${
           sourceLabel(result.sources?.[url]) && ` (${sourceLabel(result.sources[url])})`}`)}</p>
         ${(result.attempts || []).length > 0 && html`<details class="update-attempts">
-          <summary>Its own website was closed to the agent — what was tried</summary>
+          <summary>Its own website was closed to Compass — what was tried</summary>
           <ul class="skipped">${result.attempts.map((attempt, i) => html`<li key=${i}>
             <strong>${attempt.url.replace(/^https?:\/\//, "")}</strong> — ${attempt.plain}</li>`)}</ul>
         </details>`}
         ${(result.related || []).some((r) => r.status === "not_on_map") && html`<p class="muted">Its pages name
-          organizations not yet on the map: ${result.related.filter((r) => r.status === "not_on_map").map((r, i) =>
+          organizations not yet in the directory: ${result.related.filter((r) => r.status === "not_on_map").map((r, i) =>
             html`${i ? ", " : ""}<button type="button" class="link" onClick=${() => onFindNew(r.name)}>${r.name}</button>`)}</p>`}
         ${applied && html`<div class="discovery-actions">
-          <button class="btn" onClick=${() => openInReview(selected)}>Open in Review</button></div>`}
+          <button class="btn" onClick=${() => openInReview(selected)}>Open in Review Results</button></div>`}
       </div>`}
 
       ${deepResult && html`<div class="actor-result">
@@ -1647,7 +1647,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       if (draft !== form) setForm(draft);
       const body = JSON.stringify(entityDraftPayload(draft));
       if (action === "run" && !window.confirm(`Run “${draft.title.trim()}” now? It searches the web live, `
-          + `reads the pages it finds and sends what passes the quality checks to Review.`)) return;
+          + `reads the pages it finds and sends what passes the quality checks to Review Results.`)) return;
       setWorking(action); setMessage(null);
       try {
         if (action === "preview") {
@@ -1658,7 +1658,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
             await api(`/api/discovery/requests/${created.subscription_id}/run`, {method: "POST"});
           }
           setMessage({kind: "success", text: action === "run"
-            ? `“${draft.title.trim()}” is running. Results go to Review under ${isEvent ? "Discovery Events" : "Discovery People"}, as their own named run.`
+            ? `“${draft.title.trim()}” is running. Results go to Review Results under ${isEvent ? "Discovery Events" : "Discovery People"}, as their own named run.`
             : `Request “${draft.title.trim()}” saved.`});
           setForm(blankEntityForm(today, kind)); setTouched(false); setPreview(null);
           onSaved(action);
@@ -1752,7 +1752,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       </div>
 
       <p class="discovery-summary">${summary}</p>
-      <p class="muted">Every ${isEvent ? "event" : "person"} found goes to Review; nothing is added to the map until a person verifies it.</p>
+      <p class="muted">Every ${isEvent ? "event" : "person"} found goes to Review Results; nothing is added to the directory until a person verifies it.</p>
 
       ${preview && html`<div class="discovery-preview">
         <h4>${preview.queries.length} searches</h4>
@@ -1792,14 +1792,14 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         <div><dt>Next run</dt><dd>${current ? "Running now" : live ? nextRunLabel(request) : "None"}</dd></div>
         <div><dt>Runs so far</dt><dd>${runs.length}</dd></div>
         ${entity === "actor" ? html`
-        <div><dt>Added to the map</dt><dd>${results.filter((r) => r.score_band === "auto_high").length}</dd></div>
-        <div><dt>Sent to Review</dt><dd>${results.filter((r) => r.score_band === "review").length}</dd></div>` : html`
-        <div><dt>Sent to Review</dt><dd>${results.length}</dd></div>
+        <div><dt>Added to the directory</dt><dd>${results.filter((r) => r.score_band === "auto_high").length}</dd></div>
+        <div><dt>Sent to Review Results</dt><dd>${results.filter((r) => r.score_band === "review").length}</dd></div>` : html`
+        <div><dt>Sent to Review Results</dt><dd>${results.length}</dd></div>
         <div><dt>Excluded</dt><dd>${excluded.length}</dd></div>`}
       </dl>
       ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${last.status_reason || "no reason recorded"}</p>`}
       ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
-        ${runningLine(current)}. Searching, reading pages and scoring; results appear in Review when it finishes.</p>`}
+        ${runningLine(current)}. Searching, reading pages and scoring; results appear in Review Results when it finishes.</p>`}
       ${status === "stalled" && html`<p class="discovery-message error">The last run stopped responding before it finished. Its spend so far is recorded; you can run the request again.</p>`}
       <div class="discovery-actions">
         ${current ? html`<button class="btn running" disabled aria-live="polite">Running…</button>`
@@ -1818,7 +1818,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
                 ${r.website && html` · <a href=${r.website} target="_blank" rel="noopener noreferrer">${r.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>`}</div>
               ${r.description && html`<p>${r.description}</p>`}
               <span class=${"discovery-band " + r.score_band}>${entity === "actor"
-                ? RESULT_LABELS[r.score_band] || r.score_band : "Sent to Review"}</span>
+                ? RESULT_LABELS[r.score_band] || r.score_band : "Sent to Review Results"}</span>
               ${r.fit_score != null && html`<span class="discovery-scores">${scoreLine(r)}</span>`}
               <dl class="discovery-detail">
                 ${(entity === "actor" ? resultFacts(r) : entityResultFacts(r)).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}
@@ -1891,8 +1891,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       setView("new"); setShowDetails(true); setTouched(false); setPreview(null);
       if (status.configured) setMessage({kind: "running", text: "Proposed from your map. Check the "
         + "sector, area and sub-topics, then preview the searches before creating the request. "
-        + "Discovery doesn't know the map's results, so its first run may send some of the same "
-        + "organizations to Review again."});
+        + "Monitoring doesn't know this map's results, so its first run may send some of the same "
+        + "organizations to Review Results again."});
       onHandoffUsed();
     }, [handoff]);
 
@@ -1987,10 +1987,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const activeCount = requests.filter((r) => r.status === "active" || r.status === "paused").length;
 
     return html`<div class="discovery-page">
-      <div class="eyebrow">Discovery</div>
-      <h1 class="hero-h">Ask the agent to find organizations, events or people.</h1>
-      <p class="lead">Say what you are looking for. The agent searches only for that, and
-        only where you ask; what it finds goes to Review.</p>
+      <h1 class="hero-h">What should Compass keep watching?</h1>
+      <p class="lead">Choose the organizations, events or people to follow, and where. Compass
+        searches only for that, on the schedule you set, and what it finds goes to Review Results.</p>
 
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
       ${status.loaded && !status.configured && html`<p class="discovery-message error">Discovery requests are not available on this instance.</p>`}
@@ -2003,7 +2002,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       <div class="subnav">
         <button class=${view === "new" ? "active" : ""} onClick=${() => setView("new")}>New request</button>
         <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests (${activeCount})</button>
-        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Actor updates</button>
+        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Organization updates</button>
       </div>
 
       ${view === "new" && html`<div class="discovery-segment discovery-kinds" role="group" aria-label="What to discover">
@@ -2016,7 +2015,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         today=${today} onSaved=${async (action) => { await load(); if (action === "run") setWatchUntil(Date.now() + 20 * 60 * 1000); }}/>`}
 
       ${view === "new" && kind === "actor" && html`<section class="discovery-card">
-        <${Field} label="What should the agent look for?" error=${shown.brief} wide=${true}>
+        <${Field} label="What should Compass look for?" error=${shown.brief} wide=${true}>
           <textarea class="discovery-brief" rows="4" value=${form.brief}
             placeholder=${"Water utilities and water-technology organizations in Wisconsin.\nwastewater reuse\nphosphorus removal"}
             onInput=${(e) => set({brief: e.target.value})}></textarea>

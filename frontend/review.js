@@ -90,12 +90,12 @@ export const REVIEW_REASON_LABELS = {
   new_record: "New Record to Confirm",
   location_unplaced: "Location Not on the Map",
   relationship_check: "Link to Confirm",
-  map_agent: "Proposed by Build the Map",
+  map_agent: "Proposed by Explore and Map",
 };
 
 /** One sentence per reason: what the agent could not settle, and so asks you. */
 export const REVIEW_REASON_HINTS = {
-  borderline_score: "The agent scored it between reject and accept, so a person decides.",
+  borderline_score: "Compass scored it between reject and accept, so a person decides.",
   data_feed: "GHUS supplied it through the Data Feed; a person decides whether it is added.",
   third_party_page: "It was read from a page about the organisation on someone else's site, not its own.",
   website_unverified: "The page states no website of its own, so who published it is unconfirmed.",
@@ -106,18 +106,18 @@ export const REVIEW_REASON_HINTS = {
   low_priority: "Relevant, but its engagement priority is below what accepting it unseen needs.",
   new_person: "People are never added without a person's decision.",
   new_record: "A new record found by discovery, waiting for a decision.",
-  possible_duplicate: "It may already be on the map; confirm it is new, or the same one.",
+  possible_duplicate: "It may already be in the directory; confirm it is new, or the same one.",
   location_unplaced: "Its address could not be placed on the map; give the city and state.",
   relationship_check: "A link between two organisations needs confirming before it is shown.",
-  map_agent: "Proposed by a Build the Map run, waiting for a decision.",
-  verify_actor: "On the map but not yet verified for this topic; Deep Pull needs this.",
-  category_doubt: "The agent was unsure which category fits; choose one.",
-  hub_assignment: "The hub this actor was placed in needs confirming.",
+  map_agent: "Found by an Explore and Map search, waiting for a decision.",
+  verify_actor: "In the directory but not yet verified for this topic; Deep Pull needs this.",
+  category_doubt: "Compass was unsure which organization type fits; choose one.",
+  hub_assignment: "The hub this organization was placed in needs confirming.",
   same_topic_overlap: "It sits in two hubs on the same topic; keep the right one.",
   classification: "Its category or type needs a person to confirm.",
   geocode: "Its location was placed, but needs confirming.",
   fact_conflict: "An update found a different value from weaker or older evidence; the map keeps its value until you choose.",
-  actor_update: "What an actor update wrote, with its sources. Already on the map; say it looks right or flag it.",
+  actor_update: "What an organization update wrote, with its sources. Already in the directory; say it looks right or flag it.",
   pending_update: "An update found a different value for one GHUS set; GHUS values change only by your decision.",
 };
 
@@ -346,7 +346,7 @@ export function deepResultLine(checked = {}, applied = null) {
   const failed = results.length - written.length;
   const parts = [`Deep Pull done: ${found} ${found === 1 ? "item" : "items"} found on its pages`];
   if (missing) parts.push(`${missing} not stated (recorded as Not Found)`);
-  if (applied?.review_items) parts.push(`${applied.review_items} waiting in Review`);
+  if (applied?.review_items) parts.push(`${applied.review_items} waiting in Review Results`);
   if (failed) parts.push(`${failed} could not be written`);
   if (!applied) parts.splice(0, 1, "Deep Pull done: its pages state none of the selected items, so nothing was written");
   return `${parts.join(", ")}. Cost $${Number(checked.cost_usd || 0).toFixed(2)}.`;
@@ -434,7 +434,7 @@ export function twoWaySummary(candidate) {
   const pipeline = meta.pipeline || {};
   const name = candidate?.display_name || candidate?.reviewed_payload?.name || "This actor";
   if (twoWayKind(candidate) === "relationship") {
-    const other = meta.candidate_name || "another actor on the map";
+    const other = meta.candidate_name || "another organization in the directory";
     const words = LINK_WORDS[pipeline.proposed_relationship_type] || "is linked to";
     // The stored direction: subject -> object. The item's actor is the subject
     // unless the proposal says otherwise.
@@ -442,7 +442,7 @@ export function twoWaySummary(candidate) {
     return {
       question: subjectIsThis ? `${name} ${words} ${other}?` : `${other} ${words} ${name}?`,
       source_url: pipeline.source_url || null,
-      detail: pipeline.source_url ? "Read on this page by an actor update."
+      detail: pipeline.source_url ? "Read on this page by an organization update."
         : "No source page is recorded for this link, so it can only be refused or left.",
     };
   }
@@ -582,7 +582,7 @@ export function personDescription(candidate) {
     if (text) return {text, kind, source: evidence[key]?.source_url || null};
   }
   const mapBio = String(candidate?.original_payload?.bio ?? "").trim();
-  return mapBio ? {text: mapBio, kind: "Biography from Build the Map", source: null} : null;
+  return mapBio ? {text: mapBio, kind: "Biography from Explore and Map", source: null} : null;
 }
 
 /** The event Discovery sends to open an actor's update profile here. */
@@ -656,7 +656,7 @@ export function updateNote(update, value) {
 const CHANGE_CHOICES = {
   fact: [
     {value: "keep_current", label: "Keep Current Value", done: "the current value stays.",
-      consequence: "The value on the map stays current. The new reading is kept in the history, marked not used."},
+      consequence: "The value in the directory stays current. The new reading is kept in the history, marked not used."},
     {value: "use_new", label: "Use New Value", primary: true, done: "the new value is now current.",
       consequence: "The new value becomes current through the GHUS fact writer. The previous value stays in the history."},
   ],
@@ -705,13 +705,13 @@ export function changeRows(candidate) {
         choices: [...CHANGE_CHOICES.fact, ...(change.can_keep_both ? [CHANGE_CHOICES.keepBoth] : [])]};
     }
     if (change.kind === "relationship") {
-      const other = change.candidate_name || "another actor on the map";
+      const other = change.candidate_name || "another organization in the directory";
       const words = LINK_WORDS[change.relationship_type] || "is linked to";
       const subjectIsThis = !change.subject_actor_id || change.subject_actor_id === meta.entity_id;
       return {...base, label: "Proposed link",
         question: subjectIsThis ? `${name} ${words} ${other}?` : `${other} ${words} ${name}?`,
         source: present(change.source_url),
-        reason: change.source_url ? "Named on its own pages by an actor update."
+        reason: change.source_url ? "Named on its own pages by an organization update."
           : "No source page is recorded for this link, so it can only be refused or left.",
         choices: CHANGE_CHOICES.relationship};
     }
@@ -739,7 +739,7 @@ export function relatedItems(candidates = [], selected) {
       && item.agent_metadata?.entity_id === actorId)
     .map(item => ({
       id: item.candidate_id,
-      label: isUpdateProfile(item) ? "Actor updates"
+      label: isUpdateProfile(item) ? "Organization updates"
         : item.review_reason ? reviewReasonLabel(item.review_reason) : recordRowNote(item),
       run: item.run_label || "",
     }));
@@ -781,7 +781,7 @@ export function updateRunRows(candidate) {
     }, meta.corroborated ? {confirmed: meta.corroborated} : {}))),
   }] : []);
   return runs.map(run => ({
-    id: run.run_id, date: shortDate(run.date), title: run.title || "Actor update",
+    id: run.run_id, date: shortDate(run.date), title: run.title || "Organization update",
     status: RUN_STATUS_WORDS[run.status] || run.status || "",
     summary: countsLine(run.counts), sector: run.topic_name || null,
     pages: (run.pages_read || []).filter(Boolean),
@@ -870,7 +870,7 @@ export function factChangeRows(candidate) {
   } : null;
   return {
     field: change.field_key || "",
-    rows: [side(change.current, "On the map now"), side(change.proposed, "Found by the update")]
+    rows: [side(change.current, "In the directory now"), side(change.proposed, "Found by the update")]
       .filter(Boolean),
   };
 }
@@ -1474,7 +1474,7 @@ function lightLine(html, row) {
   return html`<div class="review-line read" key=${row.key}><b>${row.label}</b>
     <span class="review-value">
       ${row.state ? html`<span class="review-missing">${missingWithPages(row)}</span>`
-        : row.kept ? html`<span class="review-missing">The value on the map was kept (see Fact History)</span>`
+        : row.kept ? html`<span class="review-missing">The value in the directory was kept (see Fact History)</span>`
         : formatFactValue(row.value)}
       ${(row.source || row.confidence) && html`<small>${row.source && html`<a href=${row.source}
         target="_blank" rel="noreferrer">${row.sourceHost ? `Source: ${row.sourceHost}` : "Source"}</a>`}${
@@ -2047,7 +2047,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       if (isFactReview(selected)) {
         if (kind !== "defer") lines.push("", "Both values stay in the history; nothing is deleted.");
       } else if (twoWayKind(selected) === "update") {
-        if (kind !== "defer") lines.push("", "Recorded in Review only; the map is not changed.");
+        if (kind !== "defer") lines.push("", "Recorded in Review Results only; the map is not changed.");
       } else if (twoWayKind(selected)) {
         if (kind !== "defer") lines.push("", twoWaySummary(selected).question);
       } else if (kind === "new" || kind === "same_existing") {
@@ -2185,8 +2185,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       if (!window.confirm([`Run Deep Pull for ${deepTarget.name} in ${plan.topic?.name || deepTarget.topic}?`,
         "", `It reads up to three of its own pages for ${plan.fields.length} selected items: ${items}.`,
         deepCostLine(plan.cost), "",
-        "What the pages state is written to the map with its source. Values set by GHUS and "
-          + "conflicting readings are not written over; they wait in Review."].join("\n"))) return;
+        "What the pages state is written to the directory with its source. Values set by GHUS and "
+          + "conflicting readings are not written over; they wait in Review Results."].join("\n"))) return;
       setDeep({...deep, state: "running"});
       try {
         const body = JSON.stringify({scope: "general", depth: "deep", topic: deepTarget.topic});
@@ -2299,8 +2299,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       && !(CARD_FIELDS[selected?.entity_type] || []).some(([cardField]) => cardField === field));
 
     return html`<section class="review-page" aria-labelledby="review-title">
-      <div class="eyebrow">${SENTENCES.pageEyebrow}</div>
       <h1 class="hero-h" id="review-title">${SENTENCES.pageTitle}</h1>
+      <p class="lead">${SENTENCES.pageLead}</p>
 
       <div class="review-counts" aria-label="Review queue counts">
         ${["pending_review", "approved", "rejected_by_reviewer"].map(status => html`
@@ -2314,7 +2314,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           <span>${FIELDS.reviewer}</span>
           <input value=${reviewer} placeholder="Your name" onInput=${e => setReviewer(e.target.value)}/>
         </label>
-        <span>Last PostgreSQL sync: ${formatSync(data.last_sync)}</span>
+        <span>Last updated: ${formatSync(data.last_sync)}</span>
         <button class="btn ghost" disabled=${loading} onClick=${() => load(undefined, true)}>
           ${BUTTONS.refresh}
         </button>
@@ -2679,7 +2679,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <summary>${SECTIONS.facts}</summary>
             ${twoWayKind(selected) === "update" && html`<p class="review-hint">${[
               selected.agent_metadata?.topic_name && `Sector: ${selected.agent_metadata.topic_name}.`,
-              "Each value below is on the map; earlier readings are in Fact History.",
+              "Each value below is in the directory; earlier readings are in Fact History.",
               (selected.agent_metadata?.changes || []).some(change => change.kind === "fact")
                 && "A value marked Proposed has a change waiting below."].filter(Boolean).join(" ")}</p>`}
             <p class="review-group-title">${FIELDS.commonLightPull}</p>
@@ -2723,7 +2723,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     ? "Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
                     : "Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}
                   onInput=${e => setAnalystNotes(e.target.value)}></textarea>
-                <small class="muted">Kept on the record when you verify it, as written by GHUS; agents never write here.</small>
+                <small class="muted">Kept on the record when you verify it, as written by GHUS; Compass never writes here.</small>
               </label>`
               : html`<p class="muted">Analyst notes are kept for organizations and events; people have no notes field yet.</p>`}
             </div>
@@ -2735,7 +2735,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           ${(() => {
             const others = relatedItems(data.candidates, selected);
             return others.length > 0 && html`<section class="review-section">
-              <h3>Also waiting for this actor</h3>
+              <h3>Also waiting for this organization</h3>
               <ul class="review-evidence">${others.map(item => html`<li key=${item.id}>
                 <strong>${item.label}</strong> <span>${item.run}</span>
                 <button class="link" onClick=${() => openRecord(item.id)}>Open</button>

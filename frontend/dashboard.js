@@ -36,12 +36,12 @@ export function dashboardItems({requests = [], updates = {}, imports = []} = {})
       const state = run.status === "running" && run.stalled ? "stalled" : run.status;
       items.push({
         key: `run:${run.collection_run_id}`, kind: KIND_LABELS[entity] || "Discovery",
-        title: r.title || "Discovery request", status: state,
+        title: r.title || "Monitoring request", status: state,
         started_at: run.started_at, finished_at: state === "running" ? null : finishedAt(run),
         elapsed_seconds: run.elapsed_seconds, spent_usd: run.spent_usd,
         result: state === "running" ? runningLine(run)
           : [entity === "actor" && run.staged_count != null ? `${run.staged_count} added` : null,
-            run.review_item_count != null ? `${run.review_item_count} to Review` : null,
+            run.review_item_count != null ? `${run.review_item_count} to Review Results` : null,
             run.found_count != null ? `${run.found_count} pages found` : null]
             .filter(Boolean).join(" · "),
         review: reviewRunKey(run) ? {run_key: reviewRunKey(run), run_type: RUN_TYPES[entity]} : null,
@@ -52,19 +52,19 @@ export function dashboardItems({requests = [], updates = {}, imports = []} = {})
     for (const run of r.runs || []) {
       const state = run.status === "running" && run.stalled ? "stalled" : run.status;
       items.push({
-        key: `run:${run.collection_run_id}`, kind: "Actor updates", title: r.title || "Update request",
+        key: `run:${run.collection_run_id}`, kind: "Organization updates", title: r.title || "Update request",
         status: state, started_at: run.started_at,
         finished_at: state === "running" ? null : finishedAt(run),
         elapsed_seconds: run.elapsed_seconds, spent_usd: run.spent_usd,
         result: state === "running" ? runningLine(run)
-          : `${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review`,
+          : `${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review Results`,
         review: {run_type: "actor_updates"},
       });
     }
   }
   for (const u of updates.one_time || []) {
     items.push({
-      key: `update:${u.run_id}`, kind: "Actor updates", title: u.name || "Actor update",
+      key: `update:${u.run_id}`, kind: "Organization updates", title: u.name || "Organization update",
       status: u.status, started_at: u.started_at, finished_at: u.started_at,
       spent_usd: u.spent_usd, result: u.topic_name || "", review: {run_type: "actor_updates"},
     });
@@ -154,7 +154,7 @@ export function createDashboardPage({html, useState, useEffect}) {
       const failed = [];
       const [requests, updates, imports] = await Promise.all([
         get("/api/discovery/requests").then(r => r.requests || []).catch(() => { failed.push("Discovery"); return []; }),
-        get("/api/discovery/update-requests").catch(() => { failed.push("Actor updates"); return {}; }),
+        get("/api/discovery/update-requests").catch(() => { failed.push("Organization updates"); return {}; }),
         get("/api/datafeed/history").then(r => r.imports || []).catch(() => { failed.push("Data Feed"); return []; }),
       ]);
       const all = dashboardItems({requests, updates, imports});
@@ -183,10 +183,9 @@ export function createDashboardPage({html, useState, useEffect}) {
     const freshKeys = new Set(fresh.map(i => i.key));
     const figures = weekFigures(items);
     return html`<div class="discovery-page dashboard-page">
-      <div class="eyebrow">Dashboard</div>
-      <h1 class="hero-h">What is running, and what just finished.</h1>
-      <p class="lead">Discovery requests, actor updates and Data Feed imports in one place. Every
-        finished run opens in Review with Show Results.</p>
+      <h1 class="hero-h">Dashboard</h1>
+      <p class="lead">What is running and what just finished: monitoring requests, organization
+        updates and Data Feed imports in one place. Every finished run opens in Review Results.</p>
       ${problems.length > 0 && html`<p class="discovery-message error">Could not read: ${problems.join(", ")}.</p>`}
       <div class="dash-tiles">
         <div class="dash-tile"><strong>${figures.running}</strong><span>Running now</span></div>

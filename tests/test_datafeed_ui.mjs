@@ -77,7 +77,7 @@ test('summary tiles show every count the preview needs, and flag problems', () =
     possible_duplicates: 1, already_waiting: 1, missing_optional: 4});
   assert.deepEqual(tiles.map(t => [t.label, t.value]), [
     ['Records', 8], ['Valid', 5], ['Need correction', 3], ['New', 2], ['Existing matches', 1],
-    ['Possible duplicates', 1], ['Already in Review', 1], ['Missing optional info', 4]]);
+    ['Possible duplicates', 1], ['Already in Review Results', 1], ['Missing optional info', 4]]);
   assert.equal(tiles.find(t => t.key === 'needs_correction').tone, 'error');
   assert.equal(summaryTiles({}).find(t => t.key === 'needs_correction').tone, '');
 });
@@ -85,8 +85,8 @@ test('summary tiles show every count the preview needs, and flag problems', () =
 test('records already waiting in Review are not counted as sent', () => {
   const counts = {valid: 5, already_waiting: 2};
   assert.equal(stageable(counts), 3);
-  assert.equal(confirmLabel(counts), 'Send 3 records to Review');
-  assert.equal(confirmLabel({valid: 1}), 'Send 1 record to Review');
+  assert.equal(confirmLabel(counts), 'Send 3 records to Review Results');
+  assert.equal(confirmLabel({valid: 1}), 'Send 1 record to Review Results');
 });
 
 test('filters split the preview by status', () => {
@@ -166,7 +166,7 @@ test('import history says what Review decided', () => {
   assert.equal(historyLine({staged: 5, already_awaiting_review: 1, rows_invalid: 2,
     counts: {pending: 2, approved_new: 1, matched_existing: 1, rejected: 1, deferred: 0}}),
   '5 staged · 2 awaiting Review · 1 approved and added · 1 matched to existing · 1 rejected · '
-  + '1 already in Review · 2 failed validation');
+  + '1 already in Review Results · 2 failed validation');
 });
 
 test('the page never writes records itself and confirms explicitly', () => {
@@ -183,7 +183,7 @@ test('the page never writes records itself and confirms explicitly', () => {
 test('the page is in the navigation, between Discovery and Review', () => {
   const index = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
   // The COMPASS navigation (2026-10-29): [id, label], an icon per id.
-  assert.match(index, /\["discovery","Discovery"\],\["datafeed","Data Feed"\],\["review","Review"\]/);
+  assert.match(index, /\["discovery","Monitor and Update"\],\["datafeed","Data Feed"\],\["review","Review Results"\]/);
   assert.match(index, /datafeed:svg\(/);
   assert.match(index, /import \{createDataFeedPage\} from "\.\/datafeed\.js\?v=\d+[a-z]";/);
   assert.match(index, /<link rel="stylesheet" href="\/datafeed\.css\?v=\d+[a-z]"\/>/);
@@ -197,16 +197,16 @@ test('sentences agree in number and keep their spaces', () => {
   assert.equal(leftOutLine(1), '1 record needs correction and will not be sent. I understand; send the others.');
   assert.equal(leftOutLine(3).slice(0, 25), '3 records need correction');
   assert.equal(doneLine({staged: 1, import_name: 'K', left_out: 1}),
-    '1 record now waits in Review as “Data Feed import · K”. 1 needed correction and was left out.');
+    '1 record now waits in Review Results as “Data Feed import · K”. 1 needed correction and was left out.');
   assert.equal(doneLine({staged: 2, import_name: 'K', already_awaiting_review: 2, left_out: 3}),
-    '2 records now wait in Review as “Data Feed import · K”. 2 were already waiting in Review and '
+    '2 records now wait in Review Results as “Data Feed import · K”. 2 were already waiting in Review Results and '
     + 'not sent again. 3 needed correction and were left out.');
   assert.equal(doneLine({status: 'already_imported'}),
     'This exact file was imported before; nothing was sent twice.');
   const meta = historyMeta({record_type: 'event', method: 'upload', file_name: 'ev.csv',
     uploaded_at: '2026-10-26T12:00:00Z', uploaded_by: 'Ana Ruiz'});
   assert.match(meta, /^Events · ev\.csv · 10\/2[67]\/2026, \d{1,2}:\d{2} [AP]M/);       // date and time
-  assert.match(meta, /Uploaded by Ana Ruiz \(as typed; no sign-in yet\) · Sent to Review$/);
+  assert.match(meta, /Uploaded by Ana Ruiz \(as typed; no sign-in yet\) · Sent to Review Results$/);
   assert.match(historyMeta({record_type: 'actor', admission: 'verified'}),
     /Uploaded by Not recorded · Imported as Verified$/);
   assert.equal(boxesLine({name: 'ADM', boxes: ['a']}), 'ADM: 1 empty box');
@@ -245,6 +245,6 @@ test('nothing is sent before the uploader is named and confirms the source', () 
 test('a Verified import says what was added and what waits in Review', () => {
   assert.equal(doneLine({admission: 'verified', verified: 2, uploaded_by: 'Ana Ruiz',
     held_for_review: [{row_number: 4, reason: 'x'}], left_out: 1}),
-  "2 organizations were added to the map as Verified, on Ana Ruiz's attestation. "
-  + '1 record waits in Review. 1 needed correction and was left out.');
+  "2 organizations were added to the directory as Verified, on Ana Ruiz's attestation. "
+  + '1 record waits in Review Results. 1 needed correction and was left out.');
 });

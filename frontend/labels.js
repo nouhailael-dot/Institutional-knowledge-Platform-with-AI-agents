@@ -216,27 +216,26 @@ export const SENTENCES = {
   noHubCreated: "No — a proposal only.",
   hubProposalsExplain: "Detection proposes; GHUS decides. A proposal never creates a hub — it records a cluster that met every threshold, for a person to accept or refuse.",
   hubProposalsNone: "No open hub proposals. Detection runs produce a proposal only when a cluster meets every threshold.",
-  hubProposalsUnavailable: "Hub proposals are unavailable: no PostgreSQL review source is configured.",
+  hubProposalsUnavailable: "Hub proposals aren't available on this computer.",
   demoLabel: "Example / test data — not GHUS-verified production data.",
-  queueEmpty: "No candidates match these filters.",
-  queueLoading: "Loading candidates…",
-  queueSelectOne: "Select a candidate from the queue.",
-  noFacts: "No Light Pull facts have been recorded for this record yet.",
-  pageEyebrow: "Human admission control",
-  pageTitle: "Review agent discoveries.",
+  queueEmpty: "No results match these filters.",
+  queueLoading: "Loading results…",
+  queueSelectOne: "Select a result from the list.",
+  noFacts: "No details have been recorded for this record yet.",
+  pageTitle: "Review Results",
   pageLead:
-    "Every record below was found by an agent and waits, Pending, for a decision. Claude proposes; GHUS decides. " +
-    "Verify authorises the topic-scoped Deep Pull, Park leaves the record for later, and " +
-    "Reject keeps the record with its reason. Nothing here is ever deleted.",
+    "Everything Compass found — from monitoring, Explore and Map and the Data Feed — waits here, " +
+    "Pending, for a GHUS decision. Verify adds it to the Ecosystem Directory and collects its full " +
+    "profile, Park keeps it for later, and Reject closes it with its reason. Nothing is deleted.",
   failClosed:
-    "Canonical admission is fail-closed. Apply the emitted migration and configure " +
-    "dedicated review-writer credentials to enable decisions.",
+    "Decisions are turned off on this computer: saving decisions to the directory isn't " +
+    "set up yet.",
   writerUnavailable:
-    "The canonical writer is unavailable, so Verify, Park and Reject are disabled. " +
-    "No decision can be recorded until it is reachable again.",
+    "Decisions can't be saved right now, so Verify, Park and Reject are turned off " +
+    "until the directory can be reached again.",
   schemaMismatch:
-    "The review source does not match the expected schema, so decisions are disabled.",
-  noParent: "No parent organization recorded. Standalone actors are complete records.",
+    "Decisions are turned off: the directory doesn't match what Review Results expects.",
+  noParent: "No parent organization recorded. A standalone organization is a complete record.",
   parentPickerRule:
     "Only Unit of and Operated by record parenthood, and each one needs a source. " +
     "Member of, Portfolio of, Spinout of, Funded by and Collaborates with are " +
@@ -247,35 +246,34 @@ export const SENTENCES = {
     "outside the radius is flagged, not dropped.",
   suggestionIsNotADecision:
     "A suggestion is the deterministic rule's proposal, not an assignment. Choose one, " +
-    "choose a different hub, or leave the actor unassigned.",
+    "choose a different hub, or leave the organization unassigned.",
   noHubOption: "Not Applicable — No Hub",
   subscriptionsExplain:
-    "Actor updates are opt-in. Each subscription keeps a stated scope current for a " +
+    "Organization updates are opt-in. Each subscription keeps a stated scope current for a " +
     "stated period; nothing outside one is swept. The event update schedule is separate " +
     "and unchanged.",
   subscriptionsNone:
     "No subscriptions yet. One is created when a map is verified, or from here once the " +
     "scheduler contract is built.",
   subscriptionsUnavailable:
-    "No PostgreSQL review source is configured, so subscriptions cannot be read.",
+    "Subscriptions aren't available on this computer.",
   subscriptionNoScope:
     "No scope recorded — this subscription would sweep everything and must not run.",
   hubDropdownRule:
     "Only existing hubs are listed. A new hub is never created here: detection proposes " +
     "one and GHUS decides.",
   lightPullBoxes:
-    "These are the Light Pull fields from Architecture V2 Sept, Sections 5.1 and 5.2. " +
-    "Every box for this actor category stays visible, including the ones with nothing " +
-    "in them, because an empty field is itself an answer.",
+    "These are the details Compass collects for this organization type. Every field " +
+    "stays visible, including the empty ones, because an empty field is itself an answer.",
   chooseCategoryForBoxes:
     "Choose a Category to see the fields collected for it.",
   deepIsSeparate:
-    "Deep Pull evidence, collected only after a GHUS verification. It is not Light Pull.",
+    "Full-profile details, collected only after GHUS verifies the record.",
   sectorDecidesHub:
-    "Hub membership is decided on sector. An actor joins a hub because it works in that " +
+    "Hub membership is decided on sector. An organization joins a hub because it works in that " +
     "hub's sector and sits inside its radius.",
   topicIsSecondary:
-    "Topic is the specific thing this actor was found for. It is recorded on the record and " +
+    "Topic is the specific thing this organization was found for. It is recorded on the record and " +
     "on any hub proposal, but it no longer decides hub membership.",
   categoryChangeWarning:
     "Changing the Category clears the Category Type, because a type belongs to " +
@@ -287,15 +285,14 @@ export const SENTENCES = {
     "This legacy record has no category type. It is not being treated as Not Applicable.",
   noDeletion: "Record will be kept, not deleted.",
   verifyConsequences:
-    "Verifying authorises the topic-scoped Deep Pull, makes this actor eligible for hub " +
-    "assignment, and counts it towards hub detection. The decision is kept in history " +
-    "permanently.",
+    "Verifying adds this organization to the Ecosystem Directory, collects its full profile " +
+    "for this topic, and lets it join a hub. The decision is kept in history permanently.",
   reviewerRequired:
     "There is no authenticated identity yet, so the reviewer name is recorded as typed. " +
     "It is never defaulted or guessed.",
   migratedBaseline:
-    "Migrated from the existing canonical map as Verified. No reviewer and no review date " +
-    "were recorded, because none exist.",
+    "Imported from the Phase 1 map as Verified. No reviewer and no review date were " +
+    "recorded, because none exist.",
   duplicatesNoMerge:
     "Compare the records side by side. Nothing is merged automatically.",
   trlStartupOnly: "TRL is recorded for startups only, and only when a source publishes it.",
@@ -303,8 +300,8 @@ export const SENTENCES = {
     "Rankings are recorded for universities only. A department never inherits its " +
     "university's ranking.",
   legacyTrl: "A legacy Imported estimate. Not a current TRL.",
-  ghusNotesOnly: "GHUS writes this field. Agents never do.",
-  eventNotesEmpty: "Empty. GHUS writes this field; agents never do.",
+  ghusNotesOnly: "Only GHUS writes this field; Compass never does.",
+  eventNotesEmpty: "Empty. Only GHUS writes this field; Compass never does.",
   personDiscoveryDisabled:
     "Person discovery is disabled. Existing person candidates are shown for review only.",
   auditIntro:

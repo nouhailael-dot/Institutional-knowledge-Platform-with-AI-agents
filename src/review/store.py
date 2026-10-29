@@ -366,20 +366,20 @@ def run_name(description: Any, source_run_id: Any) -> str:
         "Actor discovery (test run)"                         (an unnamed open-web run)
     """
     parts = _run_label(description, source_run_id).split(" · ")
-    if parts[0] in ("Discovery request", "Actor update", DATAFEED_LABEL) and len(parts) > 1:
+    if parts[0] in ("Monitoring request", "Organization update", DATAFEED_LABEL) and len(parts) > 1:
         return " · ".join(parts[1:])
-    if parts[0] == "Build the Map" and len(parts) > 1:
-        return "Build the Map: " + " · ".join(parts[1:])
+    if parts[0] == "Explore and Map" and len(parts) > 1:
+        return "Explore and Map: " + " · ".join(parts[1:])
     return parts[0] + (f" ({' · '.join(parts[1:])})" if len(parts) > 1 else "")
 
 
 def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
     """What a run IS, in words a reviewer reads - never a UUID or a code.
 
-        Discovery request · Water technology organizations in the Great Lakes · Oct 15, 2026
+        Monitoring request · Water technology organizations in the Great Lakes · Oct 15, 2026
         Actor discovery · test run · Oct 7, 2026
         Map checks · locations and links
-        Build the Map · find companies in the US that focus on…
+        Explore and Map · find companies in the US that focus on…
     """
 
     raw = " ".join(str(description or "").split())
@@ -388,7 +388,7 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
     request = _REQUEST_TITLE.match(raw)
     kind = _DISCOVERY_KIND.match(raw)
     if request:
-        parts = ["Discovery request", request.group(1)]
+        parts = ["Monitoring request", request.group(1)]
     elif kind:
         parts = [f"{kind.group(1).capitalize()} discovery"]
         if "dry_run" in raw or "dry run" in raw.casefold():
@@ -399,7 +399,8 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
     elif run_id.startswith(ACTOR_UPDATE_PREFIX):
         # "Actor update · CPower Energy · Oct 19, 2026": what an update wrote,
         # and anything it raised for a person (conflicts, links, hubs).
-        parts = ["Actor update", raw.removeprefix("Actor update:").strip()]
+        # Stored descriptions still start "Actor update:"; the page says Organization update.
+        parts = ["Organization update", raw.removeprefix("Actor update:").strip()]
     elif run_id.startswith(MAP_CHECKS_PREFIX) or raw.startswith("Architecture V2"):
         # Review items the map itself raised - a verification, a place that
         # would not geocode, a link or a hub to confirm. No run is behind them,
@@ -409,7 +410,7 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
         # A Build the Map run: its description is what the person asked for.
         words = _UUID_PATTERN.sub("", raw).split()
         prompt = " ".join(words[:8]) + ("…" if len(words) > 8 else "")
-        parts = ["Build the Map", prompt]
+        parts = ["Explore and Map", prompt]
     else:
         parts = ["Discovery run"]
     if day:

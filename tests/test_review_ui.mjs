@@ -194,7 +194,7 @@ test('no parent reads Not Available with an explanation, not a warning', () => {
   const display = parentDisplay({agent_metadata: {relationships: []}});
   assert.equal(display.hasParent, false);
   assert.equal(display.missing, MISSING.notAvailable);
-  assert.match(display.tooltip, /Standalone actors are complete records/);
+  assert.match(display.tooltip, /A standalone organization is a complete record/);
 });
 
 test('only Unit of and Operated by count as parenthood', () => {
@@ -530,7 +530,7 @@ test('every action is disabled while the canonical writer is unavailable', () =>
 test('Review is mounted and its navigation entry is present', () => {
   const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
   // The COMPASS navigation (2026-10-29): [id, label], an icon per id.
-  assert.match(page, /\["review","Review"\]/);
+  assert.match(page, /\["review","Review Results"\]/);
   assert.match(page, /review:svg\(/);
   assert.match(page, /display:tab==="review"/);
 });
@@ -991,7 +991,7 @@ test('a fact conflict is a choice between the value on the map and the one found
   const {field, rows} = factChangeRows(candidate);
   assert.equal(field, 'funding_signal');
   assert.deepEqual(rows.map(r => [r.label, r.value, r.date_read, r.set_by]), [
-    ['On the map now', '$1M grant.', '01/02/2026', 'GHUS'],
+    ['In the directory now', '$1M grant.', '01/02/2026', 'GHUS'],
     ['Found by the update', '$2M grant.', '10/18/2026', 'Agent']]);
   assert.ok(labels.fact_conflict && labels.pending_update);
 });
@@ -1163,7 +1163,7 @@ test('other items for the same actor are listed on its card, never merged', asyn
   const other = {candidate_id: 'o', agent_metadata: {entity_id: 'a2'}};
   assert.deepEqual(relatedItems([profile, geocode, other], profile).map(item => item.id), ['g']);
   assert.deepEqual(relatedItems([profile, geocode], geocode),
-    [{id: 'p', label: 'Actor updates', run: ''}]);
+    [{id: 'p', label: 'Organization updates', run: ''}]);
   assert.deepEqual(relatedItems([profile], {candidate_id: 'x', agent_metadata: {}}), []);
 });
 
@@ -1271,7 +1271,7 @@ test('a person reads what they do; an event its fuller description; no qualifica
   assert.equal(personDescription({agent_metadata: {}}), null);
   // A person found by Build the Map reads its bio.
   assert.equal(personDescription({agent_metadata: {}, original_payload: {bio: 'Leads grid research.'}}).kind,
-    'Biography from Build the Map');
+    'Biography from Explore and Map');
   // No qualification box, no "read from its page" list, anywhere.
   assert.doesNotMatch(component, /Collected information|collectedBlock|readoutBlock|Read from its page|Not found on its page:/);
   assert.doesNotMatch(component, /review-checks|review-quality/);
@@ -1359,7 +1359,7 @@ test('a verified actor is offered a Deep Pull for exactly the sector it was veri
     {written: true, actual: 'new'}, {written: true, actual: 'not_found'},
     {written: true, actual: 'conflict'}, {written: false}]}),
   'Deep Pull done: 2 items found on its pages, 1 not stated (recorded as Not Found), '
-    + '1 waiting in Review, 1 could not be written. Cost $0.03.');
+    + '1 waiting in Review Results, 1 could not be written. Cost $0.03.');
 });
 
 test('bulk category confirmation lists only pending, categorized, non-aggregate category reviews',()=>{

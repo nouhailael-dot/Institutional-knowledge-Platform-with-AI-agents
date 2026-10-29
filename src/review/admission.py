@@ -39,10 +39,10 @@ def refusal_reason(stderr: str | None, returncode: int) -> str:
         if kind == "AdmissionConflict" and match:
             rule, name = match.groups()
             how = "the same website" if rule == "website_domain" else "the same name"
-            return (f"It is already on the map as “{name}” ({how}). "
+            return (f"It is already in the directory as “{name}” ({how}). "
                     "Choose “Same as existing” to add this evidence to it, or Defer.")
         if kind == "AdmissionConflict":
-            return ("It may already be on the map: a close match was found. "
+            return ("It may already be in the directory: a close match was found. "
                     "Choose “Same as existing” with the right record, or Defer.")
         return message[:300]
     return f"Admission process exited with code {returncode}."

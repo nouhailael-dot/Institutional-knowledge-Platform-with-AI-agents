@@ -98,7 +98,7 @@ def test_a_refusal_says_why_instead_of_an_exit_code():
         "(website_domain: North Dakota Water Users Association "
         "fdee588b-625d-4974-89bc-28add40e58c0); choose same existing or defer\n")
     said = refusal_reason(stderr, 1)
-    assert "already on the map" in said and "North Dakota Water Users Association" in said
+    assert "already in the directory" in said and "North Dakota Water Users Association" in said
     assert "same website" in said and "fdee588b" not in said
     close = refusal_reason("AdmissionConflict: frozen entity resolution found an existing "
                            "or ambiguous match; choose same existing or defer", 1)
@@ -117,4 +117,4 @@ def test_a_coloured_traceback_still_yields_the_reason():
     coloured = ("\x1b[1;35mAdmissionConflict\x1b[0m: \x1b[35mfrozen entity resolution found an "
                 "existing or ambiguous match (website_domain: North Dakota Water Users Association "
                 "fdee588b-625d-4974-89bc-28add40e58c0)); choose same existing or defer\x1b[0m")
-    assert "already on the map as “North Dakota Water Users Association”" in refusal_reason(coloured, 1)
+    assert "already in the directory as “North Dakota Water Users Association”" in refusal_reason(coloured, 1)

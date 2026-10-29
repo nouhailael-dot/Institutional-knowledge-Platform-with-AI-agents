@@ -1874,7 +1874,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     try{
       const r=await post("/api/map/"+jobId+"/discovery-brief",{});
       const d=await r.json();
-      if(!r.ok) throw new Error(d.detail||"Could not propose a Discovery request.");
+      if(!r.ok) throw new Error(d.detail||"Could not propose a monitoring request.");
       if(d.cost) setCost(d.cost);
       // Straight to Discovery: the request is edited there, not under the map.
       if(onDiscovery) onDiscovery({...d,edited:false});
@@ -2168,8 +2168,8 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
         Some searches failed, so this map may be incomplete.</div>`}
       ${total>0&&(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>
         <strong>Keep finding organizations like these</strong>
-        <div>Discovery can keep searching for more of them, every month for as long as
-          you choose. This opens the request in Discovery, filled in from what you asked,
+        <div>Monitor and Update can keep searching for more of them, every month for as long
+          as you choose. This opens the request there, filled in from what you asked,
           and you edit it there before anything is saved.</div>
         <button class="example" type="button" style=${{marginTop:"8px"}}
           disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
@@ -2212,11 +2212,10 @@ const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stro
   stroke-width="1.7"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="6" r="2.3"/>
   <circle cx="12" cy="17.5" r="2.3"/><path d="M7.9 8.4 10.6 15.6M16.4 7.6 13.2 15.9M8.2 7 15.7 6.3"
   stroke-linecap="round"/></svg>`;
-/* Page names from Fatima's COMPASS mockups (27 Oct 2026). Ask, Explore and Map
-   and the Ecosystem Directory are renamed; Ismail's pages keep their names until
-   he agrees to "Monitor and Update" and "Review Results". */
+/* Page names from Fatima's COMPASS mockups (27 Oct 2026), all applied 29 Oct.
+   Dashboard and Data Feed are not in her menu yet; they keep their names. */
 const NAV=[["dashboard","Dashboard"],["ask","Ask Compass"],["map","Explore and Map"],
-  ["browse","Ecosystem Directory"],["discovery","Discovery"],["datafeed","Data Feed"],["review","Review"]];
+  ["browse","Ecosystem Directory"],["discovery","Monitor and Update"],["datafeed","Data Feed"],["review","Review Results"]];
 const svg=(d)=>html`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const NAV_ICONS={

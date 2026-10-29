@@ -100,7 +100,7 @@ test('the page writes nothing itself: every call goes to /api/discovery', () => 
 test('Discovery is in the main navigation', () => {
   const index = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
   // The COMPASS navigation (2026-10-29): [id, label], an icon per id.
-  assert.match(index, /\["discovery","Discovery"\]/);
+  assert.match(index, /\["discovery","Monitor and Update"\]/);
   assert.match(index, /discovery:svg\(/);
   assert.match(index, /display:tab==="discovery"/);
   assert.match(index, /createDiscoveryPage/);
@@ -362,7 +362,7 @@ test('saved requests and their runs read back in plain words', async () => {
     focus: 'battery storage'}, actor_names: ['A', 'B']}),
   'Specific Changes (Funding & Partnerships) · A, B · “battery storage”');
   assert.equal(actorResultLine({name: 'CPower', ok: true, counts: {new: 2, changed: 1},
-    review_items: 1, spent_usd: 0.031}), 'CPower: 2 new · 1 changed · 1 to Review · $0.03');
+    review_items: 1, spent_usd: 0.031}), 'CPower: 2 new · 1 changed · 1 to Review Results · $0.03');
   assert.equal(actorResultLine({name: 'X', ok: false, error: 'site could not be read'}),
     'X: not updated — site could not be read');
   assert.equal(actorResultLine({name: 'Y', ok: true, counts: {}, spent_usd: 0}),
@@ -377,14 +377,14 @@ test('hub fit and named organisations read back in plain words', async () => {
   'In Bay Hub (fits), Far Hub (now outside its radius — kept, for a person to look at, GHUS membership)');
   assert.equal(hubSummary({ok: true, memberships: [], proposals: [
     {name: 'Delta Hub', distance_miles: 12.5}], note: null}),
-  'Newly fits Delta Hub (12.5 mi) — proposed to Review when written, never assigned directly');
+  'Newly fits Delta Hub (12.5 mi) — proposed to Review Results when written, never assigned directly');
   assert.equal(hubSummary({ok: true, memberships: [], proposals: [],
     note: 'In no hub, and no hub of its sector contains it today. It stays eligible.'}),
   'In no hub, and no hub of its sector contains it today. It stays eligible.');
   assert.equal(relatedLine({name: 'NSF', relation: 'funder', status: 'on_map'}),
-    'NSF · funder · On the map — the link goes to Review when written');
+    'NSF · funder · In the directory — the link goes to Review Results when written');
   assert.equal(relatedLine({name: 'Acme', relation: 'member', status: 'not_on_map'}),
-    'Acme · member · Not on the map');
+    'Acme · member · Not in the directory');
 });
 
 test('update runs are one list: name, actors, when, status and what each found', async () => {
@@ -412,7 +412,7 @@ test('update runs are one list: name, actors, when, status and what each found',
   assert.equal(weekly.result, 'Not run yet');
   assert.match(weekly.schedule, /^Every week until .* · next /);
   assert.equal(topic.actors, 'Chevron, ExxonMobil, Shell');
-  assert.equal(topic.result, '13 new or updated · 0 to Review');
+  assert.equal(topic.result, '13 new or updated · 0 to Review Results');
   assert.equal(topic.statusLabel, 'Finished');
   assert.equal(single.schedule, 'One-time update · Energy Transition');
   assert.equal(single.result, '4 updated · 2 confirmed · 2 not found');
@@ -446,7 +446,7 @@ test('run now writes, says what it wrote, and opens Review - no findings table',
 test('events and people have their own request forms; organizations keep theirs', async () => {
   const {DISCOVERY_KINDS, blankEntityForm, entityDraftPayload, entityDraftProblems,
     entitySummary, entityResultFacts} = await import('../frontend/discovery.js');
-  assert.deepEqual(DISCOVERY_KINDS.map((k) => k.label), ['Organizations / Actors', 'Events', 'People']);
+  assert.deepEqual(DISCOVERY_KINDS.map((k) => k.label), ['Organizations', 'Events', 'People']);
 
   const event = {...blankEntityForm('2026-10-23', 'event'), title: 'Water reuse events',
     sector: 'ENERGY', focusTerms: ['water reuse'], areaKind: 'state', state: 'TX',

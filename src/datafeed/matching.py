@@ -131,9 +131,9 @@ class Matcher:
         if len(rows) == 1:
             return {"actor_id": rows[0][0], "name": rows[0][1]}
         if len(rows) > 1:
-            return {"error": f"Parent organization '{raw}' matches several records on the map; "
+            return {"error": f"Parent organization '{raw}' matches several records in the directory; "
                              "give its website instead."}
-        return {"error": f"Parent organization '{raw}' is not on the map yet. Add it first "
+        return {"error": f"Parent organization '{raw}' is not in the directory yet. Add it first "
                          "(or in this file, then link it in Review), or leave it empty."}
 
     # ---------------------------------------------------------------- events
