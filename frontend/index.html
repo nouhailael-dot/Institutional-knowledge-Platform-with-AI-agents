@@ -878,8 +878,8 @@ function DeletePanel({kind,r,onDone,onClose}){
       <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
     </div>
     ${restoring
-      ? html`<p>Removed by <b>${r.removed_by||"someone"}</b>${r.removed_at?` on ${usDate(r.removed_at.slice(0,10))}`:""}:
-          ${r.removed_reason||"no reason recorded"}. Restoring puts it back in the Ecosystem Directory for everyone.</p>`
+      ? html`<p>Removed by <b>${r.removed_by||"someone"}</b>${`${r.removed_at?` on ${usDate(r.removed_at.slice(0,10))}`:""}: `
+          + `${r.removed_reason||"no reason recorded"}. Restoring puts it back in the Ecosystem Directory for everyone.`}</p>`
       : html`<p class="delete-warning">This removes ${r.name} from the Ecosystem Directory for everyone.</p>
           <p class="hint" style=${{margin:"0 0 10px"}}>It stays in the history with your name and reason, and a
             GHUS reviewer can restore it from Status → Removed.</p>`}
