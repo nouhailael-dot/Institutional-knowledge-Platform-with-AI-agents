@@ -1455,6 +1455,20 @@ def discovery_run_now(subscription_id: str):
     return _discovery_call(discovery_bridge().run_now, subscription_id)
 
 
+class EndDateChange(BaseModel):
+    end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+
+
+@app.post("/api/discovery/requests/{subscription_id}/end-date")
+def discovery_end_date(subscription_id: str, change: EndDateChange):
+    """Extend or shorten an active or paused recurring request's monitoring period."""
+    try:
+        UUID(subscription_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="unknown request") from exc
+    return _discovery_call(discovery_bridge().set_end_date, subscription_id, change.end_date)
+
+
 # ------------------------------------------------------- specific actor updates
 # Refresh what the map says about ONE existing actor - its funding, its recent
 # activity, or every box - from its own pages. Search is a read-only query; the

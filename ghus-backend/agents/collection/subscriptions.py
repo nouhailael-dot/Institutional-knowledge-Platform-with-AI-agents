@@ -30,6 +30,9 @@ from datetime import date, timedelta
 
 CADENCE_DAYS: dict[str, int | None] = {
     "once": None,
+    # Daily (GHUS, 2026-10-29) needs migration 597 on the database; until it
+    # runs the page does not offer it (discovery_requests._db_cadences).
+    "daily": 1,
     "weekly": 7,
     "biweekly": 14,
     "monthly": 30,
@@ -59,8 +62,10 @@ DISCOVERY_ENTITIES = ("actor", "event", "person")
 DISCOVERY_OPTION_KEYS = {
     "actor": ("pull_depth",),
     "event": ("date_from", "date_to", "event_types"),
-    "person": ("institution", "role"),
+    # brief: the person's own description, kept whole (people_brief.py).
+    "person": ("institution", "role", "brief"),
 }
+MAX_BRIEF_CHARS = 2000
 # The event types a new request may choose (GHUS, 2026-10-26).
 EVENT_TYPES = ("conference", "summit", "symposium", "forum", "training")
 # Offered before; a request saved with one of them still loads and runs.
@@ -166,6 +171,8 @@ class Subscription:
         for key in ("institution", "role"):
             if len(str(options.get(key) or "")) > MAX_OPTION_CHARS:
                 raise SubscriptionError(f"{key} must be at most {MAX_OPTION_CHARS} characters")
+        if len(str(options.get("brief") or "")) > MAX_BRIEF_CHARS:
+            raise SubscriptionError(f"the description must be at most {MAX_BRIEF_CHARS} characters")
         types = options.get("event_types") or []
         if not isinstance(types, list) or len(types) > MAX_EVENT_TYPES \
                 or any(t not in EVENT_TYPES + RETIRED_EVENT_TYPES for t in types):

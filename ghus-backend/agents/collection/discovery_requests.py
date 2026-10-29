@@ -5,6 +5,7 @@
     python -m agents.collection.discovery_requests preview --json '{...}'
     python -m agents.collection.discovery_requests create  --json '{...}' [--live]
     python -m agents.collection.discovery_requests pause|resume|cancel ID [--live]
+    python -m agents.collection.discovery_requests end-date ID --json '{"end_date": ...}' [--live]
 
 The platform's Discovery page calls this, the way Review calls the admission
 bridge: the page never writes these tables itself. ``create`` and the status
@@ -26,6 +27,8 @@ from pathlib import Path
 from sqlalchemy import text
 
 from agents.collection import subscription_store as store
+from agents.collection.notify import is_email
+from agents.collection.people_brief import BriefError, apply_brief
 from agents.collection.subscriptions import (
     CADENCE_DAYS,
     DEFAULT_NEW_ACTORS_PER_RUN,
@@ -77,7 +80,8 @@ def _draft_fields(payload: dict) -> dict:
 
     allowed = {"title", "sector_codes", "topic_ids", "focus_terms", "region_code",
                "state_code", "city", "start_date", "end_date", "cadence",
-               "max_new_actors_per_run", "discovery_entity", "discovery_options"}
+               "max_new_actors_per_run", "discovery_entity", "discovery_options",
+               "requested_by"}
     unknown = set(payload) - allowed
     if unknown:
         raise SubscriptionError(f"unknown field(s): {sorted(unknown)}")
@@ -111,6 +115,10 @@ def _draft_fields(payload: dict) -> dict:
         # Every new organization request reads what it keeps (Light Pull),
         # unless the person opts out.
         options.setdefault("pull_depth", DEFAULT_PULL_DEPTH)
+    # Who asked: told by email when a run has findings (notify.py).
+    requested_by = str(payload.get("requested_by") or "").strip() or None
+    if requested_by and not is_email(requested_by):
+        raise SubscriptionError(f"{requested_by!r} is not an email address")
     return {
         "title": str(payload.get("title") or "").strip(),
         "sector_codes": [str(c) for c in payload.get("sector_codes") or []],
@@ -127,6 +135,7 @@ def _draft_fields(payload: dict) -> dict:
         # Organizations unless the page asked for events or people (580).
         "discovery_entity": entity,
         "discovery_options": options,
+        "requested_by": requested_by,
     }
 
 
@@ -174,6 +183,21 @@ def _preview(fields: dict, codes: dict[str, str], session=None) -> dict:
             "first_run": draft.next_due(draft.start_date)}
 
 
+def _db_cadences(session) -> list[str]:
+    """The cadences the database accepts, in CADENCE_DAYS order.
+
+    Daily needs migration 597; a database without it is offered only what its
+    check constraint allows, so a request is never refused on save.
+    """
+    definition = session.execute(text(
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE conname = 'ck_actor_update_subscription_cadence'"
+    )).scalar()
+    if not definition:
+        return list(CADENCE_DAYS)
+    return [c for c in CADENCE_DAYS if f"'{c}'" in definition]
+
+
 def _options(session) -> dict:
     topics = [
         dict(row) for row in session.execute(text(
@@ -186,7 +210,7 @@ def _options(session) -> dict:
                      "states": list(states)} for code, states in REGION_STATES.items()],
         "states": [{"code": code, "name": name} for code, name in sorted(
             STATE_NAMES.items(), key=lambda item: item[1])],
-        "cadences": [c for c in CADENCE_DAYS],
+        "cadences": _db_cadences(session),
         "max_focus_terms": MAX_FOCUS_TERMS,
         "max_new_actors_per_run": MAX_NEW_ACTORS_PER_RUN,
         "default_new_actors_per_run": DEFAULT_NEW_ACTORS_PER_RUN,
@@ -246,7 +270,7 @@ def open_session():
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", choices=["list", "options", "preview", "create",
-                                            "pause", "resume", "cancel"])
+                                            "pause", "resume", "cancel", "end-date"])
     parser.add_argument("subscription_id", nargs="?")
     parser.add_argument("--json", dest="payload", default="{}")
     parser.add_argument("--live", action="store_true")
@@ -259,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "options":
                 result = _options(session)
             elif args.command in ("preview", "create"):
-                fields = _draft_fields(json.loads(args.payload))
+                fields = apply_brief(_draft_fields(json.loads(args.payload)))
                 codes = store.topic_codes(session)
                 fields = expand_any_sector(fields, codes)
                 preview = _preview(fields, codes, session)
@@ -269,6 +293,14 @@ def main(argv: list[str] | None = None) -> int:
                     written = store.create_request(session, live=args.live, **fields)
                     result = {**preview, "live": written.live,
                               "subscription_id": written.subscription_id}
+            elif args.command == "end-date":
+                if not args.subscription_id:
+                    raise SubscriptionError("a request id is required")
+                end = date.fromisoformat(str(json.loads(args.payload).get("end_date") or ""))
+                written = store.set_end_date(session, args.subscription_id, end,
+                                             max_days=_max_duration_days(), live=args.live)
+                result = {"live": written.live, "subscription_id": args.subscription_id,
+                          "end_date": end.isoformat()}
             else:
                 if not args.subscription_id:
                     raise SubscriptionError("a request id is required")
@@ -276,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
                                               live=args.live)
                 result = {"live": written.live, "subscription_id": args.subscription_id,
                           "status": written.values["status"]}
-    except (SubscriptionError, DiscoveryRequestError, ValueError, KeyError) as exc:
+    except (SubscriptionError, DiscoveryRequestError, BriefError, ValueError, KeyError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 2
     print(json.dumps({"ok": True, **_jsonable(result)}, default=str))

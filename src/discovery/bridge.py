@@ -136,6 +136,13 @@ class DiscoveryBridge:
             raise DiscoveryBridgeError(f"unknown action {action!r}", rejected=True)
         return self._call([action, subscription_id, "--live"])
 
+    def set_end_date(self, subscription_id: str, end_date: str) -> dict[str, Any]:
+        """Extend or shorten a recurring request; the saved schedule stands until this succeeds."""
+        if not _UUID.match(subscription_id or ""):
+            raise DiscoveryBridgeError("unknown request", rejected=True)
+        return self._call(["end-date", subscription_id, "--json",
+                           json.dumps({"end_date": end_date}), "--live"])
+
     def run_now(self, subscription_id: str) -> dict[str, Any]:
         """Start a live run of one request, in the background.
 

@@ -78,10 +78,28 @@ test('a request without a topic or name is not sent', () => {
   assert.deepEqual(draftProblems(form(), OPTIONS), {});
 });
 
-test('the per-run ceiling and the period are checked before sending', () => {
+test('the per-run ceiling and the schedule are checked before sending', async () => {
+  const {scheduleEnd, scheduleProblems, previewProblems, frequencyOptions, DURATION_PRESETS} =
+    await import('../frontend/discovery.js');
   assert.ok(draftProblems(form({cap: 0}), OPTIONS).cap);
   assert.ok(draftProblems(form({cap: 51}), OPTIONS).cap);
-  assert.ok(draftProblems(form({endDate: '2026-10-01'}), OPTIONS).duration);
+  // Frequency, Start Date and Duration start on their placeholders and must be chosen;
+  // Duration only for a recurring request, which begins on its start date.
+  assert.deepEqual(Object.keys(scheduleProblems({cadence: '', startDate: '', duration: ''})),
+    ['frequency', 'start']);
+  assert.ok(draftProblems(form({cadence: 'weekly', duration: ''}), OPTIONS).duration);
+  assert.equal(draftProblems(form({cadence: 'once', duration: ''}), OPTIONS).duration, undefined);
+  assert.equal(scheduleProblems({cadence: 'once', startDate: '2026-10-01', duration: ''},
+    '2026-10-14').start, 'Choose today or a later date.');
+  assert.equal(scheduleEnd({cadence: 'monthly', startDate: '2026-10-14', duration: '6m'}), '2027-04-14');
+  assert.equal(scheduleEnd({cadence: 'once', startDate: '2026-10-14', duration: '6m'}), '2026-10-14');
+  assert.deepEqual(DURATION_PRESETS.map((d) => d.label), ['1 month', '3 months', '6 months', '12 months']);
+  // Events and organizations offer Daily, people do not; only what the database accepts.
+  assert.deepEqual(frequencyOptions('event'), ['once', 'daily', 'weekly', 'monthly']);
+  assert.deepEqual(frequencyOptions('person'), ['once', 'weekly', 'monthly']);
+  assert.deepEqual(frequencyOptions('actor', ['once', 'weekly', 'monthly']), ['once', 'weekly', 'monthly']);
+  // A preview needs no schedule.
+  assert.deepEqual(previewProblems({title: 'x', frequency: 'y', start: 'z'}), {title: 'x'});
 });
 
 test('a request that will not run again says why', () => {
@@ -448,9 +466,13 @@ test('events and people have their own request forms; organizations keep theirs'
     entitySummary, entityResultFacts} = await import('../frontend/discovery.js');
   assert.deepEqual(DISCOVERY_KINDS.map((k) => k.label), ['Organizations', 'Events', 'People']);
 
-  const event = {...blankEntityForm('2026-10-23', 'event'), title: 'Water reuse events',
+  // Nothing is assumed about the schedule: each field starts on its placeholder.
+  const blank = blankEntityForm('2026-10-23', 'event');
+  assert.deepEqual([blank.cadence, blank.startDate, blank.duration], ['', '', '']);
+  const event = {...blank, title: 'Water reuse events',
     sector: 'ENERGY', focusTerms: ['water reuse'], areaKind: 'state', state: 'TX',
-    dateFrom: '2027-03-01', dateTo: '2027-06-30', eventTypes: ['conference']};
+    dateFrom: '2027-03-01', dateTo: '2027-06-30', eventTypes: ['conference'],
+    cadence: 'once', startDate: '2026-10-23'};
   assert.deepEqual(entityDraftPayload(event), {
     title: 'Water reuse events', sector_codes: ['ENERGY'], focus_terms: ['water reuse'],
     start_date: '2026-10-23', end_date: '2026-10-23', cadence: 'once',
@@ -463,20 +485,44 @@ test('events and people have their own request forms; organizations keep theirs'
   assert.equal(entityDraftProblems({...event, dateTo: '2027-01-01'}, OPTIONS).dates,
     'The range ends before it starts.');
 
-  const person = {...blankEntityForm('2026-10-23', 'person'), title: 'Battery researchers',
-    sector: 'ENERGY', focusTerms: ['battery storage'], institution: ' Rice University ', role: 'professor'};
-  const sent = entityDraftPayload(person);
-  assert.deepEqual(sent.discovery_options, {institution: 'Rice University', role: 'professor'});
-  assert.equal(sent.discovery_entity, 'person');
-  assert.match(entitySummary(sent, OPTIONS), /find professors working on battery storage at Rice University\.$/);
-  // A person form never sends event options, and needs a topic.
-  assert.ok(entityDraftProblems({...person, focusTerms: []}, OPTIONS).topic);
+  // People: one question in the person's own words; the backend reads it into searches.
+  const {PEOPLE_QUESTION, blankPeopleForm, peopleDraftPayload, peopleDraftProblems, statesForRegion} =
+    await import('../frontend/discovery.js');
+  assert.equal(PEOPLE_QUESTION, 'Who would you like to find?');
+  const people = blankPeopleForm();
+  assert.deepEqual([people.sector, people.region, people.state, people.cadence, people.startDate, people.duration],
+    ['ANY', '', '', '', '', '']);
+  assert.deepEqual(Object.keys(peopleDraftProblems(people)), ['brief', 'frequency', 'start']);
+  const asked = {...people, brief: ' Battery storage professors at Texas universities. ', region: 'northeast',
+    state: 'TX', cadence: 'monthly', startDate: '2026-10-23', duration: '3m'};
+  assert.deepEqual(peopleDraftProblems(asked), {});
+  assert.deepEqual(peopleDraftPayload(asked), {
+    title: '', sector_codes: ['ANY'], focus_terms: [], start_date: '2026-10-23', end_date: '2027-01-23',
+    cadence: 'monthly', discovery_entity: 'person',
+    discovery_options: {brief: 'Battery storage professors at Texas universities.'}, state_code: 'TX'});
+  assert.equal(peopleDraftPayload({...asked, state: ''}).region_code, 'northeast');
+  // A region narrows the states offered.
+  const regions = {states: [{code: 'TX', name: 'Texas'}, {code: 'NY', name: 'New York'}],
+    regions: [{code: 'northeast', name: 'Northeast', states: ['NY']}]};
+  assert.deepEqual(statesForRegion(regions, 'northeast').map((s) => s.code), ['NY']);
+  assert.deepEqual(statesForRegion(regions, '').map((s) => s.code), ['TX', 'NY']);
 
   assert.deepEqual(entityResultFacts({start_date: '2027-03-10', event_type: 'Summit', city: 'Austin', state: 'TX',
     completeness: 'complete'}), [['Date', '03/10/2027'], ['Type', 'Summit'], ['Place', 'Austin, TX'],
     ['Completeness', 'Complete']]);
   // The organization form still sends exactly what it sent before.
   assert.equal('discovery_entity' in draftPayload(form()), false);
+  // One submission button everywhere: Create Request, which runs at once when it starts today.
+  const page = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /Save request/);
+  assert.equal((page.match(/"Create Request"/g) || []).length, 3);
+  assert.match(page, /const started = payload\.start_date === today;/);
+  for (const placeholder of ['Select frequency\u2026', 'Select a date\u2026', 'Select duration\u2026']) {
+    assert.ok(page.includes(placeholder), placeholder);
+  }
+  // End date: Save appears only once it changes; finished requests are read-only.
+  assert.match(page, /\$\{changed && html`<button class="btn"/);
+  assert.match(page, /const editable = \(request\.status === "active" \|\| request\.status === "paused"\) && request\.cadence !== "once";/);
 });
 
 test('a request that ran, or whose period is over, offers Run again; a running one says Running', async () => {

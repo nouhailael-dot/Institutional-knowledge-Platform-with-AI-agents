@@ -37,7 +37,9 @@ test('every calendar on the platform is the MM/DD/YYYY date field', () => {
   const DateInput = createDateInput({html, useState: init => [typeof init === 'function' ? init() : init, () => {}],
     useEffect() {}});
   const out = DateInput({value: '2027-04-02', onChange() {}});
-  assert.match(out, /placeholder="MM\/DD\/YYYY"/);
+  assert.match(out, /placeholder=MM\/DD\/YYYY/);
+  // A form can ask for a choice instead (Monitor and Update: "Select a date…").
+  assert.match(DateInput({value: '', onChange() {}, placeholder: 'Select a date…'}), /placeholder=Select a date…/);
   assert.match(out, /value=04\/02\/2027/);
   assert.match(out, /Open calendar/);
 });

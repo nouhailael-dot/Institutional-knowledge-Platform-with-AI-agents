@@ -63,7 +63,8 @@ export function isoFromUs(text) {
  * calendar from the button.
  */
 export function createDateInput({html, useState, useEffect}) {
-  return function DateInput({value = "", onChange, min, max, id, ariaLabel, disabled, className}) {
+  return function DateInput({value = "", onChange, min, max, id, ariaLabel, disabled, className,
+    placeholder = "MM/DD/YYYY"}) {
     const [text, setText] = useState(() => usDate(value));
     // A value set from outside (a reset, a hand-off) replaces what is shown.
     useEffect(() => {
@@ -86,7 +87,7 @@ export function createDateInput({html, useState, useEffect}) {
     }
 
     return html`<span class=${"date-input" + (invalid ? " invalid" : "") + (className ? ` ${className}` : "")}>
-      <input type="text" inputMode="numeric" placeholder="MM/DD/YYYY" maxLength="10" autoComplete="off"
+      <input type="text" inputMode="numeric" placeholder=${placeholder} maxLength="10" autoComplete="off"
         id=${id} aria-label=${ariaLabel} value=${text} disabled=${disabled} aria-invalid=${invalid}
         title=${invalid ? (outside ? "Outside the allowed dates" : "Use MM/DD/YYYY") : undefined}
         onInput=${(e) => typed(e.target.value)}

@@ -213,3 +213,18 @@
 /* What a new request finds: organizations, events or people. */
 .discovery-kinds{margin:0 0 14px}
 .discovery-kind{display:inline-block;font-size:12px;font-weight:600;color:var(--accent-ink);background:var(--accent-soft);border-radius:999px;padding:2px 10px;margin-bottom:4px}
+
+/* One schedule row for every new request; three fields per row (2026-10-29). */
+.discovery-row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 18px;margin:14px 0}
+.discovery-row3 .discovery-field{min-width:0}
+.discovery-row3 select,.discovery-row3 .date-input{width:100%}
+.discovery-whoami{display:grid;grid-template-columns:auto minmax(0,320px);align-items:center;gap:6px 12px;margin:10px 0 18px;font-size:13.5px}
+.discovery-whoami>span{font-weight:600}
+.discovery-whoami input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:var(--surface);color:var(--ink)}
+.discovery-whoami.invalid input{border-color:#b42318}
+.discovery-whoami small{grid-column:1/-1}
+.discovery-enddate{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0}
+.discovery-enddate .discovery-label{margin:0}
+.discovery-saved{color:#2f7d4f;flex-basis:100%}
+.discovery-enddate .field-error{flex-basis:100%}
+@media (max-width:760px){.discovery-row3{grid-template-columns:1fr}.discovery-whoami{grid-template-columns:1fr}}

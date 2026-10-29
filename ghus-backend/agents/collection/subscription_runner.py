@@ -60,6 +60,9 @@ class RequestOutcome:
     entity: str = "actor"
     # The request's own Light Pull choice; None for requests saved before it.
     pull_depth: str | None = None
+    # Who asked (an email address), told when a run has findings (notify.py).
+    notify_to: str | None = None
+    notified: dict | None = None
 
 
 @dataclass
@@ -209,6 +212,7 @@ def run_due_requests(
             queries=list(bundle.queries),
             entity=request.entity,
             pull_depth=(subscription.discovery_options or {}).get("pull_depth"),
+            notify_to=subscription.requested_by,
         ))
 
     if not live:
@@ -373,6 +377,9 @@ def render_report(report: RunnerReport) -> str:
             lines.append(", ".join(f"{k}: {v}" for k, v in outcome.counts.items()))
         if outcome.next_status:
             lines.append(f"Request is now: {outcome.next_status}")
+        if outcome.notified:
+            lines.append(f"Email: sent to {outcome.notified['to']}" if outcome.notified.get("sent")
+                         else f"Email: not sent - {outcome.notified.get('reason')}")
         label = "Actors" if outcome.kind == "actor_update" else "Queries"
         lines.append(f"{label} ({len(outcome.queries)}):")
         lines.extend(f"- {query}" for query in outcome.queries)
@@ -386,6 +393,21 @@ def render_report(report: RunnerReport) -> str:
         lines.extend(f"- `{sid}`: {why}" for sid, why in sorted(report.invalid.items()))
         lines.append("")
     return "\n".join(lines)
+
+
+def _notify_after(report: RunnerReport, *, environ=None, smtp_factory=None) -> None:
+    """Email whoever asked, for each discovery run that sent findings to Review.
+
+    After Light Pull, so the findings are ready to verify when the email lands.
+    """
+    from agents.collection.notify import findings, notify_findings
+
+    for outcome in report.outcomes:
+        if (outcome.kind != "discovery" or outcome.status not in ("succeeded", "attention")
+                or not findings(outcome)):
+            continue
+        outcome.notified = notify_findings(outcome, outcome.notify_to, environ=environ,
+                                           smtp_factory=smtp_factory)
 
 
 def _light_pull_after(report: RunnerReport, *, everything: bool = False) -> None:
@@ -455,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
                                   request_id=args.request_id)
     if args.live:
         _light_pull_after(report, everything=args.light_pull)
+        _notify_after(report)
     text_report = render_report(report)
     out = Path(args.report_out)
     out.parent.mkdir(parents=True, exist_ok=True)

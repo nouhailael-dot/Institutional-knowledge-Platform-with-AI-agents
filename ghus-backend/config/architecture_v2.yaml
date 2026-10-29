@@ -114,7 +114,7 @@ actor_update_subscriptions:
   default_cadence: monthly
   # biweekly added with the Discovery page (migration 550). No daily: the
   # organisations being mapped do not change daily.
-  allowed_cadences: [once, weekly, biweekly, monthly, quarterly]
+  allowed_cadences: [once, daily, weekly, biweekly, monthly, quarterly]
   # Proposed ~20% weight for sector match in candidate ranking. NOT approved.
   sector_rank_weight: 0.2
   # A run is a rehearsal unless someone asks for it to be live.

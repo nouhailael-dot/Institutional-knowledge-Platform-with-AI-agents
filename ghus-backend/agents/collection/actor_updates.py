@@ -1228,7 +1228,9 @@ def request_options(payload: dict, *, config: dict | None = None,
     if scope == "specific" and not fields and not categories:
         raise ActorUpdateError("Choose at least one box, or a type of information, to update.")
     cadence = str(payload.get("cadence") or "once")
-    if cadence not in CADENCE_DAYS:
+    # Daily is for Monitor and Update requests (GHUS, 2026-10-29), not for
+    # re-reading organizations already on the map.
+    if cadence not in CADENCE_DAYS or cadence == "daily":
         raise ActorUpdateError(f"Unknown frequency {cadence!r}.")
     today = today or datetime.now(UTC).date()
     start = _date.fromisoformat(payload["start_date"]) if payload.get("start_date") else today

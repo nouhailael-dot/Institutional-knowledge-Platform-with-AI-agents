@@ -4,10 +4,11 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, usDate} from "./dates.js?v=20261028e";
+import {createDateInput, usDate} from "./dates.js?v=20261029a";
 
 export const CADENCE_LABELS = {
   once: "Once",
+  daily: "Every day",
   weekly: "Every week",
   biweekly: "Every two weeks",
   monthly: "Every month",
@@ -33,8 +34,68 @@ export const DURATION_PRESETS = [
   {id: "3m", label: "3 months", months: 3},
   {id: "6m", label: "6 months", months: 6},
   {id: "12m", label: "12 months", months: 12},
-  {id: "custom", label: "Custom", months: null},
 ];
+
+// ------------------------------------------------------------- the schedule
+//
+// Every new request - organizations, events, people - is scheduled the same
+// way (GHUS, 2026-10-29): Frequency, Start Date, Duration, each chosen from a
+// placeholder. Once has no duration; a recurring request needs one, and its
+// monitoring period begins on the start date. A request that starts today runs
+// as soon as it is created.
+
+export const FREQUENCY_LABELS = {once: "Once", daily: "Daily", weekly: "Weekly", monthly: "Monthly"};
+const FREQUENCIES = {
+  actor: ["once", "daily", "weekly", "monthly"],
+  event: ["once", "daily", "weekly", "monthly"],
+  person: ["once", "weekly", "monthly"],
+};
+const SCHEDULE_FIELDS = ["frequency", "start", "duration"];
+
+/** The frequencies a form offers: its own, among those the database accepts. */
+export function frequencyOptions(kind, offered = null) {
+  return (FREQUENCIES[kind] || FREQUENCIES.actor).filter((c) => !offered || offered.includes(c));
+}
+
+/** The last day of the monitoring period: the start for Once, else start + duration. */
+export function scheduleEnd(form) {
+  if (form.cadence === "once") return form.startDate || "";
+  const preset = DURATION_PRESETS.find((d) => d.id === form.duration);
+  return preset && form.startDate ? addMonths(form.startDate, preset.months) : "";
+}
+
+export function scheduleProblems(form, today = null) {
+  const problems = {};
+  if (!form.cadence) problems.frequency = "Select how often to search.";
+  if (!form.startDate) problems.start = "Select a start date.";
+  else if (today && form.startDate < today) problems.start = "Choose today or a later date.";
+  if (form.cadence && form.cadence !== "once"
+      && !DURATION_PRESETS.some((d) => d.id === form.duration)) {
+    problems.duration = "Select how long to keep searching.";
+  }
+  return problems;
+}
+
+/** Problems that stop a preview: everything but the schedule, which a preview does not need. */
+export function previewProblems(problems) {
+  return Object.fromEntries(Object.entries(problems).filter(([key]) => !SCHEDULE_FIELDS.includes(key)));
+}
+
+/** A preview searches nothing and saves nothing: without a schedule, it looks at today. */
+export function previewSchedule(payload, today) {
+  return payload.cadence && payload.start_date && payload.end_date ? payload
+    : {...payload, cadence: "once", start_date: today, end_date: today};
+}
+
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+export function isEmail(value) {
+  return EMAIL.test(String(value || "").trim());
+}
+
+/** The requester's email on a payload, when it is one (they are told about findings). */
+function withRequester(payload, email) {
+  return isEmail(email) ? {...payload, requested_by: String(email).trim()} : payload;
+}
 
 export const STATUS_LABELS = {
   // Active and waiting for its next run; "Running" is said only while a run is.
@@ -834,7 +895,7 @@ export function draftPayload(form) {
     sector_codes: form.sector ? [form.sector] : [],
     focus_terms: form.focusTerms,
     start_date: form.startDate,
-    end_date: form.cadence === "once" ? form.startDate : form.endDate,
+    end_date: scheduleEnd(form),
     cadence: form.cadence,
     max_new_actors_per_run: Number(form.cap),
     // New requests read what they keep (Light Pull) unless a person opts out.
@@ -872,11 +933,7 @@ export function draftProblems(rawForm, options) {
   const cap = Number(form.cap);
   const maxCap = options?.max_new_actors_per_run || 50;
   if (!Number.isInteger(cap) || cap < 1 || cap > maxCap) problems.cap = `Between 1 and ${maxCap}.`;
-  if (form.cadence !== "once") {
-    if (!form.endDate) problems.duration = "Choose how long the request runs.";
-    else if (form.endDate < form.startDate) problems.duration = "The end date is before the start.";
-  }
-  return problems;
+  return {...problems, ...scheduleProblems(form)};
 }
 
 // ------------------------------------------------------- events and people
@@ -903,7 +960,8 @@ export function blankEntityForm(today, kind) {
     kind, title: "", sector: "", focusTerms: [], focusInput: "",
     areaKind: "us", region: "", state: "", city: "",
     dateFrom: "", dateTo: "", eventTypes: [], institution: "", role: "",
-    startDate: today, cadence: "once", duration: "3m", endDate: addMonths(today, 3),
+    // Chosen, never assumed: each starts on its placeholder.
+    startDate: "", cadence: "", duration: "",
   };
 }
 
@@ -923,7 +981,7 @@ export function entityDraftPayload(form) {
     sector_codes: form.sector ? [form.sector] : [],
     focus_terms: form.focusTerms,
     start_date: form.startDate,
-    end_date: form.cadence === "once" ? form.startDate : form.endDate,
+    end_date: scheduleEnd(form),
     cadence: form.cadence,
     discovery_entity: form.kind,
     discovery_options: options,
@@ -954,11 +1012,51 @@ export function entityDraftProblems(form, options = {}) {
       problems.types = `Choose at most ${options.max_event_types || 5}.`;
     }
   }
-  if (form.cadence !== "once") {
-    if (!form.endDate) problems.duration = "Choose how long the request runs.";
-    else if (form.endDate < form.startDate) problems.duration = "The end date is before the start.";
+  return {...problems, ...scheduleProblems(form)};
+}
+
+// People (GHUS, 2026-10-29): one question answered in the person's own words;
+// the backend reads it into search themes, a role and a name
+// (agents/collection/people_brief.py) and keeps the whole description.
+export const PEOPLE_QUESTION = "Who would you like to find?";
+export const PEOPLE_PLACEHOLDER = "Describe the expertise and professional profiles you’re looking "
+  + "for. Include your objective, sector or topic, geographic focus, and any relevant affiliations "
+  + "or experience.";
+
+export function blankPeopleForm() {
+  return {brief: "", sector: ANY_SECTOR, region: "", state: "", startDate: "", cadence: "", duration: ""};
+}
+
+/** The states a region holds; every state when no region is chosen. */
+export function statesForRegion(options, region) {
+  const states = options?.states || [];
+  const chosen = (options?.regions || []).find((r) => r.code === region);
+  return chosen ? states.filter((s) => (chosen.states || []).includes(s.code)) : states;
+}
+
+export function peopleDraftPayload(form) {
+  const payload = {
+    title: "",
+    sector_codes: [form.sector || ANY_SECTOR],
+    focus_terms: [],
+    start_date: form.startDate,
+    end_date: scheduleEnd(form),
+    cadence: form.cadence,
+    discovery_entity: "person",
+    discovery_options: {brief: String(form.brief || "").trim()},
+  };
+  // A state is the narrower choice; the backend takes one or the other.
+  if (form.state) payload.state_code = form.state;
+  else if (form.region) payload.region_code = form.region;
+  return payload;
+}
+
+export function peopleDraftProblems(form, today = null) {
+  const problems = {};
+  if (String(form.brief || "").trim().length < 10) {
+    problems.brief = "Describe who you would like to find in a sentence or two.";
   }
-  return problems;
+  return {...problems, ...scheduleProblems(form, today)};
 }
 
 /** One sentence a person can check against what they meant. */
@@ -988,13 +1086,12 @@ export function entitySummary(request, options) {
   return `${when}: find ${role} working on ${topic}${at}.`;
 }
 
-function blankForm(today) {
+function blankForm() {
   return {
     brief: "", areaTouched: false,
     title: "", sector: "", focusTerms: [], focusInput: "",
     areaKind: "region", region: "", state: "", city: "",
-    startDate: today, duration: "3m", endDate: addMonths(today, 3),
-    cadence: "weekly", cap: 10, pullDepth: "light",
+    startDate: "", duration: "", cadence: "", cap: 10, pullDepth: "light",
   };
 }
 
@@ -1005,7 +1102,8 @@ function blankForm(today) {
  * cannot change them.
  */
 export function handoffForm(handoff, today) {
-  const form = {...blankForm(today), brief: handoff.brief || "", cadence: "monthly"};
+  const form = {...blankForm(), brief: handoff.brief || "", cadence: "monthly", startDate: today,
+    duration: "3m"};
   if (handoff.edited) return form;
   form.sector = handoff.sector_code || "";
   form.areaTouched = true;
@@ -1013,6 +1111,11 @@ export function handoffForm(handoff, today) {
   form.state = handoff.state_code || "";
   form.region = handoff.region_code || "";
   return form;
+}
+
+/** The requester's email as typed earlier in this browser, or empty. */
+function storedRequester() {
+  try { return localStorage.getItem("ghus.monitor.email") || ""; } catch { return ""; }
 }
 
 export function createDiscoveryPage({html, useState, useEffect}) {
@@ -1033,6 +1136,167 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     return html`<div role="group" aria-label=${label} class=${"discovery-field" + (wide ? " wide" : "") + (error ? " invalid" : "")}>
       <span class="discovery-label">${label}</span>${children}
       ${error && html`<small class="field-error">${error}</small>`}
+    </div>`;
+  }
+
+  /** Frequency · Start Date · Duration, in one row; Duration only for a recurring request. */
+  function ScheduleRow({form, set, kind, options, today, shown}) {
+    return html`<div class="discovery-row3">
+      <${Field} label="Frequency" error=${shown.frequency}>
+        <select value=${form.cadence} onChange=${(e) => set({cadence: e.target.value})}>
+          <option value="" disabled>Select frequency…</option>
+          ${frequencyOptions(kind, options.cadences).map((c) => html`<option key=${c} value=${c}>${FREQUENCY_LABELS[c]}</option>`)}
+        </select>
+      <//>
+      <${Field} label="Start Date" error=${shown.start}>
+        <${DateInput} ariaLabel="Start Date" placeholder="Select a date…" value=${form.startDate}
+          min=${today} onChange=${(v) => set({startDate: v})}/>
+      <//>
+      ${form.cadence !== "once" && html`<${Field} label="Duration" error=${shown.duration}>
+        <select value=${form.duration} onChange=${(e) => set({duration: e.target.value})}>
+          <option value="" disabled>Select duration…</option>
+          ${DURATION_PRESETS.map((d) => html`<option key=${d.id} value=${d.id}>${d.label}</option>`)}
+        </select>
+      <//>`}
+    </div>`;
+  }
+
+  /**
+   * Save a request; when it starts today, start its first run now - for Once
+   * that is the run, for a recurring request the first of its period.
+   */
+  async function createRequest(payload, today) {
+    const created = await api("/api/discovery/requests", {method: "POST", body: JSON.stringify(payload)});
+    const started = payload.start_date === today;
+    if (started) await api(`/api/discovery/requests/${created.subscription_id}/run`, {method: "POST"});
+    return {created, started};
+  }
+
+  function createdMessage({created, started}, payload) {
+    const title = payload.title || created?.request?.title || "Your request";
+    const email = payload.requested_by ? ` ${payload.requested_by} gets an email when findings are ready.` : "";
+    return started
+      ? `“${title}” is created and running now. Its findings go to Review Results for you to verify.${email}`
+      : `“${title}” is created. Its first run is on ${formatDay(payload.start_date)}; findings go to Review Results.${email}`;
+  }
+
+  function PeopleRequestForm({options, today, requester, onSaved}) {
+    const [form, setForm] = useState(blankPeopleForm);
+    const [touched, setTouched] = useState(false);
+    const [preview, setPreview] = useState(null);
+    const [working, setWorking] = useState("");
+    const [message, setMessage] = useState(null);
+    const set = (patch) => { setForm((f) => ({...f, ...patch})); setPreview(null); };
+    const problems = peopleDraftProblems(form, today);
+    const shown = touched ? problems : {};
+    const ready = options.entity_requests_ready !== false;
+    const states = statesForRegion(options, form.region);
+
+    async function runPreview() {
+      setTouched(true);
+      if (Object.keys(previewProblems(problems)).length) return;
+      setWorking("preview"); setMessage(null);
+      try {
+        const payload = previewSchedule(peopleDraftPayload(form), today);
+        setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(payload)}));
+      } catch (err) { setMessage({kind: "error", text: err.message}); }
+      setWorking("");
+    }
+    async function create() {
+      setTouched(true);
+      if (Object.keys(problems).length) return;
+      setWorking("create"); setMessage(null);
+      try {
+        const payload = withRequester(peopleDraftPayload(form), requester);
+        const result = await createRequest(payload, today);
+        setMessage({kind: "success", text: createdMessage(result, payload)});
+        setForm(blankPeopleForm()); setTouched(false); setPreview(null);
+        onSaved(result.started);
+      } catch (err) { setMessage({kind: "error", text: err.message}); }
+      setWorking("");
+    }
+
+    return html`<section class="discovery-card">
+      ${!ready && html`<p class="discovery-message error">People requests need migration 580 on this database.</p>`}
+      ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
+      <${Field} label=${PEOPLE_QUESTION} error=${shown.brief} wide=${true}>
+        <textarea class="discovery-brief" rows="5" maxLength="2000" value=${form.brief}
+          placeholder=${PEOPLE_PLACEHOLDER} onInput=${(e) => set({brief: e.target.value})}></textarea>
+      <//>
+      <div class="discovery-row3">
+        <${Field} label="Sector">
+          <select value=${form.sector} onChange=${(e) => set({sector: e.target.value})}>
+            <option value=${ANY_SECTOR}>Any</option>
+            ${options.topics.map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
+          </select>
+        <//>
+        <${Field} label="Region">
+          <select value=${form.region} onChange=${(e) => {
+            const region = e.target.value;
+            const keep = statesForRegion(options, region).some((s) => s.code === form.state);
+            set({region, state: keep ? form.state : ""});
+          }}>
+            <option value="">All Regions</option>
+            ${options.regions.map((r) => html`<option key=${r.code} value=${r.code}>${r.name}</option>`)}
+          </select>
+        <//>
+        <${Field} label="State">
+          <select value=${form.state} onChange=${(e) => set({state: e.target.value})}>
+            <option value="">All States</option>
+            ${states.map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
+          </select>
+        <//>
+      </div>
+      <${ScheduleRow} form=${form} set=${set} kind="person" options=${options} today=${today} shown=${shown}/>
+      <p class="muted">Every person found goes to Review Results; nothing enters the Ecosystem Directory until it is verified.</p>
+
+      ${preview && html`<div class="discovery-preview">
+        <h4>${preview.request?.title || "Searches"} · ${preview.queries.length} searches</h4>
+        <ul>${preview.queries.map((q) => html`<li key=${q}>${q}</li>`)}</ul>
+      </div>`}
+
+      <div class="discovery-actions">
+        <button class="btn ghost" disabled=${!!working || !ready} onClick=${runPreview}>${working === "preview" ? "Preparing preview…" : "Preview searches"}</button>
+        <button class="btn" disabled=${!!working || !ready} onClick=${create}>${working === "create" ? "Creating…" : "Create Request"}</button>
+      </div>
+    </section>`;
+  }
+
+  /** A recurring request's end date: Save appears once it changes; the old schedule holds until then. */
+  function EndDate({request, today, onSaved}) {
+    const [value, setValue] = useState(request.end_date || "");
+    const [state, setState] = useState({saving: false, ok: "", error: ""});
+    // What was just saved: Save hides at once, before the list reloads.
+    const [saved, setSaved] = useState(null);
+    useEffect(() => { setValue(request.end_date || ""); setSaved(null); }, [request.end_date]);
+    const editable = (request.status === "active" || request.status === "paused") && request.cadence !== "once";
+    if (!editable) {
+      return html`<div class="discovery-enddate"><span class="discovery-label">End date</span>
+        <span>${formatDay(request.end_date)}</span></div>`;
+    }
+    const changed = Boolean(value) && value !== (saved || request.end_date);
+    const earliest = request.start_date > today ? request.start_date : today;
+    async function saveEnd() {
+      setState({saving: true, ok: "", error: ""});
+      try {
+        await api(`/api/discovery/requests/${request.subscription_id}/end-date`,
+          {method: "POST", body: JSON.stringify({end_date: value})});
+        setSaved(value);
+        setState({saving: false, ok: `Saved. The request now ends on ${formatDay(value)}.`, error: ""});
+        setTimeout(() => setState((s) => ({...s, ok: ""})), 4000);
+        onSaved();
+      } catch (err) {
+        // The edit stays, so it can be corrected or tried again.
+        setState({saving: false, ok: "", error: err.message});
+      }
+    }
+    return html`<div class="discovery-enddate">
+      <span class="discovery-label">End date</span>
+      <${DateInput} ariaLabel="End date" value=${value} min=${earliest}
+        max=${addMonths(request.start_date, 12)} onChange=${(v) => { setValue(v); setState({saving: false, ok: "", error: ""}); }}/>
+      ${changed && html`<button class="btn" disabled=${state.saving} onClick=${saveEnd}>${state.saving ? "Saving…" : "Save"}</button>`}
+      ${state.ok && html`<small class="discovery-saved" role="status">${state.ok}</small>`}
+      ${state.error && html`<small class="field-error" role="alert">${state.error}</small>`}
     </div>`;
   }
 
@@ -1608,7 +1872,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     </section>`;
   }
 
-  function EntityRequestForm({kind, options, today, onSaved}) {
+  function EntityRequestForm({kind, options, today, requester, onSaved}) {
     const [form, setForm] = useState(() => blankEntityForm(today, kind));
     const [touched, setTouched] = useState(false);
     const [preview, setPreview] = useState(null);
@@ -1632,10 +1896,6 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       const next = withTyped();
       if (next !== form) set({focusTerms: next.focusTerms, focusInput: ""});
     }
-    function setDuration(id) {
-      const preset = DURATION_PRESETS.find((p) => p.id === id);
-      set({duration: id, endDate: preset?.months ? addMonths(form.startDate, preset.months) : form.endDate});
-    }
     function toggleType(type) {
       set({eventTypes: form.eventTypes.includes(type)
         ? form.eventTypes.filter((t) => t !== type) : [...form.eventTypes, type]});
@@ -1643,31 +1903,27 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     async function send(action) {
       setTouched(true);
       const draft = withTyped();
-      if (Object.keys(entityDraftProblems(draft, options)).length) return;
+      const issues = entityDraftProblems(draft, options);
+      if (Object.keys(action === "preview" ? previewProblems(issues) : issues).length) return;
       if (draft !== form) setForm(draft);
-      const body = JSON.stringify(entityDraftPayload(draft));
-      if (action === "run" && !window.confirm(`Run “${draft.title.trim()}” now? It searches the web live, `
-          + `reads the pages it finds and sends what passes the quality checks to Review Results.`)) return;
       setWorking(action); setMessage(null);
       try {
         if (action === "preview") {
-          setPreview(await api("/api/discovery/preview", {method: "POST", body}));
+          const payload = previewSchedule(entityDraftPayload(draft), today);
+          setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(payload)}));
         } else {
-          const created = await api("/api/discovery/requests", {method: "POST", body});
-          if (action === "run") {
-            await api(`/api/discovery/requests/${created.subscription_id}/run`, {method: "POST"});
-          }
-          setMessage({kind: "success", text: action === "run"
-            ? `“${draft.title.trim()}” is running. Results go to Review Results under ${isEvent ? "Discovery Events" : "Discovery People"}, as their own named run.`
-            : `Request “${draft.title.trim()}” saved.`});
+          const payload = withRequester(entityDraftPayload(draft), requester);
+          const result = await createRequest(payload, today);
+          setMessage({kind: "success", text: createdMessage(result, payload)});
           setForm(blankEntityForm(today, kind)); setTouched(false); setPreview(null);
-          onSaved(action);
+          onSaved(result.started);
         }
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setWorking("");
     }
 
-    const summary = entitySummary({...entityDraftPayload(form), start_date: form.startDate}, options);
+    const scheduled = !Object.keys(scheduleProblems(form)).length;
+    const summary = scheduled ? entitySummary(entityDraftPayload(form), options) : "";
     return html`<section class="discovery-card">
       ${!ready && html`<p class="discovery-message error">Event and people requests need migration 580 on this database.</p>`}
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
@@ -1694,14 +1950,6 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               onBlur=${addTerm}/>
           </div>
         <//>
-        ${!isEvent && html`<${Field} label="Institution or organization (optional)">
-          <input value=${form.institution} maxLength="120" placeholder="e.g. University of Texas at Austin"
-            onInput=${(e) => set({institution: e.target.value})}/>
-        <//>
-        <${Field} label="Professional role or specialization (optional)">
-          <input value=${form.role} maxLength="120" placeholder="e.g. professor, program director"
-            onInput=${(e) => set({role: e.target.value})}/>
-        <//>`}
         <${Field} label="Geographic scope" error=${shown.area} wide=${true}>
           <div class="discovery-segment">
             ${[["region", "Region"], ["state", "State"], ["us", "All United States"]].map(([id, label]) => html`
@@ -1733,25 +1981,10 @@ export function createDiscoveryPage({html, useState, useEffect}) {
                 onClick=${() => toggleType(type)}>${EVENT_TYPE_LABELS[type] || type}</button>`)}
           </div>
         <//>`}
-        <${Field} label="Start">
-          <${DateInput} ariaLabel="Start" value=${form.startDate} min=${today} onChange=${(v) => set({startDate: v})}/>
-        <//>
-        <${Field} label="Frequency">
-          <select value=${form.cadence} onChange=${(e) => set({cadence: e.target.value})}>
-            ${options.cadences.map((c) => html`<option key=${c} value=${c}>${CADENCE_LABELS[c] || c}</option>`)}
-          </select>
-        <//>
-        ${form.cadence !== "once" && html`<${Field} label="Duration" error=${shown.duration} wide=${true}>
-          <div class="discovery-segment">
-            ${DURATION_PRESETS.map((p) => html`<button type="button" key=${p.id} class=${form.duration === p.id ? "active" : ""} onClick=${() => setDuration(p.id)}>${p.label}</button>`)}
-          </div>
-          ${form.duration === "custom"
-            ? html`<${DateInput} ariaLabel="End" value=${form.endDate} min=${form.startDate} max=${addMonths(form.startDate, 12)} onChange=${(v) => set({endDate: v})}/>`
-            : html`<small class="muted">Ends ${formatDay(form.endDate)}</small>`}
-        <//>`}
       </div>
+      <${ScheduleRow} form=${form} set=${set} kind=${kind} options=${options} today=${today} shown=${shown}/>
 
-      <p class="discovery-summary">${summary}</p>
+      ${summary && html`<p class="discovery-summary">${summary}</p>`}
       <p class="muted">Every ${isEvent ? "event" : "person"} found goes to Review Results; nothing is added to the directory until a person verifies it.</p>
 
       ${preview && html`<div class="discovery-preview">
@@ -1761,13 +1994,12 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
       <div class="discovery-actions">
         <button class="btn ghost" disabled=${!!working || !ready} onClick=${() => send("preview")}>${working === "preview" ? "Preparing preview…" : "Preview searches"}</button>
-        <button class="btn ghost" disabled=${!!working || !ready} onClick=${() => send("save")}>${working === "save" ? "Saving…" : "Save request"}</button>
-        <button class="btn" disabled=${!!working || !ready} onClick=${() => send("run")}>${working === "run" ? "Starting…" : "Run now"}</button>
+        <button class="btn" disabled=${!!working || !ready} onClick=${() => send("create")}>${working === "create" ? "Creating…" : "Create Request"}</button>
       </div>
     </section>`;
   }
 
-  function RequestCard({request, options, busy, onAction, onRun}) {
+  function RequestCard({request, options, busy, onAction, onRun, today, onChanged}) {
     const [open, setOpen] = useState(false);
     const runs = request.runs || [];
     const results = request.results || [];
@@ -1797,6 +2029,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         <div><dt>Sent to Review Results</dt><dd>${results.length}</dd></div>
         <div><dt>Excluded</dt><dd>${excluded.length}</dd></div>`}
       </dl>
+      <${EndDate} request=${request} today=${today} onSaved=${onChanged}/>
       ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${last.status_reason || "no reason recorded"}</p>`}
       ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
         ${runningLine(current)}. Searching, reading pages and scoring; results appear in Review Results when it finishes.</p>`}
@@ -1857,7 +2090,13 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const [view, setView] = useState("new");
     // What the new request finds. Organizations keep their form exactly.
     const [kind, setKind] = useState("actor");
-    const [form, setForm] = useState(() => blankForm(today));
+    const [form, setForm] = useState(blankForm);
+    // Who asked: emailed when a run has findings. Typed once, kept in this browser.
+    const [requester, setRequesterState] = useState(storedRequester());
+    const setRequester = (value) => {
+      setRequesterState(value);
+      try { localStorage.setItem("ghus.monitor.email", value); } catch { /* not kept */ }
+    };
     // The fields are folded away: the brief is what a person writes, and the
     // panel below shows what it resolved to for anyone who wants to change it.
     const [showDetails, setShowDetails] = useState(false);
@@ -1896,14 +2135,6 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       onHandoffUsed();
     }, [handoff]);
 
-    function setDuration(id) {
-      const preset = DURATION_PRESETS.find((p) => p.id === id);
-      set({duration: id, endDate: preset?.months ? addMonths(form.startDate, preset.months) : form.endDate});
-    }
-    function setStart(value) {
-      const preset = DURATION_PRESETS.find((p) => p.id === form.duration);
-      set({startDate: value, endDate: preset?.months ? addMonths(value, preset.months) : form.endDate});
-    }
     function addFocus() {
       const term = form.focusInput.trim();
       if (!term) return;
@@ -1924,10 +2155,11 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
     async function runPreview() {
       setTouched(true);
-      if (!valid) return;
+      if (Object.keys(previewProblems(problems)).length) return;
       setBusy(true); setWorking("preview"); setMessage(null);
       try {
-        setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(draftPayload(draft))}));
+        const payload = previewSchedule(draftPayload(draft), today);
+        setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(payload)}));
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setBusy(false); setWorking("");
     }
@@ -1937,10 +2169,12 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       if (!valid) return;
       setBusy(true); setWorking("create"); setMessage(null);
       try {
-        await api("/api/discovery/requests", {method: "POST", body: JSON.stringify(draftPayload(draft))});
-        setMessage({kind: "success", text: `Request “${draft.title.trim()}” created.`});
-        setForm(blankForm(today)); setTouched(false); setPreview(null); setShowDetails(false);
+        const payload = withRequester(draftPayload(draft), requester);
+        const result = await createRequest(payload, today);
+        setMessage({kind: "success", text: createdMessage(result, payload)});
+        setForm(blankForm()); setTouched(false); setPreview(null); setShowDetails(false);
         await load();
+        if (result.started) setWatchUntil(Date.now() + 20 * 60 * 1000);
         setView("requests");
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setBusy(false); setWorking("");
@@ -1990,6 +2224,12 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       <h1 class="hero-h">What should Compass keep watching?</h1>
       <p class="lead">Choose the organizations, events or people to follow, and where. Compass
         searches only for that, on the schedule you set, and what it finds goes to Review Results.</p>
+      <label class=${"discovery-whoami" + (requester && !isEmail(requester) ? " invalid" : "")}>
+        <span>Email for results</span>
+        <input type="email" value=${requester} placeholder="you@um6p.ma" maxLength="254"
+          onInput=${(e) => setRequester(e.target.value)}/>
+        <small class="muted">You get an email when a request's findings are ready in Review Results.</small>
+      </label>
 
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
       ${status.loaded && !status.configured && html`<p class="discovery-message error">Discovery requests are not available on this instance.</p>`}
@@ -2011,8 +2251,12 @@ export function createDiscoveryPage({html, useState, useEffect}) {
           onClick=${() => setKind(k.id)}>${k.label}</button>`)}
       </div>`}
 
-      ${view === "new" && kind !== "actor" && html`<${EntityRequestForm} kind=${kind} options=${options}
-        today=${today} onSaved=${async (action) => { await load(); if (action === "run") setWatchUntil(Date.now() + 20 * 60 * 1000); }}/>`}
+      ${view === "new" && kind === "event" && html`<${EntityRequestForm} kind=${kind} options=${options}
+        today=${today} requester=${requester}
+        onSaved=${async (started) => { await load(); if (started) setWatchUntil(Date.now() + 20 * 60 * 1000); }}/>`}
+      ${view === "new" && kind === "person" && html`<${PeopleRequestForm} options=${options}
+        today=${today} requester=${requester}
+        onSaved=${async (started) => { await load(); if (started) setWatchUntil(Date.now() + 20 * 60 * 1000); }}/>`}
 
       ${view === "new" && kind === "actor" && html`<section class="discovery-card">
         <${Field} label="What should Compass look for?" error=${shown.brief} wide=${true}>
@@ -2089,22 +2333,6 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               <input value=${form.city} maxLength="120" placeholder="City (optional)" onInput=${(e) => set({city: e.target.value})}/>
             </div>`}
           <//>
-          <${Field} label="Frequency">
-            <select value=${form.cadence} onChange=${(e) => set({cadence: e.target.value})}>
-              ${options.cadences.map((c) => html`<option key=${c} value=${c}>${CADENCE_LABELS[c] || c}</option>`)}
-            </select>
-          <//>
-          <${Field} label="Start">
-            <${DateInput} ariaLabel="Start" value=${form.startDate} min=${today} onChange=${setStart}/>
-          <//>
-          ${form.cadence !== "once" && html`<${Field} label="Duration" error=${shown.duration} wide=${true}>
-            <div class="discovery-segment">
-              ${DURATION_PRESETS.map((p) => html`<button type="button" key=${p.id} class=${form.duration === p.id ? "active" : ""} onClick=${() => setDuration(p.id)}>${p.label}</button>`)}
-            </div>
-            ${form.duration === "custom"
-              ? html`<${DateInput} ariaLabel="End" value=${form.endDate} min=${form.startDate} max=${addMonths(form.startDate, 12)} onChange=${(v) => set({endDate: v})}/>`
-              : html`<small class="muted">Ends ${formatDay(form.endDate)}</small>`}
-          <//>`}
           <${Field} label="New organizations per run" error=${shown.cap}>
             <input type="number" min="1" max=${options.max_new_actors_per_run} value=${form.cap} onInput=${(e) => set({cap: e.target.value})}/>
           <//>
@@ -2116,8 +2344,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
               sector, from Review.</small>
           <//>
         </div>
+        <${ScheduleRow} form=${form} set=${set} kind="actor" options=${options} today=${today} shown=${shown}/>
 
-        <p class="discovery-summary">${requestSummary(summaryDraft, options)}</p>
+        ${!Object.keys(scheduleProblems(form)).length && html`<p class="discovery-summary">${requestSummary(summaryDraft, options)}</p>`}
 
         ${preview && html`<div class="discovery-preview">
           <h4>First run ${formatDay(preview.first_run)} · ${preview.queries.length} searches</h4>
@@ -2126,7 +2355,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
         <div class="discovery-actions">
           <button class="btn ghost" disabled=${busy} onClick=${runPreview}>${working === "preview" ? "Preparing preview…" : "Preview searches"}</button>
-          <button class="btn" disabled=${busy} onClick=${create}>${working === "create" ? "Creating…" : "Create request"}</button>
+          <button class="btn" disabled=${busy} onClick=${create}>${working === "create" ? "Creating…" : "Create Request"}</button>
         </div>
       </section>`}
 
@@ -2136,7 +2365,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       ${view === "requests" && html`<section class="discovery-list">
         ${requests.length === 0
           ? html`<p class="discovery-empty">No requests yet.</p>`
-          : requests.map((r) => html`<${RequestCard} key=${r.subscription_id} request=${r} options=${options} busy=${busy} onAction=${onAction} onRun=${runNow}/>`)}
+          : requests.map((r) => html`<${RequestCard} key=${r.subscription_id} request=${r} options=${options}
+              busy=${busy} onAction=${onAction} onRun=${runNow} today=${today} onChanged=${load}/>`)}
       </section>`}
       `}
     </div>`;

@@ -470,6 +470,49 @@ def change_status(session, subscription_id: str, action: str, *, live: bool = Fa
     return WriteResult(True, subscription_id, statement, values)
 
 
+def set_end_date(session, subscription_id: str, end_date: date, *, max_days: int,
+                 live: bool = False) -> WriteResult:
+    """Extend or shorten an active or paused recurring request's monitoring period.
+
+    The schedule already saved stays in effect until this succeeds. A finished,
+    cancelled or one-off request is not changed: its period is over or is a
+    single day.
+    """
+
+    row = session.execute(text(
+        "SELECT status, requested_via, cadence, start_date, end_date FROM actor_update_subscription "
+        "WHERE actor_update_subscription_id = CAST(:id AS uuid)"
+    ), {"id": subscription_id}).mappings().first()
+    if row is None:
+        raise SubscriptionError(f"no request {subscription_id}")
+    if row["requested_via"] not in _MANAGED_VIA:
+        raise SubscriptionError("only Monitor and Update requests are managed here")
+    if row["status"] not in ("active", "paused"):
+        raise SubscriptionError(f"a {row['status']} request is read-only")
+    if row["cadence"] == "once":
+        raise SubscriptionError("a one-time request has no monitoring period to change")
+    start = row["start_date"]
+    if end_date < start:
+        raise SubscriptionError("the end date is before the request starts")
+    if end_date < _today():
+        raise SubscriptionError("the end date is in the past")
+    if (end_date - start).days > max_days:
+        raise SubscriptionError(f"a request may run for at most {max_days} days from its start")
+    values = {"id": subscription_id, "end_date": end_date, "old": row["end_date"]}
+    statement = (
+        "UPDATE actor_update_subscription SET end_date = :end_date, updated_at = now() "
+        "WHERE actor_update_subscription_id = CAST(:id AS uuid) AND end_date = :old "
+        "AND status IN ('active', 'paused')"
+    )
+    if not live:
+        return WriteResult(False, subscription_id, statement, values)
+    if session.execute(text(statement), values).rowcount != 1:
+        session.rollback()
+        raise SubscriptionError("the request changed while it was being updated; try again")
+    session.commit()
+    return WriteResult(True, subscription_id, statement, values)
+
+
 # ---------------------------------------------------------- what a run records
 
 def ensure_collection_request(session, subscription: Subscription, topic_id: str | None) -> str:

@@ -328,3 +328,16 @@ def test_update_request_routes_validate_and_run_now_starts_the_runner(monkeypatc
     # Unset choices are not sent: the backend applies its own defaults.
     assert bridge.calls[0][1] == {"actor_ids": ["a"], "scope": "general", "depth": "light",
                                   "categories": [], "fields": [], "focus": "", "cadence": "once"}
+
+
+def test_an_end_date_change_is_a_live_backend_command_for_a_real_request(tmp_path):
+    calls = []
+    bridge = _bridge(tmp_path, stdout=json.dumps({"ok": True, "end_date": "2027-03-01"}), calls=calls)
+    request = "00000000-0000-4000-8000-000000000001"
+    assert bridge.set_end_date(request, "2027-03-01")["end_date"] == "2027-03-01"
+    command = calls[0][0]
+    assert command[3:5] == ["end-date", request] and command[-1] == "--live"
+    assert json.loads(command[command.index("--json") + 1]) == {"end_date": "2027-03-01"}
+    with pytest.raises(DiscoveryBridgeError, match="unknown request"):
+        bridge.set_end_date("not-a-request", "2027-03-01")
+    assert len(calls) == 1
