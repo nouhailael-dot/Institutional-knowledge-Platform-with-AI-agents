@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, usDate} from "./dates.js?v=20261029a";
+import {createDateInput, usDate} from "./dates.js?v=20261029b";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -732,6 +732,14 @@ export function hubSummary(hubs) {
   }
   if (hubs.note) parts.push(hubs.note);
   return parts.join(" · ") || "In no hub.";
+}
+
+/** An actor with no Category Type: the type its own pages point to, for Review to confirm. */
+export function typeProposalLine(proposal) {
+  if (!proposal) return "";
+  const type = proposal.category_type === "not_applicable" ? "Not Applicable" : proposal.type_label;
+  return `Category Type: it had none; its pages point to ${type} — proposed to Review Results `
+    + "when written, never set directly.";
 }
 
 const RELATED_STATUS = {
@@ -1855,6 +1863,7 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         ${(result.related || []).some((r) => r.status === "not_on_map") && html`<p class="muted">Its pages name
           organizations not yet in the directory: ${result.related.filter((r) => r.status === "not_on_map").map((r, i) =>
             html`${i ? ", " : ""}<button type="button" class="link" onClick=${() => onFindNew(r.name)}>${r.name}</button>`)}</p>`}
+        ${result.type_proposal && html`<p class="muted">${typeProposalLine(result.type_proposal)}</p>`}
         ${applied && html`<div class="discovery-actions">
           <button class="btn" onClick=${() => openInReview(selected)}>Open in Review Results</button></div>`}
       </div>`}

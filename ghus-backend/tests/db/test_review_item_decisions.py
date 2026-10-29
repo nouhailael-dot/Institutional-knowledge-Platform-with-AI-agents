@@ -159,3 +159,55 @@ def test_hub_membership_proposal_routes_to_its_decision_and_refusal_writes_nothi
         _decide(connection, decision_kind="resolve_hub_membership", review_item_id=legacy,
                 accept=True)
     assert uuid.UUID(proposal["review_item_id"])
+
+
+def test_a_proposed_category_type_is_set_only_on_acceptance_and_only_while_untyped(connection):
+    from agents.enrichment.decisions import propose_category_type, record_category_review_decision
+
+    actor = connection.execute(text(
+        "SELECT actor_id::text FROM actor WHERE actor_category = 'association_network' "
+        "AND category_type IS NULL LIMIT 1")).scalar()
+    if actor is None:
+        pytest.skip("no untyped association in this database")
+
+    def propose(**changes):
+        session = Session(bind=connection, join_transaction_mode="create_savepoint")
+        try:
+            result = propose_category_type(session, **{
+                "actor_id": actor, "actor_category": "association_network",
+                "category_type": "professional_network", "category_note": None,
+                "main_job": "It convenes water professionals across the region.",
+                "source_url": "https://example.org/about", "live": True, **changes})
+            session.commit()
+            return result
+        finally:
+            session.close()
+
+    def type_of():
+        return connection.execute(text(
+            "SELECT category_type FROM actor WHERE actor_id = CAST(:a AS uuid)"),
+            {"a": actor}).scalar()
+
+    # Another category's type, or Not Applicable without a note, is never raised.
+    with pytest.raises(ValueError):
+        propose(category_type="private_company")
+    with pytest.raises(ValueError):
+        propose(category_type="not_applicable")
+    first = propose()
+    assert first["action"] == "proposed"
+    assert propose()["action"] == "already_proposed"
+    assert type_of() is None                       # a proposal changes nothing
+    with pytest.raises(ValueError, match="record_category_type_decision"):
+        session = Session(bind=connection, join_transaction_mode="create_savepoint")
+        record_category_review_decision(session, review_item_id=first["review_item_id"],
+                                        actor_category="association_network",
+                                        decided_by="GHUS test", live=True)
+    refused = _decide(connection, decision_kind="resolve_category_type",
+                      review_item_id=first["review_item_id"], accept=False)
+    assert refused["decision"] == "refused" and type_of() is None
+    second = propose()
+    accepted = _decide(connection, decision_kind="resolve_category_type",
+                       review_item_id=second["review_item_id"], accept=True)
+    assert accepted["action"] == "decided" and type_of() == "professional_network"
+    # Typed now: nothing more is proposed for it.
+    assert propose()["action"] == "already_typed"

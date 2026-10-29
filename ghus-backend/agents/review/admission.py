@@ -653,7 +653,7 @@ def apply_category_decisions(session, decision: Mapping[str, Any]) -> dict[str, 
 
 
 REVIEW_ITEM_DECISION_KINDS = {"resolve_location", "resolve_relationship", "verify_actor",
-                              "resolve_fact", "resolve_hub_membership"}
+                              "resolve_fact", "resolve_hub_membership", "resolve_category_type"}
 
 
 def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str, Any]:
@@ -664,6 +664,7 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
     """
     from agents.enrichment.decisions import (
         record_actor_verification_review_decision,
+        record_category_type_decision,
         record_fact_review_decision,
         record_ghus_notes,
         record_geocode_review_decision,
@@ -704,6 +705,13 @@ def apply_review_item_decision(session, decision: Mapping[str, Any]) -> dict[str
             # A hub an unassigned actor now fits: accept adds the membership,
             # refuse closes the proposal. Nothing is ever removed.
             result = record_hub_membership_decision(
+                session, review_item_id=item_id, decided_by=reviewer,
+                accept=bool(decision.get("accept")), notes=notes, live=True,
+            )
+        elif kind == "resolve_category_type":
+            # A category type an update read for an untyped actor: accept sets
+            # it (only if the actor is still untyped), refuse closes it.
+            result = record_category_type_decision(
                 session, review_item_id=item_id, decided_by=reviewer,
                 accept=bool(decision.get("accept")), notes=notes, live=True,
             )

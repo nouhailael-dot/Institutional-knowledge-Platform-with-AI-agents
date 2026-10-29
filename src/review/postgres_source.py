@@ -693,6 +693,19 @@ class PostgresReviewSource:
         if kind == "hub_assignment" and pipeline.get("proposal") == "membership":
             return {**base, "kind": "hub", "hub_name": meta.get("proposed_hub_name"),
                     "evidence": pipeline.get("deterministic_evidence") or {}}
+        if kind == "category_doubt" and pipeline.get("proposal") == "category_type":
+            # A legacy actor with no type: the type its own pages point to,
+            # within the category it already has.
+            from .taxonomy import category_label, type_label
+
+            category = pipeline.get("actor_category")
+            type_code = pipeline.get("proposed_category_type")
+            return {**base, "kind": "category_type", "actor_category": category,
+                    "category_label": category_label(category) or category,
+                    "category_type": type_code,
+                    "type_label": type_label(category, type_code) or type_code,
+                    "note": pipeline.get("category_note"), "main_job": pipeline.get("main_job"),
+                    "source_url": pipeline.get("source_url")}
         return None
 
     def _actor_topic_facts(self, db, columns, actor_id, topic_id):

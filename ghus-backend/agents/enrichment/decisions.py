@@ -541,6 +541,8 @@ def record_category_review_decision(
     if item is None:
         raise ValueError("category review item not found")
     payload = item["payload"] if isinstance(item["payload"], dict) else json.loads(item["payload"] or "{}")
+    if payload.get("proposal") == "category_type":
+        raise ValueError("a proposed category type is decided with record_category_type_decision")
     if payload.get("is_true_aggregate"):
         raise ValueError("a true aggregate needs a GHUS disposition, not a category")
     outcome = {
@@ -954,6 +956,126 @@ def record_hub_membership_decision(
                        status="approved" if accept else "rejected", decided_by=reviewer,
                        reason=reason)
     return {**outcome, "action": "decided"}
+
+
+CATEGORY_TYPE_PROPOSAL = "category_type"
+
+
+def propose_category_type(
+    session,
+    *,
+    actor_id: str,
+    actor_category: str,
+    category_type: str,
+    category_note: str | None,
+    main_job: str,
+    source_url: str | None,
+    topic_id: str | None = None,
+    request_id: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Ask GHUS to confirm a category type an actor update read for an untyped actor.
+
+    A ``category_doubt`` item marked as a type proposal; the type is written
+    only on acceptance (``record_category_type_decision``). Raised only while
+    the actor still has no type in the same category, and never twice.
+    """
+    from agents.common.actor_classification import (
+        ActorClassification,
+        ClassificationEvidence,
+        needs_category_type,
+        validate_actor_classification,
+    )
+
+    proposal = validate_actor_classification(ActorClassification(
+        actor_category=actor_category, category_type=category_type,
+        category_note=category_note, category_needs_review=False,
+        evidence=ClassificationEvidence(main_job=main_job)))
+    actor = session.execute(text(
+        "SELECT actor_category, category_type FROM actor WHERE actor_id=CAST(:actor AS uuid)"),
+        {"actor": actor_id}).mappings().first()
+    if actor is None:
+        raise ValueError("actor not found")
+    if actor["actor_category"] != proposal.actor_category:
+        return {"action": "category_changed"}
+    if not needs_category_type(actor["category_type"]):
+        return {"action": "already_typed"}
+    pending = session.execute(text(
+        "SELECT review_item_id::text FROM review_item WHERE review_kind='category_doubt' "
+        "AND status='pending' AND entity_id=CAST(:actor AS uuid) "
+        "AND payload->>'proposal'=:proposal LIMIT 1"),
+        {"actor": actor_id, "proposal": CATEGORY_TYPE_PROPOSAL}).scalar()
+    if pending:
+        return {"action": "already_proposed", "review_item_id": pending}
+    if not live:
+        return {"action": "would_propose"}
+    review_id = str(uuid.uuid4())
+    execute_canonical_write(session, text(
+        "INSERT INTO review_item(review_item_id,review_kind,entity_type,entity_id,topic_id,"
+        "priority,payload,status) VALUES(CAST(:id AS uuid),'category_doubt','actor',"
+        "CAST(:actor AS uuid),CAST(:topic AS uuid),'normal',CAST(:payload AS jsonb),'pending')"
+    ), {"id": review_id, "actor": actor_id, "topic": topic_id, "payload": json.dumps({
+        "proposal": CATEGORY_TYPE_PROPOSAL, "issue": "category_type_missing",
+        "actor_category": proposal.actor_category,
+        "proposed_category_type": proposal.category_type,
+        "category_note": proposal.category_note, "main_job": proposal.evidence.main_job,
+        "source_url": source_url, "origin": "actor_update", "request_id": request_id},
+        sort_keys=True)})
+    return {"action": "proposed", "review_item_id": review_id}
+
+
+def record_category_type_decision(
+    session,
+    *,
+    review_item_id: str,
+    decided_by: str,
+    accept: bool,
+    notes: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """GHUS accepts or refuses a proposed category type. Dry-run is the default.
+
+    Accepting sets the type only while the actor still has none in the same
+    category; if a reviewer classified it meanwhile, the proposal closes
+    without changing anything.
+    """
+    from agents.common.actor_classification import needs_category_type
+
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    item, payload = _pending_review_item(session, review_item_id, ("category_doubt",))
+    if payload.get("proposal") != CATEGORY_TYPE_PROPOSAL:
+        raise ValueError("this category review is not a proposed category type")
+    category = str(payload.get("actor_category") or "")
+    category_type = str(payload.get("proposed_category_type") or "")
+    outcome: dict[str, object] = {"review_item_id": review_item_id, "actor_id": item["entity_id"],
+                                  "actor_category": category, "category_type": category_type,
+                                  "decision": "accepted" if accept else "refused"}
+    if item["status"] != "pending":
+        return {**outcome, "action": "already_resolved"}
+    if not live:
+        return {**outcome, "action": "would_decide"}
+    written = False
+    if accept:
+        actor = session.execute(text(
+            "SELECT actor_category, category_type FROM actor WHERE actor_id=CAST(:actor AS uuid) "
+            "FOR UPDATE"), {"actor": item["entity_id"]}).mappings().first()
+        if actor and actor["actor_category"] == category and needs_category_type(actor["category_type"]):
+            note = str(payload.get("category_note") or "").strip() or None
+            execute_canonical_write(session, text(
+                "UPDATE actor SET category_type=:type,category_note=:note,"
+                "category_needs_review=false,updated_at=now() WHERE actor_id=CAST(:actor AS uuid)"
+            ), {"type": category_type, "note": note, "actor": item["entity_id"]})
+            written = True
+    if accept and not written:
+        reason = "type not set: the actor was classified differently meanwhile"
+    else:
+        reason = f"category_type={category_type} " + ("accepted" if accept else "refused")
+    _close_review_item(session, review_item_id, decision="approve" if written else "reject",
+                       status="approved" if written else "rejected", decided_by=reviewer,
+                       reason=reason + (f"; {notes}" if notes else ""))
+    return {**outcome, "action": "decided" if written or not accept else "superseded"}
 
 
 def record_geocode_review_decision(

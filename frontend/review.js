@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261029a";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261029b";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
@@ -672,6 +672,12 @@ const CHANGE_CHOICES = {
     {value: "confirm", label: "Add to the hub", primary: true, done: "it is added to the hub.",
       consequence: "The hub membership is added. Nothing is ever removed from a hub here."},
   ],
+  category_type: [
+    {value: "refuse", label: "Not this type", done: "the type stays Pending Classification.",
+      consequence: "Nothing changes; the type stays Pending Classification."},
+    {value: "confirm", label: "Use this type", primary: true, done: "the Category Type is set.",
+      consequence: "The Category Type is set. The category itself does not change."},
+  ],
 };
 
 const CHOICE_WORDS = {
@@ -714,6 +720,17 @@ export function changeRows(candidate) {
         reason: change.source_url ? "Named on its own pages by an organization update."
           : "No source page is recorded for this link, so it can only be refused or left.",
         choices: CHANGE_CHOICES.relationship};
+    }
+    if (change.kind === "category_type") {
+      const notApplicable = change.category_type === "not_applicable";
+      return {...base, label: "Proposed Category Type",
+        question: notApplicable
+          ? `None of the ${change.category_label} types fits ${name}. Mark it Not Applicable?`
+          : `Is ${name} ${/^[aeiou]/i.test(change.type_label || "") ? "an" : "a"} ${change.type_label}? (${change.category_label})`,
+        source: present(change.source_url),
+        reason: [change.main_job && `From its own pages: ${change.main_job}`, change.note]
+          .filter(Boolean).join(" "),
+        choices: CHANGE_CHOICES.category_type};
     }
     const evidence = change.evidence || {};
     return {...base, label: "Proposed hub", question: `Add ${name} to ${change.hub_name || "a hub"}?`,

@@ -248,3 +248,40 @@ def test_the_earlier_profile_fills_one_box_per_fact_and_never_recent_activity():
     assert len(set(boxes.values())) == len(boxes)          # no paragraph in two boxes
     assert all(f["from_record"] == "earlier GHUS profile" and f["source_origin"] == "imported"
                for f in facts)
+
+
+TYPE_CHANGE = {"review_item_id": CHANGE, "kind": "category_type",
+               "actor_category": "association_network", "category_type": "professional_network",
+               "category_label": "Association / Consortium / Network",
+               "type_label": "Professional Network", "source_url": "https://ijc.org/en/about"}
+
+
+def test_a_proposed_category_type_is_used_or_refused_through_the_backend_writer(store):
+    store.sync_external_candidates([_profile("r1", changes=[TYPE_CHANGE])])
+    profile_id = _external_candidate_id(f"postgres:actor_updates:{ACTOR}:r1")
+    use = store.change_request(profile_id, CHANGE, choice="confirm", reviewer="R",
+                               idempotency_key="k1", confirmed=True)
+    assert (use["decision_kind"], use["accept"]) == ("resolve_category_type", True)
+    refuse = store.change_request(profile_id, CHANGE, choice="refuse", reviewer="R",
+                                  idempotency_key="k2", confirmed=True)
+    assert refuse["accept"] is False
+    with pytest.raises(ReviewValidationError, match="Unsupported choice"):
+        store.change_request(profile_id, CHANGE, choice="use_new", reviewer="R",
+                             idempotency_key="k3", confirmed=True)
+
+
+def test_a_category_type_proposal_reads_as_a_change_with_its_labels():
+    from src.review.postgres_source import PostgresReviewSource
+
+    item = {"source_run_id": "actor-update:r1", "created_at": 1, "agent_metadata": {
+        "review_kind": "category_doubt", "review_item_id": CHANGE, "pipeline": {
+            "proposal": "category_type", "actor_category": "association_network",
+            "proposed_category_type": "professional_network", "category_note": None,
+            "main_job": "It convenes water managers.", "source_url": "https://ijc.org"}}}
+    change = PostgresReviewSource._change_of(object.__new__(PostgresReviewSource), item, {})
+    assert change["kind"] == "category_type" and change["run_id"] == "r1"
+    assert (change["category_label"], change["type_label"]) == (
+        "Association / Consortium / Network", "Professional Network")
+    # A category doubt from discovery is not a profile change: it keeps its own card.
+    item["agent_metadata"]["pipeline"] = {"issue": "category_doubt"}
+    assert PostgresReviewSource._change_of(object.__new__(PostgresReviewSource), item, {}) is None

@@ -25,6 +25,13 @@ NOT_APPLICABLE = "not_applicable"
 # and still validates on read, but it is never selectable and never proposed.
 RETIRED_CATCH_ALL = "other"
 CATCH_ALL_TYPE_CODES = (NOT_APPLICABLE, RETIRED_CATCH_ALL)
+
+
+def needs_category_type(category_type: object) -> bool:
+    """No type yet (a legacy record), or only the retired catch-all."""
+    value = str(category_type or "").strip()
+    return not value or value == RETIRED_CATCH_ALL
+
 CATEGORY_COUNT = 12
 CATEGORY_TYPE_COUNT = 69
 
@@ -616,6 +623,11 @@ def _type_schema(type_codes: tuple[str, ...]) -> dict[str, object]:
         "additionalProperties": False,
         "properties": {
             "category_type": {"type": "string", "enum": list(type_codes)},
+            "main_job_evidence": {
+                "type": "string", "maxLength": 300,
+                "description": "One sentence from the self-description that shows the "
+                               "organization's main job.",
+            },
             "doubt": {"type": "boolean"},
             "category_note": {"type": ["string", "null"], "maxLength": 500},
         },

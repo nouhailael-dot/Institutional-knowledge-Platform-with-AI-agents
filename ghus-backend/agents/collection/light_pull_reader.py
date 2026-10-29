@@ -207,6 +207,8 @@ class LightRead:
     sources: dict[str, str] = field(default_factory=dict)
     # What was tried when its own site was closed, in plain words.
     attempts: list[dict] = field(default_factory=list)
+    # url -> the page's text, kept for the run (never written to a record).
+    texts: dict[str, str] = field(default_factory=dict)
 
     def as_record(self, *, model: str, read_at: datetime) -> dict:
         return {
@@ -595,6 +597,7 @@ class LightPullReader:
         result.pages = [d.url for d in documents]
         result.sources = {d.url: kinds.get(d.url, "official") for d in documents}
         texts = {d.url: d.text for d in documents}
+        result.texts = texts
         if not any(t.strip() for t in texts.values()):
             result.error = PLAIN["no_text"]
             return result

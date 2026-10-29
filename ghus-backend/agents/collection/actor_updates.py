@@ -37,7 +37,9 @@ changes anything:
 
     The findings are kept for ``check_valid_hours`` under agents/runs so the
     apply step writes exactly what was checked, without paying for a second
-    read.
+    read. An actor with no Category Type (a legacy record) also gets one
+    proposed from its own official pages, within its fixed category
+    (``type_proposal``).
 
 ``apply`` (writes)
     Records the run in ``collection_request``/``collection_run`` (the existing
@@ -47,6 +49,8 @@ changes anything:
     Review items. Each fact carries the run as its ``request_id``. A silent
     page never overwrites a recorded value. One failed box does not stop the
     others; applying the same check again retries only the boxes that failed.
+    Links, hub memberships and a proposed Category Type go to Review as
+    proposals; only a person's acceptance writes them.
 
 Deep Pull (``--depth deep``) is refused unless the latest GHUS decision
 verified this actor for this exact sector (``deep_pull.actor_is_verified_for_topic``);
@@ -763,6 +767,45 @@ def _check_path(runs_dir: Path, check_id: str) -> Path:
     return Path(runs_dir) / f"{check_id}.json"
 
 
+# How much of the official pages the Category Type reading sees.
+TYPE_TEXT_CHARS = 6000
+
+
+def type_proposal(client, actor: dict, read) -> dict | None:
+    """A Category Type for an actor that has none, read from its own official pages.
+
+    The category stays as it is (``classify_type_for_existing_category``); the
+    type is chosen from that category's list, or Not Applicable with a note
+    when nothing fits. None when the actor already has a type, or when no
+    official page was read: a third-party page is not a self-description.
+    """
+    from agents.common.actor_classification import (
+        classify_type_for_existing_category,
+        load_category_catalog,
+        needs_category_type,
+    )
+
+    category = str(actor.get("actor_category") or "")
+    if client is None or not category or not needs_category_type(actor.get("category_type")):
+        return None
+    sources = dict(getattr(read, "sources", {}) or {})
+    texts = dict(getattr(read, "texts", {}) or {})
+    official = [url for url in read.pages if sources.get(url, "official") == "official"
+                and str(texts.get(url) or "").strip()]
+    if not official:
+        return None
+    words = " ".join(" ".join(str(texts[url]).split()) for url in official)[:TYPE_TEXT_CHARS]
+    catalog = load_category_catalog()
+    result = classify_type_for_existing_category(
+        client, name=actor["name"], self_description=words, actor_category=category,
+        catalog=catalog)
+    label = next((item.label for item in catalog.by_code[category].types
+                  if item.code == result.category_type), result.category_type)
+    return {"actor_category": category, "category_type": result.category_type,
+            "type_label": label, "category_note": result.category_note,
+            "main_job": result.evidence.main_job[:300], "source_url": official[0]}
+
+
 def check_update(session, *, actor_id: str, topic_code: str | None = None,
                  scope: str = "general", depth: str = "light", fields=(), categories=(),
                  focus: str = "", max_usd: float | None = None, config: dict | None = None,
@@ -843,6 +886,11 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
             related = related_actors.route(session, actor, named)
         except Exception as exc:  # noqa: BLE001 - the facts stand without it; say so
             related_error = f"Related organisations were not listed: {type(exc).__name__}"
+    proposed_type, type_error = None, None
+    try:
+        proposed_type = type_proposal(client, actor, read)
+    except Exception as exc:  # noqa: BLE001 - the facts stand without it; say so
+        type_error = f"No Category Type was proposed: {type(exc).__name__}"
     spent = round(float(meter.spent_usd), 4)
     # Boxes in the schema with nothing recorded and not read now.
     schema = plan["schema"]
@@ -860,7 +908,8 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
         "sources": dict(getattr(read, "sources", {}) or {}), "attempts": attempts,
         "model": model, "summary": plan["summary"], "findings": findings,
         "applied_run_id": None, "written_fields": [],
-        "related": related, "hubs": plan["hubs"], "proposals_written": False,
+        "related": related, "hubs": plan["hubs"], "type_proposal": proposed_type,
+        "proposals_written": False,
     }
     Path(runs_dir).mkdir(parents=True, exist_ok=True)
     _check_path(runs_dir, check_id).write_text(json.dumps(record, default=str, indent=1),
@@ -872,7 +921,8 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
             "findings": [public(f) for f in findings], "unread": [public(f) for f in unread],
             "counts": counts_of(findings), "cost_usd": spent, "model": model,
             "related": related, "related_error": related_error,
-            "proposals": _proposal_count(related, plan["hubs"]),
+            "type_proposal": proposed_type, "type_error": type_error,
+            "proposals": _proposal_count(related, plan["hubs"], proposed_type),
             "writes": sum(1 for f in findings if f["outcome"] in WRITTEN
                           and not (f["outcome"] == "not_found" and f.get("reason"))),
             "error": read.error}
@@ -952,18 +1002,22 @@ def _fill_location(session, record: dict, results: list[dict]) -> dict | None:
     return result
 
 
-def _proposal_count(related, hubs) -> int:
+def _proposal_count(related, hubs, proposed_type=None) -> int:
     return (sum(1 for r in related or () if r.get("status") == "on_map")
-            + len((hubs or {}).get("proposals") or ()))
+            + len((hubs or {}).get("proposals") or ()) + (1 if proposed_type else 0))
 
 
 def _write_proposals(session, record: dict, request_id: str) -> list[dict]:
-    """Relationships and hub memberships the check found, raised to Review.
+    """Relationships, hub memberships and a Category Type the check found, raised to Review.
 
-    Never written as edges or memberships here: decisions.py raises a Review
-    item for each, and only a person's acceptance makes it real.
+    Never written as edges, memberships or a type here: decisions.py raises a
+    Review item for each, and only a person's acceptance makes it real.
     """
-    from agents.enrichment.decisions import propose_actor_relationship, propose_hub_membership
+    from agents.enrichment.decisions import (
+        propose_actor_relationship,
+        propose_category_type,
+        propose_hub_membership,
+    )
 
     out = []
     for item in record.get("related") or ():
@@ -993,6 +1047,22 @@ def _write_proposals(session, record: dict, request_id: str) -> list[dict]:
             savepoint.rollback()
             result = {"action": "failed", "error": f"{type(exc).__name__}: {exc}"[:200]}
         out.append({"kind": "hub", "name": hub["name"], **result})
+    proposed_type = record.get("type_proposal")
+    if proposed_type:
+        savepoint = session.begin_nested()
+        try:
+            result = propose_category_type(
+                session, actor_id=record["actor_id"],
+                actor_category=proposed_type["actor_category"],
+                category_type=proposed_type["category_type"],
+                category_note=proposed_type.get("category_note"),
+                main_job=proposed_type["main_job"], source_url=proposed_type.get("source_url"),
+                topic_id=record["topic_id"], request_id=request_id, live=True)
+            savepoint.commit()
+        except Exception as exc:  # noqa: BLE001
+            savepoint.rollback()
+            result = {"action": "failed", "error": f"{type(exc).__name__}: {exc}"[:200]}
+        out.append({"kind": "category_type", "name": proposed_type["type_label"], **result})
     return out
 
 

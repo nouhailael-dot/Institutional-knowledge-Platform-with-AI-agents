@@ -549,3 +549,12 @@ test('every date on the platform is MM/DD/YYYY', async () => {
   assert.equal(usDate(''), '');
   assert.equal(usDate('not a date'), 'not a date');
 });
+
+test('an update says when it proposed a Category Type, and never sets one', async () => {
+  const {typeProposalLine} = await import('../frontend/discovery.js');
+  assert.equal(typeProposalLine(null), '');
+  assert.match(typeProposalLine({category_type: 'professional_network', type_label: 'Professional Network'}),
+    /point to Professional Network — proposed to Review Results when written, never set directly/);
+  assert.match(typeProposalLine({category_type: 'not_applicable', type_label: 'Not Applicable'}),
+    /point to Not Applicable/);
+});

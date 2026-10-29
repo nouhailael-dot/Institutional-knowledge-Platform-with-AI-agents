@@ -1123,6 +1123,26 @@ test('keep both is offered only for a location, and links and hubs keep their ow
   assert.equal(hub.reason, 'Same sector (WATER); 12 miles from the centre');
 });
 
+test('a proposed Category Type asks one question, with what its own pages say', async () => {
+  const {changeRows} = await import('../frontend/review.js');
+  const profile = {display_name: 'International Joint Commission', reviewed_payload: {}, agent_metadata: {
+    review_kind: 'actor_profile', entity_id: 'a1', changes: [
+      {review_item_id: 't', kind: 'category_type', category_type: 'independent_institute',
+        type_label: 'Independent Institute', category_label: 'Research Center',
+        main_job: 'It studies boundary waters.', source_url: 'https://ijc.org/en/about'},
+      {review_item_id: 'n', kind: 'category_type', category_type: 'not_applicable',
+        type_label: 'Not Applicable', category_label: 'Association / Consortium / Network',
+        note: 'A binational commission, not a membership network.'},
+    ]}};
+  const [typed, none] = changeRows(profile);
+  assert.equal(typed.question, 'Is International Joint Commission an Independent Institute? (Research Center)');
+  assert.equal(typed.reason, 'From its own pages: It studies boundary waters.');
+  assert.deepEqual(typed.choices.map(c => c.value), ['refuse', 'confirm']);
+  assert.equal(none.question, 'None of the Association / Consortium / Network types fits '
+    + 'International Joint Commission. Mark it Not Applicable?');
+  assert.equal(none.reason, 'A binational commission, not a membership network.');
+});
+
 test('older update results render in the boxes, from what they wrote, with their run', async () => {
   const {lightFactRows, updateRunRows} = await import('../frontend/review.js');
   const legacy = {

@@ -1618,6 +1618,7 @@ class ReviewStore:
         "fact": ("keep_current", "use_new", "keep_both"),
         "relationship": ("confirm", "refuse"),
         "hub": ("confirm", "refuse"),
+        "category_type": ("confirm", "refuse"),
     }
 
     def change_request(self, candidate_id: str, review_item_id: str, *, choice: str,
@@ -1663,6 +1664,9 @@ class ReviewStore:
             return {**base, "decision_kind": "resolve_relationship", "approve": choice == "confirm",
                     "source_url": source_url or None,
                     "relationship_type": change.get("relationship_type")}
+        if change["kind"] == "category_type":
+            return {**base, "decision_kind": "resolve_category_type",
+                    "accept": choice == "confirm"}
         return {**base, "decision_kind": "resolve_hub_membership", "accept": choice == "confirm"}
 
     def record_change_decision(self, candidate_id: str, review_item_id: str, *, choice: str,
