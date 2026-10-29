@@ -37,6 +37,9 @@ ATTESTATIONS = {
               "import or a Notion CRM export copied into the GHUS template).",
     "verified": "I confirm these records come from a GHUS source, that I am authorized GHUS "
                 "staff, and that I verify the organizations in this import.",
+    # Explore and Map's Verify (28 Oct 2026): web results a reviewer checked.
+    "map": "I confirm that I am authorized GHUS staff, that I checked these records' sources, "
+           "and that I verify the organizations among them.",
 }
 # What a record is, in the words the page uses.
 STATUS_LABELS = {
@@ -116,7 +119,9 @@ class DataFeedService:
                              [(r["row_number"], r["values"]) for r in parsed.rows],
                              file_info=file_info, notes=parsed.notes)
 
-    def validate_manual(self, record_type: str, records: list[dict[str, Any]]) -> dict[str, Any]:
+    def validate_manual(self, record_type: str, records: list[dict[str, Any]],
+                        method: str = "manual") -> dict[str, Any]:
+        """Check records typed by hand, or ("map") results verified in Explore and Map."""
         self._type(record_type)
         if not records:
             raise DataFeedError("Add at least one record.")
@@ -131,7 +136,7 @@ class DataFeedService:
                 raise DataFeedError("Unknown fields: " + ", ".join(unknown))
             values = {by_key[k].header: str(v if v is not None else "") for k, v in record.items()}
             rows.append((index, values))
-        return self._preview(record_type, "manual", rows)
+        return self._preview(record_type, method, rows)
 
     def _preview(self, record_type, method, rows, *, file_info=None, notes=None):
         vocab = self.vocabularies()
@@ -330,7 +335,9 @@ class DataFeedService:
             import_name=name, uploaded_by=uploader, rows_invalid=invalid, admission=admission,
             attestation={"source": True, "authorized": bool(attest_authorized and
                                                               admission == "verified"),
-                         "text": ATTESTATIONS["verified" if admission == "verified" else "source"]})
+                         "text": ATTESTATIONS["map" if preview["method"] == "map"
+                                              else "verified" if admission == "verified"
+                                              else "source"]})
         batch["rows_total"] = preview["counts"]["total"]
         try:
             outcome = self.bridge.stage(batch)

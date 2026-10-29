@@ -42,6 +42,8 @@ from src.documents.extract import ExtractionError, extract_text
 from src.generate import ask_handoff, condense_question, stream_answer
 from src.map_agent.actor_profile import LEGACY_CATEGORIES, NOT_CLASSIFIED
 from src.map_agent import parked, review
+from src.map_agent import save as map_save
+from src.datafeed.service import DataFeedError
 from src.map_agent.dedup import mark_possible_duplicates
 from src.map_agent.discovery_brief import propose_discovery
 from src.map_agent.export import to_pptx, to_xlsx
@@ -727,7 +729,7 @@ def map_discovery_brief(job_id: str):
 class ReviewRequest(BaseModel):
     name: str
     website: str | None = None
-    action: Literal["park", "unpark", "reject"]
+    action: Literal["park", "unpark", "reject", "ready", "unready"]
     kind: Literal["actor", "person", "event"] = "actor"
 
 
@@ -743,6 +745,88 @@ def map_review(job_id: str, payload: ReviewRequest):
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return public_map(job_id)
+
+
+class SavePick(BaseModel):
+    name: str
+    website: str | None = None
+    kind: Literal["actor", "person", "event"] = "actor"
+    sector: str = ""
+
+
+class SaveRequest(BaseModel):
+    records: list[SavePick]
+    uploaded_by: str = ""
+    attest: bool = False
+
+
+def _save_picks(job_id: str, records: list[SavePick]):
+    """The verified cards a save names, as (kind, entity, sector)."""
+    if not records:
+        raise HTTPException(status_code=400, detail="Verify at least one result first.")
+    if len(records) > 50:
+        raise HTTPException(status_code=400, detail="Save at most 50 results at a time.")
+    entities = ((map_record(job_id)["result"] or {}).get("entities") or {})
+    picks = []
+    for pick in records:
+        found = [e for e in entities.get(pick.kind) or []
+                 if (e.get("full_name") if pick.kind == "person" else e.get("name")) == pick.name
+                 and (e.get("website") or "") == (pick.website or "")]
+        if len(found) != 1:
+            raise HTTPException(status_code=404, detail=f"{pick.name} is no longer in this map.")
+        picks.append((pick.kind, found[0], pick.sector.strip()))
+    return picks
+
+
+def _save_service():
+    from backend.datafeed_routes import datafeed_service
+    service = datafeed_service()
+    if not service.bridge.configured:
+        raise HTTPException(status_code=503, detail=(
+            "Saving to the database isn't set up on this computer yet: "
+            "DATAFEED_DATABASE_URL is missing from .env."))
+    return service
+
+
+@app.post("/api/map/{job_id}/save-check")
+def map_save_check(job_id: str, payload: SaveRequest):
+    """Free and writes nothing: what saving each verified card would do."""
+    picks = _save_picks(job_id, payload.records)
+    try:
+        return {"records": map_save.check(_save_service(), picks)}
+    except DataFeedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/map/{job_id}/save")
+def map_save_verified(job_id: str, payload: SaveRequest):
+    """Verify -> the database, through the Data Feed and the backend's admission
+    (28 Oct 2026). New organizations are added Verified under the reviewer's name;
+    the rest wait in Review Results."""
+    uploader = " ".join(payload.uploaded_by.split())
+    if not 1 <= len(uploader) <= 120:
+        raise HTTPException(status_code=400, detail="Give your name: every save records who verified it.")
+    if payload.attest is not True:
+        raise HTTPException(status_code=400, detail="Confirm that you're authorized GHUS staff and checked the sources.")
+    record = map_record(job_id)
+    picks = _save_picks(job_id, payload.records)
+    try:
+        results = map_save.save(_save_service(), picks, uploader=uploader,
+                                map_name=record["description"] or "untitled map")
+    except DataFeedError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    when = time.time()
+    def change(result, workflow):
+        for pick, outcome in zip(payload.records, results):
+            review.mark_saved(result, workflow, pick.name, pick.website, pick.kind,
+                              {"outcome": outcome["outcome"], "reason": outcome["reason"],
+                               "by": uploader, "at": when})
+        return result, workflow
+    try:
+        map_store().edit_result(job_id, change)
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return {**public_map(job_id), "saved": results}
 
 
 class BudgetExtensionRequest(BaseModel):
