@@ -38,10 +38,13 @@ def _locate(result, workflow, name, website, kind):
 
 
 def mark_saved(result, workflow, name, website, kind, saved: dict):
-    """Record what saving did with one card (added, sent to Review, not saved)."""
+    """Record what saving did with one card (added, sent to Review, not saved).
+
+    Kept under "_db_save", not "_saved": FastAPI's JSON encoder silently drops
+    keys starting with "_sa" (it takes them for SQLAlchemy internals)."""
     _records, matches, found = _locate(result, workflow, name, website, kind)
     for entity in matches + found:
-        entity["_saved"] = saved
+        entity["_db_save"] = saved
         if saved.get("outcome") != "not_saved" and entity.get("_review") == READY:
             entity.pop("_review", None)
     return result, workflow
@@ -51,7 +54,7 @@ def apply(result, workflow, name: str, website: str | None, action: str, kind: s
     """Return (result, workflow) with the action applied to one record of `kind`."""
     records, matches, found = _locate(result, workflow, name, website, kind)
     key = entity_key({**matches[0], "_entity_type": kind})
-    if action in ("ready", "unready", "park") and (matches[0].get("_saved") or {}).get("outcome") in ("directory", "review"):
+    if action in ("ready", "unready", "park") and (matches[0].get("_db_save") or {}).get("outcome") in ("directory", "review"):
         raise LookupError("That result has already been saved.")
 
     if action == "park":

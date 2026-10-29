@@ -118,7 +118,7 @@ class ReadyMarkTests(unittest.TestCase):
                           {"outcome": "directory", "by": "N"})
         card = result["entities"]["actor"][0]
         self.assertNotIn("_review", card)
-        self.assertEqual(card["_saved"]["outcome"], "directory")
+        self.assertEqual(card["_db_save"]["outcome"], "directory")
         with self.assertRaises(LookupError):
             review.apply(result, workflow, "FIPR Institute", "https://fipr.floridapoly.edu", "ready")
 
@@ -130,6 +130,16 @@ class ReadyMarkTests(unittest.TestCase):
         self.assertEqual(result["entities"]["actor"][0]["_review"], "ready")
 
 
+
+
+class ResponseTests(unittest.TestCase):
+    def test_the_saved_outcome_survives_the_json_response(self):
+        # FastAPI's encoder drops keys starting with "_sa"; "_saved" vanished
+        # from every response while it was stored correctly (28 Oct 2026).
+        from fastapi.encoders import jsonable_encoder
+        card = {"name": "FIPR Institute", "_db_save": {"outcome": "review"}}
+        self.assertEqual(jsonable_encoder(card)["_db_save"], {"outcome": "review"})
+        self.assertNotIn("_saved", jsonable_encoder({"_saved": 1}))
 
 
 class SetupTests(unittest.TestCase):

@@ -1405,7 +1405,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
   // Verify marks the card checked and ready to save (free). "Save verified to
   // Compass" then sends every ready card to the database (28 Oct 2026).
   const ready=e._review==="ready";
-  const saved=e._saved||null, savedDone=!!saved&&saved.outcome!=="not_saved";
+  const saved=e._db_save||null, savedDone=!!saved&&saved.outcome!=="not_saved";
 
   const badge = j && j.relevance_score!=null
     ? html`<span class=${"chip "+(j.is_relevant?"teal":"violet")}>
@@ -2000,7 +2000,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     return Array.from({length:roundCount},(_,i)=>i+1).flatMap(r=>groupsFor(r).flatMap(([k])=>
       ((res.entities&&res.entities[k])||[]).filter(e=>(e._round||1)===r)));
   }
-  const statusOf=e=>e._saved&&e._saved.outcome!=="not_saved"?"saved":e._review==="ready"?"ready"
+  const statusOf=e=>e._db_save&&e._db_save.outcome!=="not_saved"?"saved":e._review==="ready"?"ready"
     :e._review==="parked"?"parked":"pending";
   const passes=e=>(statusFilter==="all"||statusOf(e)===statusFilter)
     &&(matchFilter==="all"||(matchFilter==="matches")===(e._selected!==false))
