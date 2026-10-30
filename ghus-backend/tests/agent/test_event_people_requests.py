@@ -710,3 +710,14 @@ def test_every_theme_and_event_type_pair_is_searched():
     assert {(t, k) for t in ("water reuse", "desalination") for k in ("conference", "summit")} == {
         (t, k) for q in grid for t in ("water reuse", "desalination") for k in ("conference", "summit")
         if q.startswith(f"{t} {k} ")}
+
+
+def test_a_website_with_text_after_it_still_gives_a_clean_search_domain():
+    """Live run, 2026-10-30: "arizona.edu College of ..." stopped the whole search."""
+    from agents.discovery.search.people_targets import registrable
+
+    assert registrable("arizona.edu College of Engineering") == "arizona.edu"
+    assert registrable("//arizona.edu College of Engineering") == "arizona.edu"
+    assert registrable("https://www.nrel.gov DOE National Laboratories: https://x.gov") == "nrel.gov"
+    assert registrable("https://www.asu.edu/research") == "asu.edu"
+    assert registrable("") == ""

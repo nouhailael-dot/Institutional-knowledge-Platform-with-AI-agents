@@ -41,6 +41,7 @@ from agents.discovery.quality_gates import name_parts
 PROFILE_CATEGORIES = ("university_academic", "research_center", "national_laboratory",
                       "government", "hospital_clinical")
 DOMAINS_PER_SEARCH = 6
+_DOMAIN = re.compile(r"[a-z0-9-]+(\.[a-z0-9-]+)+")
 
 _PEOPLE_WORDS = ("people", "faculty", "directory", "staff", "profile", "profiles", "experts",
                  "expert", "bio", "bios", "person", "persons", "team", "researchers",
@@ -58,8 +59,10 @@ _NAV_WORDS = {"home", "about", "contact", "people", "faculty", "staff", "directo
 
 
 def registrable(url_or_host: str) -> str:
-    host = (urlsplit(url_or_host).hostname if "//" in str(url_or_host)
-            else str(url_or_host)) or ""
+    # Imported websites can carry text after the address ("arizona.edu College of ...").
+    words = str(url_or_host or "").split()
+    site = words[0] if words else ""
+    host = (urlsplit(site).hostname if "//" in site else site) or ""
     host = host.lower().removeprefix("www.")
     labels = host.split(".")
     if len(labels) >= 3 and labels[-2] in {"co", "ac", "gov", "edu", "org"} \
@@ -108,7 +111,8 @@ def institution_domains(session, *, states: Sequence[str], sector_codes: Sequenc
         if states and str(row["state"] or "").upper() not in {s.upper() for s in states}:
             continue
         domain = registrable(row["site"] if "//" in str(row["site"]) else f"//{row['site']}")
-        if not domain or "." not in domain:
+        # The search service refuses a whole search over one malformed domain.
+        if not _DOMAIN.fullmatch(domain):
             continue
         entry = scores.setdefault(domain, {"domain": domain, "institutions": [],
                                            "in_sector": 0, "academic": False})
