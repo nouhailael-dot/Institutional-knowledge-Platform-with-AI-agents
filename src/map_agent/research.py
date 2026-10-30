@@ -471,8 +471,19 @@ def _source_filter(entity, available):
     return bool(sources)
 
 
+def _unreadable(response):
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "submit_entities":
+            try:
+                entity_rows(block.input)
+            except ExtractionError:
+                return True
+    return False
+
+
 def extract(run, request, task, evidence, client=None, target=None):
-    """One forced extraction, no iterative model calls or paid parsing retries."""
+    """One forced extraction. The only retry: one more call when the record list
+    comes back unreadable (malformed JSON text), never after an output-limit stop."""
     evidence = [excerpt(e, task["query"]) for e in evidence if e.get("text")]
     if not evidence:
         return [], "No readable evidence returned."
@@ -487,19 +498,26 @@ def extract(run, request, task, evidence, client=None, target=None):
            "extract-actor-fields-v3" if et == "actor" else
            "extract-event-v2" if et == "event" else "extract-v1")
     sectors = event_sectors() if et == "event" else None
-    response = paid_message(client or get_client(), run, stage,
-        operation_key=operation_key(key, payload),
-        model=EXTRACTION_MODEL, max_tokens=8192 if target else 16000,
-        system=SYSTEM + ("\n" + LIGHT_GUIDANCE + "\nKeep organization records concise and prioritize completing the "
-                        "structured response over returning more organizations: a truncated response loses the "
-                        "whole batch." if et == "actor" else "") + ("\nKeep person records concise: at most two sentences per bio, "
-                        "one short explanation per criterion, and only the source quotes needed to support it. "
-                        "Prioritize completing the structured response over returning more people." if target else "")
-               + ("\n" + PEOPLE_MAP_GUIDANCE if people_map else "")
-               + ("\n" + EVENT_GUIDANCE if et == "event" else ""),
-        tools=[submit_entities_tool("map_person" if people_map else et, sectors)],
-        tool_choice={"type": "tool", "name": "submit_entities"},
-        messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
+    def ask(attempt_key):
+        return paid_message(client or get_client(), run, stage,
+            operation_key=operation_key(attempt_key, payload),
+            model=EXTRACTION_MODEL, max_tokens=8192 if target else 16000,
+            system=SYSTEM + ("\n" + LIGHT_GUIDANCE + "\nKeep organization records concise and prioritize completing the "
+                            "structured response over returning more organizations: a truncated response loses the "
+                            "whole batch." if et == "actor" else "") + ("\nKeep person records concise: at most two sentences per bio, "
+                            "one short explanation per criterion, and only the source quotes needed to support it. "
+                            "Prioritize completing the structured response over returning more people." if target else "")
+                   + ("\n" + PEOPLE_MAP_GUIDANCE if people_map else "")
+                   + ("\n" + EVENT_GUIDANCE if et == "event" else ""),
+            tools=[submit_entities_tool("map_person" if people_map else et, sectors)],
+            tool_choice={"type": "tool", "name": "submit_entities"},
+            messages=[{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}])
+    response = ask(key)
+    # The model occasionally writes the list as malformed JSON text (a missing ":"
+    # sank a whole map on 30 Oct 2026). Ask once more, under its own key so a
+    # resumed map replays the retry instead of paying for it again.
+    if response.stop_reason != "max_tokens" and _unreadable(response):
+        response = ask(key + "-retry")
     available = {canonical_url(e["url"]): e for e in evidence}
     output, gap = [], ""
     if response.stop_reason == "max_tokens":

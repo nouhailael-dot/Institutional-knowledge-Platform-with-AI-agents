@@ -19,6 +19,12 @@ class ParsingTests(unittest.TestCase):
         for payload in [{"entities": "broken"}, {"people": []}, {"entities": None}]:
             with self.assertRaises(ExtractionError): entity_rows(payload)
 
+    def test_complete_list_with_stray_tail_is_read_malformed_list_is_not(self):
+        rows = [{"name": "POWERGEN International"}]
+        self.assertEqual(entity_rows({"entities": json.dumps(rows) + "]}\n</invoke>\n"}), rows)
+        for broken in ['[{"label": "Established by", "value "Florida Legislature"}]', '"just text"', '42']:
+            with self.assertRaises(ExtractionError): entity_rows({"entities": broken})
+
     def test_constituent_units_without_parent_or_guest_leakage(self):
         for name in ["University of Florida Water Institute", "University of Florida Center for African Studies", "Center for African Studies"]:
             self.assertTrue(affiliation_matches(name, TARGET),name)
@@ -80,4 +86,42 @@ class OutputLimitTests(unittest.TestCase):
                         client=object(), target={'name':'Example Lab'})
         self.assertEqual(paid.call_args.kwargs['max_tokens'], 8192)
         self.assertTrue(paid.call_args.kwargs['operation_key'].startswith('extract-people-v2:'))
+        paid.assert_called_once()
+
+
+class UnreadableListRetryTests(unittest.TestCase):
+    TASK = {'query': 'phosphate research Florida', 'entity_type': 'actor'}
+    EVIDENCE = [{'url': 'https://example.edu/fipr', 'text': 'FIPR phosphate research'}]
+
+    def response(self, entities):
+        from types import SimpleNamespace
+        return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
+            type='tool_use', name='submit_entities', input={'entities': entities})])
+
+    def run_extract(self, *responses):
+        from src.map_agent.research import extract
+        with patch('src.map_agent.research.paid_message', side_effect=list(responses)) as paid, \
+             patch('src.map_agent.research.normalize_actor_profile'), \
+             patch('src.map_agent.research.filter_rankings'):
+            try:
+                return extract(object(), 'Phosphate partners', self.TASK, self.EVIDENCE, client=object()), paid
+            except ExtractionError as exc:
+                return exc, paid
+
+    def test_unreadable_list_is_asked_once_more_under_its_own_key(self):
+        good = [{'name': 'FIPR Institute', 'sources': [{'url': 'https://example.edu/fipr', 'supports': 'focus'}]}]
+        (rows, _), paid = self.run_extract(self.response('[{"name" "FIPR"}]'), self.response(good))
+        self.assertEqual([r['name'] for r in rows], ['FIPR Institute'])
+        self.assertEqual(paid.call_count, 2)
+        first, second = (c.kwargs['operation_key'] for c in paid.call_args_list)
+        self.assertTrue(first.startswith('extract-actor-fields-v3:'))
+        self.assertTrue(second.startswith('extract-actor-fields-v3-retry:'))
+
+    def test_second_unreadable_list_fails_without_a_third_call(self):
+        result, paid = self.run_extract(self.response('broken'), self.response('still broken'))
+        self.assertIsInstance(result, ExtractionError)
+        self.assertEqual(paid.call_count, 2)
+
+    def test_readable_list_is_not_retried(self):
+        _, paid = self.run_extract(self.response([]))
         paid.assert_called_once()

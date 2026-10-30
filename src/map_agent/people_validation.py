@@ -16,7 +16,14 @@ def entity_rows(value):
             try:
                 value = json.loads(value)
             except (ValueError, TypeError):
-                break
+                # A complete list followed by stray text (seen live: "\n</invoke>")
+                # is read up to its end; anything malformed still fails.
+                try:
+                    value, _ = json.JSONDecoder().raw_decode(value.strip())
+                except (ValueError, TypeError):
+                    break
+                if not isinstance(value, (list, dict)):
+                    break
         elif isinstance(value, dict) and "entities" in value:
             value = value["entities"]
         else:
