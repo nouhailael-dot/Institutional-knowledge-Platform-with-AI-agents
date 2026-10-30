@@ -85,7 +85,8 @@ def institution_domains(session, *, states: Sequence[str], sector_codes: Sequenc
     rows = session.execute(text(
         "SELECT a.name, COALESCE(NULLIF(a.website_domain, ''), a.website) AS site, "
         "a.actor_category AS category, concat_ws(' ', a.name, a.description, "
-        "a.primary_technical_focus, a.current_activities) AS about, "
+        # Through to_jsonb: the shared database no longer has these legacy columns.
+        "to_jsonb(a)->>'primary_technical_focus', to_jsonb(a)->>'current_activities') AS about, "
         "COALESCE(a.state_code, (SELECT l.state_code FROM actor_location l "
         " WHERE l.actor_id = a.actor_id ORDER BY l.is_primary DESC NULLS LAST LIMIT 1)) "
         " AS state, "
@@ -93,7 +94,7 @@ def institution_domains(session, *, states: Sequence[str], sector_codes: Sequenc
         "        WHERE x.actor_id = a.actor_id AND upper(s.code) = ANY(:codes)) AS in_sector "
         "FROM actor a WHERE a.actor_category = ANY(:cats) "
         "AND COALESCE(NULLIF(a.website_domain, ''), a.website) IS NOT NULL "
-        "AND COALESCE(a.status, a.record_status, '') NOT IN ('rejected', 'merged')"
+        "AND COALESCE(a.status, to_jsonb(a)->>'record_status', '') NOT IN ('rejected', 'merged')"
     ), {"codes": [c.upper() for c in sector_codes] or [""],
         "cats": list(PROFILE_CATEGORIES)}).mappings().all()
     if institution:

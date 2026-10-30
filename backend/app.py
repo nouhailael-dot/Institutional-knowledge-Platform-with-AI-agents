@@ -1391,7 +1391,9 @@ def review_candidate_change(candidate_id: str, review_item_id: str, payload: Rev
 # applies the same rules as the scheduler and the database.
 
 class DiscoveryDraft(BaseModel):
-    title: str = Field(min_length=1, max_length=160)
+    # Empty on a People request: the backend names it from the description, and
+    # refuses any other request without a name.
+    title: str = Field(default="", max_length=160)
     sector_codes: list[str] = Field(default_factory=list, max_length=8)
     topic_ids: list[str] = Field(default_factory=list, max_length=8)
     focus_terms: list[str] = Field(default_factory=list, max_length=8)
@@ -1407,6 +1409,8 @@ class DiscoveryDraft(BaseModel):
     # validated by agents/collection/subscriptions.py).
     discovery_entity: Literal["actor", "event", "person"] | None = None
     discovery_options: dict[str, Any] | None = None
+    # Who asked: emailed about findings, and the only one who sees the request.
+    requested_by: str | None = Field(default=None, max_length=254)
 
 
 def _discovery_call(fn, *args):
@@ -1556,12 +1560,13 @@ class UpdateRequestDraft(BaseModel):
     depth: str = Field(default="light", max_length=10)
     categories: list[str] = Field(default_factory=list, max_length=10)
     fields: list[str] = Field(default_factory=list, max_length=40)
-    focus: str = Field(default="", max_length=200)
+    focus: str = Field(default="", max_length=1000)
     cadence: str = Field(default="once", max_length=20)
     start_date: str | None = Field(default=None, max_length=10)
     end_date: str | None = Field(default=None, max_length=10)
     max_actors_per_run: int | None = Field(default=None, ge=1, le=50)
     max_usd_per_run: float | None = Field(default=None, gt=0, le=5)
+    requested_by: str | None = Field(default=None, max_length=254)
 
 
 @app.get("/api/discovery/update-requests")

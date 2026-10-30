@@ -341,3 +341,18 @@ def test_an_end_date_change_is_a_live_backend_command_for_a_real_request(tmp_pat
     with pytest.raises(DiscoveryBridgeError, match="unknown request"):
         bridge.set_end_date("not-a-request", "2027-03-01")
     assert len(calls) == 1
+
+
+def test_the_routes_pass_on_what_the_forms_send():
+    """The page's fields must survive the route's model, not only the backend."""
+    from backend.app import DiscoveryDraft, UpdateRequestDraft
+
+    people = DiscoveryDraft(title="", end_date="2026-11-01", cadence="once",
+                            discovery_entity="person", requested_by="me@um6p.ma",
+                            discovery_options={"brief": "Groundwater researchers in Arizona."})
+    sent = people.model_dump(exclude_none=True)
+    assert sent["title"] == "" and sent["requested_by"] == "me@um6p.ma"
+    update = UpdateRequestDraft(actor_ids=["a"], scope="topic", focus="x" * 1000,
+                                requested_by="me@um6p.ma").model_dump(exclude_none=True)
+    assert len(update["focus"]) == 1000 and update["requested_by"] == "me@um6p.ma"
+
