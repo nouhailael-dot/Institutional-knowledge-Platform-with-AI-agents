@@ -1242,7 +1242,10 @@ SCOPE_NAMES = {"general": "General update", "topic": "Specific changes",
 REQUEST_KEYS = frozenset({
     "title", "actor_ids", "group", "topic", "scope", "depth", "categories", "fields", "focus",
     "cadence", "start_date", "end_date", "max_actors_per_run", "max_usd_per_run",
+    "requested_by",
 })
+# Specific Changes is described in the person's own words (GHUS, 2026-10-30).
+MAX_FOCUS_CHARS = 1000
 GROUP_KEYS = frozenset({"sector", "category", "state"})
 
 
@@ -1284,8 +1287,17 @@ def request_options(payload: dict, *, config: dict | None = None,
     scope = str(payload.get("scope") or "general")
     if scope not in SCOPES:
         raise ActorUpdateError(f"Unknown update scope {scope!r}.")
-    if scope == "topic" and not topic:
+    focus = " ".join(str(payload.get("focus") or "").split())[:MAX_FOCUS_CHARS]
+    if scope == "topic" and not topic and not actor_ids:
         raise ActorUpdateError("A topic update needs the sector to update it for.")
+    if scope == "topic" and actor_ids and not focus:
+        raise ActorUpdateError("Describe the information you'd like to update.")
+    requested_by = str(payload.get("requested_by") or "").strip() or None
+    if requested_by:
+        from agents.collection.notify import is_email
+
+        if not is_email(requested_by):
+            raise ActorUpdateError("The email for results is not a valid address.")
     depth = str(payload.get("depth") or "light")
     if depth != "light":
         raise ActorUpdateError("Saved and group requests use the Light refresh. Deep "
@@ -1330,10 +1342,9 @@ def request_options(payload: dict, *, config: dict | None = None,
     return {
         "title": title, "actor_ids": actor_ids, "sector": sector, "state": state,
         "start_date": start, "end_date": end, "cadence": cadence,
-        "max_usd_per_run": round(ceiling, 4),
+        "max_usd_per_run": round(ceiling, 4), "requested_by": requested_by,
         "options": {"scope": scope, "depth": depth, "categories": categories,
-                    "fields": fields, "focus": " ".join(str(payload.get("focus") or "")
-                                                       .split())[:200],
+                    "fields": fields, "focus": focus,
                     "topic": topic, "category": category, "max_actors_per_run": per_run},
     }
 
@@ -1552,7 +1563,7 @@ def create_request(session, payload: dict, *, config: dict | None = None,
             update_options=prepared["options"], max_usd_per_run=prepared["max_usd_per_run"],
             actor_ids=prepared["actor_ids"],
             sector_codes=[prepared["sector"]] if prepared["sector"] else [],
-            state_code=prepared["state"], live=live)
+            state_code=prepared["state"], requested_by=prepared["requested_by"], live=live)
     except SubscriptionError as exc:
         raise ActorUpdateError(str(exc)) from exc
     return {**plan, "live": written.live, "subscription_id": written.subscription_id}

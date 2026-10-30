@@ -1352,7 +1352,8 @@ class PostgresReviewSource:
                 " AND f.fact_key = 'recent_activity' AND f.collection_state = 'found' "
                 " ORDER BY f.retrieved_at DESC LIMIT 1) AS recent_activity, "
                 "(SELECT max(f.retrieved_at) FROM actor_fact f WHERE f.actor_id = m.actor_id::uuid "
-                " AND f.layer = 1) AS last_read "
+                " AND f.layer = 1) AS last_read, "
+                + self._last_checked_sql(self._columns(db)) +
                 "FROM matched m "
                 "ORDER BY (m.name ILIKE %s) DESC, length(m.name), m.name LIMIT %s",
                 (like, like, like, bool(updatable_only),
@@ -1364,8 +1365,30 @@ class PostgresReviewSource:
         return {"total": total, "actors": [
             {**{k: v for k, v in dict(row).items() if k != "total"},
              "sectors": list(row["sectors"] or []),
-             "last_read": str(row["last_read"])[:10] if row["last_read"] else None}
+             "last_read": str(row["last_read"])[:10] if row["last_read"] else None,
+             "last_checked": str(row["last_checked"])[:10] if row["last_checked"] else None}
             for row in rows]}
+
+    @staticmethod
+    def _last_checked_sql(columns: dict[str, set[str]]) -> str:
+        """The organization's most recent SUCCESSFUL update check, or NULL.
+
+        A check that found no change counts; a failed attempt does not. A run
+        for one organization counts when it finished (succeeded, or completed
+        with limits); a run for several counts for each organization it marked
+        ok. A database without the run ledger has no checks to report.
+        """
+        if not {"collection_run", "collection_request"} <= set(columns):
+            return "NULL::timestamptz AS last_checked "
+        return (
+            "(SELECT max(r.finished_at) FROM collection_run r "
+            " JOIN collection_request c ON c.collection_request_id = r.collection_request_id "
+            " WHERE r.job_name IN ('actor_update', 'actor_update_request') AND NOT r.dry_run "
+            "   AND r.status IN ('succeeded', 'attention') AND r.finished_at IS NOT NULL "
+            "   AND (c.actor_id = m.actor_id::uuid "
+            "        OR COALESCE(r.config_snapshot->'actor_results', '[]'::jsonb) @> "
+            "           jsonb_build_array(jsonb_build_object('actor_id', m.actor_id, 'ok', true))) "
+            ") AS last_checked ")
 
     @staticmethod
     def _actor_sectors_sql(columns: dict[str, set[str]]) -> str:

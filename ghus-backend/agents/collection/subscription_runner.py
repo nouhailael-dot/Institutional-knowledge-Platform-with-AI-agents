@@ -195,7 +195,8 @@ def run_due_requests(
                 subscription_id=subscription.subscription_id,
                 title=subscription.title or "Actor update request",
                 queries=[f"{a['name']}: {a['boxes']} box(es) to read" for a in plan["chosen"]],
-                kind="actor_update",
+                kind="actor_update", entity="update",
+                notify_to=subscription.requested_by,
             ))
             continue
         try:
@@ -396,15 +397,16 @@ def render_report(report: RunnerReport) -> str:
 
 
 def _notify_after(report: RunnerReport, *, environ=None, smtp_factory=None) -> None:
-    """Email whoever asked, for each discovery run that sent findings to Review.
+    """Email whoever asked, for each run that sent findings to Review Results.
 
+    Discovery runs and organization update runs alike (GHUS, 2026-10-30).
     After Light Pull, so the findings are ready to verify when the email lands.
     """
     from agents.collection.notify import findings, notify_findings
 
     for outcome in report.outcomes:
-        if (outcome.kind != "discovery" or outcome.status not in ("succeeded", "attention")
-                or not findings(outcome)):
+        if (outcome.kind not in ("discovery", "actor_update")
+                or outcome.status not in ("succeeded", "attention") or not findings(outcome)):
             continue
         outcome.notified = notify_findings(outcome, outcome.notify_to, environ=environ,
                                            smtp_factory=smtp_factory)

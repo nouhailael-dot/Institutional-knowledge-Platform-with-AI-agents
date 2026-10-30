@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261029b";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261030a";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,

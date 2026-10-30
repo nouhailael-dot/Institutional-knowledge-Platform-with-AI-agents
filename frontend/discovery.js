@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, usDate} from "./dates.js?v=20261029b";
+import {createDateInput, usDate} from "./dates.js?v=20261030a";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -49,6 +49,8 @@ const FREQUENCIES = {
   actor: ["once", "daily", "weekly", "monthly"],
   event: ["once", "daily", "weekly", "monthly"],
   person: ["once", "weekly", "monthly"],
+  // Organizations Update (GHUS, 2026-10-30): Once, Weekly, Monthly.
+  update: ["once", "weekly", "monthly"],
 };
 const SCHEDULE_FIELDS = ["frequency", "start", "duration"];
 
@@ -710,6 +712,89 @@ export function updateRequestScope(request, sectors = []) {
   return [scope, who, options.focus && `“${options.focus}”`].filter(Boolean).join(" · ");
 }
 
+// ---------------------------------------------------------- Organizations Update
+// One page (GHUS, 2026-10-30): search the Ecosystem Directory, add organizations
+// to one list, choose which to include, then what to update and when.
+
+export const ORG_UPDATE_TITLE = "Which organizations would you like to update?";
+export const ORG_UPDATE_LEAD = "Refresh information about organizations already saved in the Ecosystem Directory.";
+export const SPECIFIC_PLACEHOLDER = "Describe the information you’d like to update, such as research "
+  + "projects, technologies, funding, partnerships, leadership, facilities, or capabilities in "
+  + "another sector. Include relevant topics, dates, or requirements.";
+export const PRIORITY_AREAS = INFORMATION_FOCUS;
+export const MAX_SPECIFIC_CHARS = 1000;
+
+/** Add a directory record to the list, checked; never twice. */
+export function addOrganization(list, actor) {
+  if (!actor || list.some((row) => row.actor.actor_id === actor.actor_id)) return list;
+  return [...list, {actor, checked: true}];
+}
+
+/** The header checkbox: "all", "some" or "none" of the list checked. */
+export function selectionState(list) {
+  const checked = list.filter((row) => row.checked).length;
+  return !checked ? "none" : checked === list.length ? "all" : "some";
+}
+
+/** "2 organizations selected." */
+export function selectionLine(list) {
+  const n = list.filter((row) => row.checked).length;
+  return `${n} ${n === 1 ? "organization" : "organizations"} selected.`;
+}
+
+/** "28 October 2026", or "Not recorded" when it was never checked successfully. */
+export function lastCheckedLabel(value) {
+  if (!value) return "Not recorded";
+  const [y, m, d] = String(value).slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return "Not recorded";
+  return new Date(y, m - 1, d).toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric"});
+}
+
+/** Verified or Parked, next to the organization's name. */
+export function directoryStatus(actor) {
+  const status = String(actor?.status || "").toLowerCase();
+  return status === "verified" ? "Verified" : status === "parked" ? "Parked"
+    : status === "imported" ? "Imported" : "";
+}
+
+/** Why Create Request is not ready yet: {organizations, focus, frequency, start, duration}. */
+export function orgUpdateProblems({list, kind, focus, form}, today = null) {
+  const problems = {};
+  if (!list.some((row) => row.checked)) problems.organizations = "Add an organization and check it.";
+  if (kind === "specific" && !String(focus || "").trim()) {
+    problems.focus = "Describe the information you'd like to update.";
+  }
+  return {...problems, ...scheduleProblems(form, today)};
+}
+
+/**
+ * What Create Request sends: only the checked organizations, one update option
+ * and one schedule for all of them. General Update reads the full profile, the
+ * priority areas first; Specific Changes researches the described scope.
+ */
+export function orgUpdatePayload({list, kind, interests = [], focus = "", form, requester = ""}) {
+  const ids = list.filter((row) => row.checked).map((row) => row.actor.actor_id);
+  const payload = {actor_ids: ids, max_actors_per_run: Math.max(ids.length, 1), depth: "light",
+    cadence: form.cadence, start_date: form.startDate, end_date: scheduleEnd(form)};
+  if (kind === "specific") {
+    Object.assign(payload, {scope: "topic", focus: String(focus).trim().slice(0, MAX_SPECIFIC_CHARS)});
+  } else {
+    payload.scope = "general";
+    const categories = focusCategories(interests);
+    if (categories.length) payload.categories = categories;
+  }
+  return withRequester(payload, requester);
+}
+
+/** Requests stay with whoever made them; those made before requesters were recorded stay shared. */
+export function visibleRequests(requests = [], email = "") {
+  const me = String(email || "").trim().toLowerCase();
+  return requests.filter((r) => {
+    const by = String(r.requested_by || "").trim().toLowerCase();
+    return !by || !by.includes("@") || (me && by === me);
+  });
+}
+
 const FIT_WORDS = {
   fits: "fits",
   outside_radius: "now outside its radius — kept, for a person to look at",
@@ -1126,7 +1211,7 @@ function storedRequester() {
   try { return localStorage.getItem("ghus.monitor.email") || ""; } catch { return ""; }
 }
 
-export function createDiscoveryPage({html, useState, useEffect}) {
+export function createDiscoveryPage({html, useState, useEffect, useRef = () => ({current: null})}) {
   // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
   const DateInput = createDateInput({html, useState, useEffect});
   async function api(path, options = {}) {
@@ -1308,577 +1393,224 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     </div>`;
   }
 
-  function ActorUpdates({onFindNew, sectors, states}) {
+  function OrganizationsUpdate({sectors, options, today, requester, onCreated}) {
     const [query, setQuery] = useState("");
-    const [group, setGroup] = useState({sector: "", category: "", state: "", everyone: false});
     const [results, setResults] = useState([]);
-    const [total, setTotal] = useState(0);
-    const [searched, setSearched] = useState(null);
     const [open, setOpen] = useState(false);
     const [active, setActive] = useState(0);
-    const [selected, setSelected] = useState(null);
-    const [form, setForm] = useState({kind: "general", interests: [], focus: "", topic: "",
-      depth: "light", cadence: "weekly", months: 3});
-    const [plan, setPlan] = useState(null);
-    const [planning, setPlanning] = useState(false);
-    const [busy, setBusy] = useState("");
-    const [result, setResult] = useState(null);
-    const [applied, setApplied] = useState(null);
+    const [chosen, setChosen] = useState(null);
+    const [list, setList] = useState([]);
+    const [kind, setKind] = useState("general");
+    const [interests, setInterests] = useState([]);
+    const [focus, setFocus] = useState("");
+    const [form, setForm] = useState({cadence: "", startDate: "", duration: ""});
+    const [touched, setTouched] = useState(false);
+    const [busy, setBusy] = useState(false);
     const [error, setError] = useState("");
-    // Update requests: several actors, or any actor on a frequency.
-    const [mode, setMode] = useState("one");
-    const [picked, setPicked] = useState([]);
-    const [useGroup, setUseGroup] = useState(false);
-    const [reqPlan, setReqPlan] = useState(null);
-    const [reqPlanning, setReqPlanning] = useState(false);
-    const [saved, setSaved] = useState({requests: [], one_time: [], ready: true, loaded: false});
-    const [notice, setNotice] = useState("");
-    // Every update is a Light Refresh. A Deep Pull follows only when asked for,
-    // and is offered only where GHUS verified this actor for this sector.
-    const [deepPlan, setDeepPlan] = useState(null);
-    const [wantDeep, setWantDeep] = useState(false);
-    const [deepResult, setDeepResult] = useState(null);
-    const topic = form.topic;
-    const today = isoDate(new Date());
-    const when = updateSchedule(today, form.cadence, form.months);
-    const choiceProblem = updateChoiceProblem(form);
-    // Every sector (the page's own Discovery options), so an actor with no
-    // sector link yet can still be updated: facts are kept per sector, and
-    // choosing it is a person's decision.
+    const headerBox = useRef(null);
     const allSectors = sectors || [];
-    const grouped = Boolean(group.sector || group.category || group.state);
+    const sectorName = (code) => (allSectors.find((x) => x.code === code) || {}).name || code;
 
-    // Suggestions as the person types, within the chosen group; with a group
-    // chosen and nothing typed, the group itself is listed. Last answer wins.
+    // Matching directory records as the person types. Last answer wins.
     useEffect(() => {
       const q = query.trim();
-      if (q.length < 2 && !grouped) { setResults([]); setTotal(0); setSearched(null); return undefined; }
+      if (q.length < 2 || (chosen && chosen.name === query)) { setResults([]); return undefined; }
       let live = true;
       const timer = setTimeout(async () => {
         try {
-          const body = await api(`/api/discovery/actors?${actorSearchParams(q, group)}`);
-          if (live) {
-            setResults(body.actors || []); setTotal(body.total || 0);
-            setSearched(q); setActive(0); setError("");
-          }
+          const body = await api(`/api/discovery/actors?${new URLSearchParams({q, limit: "8"})}`);
+          if (live) { setResults(body.actors || []); setActive(0); setOpen(true); setError(""); }
         } catch (err) { if (live) setError(err.message); }
       }, 200);
       return () => { live = false; clearTimeout(timer); };
-    }, [query, group.sector, group.category, group.state, group.everyone]);
+    }, [query]);
 
-    function setGroupField(patch) {
-      setGroup((g) => ({...g, ...patch})); setSelected(null); setResult(null); setOpen(true);
+    const state = selectionState(list);
+    useEffect(() => { if (headerBox.current) headerBox.current.indeterminate = state === "some"; }, [state]);
+
+    function pick(actor) { setChosen(actor); setQuery(actor.name); setOpen(false); setResults([]); }
+
+    function add() {
+      const actor = chosen || (results.length === 1 ? results[0] : null);
+      if (!actor) { setError(results.length ? "Choose the organization in the list first." : "Search for an organization by name."); return; }
+      if (list.some((row) => row.actor.actor_id === actor.actor_id)) setError(`${actor.name} is already in the list.`);
+      else setError("");
+      setList((rows) => addOrganization(rows, actor));
+      setChosen(null); setQuery(""); setResults([]); setOpen(false);
     }
 
     function onKey(e) {
-      if (!results.length) return;
-      if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setActive((i) => (i + 1) % results.length); }
-      else if (e.key === "ArrowUp") { e.preventDefault(); setActive((i) => (i - 1 + results.length) % results.length); }
-      else if (e.key === "Enter" || (e.key === "Tab" && open && query.trim())) {
-        e.preventDefault(); choose(results[active] || results[0]);
-      } else if (e.key === "Escape") { setOpen(false); }
+      if (e.key === "ArrowDown" && results.length) { e.preventDefault(); setOpen(true); setActive((i) => (i + 1) % results.length); }
+      else if (e.key === "ArrowUp" && results.length) { e.preventDefault(); setActive((i) => (i - 1 + results.length) % results.length); }
+      else if (e.key === "Enter") {
+        e.preventDefault();
+        if (open && results[active] && !chosen) pick(results[active]); else add();
+      } else if (e.key === "Escape") setOpen(false);
     }
 
-    function choose(actor) {
-      if (mode === "several") {
-        // Several actors: each choice is added to the list (at most 10).
-        setPicked((list) => list.some((a) => a.actor_id === actor.actor_id) || list.length >= 10
-          ? list : [...list, actor]);
-        setUseGroup(false); setQuery(""); setOpen(false);
-        setForm((f) => ({...f, topic: f.topic || (actor.sectors || [])[0] || group.sector || ""}));
-        return;
-      }
-      setSelected(actor); setResult(null); setApplied(null); setError(""); setOpen(false);
-      setQuery(actor.name);
-      setWantDeep(false); setDeepResult(null);
-      setForm((f) => ({...f, topic: (actor.sectors || [])[0] || group.sector || ""}));
-    }
+    const setAll = (checked) => setList((rows) => rows.map((row) => ({...row, checked})));
+    const setOne = (id, checked) => setList((rows) => rows.map((row) =>
+      row.actor.actor_id === id ? {...row, checked} : row));
+    const toggleArea = (id) => setInterests((xs) => xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]);
+    const setSchedule = (patch) => setForm((f) => ({...f, ...patch}));
 
-    function change(patch) {
-      setForm((f) => ({...f, ...patch})); setResult(null); setApplied(null);
-    }
+    const problems = orgUpdateProblems({list, kind, focus, form}, today);
+    const ready = Object.keys(problems).length === 0;
+    const shown = touched ? problems : {};
+    const tooMany = list.filter((row) => row.checked).length > (options?.max_update_actors || 20);
 
-    function toggle(name, id) {
-      const list = form[name] || [];
-      change({[name]: list.includes(id) ? list.filter((x) => x !== id) : [...list, id]});
-    }
-
-    // The request preview follows every choice. It is free: nothing is read
-    // from the web and nothing is written; it only asks the backend what the
-    // request would do. Last answer wins.
-    useEffect(() => {
-      if (!selected || !form.topic || choiceProblem) { setPlan(null); setPlanning(false); return undefined; }
-      let live = true;
-      setPlanning(true);
-      const timer = setTimeout(async () => {
-        try {
-          const body = await api(`/api/discovery/actors/${selected.actor_id}/plan`, {
-            method: "POST", body: JSON.stringify(updateRequestBody(form))});
-          if (live) { setPlan(body); setError(""); }
-        } catch (err) { if (live) { setPlan(null); setError(err.message); } }
-        if (live) setPlanning(false);
-      }, 350);
-      return () => { live = false; clearTimeout(timer); };
-    }, [selected?.actor_id, form.topic, form.kind, form.depth, form.focus, form.interests.join(",")]);
-
-    // The Deep Pull on offer, when the gate permits it: its items and cost. Free.
-    const deepPermitted = mode === "one" && Boolean(plan?.deep?.permitted);
-    useEffect(() => {
-      if (!deepPermitted || !selected) { setDeepPlan(null); setWantDeep(false); return undefined; }
-      let live = true;
-      api(`/api/discovery/actors/${selected.actor_id}/plan`, {method: "POST",
-        body: JSON.stringify({...updateRequestBody(form), scope: "general", depth: "deep"})})
-        .then((body) => { if (live) setDeepPlan(body); })
-        .catch(() => { if (live) setDeepPlan(null); });
-      return () => { live = false; };
-    }, [deepPermitted, selected?.actor_id, form.topic]);
-    const deepReady = deepPermitted && Boolean(deepPlan?.can_check);
-
-    function draft(runNow = false) {
-      return updateRequestDraft({mode, form, selected, picked, group, useGroup, today, runNow});
-    }
-
-    const requestReady = mode === "one" ? Boolean(selected && form.topic)
-      : useGroup ? Boolean(group.sector) : picked.length > 0;
-
-    async function refreshRequests() {
+    async function create() {
+      setTouched(true);
+      if (!ready || busy || tooMany) return;
+      setBusy(true); setError("");
+      const payload = orgUpdatePayload({list, kind, interests, focus, form, requester});
       try {
-        const body = await api("/api/discovery/update-requests");
-        setSaved({requests: body.requests || [], one_time: body.one_time || [],
-          ready: body.ready !== false, loaded: true});
-      } catch (err) { setSaved((v) => ({...v, loaded: true})); setError(err.message); }
-    }
-    useEffect(() => { refreshRequests(); }, []);
-    // While a run is going, look again every 15 s; it records its result itself.
-    useEffect(() => {
-      if (!saved.requests.some(isRunning)) return undefined;
-      const timer = setInterval(refreshRequests, 15000);
-      return () => clearInterval(timer);
-    }, [saved.requests.map((r) => (r.runs || [])[0]?.status).join(",")]);
-
-    // Deep Enrichment is asked for one organization at a time and never scheduled.
-    const canSchedule = requestReady && !choiceProblem && !when.problem && form.depth === "light";
-
-    // The schedule preview: which actors the first run reads, its cost and its
-    // runs. Free, like the one-actor preview. Last answer wins.
-    useEffect(() => {
-      if (!canSchedule) { setReqPlan(null); setReqPlanning(false); return undefined; }
-      let live = true;
-      setReqPlanning(true);
-      const timer = setTimeout(async () => {
-        try {
-          const body = await api("/api/discovery/update-requests/plan", {
-            method: "POST", body: JSON.stringify(draft())});
-          if (live) { setReqPlan(body); setError(""); }
-        } catch (err) { if (live) { setReqPlan(null); setError(err.message); } }
-        if (live) setReqPlanning(false);
-      }, 400);
-      return () => { live = false; clearTimeout(timer); };
-    }, [canSchedule, JSON.stringify(canSchedule ? draft() : null)]);
-
-    const count = mode === "one" ? (selected ? 1 : 0) : useGroup ? (reqPlan?.matched ?? 0) : picked.length;
-
-    // Save the schedule. Its first check is one interval from today, run by the
-    // existing request runner; nothing runs when it is saved.
-    async function saveSchedule() {
-      if (!reqPlan?.can_save) return;
-      if (!window.confirm(`Save this schedule?\n\n${updateSummary({form, count})}\n\nFirst check: `
-        + `${formatDay(when.start_date)}. Last: by ${formatDay(when.end_date)}.`)) return;
-      setBusy("save"); setError(""); setNotice("");
-      try {
-        await api("/api/discovery/update-requests", {method: "POST", body: JSON.stringify(draft())});
-        setNotice(`Saved. The first check is on ${formatDay(when.start_date)}; you can pause, resume or `
-          + "cancel it in the list below.");
-        await refreshRequests();
+        const made = await api("/api/discovery/update-requests", {method: "POST", body: JSON.stringify(payload)});
+        // A request that starts today runs its first check now, like every Monitor request.
+        const started = payload.start_date === today;
+        if (started) await api(`/api/discovery/update-requests/${made.subscription_id}/run`, {method: "POST"});
+        const n = payload.actor_ids.length;
+        onCreated({started, text: started
+          ? `Request created and running now for ${n} ${n === 1 ? "organization" : "organizations"}. `
+            + "Its findings go to Review Results; you can follow it under Requests."
+          : `Request created for ${n} ${n === 1 ? "organization" : "organizations"}. `
+            + `Its first check is on ${formatDay(payload.start_date)}; you can manage it under Requests.`});
+        setList([]); setInterests([]); setFocus(""); setKind("general");
+        setForm({cadence: "", startDate: "", duration: ""}); setTouched(false);
       } catch (err) { setError(err.message); }
-      setBusy("");
+      setBusy(false);
     }
 
-    // Run Now: one organization is read and written now, then shown in Review,
-    // in its own boxes; several are run once by the request runner.
-    async function runNow() {
-      if (mode === "one") { runOne(); return; }
-      if (!window.confirm(`Check ${count} organization(s) now, once? It reads their own websites `
-        + "and writes what changed; conflicts and changes to GHUS values go to Review Results.")) return;
-      setBusy("run"); setError(""); setNotice("");
-      try {
-        const made = await api("/api/discovery/update-requests", {
-          method: "POST", body: JSON.stringify(draft(true))});
-        await api(`/api/discovery/update-requests/${made.subscription_id}/run`, {method: "POST"});
-        setNotice("Started. The check appears in the list below when it finishes.");
-        await refreshRequests();
-      } catch (err) { setError(err.message); }
-      setBusy("");
-    }
-
-    async function requestAction(request, action) {
-      if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
-      if (action === "run" && !window.confirm(`Run “${request.title}” now? It reads the actors' `
-        + "websites and writes what changed; conflicts go to Review Results.")) return;
-      setBusy(`${action}:${request.subscription_id}`); setError("");
-      try {
-        await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
-        await refreshRequests();
-      } catch (err) { setError(err.message); }
-      setBusy("");
-    }
-
-    // Read its pages, write what they state through the GHUS fact writer, and
-    // open its profile in Review: each finding in its own box. A value set by
-    // GHUS, or a weaker reading of a recorded one, is never written over - it
-    // waits under "Changes to Review" in the same profile.
-    async function runOne() {
-      const deep = wantDeep && deepReady;
-      if (!selected || !(plan?.can_check || deep)) return;
-      const lines = [`Update ${selected.name} now${deep ? ", then run a Deep Pull" : ""}?`, ""];
-      if (deep) {
-        lines.push(`Deep Pull: ${deepPlan.fields.map(boxLabel).join(", ")}. ${estimateLine(deepPlan.cost)}`, "");
-      }
-      lines.push("Compass reads its pages and writes what they state to the directory, each with its "
-        + "source; earlier values stay in the history. Values set by GHUS and conflicting readings "
-        + "are not written over: they wait for you in Review Results. The result opens in Review Results.");
-      if (!window.confirm(lines.join("\n"))) return;
-      setBusy("check"); setError(""); setResult(null); setApplied(null); setDeepResult(null);
-      let wrote = false;
-      try {
-        if (plan?.can_check) {
-          const checked = await api(`/api/discovery/actors/${selected.actor_id}/check`, {
-            method: "POST", body: JSON.stringify(updateRequestBody(form))});
-          setResult(checked);
-          if (checked.check_id && checked.writes) {
-            setBusy("apply");
-            setApplied(await api(`/api/discovery/actor-checks/${checked.check_id}/apply`,
-              {method: "POST"}));
-            wrote = true;
-          }
-        }
-        if (deep) {
-          setBusy("deep");
-          const body = JSON.stringify({...updateRequestBody(form), scope: "general", depth: "deep"});
-          const checked = await api(`/api/discovery/actors/${selected.actor_id}/check`, {method: "POST", body});
-          const applied = checked.check_id && checked.writes
-            ? await api(`/api/discovery/actor-checks/${checked.check_id}/apply`, {method: "POST"}) : null;
-          setDeepResult({checked, applied});
-          wrote = wrote || Boolean(applied);
-        }
-        if (wrote) openInReview(selected);
-        refreshRequests();
-      } catch (err) { setError(err.message); }
-      setBusy("");
-    }
-
-    const where = (a) => [a.city, a.state].filter(Boolean).join(", ");
-
-    // One form for one organization, picked organizations, or a group.
-    function updateBuilder({sectorControl}) {
-      const kind = UPDATE_KINDS.find((x) => x.id === form.kind);
-      return html`<div class="update-builder">
-        ${Field({label: "What to update", wide: true, children: html`
-          <div class="discovery-segment">
-            ${UPDATE_KINDS.map((x) => html`<button type="button" key=${x.id}
-              aria-pressed=${form.kind === x.id}
-              class=${form.kind === x.id ? "active" : ""} onClick=${() => change({kind: x.id})}>${x.label}</button>`)}
-          </div>
-          <small class="muted">${kind?.hint}</small>`})}
-
-        ${Field({label: "What information are you interested in?", wide: true, children: html`
-          <div class="chips">${INFORMATION_FOCUS.map((x) => html`<label key=${x.id} class=${"chip" + (form.interests.includes(x.id) ? " on" : "")}>
-            <input type="checkbox" checked=${form.interests.includes(x.id)} onChange=${() => toggle("interests", x.id)}/>${x.label}</label>`)}</div>
-          <small class="muted">${form.kind === "specific"
-            ? "Only this information is checked, and only what each organization's type has."
-            : form.interests.length ? "Checked first; everything else its type has is checked too."
-              : "Optional: choose what to check first. Everything its type has is checked."}</small>`})}
-
-        ${form.kind === "specific" && Field({label: "Specific topic or question (optional)", wide: true, children: html`
-          <input value=${form.focus} maxLength="200" placeholder=${UPDATE_QUESTION_EXAMPLE}
-            onInput=${(e) => change({focus: e.target.value})}/>`})}
-
-        ${Field({label: "Sector", children: sectorControl})}
-
-        ${Field({label: "How often should we check for updates?", children: html`
-          <select value=${form.cadence} onChange=${(e) => change({cadence: e.target.value})}>
-            ${UPDATE_FREQUENCIES.map((x) => html`<option key=${x.id} value=${x.id}>${x.label}</option>`)}
-          </select>`})}
-
-        ${Field({label: "For how long should we keep checking?", children: html`
-          <select value=${form.months} onChange=${(e) => change({months: Number(e.target.value)})}>
-            ${UPDATE_DURATIONS.map((d) => html`<option key=${d.months} value=${d.months}>${d.label}</option>`)}
-          </select>`})}
-      </div>`;
-    }
-
-    // The request preview in plain words, and the two actions.
-    function requestPanel() {
-      const organizations = mode === "one" ? selected?.name
-        : useGroup ? (reqPlan ? `${reqPlan.matched} in this group` : "")
-          : `${picked.length} chosen`;
-      const cost = reqPlan?.cost || (plan?.cost && {...plan.cost, expected_usd: plan.cost.typical_usd});
-      const deep = mode === "one" && wantDeep && deepReady;
-      const ready = requestReady && !choiceProblem;
-      return html`<div class="update-request">
-        <div class=${"update-preview" + (reqPlanning || planning ? " loading" : "")}>
-          <h4>Request preview ${(reqPlanning || planning) && html`<span class="muted">· updating…</span>`}</h4>
-          ${choiceProblem && html`<p class="discovery-message error">${choiceProblem}</p>`}
-          ${!choiceProblem && html`<p>${updateSummary({form, count, deep})}</p>`}
-          <dl class="actor-now">
-            <div><dt>Organizations</dt><dd>${organizations || "—"}</dd></div>
-            <div><dt>Next run</dt><dd>${formatDay(when.start_date)}</dd></div>
-            <div><dt>Ends</dt><dd>${formatDay(when.end_date)}${reqPlan ? ` · ${reqPlan.runs} ${reqPlan.runs === 1 ? "check" : "checks"}` : ""}</dd></div>
-            <div><dt>Depth</dt><dd>${deep ? "Light Refresh, then Deep Pull" : "Light Refresh"}</dd></div>
-            <div><dt>Estimated cost</dt><dd>${estimateLine(cost, reqPlan?.runs || 1) || "—"}</dd></div>
-          </dl>
-          ${when.problem && html`<p class="discovery-message error">${when.problem}</p>`}
-          ${mode === "one" && plan?.access?.blocked && html`<p class="discovery-message warn">
-            ${plan.access.blocked.plain} It is not tried again before ${formatDay(plan.access.blocked.retry_after)};
-            this update reads other sources that name it instead.</p>`}
-          ${mode === "one" && plan?.access?.fallback && html`<p class="muted">${plan.access.fallback}</p>`}
-          ${mode === "one" && plan?.refusal && html`<p class="discovery-message error">${plan.refusal}</p>`}
-          ${deepReady && html`<label class="update-deep">
-            <input type="checkbox" checked=${wantDeep} onChange=${(e) => setWantDeep(e.target.checked)}/>
-            <span><strong>Also run a Deep Pull</strong> — GHUS verified this organization for
-              ${" " + (plan.topic?.name || "this sector")}. It reads ${deepPlan.fields.length} selected items:
-              ${" " + deepPlan.fields.map(boxLabel).join(", ")}. ${estimateLine(deepPlan.cost)}
-              <small class="muted">With Run now only; a saved schedule is a Light Refresh.</small></span>
-          </label>`}
-          ${mode === "one" && plan && !deepPermitted && plan.topic && html`<p class="muted">A Deep Pull becomes
-            available here once GHUS verifies this organization for ${plan.topic.name} in Review Results.</p>`}
-          ${mode === "one" && plan?.error && html`<p class="discovery-message error">${plan.error}</p>`}
-          ${mode === "one" && plan?.fields && html`<details><summary>What will be checked: ${plan.fields.length} of ${plan.schema_size} items</summary>
-            <p class="muted">${plan.fields.map(boxLabel).join(", ") || "Nothing needs checking."}</p>
-            ${plan.skipped.length > 0 && html`<ul class="skipped">${plan.skipped.map((x) => html`<li key=${x.field}><strong>${boxLabel(x.field)}</strong> — ${x.reason}</li>`)}</ul>`}
-            <p class="muted">Hubs: ${hubSummary(plan.hubs) || "—"}</p></details>`}
-          ${mode === "several" && reqPlan && html`
-            ${useGroup && html`<p class="muted">${`${reqPlan.matched} organization(s) match. Each check reaches up to `
-              + `${reqPlan.options?.max_actors_per_run} of them, those with the most missing or out-of-date `
-              + "information first; the others wait for a later check."}</p>`}
-            ${reqPlan.waiting.length > 0 && html`<details><summary>${reqPlan.waiting.length} organization(s) not in the first check, and why</summary>
-              <ul class="skipped">${reqPlan.waiting.map((x) => html`<li key=${x.actor_id}><strong>${x.name}</strong> — ${x.reason}</li>`)}</ul></details>`}`}
-          ${reqPlan?.needs_migration && html`<p class="discovery-message error">${reqPlan.needs_migration}</p>`}
-        </div>
-
-        <div class="discovery-actions">
-          <button class="btn" disabled=${!!busy || !ready || (mode === "one" ? (planning || !(plan?.can_check || deep))
-            : !reqPlan?.chosen?.length)} onClick=${runNow}>
-            ${busy === "check" ? "Reading its pages…" : busy === "apply" ? "Writing…"
-              : busy === "deep" ? "Running Deep Pull…" : busy === "run" ? "Starting…" : "Run now"}</button>
-          <button class="btn ghost" disabled=${!!busy || !canSchedule || reqPlanning || !reqPlan?.can_save}
-            onClick=${saveSchedule}>${busy === "save" ? "Saving…" : "Save schedule"}</button>
-        </div>
-        ${busy === "check" && html`<p class="muted">Reading up to three of its own pages — about half a minute.</p>`}
-      </div>`;
-    }
-
-    function updateRequestList() {
-      if (!saved.loaded) return null;
-      const rows = updateRunList(saved, allSectors);
-      const hidden = (saved.requests || []).filter((r) => r.test_sector).length;
-      return html`<div class="update-requests">
-        <div class="update-requests-head">
-          <h3>Update runs</h3>
-          <button type="button" class="btn ghost" onClick=${refreshRequests}>Refresh</button>
-        </div>
-        ${!saved.ready && html`<p class="muted">Saved schedules need migration 570 on this database.
-          One-time updates of one actor work without it.</p>`}
-        ${!rows.length && html`<p class="muted">None yet. Update an organization above, or save a schedule.</p>`}
-        ${rows.length > 0 && html`<ul class="update-run-list">${rows.map((row) => {
-          const r = row.request;
-          const live = r && (r.status === "active" || r.status === "paused");
-          const doing = (action) => r && busy === `${action}:${r.subscription_id}`;
-          return html`<li key=${row.key} class="update-run-row">
-            <div class="update-run-name"><strong>${row.name}</strong>
-              <span>${[row.actors !== row.name && row.actors, row.what].filter(Boolean).join(" · ")}</span></div>
-            <div class="update-run-when">${formatDay(row.date)}<span>${row.schedule}</span></div>
-            <div class="update-run-result">${row.result}</div>
-            <span class=${"discovery-status " + row.status}>${row.statusLabel}</span>
-            ${r && (r.status === "active" || live) && html`<div class="update-run-actions">
-              ${isRunning(r) ? html`<button class="btn running" disabled>Running…</button>`
-                : r.status === "active" && html`<button class="btn" disabled=${!!busy}
-                onClick=${() => requestAction(r, "run")}>${doing("run") ? "Starting…" : runButtonLabel(r)}</button>`}
-              ${r.status === "active" && html`<button class="btn ghost" disabled=${!!busy}
-                onClick=${() => requestAction(r, "pause")}>Pause</button>`}
-              ${r.status === "paused" && html`<button class="btn ghost" disabled=${!!busy}
-                onClick=${() => requestAction(r, "resume")}>Resume</button>`}
-              ${live && html`<button class="btn ghost danger" disabled=${!!busy}
-                onClick=${() => requestAction(r, "cancel")}>Cancel</button>`}
-            </div>`}
-            ${row.runs.length > 0 && html`<details class="update-run-details">
-              <summary>${row.runs.length === 1 ? "1 run" : `${row.runs.length} runs`}</summary>
-              ${row.runs.map((run) => html`<div key=${run.collection_run_id} class="update-run">
-                <p><strong>${formatDay(run.started_at)}</strong> · ${RUN_STATUS[run.status] || run.status}
-                  · ${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review Results</p>
-                ${run.status_reason && html`<p class="muted">${run.status_reason}</p>`}
-                ${(run.actor_results || []).length > 0 && html`<ul class="skipped">${run.actor_results.map((a) =>
-                  html`<li key=${a.actor_id} class=${a.ok ? "" : "warn"}>${actorResultLine(a)}</li>`)}</ul>`}
-              </div>`)}
-            </details>`}
-          </li>`;
-        })}</ul>`}
-        ${hidden > 0 && html`<p class="muted">${hidden} test request(s) on inactive sectors are not listed.</p>`}
-      </div>`;
-    }
-
-    return html`<section class="discovery-card actor-updates">
-      <p class="muted actor-updates-lead">Pick an organization already in the directory. Compass
-        reads available sources and tells you what changed — nothing is written until you say so.</p>
-
-      <div class="discovery-segment actor-mode" role="group" aria-label="How many actors">
-        <button type="button" class=${mode === "one" ? "active" : ""}
-          onClick=${() => { setMode("one"); setReqPlan(null); }}>One actor</button>
-        <button type="button" class=${mode === "several" ? "active" : ""}
-          onClick=${() => { setMode("several"); setSelected(null); setResult(null);
-            setForm((f) => ({...f, depth: "light"})); }}>Several actors</button>
-      </div>
-
-      <div class="actor-group" role="group" aria-label="Which actors">
-        <select aria-label="Sector" value=${group.sector} onChange=${(e) => setGroupField({sector: e.target.value})}>
-          <option value="">Every sector</option>
-          ${allSectors.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-        </select>
-        <select aria-label="Type" value=${group.category} onChange=${(e) => setGroupField({category: e.target.value})}>
-          <option value="">Every type</option>
-          ${Object.entries(CATEGORY_LABELS).map(([code, label]) => html`<option key=${code} value=${code}>${label}</option>`)}
-        </select>
-        <select aria-label="State" value=${group.state} onChange=${(e) => setGroupField({state: e.target.value})}>
-          <option value="">Every state</option>
-          ${(states || []).map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-        </select>
-        <label class="actor-everyone"><input type="checkbox" checked=${group.everyone}
-          onChange=${(e) => setGroupField({everyone: e.target.checked})}/> Include actors with no website</label>
-      </div>
-
-      ${mode === "several" && html`<div class="several-choice">
-        <label class="actor-everyone"><input type="checkbox" checked=${useGroup} disabled=${!group.sector}
-          onChange=${(e) => { setUseGroup(e.target.checked); setOpen(false); if (e.target.checked) setPicked([]); }}/>
-          ${group.sector ? `Update the whole group (${groupCaption(total, total, group, allSectors, states)}), most gaps first`
-            : "To update a whole group, choose its sector in the filters above"}</label>
-        ${!useGroup && html`<div class="picked" role="group" aria-label="Chosen actors">
-          ${picked.map((a) => html`<span key=${a.actor_id} class="chip on">${a.name}
-            <button type="button" class="link" aria-label=${`Remove ${a.name}`}
-              onClick=${() => setPicked((list) => list.filter((x) => x.actor_id !== a.actor_id))}>×</button></span>`)}
-          ${!picked.length && html`<span class="muted">Or type below to add actors one by one (up to 10).</span>`}
-        </div>`}
-      </div>`}
-
-      ${!(mode === "several" && useGroup) && html`<div class="actor-combo">
-        <input class="actor-search" role="combobox" aria-expanded=${open && results.length > 0}
-          aria-controls="actor-suggestions" aria-autocomplete="list" autocomplete="off"
-          value=${query} placeholder=${grouped ? "Type to narrow this group…" : "Start typing a name or website — e.g. CPo, calwep"}
-          onInput=${(e) => { setQuery(e.target.value); setSelected(null); setResult(null); setOpen(true); }}
-          onFocus=${() => setOpen(true)} onKeyDown=${onKey}/>
-
-        ${!selected && open && results.length > 0 && html`<div class="actor-suggest">
-          <div class="actor-suggest-head">${groupCaption(total, results.length, group, allSectors, states)}
-            <span class="muted">↑ ↓ to move · Enter to choose</span></div>
-          <ul id="actor-suggestions" role="listbox" class="actor-results">
+    return html`<section class="discovery-card org-update">
+      <h3 class="org-update-h">Select Organizations</h3>
+      <p class="muted org-update-sub">Search by name and add organizations from the Ecosystem Directory.</p>
+      <div class="org-search">
+        <div class="org-search-box">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          <input role="combobox" aria-expanded=${open && results.length > 0} aria-controls="org-suggestions"
+            aria-autocomplete="list" autocomplete="off" value=${query} placeholder="Enter an organization name..."
+            onInput=${(e) => { setQuery(e.target.value); setChosen(null); }} onKeyDown=${onKey}
+            onFocus=${() => results.length && setOpen(true)}/>
+          ${open && results.length > 0 && html`<ul id="org-suggestions" role="listbox" class="org-suggest">
             ${results.map((a, i) => html`<li key=${a.actor_id} role="option" aria-selected=${i === active}>
-              <button type="button" class=${i === active ? "active" : ""}
-                onMouseEnter=${() => setActive(i)} onClick=${() => choose(a)}>
-                <strong>${highlightParts(a.name, query).map((part, k) =>
-                  part.match ? html`<mark key=${k}>${part.text}</mark>` : part.text)}</strong>
-                <span>${[a.actor_category ? (CATEGORY_LABELS[a.actor_category] || a.actor_category.replaceAll("_", " ")) : "Unclassified",
-                  where(a), (a.sectors || []).join(" / ")].filter(Boolean).join(" · ")}</span>
-                <span class="actor-flags">
-                  ${a.funding_signal && html`<em>funding on record</em>`}
-                  ${a.recent_activity && html`<em>activity on record</em>`}
-                  ${!a.website && html`<em class="warn">no website</em>`}
-                </span>
+              <button type="button" class=${i === active ? "active" : ""} onMouseEnter=${() => setActive(i)}
+                onClick=${() => pick(a)}>
+                <strong>${a.name}</strong>
+                <span>${[directoryStatus(a), (a.sectors || []).map(sectorName).join(", "),
+                  [a.city, a.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}</span>
               </button></li>`)}
-          </ul>
-        </div>`}
-      </div>`}
-
-      ${!selected && searched !== null && results.length === 0 && html`<div class="actor-none">
-        <span>${searched ? `“${searched}” is not in the directory${grouped ? " in this group" : ""}.` : "No organization in the directory in this group."}</span>
-        ${searched && html`<button type="button" class="btn ghost" onClick=${() => onFindNew(searched)}>Find it with Discovery</button>`}
-      </div>`}
-
-      ${selected && html`<div class="actor-selected">
-        <div class="actor-head">
-          <div>
-            <h3>${selected.name}</h3>
-            ${selected.website
-              ? html`<a href=${selected.website} target="_blank" rel="noreferrer">${selected.website}</a>`
-              : html`<span class="warn">No website on record</span>`}
-          </div>
-          <button type="button" class="link" onClick=${() => { setSelected(null); setResult(null); }}>Change</button>
+          </ul>`}
         </div>
+        <button type="button" class="btn org-add" onClick=${add}>Add</button>
+      </div>
+      ${query.trim().length >= 2 && !chosen && !open && results.length === 0 && html`
+        <p class="muted org-none">No organization in the Ecosystem Directory matches “${query.trim()}”.</p>`}
 
-        <dl class="actor-now">
-          <div><dt>Type</dt><dd>${selected.actor_category ? (CATEGORY_LABELS[selected.actor_category] || selected.actor_category.replaceAll("_", " ")) : "Unclassified"}</dd></div>
-          <div><dt>Where</dt><dd>${where(selected) || "—"}</dd></div>
-          <div><dt>Sectors</dt><dd>${(selected.sectors || []).map((code) =>
-            (allSectors.find((x) => x.code === code) || {}).name || code).join(", ") || "Not linked yet"}</dd></div>
-          <div><dt>Status</dt><dd>${plan?.actor?.status || selected.status || "—"}</dd></div>
-          <div><dt>Last update</dt><dd>${plan?.last_update
-            ? `${formatDay(plan.last_update.finished_at)} · ${formatUsd(plan.last_update.spent_usd)}`
-            : "Never updated here"}</dd></div>
-        </dl>
+      ${list.length > 0 && html`<table class="org-table">
+        <thead><tr>
+          <th class="org-check"><input type="checkbox" ref=${headerBox} aria-label="Select all organizations"
+            checked=${state === "all"} onChange=${(e) => setAll(e.target.checked)}/></th>
+          <th>Organization</th><th>Mapped Sectors</th><th>Last Checked</th>
+        </tr></thead>
+        <tbody>${list.map(({actor, checked}) => html`<tr key=${actor.actor_id} class=${checked ? "" : "off"}>
+          <td class="org-check"><input type="checkbox" checked=${checked} aria-label=${`Include ${actor.name}`}
+            onChange=${(e) => setOne(actor.actor_id, e.target.checked)}/></td>
+          <td><span class="org-name">${actor.name}</span>
+            ${directoryStatus(actor) && html`<span class=${"org-status " + directoryStatus(actor).toLowerCase()}>${directoryStatus(actor)}</span>`}</td>
+          <td class="muted">${(actor.sectors || []).map(sectorName).join(", ") || "None mapped"}</td>
+          <td class="muted">${lastCheckedLabel(actor.last_checked)}</td>
+        </tr>`)}</tbody>
+      </table>`}
+      <p class=${"org-count" + (shown.organizations ? " error" : "")}>${list.length
+        ? selectionLine(list) : shown.organizations || "No organizations added yet."}</p>
+      ${tooMany && html`<p class="discovery-message error">One request covers at most ${options?.max_update_actors || 20} organizations; uncheck some, or make a second request.</p>`}
 
-        ${updateBuilder({sectorControl: html`
-            <select value=${topic} onChange=${(e) => change({topic: e.target.value})}>
-              ${!(selected.sectors || []).length && html`<option value="">Choose a sector</option>`}
-              ${(selected.sectors || []).length > 0 && html`<optgroup label="Its sectors">
-                ${selected.sectors.map((code) => html`<option key=${code} value=${code}>
-                  ${(allSectors.find((x) => x.code === code) || {}).name || code}</option>`)}
-              </optgroup>`}
-              <optgroup label=${(selected.sectors || []).length ? "Other sectors" : "Sectors"}>
-                ${allSectors.filter((x) => !(selected.sectors || []).includes(x.code)).map((x) =>
-                  html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-              </optgroup>
-            </select>
-            ${!(selected.sectors || []).length && html`<small class="muted">Not linked to a sector yet —
-              facts are kept per sector, so choose the one this update is for.</small>`}`})}
+      <h3 class="org-update-h">What would you like to update?</h3>
+      <div class="org-kinds" role="group" aria-label="What to update">
+        ${[["general", "General Update"], ["specific", "Specific Changes"]].map(([id, label]) => html`
+          <button type="button" key=${id} class=${kind === id ? "active" : ""} aria-pressed=${kind === id}
+            onClick=${() => setKind(id)}>${label}</button>`)}
+      </div>
+      ${kind === "general" ? html`
+        <p class="muted org-hint">Check the full profile for new, missing, or outdated information.</p>
+        <p class="org-label">Priority Areas (optional)</p>
+        <div class="org-areas">${PRIORITY_AREAS.map((x) => html`<label key=${x.id}>
+          <input type="checkbox" checked=${interests.includes(x.id)} onChange=${() => toggleArea(x.id)}/>${x.label}</label>`)}</div>
+        <p class="muted org-hint">Select areas to prioritize. The full profile will still be checked.</p>` : html`
+        <textarea class=${"org-specific" + (shown.focus ? " invalid" : "")} rows="3" maxLength=${MAX_SPECIFIC_CHARS}
+          placeholder=${SPECIFIC_PLACEHOLDER} value=${focus} onInput=${(e) => setFocus(e.target.value)}></textarea>
+        ${shown.focus && html`<small class="discovery-error">${shown.focus}</small>`}
+        <p class="muted org-hint">These instructions apply to all selected organizations.</p>`}
 
-        ${requestPanel()}
-      </div>`}
+      <${ScheduleRow} form=${form} set=${setSchedule} kind="update" options=${options} today=${today} shown=${shown}/>
 
-      ${mode === "several" && html`<div class="actor-selected">
-        ${updateBuilder({sectorControl: html`
-          <select value=${topic} onChange=${(e) => change({topic: e.target.value})}>
-            <option value="">${useGroup && group.sector ? "The group's sector" : "Each actor's own sector"}</option>
-            ${allSectors.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-          </select>`})}
-        ${requestPanel()}
-      </div>`}
-
+      <div class="org-footer">
+        <div class="org-notes">
+          <p><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            Existing directory information remains unchanged until you verify the proposed updates.</p>
+          <p><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+            You’ll receive an email notification when your results are ready in Review Results.</p>
+        </div>
+        <button type="button" class="btn org-create" disabled=${!ready || busy || tooMany} onClick=${create}>
+          ${busy ? "Creating…" : "Create Request"}</button>
+      </div>
       ${error && html`<p class="discovery-message error">${error}</p>`}
-
-      ${result && html`<div class="actor-result">
-        <p class="actor-result-head"><strong>${applied ? "Written to the directory"
-          : result.ok === false ? "Could not check" : "Nothing new to write"}</strong>
-          · ${selected?.name} · ${result.topic?.name} · ${formatUsd(result.cost_usd)}</p>
-        <p>${applied ? writtenLine(applied.counts) : result.ok === false
-          ? result.error || "Its pages could not be read. Nothing was written."
-          : result.note || "Its pages state nothing new, so nothing was written."}
-          ${applied?.review_items > 0 ? ` · ${applied.review_items} change(s) wait for you in Review Results.` : ""}
-          ${applied?.failed > 0 ? ` · ${applied.failed} box(es) could not be written; run it again to retry.` : ""}</p>
-        <p class="muted">Read from: ${(result.pages_read || []).map((url, i) => html`${i ? " · " : ""}<a href=${url}
-          target="_blank" rel="noreferrer">${url.replace(/^https?:\/\//, "")}</a>${
-          sourceLabel(result.sources?.[url]) && ` (${sourceLabel(result.sources[url])})`}`)}</p>
-        ${(result.attempts || []).length > 0 && html`<details class="update-attempts">
-          <summary>Its own website was closed to Compass — what was tried</summary>
-          <ul class="skipped">${result.attempts.map((attempt, i) => html`<li key=${i}>
-            <strong>${attempt.url.replace(/^https?:\/\//, "")}</strong> — ${attempt.plain}</li>`)}</ul>
-        </details>`}
-        ${(result.related || []).some((r) => r.status === "not_on_map") && html`<p class="muted">Its pages name
-          organizations not yet in the directory: ${result.related.filter((r) => r.status === "not_on_map").map((r, i) =>
-            html`${i ? ", " : ""}<button type="button" class="link" onClick=${() => onFindNew(r.name)}>${r.name}</button>`)}</p>`}
-        ${result.type_proposal && html`<p class="muted">${typeProposalLine(result.type_proposal)}</p>`}
-        ${applied && html`<div class="discovery-actions">
-          <button class="btn" onClick=${() => openInReview(selected)}>Open in Review Results</button></div>`}
-      </div>`}
-
-      ${deepResult && html`<div class="actor-result">
-        <p class="actor-result-head"><strong>Deep Pull</strong> · ${selected?.name}
-          · ${deepResult.checked.topic?.name} · ${formatUsd(deepResult.checked.cost_usd)}</p>
-        <p>${deepResult.checked.ok === false ? deepResult.checked.error
-          : deepResult.applied ? writtenLine(deepResult.applied.counts)
-            : "Its pages state none of the selected items, so nothing was written."}</p>
-      </div>`}
-
-      ${notice && html`<p class="discovery-message">${notice}</p>`}
-      ${updateRequestList()}
     </section>`;
+  }
+
+  function UpdateRequestCard({request, sectors, busy, onAction, today, onChanged}) {
+    const [open, setOpen] = useState(false);
+    const runs = request.runs || [];
+    const live = request.status === "active" || request.status === "paused";
+    const current = runningRun(request);
+    const status = requestStatus(request);
+    const names = request.actor_names || [];
+    const sum = (key) => runs.reduce((total, run) => total + Number(run[key] || 0), 0);
+    const showResults = () => (names.length === 1 && (request.actor_ids || []).length === 1
+      ? openInReview({actor_id: request.actor_ids[0], name: names[0]})
+      : window.dispatchEvent(new CustomEvent(OPEN_IN_REVIEW, {detail: {}})));
+    return html`<article class="discovery-request">
+      <div class="discovery-request-head">
+        <div>
+          <span class="discovery-kind">Organizations Update</span>
+          <h3>${request.title || "Organizations update"}</h3>
+          <p>${updateRequestScope(request, sectors)}</p>
+        </div>
+        <span class=${"discovery-status " + status}>${STATUS_LABELS[status] || status}</span>
+      </div>
+      <dl class="discovery-facts">
+        <div><dt>Next run</dt><dd>${current ? "Running now" : live ? nextRunLabel(request) : "None"}</dd></div>
+        <div><dt>Runs so far</dt><dd>${runs.length}</dd></div>
+        <div><dt>New or updated</dt><dd>${sum("found_count")}</dd></div>
+        <div><dt>Sent to Review Results</dt><dd>${sum("review_item_count")}</dd></div>
+      </dl>
+      <${EndDate} request=${request} today=${today} onSaved=${onChanged}/>
+      ${runs[0] && runs[0].status === "failed" && html`<p class="discovery-message error">Last run failed: ${runs[0].status_reason || "no reason recorded"}</p>`}
+      ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
+        ${runningLine(current)}. Reading each organization's sources; results appear in Review Results when it finishes.</p>`}
+      <div class="discovery-actions">
+        ${current ? html`<button class="btn running" disabled aria-live="polite">Running…</button>`
+          : request.status === "active" && html`<button class="btn" disabled=${busy} onClick=${() => onAction(request, "run")}>${runButtonLabel(request)}</button>`}
+        ${runs.some((run) => run.status !== "running") && html`<button class="btn ghost" onClick=${showResults}>Show Results</button>`}
+        ${request.status === "active" && html`<button class="btn ghost" disabled=${busy} onClick=${() => onAction(request, "pause")}>Pause</button>`}
+        ${request.status === "paused" && html`<button class="btn ghost" disabled=${busy} onClick=${() => onAction(request, "resume")}>Resume</button>`}
+        ${live && html`<button class="btn ghost danger" disabled=${busy} onClick=${() => onAction(request, "cancel")}>Cancel request</button>`}
+        ${runs.length > 0 && html`<button class="btn ghost" onClick=${() => setOpen(!open)}>${open ? "Hide run details" : "Run details"}</button>`}
+      </div>
+      ${open && html`<div class="discovery-results">
+        <h4>Organizations</h4>
+        <p class="muted">${names.join(", ") || "—"}</p>
+        <h4>Runs</h4>
+        ${runs.map((run) => html`<div key=${run.collection_run_id} class="update-run">
+          <p><strong>${formatDay(run.started_at)}</strong> · ${RUN_STATUS[run.status] || run.status}
+            · ${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review Results
+            · ${formatUsd(run.spent_usd)}</p>
+          ${run.status_reason && html`<p class="muted">${run.status_reason}</p>`}
+          ${(run.actor_results || []).length > 0 && html`<ul class="skipped">${run.actor_results.map((a) =>
+            html`<li key=${a.actor_id} class=${a.ok ? "" : "warn"}>${actorResultLine(a)}</li>`)}</ul>`}
+        </div>`)}
+      </div>`}
+    </article>`;
   }
 
   function EntityRequestForm({kind, options, today, requester, onSaved}) {
@@ -2096,6 +1828,8 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     const [status, setStatus] = useState({loaded: false, configured: false});
     const [options, setOptions] = useState(null);
     const [requests, setRequests] = useState([]);
+    // Organizations Update requests, listed under Requests too.
+    const [updates, setUpdates] = useState([]);
     const [view, setView] = useState("new");
     // What the new request finds. Organizations keep their form exactly.
     const [kind, setKind] = useState("actor");
@@ -2122,9 +1856,11 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         const s = await api("/api/discovery/status");
         setStatus({loaded: true, configured: !!s.configured});
         if (!s.configured) return;
-        const [o, r] = await Promise.all([api("/api/discovery/options"), api("/api/discovery/requests")]);
+        const [o, r, u] = await Promise.all([api("/api/discovery/options"), api("/api/discovery/requests"),
+          api("/api/discovery/update-requests").catch(() => ({requests: []}))]);
         setOptions(o);
         setRequests(r.requests || []);
+        setUpdates((u.requests || []).filter((x) => !x.test_sector));
       } catch (err) {
         setStatus({loaded: true, configured: false});
         setMessage({kind: "error", text: err.message});
@@ -2192,11 +1928,11 @@ export function createDiscoveryPage({html, useState, useEffect}) {
     // While anything is running (or was just started), refresh every 15 s.
     const [watchUntil, setWatchUntil] = useState(0);
     useEffect(() => {
-      const active = requests.some(isRunning) || Date.now() < watchUntil;
+      const active = requests.some(isRunning) || updates.some(isRunning) || Date.now() < watchUntil;
       if (!active) return undefined;
       const timer = setInterval(() => { load(); }, 15000);
       return () => clearInterval(timer);
-    }, [requests, watchUntil]);
+    }, [requests, updates, watchUntil]);
 
     async function runNow(request) {
       if (!window.confirm(`Run “${request.title}” now? It searches the web live and adds what passes the quality checks.`)) return;
@@ -2220,6 +1956,19 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       setBusy(false);
     }
 
+    async function onUpdateAction(request, action) {
+      if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
+      if (action === "run" && !window.confirm(`Run “${request.title}” now? It reads each organization's `
+        + "sources; findings go to Review Results.")) return;
+      setBusy(true); setMessage(null);
+      try {
+        await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
+        if (action === "run") setWatchUntil(Date.now() + 20 * 60 * 1000);
+        await load();
+      } catch (err) { setMessage({kind: "error", text: err.message}); }
+      setBusy(false);
+    }
+
     const summaryDraft = {
       ...draftPayload(draft),
       start_date: draft.startDate,
@@ -2227,12 +1976,20 @@ export function createDiscoveryPage({html, useState, useEffect}) {
       state_code: draft.areaKind === "state" ? draft.state : null,
       city: draft.areaKind === "state" ? draft.city.trim() : null,
     };
-    const activeCount = requests.filter((r) => r.status === "active" || r.status === "paused").length;
+    // Requests are private to whoever made them (their email); older ones stay shared.
+    const mine = visibleRequests(requests, requester);
+    const myUpdates = visibleRequests(updates, requester);
+    const listed = [...mine.map((r) => ({kind: "discovery", r})), ...myUpdates.map((r) => ({kind: "update", r}))]
+      .sort((a, b) => String(b.r.created_at || "").localeCompare(String(a.r.created_at || "")));
+    const activeCount = [...mine, ...myUpdates].filter((r) => r.status === "active" || r.status === "paused").length;
 
     return html`<div class="discovery-page">
+      ${view === "actors" ? html`
+      <h1 class="hero-h">${ORG_UPDATE_TITLE}</h1>
+      <p class="lead">${ORG_UPDATE_LEAD}</p>` : html`
       <h1 class="hero-h">What should Compass keep watching?</h1>
       <p class="lead">Choose the organizations, events or people to follow, and where. Compass
-        searches only for that, on the schedule you set, and what it finds goes to Review Results.</p>
+        searches only for that, on the schedule you set, and what it finds goes to Review Results.</p>`}
       <label class=${"discovery-whoami" + (requester && !isEmail(requester) ? " invalid" : "")}>
         <span>Email for results</span>
         <input type="email" value=${requester} placeholder="you@um6p.ma" maxLength="254"
@@ -2249,9 +2006,9 @@ export function createDiscoveryPage({html, useState, useEffect}) {
 
       ${status.configured && options && html`
       <div class="subnav">
-        <button class=${view === "new" ? "active" : ""} onClick=${() => setView("new")}>New request</button>
+        <button class=${view === "new" ? "active" : ""} onClick=${() => setView("new")}>New Request</button>
+        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Organizations Update</button>
         <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests (${activeCount})</button>
-        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Organization updates</button>
       </div>
 
       ${view === "new" && html`<div class="discovery-segment discovery-kinds" role="group" aria-label="What to discover">
@@ -2368,14 +2125,22 @@ export function createDiscoveryPage({html, useState, useEffect}) {
         </div>
       </section>`}
 
-      ${view === "actors" && html`<${ActorUpdates} sectors=${options.topics} states=${options.states}
-        onFindNew=${(name) => { set({brief: name}); setView("new"); }}/>`}
+      ${view === "actors" && html`<${OrganizationsUpdate} sectors=${options.topics} options=${options}
+        today=${today} requester=${requester}
+        onCreated=${async ({started, text}) => {
+          setMessage({kind: "success", text}); await load();
+          if (started) setWatchUntil(Date.now() + 20 * 60 * 1000);
+          setView("requests");
+        }}/>`}
 
       ${view === "requests" && html`<section class="discovery-list">
-        ${requests.length === 0
+        ${listed.length === 0
           ? html`<p class="discovery-empty">No requests yet.</p>`
-          : requests.map((r) => html`<${RequestCard} key=${r.subscription_id} request=${r} options=${options}
-              busy=${busy} onAction=${onAction} onRun=${runNow} today=${today} onChanged=${load}/>`)}
+          : listed.map(({kind: k, r}) => k === "update"
+            ? html`<${UpdateRequestCard} key=${r.subscription_id} request=${r} sectors=${options.topics}
+                busy=${busy} onAction=${onUpdateAction} today=${today} onChanged=${load}/>`
+            : html`<${RequestCard} key=${r.subscription_id} request=${r} options=${options}
+                busy=${busy} onAction=${onAction} onRun=${runNow} today=${today} onChanged=${load}/>`)}
       </section>`}
       `}
     </div>`;

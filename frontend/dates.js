@@ -93,7 +93,7 @@ export function createDateInput({html, useState, useEffect}) {
         onInput=${(e) => typed(e.target.value)}
         onBlur=${() => { if (!invalid) setText(usDate(value)); }}/>
       <button type="button" class="date-input-pick" aria-label="Open calendar" title="Open calendar"
-        disabled=${disabled} onClick=${openCalendar}>📅</button>
+        disabled=${disabled} onClick=${openCalendar}><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
       <input type="date" class="date-input-native" tabIndex="-1" aria-hidden="true"
         value=${value || ""} min=${min} max=${max}
         onChange=${(e) => { setText(usDate(e.target.value)); onChange(e.target.value); }}/>

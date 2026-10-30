@@ -175,3 +175,48 @@ def test_the_runner_tells_only_discovery_runs_that_found_something():
     _notify_after(report, environ={})
     assert found.notified == {"sent": False, "reason": "no mail server configured (GHUS_SMTP_HOST)"}
     assert empty.notified is None and failed.notified is None
+
+
+# ----------------------------------------------------------- Organizations Update
+
+def _update_payload(**changes):
+    from datetime import date as _date
+
+    return {"actor_ids": ["11111111-2222-4333-8444-555555555555"], "scope": "general",
+            "cadence": "once", "start_date": _date.today().isoformat(), **changes}
+
+
+def test_an_update_request_records_who_asked_and_takes_specific_changes_in_words():
+    from agents.collection.actor_updates import ActorUpdateError, request_options
+
+    limits = {"actor_updates": {"max_actors_per_request": 20, "max_usd_per_request_run": 3.0}}
+    done = request_options(_update_payload(requested_by="analyst@um6p.ma"), config=limits)
+    assert done["requested_by"] == "analyst@um6p.ma"
+    with pytest.raises(ActorUpdateError, match="email"):
+        request_options(_update_payload(requested_by="nobody"), config=limits)
+    # Specific Changes: the person's description; each organization's own sector.
+    words = "Battery storage pilots, partnerships and funding announced since 2025. " * 6
+    specific = request_options(_update_payload(scope="topic", focus=words), config=limits)
+    assert specific["options"]["scope"] == "topic" and specific["options"]["topic"] is None
+    assert len(specific["options"]["focus"]) > 200
+    with pytest.raises(ActorUpdateError, match="Describe"):
+        request_options(_update_payload(scope="topic"), config=limits)
+
+
+def test_an_update_run_with_findings_emails_whoever_asked():
+    from agents.collection.subscription_runner import RequestOutcome, RunnerReport, _notify_after
+
+    report = RunnerReport(live=True, today=date.today())
+    found = RequestOutcome("u", "Water organizations", [], status="succeeded", kind="actor_update",
+                           entity="update", counts={"found": 3, "review": 1},
+                           notify_to="analyst@um6p.ma")
+    quiet = RequestOutcome("q", "Nothing new", [], status="succeeded", kind="actor_update",
+                           entity="update", counts={"found": 0, "review": 0},
+                           notify_to="analyst@um6p.ma")
+    report.outcomes = [found, quiet]
+    _notify_after(report, environ={})
+    assert notify.findings(found) == 4
+    assert found.notified == {"sent": False, "reason": "no mail server configured (GHUS_SMTP_HOST)"}
+    assert quiet.notified is None
+    assert notify.message_for(found, "analyst@um6p.ma", sender="c@x.org",
+                              app_url="https://c.x")["Subject"] == "Compass found 4 updates: Water organizations"

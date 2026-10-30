@@ -228,3 +228,54 @@
 .discovery-saved{color:#2f7d4f;flex-basis:100%}
 .discovery-enddate .field-error{flex-basis:100%}
 @media (max-width:760px){.discovery-row3{grid-template-columns:1fr}.discovery-whoami{grid-template-columns:1fr}}
+
+/* Organizations Update (GHUS, 2026-10-30): one list, one option, one schedule. */
+.org-update-h{margin:0 0 4px;font-size:17px;font-weight:700}
+.org-update-sub{margin:0 0 12px;font-size:14px}
+.org-search{display:flex;gap:12px;align-items:stretch}
+.org-search-box{position:relative;flex:1;display:flex;align-items:center;gap:10px;border:1px solid var(--line-strong);border-radius:8px;padding:0 12px;background:var(--surface);min-height:42px;color:var(--muted)}
+.org-search-box:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.org-search-box input{flex:1;border:0;outline:none;background:transparent;font:inherit;color:var(--ink);min-height:40px}
+.org-search .org-add{min-height:42px;min-width:120px;border-radius:8px}
+.org-suggest{position:absolute;z-index:20;left:-1px;right:-1px;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;box-shadow:var(--shadow-sm);max-height:300px;overflow:auto}
+.org-suggest button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;text-align:left;border:0;background:transparent;padding:8px 10px;border-radius:6px;font:inherit;color:var(--ink);cursor:pointer}
+.org-suggest button span{font-size:12.5px;color:var(--muted)}
+.org-suggest button.active{background:var(--accent-soft)}
+.org-none{margin:8px 0 0;font-size:13.5px}
+.org-table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0 0;border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:14.5px}
+.org-table th{background:color-mix(in srgb,var(--line) 45%,var(--surface));text-align:left;font-size:12.5px;font-weight:600;color:var(--muted);padding:9px 12px}
+.org-table td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:middle}
+.org-table tr.off td{color:var(--faint)}
+.org-table .org-check{width:44px;text-align:center}
+.org-table input[type=checkbox],.org-areas input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+.org-name{font-weight:500;color:var(--ink)}
+.org-table tr.off .org-name{color:var(--faint)}
+.org-status{display:inline-block;margin-left:10px;font-size:12px;font-weight:600;border-radius:6px;padding:2px 8px;vertical-align:1px}
+.org-status.verified{background:#e7f6ec;color:#1e7a3c}
+.org-status.parked,.org-status.imported{background:color-mix(in srgb,var(--line) 70%,var(--surface));color:var(--muted)}
+.org-count{margin:10px 0 22px;font-size:14px;color:var(--muted)}
+.org-count.error{color:#b42318}
+.org-kinds{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0 0}
+.org-kinds button{min-height:42px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:inherit;font-weight:600;font-size:15.5px;cursor:pointer}
+.org-kinds button:hover{border-color:var(--accent)}
+.org-kinds button.active{background:linear-gradient(180deg,var(--accent-2),var(--accent));border-color:var(--accent);color:#fff}
+.org-hint{margin:8px 0 0;font-size:14px}
+.org-label{margin:14px 0 8px;font-weight:600;font-size:14.5px;color:var(--muted)}
+.org-areas{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
+.org-areas label{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--ink);cursor:pointer}
+.org-specific{display:block;width:100%;margin:12px 0 0;border:1px solid var(--line-strong);border-radius:8px;padding:12px 14px;font:inherit;font-size:14.5px;color:var(--ink);background:var(--surface);resize:vertical;box-sizing:border-box}
+.org-specific:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.org-specific.invalid{border-color:#b42318}
+.org-update .discovery-row3{margin-top:18px}
+.org-footer{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:8px;padding:12px 14px;border-radius:8px;background:color-mix(in srgb,var(--line) 35%,var(--surface))}
+.org-notes p{display:flex;align-items:center;gap:10px;margin:4px 0;font-size:13.5px;color:var(--muted)}
+.org-notes svg{flex:none;color:var(--muted)}
+.org-footer .org-create{min-height:46px;min-width:170px;border-radius:8px;font-size:15.5px}
+@media (max-width:720px){
+  .org-search{flex-direction:column}
+  .org-kinds,.org-areas{grid-template-columns:1fr}
+  .org-footer{flex-direction:column;align-items:stretch}
+  .org-table th:nth-child(3),.org-table td:nth-child(3){display:none}
+}
+/* The mockups' field labels: title case, not the small capitals of the other forms. */
+.org-update .discovery-label{text-transform:none;letter-spacing:0;font-size:14.5px;font-weight:600;color:var(--ink)}

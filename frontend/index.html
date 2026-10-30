@@ -314,7 +314,8 @@
   .date-input{position:relative;display:flex;align-items:center;gap:6px;width:100%;min-width:0}
   .date-input>input[type="text"]{flex:1;min-width:0}
   .date-input.invalid>input[type="text"]{border-color:#b42318;outline-color:#b42318}
-  .date-input-pick{flex:none;align-self:stretch;min-width:40px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);border-radius:8px;padding:0 9px;cursor:pointer;font-size:15px;line-height:1}
+  .date-input-pick{flex:none;align-self:stretch;min-width:40px;border:1px solid var(--line-strong);background:var(--surface);color:var(--muted);border-radius:8px;padding:0 9px;cursor:pointer;font-size:15px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+  .date-input-pick:hover:not(:disabled){color:var(--accent-ink);border-color:var(--accent)}
   .date-input-pick:hover{background:var(--surface-2)}
   .date-input-pick:disabled{opacity:.5;cursor:default}
   .date-input>.date-input-native{position:absolute;right:0;bottom:0;width:1px;height:1px;min-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none}
@@ -561,10 +562,10 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261029b"/>
-<link rel="stylesheet" href="/discovery.css?v=20261029b"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261029b"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261029b"/>
+<link rel="stylesheet" href="/review.css?v=20261030a"/>
+<link rel="stylesheet" href="/discovery.css?v=20261030a"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261030a"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261030a"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -581,15 +582,15 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261029b";
-import {createDiscoveryPage} from "./discovery.js?v=20261029b";
-import {createDateInput, usDate} from "./dates.js?v=20261029b";
-import {createDataFeedPage} from "./datafeed.js?v=20261029b";
-import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261029b";
+import {createReviewPage} from "./review.js?v=20261030a";
+import {createDiscoveryPage} from "./discovery.js?v=20261030a";
+import {createDateInput, usDate} from "./dates.js?v=20261030a";
+import {createDataFeedPage} from "./datafeed.js?v=20261030a";
+import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261030a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
-const Discovery=createDiscoveryPage({html,useState,useEffect});
+const Discovery=createDiscoveryPage({html,useState,useEffect,useRef});
 const DataFeed=createDataFeedPage({html,useState,useEffect});
 // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
 const DateInput=createDateInput({html,useState,useEffect});

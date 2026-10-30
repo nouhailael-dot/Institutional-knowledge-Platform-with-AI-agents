@@ -515,7 +515,7 @@ test('events and people have their own request forms; organizations keep theirs'
   // One submission button everywhere: Create Request, which runs at once when it starts today.
   const page = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
   assert.doesNotMatch(page, /Save request/);
-  assert.equal((page.match(/"Create Request"/g) || []).length, 3);
+  assert.equal((page.match(/"Create Request"/g) || []).length, 4);
   assert.match(page, /const started = payload\.start_date === today;/);
   for (const placeholder of ['Select frequency\u2026', 'Select a date\u2026', 'Select duration\u2026']) {
     assert.ok(page.includes(placeholder), placeholder);
@@ -557,4 +557,67 @@ test('an update says when it proposed a Category Type, and never sets one', asyn
     /point to Professional Network — proposed to Review Results when written, never set directly/);
   assert.match(typeProposalLine({category_type: 'not_applicable', type_label: 'Not Applicable'}),
     /point to Not Applicable/);
+});
+
+test('Organizations Update: one list, checked by default, never twice, with a header checkbox', async () => {
+  const {addOrganization, selectionState, selectionLine, lastCheckedLabel, directoryStatus} =
+    await import('../frontend/discovery.js');
+  const bio = {actor_id: 'a', name: 'BioSTL', status: 'verified', last_checked: '2026-10-28'};
+  const ceg = {actor_id: 'b', name: 'Clean Energy Group', status: 'parked', last_checked: null};
+  let list = addOrganization(addOrganization([], bio), ceg);
+  assert.equal(addOrganization(list, bio), list);                // no duplicate
+  assert.deepEqual(list.map((r) => r.checked), [true, true]);
+  assert.equal(selectionState(list), 'all');
+  assert.equal(selectionLine(list), '2 organizations selected.');
+  list = list.map((r) => (r.actor.actor_id === 'b' ? {...r, checked: false} : r));
+  assert.equal(selectionState(list), 'some');                   // partially selected
+  assert.equal(selectionLine(list), '1 organization selected.');
+  assert.equal(lastCheckedLabel('2026-10-28'), '28 October 2026');
+  assert.equal(lastCheckedLabel(null), 'Not recorded');
+  assert.deepEqual([directoryStatus(bio), directoryStatus(ceg)], ['Verified', 'Parked']);
+});
+
+test('Organizations Update sends only the checked organizations, one option and one schedule', async () => {
+  const {orgUpdatePayload, orgUpdateProblems, frequencyOptions, SPECIFIC_PLACEHOLDER} =
+    await import('../frontend/discovery.js');
+  const list = [{actor: {actor_id: 'a'}, checked: true}, {actor: {actor_id: 'b'}, checked: false}];
+  const form = {cadence: 'monthly', startDate: '2026-11-02', duration: '3m'};
+  assert.deepEqual(frequencyOptions('update'), ['once', 'weekly', 'monthly']);
+  assert.deepEqual(orgUpdatePayload({list, kind: 'general', interests: ['funding'], form, requester: 'me@um6p.ma'}), {
+    actor_ids: ['a'], max_actors_per_run: 1, depth: 'light', cadence: 'monthly',
+    start_date: '2026-11-02', end_date: '2027-02-02', scope: 'general',
+    categories: ['funding', 'partnerships'], requested_by: 'me@um6p.ma'});
+  const specific = orgUpdatePayload({list, kind: 'specific', focus: ' Battery storage pilots since 2025. ',
+    form: {cadence: 'once', startDate: '2026-11-02', duration: ''}});
+  assert.equal(specific.scope, 'topic');
+  assert.equal(specific.focus, 'Battery storage pilots since 2025.');
+  assert.equal(specific.end_date, '2026-11-02');
+  // Create Request waits for a checked organization, the description and the schedule.
+  const blank = {cadence: '', startDate: '', duration: ''};
+  assert.deepEqual(Object.keys(orgUpdateProblems({list: [], kind: 'specific', focus: '', form: blank})),
+    ['organizations', 'focus', 'frequency', 'start']);
+  assert.deepEqual(orgUpdateProblems({list, kind: 'general', focus: '', form}, '2026-10-30'), {});
+  assert.ok(orgUpdateProblems({list, kind: 'general', form: {...form, duration: ''}}).duration);
+  assert.match(SPECIFIC_PLACEHOLDER, /capabilities in another sector/);
+});
+
+test('requests stay with whoever made them; older ones without a requester stay shared', async () => {
+  const {visibleRequests} = await import('../frontend/discovery.js');
+  const rows = [{id: 1, requested_by: 'me@um6p.ma'}, {id: 2, requested_by: 'other@um6p.ma'},
+    {id: 3, requested_by: null}, {id: 4, requested_by: 'actor_updates_page'}];
+  assert.deepEqual(visibleRequests(rows, 'ME@um6p.ma').map((r) => r.id), [1, 3, 4]);
+  assert.deepEqual(visibleRequests(rows, '').map((r) => r.id), [3, 4]);
+});
+
+test('the Monitor page leads with New Request, Organizations Update, Requests and keeps no run list', async () => {
+  const page = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  const order = ['setView("new")}>New Request<', 'setView("actors")}>Organizations Update<',
+    'setView("requests")}>Requests ('].map((s) => page.indexOf(s));
+  assert.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]);
+  const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  for (const gone of ['One actor', 'Several actors', 'Save schedule', 'Update runs', 'Every state']) {
+    assert.ok(!code.includes(gone), gone);
+  }
+  assert.ok(page.includes('Existing directory information remains unchanged until you verify the proposed updates.'));
+  assert.ok(page.includes('You’ll receive an email notification when your results are ready in Review Results.'));
 });

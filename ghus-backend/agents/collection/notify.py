@@ -25,7 +25,7 @@ from email.message import EmailMessage
 
 EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 NOUNS = {"actor": ("organization", "organizations"), "event": ("event", "events"),
-         "person": ("person", "people")}
+         "person": ("person", "people"), "update": ("update", "updates")}
 
 
 def is_email(value: object) -> bool:
@@ -34,6 +34,9 @@ def is_email(value: object) -> bool:
 
 def findings(outcome) -> int:
     counts = dict(getattr(outcome, "counts", None) or {})
+    if getattr(outcome, "entity", None) == "update":
+        # An organization update: values found or changed, and changes to review.
+        return int(counts.get("found") or 0) + int(counts.get("review") or 0)
     return int(counts.get("staged") or 0) + int(counts.get("review") or 0)
 
 
