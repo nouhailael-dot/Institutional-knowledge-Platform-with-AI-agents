@@ -26,7 +26,13 @@
 - Isolated test database: local PostgreSQL `ghus_v2_test` (and other
   `ghus_v2_*_test` databases) at `127.0.0.1:55432`; its data directory stays
   outside all repositories.
-- Shared Supabase database: read-only. Never execute DDL or writes there.
+- Shared Supabase database: the team's one database since 2026-10-29 (decision
+  of the platform owner, Ismail Sabbar). Data is written there only through the
+  approved backend writers and the platform's own flows, never by hand. A
+  schema change is a numbered migration the platform owner approves, applied
+  only after a fresh backup (`C:\Users\Ismail\GHUS-data\backups`) and recorded
+  in `architecture_v2_migration_ledger`. The local `ghus_v2_demo_test` database
+  is retired; local `ghus_v2_*_test` databases remain for tests only.
 
 At the start of every session, print the working directory and branch. Stop if
 the directory is one of the retired folders.
@@ -53,8 +59,10 @@ feature branches.
    `agents/discovery/promote.py` and `agents/enrichment/decisions.py`. Frontend
    code must not become a third canonical writer; mutation endpoints must
    delegate to the approved backend workflow.
-2. Canonical schema changes are proposals for the schema owner. Never apply
-   DDL or writes to shared Supabase.
+2. Canonical schema changes are numbered migrations approved by the platform
+   owner, applied to shared Supabase only after a fresh backup and recorded in
+   `architecture_v2_migration_ledger`. Data reaches it only through the
+   approved writers (rule 1).
 3. Every new job and script defaults to dry-run. Live execution requires an
    explicit manual dispatch.
 4. Person discovery is enabled: supervisor sign-off was confirmed by the

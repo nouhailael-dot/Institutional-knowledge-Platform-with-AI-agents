@@ -25,7 +25,11 @@ read-only consumer that owns only three tables: `search_doc`, `query_log`,
   read-only reference material. Never edit, commit, or run migrations there.
 - Isolated test database: local PostgreSQL `ghus_v2_test` at
   `127.0.0.1:55432`. Its data directory must remain outside every repository.
-- Shared Supabase database: read-only. Never execute DDL or any write there.
+- Shared Supabase database: the team's one database since 2026-10-29 (decision
+  of the platform owner, Ismail Sabbar). Data is written there only through the
+  approved writers and the platform's own flows, never by hand; a migration
+  only with the platform owner's approval, after a fresh backup, recorded in
+  `architecture_v2_migration_ledger`.
 
 At the start of every session, print the working directory and branch, and
 stop if the directory is not `GHUS-Shared` (or a worktree of it).
@@ -77,9 +81,11 @@ project. Treat them as compile errors, not preferences.
    requires explicit approval and must be raised as a question, not written.
 9. **No secrets in code or committed files.** Read from environment. Never print
    a connection string or API key, even partially, in logs or error messages.
-10. **The shared Supabase database is read-only.** Never run migrations, DDL,
-    or writes there. Read-only access is allowed only when a task explicitly
-    requires it. Canonical DDL remains a proposal for the schema owner.
+10. **The shared Supabase database is the team's database (2026-10-29).** Data
+    is written there only through the approved writers (`promote.py`,
+    `decisions.py`, the admission and staging commands). A migration runs
+    there only with the platform owner's approval, after a fresh backup, and
+    is recorded in `architecture_v2_migration_ledger`.
 11. **Person discovery is enabled, under section 6.** Supervisor sign-off was
     confirmed by the platform owner on 2026-10-15 and recorded in
     `TARGETING_POLICY.md` section 6; `people_enabled` is on. Section 6's limits
