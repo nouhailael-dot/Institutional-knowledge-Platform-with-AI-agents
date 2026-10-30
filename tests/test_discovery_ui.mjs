@@ -615,7 +615,7 @@ test('the Monitor page leads with New Request, Organizations Update, Requests an
     'setView("requests")}>Requests ('].map((s) => page.indexOf(s));
   assert.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]);
   const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  for (const gone of ['One actor', 'Several actors', 'Save schedule', 'Update runs', 'Every state']) {
+  for (const gone of ['One actor', 'Several actors', 'Save schedule', 'Update runs']) {
     assert.ok(!code.includes(gone), gone);
   }
   assert.ok(page.includes('Existing directory information remains unchanged until you verify the proposed updates.'));
