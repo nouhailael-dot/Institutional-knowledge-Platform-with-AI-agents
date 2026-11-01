@@ -207,9 +207,9 @@ class RowChecker:
         if description and sentence_count(description) > 3:
             errors.append("Description must be 1-3 sentences (a full stop followed by a "
                           "space starts a new one).")
-        category_field = self.header_fields[contract.header_key("Actor Category")]
+        category_field = self.header_fields[contract.header_key("Organization Category")]
         category = self._enum(category_field, cells.get("actor_category", ""), errors,
-                              "Actor Category")
+                              "Organization Category")
         type_raw = cells.get("category_type", "")
         type_code = None
         if category:
@@ -220,7 +220,7 @@ class RowChecker:
                 owners = [c for c in self.vocab["actor_categories"]
                           if lookup(self.vocab["category_types"][c["code"]], type_raw)]
                 if owners:
-                    errors.append(f"Actor Category is {category['label']}, but Category Type "
+                    errors.append(f"Organization Category is {category['label']}, but Category Type "
                                   f"'{type_raw}' belongs to {owners[0]['label']}.")
                 else:
                     errors.append(f"Category Type '{type_raw}' is not a type in the GHUS list.")

@@ -20,9 +20,12 @@ from dataclasses import dataclass
 
 TEMPLATE_VERSION = "2026-10-26.3"
 RECORD_TYPES = ("actor", "person", "event")
-TYPE_LABELS = {"actor": "Actors / Organizations", "person": "People", "event": "Events"}
-SHEET_NAMES = {"actor": "Actors", "person": "People", "event": "Events"}
-FILE_STEMS = {"actor": "GHUS_Actors_Template", "person": "GHUS_People_Template",
+TYPE_LABELS = {"actor": "Organizations / Organizations", "person": "People", "event": "Events"}
+# Templates made before 2026-11-01 keep their old sheet, column and label names.
+LEGACY_SHEET_NAMES = {"actor": "Actors"}
+LEGACY_HEADERS = {"actor category": "organization category"}
+SHEET_NAMES = {"actor": "Organizations", "person": "People", "event": "Events"}
+FILE_STEMS = {"actor": "GHUS_Organizations_Template", "person": "GHUS_People_Template",
               "event": "GHUS_Events_Template"}
 REQUIRED_MARK = " *"
 LIST_SEPARATOR = ";"
@@ -62,9 +65,9 @@ ACTOR_FIELDS: tuple[Field, ...] = (
           max_length=1000, target="actor.alt_names"),
     Field("website", "Website", "url", "Its official website (https://...).",
           "https://prairiewaterlab.org", max_length=500, target="actor.website"),
-    Field("actor_category", "Actor Category", "enum",
+    Field("actor_category", "Organization Category", "enum",
           "What the organization IS (one of the 12 GHUS categories) - never its sector.",
-          "Company / Corporate Actor", required=True, vocab="actor_categories",
+          "Company / Corporate Organization", required=True, vocab="actor_categories",
           target="actor.actor_category"),
     Field("category_type", "Category Type", "enum",
           "Which kind of that category. Leave empty when unknown: it stays Pending "
@@ -321,8 +324,8 @@ def fields(record_type: str) -> tuple[Field, ...]:
 
 def header_key(header: object) -> str:
     """A header as the parser compares it: no required mark, case or spacing."""
-    text_ = " ".join(str(header or "").replace("*", " ").split())
-    return text_.casefold()
+    text_ = " ".join(str(header or "").replace("*", " ").split()).casefold()
+    return LEGACY_HEADERS.get(text_, text_)
 
 
 def by_header(record_type: str) -> dict[str, Field]:

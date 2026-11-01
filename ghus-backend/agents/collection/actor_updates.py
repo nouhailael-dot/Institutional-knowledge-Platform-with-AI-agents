@@ -160,7 +160,7 @@ RESOLUTION = {
     "conflict": "The current value is kept; the difference goes to Review.",
     "protected": "Set by GHUS, so never overwritten; a pending update goes to Review.",
     "unchanged": "Nothing is written; the recorded value is kept.",
-    "not_found": "Recorded as not found on the actor's pages.",
+    "not_found": "Recorded as not found on the organization's pages.",
     "not_yet_collected": "Not read in this update.",
 }
 WRITTEN = frozenset({"new", "changed", "additional", "corroborated", "conflict", "protected",
@@ -308,9 +308,9 @@ def deep_eligibility(session, *, actor_id: str, topic: dict | None) -> dict:
         return {"permitted": False, "reason": "No sector is chosen, and Deep Pull is "
                                               "permitted per sector."}
     if actor_is_verified_for_topic(session, actor_id=actor_id, topic_id=topic["topic_id"]):
-        return {"permitted": True, "reason": f"GHUS verified this actor for {topic['name']}."}
+        return {"permitted": True, "reason": f"GHUS verified this organization for {topic['name']}."}
     return {"permitted": False,
-            "reason": f"GHUS has not verified this actor for {topic['name']}. Deep Pull "
+            "reason": f"GHUS has not verified this organization for {topic['name']}. Deep Pull "
                       "needs that decision for this exact sector; verify it in Review "
                       "first. A Light Refresh is permitted now."}
 
@@ -366,10 +366,10 @@ def plan_fields(scope: str, schema: list[str], current: dict[str, dict], *, fiel
         asked = [f for f in schema if f in wanted]
         if not asked:
             raise ActorUpdateError("None of the chosen types of information applies to "
-                                   "this actor's category.")
+                                   "this organization's category.")
     for key in asked:
         if key not in schema:
-            skipped.append({"field": key, "reason": "Not in this actor's category schema, "
+            skipped.append({"field": key, "reason": "Not in this organization's category schema, "
                                                     "so it is never filled."})
     for key in schema:
         fact = current.get(key)
@@ -443,7 +443,7 @@ def cost_estimate(session, limits: dict, *, runs_dir: Path = RUNS_DIR) -> dict:
     return {"cap_usd": cap, "runs": len(spent), "low_usd": round(min(spent), 4),
             "typical_usd": round(statistics.median(spent), 4),
             "high_usd": round(max(spent), 4),
-            "basis": f"From the last {len(spent)} actor update read(s); capped at ${cap:.2f}."}
+            "basis": f"From the last {len(spent)} organization update read(s); capped at ${cap:.2f}."}
 
 
 def last_update(session, actor_id: str) -> dict | None:
@@ -525,7 +525,7 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
     today = today or datetime.now(UTC)
     actor = load_actor(session, actor_id)
     if actor is None:
-        return {"ok": False, "error": "No actor with that id."}
+        return {"ok": False, "error": "No organization with that id."}
     summary_actor = {k: actor.get(k) for k in ("actor_id", "name", "website", "actor_category",
                                                 "category_type", "city", "state", "country",
                                                 "status")}
@@ -549,11 +549,11 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
                          "it is never updated by an agent."}
     if not str(actor.get("website") or "").strip():
         return {**base, "ok": False,
-                "error": "This actor has no website on record, so there are no pages "
+                "error": "This organization has no website on record, so there are no pages "
                          "of its own to read. Add the website in Review first."}
     if topic is None:
         return {**base, "ok": False, "needs_topic": True,
-                "error": "This actor is not linked to a sector yet, and facts are kept "
+                "error": "This organization is not linked to a sector yet, and facts are kept "
                          "per sector. Choose the sector to update it for."}
     schema = schema_fields(actor["actor_category"])
     from agents.collection.light_pull import CATEGORY_LIGHT_FIELDS
@@ -1113,7 +1113,7 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
         if not actor_is_verified_for_topic(session, actor_id=record["actor_id"],
                                            topic_id=record["topic_id"]):
             return {"ok": False, "check_id": check_id, "error": (
-                "GHUS no longer has this actor verified for this sector, so the Deep Pull "
+                "GHUS no longer has this organization verified for this sector, so the Deep Pull "
                 "is not written. Nothing was changed.")}
     done = set(record.get("written_fields") or ())
     pending = [f for f in record["findings"] if f["outcome"] in WRITTEN
@@ -1274,15 +1274,15 @@ def request_options(payload: dict, *, config: dict | None = None,
         try:
             actor_ids.append(str(uuid.UUID(str(value))))
         except ValueError as exc:
-            raise ActorUpdateError("An actor id is not valid.") from exc
+            raise ActorUpdateError("An organization id is not valid.") from exc
     actor_ids = list(dict.fromkeys(actor_ids))
     most = int(limits["max_actors_per_request"])
     if len(actor_ids) > most:
-        raise ActorUpdateError(f"Choose at most {most} actors for one request.")
+        raise ActorUpdateError(f"Choose at most {most} organizations for one request.")
     sector = str(group.get("sector") or "").strip().upper() or None
     topic = str(payload.get("topic") or "").strip().upper() or sector
     if not actor_ids and not sector:
-        raise ActorUpdateError("Choose the actors, or a group with a sector: an update "
+        raise ActorUpdateError("Choose the organizations, or a group with a sector: an update "
                                "request never sweeps the whole map.")
     scope = str(payload.get("scope") or "general")
     if scope not in SCOPES:
@@ -1301,7 +1301,7 @@ def request_options(payload: dict, *, config: dict | None = None,
     depth = str(payload.get("depth") or "light")
     if depth != "light":
         raise ActorUpdateError("Saved and group requests use the Light refresh. Deep "
-                               "enrichment is asked for one actor at a time, and only when "
+                               "enrichment is asked for one organization at a time, and only when "
                                "GHUS verified it for that sector.")
     categories = [str(c) for c in payload.get("categories") or []]
     if any(c not in CATEGORY_CHOICES for c in categories):
@@ -1330,7 +1330,7 @@ def request_options(payload: dict, *, config: dict | None = None,
             raise ActorUpdateError(f"A request may run for at most {_max_duration_days()} days.")
     per_run = int(payload.get("max_actors_per_run") or min(len(actor_ids) or most, most))
     if not 1 <= per_run <= most:
-        raise ActorUpdateError(f"Actors per run must be 1 to {most}.")
+        raise ActorUpdateError(f"Organizations per run must be 1 to {most}.")
     ceiling = float(payload.get("max_usd_per_run") or limits["max_usd_per_request_run"])
     if not 0 < ceiling <= float(limits["max_usd_per_request_run"]):
         raise ActorUpdateError(
@@ -1467,9 +1467,9 @@ def choose_actors(session, prepared: dict, *, config: dict | None = None,
     for actor in ready[cap:]:
         waiting.append({"actor_id": actor["actor_id"], "name": actor["name"],
                         "reason": (f"Its website refuses automated access; it waits behind readable "
-                                   f"actors until {actor['blocked_until']}."
+                                   f"organizations until {actor['blocked_until']}."
                                    if "blocked_until" in actor else
-                                   f"Over this run's cap of {cap} actors; it comes first next run "
+                                   f"Over this run's cap of {cap} organizations; it comes first next run "
                                    "if it still has the most gaps.")})
     return {"matched": matched, "chosen": ready[:cap], "waiting": waiting}
 
@@ -1488,7 +1488,7 @@ def _request_title(prepared: dict, chosen: list[dict], sector_name: str | None =
         return prepared["title"]
     scope = SCOPE_NAMES[prepared["options"]["scope"]]
     if prepared["actor_ids"]:
-        names = [a["name"] for a in chosen] or ["chosen actors"]
+        names = [a["name"] for a in chosen] or ["chosen organizations"]
         who = names[0] if len(prepared["actor_ids"]) == 1 else f"{len(prepared['actor_ids'])} actors"
     else:
         category = (prepared["options"]["category"] or "").replace("_", " ") or None
@@ -1522,12 +1522,12 @@ def plan_request(session, payload: dict, *, config: dict | None = None,
     frequency = {"once": "once", "weekly": "every week", "biweekly": "every two weeks",
                  "monthly": "every month", "quarterly": "every three months"}[prepared["cadence"]]
     summary = (
-        f"“{title}”: re-read up to {prepared['options']['max_actors_per_run']} actor(s) "
+        f"“{title}”: re-read up to {prepared['options']['max_actors_per_run']} organization(s) "
         f"{frequency}"
         + (f" from {prepared['start_date']} to {prepared['end_date']} ({runs} runs)"
            if prepared["cadence"] != "once" else f" on {prepared['start_date']}")
         + f", each with a Light refresh (up to 3 page requests including fallback sources). "
-        f"{choice['matched']} actor(s) match; {n} would be read on the first run, those "
+        f"{choice['matched']} organization(s) match; {n} would be read on the first run, those "
         f"with the most missing or out-of-date boxes first. Each run stops at "
         f"${ceiling:.2f}. New and changed values are written with their source; "
         f"conflicts and changes to GHUS values go to Review."
@@ -1544,7 +1544,7 @@ def plan_request(session, payload: dict, *, config: dict | None = None,
         "can_save": store.has_update_requests(session),
         "needs_migration": None if store.has_update_requests(session) else (
             "Saving update requests needs migration 570 on this database. A one-time "
-            "update of one actor works without it."),
+            "update of one organization works without it."),
     }
 
 
@@ -1608,7 +1608,7 @@ def run_request(session, subscription, *, ledger: tuple[str, str], config: dict 
         left = round(ceiling - spent, 4)
         if left < 0.01:
             stopped = (f"Stopped at the ${ceiling:.2f} spend ceiling; "
-                       f"{len(choice['chosen']) - index} actor(s) not reached this run.")
+                       f"{len(choice['chosen']) - index} organization(s) not reached this run.")
             break
         cap = min(float(limits["max_usd_per_actor"]), left)
         entry = {"actor_id": actor["actor_id"], "name": actor["name"], "topic": actor["topic"],

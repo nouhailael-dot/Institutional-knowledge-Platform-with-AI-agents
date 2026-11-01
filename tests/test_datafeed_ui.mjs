@@ -31,7 +31,7 @@ import {
 import {lightFactRows, lightPullBoxes} from '../frontend/review.js';
 
 const VOCAB = {
-  actor_categories: [{code: 'company', label: 'Company / Corporate Actor'},
+  actor_categories: [{code: 'company', label: 'Company / Corporate Organization'},
     {code: 'university_academic', label: 'University / Academic Institution'}],
   category_types: {company: [{code: 'small_mid_size', label: 'SME'}],
     university_academic: [{code: 'university_system', label: 'Main Institution'}]},
@@ -45,7 +45,7 @@ const VOCAB = {
 };
 const FIELDS = [
   {key: 'name', header: 'Official name', required: true, categories: []},
-  {key: 'actor_category', header: 'Actor Category', required: true, categories: []},
+  {key: 'actor_category', header: 'Organization Category', required: true, categories: []},
   {key: 'website', header: 'Website', required: false, categories: []},
   {key: 'ownership_and_size', header: 'Company: ownership and size', required: false,
     categories: ['company']},
@@ -64,7 +64,7 @@ const ACTOR_ROW = {
 };
 
 test('three record types, chosen from a dropdown', () => {
-  assert.deepEqual(RECORD_TYPES.map(t => t.label), ['Actors / Organizations', 'People', 'Events']);
+  assert.deepEqual(RECORD_TYPES.map(t => t.label), ['Organizations', 'People', 'Events']);
   const source = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
   assert.match(source, /<select id="df-record-type"/);
   assert.match(source, /<select id="df-method"/);
@@ -118,13 +118,13 @@ test('the manual form shows a category-specific box only for its categories', ()
 });
 
 test('manual records send only known, filled fields, as text', () => {
-  assert.deepEqual(missingRequired(FIELDS, {name: ' '}), ['Official name', 'Actor Category']);
+  assert.deepEqual(missingRequired(FIELDS, {name: ' '}), ['Official name', 'Organization Category']);
   assert.deepEqual(manualRecords([{name: 'X', website: '', bogus: 'y', sectors: ['Water', 'AGRI']}],
     [...FIELDS, {key: 'sectors'}]), [{name: 'X', sectors: 'Water; AGRI'}]);
 });
 
 test('the preview row uses labels, never codes', () => {
-  assert.equal(rowSubtitle(ACTOR_ROW, 'actor', VOCAB), 'Company / Corporate Actor · SME · Wichita, KS');
+  assert.equal(rowSubtitle(ACTOR_ROW, 'actor', VOCAB), 'Company / Corporate Organization · SME · Wichita, KS');
   const event = {payload: {event_type: 'summit', start_date: '2027-04-02', end_date: '2027-04-03',
     location: 'Wichita, KS'}};
   assert.equal(rowSubtitle(event, 'event', VOCAB), 'Summit · 04/02/2027 - 04/03/2027 · Wichita, KS');

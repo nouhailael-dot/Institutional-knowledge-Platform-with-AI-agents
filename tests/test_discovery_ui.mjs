@@ -342,8 +342,8 @@ test('suggestions highlight what was typed, and the group narrows the search', a
     'q=cpo&sector=ENERGY&everyone=true');
   assert.equal(actorSearchParams('  ', {state: 'WI'}), 'state=WI');
   assert.equal(groupCaption(17, 12, {sector: 'WATER', category: 'research_center'},
-    [{code: 'WATER', name: 'Water'}]), '17 actors · Water · Research centre · showing 12');
-  assert.equal(groupCaption(1, 1, {}), '1 actor');
+    [{code: 'WATER', name: 'Water'}]), '17 organizations · Water · Research centre · showing 12');
+  assert.equal(groupCaption(1, 1, {}), '1 organization');
 });
 
 test('an update request is sent as one actor, the picked actors, or a group with a sector', async () => {
@@ -620,4 +620,13 @@ test('the Monitor page leads with New Request, Organizations Update, Requests an
   }
   assert.ok(page.includes('Existing directory information remains unchanged until you verify the proposed updates.'));
   assert.ok(page.includes('You’ll receive an email notification when your results are ready in Review Results.'));
+});
+
+test('reasons saved with the old word read as organization, and code names stay', async () => {
+  const {orgWords} = await import('../frontend/discovery.js');
+  assert.equal(orgWords('1 actor(s) could not be updated; open-web actor fetch failed'),
+    '1 organization(s) could not be updated; open-web organization fetch failed');
+  assert.equal(orgWords('Actors per run'), 'Organizations per run');
+  assert.equal(orgWords('actor_id stays'), 'actor_id stays');
+  assert.equal(orgWords(null), '');
 });

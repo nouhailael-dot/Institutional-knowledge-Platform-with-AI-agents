@@ -562,10 +562,10 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261030b"/>
-<link rel="stylesheet" href="/discovery.css?v=20261030b"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261030b"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261030b"/>
+<link rel="stylesheet" href="/review.css?v=20261101a"/>
+<link rel="stylesheet" href="/discovery.css?v=20261101a"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261101a"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261101a"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -582,11 +582,11 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261030b";
-import {createDiscoveryPage} from "./discovery.js?v=20261030b";
-import {createDateInput, usDate} from "./dates.js?v=20261030b";
-import {createDataFeedPage} from "./datafeed.js?v=20261030b";
-import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261030b";
+import {createReviewPage} from "./review.js?v=20261101a";
+import {createDiscoveryPage} from "./discovery.js?v=20261101a";
+import {createDateInput, usDate} from "./dates.js?v=20261101a";
+import {createDataFeedPage} from "./datafeed.js?v=20261101a";
+import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261101a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -808,7 +808,7 @@ function Ask({onCarryOver,onExplore}){
         <div class="input-shell">
           ${ICON_SEARCH}
           <textarea class="field" rows="1"
-            placeholder=${empty?"Ask about actors, hubs, or events…":"Ask a follow-up…"}
+            placeholder=${empty?"Ask about organizations, hubs, or events…":"Ask a follow-up…"}
             value=${q} onInput=${e=>setQ(e.target.value)}
             onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask();}}}></textarea>
         </div>
@@ -1270,7 +1270,7 @@ function regionalHub(actor){
   const region=Object.keys(US_REGIONS).find(name=>US_REGIONS[name].includes(state.toUpperCase()));
   if(!region)return {region:null,status:"Needs review",reason:"A single recognized US state or Washington, DC is required. Territories and multiple-state locations need separate review."};
   return {region,state:state.toUpperCase(),city,status:"Assigned by state",
-    reason:"Geographic grouping based on the actor’s recorded state, not a hotspot quality assessment."};
+    reason:"Geographic grouping based on the organization’s recorded state, not a hotspot quality assessment."};
 }
 // Legacy records predate the stored region, so fall back to the local calculation.
 function actorRegion(actor){
@@ -1331,7 +1331,7 @@ function ActorLightProfile({actor}){
     ["sector","Sector"],["mapped_topic","Mapped topic"],["match_strength","Topic match"],
     ["match_explanation","Why it matched"],["international_connections","Africa / Morocco connections"]];
   const ranked=rankingRows(actor);
-  return html`<details class="mpeople university-rankings"><summary>Actor profile</summary>
+  return html`<details class="mpeople university-rankings"><summary>Organization profile</summary>
     ${actor.category_note&&html`<div class="mperson-meta"><b>Category note:</b> ${actor.category_note}</div>`}
     ${fields.map(([key,label])=>html`<div class="mperson-meta" key=${key}><b>${label}:</b> ${actor[key]||"Not found"}</div>`)}
     ${isRankedInstitution(actor)&&html`

@@ -938,7 +938,7 @@ class PostgresReviewSource:
         }.items() if v is not None}
         evidence = []
         for url in dict.fromkeys([*pages, *(f["source_url"] for f in facts if f["source_url"])]):
-            evidence.extend(_source_evidence(url, supports="Page read by the actor update"))
+            evidence.extend(_source_evidence(url, supports="Page read by the organization update"))
         return {
             "source_key": f"postgres:actor_update:{run['run_id']}:{actor_id}",
             "source_run_id": f"actor-update:{run['run_id']}",
@@ -1695,7 +1695,7 @@ class PostgresReviewSource:
                         "distance_miles": round(miles, 2),
                         "suggested": True,
                         "reason": (
-                            f"Sector {hub['sector_code']} matches and the actor is "
+                            f"Sector {hub['sector_code']} matches and the organization is "
                             f"{miles:.1f} miles from the hub centre, inside its "
                             f"{hub['radius_miles']:g}-mile radius."
                         ),

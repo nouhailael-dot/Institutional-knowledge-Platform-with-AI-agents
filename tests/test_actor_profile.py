@@ -53,7 +53,7 @@ class ActorProfileTests(unittest.TestCase):
             self.assertEqual(len(types),len(set(types)),category)
         self.assertEqual(len(CATEGORY_TYPES['University / Academic Institution']),11)
         self.assertIn('Medical School',CATEGORY_TYPES['University / Academic Institution'])
-        self.assertIn('SME',CATEGORY_TYPES['Company / Corporate Actor'])
+        self.assertIn('SME',CATEGORY_TYPES['Company / Corporate Organization'])
         self.assertIn('Diaspora Network',CATEGORY_TYPES['Association / Consortium / Network'])
 
     def test_schema_requires_a_category_type_from_the_lists(self):
@@ -70,7 +70,7 @@ class ActorProfileTests(unittest.TestCase):
         self.assertNotIn('category_note',actor)
 
     def test_a_type_from_another_category_becomes_not_applicable_with_a_note(self):
-        actor={'name':'Example Co','actor_type':'Company / Corporate Actor','category_type':'Medical School'}
+        actor={'name':'Example Co','actor_type':'Company / Corporate Organization','category_type':'Medical School'}
         normalize_actor_profile(actor,{})
         self.assertEqual(actor['category_type'],'Not Applicable')
         self.assertIn('Medical School',actor['category_note'])

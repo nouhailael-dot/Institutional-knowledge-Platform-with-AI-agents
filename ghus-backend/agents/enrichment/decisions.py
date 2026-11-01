@@ -346,7 +346,7 @@ def record_ghus_notes(
     """
     key = GHUS_NOTES_KEYS.get(entity_type)
     if key is None:
-        raise ValueError("GHUS notes exist only for actors and events")
+        raise ValueError("GHUS notes exist only for organizations and events")
     value = str(notes or "").strip()
     if not value:
         return False

@@ -1501,7 +1501,7 @@ def discovery_actor_search(q: str = Query("", max_length=120),
     """
     source = review_postgres_source()
     if source is None:
-        raise HTTPException(status_code=503, detail="Actor search is not available on this instance.")
+        raise HTTPException(status_code=503, detail="Organization search is not available on this instance.")
     try:
         return source.search_actors(q, sector=sector, category=category, state=state,
                                     updatable_only=not everyone, limit=limit)
@@ -1513,7 +1513,7 @@ def _actor_update_call(actor_id: str, step: str, payload: ActorUpdateRequest):
     try:
         UUID(actor_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail="unknown actor") from exc
+        raise HTTPException(status_code=404, detail="unknown organization") from exc
     bridge = discovery_bridge()
     call = bridge.plan_update if step == "plan" else bridge.check_update
     return _discovery_call(lambda: call(actor_id, payload.model_dump()))

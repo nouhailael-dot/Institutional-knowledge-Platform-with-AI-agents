@@ -147,7 +147,9 @@ def load_actors() -> list[dict]:
     # fact store, so it is cast defensively rather than trusted to be a number.
     sql = f"""
         SELECT a.actor_id, a.name,
-               coalesce(cd.display_name, a.actor_category) AS category,
+               -- The word on screen is organization; the reference row keeps its old label.
+               replace(coalesce(cd.display_name, a.actor_category), 'Corporate Actor',
+                       'Corporate Organization') AS category,
                NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
                -- Migration 500 drops verification_status, estimated_trl and
                -- renames location_city -> city, state -> state_code, so each is

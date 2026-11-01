@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, usDate} from "./dates.js?v=20261030b";
+import {createDateInput, usDate} from "./dates.js?v=20261101a";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -14,6 +14,12 @@ export const CADENCE_LABELS = {
   monthly: "Every month",
   quarterly: "Every three months",
 };
+
+/** Reasons saved before the word changed read the same as new ones: "actor" -> "organization". */
+export function orgWords(text) {
+  return String(text ?? "").replace(/\b([Aa])ctor(s?)\b(?![_.])/g,
+    (_, a, s) => `${a === "A" ? "O" : "o"}rganization${s}`);
+}
 
 export function formatUsd(value) {
   const number = Number(value);
@@ -965,7 +971,7 @@ export function groupCaption(total, shown, group = {}, sectors = [], states = []
   const sector = group.sector && ((sectors.find((s) => s.code === group.sector) || {}).name || group.sector);
   const type = group.category && (CATEGORY_LABELS[group.category] || group.category);
   const state = group.state && ((states.find((s) => s.code === group.state) || {}).name || group.state);
-  return [`${total} ${total === 1 ? "actor" : "actors"}`, sector, type, state,
+  return [`${total} ${total === 1 ? "organization" : "organizations"}`, sector, type, state,
     shown < total ? `showing ${shown}` : null].filter(Boolean).join(" · ");
 }
 
@@ -1219,7 +1225,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       headers: {"Content-Type": "application/json"}, ...options,
     });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.detail || `Request failed (${response.status})`);
+    if (!response.ok) throw new Error(orgWords(body.detail) || `Request failed (${response.status})`);
     return body;
   }
 
@@ -1620,7 +1626,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         <div><dt>Sent to Review Results</dt><dd>${sum("review_item_count")}</dd></div>
       </dl>
       <${EndDate} request=${request} today=${today} onSaved=${onChanged}/>
-      ${runs[0] && runs[0].status === "failed" && html`<p class="discovery-message error">Last run failed: ${runs[0].status_reason || "no reason recorded"}</p>`}
+      ${runs[0] && runs[0].status === "failed" && html`<p class="discovery-message error">Last run failed: ${orgWords(runs[0].status_reason) || "no reason recorded"}</p>`}
       ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
         ${runningLine(current)}. Reading each organization's sources; results appear in Review Results when it finishes.</p>`}
       <div class="discovery-actions">
@@ -1640,7 +1646,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           <p><strong>${formatDay(run.started_at)}</strong> · ${RUN_STATUS[run.status] || run.status}
             · ${run.found_count ?? 0} new or updated · ${run.review_item_count ?? 0} to Review Results
             · ${formatUsd(run.spent_usd)}</p>
-          ${run.status_reason && html`<p class="muted">${run.status_reason}</p>`}
+          ${run.status_reason && html`<p class="muted">${orgWords(run.status_reason)}</p>`}
           ${(run.actor_results || []).length > 0 && html`<ul class="skipped">${run.actor_results.map((a) =>
             html`<li key=${a.actor_id} class=${a.ok ? "" : "warn"}>${actorResultLine(a)}</li>`)}</ul>`}
         </div>`)}
@@ -1806,7 +1812,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         <div><dt>Excluded</dt><dd>${excluded.length}</dd></div>`}
       </dl>
       <${EndDate} request=${request} today=${today} onSaved=${onChanged}/>
-      ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${last.status_reason || "no reason recorded"}</p>`}
+      ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${orgWords(last.status_reason) || "no reason recorded"}</p>`}
       ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
         ${runningLine(current)}. Searching, reading pages and scoring; results appear in Review Results when it finishes.</p>`}
       ${status === "stalled" && html`<p class="discovery-message error">The last run stopped responding before it finished. Its spend so far is recorded; you can run the request again.</p>`}
@@ -1832,19 +1838,19 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
               <dl class="discovery-detail">
                 ${(entity === "actor" ? resultFacts(r) : entityResultFacts(r)).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}
               </dl>
-              ${r.score_band === "review" && r.triage_reason && html`<p class="discovery-held"><strong>Why a person should look:</strong> ${r.triage_reason}</p>`}
+              ${r.score_band === "review" && r.triage_reason && html`<p class="discovery-held"><strong>Why a person should look:</strong> ${orgWords(r.triage_reason)}</p>`}
               <a class="discovery-source" href=${r.url} target="_blank" rel="noopener noreferrer">Page read</a>
             </li>`)}</ul>`}
         ${excluded.length > 0 && html`<details class="discovery-excluded">
           <summary>Not added (${excluded.length}): ${exclusionSummary(excluded)}</summary>
           <ul>${excluded.map((x) => html`<li key=${x.url}>
             <strong>${x.name || x.url}</strong> <span class="muted">${EXCLUSION_LABELS[exclusionKind(x)]}</span>
-            <p>${x.triage_reason || "No reason was recorded."}</p>
+            <p>${orgWords(x.triage_reason) || "No reason was recorded."}</p>
           </li>`)}</ul>
         </details>`}
         <h4>Runs</h4>
         ${runs.length === 0 ? html`<p class="muted">Not run yet.</p>` : html`<table class="discovery-runs">
-          <thead><tr><th>Date</th><th>Result</th><th>Time</th><th>Pages found</th><th>Added</th><th>To Review</th><th>Spent</th><th>Per Relevant Actor</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Result</th><th>Time</th><th>Pages found</th><th>Added</th><th>To Review</th><th>Spent</th><th>Per Relevant Organization</th><th></th></tr></thead>
           <tbody>${runs.map((run) => html`<tr key=${run.collection_run_id}>
             <td>${formatDay(run.started_at)}</td>
             <td>${run.status === "running" && run.stalled ? "Stopped responding"

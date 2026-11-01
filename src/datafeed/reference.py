@@ -95,6 +95,8 @@ def lookup(items: list[dict[str, str]], raw: Any) -> dict[str, str] | None:
     wanted = " ".join(str(raw or "").split()).casefold()
     if not wanted:
         return None
+    # The label before 2026-11-01, in files and map results made earlier.
+    wanted = wanted.replace("corporate actor", "corporate organization")
     for item in items:
         if wanted in (item["code"].casefold(), item["label"].casefold()):
             return item

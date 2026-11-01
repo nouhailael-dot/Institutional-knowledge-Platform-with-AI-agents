@@ -57,7 +57,7 @@ export const CATEGORIES = [
     ["academic_medical_center", "University-Affiliated", "Operated by, or formally tied to, a university medical school; the medical school itself is a separate Category 1 record"],
     ["not_applicable", "Not Applicable", "Nothing listed fits yet"],
   ]],
-  ["company", "Company / Corporate Actor", [
+  ["company", "Company / Corporate Organization", [
     ["public_company", "Public Company", "Publicly traded"],
     ["private_company", "Private Company", "Privately held, not SME-scale"],
     ["small_mid_size", "SME", "Small or medium enterprise, privately held"],
@@ -103,7 +103,7 @@ export const CATEGORIES = [
     ["trade_association", "Trade Association", "Represents a commercial industry's shared interests"],
     ["research_consortium", "Research Consortium", "Multi-member group organized around shared research; each member links in as Member of, never as parent or child"],
     ["innovation_consortium", "Innovation Consortium", "Multi-member group organized around innovation or commercialization themes rather than research"],
-    ["multi_location_network", "Statewide / Multi-Location Network", "One parent record, with each individual physical location mapped as its own linked child actor"],
+    ["multi_location_network", "Statewide / Multi-Location Network", "One parent record, with each individual physical location mapped as its own linked child organization"],
     ["professional_network", "Professional Network", "Organized around a shared profession or role, not research or innovation"],
     ["diaspora_network", "Diaspora Network", "Organized around shared national or regional origin"],
     ["not_applicable", "Not Applicable", "Nothing listed fits yet"],
@@ -221,10 +221,10 @@ export const LINK_TYPES = [
   ["member_of", "Member of", false, "An independent organization to an Association / Consortium / Network it belongs to. Not parenthood."],
   ["portfolio_of", "Portfolio of", false, "A startup in an accelerator, incubator or venture studio program. Not ownership."],
   ["spinout_of", "Spinout of", false, "A startup founded on IP that originated at a university or company."],
-  ["funded_by", "Funded by", false, "A grant, investment or award from a funder to the actor."],
+  ["funded_by", "Funded by", false, "A grant, investment or award from a funder to the organization."],
   ["collaborates_with", "Collaborates with", false, "A documented partnership that is not parenthood, membership or funding."],
-  ["organizes", "Organizes", false, "An actor to an event it runs."],
-  ["participates_in", "Participates in", false, "An actor to an event it takes part in without organizing."],
+  ["organizes", "Organizes", false, "An organization to an event it runs."],
+  ["participates_in", "Participates in", false, "An organization to an event it takes part in without organizing."],
   // The stored code is `connected_to_um6p_ocp`: that is what the entity_edge
   // CHECK constraint allows, so it is what arrives from the database. The Guide
   // writes the label with "Entity" on the end, which is what we display.

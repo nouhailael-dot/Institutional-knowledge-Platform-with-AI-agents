@@ -92,7 +92,7 @@ export const FIELDS = {
   sourceRun: "Source Run",
   search: "Search by Name or Domain",
   status: "Status",
-  legacyActorType: "Legacy Actor Type",
+  legacyActorType: "Legacy Organization Type",
   candidateId: "Candidate ID",
   runId: "Run ID",
   created: "Created",
@@ -111,7 +111,7 @@ export const FIELDS = {
 };
 
 export const BADGES = {
-  actor: "Actor",
+  actor: "Organization",
   event: "Event",
   person: "Person",
   imported: "Imported",

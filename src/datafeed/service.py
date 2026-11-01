@@ -181,7 +181,7 @@ class DataFeedService:
                             result["warnings"].append(
                                 f"Row {result['row_number']}: the organization is not on the map "
                                 "as written. A person is added only once their organization is "
-                                "(add it with the Actors feed, or Discovery), so Review will hold "
+                                "(add it with the Organizations feed, or Discovery), so Review will hold "
                                 "this record until then.")
                     result["match"] = getattr(matcher, record_type)(payload)
         except Exception as exc:  # noqa: BLE001 - say so; never guess a match
@@ -438,7 +438,7 @@ class DataFeedService:
     @staticmethod
     def _type(record_type: str) -> None:
         if record_type not in contract.RECORD_TYPES:
-            raise DataFeedError("Choose Actors, People or Events.")
+            raise DataFeedError("Choose Organizations, People or Events.")
 
 
 # Per import: what Review has done with its records. Read only.

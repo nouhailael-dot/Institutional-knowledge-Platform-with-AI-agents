@@ -127,6 +127,9 @@ def _xlsx_rows(data: bytes, record_type: str) -> tuple[list[list[Any]], dict[str
             if len(marker) == 3 and marker[0] == "ghus-datafeed":
                 identity = {"record_type": marker[1], "template_version": marker[2]}
         sheet = contract.SHEET_NAMES[record_type]
+        legacy = contract.LEGACY_SHEET_NAMES.get(record_type)
+        if legacy in wb.sheetnames and sheet not in wb.sheetnames:
+            sheet = legacy
         other = contract.SHEET_NAMES.get(identity.get("record_type", ""), "")
         if sheet in wb.sheetnames:
             ws = wb[sheet]

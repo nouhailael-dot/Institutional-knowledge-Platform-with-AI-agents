@@ -41,7 +41,7 @@ _STRIP = (" ", "/", "(", ")", "&", "-")
 EXAMPLES: dict[str, list[dict[str, str]]] = {
     "actor": [
         {"name": "Prairie Water Lab", "alternate_names": "PWL",
-         "website": "https://prairiewaterlab.example", "actor_category": "Company / Corporate Actor",
+         "website": "https://prairiewaterlab.example", "actor_category": "Company / Corporate Organization",
          "category_type": "SME",
          "description": "A company that builds low-cost water-quality sensors for farms.",
          "primary_sector": "Water", "city": "Wichita", "state_code": "Kansas",
@@ -100,7 +100,7 @@ def _labels(vocab: dict[str, Any], name: str) -> list[str]:
 
 def _allowed(field: Field, vocab: dict[str, Any]) -> str:
     if field.vocab == "category_types":
-        return "Depends on the Actor Category (see the dropdown)"
+        return "Depends on the Organization Category (see the dropdown)"
     if not field.vocab:
         return ""
     labels = _labels(vocab, field.vocab)

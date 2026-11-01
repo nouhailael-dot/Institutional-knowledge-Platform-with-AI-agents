@@ -45,7 +45,7 @@ def test_notes_travel_with_an_admitted_actor_or_event():
 
 
 @pytest.mark.parametrize("decision, words", [
-    (_decision("person", ghus_notes="x"), "only for actors and events"),
+    (_decision("person", ghus_notes="x"), "only for organizations and events"),
     (_decision("actor", "defer", ghus_notes="x"), "admitted record"),
     (_decision("actor", "reject", rejection_reason="Duplicate of an existing record", ghus_notes="x"), "admitted record"),
     (_decision("actor", ghus_notes="x" * 5001), "at most 5000"),
@@ -74,7 +74,7 @@ def test_the_writer_writes_nothing_unless_live_and_never_for_people():
     assert record_ghus_notes(session, entity_type="actor", entity_id=actor, notes="  ",
                              decided_by="Ana", live=True) is False
     assert session.statements == []
-    with pytest.raises(ValueError, match="only for actors and events"):
+    with pytest.raises(ValueError, match="only for organizations and events"):
         record_ghus_notes(session, entity_type="person", entity_id=actor, notes="x",
                           decided_by="Ana", live=True)
     with pytest.raises(ValueError, match="GHUS person"):

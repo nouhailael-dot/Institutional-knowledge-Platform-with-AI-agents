@@ -49,7 +49,7 @@ def _require_contact() -> None:
 def _update_arguments(actor_id: str, options: dict[str, Any]) -> list[str]:
     """Command-line arguments for one actor update, checked before they leave."""
     if not _UUID.match(actor_id or ""):
-        raise DiscoveryBridgeError("unknown actor", rejected=True)
+        raise DiscoveryBridgeError("unknown organization", rejected=True)
     scope = str(options.get("scope") or "general")
     depth = str(options.get("depth") or "light")
     if scope not in UPDATE_SCOPES or depth not in UPDATE_DEPTHS:

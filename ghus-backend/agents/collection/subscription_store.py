@@ -431,7 +431,7 @@ def create_update_request(
     if not has_update_requests(session):
         raise SubscriptionError(
             "Saving update requests needs migration 570 on this database; it is not applied "
-            "yet. A one-time update of one actor works without it.")
+            "yet. A one-time update of one organization works without it.")
     new_id = session.execute(text(statement), values).scalar_one()
     session.commit()
     return WriteResult(True, str(new_id), statement, values)
@@ -450,7 +450,7 @@ def change_status(session, subscription_id: str, action: str, *, live: bool = Fa
     if row is None:
         raise SubscriptionError(f"no request {subscription_id}")
     if row["requested_via"] not in _MANAGED_VIA:
-        raise SubscriptionError("only Discovery-page and actor update requests are managed here")
+        raise SubscriptionError("only Discovery-page and organization update requests are managed here")
     new_status = allowed.get(str(row["status"]))
     if new_status is None:
         raise SubscriptionError(f"a {row['status']} request cannot be {action}d")
@@ -518,7 +518,7 @@ def set_end_date(session, subscription_id: str, end_date: date, *, max_days: int
 def ensure_collection_request(session, subscription: Subscription, topic_id: str | None) -> str:
     if subscription.is_actor_update_request:
         return _ensure_request(session, topic_id, by=ACTOR_UPDATES,
-                               need=f"Actor update request {subscription.subscription_id}: "
+                               need=f"Organization update request {subscription.subscription_id}: "
                                     f"{subscription.title or ''}".strip())
     return _discovery_collection_request(session, subscription, topic_id)
 

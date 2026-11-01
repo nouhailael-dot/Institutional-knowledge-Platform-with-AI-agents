@@ -50,7 +50,7 @@ def csv_bytes(record_type: str, rows: list[dict[str, str]], *, sep=",", encoding
 
 
 ACTOR = {"Official name": "Prairie Water Lab Inc.", "Website": "https://prairiewaterlab-test.org",
-         "Actor Category": "Company / Corporate Actor", "Category Type": "SME",
+         "Organization Category": "Company / Corporate Organization", "Category Type": "SME",
          "Description": "A company that builds water sensors for farms.", "Sector": "Water",
          "City": "Wichita", "State": "Kansas",
          "Source URL": "https://prairiewaterlab-test.org/about"}
@@ -78,7 +78,7 @@ def test_templates_follow_the_contract_and_carry_their_identity():
 
 def test_required_columns_are_marked_and_internal_columns_never_offered():
     actor = [f.template_header for f in contract.fields("actor")]
-    assert "Official name *" in actor and "Actor Category *" in actor and "Sector *" in actor
+    assert "Official name *" in actor and "Organization Category *" in actor and "Sector *" in actor
     every = " ".join(f.key for t in contract.RECORD_TYPES for f in contract.fields(t))
     for internal in ("actor_id", "created_at", "updated_at", "verification", "run_id",
                      "status", "actor_type", "pointer", "rankings", "published_stage_or_trl"):
@@ -87,7 +87,7 @@ def test_required_columns_are_marked_and_internal_columns_never_offered():
 
 def test_dropdowns_cover_every_controlled_column_and_type_follows_category():
     wb = load_workbook(io.BytesIO(templates.build_xlsx("actor", VOCAB)))
-    rules = wb["Actors"].data_validations.dataValidation
+    rules = wb["Organizations"].data_validations.dataValidation
     formulas = [r.formula1 for r in rules]
     assert any(f.startswith("INDIRECT(") for f in formulas)          # Category Type
     assert not any(f.startswith("=") for f in formulas)
@@ -197,9 +197,9 @@ def test_a_valid_actor_becomes_the_staged_payload():
 
 
 def test_category_and_type_must_belong_together():
-    result = check("actor", {**ACTOR, "Actor Category": "University / Academic Institution"}, 12)
-    assert ("Row 12: Actor Category is University / Academic Institution, but Category Type "
-            "'SME' belongs to Company / Corporate Actor.") in result["errors"]
+    result = check("actor", {**ACTOR, "Organization Category": "University / Academic Institution"}, 12)
+    assert ("Row 12: Organization Category is University / Academic Institution, but Category Type "
+            "'SME' belongs to Company / Corporate Organization.") in result["errors"]
     result = check("actor", {**ACTOR, "Category Type": "Not Applicable"})
     assert any("needs a one-line Category note" in e for e in result["errors"])
     result = check("actor", {**ACTOR, "Category Type": ""})
@@ -208,12 +208,12 @@ def test_category_and_type_must_belong_together():
 
 
 def test_required_fields_types_and_lists():
-    result = check("actor", {"Website": "www.no-scheme.org", "Actor Category": "Bakery",
+    result = check("actor", {"Website": "www.no-scheme.org", "Organization Category": "Bakery",
                              "Sector": "Space"})
     errors = " ".join(result["errors"])
     assert "Official name is required" in errors
     assert "Website is not a web address" in errors
-    assert "Actor Category 'Bakery' is not an allowed value" in errors
+    assert "Organization Category 'Bakery' is not an allowed value" in errors
     assert "Sector 'Space' is not an allowed value" in errors
 
 
@@ -242,14 +242,14 @@ def test_light_pull_boxes_belong_to_their_category_and_activity_needs_a_date():
 def test_classification_evidence_columns_are_required_where_the_rules_need_them():
     assert any("Description is required" in e
                for e in check("actor", {**ACTOR, "Description": ""})["errors"])
-    startup = {**ACTOR, "Actor Category": "Startup / Emerging Technology Company",
+    startup = {**ACTOR, "Organization Category": "Startup / Emerging Technology Company",
                "Category Type": "University Spinout"}
     assert any("published development stage" in e for e in check("actor", startup)["errors"])
     ok = check("actor", {**startup, "Startup: development stage": "Pilot with two utilities"})
     assert ok["errors"] == [] and ok["payload"]["development_stage"] == "Pilot with two utilities"
     assert any("only for Startup" in e for e in check(
         "actor", {**ACTOR, "Startup: development stage": "Seed"})["errors"])
-    lab = {**ACTOR, "Actor Category": "National Laboratory", "Category Type": "Government-Direct"}
+    lab = {**ACTOR, "Organization Category": "National Laboratory", "Category Type": "Government-Direct"}
     assert any("formal designation" in e for e in check("actor", lab)["errors"])
 
 
@@ -426,7 +426,7 @@ def test_routes(monkeypatch, tmp_path):
     catalog = client.get("/api/datafeed/catalog").json()
     assert catalog["template_version"] == contract.TEMPLATE_VERSION
     xlsx = client.get("/api/datafeed/templates/actor.xlsx")
-    assert xlsx.status_code == 200 and "GHUS_Actors_Template.xlsx" in xlsx.headers[
+    assert xlsx.status_code == 200 and "GHUS_Organizations_Template.xlsx" in xlsx.headers[
         "content-disposition"]
     assert client.get("/api/datafeed/templates/event.csv").content.decode("utf-8-sig").startswith(
         "Event name *")
@@ -482,11 +482,11 @@ def test_end_to_end_upload_matches_stages_and_appears_in_review(live):
     rows = [{**ACTOR, "Official name": f"Prairie Water Lab {suffix} Inc.",
              "Website": f"https://pwl-{suffix}.org", "Source URL": f"https://pwl-{suffix}.org/a"},
             {"Official name": "ADM", "Website": "https://www.adm.com",
-             "Actor Category": "Company / Corporate Actor", "Category Type": "Public Company",
+             "Organization Category": "Company / Corporate Organization", "Category Type": "Public Company",
              "Description": "An agricultural processing and food ingredient company.",
              "Sector": "Agriculture", "State": "IL"},
             {**ACTOR, "Official name": f"Water Unit {suffix}", "Website": f"https://wu-{suffix}.org",
-             "Actor Category": "Research Center / Institute / Laboratory", "Category Type": "",
+             "Organization Category": "Research Center / Institute / Laboratory", "Category Type": "",
              "Parent organization": "3M Research Laboratories", "Relationship to parent": "Unit of"}]
     data = filled_xlsx("actor", rows)
     preview = service.validate_upload("actor", f"e2e-{suffix}.xlsx", data)
@@ -596,3 +596,14 @@ def test_review_names_a_data_feed_record_honestly():
 def test_derived_values_are_not_reported_missing():
     result = check("actor", ACTOR)                    # no Country typed; a US state implies it
     assert "Country" not in result["missing"]
+
+
+def test_files_made_before_the_rename_still_read():
+    """Old templates say Actor Category and Company / Corporate Actor, on a sheet named Actors."""
+    from src.datafeed import contract
+    from src.datafeed.reference import lookup, vocabularies
+
+    assert contract.header_key("Actor Category *") == contract.header_key("Organization Category")
+    assert contract.LEGACY_SHEET_NAMES["actor"] == "Actors"
+    item = lookup(vocabularies()["actor_categories"], "Company / Corporate Actor")
+    assert item["code"] == "company" and item["label"] == "Company / Corporate Organization"

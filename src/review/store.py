@@ -390,7 +390,8 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
     if request:
         parts = ["Monitoring request", request.group(1)]
     elif kind:
-        parts = [f"{kind.group(1).capitalize()} discovery"]
+        word = kind.group(1).lower()
+        parts = [f"{'Organization' if word == 'actor' else word.capitalize()} discovery"]
         if "dry_run" in raw or "dry run" in raw.casefold():
             parts.append("test run")
     elif run_id.startswith(DATAFEED_PREFIX):
@@ -1044,7 +1045,7 @@ class ReviewStore:
         if entity_type not in (*ENTITY_TYPES, None, "all"):
             raise ReviewValidationError("Unsupported entity type.")
         if actor_category and actor_category != "all" and actor_category not in CATEGORY_LABELS:
-            raise ReviewValidationError("Unsupported actor category.")
+            raise ReviewValidationError("Unsupported organization category.")
         where, params = ["folded_into IS NULL"], []
         if status not in (None, "all"):
             where.append("status=?"); params.append(status)
@@ -1476,7 +1477,7 @@ class ReviewStore:
         if ghus_notes and decision_kind not in {"new", "same_existing"}:
             raise ReviewValidationError("Analyst notes are saved when the record is verified.")
         if candidate.get("folded_into"):
-            raise ReviewConflict("This card is now part of the actor's update profile; "
+            raise ReviewConflict("This card is now part of the organization's update profile; "
                                  "decide it there.")
         if (metadata.get("review_kind") == "actor_profile" and decision_kind == "new"
                 and metadata.get("changes")):
@@ -1571,7 +1572,7 @@ class ReviewStore:
             # created and no field is edited by this decision.
             if decision_kind not in {"new", "same_existing", "reject"}:
                 raise ReviewValidationError(
-                    "An actor awaiting verification is verified or rejected; "
+                    "An organization awaiting verification is verified or rejected; "
                     "leave it in the queue to decide later.")
             return {
                 "decision_kind": "verify_actor",
@@ -1638,7 +1639,7 @@ class ReviewStore:
         candidate = self.get(candidate_id)
         metadata = candidate["agent_metadata"]
         if metadata.get("review_kind") != "actor_profile":
-            raise ReviewValidationError("Only an actor's update profile holds changes.")
+            raise ReviewValidationError("Only an organization's update profile holds changes.")
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This profile has already been reviewed.")
         change = next((c for c in metadata.get("changes") or []
@@ -1832,7 +1833,7 @@ class ReviewStore:
                 max_length=80,
             )
             if not category:
-                raise ReviewValidationError(f"Choose an actor category for {name}.")
+                raise ReviewValidationError(f"Choose an organization category for {name}.")
             items.append({
                 "candidate_id": candidate_id,
                 "review_item_id": str(metadata.get("review_item_id")),
@@ -1890,9 +1891,9 @@ class ReviewStore:
                 raise ReviewValidationError("This is not a location review.")
             if keep_unlocated:
                 if not notes:
-                    raise ReviewValidationError("Explain why the actor stays unlocated.")
+                    raise ReviewValidationError("Explain why the organization stays unlocated.")
             elif not (_clean_text(city) and _clean_text(state)):
-                raise ReviewValidationError("Enter the actor's city and state.")
+                raise ReviewValidationError("Enter the organization's city and state.")
             request.update({"city": _clean_text(city, max_length=120),
                             "state": _clean_text(state, max_length=80),
                             "country": _clean_text(country, max_length=80) or "US",

@@ -100,7 +100,7 @@ def test_runs_are_listed_newest_first_each_with_its_own_label(store):
     assert [group["key"] for group in groups] == ["run-d", "run-c", "run-a", "map-checks"]
     labels = {group["key"]: group["label"] for group in groups}
     assert labels["run-c"].startswith("Monitoring request · Water technology in the Great Lakes · ")
-    assert labels["run-a"].startswith("Actor discovery · test run · ")
+    assert labels["run-a"].startswith("Organization discovery · test run · ")
     assert labels["map-checks"] == "Map checks"
     assert labels["run-d"].startswith("Explore and Map · find companies in the US that focus on")
     assert not any(group["is_backlog"] for group in groups)
@@ -144,7 +144,7 @@ def test_run_labels_hide_uuids_and_stored_provenance_is_untouched(store):
             description=description)
 
     item = store.list(status="all")["candidates"][0]
-    assert item["run_label"] == "Actor discovery · test run · 10/08/2026"
+    assert item["run_label"] == "Organization discovery · test run · 10/08/2026"
     assert "577bd0bd" not in item["run_label"]
     # The label is a projection. The stored values are identical.
     assert item["source_run_id"] == run_id
@@ -191,7 +191,7 @@ def test_the_queue_filters_by_category_reason_and_region(store):
             store.list(status="all", region="Northeast")["candidates"]] == ["lab"]
     assert [item["candidate_id"] for item in
             store.list(status="all", region="West Coast / Pacific")["candidates"]] == ["startup"]
-    with pytest.raises(ReviewValidationError, match="Unsupported actor category"):
+    with pytest.raises(ReviewValidationError, match="Unsupported organization category"):
         store.list(status="all", actor_category="aggregate")
 
 
