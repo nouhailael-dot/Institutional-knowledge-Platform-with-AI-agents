@@ -75,6 +75,9 @@ class DataFeedService:
             self.bridge.database_url)
         self.preview_dir = preview_dir or ROOT / ".datafeed" / "previews"
         self.runs_dir = self.preview_dir.parent / "completion"
+        # The files people uploaded, kept for Import history.
+        self.originals_dir = Path(os.environ.get("GHUS_DATAFEED_ORIGINALS")
+                                  or self.preview_dir.parent / "originals")
 
     # ------------------------------------------------------------------ catalog
     def vocabularies(self) -> dict[str, Any]:
@@ -115,9 +118,11 @@ class DataFeedService:
                               header_problems=header_problems, notes=parsed.notes)
         if not parsed.rows:
             raise DataFeedError("The file has no records below the header row.")
-        return self._preview(record_type, "upload",
-                             [(r["row_number"], r["values"]) for r in parsed.rows],
-                             file_info=file_info, notes=parsed.notes)
+        result = self._preview(record_type, "upload",
+                               [(r["row_number"], r["values"]) for r in parsed.rows],
+                               file_info=file_info, notes=parsed.notes)
+        self._upload_path(result["preview_id"]).write_bytes(data)
+        return result
 
     def validate_manual(self, record_type: str, records: list[dict[str, Any]],
                         method: str = "manual") -> dict[str, Any]:
@@ -274,10 +279,29 @@ class DataFeedService:
             raise DataFeedError("Unknown preview.")
         return self.preview_dir / f"{preview_id}.json"
 
+    def _upload_path(self, preview_id: str) -> Path:
+        return self._path(preview_id).with_suffix(".upload")
+
+    def _keep_original(self, preview: dict[str, Any], run_id: object) -> None:
+        """The uploaded file, kept under its import for Import history."""
+        upload = self._upload_path(preview["preview_id"])
+        if not upload.is_file():
+            return
+        if _UUID.match(str(run_id or "")) and not self.original_file(str(run_id)):
+            safe = re.sub(r"[^\w.\- ]", "_", Path((preview.get("file") or {}).get("name") or "import").name)
+            self.originals_dir.mkdir(parents=True, exist_ok=True)
+            upload.replace(self.originals_dir / f"{run_id}__{safe}")
+        upload.unlink(missing_ok=True)
+
+    def original_file(self, run_id: str) -> Path | None:
+        if not _UUID.match(run_id or "") or not self.originals_dir.is_dir():
+            return None
+        return next(iter(sorted(self.originals_dir.glob(f"{run_id}__*"))), None)
+
     def _store(self, preview: dict[str, Any]) -> None:
         self.preview_dir.mkdir(parents=True, exist_ok=True)
         now = time.time()
-        for old in self.preview_dir.glob("*.json"):
+        for old in [*self.preview_dir.glob("*.json"), *self.preview_dir.glob("*.upload")]:
             if now - old.stat().st_mtime > PREVIEW_TTL:
                 old.unlink(missing_ok=True)
         self._path(preview["preview_id"]).write_text(
@@ -343,6 +367,7 @@ class DataFeedService:
             outcome = self.bridge.stage(batch)
         except DataFeedBridgeError as exc:
             raise DataFeedError(str(exc)) from exc
+        self._keep_original(preview, outcome.get("run_id"))
         self._path(preview_id).unlink(missing_ok=True)
         rows = outcome.get("rows") or []
         admitted = outcome.get("admissions") or []
@@ -381,6 +406,7 @@ class DataFeedService:
                 "status": ("Awaiting Review" if pending and not decided
                            else "Partly reviewed" if pending else "Reviewed"),
                 "light_pull_read": r[10],
+                "has_file": self.original_file(r[0]) is not None,
             })
         return out
 
@@ -413,7 +439,7 @@ class DataFeedService:
             raise DataFeedError("The spending cap must be between $0.01 and $5.00.")
         estimate = self.completion_estimate(run_id)
         if not estimate.get("organisations"):
-            raise DataFeedError("Every record of this import already has all its boxes.")
+            raise DataFeedError("No record of this import can be completed: each has all its boxes, or has no website to read.")
         log = self.runs_dir / f"{run_id}.log"
         try:
             pid = self.bridge.start_completion(run_id, max_usd, log)

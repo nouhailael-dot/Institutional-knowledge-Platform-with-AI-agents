@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, usDate} from "./dates.js?v=20261101a";
+import {createDateInput, usDate} from "./dates.js?v=20261101c";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -763,27 +763,26 @@ export function directoryStatus(actor) {
     : status === "imported" ? "Imported" : "";
 }
 
-/** Why Create Request is not ready yet: {organizations, focus, frequency, start, duration}. */
-export function orgUpdateProblems({list, kind, focus, form}, today = null) {
+/** Why Create Request is not ready yet: {organizations, frequency, start, duration}. */
+export function orgUpdateProblems({list, form}, today = null) {
   const problems = {};
   if (!list.some((row) => row.checked)) problems.organizations = "Add an organization and check it.";
-  if (kind === "specific" && !String(focus || "").trim()) {
-    problems.focus = "Describe the information you'd like to update.";
-  }
   return {...problems, ...scheduleProblems(form, today)};
 }
 
 /**
- * What Create Request sends: only the checked organizations, one update option
- * and one schedule for all of them. General Update reads the full profile, the
- * priority areas first; Specific Changes researches the described scope.
+ * What Create Request sends: only the checked organizations, with one set of
+ * instructions and one schedule for all of them. Instructions research that
+ * scope; left blank, it is a general update of the full profile, the priority
+ * areas first (GHUS, 2026-11-01).
  */
-export function orgUpdatePayload({list, kind, interests = [], focus = "", form, requester = ""}) {
+export function orgUpdatePayload({list, interests = [], focus = "", form, requester = ""}) {
   const ids = list.filter((row) => row.checked).map((row) => row.actor.actor_id);
   const payload = {actor_ids: ids, max_actors_per_run: Math.max(ids.length, 1), depth: "light",
     cadence: form.cadence, start_date: form.startDate, end_date: scheduleEnd(form)};
-  if (kind === "specific") {
-    Object.assign(payload, {scope: "topic", focus: String(focus).trim().slice(0, MAX_SPECIFIC_CHARS)});
+  const instructions = String(focus || "").trim();
+  if (instructions) {
+    Object.assign(payload, {scope: "topic", focus: instructions.slice(0, MAX_SPECIFIC_CHARS)});
   } else {
     payload.scope = "general";
     const categories = focusCategories(interests);
@@ -1402,14 +1401,13 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
   function OrganizationsUpdate({sectors, options, today, requester, onCreated}) {
     const [query, setQuery] = useState("");
     // Narrow the directory by sector, type and state; with one chosen, the group is listed.
-    const [group, setGroup] = useState({sector: "", category: "", state: "", everyone: false});
+    const [group, setGroup] = useState({sector: "", category: "", state: ""});
     const [results, setResults] = useState([]);
     const [total, setTotal] = useState(0);
     const [searching, setSearching] = useState(false);
     const [searched, setSearched] = useState(false);
     const [active, setActive] = useState(0);
     const [list, setList] = useState([]);
-    const [kind, setKind] = useState("general");
     const [interests, setInterests] = useState([]);
     const [focus, setFocus] = useState("");
     const [form, setForm] = useState({cadence: "", startDate: "", duration: ""});
@@ -1441,7 +1439,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         if (live) setSearching(false);
       }, 200);
       return () => { live = false; clearTimeout(timer); };
-    }, [query, group.sector, group.category, group.state, group.everyone]);
+    }, [query, group.sector, group.category, group.state]);
 
     const state = selectionState(list);
     useEffect(() => { if (headerBox.current) headerBox.current.indeterminate = state === "some"; }, [state]);
@@ -1474,7 +1472,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const toggleArea = (id) => setInterests((xs) => xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]);
     const setSchedule = (patch) => setForm((f) => ({...f, ...patch}));
 
-    const problems = orgUpdateProblems({list, kind, focus, form}, today);
+    const problems = orgUpdateProblems({list, form}, today);
     const ready = Object.keys(problems).length === 0;
     const shown = touched ? problems : {};
     const tooMany = list.filter((row) => row.checked).length > (options?.max_update_actors || 20);
@@ -1483,7 +1481,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       setTouched(true);
       if (!ready || busy || tooMany) return;
       setBusy(true); setError("");
-      const payload = orgUpdatePayload({list, kind, interests, focus, form, requester});
+      const payload = orgUpdatePayload({list, interests, focus, form, requester});
       try {
         const made = await api("/api/discovery/update-requests", {method: "POST", body: JSON.stringify(payload)});
         // A request that starts today runs its first check now, like every Monitor request.
@@ -1495,7 +1493,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             + "Its findings go to Review Results; you can follow it under Requests."
           : `Request created for ${n} ${n === 1 ? "organization" : "organizations"}. `
             + `Its first check is on ${formatDay(payload.start_date)}; you can manage it under Requests.`});
-        setList([]); setInterests([]); setFocus(""); setKind("general");
+        setList([]); setInterests([]); setFocus("");
         setForm({cadence: "", startDate: "", duration: ""}); setTouched(false);
       } catch (err) { setError(err.message); }
       setBusy(false);
@@ -1517,8 +1515,6 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           <option value="">Every state</option>
           ${(options?.states || []).map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
         </select>
-        <label class="org-everyone"><input type="checkbox" checked=${group.everyone}
-          onChange=${(e) => setGroup((g) => ({...g, everyone: e.target.checked}))}/> Include organizations with no website</label>
       </div>
       <div class="org-search">
         <div class="org-search-box">
@@ -1567,21 +1563,16 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       ${tooMany && html`<p class="discovery-message error">One request covers at most ${options?.max_update_actors || 20} organizations; uncheck some, or make a second request.</p>`}
 
       <h3 class="org-update-h">What would you like to update?</h3>
-      <div class="org-kinds" role="group" aria-label="What to update">
-        ${[["general", "General Update"], ["specific", "Specific Changes"]].map(([id, label]) => html`
-          <button type="button" key=${id} class=${kind === id ? "active" : ""} aria-pressed=${kind === id}
-            onClick=${() => setKind(id)}>${label}</button>`)}
-      </div>
-      ${kind === "general" ? html`
-        <p class="muted org-hint">Check the full profile for new, missing, or outdated information.</p>
+      <textarea class="org-specific" rows="3" maxLength=${MAX_SPECIFIC_CHARS}
+        aria-label="Update instructions (optional)" placeholder=${SPECIFIC_PLACEHOLDER} value=${focus}
+        onInput=${(e) => setFocus(e.target.value)}></textarea>
+      <p class="muted org-hint">Leave this blank for a general update: the full profile is checked for
+        new, missing, or outdated information. These instructions apply to all selected organizations.</p>
+      ${!focus.trim() && html`
         <p class="org-label">Priority Areas (optional)</p>
         <div class="org-areas">${PRIORITY_AREAS.map((x) => html`<label key=${x.id}>
           <input type="checkbox" checked=${interests.includes(x.id)} onChange=${() => toggleArea(x.id)}/>${x.label}</label>`)}</div>
-        <p class="muted org-hint">Select areas to prioritize. The full profile will still be checked.</p>` : html`
-        <textarea class=${"org-specific" + (shown.focus ? " invalid" : "")} rows="3" maxLength=${MAX_SPECIFIC_CHARS}
-          placeholder=${SPECIFIC_PLACEHOLDER} value=${focus} onInput=${(e) => setFocus(e.target.value)}></textarea>
-        ${shown.focus && html`<small class="discovery-error">${shown.focus}</small>`}
-        <p class="muted org-hint">These instructions apply to all selected organizations.</p>`}
+        <p class="muted org-hint">Select areas to prioritize. The full profile will still be checked.</p>`}
 
       <${ScheduleRow} form=${form} set=${setSchedule} kind="update" options=${options} today=${today} shown=${shown}/>
 

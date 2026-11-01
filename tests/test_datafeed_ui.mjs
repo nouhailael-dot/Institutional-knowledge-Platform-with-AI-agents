@@ -248,3 +248,17 @@ test('a Verified import says what was added and what waits in Review', () => {
   "2 organizations were added to the directory as Verified, on Ana Ruiz's attestation. "
   + '1 record waits in Review Results. 1 needed correction and was left out.');
 });
+
+test('import history stays with its uploader and links what is incomplete to Review', async () => {
+  const {myImports, recordCount, completionCap} = await import('../frontend/datafeed.js');
+  const items = [{run_id: 'a', uploaded_by: 'Ismail Sabbar', rows_total: 3}, {run_id: 'b', uploaded_by: 'Nouhaila'},
+    {run_id: 'c', uploaded_by: null, staged: 1}];
+  assert.deepEqual(myImports(items, ' ismail sabbar ').map((i) => i.run_id), ['a', 'c']);
+  assert.deepEqual(myImports(items, '').map((i) => i.run_id), ['c']);
+  assert.equal(recordCount(items[0]), '3 records');
+  assert.equal(recordCount(items[2]), '1 record');
+  assert.equal(completionCap(3), 0.5);
+  assert.equal(completionCap(20), 2);
+  assert.equal(completionCap(900), 5);
+});
+

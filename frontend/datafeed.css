@@ -102,3 +102,12 @@
   .df-issues{padding-left:14px}
   .df-box dl div,.df-original dl div{grid-template-columns:1fr}
 }
+
+/* One template per kind of record; the chosen kind is marked. */
+.df-templates{display:grid;gap:8px;margin:12px 0 16px}
+.df-template{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:8px}
+.df-template strong{flex:1;min-width:140px;font-weight:600}
+.df-template .btn{min-height:34px;display:inline-flex;align-items:center}
+.df-template.on{border-color:var(--accent);background:var(--accent-soft)}
+.df-whoami{max-width:360px;margin-bottom:14px}
+.df-import-facts{margin:4px 0;font-size:14px}

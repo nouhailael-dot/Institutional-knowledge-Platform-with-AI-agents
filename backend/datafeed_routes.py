@@ -102,6 +102,17 @@ def import_records(run_id: str):
     return {"records": _call(datafeed_service().import_records, run_id)}
 
 
+@router.get("/imports/{run_id}/file")
+def original_file(run_id: str):
+    """The file as it was uploaded, for Import history."""
+    path = datafeed_service().original_file(run_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="The original file is not kept on this computer.")
+    name = path.name.split("__", 1)[1].replace('"', "")
+    return Response(content=path.read_bytes(), media_type="application/octet-stream", headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @router.post("/imports/{run_id}/estimate")
 def completion_estimate(run_id: str):
     return _call(datafeed_service().completion_estimate, run_id)

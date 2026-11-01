@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261015";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261101a";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261101c";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
@@ -250,20 +250,26 @@ export function filterReviewCandidates(candidates, filters = {}) {
 // ------------------------------------------------------------- runs (left panel)
 // Review is organised Run Type -> named run -> records -> one record's review.
 
-/** The Run Type dropdown: exactly these six, in this order. */
+/** The Request Type dropdown: where results come from (GHUS, 2026-11-01). */
 export const RUN_TYPE_OPTIONS = [
-  {value: "all", label: "All Runs"},
-  {value: "discovery_actors", label: "Discovery Organizations"},
-  {value: "discovery_events", label: "Discovery Events"},
-  {value: "discovery_people", label: "Discovery People"},
+  {value: "all", label: "All Requests"},
+  {value: "new_requests", label: "New Requests"},
   {value: "actor_updates", label: "Organization Updates"},
-  {value: "data_feed", label: "Data Feed Imports"},
+  {value: "data_feed", label: "Import Updates"},
 ];
 
+// A run's own type stays specific; the dropdown groups the three kinds of New Request.
+const NEW_REQUEST_TYPES = ["discovery_actors", "discovery_events", "discovery_people"];
+
+/** The dropdown value for a run type, for links that open one run. */
+export function runTypeFilter(type) {
+  return NEW_REQUEST_TYPES.includes(type) ? "new_requests" : type || "all";
+}
+
 const RUN_TYPE_NAMES = {
-  discovery_actors: "Discovery Organizations", discovery_events: "Discovery Events",
-  discovery_people: "Discovery People", actor_updates: "Organization Updates", map_checks: "Map Checks",
-  data_feed: "Data Feed Imports",
+  discovery_actors: "New Request · Organizations", discovery_events: "New Request · Events",
+  discovery_people: "New Request · People", actor_updates: "Organization Updates", map_checks: "Map Checks",
+  data_feed: "Import Updates",
 };
 
 export function runTypeName(type) {
@@ -281,7 +287,8 @@ export function runsForType(groups = [], candidates = [], runType = "all") {
     shown.set(candidate.run_group_key, (shown.get(candidate.run_group_key) || 0) + 1);
   }
   return groups
-    .filter(group => runType === "all" || group.run_type === runType)
+    .filter(group => runType === "all" || group.run_type === runType
+      || (runType === "new_requests" && NEW_REQUEST_TYPES.includes(group.run_type)))
     .filter(group => shown.get(group.key))
     .map(group => ({...group, shown_count: shown.get(group.key)}));
 }
@@ -1881,7 +1888,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         const wanted = event.detail?.run_key;
         if (wanted) {
           setView("queue");
-          setFilters(current => ({...current, run_type: event.detail.run_type || "all",
+          setFilters(current => ({...current, run_type: runTypeFilter(event.detail.run_type),
             status: "all"}));
           setSelectedId(null);
           loaded.current = null;
@@ -2391,17 +2398,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
 
       ${view === "queue" && html`<div class="review-filters" aria-label="Review filters">
-        <label><span>Run Type</span>
+        <label><span>Request Type</span>
           <select value=${filters.run_type} onChange=${e => setFilter("run_type", e.target.value)}>
             ${RUN_TYPE_OPTIONS.map(option => html`
               <option key=${option.value} value=${option.value}>${option.label}</option>`)}
           </select></label>
-        ${filters.run_type === "all" && html`<label><span>${FIELDS.recordKind}</span>
+        ${filters.run_type !== "actor_updates" && html`<label><span>${FIELDS.recordKind}</span>
           <select value=${filters.entity_type} onChange=${e => setFilter("entity_type", e.target.value)}>
             <option value="all">${QUEUE.allTypes}</option>
-            <option value="actor">${BADGES.actor}</option>
-            <option value="person">${BADGES.person}</option>
-            <option value="event">${BADGES.event}</option>
+            <option value="actor">Organizations</option>
+            <option value="event">Events</option>
+            <option value="person">People</option>
           </select></label>`}
         <label><span>${FIELDS.actorCategory}</span>
           <select value=${filters.actor_category} onChange=${e => setFilter("actor_category", e.target.value)}>
@@ -2452,7 +2459,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               aria-pressed=${activeRun?.key === run.key}
               onClick=${() => { setRunKey(run.key); setSelectedId(null); }}>
               <strong>${run.run_name || run.label}</strong>
-              ${filters.run_type === "all" && html`<span class="review-run-type">${runTypeName(run.run_type)}</span>`}
+              ${["all", "new_requests"].includes(filters.run_type) && html`<span class="review-run-type">${runTypeName(run.run_type)}</span>`}
               <small>${runMeta(run, filters.status)}</small>
             </button>`)}
         </nav>

@@ -577,27 +577,29 @@ test('Organizations Update: one list, checked by default, never twice, with a he
   assert.deepEqual([directoryStatus(bio), directoryStatus(ceg)], ['Verified', 'Parked']);
 });
 
-test('Organizations Update sends only the checked organizations, one option and one schedule', async () => {
+test('Organizations Update sends only the checked organizations; blank instructions are a general update', async () => {
   const {orgUpdatePayload, orgUpdateProblems, frequencyOptions, SPECIFIC_PLACEHOLDER} =
     await import('../frontend/discovery.js');
   const list = [{actor: {actor_id: 'a'}, checked: true}, {actor: {actor_id: 'b'}, checked: false}];
   const form = {cadence: 'monthly', startDate: '2026-11-02', duration: '3m'};
   assert.deepEqual(frequencyOptions('update'), ['once', 'weekly', 'monthly']);
-  assert.deepEqual(orgUpdatePayload({list, kind: 'general', interests: ['funding'], form, requester: 'me@um6p.ma'}), {
+  assert.deepEqual(orgUpdatePayload({list, interests: ['funding'], form, requester: 'me@um6p.ma'}), {
     actor_ids: ['a'], max_actors_per_run: 1, depth: 'light', cadence: 'monthly',
     start_date: '2026-11-02', end_date: '2027-02-02', scope: 'general',
     categories: ['funding', 'partnerships'], requested_by: 'me@um6p.ma'});
-  const specific = orgUpdatePayload({list, kind: 'specific', focus: ' Battery storage pilots since 2025. ',
+  const specific = orgUpdatePayload({list, interests: ['funding'], focus: ' Battery storage pilots since 2025. ',
     form: {cadence: 'once', startDate: '2026-11-02', duration: ''}});
   assert.equal(specific.scope, 'topic');
   assert.equal(specific.focus, 'Battery storage pilots since 2025.');
   assert.equal(specific.end_date, '2026-11-02');
+  assert.equal(specific.categories, undefined);
+  assert.equal(orgUpdatePayload({list, focus: '   ', form}).scope, 'general');
   // Create Request waits for a checked organization, the description and the schedule.
   const blank = {cadence: '', startDate: '', duration: ''};
-  assert.deepEqual(Object.keys(orgUpdateProblems({list: [], kind: 'specific', focus: '', form: blank})),
-    ['organizations', 'focus', 'frequency', 'start']);
-  assert.deepEqual(orgUpdateProblems({list, kind: 'general', focus: '', form}, '2026-10-30'), {});
-  assert.ok(orgUpdateProblems({list, kind: 'general', form: {...form, duration: ''}}).duration);
+  assert.deepEqual(Object.keys(orgUpdateProblems({list: [], form: blank})),
+    ['organizations', 'frequency', 'start']);
+  assert.deepEqual(orgUpdateProblems({list, form}, '2026-10-30'), {});
+  assert.ok(orgUpdateProblems({list, form: {...form, duration: ''}}).duration);
   assert.match(SPECIFIC_PLACEHOLDER, /capabilities in another sector/);
 });
 
@@ -615,7 +617,7 @@ test('the Monitor page leads with New Request, Organizations Update, Requests an
     'setView("requests")}>Requests ('].map((s) => page.indexOf(s));
   assert.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]);
   const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-  for (const gone of ['One actor', 'Several actors', 'Save schedule', 'Update runs']) {
+  for (const gone of ['One actor', 'Several actors', 'Save schedule', 'Update runs', 'org-kinds']) {
     assert.ok(!code.includes(gone), gone);
   }
   assert.ok(page.includes('Existing directory information remains unchanged until you verify the proposed updates.'));

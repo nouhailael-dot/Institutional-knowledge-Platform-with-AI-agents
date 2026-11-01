@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 TEMPLATE_VERSION = "2026-10-26.3"
 RECORD_TYPES = ("actor", "person", "event")
-TYPE_LABELS = {"actor": "Organizations / Organizations", "person": "People", "event": "Events"}
+TYPE_LABELS = {"actor": "Organizations", "person": "People", "event": "Events"}
 # Templates made before 2026-11-01 keep their old sheet, column and label names.
 LEGACY_SHEET_NAMES = {"actor": "Actors"}
 LEGACY_HEADERS = {"actor category": "organization category"}

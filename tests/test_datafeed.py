@@ -607,3 +607,20 @@ def test_files_made_before_the_rename_still_read():
     assert contract.LEGACY_SHEET_NAMES["actor"] == "Actors"
     item = lookup(vocabularies()["actor_categories"], "Company / Corporate Actor")
     assert item["code"] == "company" and item["label"] == "Company / Corporate Organization"
+
+
+def test_the_uploaded_file_is_kept_with_its_import(tmp_path):
+    from src.datafeed.service import DataFeedService
+
+    service = DataFeedService(bridge=object.__new__(__import__("src.datafeed.bridge", fromlist=["DataFeedBridge"]).DataFeedBridge),
+                              connect=lambda: None, preview_dir=tmp_path / "previews")
+    run = "11111111-2222-4333-8444-555555555555"
+    (tmp_path / "previews").mkdir()
+    service._upload_path("a" * 32).write_bytes(b"cells")
+    assert service.original_file(run) is None
+    service._keep_original({"preview_id": "a" * 32, "file": {"name": "../My file.xlsx"}}, run)
+    kept = service.original_file(run)
+    assert kept.read_bytes() == b"cells" and kept.name == f"{run}__My file.xlsx"
+    assert not service._upload_path("a" * 32).exists()
+    assert service.original_file("../etc") is None
+

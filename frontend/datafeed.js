@@ -6,8 +6,8 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261101a";
-import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261101a";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261101c";
+import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261101c";
 
 export const RECORD_TYPES = [
   {id: "actor", label: "Organizations", short: "Organizations", noun: "organization"},
@@ -223,6 +223,32 @@ export function costLine(estimate) {
 }
 
 /** One history row's counts, in words. */
+/** Imports stay with whoever made them; there is no sign-in yet, so by the name they typed. */
+export function myImports(items = [], name = "") {
+  const me = String(name || "").trim().toLowerCase();
+  return items.filter((item) => {
+    const by = String(item.uploaded_by || "").trim().toLowerCase();
+    return !by || (me && by === me);
+  });
+}
+
+/** How many records the import held. */
+export function recordCount(item = {}) {
+  const n = item.rows_total ?? item.staged ?? 0;
+  return `${n} ${n === 1 ? "record" : "records"}`;
+}
+
+/** The AI read's ceiling for an import: about $0.05 each, with room, at most the $5 limit. */
+export function completionCap(count = 0) {
+  return Math.min(5, Math.max(0.5, Math.round(count * 10) / 100));
+}
+
+/** Open this import's records in Review Results. */
+export function openImportInReview(runId) {
+  window.dispatchEvent(new CustomEvent("ghus:open-review", {detail: {
+    run_key: `datafeed:${runId}`, run_type: "data_feed"}}));
+}
+
 export function historyLine(item) {
   const c = item?.counts || {};
   return [
@@ -494,12 +520,14 @@ export function createDataFeedPage({html, useState, useEffect}) {
     }
     return html`<section class="discovery-card df-upload">
       <h3>Upload Excel or CSV</h3>
-      <p class="df-muted">Download the official template, fill one record per row, and upload it.
-        Required columns are marked *; the Field Guide sheet explains every column.</p>
-      <div class="df-downloads">
-        <a class="btn ghost" href=${`/api/datafeed/templates/${recordType}.xlsx`} download>Excel template (.xlsx)</a>
-        <a class="btn ghost" href=${`/api/datafeed/templates/${recordType}.csv`} download>CSV template (.csv)</a>
-      </div>
+      <p class="df-muted">Each kind of record has its own template. Download it, fill one record per
+        row, and upload it. Required columns are marked *; the Field Guide sheet explains every column.</p>
+      <div class="df-templates">${RECORD_TYPES.map(t => html`<div key=${t.id}
+        class=${"df-template" + (t.id === recordType ? " on" : "")}>
+        <strong>${t.label}</strong>
+        <a class="btn ghost" href=${`/api/datafeed/templates/${t.id}.xlsx`} download>Excel (.xlsx)</a>
+        <a class="btn ghost" href=${`/api/datafeed/templates/${t.id}.csv`} download>CSV (.csv)</a>
+      </div>`)}</div>
       <label class=${"df-drop" + (drag ? " drag" : "")}
         onDragOver=${e => { e.preventDefault(); setDrag(true); }}
         onDragLeave=${() => setDrag(false)}
@@ -547,12 +575,14 @@ export function createDataFeedPage({html, useState, useEffect}) {
     const [attestSource, setAttestSource] = useState(false);
     const [admission, setAdmission] = useState("review");
     const [attestAuthorized, setAttestAuthorized] = useState(false);
+    const [completeAI, setCompleteAI] = useState(false);
     const [busy, setBusy] = useState(false);
     const recordType = preview.record_type;
     const vocab = catalog.vocabularies;
     const rows = filterRows(preview.rows, filter);
     const counts = preview.counts;
     const send = stageable(counts);
+    const aiOffered = recordType === "actor" && admission === "review";
     async function confirm() {
       setBusy(true);
       setMessage(null);
@@ -562,6 +592,17 @@ export function createDataFeedPage({html, useState, useEffect}) {
           method: "POST", body: JSON.stringify({import_name: name, accept_left_out: accept,
             uploaded_by: uploader, attest_source: attestSource, admission,
             attest_authorized: admission === "verified" && attestAuthorized})});
+        // The import stands whatever the AI read does; its outcome is reported beside it.
+        if (aiOffered && completeAI && result.run_id && result.status !== "already_imported") {
+          try {
+            await api(`/api/datafeed/imports/${result.run_id}/complete`, {method: "POST",
+              body: JSON.stringify({max_usd: completionCap(send), confirmed: true})});
+            result.completion = "Compass is now reading their pages to fill what is missing; "
+              + "the findings appear on each record in Review Results.";
+          } catch (error) {
+            result.completion = `The records were sent, but the AI read did not start: ${error.message}`;
+          }
+        }
         onDone(result);
       } catch (error) {
         setMessage({kind: "error", text: error.message});
@@ -667,6 +708,12 @@ export function createDataFeedPage({html, useState, useEffect}) {
           <label class="df-check"><input type="checkbox" checked=${attestAuthorized}
             onChange=${e => setAttestAuthorized(e.target.checked)}/> ${ATTEST_AUTHORIZED}</label>
         </div>`}
+        ${recordType === "actor" && (aiOffered ? html`<label class="df-check">
+            <input type="checkbox" checked=${completeAI} onChange=${e => setCompleteAI(e.target.checked)}/>
+            <span><strong>Complete Missing Information with AI</strong> — reads each organization's own
+              pages after sending and fills only what is empty; your values are never replaced. About
+              $0.05 per organization, never more than $${completionCap(send).toFixed(2)} for this import.</span></label>`
+          : html`<p class="df-muted">Complete Missing Information with AI is available when sending to Review Results.</p>`)}
         <div class="discovery-actions">
           <button type="button" class="btn" disabled=${busy || !canSend({preview, name, uploader,
             attestSource, admission, attestAuthorized, accept})} onClick=${confirm}>
@@ -727,8 +774,9 @@ export function createDataFeedPage({html, useState, useEffect}) {
     </div>`;
   }
 
-  function History({onOpenReview}) {
+  function History() {
     const [items, setItems] = useState(null);
+    const [me, setMe] = useState(() => rememberedUploader());
     const [error, setError] = useState("");
     const [open, setOpen] = useState(null);
     const [records, setRecords] = useState({});
@@ -755,10 +803,17 @@ export function createDataFeedPage({html, useState, useEffect}) {
     }
     if (error) return html`<p class="discovery-message error">${error}</p>`;
     if (!items) return html`<p class="df-muted">Loading the import history…</p>`;
-    if (!items.length) return html`<p class="discovery-empty">No imports yet. Records you send to
-      Review appear here, with what Review decided.</p>`;
-    return html`<ul class="df-history">
-      ${items.map(item => html`<li key=${item.run_id} class="discovery-request">
+    const mine = myImports(items, me);
+    return html`<div class="discovery-field df-whoami">
+      <label class="discovery-label" for="df-history-name">Your name</label>
+      <input id="df-history-name" value=${me} maxlength="120" autocomplete="name"
+        onInput=${e => { setMe(e.target.value); rememberUploader(e.target.value.trim()); }}/>
+      <small class="df-hint">Shows the imports made under this name, as it was typed when uploading.</small>
+    </div>
+    ${!mine.length && html`<p class="discovery-empty">No imports under this name yet. Records you send to
+      Review appear here, with what Review decided.</p>`}
+    ${mine.length > 0 && html`<ul class="df-history">
+      ${mine.map(item => html`<li key=${item.run_id} class="discovery-request">
         <div class="discovery-request-head">
           <div>
             <h3>${item.import_name}</h3>
@@ -766,10 +821,14 @@ export function createDataFeedPage({html, useState, useEffect}) {
           </div>
           <span class=${"discovery-status " + (item.status === "Reviewed" ? "active" : "paused")}>${item.status}</span>
         </div>
-        <p class="df-muted">${historyLine(item)}${item.rows_total ? ` · ${item.rows_total} rows in the file` : ""}</p>
+        <p class="df-import-facts"><strong>${recordCount(item)}</strong> · ${formatDateTime(item.uploaded_at)}
+          ${item.has_file ? html` · <a href=${`/api/datafeed/imports/${item.run_id}/file`} download>Original file: ${item.file_name || "download"}</a>`
+            : item.method === "upload" ? " · Original file not kept" : " · Entered by hand"}</p>
+        <p class="df-muted">${historyLine(item)}</p>
         <div class="discovery-actions">
           <button class="btn ghost" onClick=${() => toggle(item)}>${open === item.run_id ? "Hide records" : "Show records"}</button>
-          ${item.counts.pending > 0 && html`<button class="btn ghost" onClick=${onOpenReview}>Open Review</button>`}
+          ${item.counts.pending > 0 && html`<button class="btn ghost" onClick=${() => openImportInReview(item.run_id)}>
+            ${item.counts.pending} incomplete: open in Review Results</button>`}
           ${item.record_type === "actor" && item.counts.pending > 0 && html`<button class="btn ghost"
             onClick=${() => setCompleting(completing === item.run_id ? null : item.run_id)}>Complete missing information with AI</button>`}
         </div>
@@ -779,10 +838,12 @@ export function createDataFeedPage({html, useState, useEffect}) {
             : !records[item.run_id] ? html`<p class="df-muted">Loading…</p>`
             : html`<table class="discovery-runs"><thead><tr><th>Row</th><th>Record</th><th>Status</th></tr></thead>
               <tbody>${records[item.run_id].map(r => html`<tr key=${`${r.row_number}-${r.name}`}>
-                <td>${r.row_number ?? ""}</td><td>${r.name}</td><td>${r.status}${r.light_pull_read ? " · Light Pull read" : ""}</td></tr>`)}</tbody></table>`}
+                <td>${r.row_number ?? ""}</td><td>${r.name}</td><td>${r.status === "Awaiting Review"
+                  ? html`<button type="button" class="link" onClick=${() => openImportInReview(item.run_id)}>Awaiting Review</button>`
+                  : r.status}${r.light_pull_read ? " · Light Pull read" : ""}</td></tr>`)}</tbody></table>`}
         </div>`}
       </li>`)}
-    </ul>`;
+    </ul>`}`;
   }
 
   return function DataFeed() {
@@ -810,17 +871,18 @@ export function createDataFeedPage({html, useState, useEffect}) {
         <button class=${view === "add" ? "active" : ""} onClick=${() => setView("add")}>Add records</button>
         <button class=${view === "history" ? "active" : ""} onClick=${() => setView("history")}>Import history</button>
       </div>
-      ${view === "history" && html`<${History} onOpenReview=${openReview}/>`}
+      ${view === "history" && html`<${History}/>`}
       ${view === "add" && html`
         ${!catalog.staging_configured && html`<p class="discovery-message error">Sending records to
           Review is not configured on this instance; files and forms can still be checked.</p>`}
         ${done ? html`<section class="discovery-card df-done">
             <h3>${done.status === "already_imported" ? "Already imported" : "Sent to Review Results"}</h3>
             <p>${doneLine(done)}</p>
+            ${done.completion && html`<p>${done.completion}</p>`}
             ${(done.held_for_review || []).length > 0 && html`<ul class="df-notes">
               ${done.held_for_review.map(h => html`<li key=${h.row_number}>Row ${h.row_number}: ${h.reason}</li>`)}</ul>`}
             <div class="discovery-actions">
-              <button class="btn" onClick=${openReview}>Open Review</button>
+              <button class="btn" onClick=${() => done.run_id ? openImportInReview(done.run_id) : openReview()}>Open Review</button>
               <button class="btn ghost" onClick=${() => { reset(); setView("history"); }}>Import history</button>
               <button class="btn ghost" onClick=${reset}>Add more records</button>
             </div>

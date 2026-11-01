@@ -328,12 +328,11 @@ test('the queue groups the pre-redesign backlog first, then one group per run', 
   assert.deepEqual(orphan.map(group => group.key), ['unrecorded']);
 });
 
-test('Run Type offers exactly six choices, and the reason filter is gone', () => {
+test('Run Type names where results come from, and the reason filter is gone', () => {
   assert.deepEqual(RUN_TYPE_OPTIONS.map(o => o.label),
-    ['All Runs', 'Discovery Organizations', 'Discovery Events', 'Discovery People', 'Organization Updates',
-     'Data Feed Imports']);
+    ['All Requests', 'New Requests', 'Organization Updates', 'Import Updates']);
   assert.equal(runTypeName('map_checks'), 'Map Checks');
-  assert.equal(runTypeName('data_feed'), 'Data Feed Imports');
+  assert.equal(runTypeName('data_feed'), 'Import Updates');
   assert.doesNotMatch(component, /review_reason:\s*"all"/);
   assert.doesNotMatch(component, /FIELDS\.reviewReason/);
   assert.doesNotMatch(component, /FIELDS\.sourceRun/);
