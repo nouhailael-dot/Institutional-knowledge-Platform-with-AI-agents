@@ -2693,7 +2693,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${cardField(html, selected, "funding_summary", draft.funding_summary, edit,
               !pending || busy, draftErrors.funding_summary, "Funding")}
             ${cardField(html, selected, "current_activities", draft.current_activities, edit,
-              !pending || busy, draftErrors.current_activities, "Activity")}
+              !pending || busy, draftErrors.current_activities, "Current Programs")}
 
             <div class="review-hubs">
               ${cardLine(html, FIELDS.currentHubs, memberships.map(hub => `${hub.name || hub.hub_id}${

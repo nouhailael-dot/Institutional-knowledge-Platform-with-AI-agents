@@ -44,7 +44,15 @@ from agents.collection.light_pull import (
     LightDocument,
     _fact,
 )
-from agents.collection.site_access import BoundedFetch, PLAIN, SOURCE_TYPES, failure_of
+from agents.collection.site_access import (
+    _NOT_SOURCES,
+    PLAIN,
+    SOURCE_TYPES,
+    BoundedFetch,
+    failure_of,
+    host_of,
+    source_type,
+)
 from agents.common.fact_parts import (
     FACT_PARTS,
     missing_core,
@@ -508,6 +516,30 @@ def _normal_location(value: Mapping) -> dict:
     return {key: item for key, item in out.items() if item}
 
 
+# Boxes an organisation's own three pages rarely state (2026-11-02: four new
+# Massachusetts research centres, funding found for none). When the first read
+# leaves one of these not stated, one web search looks for it on other pages
+# that name the organisation - its news, a funder's or agency's announcement -
+# and those pages are judged by the same quote and evidence rules. Still not
+# stated after that means: its own pages and the search results were read.
+EVIDENCE_SEARCHES: dict[str, str] = {
+    "funding_signal": '{name} grant OR award OR funding OR funded OR raised',
+    "recent_activity": '{name} {year} OR {last_year} announces OR launched OR opened OR new',
+}
+MAX_EVIDENCE_PAGES = 2   # read per searched box
+
+
+def names_in_full(name: str, website: str, html: str, text: str) -> bool:
+    """A page from another site is about THIS organisation only if it writes its full
+    name (a leading "The" aside) or links to its website. Its distinct words are not
+    enough there: for "The Water Council" that is "water" alone."""
+    def norm(value: str) -> str:
+        return " ".join(re.findall(r"[a-z0-9]+", unicodedata.normalize("NFKD", value).casefold()))
+    full = re.sub(r"^the ", "", norm(name))
+    domain = registrable_domain(website or "")
+    return bool(full and f" {full} " in f" {norm(text)} ") or bool(
+        domain and domain.casefold() in (html or "").casefold())
+
 _OTHER_SOURCES = (
     " Some pages are not the organisation's own website (each page says which source it "
     "is). Report only what a page states about THIS organisation by name - never a fact "
@@ -531,6 +563,8 @@ class LightPullReader:
     system = _SYSTEM
     tool_name = "fill_light_pull_boxes"
     tool_description = "Answer every Light Pull box from these pages only."
+
+    evidence_searches: Mapping[str, str] = EVIDENCE_SEARCHES
 
     def __init__(self, client, fetch, *, max_tokens: int = 3000, fallback=None):
         self.client = client
@@ -613,77 +647,159 @@ class LightPullReader:
             input_schema=_answer_schema(wanted, result.pages, self.criteria),
             max_tokens=self.max_tokens,
         ) or {}
-        cost_meter = getattr(self.client, "cost_meter", None)
-        if cost_meter is not None:
-            result.cost_usd = float(cost_meter.spent_usd) - spent
         first = result.pages[0]
         for key in wanted:
             answer = answers.get(key) if isinstance(answers.get(key), Mapping) else {}
-            value = answer.get("value")
-            page = str(answer.get("page") or "")
-            not_found = {"collection_state": "not_found", "value": None, "source_url": first,
-                         "date_read": read_at.isoformat(), "confidence": "medium",
-                         "source_origin": "newly_found"}
-            if not answer.get("stated") or value in (None, "", [], {}):
-                result.evidence[key] = not_found
-                continue
-            if page not in texts:
-                result.rejected[key] = "answer named no page that was read"
-                result.evidence[key] = not_found
-                continue
-            quotes = [str(q) for q in (answer.get("quotes") or []) if str(q or "").strip()]
-            if answer.get("quote"):
-                quotes.append(str(answer["quote"]))
-            if not quotes or len(quotes) > 4 or not all(quote_on_page(q, texts[page]) for q in quotes):
-                result.rejected[key] = "the quote given is not on the page it names"
-                result.evidence[key] = not_found
-                continue
-            dropped: list[str] = []
-            if key in FACT_PARTS and isinstance(value, str):
-                # Plain words where parts were asked: kept as written, if quoted.
-                if not part_supported(value, " ".join(quotes)):
-                    result.rejected[key] = "the answer is not in the quotes given"
-                    result.evidence[key] = not_found
-                    continue
-            elif key in FACT_PARTS:
-                # Each part must be in the quotes: a number not quoted, or a name
-                # the quotes do not contain, is dropped - never kept as a guess.
-                value, dropped = supported_parts(key, value, " ".join(quotes))
-                core = missing_core(key, value)
-                if value and core:
-                    result.rejected[key] = (f"it names no {' or '.join(core)}, so it is not "
-                                            f"this kind of fact")
-                    result.evidence[key] = not_found
-                    continue
-                if not value:
-                    result.rejected[key] = ("no part of the answer is in the quotes given: "
-                                            + "; ".join(dropped))[:200]
-                    result.evidence[key] = not_found
-                    continue
-            kind = result.sources.get(page, "official")
-            candidate = {"collection_state": "found", "value": value, "source_url": page,
-                         "date_read": read_at.isoformat(),
-                         # Its own or its parent's official page naming it: high;
-                         # a page naming it in part, or anyone else's: medium.
-                         "confidence": "high" if kind in ("official", "official_parent")
-                         and page not in partial else "medium",
-                         "source_origin": "newly_found", "quotes": quotes[:4],
-                         "source_type": kind}
-            if dropped:
-                candidate["dropped_parts"] = dropped
-            try:  # the Light Pull's own evidence rules decide what is acceptable
-                _fact(key, candidate, base_url=page, date_read=read_at,
-                      actor_category=actor_category or "", category_type=category_type)
-            except (ValueError, TypeError) as exc:
-                result.rejected[key] = f"fails the Light Pull rule: {exc}"[:200]
-                result.evidence[key] = not_found
-                continue
-            stale = _not_recent(key, value, read_at)
-            if stale:
-                result.rejected[key] = stale
-                result.evidence[key] = not_found
-                continue
-            if key == "location" and isinstance(value, Mapping):
-                candidate["value"] = _normal_location(value)
-            result.evidence[key] = candidate
+            self._judge(result, key, answer, texts, partial, first=first, read_at=read_at,
+                        actor_category=actor_category, category_type=category_type)
+        self._search_evidence(result, wanted, name=name, website=website, partial=partial,
+                              read_at=read_at, actor_category=actor_category,
+                              category_type=category_type)
+        cost_meter = getattr(self.client, "cost_meter", None)
+        if cost_meter is not None:
+            result.cost_usd = float(cost_meter.spent_usd) - spent
         return result
+
+    def _judge(self, result: LightRead, key: str, answer: Mapping, texts: Mapping[str, str],
+               partial: set[str], *, first: str, read_at: datetime,
+               actor_category: str | None, category_type: str) -> None:
+        """Keep one box's answer only if its quotes are on the page it names and it
+        passes the Light Pull's evidence rules; otherwise record it not stated."""
+        value = answer.get("value")
+        page = str(answer.get("page") or "")
+        not_found = {"collection_state": "not_found", "value": None, "source_url": first,
+                     "date_read": read_at.isoformat(), "confidence": "medium",
+                     "source_origin": "newly_found"}
+
+        def refuse(reason: str | None = None) -> None:
+            if reason:
+                result.rejected[key] = reason[:200]
+            result.evidence[key] = not_found
+
+        if not answer.get("stated") or value in (None, "", [], {}):
+            return refuse()
+        if page not in texts:
+            return refuse("answer named no page that was read")
+        quotes = [str(q) for q in (answer.get("quotes") or []) if str(q or "").strip()]
+        if answer.get("quote"):
+            quotes.append(str(answer["quote"]))
+        if not quotes or len(quotes) > 4 or not all(quote_on_page(q, texts[page]) for q in quotes):
+            return refuse("the quote given is not on the page it names")
+        dropped: list[str] = []
+        if key in FACT_PARTS and isinstance(value, str):
+            # Plain words where parts were asked: kept as written, if quoted.
+            if not part_supported(value, " ".join(quotes)):
+                return refuse("the answer is not in the quotes given")
+        elif key in FACT_PARTS:
+            # Each part must be in the quotes: a number not quoted, or a name
+            # the quotes do not contain, is dropped - never kept as a guess.
+            value, dropped = supported_parts(key, value, " ".join(quotes))
+            core = missing_core(key, value)
+            if value and core:
+                return refuse(f"it names no {' or '.join(core)}, so it is not this kind of fact")
+            if not value:
+                return refuse("no part of the answer is in the quotes given: " + "; ".join(dropped))
+        kind = result.sources.get(page, "official")
+        candidate = {"collection_state": "found", "value": value, "source_url": page,
+                     "date_read": read_at.isoformat(),
+                     # Its own or its parent's official page naming it: high;
+                     # a page naming it in part, or anyone else's: medium.
+                     "confidence": "high" if kind in ("official", "official_parent")
+                     and page not in partial else "medium",
+                     "source_origin": "newly_found", "quotes": quotes[:4],
+                     "source_type": kind}
+        if dropped:
+            candidate["dropped_parts"] = dropped
+        try:  # the Light Pull's own evidence rules decide what is acceptable
+            _fact(key, candidate, base_url=page, date_read=read_at,
+                  actor_category=actor_category or "", category_type=category_type)
+        except (ValueError, TypeError) as exc:
+            return refuse(f"fails the Light Pull rule: {exc}")
+        stale = _not_recent(key, value, read_at)
+        if stale:
+            return refuse(stale)
+        if key == "location" and isinstance(value, Mapping):
+            candidate["value"] = _normal_location(value)
+        result.evidence[key] = candidate
+
+    def _search_evidence(self, result: LightRead, wanted: Sequence[str], *, name: str,
+                         website: str, partial: set[str], read_at: datetime,
+                         actor_category: str | None, category_type: str) -> None:
+        """One web search for each searchable box the own pages left not stated.
+
+        Only pages that name THIS organisation in full are read (at most
+        MAX_EVIDENCE_PAGES per box, never a social or data-broker site), and the
+        model is asked that one box over them alone. What it answers is judged
+        exactly as the first read's answers are.
+        """
+        fallback = self.fallback
+        if fallback is None or fallback.search is None:
+            return
+        if "official" not in result.sources.values():
+            # Its own site was closed: the fallback has already searched for it.
+            return
+        missing = [key for key in self.evidence_searches if key in wanted
+                   and (result.evidence.get(key) or {}).get("collection_state") != "found"]
+        if not missing:
+            return
+        own = host_of(website)
+        fetch = BoundedFetch(self.fetch, MAX_EVIDENCE_PAGES * len(missing))
+        for key in missing:
+            query = self.evidence_searches[key].format(
+                name=f'"{name}"', year=read_at.year, last_year=read_at.year - 1)
+            try:
+                hits = fallback.search(query) or []
+            except Exception as exc:  # noqa: BLE001 - the box stays not stated
+                fallback.note(query, "search_failed",
+                              "The web search could not be made: " + failure_of(exc)["plain"])
+                continue
+            fallback.note(query, "searched",
+                          f"Searched for {key.replace('_', ' ')}: {len(hits)} result(s).")
+            docs = []
+            for hit in hits:
+                url = str(getattr(hit, "url", "") or "")
+                if len(docs) >= MAX_EVIDENCE_PAGES:
+                    break
+                if (not url or url in result.texts or host_of(url) == own
+                        or _NOT_SOURCES.search(host_of(url) + ".")):
+                    continue
+                doc = fallback.try_fetch(fetch, url)
+                if doc is None:
+                    continue
+                if not names_in_full(name, website, doc.content or "", _page_text(doc.content or "")):
+                    fallback.note(doc.url, "not_about_it",
+                                  "This page does not name the organisation itself, so it "
+                                  "was not used.")
+                    continue
+                docs.append(doc)
+            documents = [d for d in light_documents(docs, read_at=read_at) if d.text.strip()]
+            if not documents:
+                continue
+            for d in documents:
+                kind = source_type(d.url, website)
+                result.sources[d.url] = kind
+                result.texts[d.url] = d.text
+                result.pages.append(d.url)
+                fallback.note(d.url, "used", f"Read for {key.replace('_', ' ')} from "
+                                             f"{SOURCE_TYPES[kind]}.", source_type=kind)
+            user = json.dumps({
+                "organisation": name, "category": actor_category,
+                "pages": [{"url": d.url, "source": SOURCE_TYPES[result.sources[d.url]],
+                           "text": d.text} for d in documents],
+            }, ensure_ascii=False)
+            urls = [d.url for d in documents]
+            answers = self.client.extract_with_tool(
+                system=self.system + _OTHER_SOURCES, user=user,
+                tool_name=self.tool_name, tool_description=self.tool_description,
+                input_schema=_answer_schema([key], urls, self.criteria),
+                max_tokens=1200,
+            ) or {}
+            answer = answers.get(key) if isinstance(answers.get(key), Mapping) else {}
+            before = result.rejected.pop(key, None)
+            self._judge(result, key, answer, {u: result.texts[u] for u in urls}, partial,
+                        first=result.pages[0], read_at=read_at,
+                        actor_category=actor_category, category_type=category_type)
+            if key not in result.rejected and before and \
+                    result.evidence[key]["collection_state"] != "found":
+                result.rejected[key] = before
+        result.attempts = list(fallback.attempts)

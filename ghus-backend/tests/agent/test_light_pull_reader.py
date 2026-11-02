@@ -270,3 +270,76 @@ def test_no_contact_page_is_read_when_a_page_already_states_an_address():
     docs = choose_pages(_fetch, "https://thewatercouncil.com", topic_terms=["Water technology"],
                         actor_category="association_network", want_location=True)
     assert len(docs) == 3 and docs[-1].url == TOPIC_URL
+
+
+class _Hit:
+    def __init__(self, url):
+        self.url = url
+
+
+class _TwoReads:
+    """First call: the own pages state no funding. Second: the funder's page does."""
+
+    def __init__(self, second):
+        self.answers = [{"funding_signal": {"stated": False}}, second]
+        self.calls = []
+
+    def extract_with_tool(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.answers[min(len(self.calls), len(self.answers)) - 1]
+
+
+def _searching_fallback(tmp_path, hits, searches):
+    from agents.collection.site_access import BlockedSites, Fallback
+
+    def search(query):
+        searches.append(query)
+        return [_Hit(u) for u in hits]
+    return Fallback(blocked=BlockedSites(tmp_path / "blocked.json"), search=search, max_searches=1)
+
+
+FUNDER = "https://fundforlakemichigan.org/grants-2026"
+
+
+def test_funding_its_own_pages_do_not_state_is_searched_for_and_checked(tmp_path, monkeypatch):
+    monkeypatch.setitem(PAGES, FUNDER, "<p>The Fund awarded The Water Council a $500,000 grant "
+                                       "in 2026 for its BREW accelerator.</p>")
+    monkeypatch.setitem(PAGES, "https://www.linkedin.com/company/x", "<p>The Water Council</p>")
+    searches: list[str] = []
+    model = _TwoReads({"funding_signal": {
+        "stated": True, "page": FUNDER, "value": "$500,000 grant, 2026",
+        "quote": "The Fund awarded The Water Council a $500,000 grant in 2026"}})
+    read = LightPullReader(model, _fetch, fallback=_searching_fallback(
+        tmp_path, ["https://www.linkedin.com/company/x", FUNDER], searches)).read(
+        name="The Water Council", website="https://thewatercouncil.com", actor_category=None,
+        read_at=NOW, fields=["funding_signal"])
+    assert searches == ['"The Water Council" grant OR award OR funding OR funded OR raised']
+    box = read.evidence["funding_signal"]
+    assert box["collection_state"] == "found" and box["source_url"] == FUNDER
+    # Another site than its own: medium confidence, and the page is listed as read.
+    assert box["confidence"] == "medium" and box["source_type"] == "third_party"
+    assert FUNDER in read.pages and len(model.calls) == 2
+
+
+def test_a_search_result_that_does_not_name_it_is_never_read_for_it(tmp_path, monkeypatch):
+    other = "https://example.org/water-news"
+    # "Water" alone is its only distinct word: a page about another water body is not about it.
+    monkeypatch.setitem(PAGES, other, "<p>A $3 million grant went to Milwaukee Water Works.</p>")
+    model = _TwoReads({"funding_signal": {"stated": True, "page": other, "value": "$3 million",
+                                          "quote": "A $3 million grant"}})
+    read = LightPullReader(model, _fetch, fallback=_searching_fallback(tmp_path, [other], [])).read(
+        name="The Water Council", website="https://thewatercouncil.com", actor_category=None,
+        read_at=NOW, fields=["funding_signal"])
+    assert read.evidence["funding_signal"]["collection_state"] == "not_found"
+    assert len(model.calls) == 1 and other not in read.pages
+
+
+def test_no_search_when_its_own_pages_state_it(tmp_path):
+    searches: list[str] = []
+    model = Model({"funding_signal": {
+        "stated": True, "page": ABOUT_URL, "value": "$2 million grant from the Fund for Lake Michigan.",
+        "quote": "received a $2 million grant from the Fund for Lake Michigan"}})
+    read = LightPullReader(model, _fetch, fallback=_searching_fallback(tmp_path, [FUNDER], searches)).read(
+        name="The Water Council", website="https://thewatercouncil.com", actor_category=None,
+        read_at=NOW, fields=["funding_signal"])
+    assert read.evidence["funding_signal"]["collection_state"] == "found" and searches == []
