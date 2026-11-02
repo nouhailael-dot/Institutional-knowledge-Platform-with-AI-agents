@@ -177,6 +177,7 @@ def load_actors() -> list[dict]:
                NULLIF(to_jsonb(a)->>'primary_lifecycle_role', '') AS primary_lifecycle_role,
                to_jsonb(a)->'alt_names' AS alt_names,
                NULLIF(to_jsonb(ac)->>'ghus_notes', '') AS ghus_notes,
+               a.updated_at,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,
                (SELECT string_agg(h.name, '{_HUB_SEP}')
@@ -228,6 +229,7 @@ def load_actors() -> list[dict]:
                 "primary_lifecycle_role": r["primary_lifecycle_role"],
                 "alt_names": ", ".join(r["alt_names"]) if isinstance(r["alt_names"], list) else "",
                 "ghus_notes": r["ghus_notes"],
+                "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
                 "owner": OWNER_NOT_RECORDED,
             })
     return out
@@ -320,8 +322,14 @@ def load_actor_profile(actor_id: str) -> dict:
                AND (g.subject_id = %s::uuid OR g.object_id = %s::uuid)
              LIMIT 30""", (actor_id,) * 4)
         relationships = [{"type": t, "outgoing": bool(out), "name": n} for t, out, n in cur.fetchall()]
+        # Where the record first came from (a Phase 1 spreadsheet, an agent run...).
+        cur.execute("""
+            SELECT s.source_type, s.description FROM actor a JOIN source s ON s.source_id = a.source_id
+             WHERE a.actor_id = %s::uuid""", (actor_id,))
+        row = cur.fetchone()
+        origin_source = {"type": row[0], "description": row[1]} if row else None
     return {"sources": sources, "verification": verification, "events": events,
-            "relationships": relationships}
+            "relationships": relationships, "origin_source": origin_source}
 
 
 def load_hubs() -> list[dict]:
