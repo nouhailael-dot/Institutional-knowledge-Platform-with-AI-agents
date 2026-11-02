@@ -412,8 +412,9 @@ test('header badges carry the record kind, the review state and every reason', (
   // One decision bar, at the bottom: none beside the name, and no hub checkbox,
   // reviewer or notes in each record; the reviewer is named once at the top.
   assert.doesNotMatch(component, /review-card-actions|checked=\$\{proposeHub\}/);
-  assert.match(component, /class=\$\{"review-whoami"/);
-  assert.match(component, /localStorage\.getItem\("ghus\.review\.reviewer"\)/);
+  // Named by the user, not typed on every visit: the box shows only when this browser knows no name.
+  assert.match(component, /\$\{askName && html`<label class=\$\{"review-whoami"/);
+  assert.doesNotMatch(component, /BUTTONS\.refresh/);
   assert.equal(reviewReasonLabel('hub_member_outside_radius'), 'Hub Member Outside Radius');
   assert.equal(reviewReasonLabel(''), '');
   assert.equal(reviewStatusLabel('rejected_by_reviewer'), 'Rejected');
@@ -1467,4 +1468,12 @@ test('Category is a filter for organizations only, under Record Type', async () 
   assert.equal(showsCategoryFilter({entity_type: 'person', run_type: 'all'}), false);
   assert.equal(showsCategoryFilter({entity_type: 'actor', run_type: 'all'}), true);
   assert.equal(showsCategoryFilter({entity_type: 'all', run_type: 'actor_updates'}), true);
+});
+
+test('decisions are signed with the name this browser knows; no Refresh button', async () => {
+  const {storedReviewer} = await import('../frontend/review.js');
+  const store = (values) => ({getItem: (key) => values[key] ?? null});
+  assert.equal(storedReviewer(store({'ghus.review.reviewer': 'Fatima Zahra'})), 'Fatima Zahra');
+  assert.equal(storedReviewer(store({'ghus.datafeed.uploader': 'Ismail Sabbar'})), 'Ismail Sabbar');
+  assert.equal(storedReviewer(store({})), '');
 });

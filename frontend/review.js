@@ -838,8 +838,8 @@ function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewe
   return html`<section class="review-section review-changes">
     <h3>Changes to Review ${rows.length > 0 && html`<span class="review-chip">${rows.length}</span>`}</h3>
     ${!rows.length && html`<p class="review-hint">Every change has been decided.</p>`}
-    ${rows.length > 0 && pending && !reviewer.trim() && html`<p class="review-hint">Type your name in
-      Reviewer at the top of Review to decide these changes.</p>`}
+    ${rows.length > 0 && pending && !reviewer.trim() && html`<p class="review-hint">Type your name at
+      the top of Review to decide these changes.</p>`}
     ${rows.map(row => html`<div class="review-change" key=${row.id}>
       <div class="review-change-head"><strong>${row.label}</strong>
         ${row.topic && html`<span class="review-chip">${row.topic}</span>`}</div>
@@ -1810,9 +1810,16 @@ function sourceLink(html, url) {
   return url ? html`<small><a href=${url} target="_blank" rel="noreferrer">Source</a></small>` : null;
 }
 
-/** The reviewer's name as typed earlier in this browser, or empty. */
-function storedReviewer() {
-  try { return localStorage.getItem("ghus.review.reviewer") || ""; } catch { return ""; }
+/**
+ * Who decides, until sign-in attaches it to the user: the name typed earlier in
+ * this browser for Review, else the one typed for the Data Feed. Empty when
+ * neither is known - only then does Review ask for it.
+ */
+export function storedReviewer(storage = null) {
+  try {
+    const store = storage || localStorage;
+    return store.getItem("ghus.review.reviewer") || store.getItem("ghus.datafeed.uploader") || "";
+  } catch { return ""; }
 }
 
 export function createReviewPage({html, useEffect, useRef, useState}) {
@@ -1831,9 +1838,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [selectedId, setSelectedId] = useState(null);
     const [selected, setSelected] = useState(null);
     const [draft, setDraft] = useState({});
-    // Typed once at the top of Review and remembered in this browser, so each
-    // record does not ask again. Never defaulted: empty until a person types it.
+    // Attached to the user (storedReviewer); asked for only when this browser
+    // knows no name, and remembered once typed. Never invented.
     const [reviewer, setReviewerState] = useState(storedReviewer());
+    const [askName] = useState(() => !storedReviewer().trim());
     const setReviewer = value => {
       setReviewerState(value);
       try { localStorage.setItem("ghus.review.reviewer", value); } catch { /* not kept */ }
@@ -2354,14 +2362,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           </button>`)}
       </div>
       <div class="review-sync">
-        <label class=${"review-whoami" + (reviewer.trim() ? "" : " invalid")}>
+        ${askName && html`<label class=${"review-whoami" + (reviewer.trim() ? "" : " invalid")}>
           <span>${FIELDS.reviewer}</span>
           <input value=${reviewer} placeholder="Your name" onInput=${e => setReviewer(e.target.value)}/>
-        </label>
-        <span>Last updated: ${formatSync(data.last_sync)}</span>
-        <button class="btn ghost" disabled=${loading} onClick=${() => load(undefined, true)}>
-          ${BUTTONS.refresh}
-        </button>
+        </label>`}
+        <span class="review-updated">Last updated ${formatSync(data.last_sync)}</span>
       </div>
       ${writerDown && html`<div class="review-notice" role="alert">
         <strong>${SENTENCES.failClosed}</strong> ${SENTENCES.writerUnavailable}

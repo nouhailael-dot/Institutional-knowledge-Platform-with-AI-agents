@@ -2046,7 +2046,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       <div class="subnav">
         <button class=${view === "new" ? "active" : ""} onClick=${() => setView("new")}>New Request</button>
         <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests</button>
-        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Record Updates</button>
+        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Organization Updates</button>
       </div>
 
       ${view === "new" && html`<div class="discovery-segment discovery-kinds" role="group" aria-label="What to discover">
