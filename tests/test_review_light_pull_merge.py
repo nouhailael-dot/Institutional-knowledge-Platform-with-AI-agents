@@ -118,3 +118,21 @@ def test_a_coloured_traceback_still_yields_the_reason():
                 "existing or ambiguous match (website_domain: North Dakota Water Users Association "
                 "fdee588b-625d-4974-89bc-28add40e58c0)); choose same existing or defer\x1b[0m")
     assert "already in the directory as “North Dakota Water Users Association”" in refusal_reason(coloured, 1)
+
+
+def test_the_page_s_own_activity_and_funding_text_never_fill_the_light_pull_boxes():
+    """Shown on the record's own rows; the boxes are only what a read found and checked."""
+    payload = {**_payload(), "funding_summary": "Sales by HY 2026 were CHF 30.4 billion."}
+    payload["light_pull_evidence"] = {
+        "recent_activity": {"collection_state": "not_found", "value": None},
+        "funding_signal": {"collection_state": "not_found", "value": None}}
+    metadata = {"rubric": {}}
+    _attach_page_facts(payload, metadata, url=PAGES[0], read_at="2026-10-15")
+    facts = {f["fact_key"]: f for f in metadata["facts"]}
+    assert facts["recent_activity"]["collection_state"] == "not_found"
+    assert facts["funding_signal"]["collection_state"] == "not_found"
+    # Without any read, the boxes stay unread rather than borrowing the page's text.
+    unread = {k: v for k, v in _payload().items() if not k.startswith("light_pull")}
+    metadata = {"rubric": {}}
+    _attach_page_facts(unread, metadata, url=PAGES[0], read_at="2026-10-15")
+    assert "recent_activity" not in {f["fact_key"] for f in metadata["facts"]}

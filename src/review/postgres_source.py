@@ -2106,8 +2106,11 @@ def _attach_page_facts(payload: dict[str, Any], metadata: dict[str, Any], *,
     hubs = [str(row.get("name")) for row in (rubric.get("hub_matches") or [])
             if isinstance(row, dict) and row.get("name")]
     fact("hub_assignment", {"suggested_hubs": hubs} if hubs else None)
-    fact("recent_activity", _text(payload.get("current_activities")))
-    fact("funding_signal", _text(payload.get("funding_summary")))
+    # Recent activity and funding are boxes only a Light Pull read fills: dated
+    # and quoted. The scoring page's own "current activities" and "funding"
+    # text stays on the record's Current Programs and Funding rows; copied
+    # here as well, it showed twice and passed undated trivia (a group
+    # retreat, a 2024 thesis defence) and sales figures off as found (2026-11-02).
     if reason:
         fact("why_matched", {"reason": reason, "strength": strength,
                              "source_url": str(url or "") or None})
