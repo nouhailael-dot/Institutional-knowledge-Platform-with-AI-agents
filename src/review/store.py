@@ -1691,6 +1691,17 @@ class ReviewStore:
             )
         return self.get(candidate_id)
 
+    def pending_by_run(self, run_ids: list[str]) -> dict[str, int]:
+        """Listed records still awaiting a decision, per source run (the Dashboard's maps)."""
+        if not run_ids:
+            return {}
+        marks = ",".join("?" * len(run_ids))
+        with self.connect() as db:
+            return {row[0]: int(row[1]) for row in db.execute(
+                f"SELECT source_run_id, COUNT(*) FROM review_candidate WHERE status='pending_review' "
+                f"AND folded_into IS NULL AND source_run_id IN ({marks}) GROUP BY source_run_id",
+                list(run_ids))}
+
     SET_ASIDE_PREFIX = "set_aside:"
 
     def set_aside(self, candidate_ids: list[str], *, reason: str) -> int:

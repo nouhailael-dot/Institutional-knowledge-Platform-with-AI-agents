@@ -562,10 +562,10 @@
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261101c"/>
-<link rel="stylesheet" href="/discovery.css?v=20261101c"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261101c"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261101c"/>
+<link rel="stylesheet" href="/review.css?v=20261102c"/>
+<link rel="stylesheet" href="/discovery.css?v=20261102c"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261102c"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261102c"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -582,11 +582,11 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261101c";
-import {createDiscoveryPage} from "./discovery.js?v=20261101c";
-import {createDateInput, usDate} from "./dates.js?v=20261101c";
-import {createDataFeedPage} from "./datafeed.js?v=20261101c";
-import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261101c";
+import {createReviewPage} from "./review.js?v=20261102c";
+import {createDiscoveryPage} from "./discovery.js?v=20261102c";
+import {createDateInput, usDate} from "./dates.js?v=20261102c";
+import {createDataFeedPage} from "./datafeed.js?v=20261102c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261102c";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -1052,9 +1052,16 @@ function RecordEditor({kind,record,options,onClose}){
 }
 
 /* ------------------------------------------------- The four tabs */
-function Actors(){
+// The Dashboard opens one record: select it once the list has loaded.
+function useFocus(focus,rows,setSel){
+  useEffect(()=>{if(!focus||!rows) return;
+    const row=rows.find(r=>String(r.id)===String(focus.id)); if(row) setSel(row);},[focus,rows]);
+}
+
+function Actors({focus}){
   const data=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
+  useFocus(focus,data?.actors,setSel);
   if(!data) return html`<${Loading}/>`;
   const {actors,options}=data;
   const typeOf=a=>a.actor_category||a.actor_type||"";
@@ -1130,9 +1137,10 @@ function eventOrder(e){
   if(!e.start_date) return [1,""];
   return d>=t?[0,e.start_date]:[2,String(99999999-+e.start_date.slice(0,10).replace(/-/g,""))];
 }
-function Events(){
+function Events({focus}){
   const data=useOnce(()=>api("/api/browse/events"));
   const [sel,setSel]=useState(null);
+  useFocus(focus,data?.events,setSel);
   if(!data) return html`<${Loading}/>`;
   const events=[...data.events].sort((a,b)=>{const x=eventOrder(a),y=eventOrder(b);
     return x[0]-y[0]||String(x[1]).localeCompare(String(y[1]))||a.name.localeCompare(b.name);});
@@ -1163,9 +1171,10 @@ function Events(){
     ]}/>`;
 }
 
-function People(){
+function People({focus}){
   const data=useOnce(()=>api("/api/browse/people"));
   const [sel,setSel]=useState(null);
+  useFocus(focus,data?.people,setSel);
   if(!data) return html`<${Loading}/>`;
   const {people,options}=data;
   if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)}
@@ -1706,6 +1715,13 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     if(carried&&!carried.raw&&!msgs.length) setDesc(requestFromRows(carried));
   },[carried,msgs.length]);
 
+  // The Dashboard opens one map, with its conversation (restore, as Saved maps does).
+  useEffect(()=>{const on=(e)=>{const id=e.detail?.map_id;
+      if(e.detail?.tab!=="map"||!id||id===activeJob.current) return;
+      if(busy||verifying){setErr("A map is still running. Stop it or wait before opening another map.");return;}
+      restore(id);};
+    window.addEventListener(NAVIGATE,on); return ()=>window.removeEventListener(NAVIGATE,on);},[busy,verifying]);
+
   function remember(id){
     activeJob.current=id; setJobId(id);
     try{if(id) localStorage.setItem("um6p.mapJobId",id);
@@ -2202,6 +2218,12 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 /* ------------------------------------------------------------------ App */
 function Browse(){
   const [k,setK]=useState("actors");
+  const [focus,setFocus]=useState(null);
+  useEffect(()=>{const on=(e)=>{const record=e.detail?.record;
+      if(e.detail?.tab!=="browse"||!record) return;
+      setK({actor:"actors",person:"people",event:"events"}[record.kind]||"actors");
+      setFocus({...record,at:Date.now()});};
+    window.addEventListener(NAVIGATE,on); return ()=>window.removeEventListener(NAVIGATE,on);},[]);
   const V={actors:Actors,hubs:Hubs,events:Events,people:People}[k];
   return html`<div>
     <h1 class="hero-h">Ecosystem Directory</h1>
@@ -2210,7 +2232,7 @@ function Browse(){
     <div class="subnav">
       ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${label}</button>`)}
-    </div><${V}/></div>`;
+    </div><${V} focus=${focus}/></div>`;
 }
 const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="1.7"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="6" r="2.3"/>
@@ -2240,7 +2262,10 @@ function App(){
   // Discovery's Run now opens the actor's profile in Review (discovery.js openInReview).
   useEffect(()=>{const go=()=>setTab("review");window.addEventListener("ghus:open-review",go);
     return ()=>window.removeEventListener("ghus:open-review",go);},[]);
-  // Completed runs not yet seen on the Dashboard: a count on its nav item.
+  // The Dashboard's entries open their page; the page itself opens the item.
+  useEffect(()=>{const go=(e)=>{if(e.detail?.tab) setTab(e.detail.tab);};window.addEventListener(NAVIGATE,go);
+    return ()=>window.removeEventListener(NAVIGATE,go);},[]);
+  // Requests with findings not yet opened from the Dashboard: a count on its nav item.
   const [unseen,setUnseen]=useState(0);
   useEffect(()=>{const on=(e)=>setUnseen(e.detail?.count||0);window.addEventListener(DASHBOARD_UNSEEN,on);
     return ()=>window.removeEventListener(DASHBOARD_UNSEEN,on);},[]);

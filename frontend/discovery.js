@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, usDate} from "./dates.js?v=20261101c";
+import {createDateInput, usDate} from "./dates.js?v=20261102c";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -200,6 +200,8 @@ export function sourceLabel(kind) {
 
 /** Ask the page to show an actor's update profile in Review (index.html, review.js). */
 export const OPEN_IN_REVIEW = "ghus:open-review";
+/** The Dashboard opens a page at one item: {tab, map_id | request_id | view | record}. */
+export const NAVIGATE = "ghus:navigate";
 
 export function openInReview(actor) {
   window.dispatchEvent(new CustomEvent(OPEN_IN_REVIEW, {detail: {
@@ -1590,7 +1592,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     </section>`;
   }
 
-  function UpdateRequestCard({request, sectors, busy, onAction, today, onChanged}) {
+  function UpdateRequestCard({request, sectors, busy, onAction, today, onChanged, focused}) {
     const [open, setOpen] = useState(false);
     const runs = request.runs || [];
     const live = request.status === "active" || request.status === "paused";
@@ -1601,7 +1603,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const showResults = () => (names.length === 1 && (request.actor_ids || []).length === 1
       ? openInReview({actor_id: request.actor_ids[0], name: names[0]})
       : window.dispatchEvent(new CustomEvent(OPEN_IN_REVIEW, {detail: {}})));
-    return html`<article class="discovery-request">
+    return html`<article class=${"discovery-request" + (focused ? " focused" : "")} id=${"request-" + request.subscription_id}>
       <div class="discovery-request-head">
         <div>
           <span class="discovery-kind">Organizations Update</span>
@@ -1772,7 +1774,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     </section>`;
   }
 
-  function RequestCard({request, options, busy, onAction, onRun, today, onChanged}) {
+  function RequestCard({request, options, busy, onAction, onRun, today, onChanged, focused}) {
     const [open, setOpen] = useState(false);
     const runs = request.runs || [];
     const results = request.results || [];
@@ -1784,7 +1786,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const finished = runs.find((run) => run.status !== "running" && reviewRunKey(run));
     const entity = request.discovery_entity || "actor";
     const noun = {actor: "Organizations", event: "Events", person: "People"}[entity];
-    return html`<article class="discovery-request">
+    return html`<article class=${"discovery-request" + (focused ? " focused" : "")} id=${"request-" + request.subscription_id}>
       <div class="discovery-request-head">
         <div>
           ${entity !== "actor" && html`<span class="discovery-kind">${noun}</span>`}
@@ -1863,6 +1865,21 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     // Organizations Update requests, listed under Requests too.
     const [updates, setUpdates] = useState([]);
     const [view, setView] = useState("new");
+    // The Dashboard opens Requests, or one request in it.
+    const [focusId, setFocusId] = useState(null);
+    useEffect(() => {
+      const on = (e) => {
+        if (e.detail?.tab !== "discovery") return;
+        if (e.detail.request_id || e.detail.view === "requests") setView("requests");
+        setFocusId(e.detail.request_id || null);
+      };
+      window.addEventListener(NAVIGATE, on);
+      return () => window.removeEventListener(NAVIGATE, on);
+    }, []);
+    useEffect(() => {
+      if (view !== "requests" || !focusId) return;
+      document.getElementById(`request-${focusId}`)?.scrollIntoView({block: "center", behavior: "smooth"});
+    }, [view, focusId, requests, updates]);
     // What the new request finds. Organizations keep their form exactly.
     const [kind, setKind] = useState("actor");
     const [form, setForm] = useState(blankForm);
@@ -2170,8 +2187,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           ? html`<p class="discovery-empty">No requests yet.</p>`
           : listed.map(({kind: k, r}) => k === "update"
             ? html`<${UpdateRequestCard} key=${r.subscription_id} request=${r} sectors=${options.topics}
+                focused=${r.subscription_id === focusId}
                 busy=${busy} onAction=${onUpdateAction} today=${today} onChanged=${load}/>`
             : html`<${RequestCard} key=${r.subscription_id} request=${r} options=${options}
+                focused=${r.subscription_id === focusId}
                 busy=${busy} onAction=${onAction} onRun=${runNow} today=${today} onChanged=${load}/>`)}
       </section>`}
       `}

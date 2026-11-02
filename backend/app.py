@@ -465,7 +465,44 @@ def map_session():
 @app.get("/api/maps")
 def maps_recent():
     enabled, reason = research_availability()
-    return {"maps": map_store().recent(), "research_available": enabled, "research_disabled_reason": reason}
+    maps = map_store().recent()
+    # Records each map sent to Review Results that nobody has decided yet (Dashboard).
+    try:
+        pending = review_store().pending_by_run([m["id"] for m in maps])
+    except Exception:
+        logger.warning("Could not count maps' pending Review records", exc_info=True)
+        pending = {}
+    for m in maps:
+        m["pending_review"] = pending.get(m["id"], 0)
+    return {"maps": maps, "research_available": enabled, "research_disabled_reason": reason}
+
+
+@app.get("/api/dashboard/directory-activity")
+def dashboard_directory_activity(reviewer: str = Query("", max_length=120),
+                                 days: int = Query(30, ge=1, le=366)):
+    """The name's latest Directory contributions (Review decisions), newest first."""
+    from src.dashboard import directory_activity
+    try:
+        return {"activity": directory_activity(reviewer, days=days)}
+    except Exception:
+        logger.exception("Dashboard directory activity failed")
+        raise HTTPException(503, "The Directory activity could not be read right now.")
+
+
+@app.get("/api/dashboard/spending")
+def dashboard_spending():
+    """Every month's request spending and the maps run on this computer. For the admin."""
+    from src.dashboard import spending_by_month
+    try:
+        months = spending_by_month()
+    except Exception:
+        logger.exception("Dashboard spending failed")
+        raise HTTPException(503, "Spending could not be read right now.")
+    maps: dict[str, float] = {}
+    for m in map_store().recent():
+        month = time.strftime("%Y-%m", time.localtime(m["created"]))
+        maps[month] = round(maps.get(month, 0.0) + float(m.get("spent_usd") or 0), 4)
+    return {"months": months, "maps_on_this_computer": maps}
 
 
 def require_research():
