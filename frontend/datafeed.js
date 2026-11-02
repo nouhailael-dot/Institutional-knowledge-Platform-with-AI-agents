@@ -334,6 +334,21 @@ export function historyMeta(item = {}) {
   ].filter(Boolean).join(" · ");
 }
 
+/** What an import looks like in the history, shown while there is none. Never real data. */
+export const EXAMPLE_IMPORT = {
+  import_name: "Kansas water organizations", record_type: "actor", method: "upload",
+  file_name: "GHUS_Organizations_Template.xlsx", uploaded_at: "2026-11-02T10:30:00",
+  uploaded_by: "", admission: "review", status: "Partly reviewed",
+  rows_total: 5, staged: 4, rows_invalid: 1,
+  counts: {pending: 2, approved_new: 1, matched_existing: 1},
+  records: [
+    {row_number: 2, name: "Example Water Lab", status: "Approved and inserted"},
+    {row_number: 3, name: "Example Irrigation Co.", status: "Matched to existing record"},
+    {row_number: 4, name: "Example Aquifer Center", status: "Awaiting Review"},
+    {row_number: 5, name: "Example Rural Water District", status: "Awaiting Review"},
+  ],
+};
+
 export function formatDateTime(value) {
   return value ? usDateTime(value) : "";
 }
@@ -780,6 +795,35 @@ export function createDataFeedPage({html, useState, useEffect}) {
     </div>`;
   }
 
+  /** An import card as it will look, with made-up records and nothing to click. */
+  function ExampleImport({uploader}) {
+    const item = {...EXAMPLE_IMPORT, uploaded_by: uploader.trim() || "Your name"};
+    return html`<div class="df-example" aria-label="Example of an import">
+      <p class="df-example-tag">Example · how an import will appear here (not real data)</p>
+      <div class="discovery-request">
+        <div class="discovery-request-head">
+          <div>
+            <h3>${item.import_name}</h3>
+            <p>${historyMeta(item)}</p>
+          </div>
+          <span class="discovery-status paused">${item.status}</span>
+        </div>
+        <p class="df-import-facts"><strong>${recordCount(item)}</strong> · ${formatDateTime(item.uploaded_at)} · Original file: ${item.file_name}</p>
+        <p class="df-muted">${historyLine(item)}</p>
+        <div class="discovery-actions">
+          <button class="btn ghost" disabled>Hide records</button>
+          <button class="btn ghost" disabled>${item.counts.pending} incomplete: open in Review Results</button>
+          <button class="btn ghost" disabled>Complete missing information with AI</button>
+        </div>
+        <div class="df-records">
+          <table class="discovery-runs"><thead><tr><th>Row</th><th>Record</th><th>Status</th></tr></thead>
+            <tbody>${item.records.map(r => html`<tr key=${r.row_number}>
+              <td>${r.row_number}</td><td>${r.name}</td><td>${r.status}</td></tr>`)}</tbody></table>
+        </div>
+      </div>
+    </div>`;
+  }
+
   function History() {
     const [items, setItems] = useState(null);
     const [me, setMe] = useState(() => rememberedUploader());
@@ -817,7 +861,8 @@ export function createDataFeedPage({html, useState, useEffect}) {
       <small class="df-hint">Shows the imports made under this name, as it was typed when uploading.</small>
     </div>
     ${!mine.length && html`<p class="discovery-empty">No imports under this name yet. Records you send to
-      Review appear here, with what Review decided.</p>`}
+      Review appear here, with what Review decided.</p>
+      <${ExampleImport} uploader=${me}/>`}
     ${mine.length > 0 && html`<ul class="df-history">
       ${mine.map(item => html`<li key=${item.run_id} class="discovery-request">
         <div class="discovery-request-head">
