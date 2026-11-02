@@ -14,6 +14,7 @@
     --violet:#5850c4; --violet-soft:#ecebfa;
     --slate:#556072; --slate-soft:#ebedf0;
     --green:#2f7a33; --green-soft:#e5f2e3; --amber:#94600a; --amber-soft:#fbf0d9; --link:#1f5fa8;
+    --orange:#c2570c; --orange-soft:#fdeedd; --red:#b42318; --red-soft:#fdecec;
     --shadow-sm:0 1px 2px rgba(24,24,24,.05);
     --shadow:0 1px 3px rgba(24,24,24,.05),0 10px 26px -8px rgba(24,24,24,.11);
     --shadow-lg:0 2px 8px rgba(24,24,24,.06),0 22px 48px -14px rgba(24,24,24,.20);
@@ -32,6 +33,7 @@
       --violet:#a79ef3; --violet-soft:#211e4d;
       --slate:#aeb6bf; --slate-soft:#252a2f;
       --green:#7fcf83; --green-soft:#16301a; --amber:#f0c060; --amber-soft:#33270f; --link:#82b6f2;
+      --orange:#f5a25d; --orange-soft:#3a230f; --red:#f2857a; --red-soft:#3d1714;
       --shadow-sm:0 1px 2px rgba(0,0,0,.35);
       --shadow:0 1px 3px rgba(0,0,0,.4),0 12px 28px -8px rgba(0,0,0,.5);
       --shadow-lg:0 2px 8px rgba(0,0,0,.45),0 24px 52px -14px rgba(0,0,0,.62);
@@ -85,7 +87,8 @@
     transition:border-color .15s,box-shadow .15s}
   .field:focus{outline:none;border-color:var(--accent);
     box-shadow:0 0 0 4px var(--accent-soft)}
-  textarea.field{resize:vertical;min-height:56px;padding-left:46px}
+  textarea.field{resize:vertical;min-height:56px}
+  .input-shell textarea.field{padding-left:46px}
   .btn{border:0;color:#fff;font-weight:600;padding:0 24px;border-radius:var(--radius-sm);
     cursor:pointer;white-space:nowrap;background:linear-gradient(180deg,var(--accent-2),var(--accent));
     box-shadow:var(--shadow-sm);transition:filter .15s,transform .05s}
@@ -103,6 +106,15 @@
   .chip.slate{background:var(--slate-soft);color:var(--slate)}
   .chip.green{background:var(--green-soft);color:var(--green)}
   .chip.amber{background:var(--amber-soft);color:var(--amber)}
+  .chip.red{background:var(--red-soft);color:var(--red)}
+  .chip.orange{background:var(--orange-soft);color:var(--orange)}
+  .chip.dot::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+  .mwhy-box{margin-top:12px;padding:10px 12px;border-radius:8px;background:var(--slate-soft)}
+  .mwhy-box>summary{cursor:pointer;margin:0}.mwhy-box[open]>summary{margin-bottom:6px}
+  .mwhy-h{font-weight:600;font-size:.9em;margin-bottom:4px;color:var(--slate)}
+  .mothers{margin:6px 0 14px}
+  .madd-box{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)}
+  .mrow.mfacts{flex-direction:column;align-items:flex-start;gap:4px}
   .badges.inline{display:inline-flex;gap:5px;margin:4px 0 0}
   .name-link{color:var(--link);font-weight:600}
   .dir-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:14px}
@@ -236,8 +248,9 @@
   .chat{display:flex;flex-direction:column;gap:16px;margin-bottom:12px}
   .msg{display:flex;gap:10px;align-items:flex-start}
   .msg.user{justify-content:flex-end}
-  .avatar{flex:0 0 30px;width:30px;height:30px;border-radius:50%;background:var(--accent-soft);
-    color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm)}
+  .avatar{flex:0 0 38px;width:38px;height:38px;border-radius:50%;background:var(--accent-soft);
+    color:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow-sm);
+    font-weight:750;font-size:17px;line-height:1}
   .bubble{border-radius:16px;padding:12px 16px;max-width:84%}
   .bubble.user{background:linear-gradient(180deg,var(--accent-2),var(--accent));color:#fff;
     font-weight:500;border-bottom-right-radius:5px;box-shadow:var(--shadow-sm)}
@@ -353,7 +366,23 @@
     padding:6px 0 14px;border-bottom:1px solid var(--line);margin-bottom:14px}
   .map-title{font-family:var(--serif);font-size:22px;font-weight:600;color:var(--ink)}
   .map-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-  .map-select{max-width:260px}
+  .map-select{max-width:420px}
+  .saved-maps{position:relative}
+  .saved-toggle{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
+    padding:10px 14px;border:1px solid var(--accent);color:var(--ink);background:var(--surface)}
+  .saved-toggle span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .saved-toggle:disabled{opacity:.6;cursor:default}
+  .saved-panel{position:absolute;z-index:30;top:calc(100% + 6px);left:0;right:0;min-width:300px;background:var(--surface);
+    border:1px solid var(--line-strong);border-radius:10px;box-shadow:var(--shadow);padding:8px}
+  .saved-panel .saved-search{width:100%;box-sizing:border-box;margin-bottom:6px;padding:9px 12px}
+  .saved-list{list-style:none;margin:0;padding:0;max-height:320px;overflow-y:auto}
+  .saved-list button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;border:0;background:transparent;
+    padding:9px 10px;border-radius:7px;cursor:pointer;color:var(--ink);font:inherit;font-size:14.5px}
+  .saved-list button:hover,.saved-list button.on{background:var(--accent-soft)}
+  .saved-list small{color:var(--muted);white-space:nowrap}
+  .saved-none{padding:10px;color:var(--muted);font-size:14px}
+  .start-select.saved-maps{max-width:560px}
+  .map-select.saved-maps{width:360px;max-width:100%}
   .filter-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line);
     position:sticky;top:0;z-index:5;background:var(--bg)}
   .fchip{border:1px solid transparent;background:transparent;border-radius:999px;padding:5px 12px;font-size:13px;
@@ -449,7 +478,10 @@
   .sidebar{background:#27292d;border-right-color:#27292d;color:#fff}
   .sidebar .compass-brand{border-top-color:rgba(255,255,255,.14)}.sidebar .compass-mark,.sidebar .compass-name{color:#fff}.sidebar .compass-tag{color:#bbbcc0}
   .brand-name{color:#fff}.brand-caption{color:#bbbcc0}
-  .workspace-brand{border-bottom:1px solid #414348;margin-bottom:16px}
+  .workspace-brand{margin-bottom:6px}
+  /* A light version of the official logo (white letters and text) for the dark sidebar. */
+  .brand-logo{display:block;width:100%;padding:2px 0}
+  .brand-logo img{display:block;width:100%;max-width:150px;height:auto}
   .nav-label{color:#a7a9af}.nav-item{color:#d0d1d5}
   .nav-item:hover{background:#36383d;color:#fff}
   .nav-item.active{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -581,9 +613,35 @@
   .msrc a{transition:border-color var(--t-fast) var(--ease),color var(--t-fast) var(--ease)}
 
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+  /* Larger text across the platform (asked for on 30 Oct and 2 Nov 2026). Kept
+     last so it wins over the earlier, smaller sizes. */
+  body{font-size:15.5px}
+  .nav-item{font-size:15px}
+  .hint,.tablecap,.selnote,.rw{font-size:14px}
+  .example,.fchip{font-size:14px}
+  .chip{font-size:12.5px}
+  .mcard .mn{font-size:17.5px}
+  .mcard .mdesc{font-size:15px}
+  .mrow{font-size:14.5px}
+  .msrc,.mnote,.why,.whynot{font-size:14px}
+  .mperson-name{font-size:15px}
+  .mperson-meta,.mperson-links{font-size:14px}
+  .mpeople summary,.mgroup-h .n{font-size:14px}
+  .mwhy-h{font-size:14px}
+  .bubble.bot .answer,.answer{font-size:16px}
+  table.grid{font-size:14.5px}
+  table.grid th{font-size:11.5px}
+  .pf-k,.pf-history{font-size:14px}
+  .prompt-card{font-size:14.5px}
+  .filters label,.edit-field>label{font-size:12px}
+  .breadcrumb{font-size:13px}
+  .ask-form>.btn{font-size:16px;padding:0 30px;min-width:120px}
+  .dir-tabs button,.tabs button,.subnav button{font-size:16px;padding-top:12px;padding-bottom:12px}
+  @media(max-width:760px){.nav-item{font-size:12px}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261030b"/>
-<link rel="stylesheet" href="/discovery.css?v=20261030b"/>
+<link rel="stylesheet" href="/review.css?v=20261102c"/>
+<link rel="stylesheet" href="/discovery.css?v=20261102c"/>
 <link rel="stylesheet" href="/datafeed.css?v=20261030b"/>
 <link rel="stylesheet" href="/dashboard.css?v=20261030b"/>
 <script type="importmap">
@@ -602,10 +660,10 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261030b";
-import {createDiscoveryPage} from "./discovery.js?v=20261030b";
+import {createReviewPage} from "./review.js?v=20261102b";
+import {createDiscoveryPage} from "./discovery.js?v=20261102b";
 import {createDateInput, usDate} from "./dates.js?v=20261030b";
-import {createDataFeedPage} from "./datafeed.js?v=20261030b";
+import {createDataFeedPage} from "./datafeed.js?v=20261102a";
 import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261030b";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
@@ -622,10 +680,8 @@ const EChip=({type})=>html`<span class=${"chip "+(ETONE[type]||"slate")}>${(type
 
 const ICON_SEARCH=html`<svg class="in-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>`;
-const AVATAR=html`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-  stroke-width="1.9"><circle cx="6" cy="7" r="2.1"/><circle cx="18" cy="6" r="2.1"/>
-  <circle cx="12" cy="17.5" r="2.1"/><path d="M7.9 8.4 10.6 15.6M16.4 7.6 13.2 15.9M8.2 7 15.7 6.3"
-  stroke-linecap="round"/></svg>`;
+// Compass's initial, as a person's initials would be (2 Nov 2026).
+const AVATAR=html`<span aria-label="Compass">C</span>`;
 
 /* ------------------------------------------------------------------ Ask */
 /* Commonly used prompts (Fatima's mockups, 27 Oct 2026). Clicking one fills the
@@ -828,7 +884,7 @@ function Ask({onCarryOver,onExplore}){
         <div class="input-shell">
           ${ICON_SEARCH}
           <textarea class="field" rows="1"
-            placeholder=${empty?"Ask about actors, hubs, or events…":"Ask a follow-up…"}
+            placeholder=${empty?"Ask about organizations, hubs, or events…":"Ask a follow-up…"}
             value=${q} onInput=${e=>setQ(e.target.value)}
             onKeyDown=${e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();ask();}}}></textarea>
         </div>
@@ -858,68 +914,49 @@ function statusOf(r){
   if(s==="verified"||s==="phase_1") return "Verified";
   if(s==="parked") return "Parked";
   if(s==="rejected") return "Rejected";
-  if(s==="removed") return "Removed";
+  if(s==="removed") return "Deleted";
   return "Pending review";
 }
-const STATUS_CHIP={"Verified":"green","Pending review":"amber","Parked":"slate","Rejected":"slate","Removed":"slate"};
+// One look for every record tag (30 Oct 2026): Verified alone has a check mark;
+// every other tag is a colored dot and the word.
+const STATUS_CHIP={"Verified":"green","Pending review":"amber","Parked":"orange","Rejected":"slate","Deleted":"red"};
 
-/* Delete in the Ecosystem Directory (29 Oct 2026): a warning, a reason, the
-   person's name and a second confirmation. Removable, never wiped - the backend
-   records a GHUS decision and the directory hides the record; Status -> Removed
-   lists it with Restore. Organizations only for now; events, hubs and people
-   show the same panel, switched off, until the backend has the same path. */
+/* Delete in the Ecosystem Directory (30 Oct 2026): one confirmation, no reason
+   to type, no restore. The backend still records the GHUS decision (with a fixed
+   reason) and the directory hides the record. Organizations only for now. */
+const DELETE_REASON="Deleted from the Ecosystem Directory";
 function DeletePanel({kind,r,onDone,onClose}){
-  const restoring=statusOf(r)==="Removed", works=kind==="actor";
-  const [reason,setReason]=useState("");
-  const [sure,setSure]=useState(false);
+  const works=kind==="actor";
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
-  // Who deleted it is recorded by the server: the signed-in user once accounts exist.
-  const ready=works&&(restoring||reason.trim());
   async function send(){
-    if(busy||!ready) return;
+    if(busy||!works) return;
     setBusy(true); setErr(null);
     try{
-      const res=await fetch(`/api/browse/actors/${r.id}/${restoring?"restore":"remove"}`,{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({reason,confirm:true})});
+      const res=await fetch(`/api/browse/actors/${r.id}/remove`,{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:DELETE_REASON,confirm:true})});
       const d=await res.json();
-      if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not save that.");
-      onDone(restoring?`${r.name} is back in the directory.`:`${r.name} was removed from the directory.`);
+      if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not delete that.");
+      onDone(`${r.name} was deleted from the directory.`);
     }catch(e){ setErr(String(e.message||e)); setBusy(false); }
   }
-  return html`<div class="card pad fade delete-panel">
-    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <strong>${restoring?`Restore ${r.name}`:`Delete ${r.name}`}</strong>
-      <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
-    </div>
-    ${restoring
-      ? html`<p>Removed${r.removed_by&&!r.removed_by.startsWith("Not recorded")?html` by <b>${r.removed_by}</b>`:""}${`${r.removed_at?` on ${usDate(r.removed_at.slice(0,10))}`:""}: `
-          + `${r.removed_reason||"no reason recorded"}. Restoring puts it back in the Ecosystem Directory for everyone.`}</p>`
-      : html`<p class="delete-warning">This removes ${r.name} from the Ecosystem Directory for everyone.</p>
-          <p class="hint" style=${{margin:"0 0 10px"}}>It stays in the history with its reason, and a GHUS
-            reviewer can restore it from Status → Removed.</p>`}
+  return html`<div class="card pad fade delete-panel" role="alertdialog" aria-label=${`Delete ${r.name}`}>
+    <p class="delete-warning" style=${{marginTop:0}}>Are you sure you want to delete ${r.name}?</p>
+    <p class="hint" style=${{margin:"0 0 10px"}}>Clicking Yes removes it from the Ecosystem Directory for everyone.</p>
     ${!works&&html`<p class="hint">Deleting ${kind==="event"?"events":kind==="hub"?"hubs":"people"} connects once the
       backend has the same path; organizations can be deleted now.</p>`}
-    ${!restoring&&html`<div class="edit-field"><label>Reason</label>
-      <textarea class="field edit-long" rows="2" disabled=${!works} value=${reason} onInput=${e=>setReason(e.target.value)}
-        placeholder="Why it should not be in the directory, e.g. a duplicate of another record, closed, not relevant to GHUS."></textarea></div>`}
     ${err&&html`<div class="whynot" role="alert">${err}</div>`}
-    <div class="attach-row" style=${{marginTop:"10px"}}>
-      ${restoring
-        ? html`<button class="btn" type="button" disabled=${busy||!ready} onClick=${send}>${busy?"Restoring…":"Restore"}</button>`
-        : !sure
-          ? html`<button class="btn danger" type="button" disabled=${!ready} onClick=${()=>setSure(true)}>Delete</button>`
-          : html`<span class="delete-warning" style=${{margin:0}}>Are you sure? ${r.name} disappears for everyone.</span>
-              <button class="btn danger" type="button" disabled=${busy} onClick=${send}>${busy?"Deleting…":"Yes, delete"}</button>
-              <button class="example" type="button" disabled=${busy} onClick=${()=>setSure(false)}>No, keep it</button>`}
+    <div class="attach-row">
+      <button class="btn danger" type="button" disabled=${busy||!works} onClick=${send}>${busy?"Deleting…":"Yes, I'm sure"}</button>
+      <button class="example" type="button" disabled=${busy} onClick=${onClose}>No, keep</button>
     </div>
   </div>`;
 }
 function RecordBadges({r}){
   const status=statusOf(r), origin=r.origin==="AI-Mapped"?"AI mapped":r.origin;
   return html`<span class="badges inline">
-    ${origin&&html`<span class=${"chip "+(origin==="AI mapped"?"violet":"slate")} title="Who made this record">${origin}</span>`}
-    <span class=${"chip "+STATUS_CHIP[status]}>${status==="Verified"?"✓ ":""}${status}</span>
+    ${origin&&html`<span class=${"chip dot "+(origin==="AI mapped"?"violet":"slate")} title="Who made this record">${origin}</span>`}
+    <span class=${"chip "+STATUS_CHIP[status]+(status==="Verified"?"":" dot")}>${status==="Verified"?"✓ ":""}${status}</span>
   </span>`;
 }
 const today=()=>new Date().toISOString().slice(0,10);
@@ -939,43 +976,53 @@ function downloadCsv(name,columns,rows){
 /* The list every tab shares. `filters` are {key,label,options,test} (a select) or
    {key,label,kind:"text",placeholder,test}; `more` folds the rarely used ones.
    Status and Owner are added to every tab. `columns` are {label,text,cell?}. */
+/* Status (a person's decision) and Source (who made the record) are separate
+   filters; Owner applies to All Records only. A country outside the US has no
+   state, GHUS region or hub, so those filters and columns step aside (2 Nov 2026). */
+const sourceOf=r=>r.origin==="AI-Mapped"?"AI mapped":(r.origin||"");
+const US="United States";
 function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],columns,onOpen,exportName,empty,note}){
   const [q,setQ]=useState("");
   const [vals,setVals]=useState({});
-  const [verifiedOnly,setVerifiedOnly]=useState(false);
+  const [mine,setMine]=useState(false);
   const set=(k,v)=>setVals(x=>({...x,[k]:v}));
+  const nonUS=!!vals.country&&vals.country!==US;
   const common=[
-    {key:"_status",label:"Status",options:distinct(rows.map(statusOf)),test:(r,v)=>statusOf(r)===v},
-    {key:"_owner",label:"Owner",options:distinct(rows.map(ownerOf)),test:(r,v)=>ownerOf(r)===v},
+    {key:"_status",label:"Status",options:distinct(rows.map(statusOf)).filter(v=>v!=="Deleted"),test:(r,v)=>statusOf(r)===v},
+    {key:"_source",label:"Source",options:distinct(rows.map(sourceOf)),test:(r,v)=>sourceOf(r)===v},
+    ...(mine?[]:[{key:"_owner",label:"Owner",options:distinct(rows.map(ownerOf)),test:(r,v)=>ownerOf(r)===v}]),
   ];
+  const usable=f=>!(nonUS&&f.usOnly);
+  filters=filters.filter(usable); more=more.filter(usable); columns=columns.filter(usable);
   const all=[...filters,...common,...more];
   const needle=q.trim().toLowerCase();
   const matches=rows.filter(r=>
-    (statusOf(r)!=="Removed"||vals._status==="Removed") &&
+    statusOf(r)!=="Deleted" &&
     (!needle||search.text(r).toLowerCase().includes(needle)) &&
-    (!verifiedOnly||statusOf(r)==="Verified") &&
     all.every(f=>!vals[f.key]||f.test(r,vals[f.key])));
   const control=f=>html`<div key=${f.key}><label>${f.label}</label>
     ${f.kind==="text"
       ? html`<input class="field" placeholder=${f.placeholder||""} value=${vals[f.key]||""}
           onInput=${e=>set(f.key,e.target.value)}/>`
+      : f.kind==="date"
+      ? html`<${DateInput} ariaLabel=${f.label} value=${vals[f.key]||""} onChange=${v=>set(f.key,v)}/>`
       : html`<${Sel} v=${vals[f.key]||""} set=${v=>set(f.key,v)} opts=${typeof f.options==="function"?f.options(vals):f.options}/>`}</div>`;
-  const exportColumns=[{label:"Name",text:r=>r.name},{label:"Status",text:statusOf},
-    {label:"Source",text:r=>r.origin||""},...columns,{label:"Owner",text:ownerOf}];
+  // Export = what the table shows: the name, its two tags, then the columns.
+  const exportColumns=[{label:nameLabel,text:r=>r.name},{label:"Source",text:sourceOf},
+    {label:"Status",text:statusOf},...columns];
   return html`<div class="fade">
     <div class="card pad">
       <div class="dir-top">
         <div class="seg" role="group" aria-label="Whose records">
-          <button type="button" class="on">All Records</button>
-          <button type="button" disabled title="Available once logins exist">My Records</button>
+          <button type="button" class=${mine?"":"on"} onClick=${()=>setMine(false)}>All Records</button>
+          <button type="button" class=${mine?"on":""} disabled title="Available once logins exist"
+            onClick=${()=>{setMine(true);set("_owner","");}}>My Records</button>
         </div>
         <input class="field" placeholder=${search.placeholder} aria-label="Search"
           value=${q} onInput=${e=>setQ(e.target.value)}/>
       </div>
       <div class="filters">${[...filters,...common].map(control)}</div>
       <div class="dir-row">
-        <label class="check"><input type="checkbox" checked=${verifiedOnly}
-          onChange=${e=>setVerifiedOnly(e.target.checked)}/> Verified records only</label>
         ${more.length>0&&html`<details class="more-filters"><summary>More filters</summary>
           <div class="filters" style=${{marginTop:"12px"}}>${more.map(control)}</div></details>`}
       </div>
@@ -991,11 +1038,11 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
       : !matches.length? html`<div class="empty">No ${plural} match these filters. Try widening them.</div>`
       : html`
       <table class="grid"><thead><tr><th>${nameLabel}</th>
-        ${columns.map(c=>html`<th key=${c.label} class=${c.num?"num":""}>${c.label}</th>`)}<th>Owner</th><th aria-hidden="true"></th></tr></thead>
+        ${columns.map(c=>html`<th key=${c.label} class=${c.num?"num":""}>${c.label}</th>`)}<th aria-hidden="true"></th></tr></thead>
         <tbody>${matches.slice(0,400).map(r=>html`<tr key=${r.id||r.hub_id||r.name} onClick=${()=>onOpen(r)}>
           <td><div class="name-link">${r.name}</div><${RecordBadges} r=${r}/></td>
           ${columns.map(c=>html`<td key=${c.label} class=${c.num?"num":""}>${c.cell?c.cell(r):dash(c.text(r))}</td>`)}
-          <td class=${r.owner?"":"dash"}>${ownerOf(r)}</td><td class="row-go" aria-hidden="true">›</td></tr>`)}</tbody>
+          <td class="row-go" aria-hidden="true">›</td></tr>`)}</tbody>
       </table>
       ${matches.length>400&&html`<div class="tablecap">
         Showing first 400 of ${matches.length}. Narrow the filters to see the rest.</div>`}`}
@@ -1029,8 +1076,12 @@ function RichText({text,limit=420}){
   return html`<div class="rich"><p>${(end>limit/2?cut.slice(0,end+1):cut+"…")}</p>
     <button class="linkbtn" type="button" onClick=${()=>setOpen(true)}>Show more</button></div>`;
 }
+// Headings in title case ("Funding and Constraints"), asked for on 2 Nov 2026.
+const SMALL_WORDS=new Set(["a","an","and","as","at","by","for","in","of","on","or","the","to","with"]);
+const titleCase=t=>String(t).split(" ").map((w,i)=>i&&SMALL_WORDS.has(w.toLowerCase())?w.toLowerCase()
+  :/^[a-z]/.test(w)?w[0].toUpperCase()+w.slice(1):w).join(" ");
 function Section({title,rows,children}){
-  return html`<section class="pf-section"><h3>${title}</h3>
+  return html`<section class="pf-section"><h3>${titleCase(title)}</h3>
     ${rows&&html`<div class="pf-rows">${rows.map(([k,v])=>html`<${React.Fragment} key=${k}>
       <span class="pf-k">${k}</span><span class="pf-v">${isEmpty(v)?NOT_FOUND:v}</span></${React.Fragment}>`)}</div>`}
     ${children}</section>`;
@@ -1047,12 +1098,19 @@ function SourcesHistory({kind,r,profile}){
   const lines=[];
   const origin=r.origin==="AI-Mapped"?"Found by Explore and Map or monitoring":r.origin==="Imported"?"Imported from the Phase 1 map":null;
   if(origin) lines.push(origin);
+  // What it was mapped for (2 Nov 2026): the sector and hub it sits in, and the
+  // spreadsheet it came from when that is recorded.
+  const sheet=profile&&profile.origin_source&&profile.origin_source.type==="spreadsheet"
+    ? String(profile.origin_source.description||"").split(/ ingested from /i)[0].trim() : "";
+  const mappedFor=[(r.sectors||[]).length?`the ${r.sectors.join(", ")} sector`:"",
+    (r.hubs||[]).length?`the ${r.hubs.join(", ")}${/\bhub\b/i.test(r.hubs.join(" "))?"":" hub"}`:""].filter(Boolean).join(", in ");
+  if(kind==="actor"&&(mappedFor||sheet)) lines.push(`Mapped for ${mappedFor||"a GHUS spreadsheet"}${sheet?` (${sheet})`:""}`);
   const v=profile&&profile.verification;
   if(v&&v.decision==="verified"&&v.at) lines.push(`Verified ${usDate(v.at.slice(0,10))}${byWhom(v.decided_by)}`);
-  if(statusOf(r)==="Removed"&&r.removed_at) lines.push(`Removed ${usDate(r.removed_at.slice(0,10))}${byWhom(r.removed_by)}: ${r.removed_reason||""}`);
+  if(statusOf(r)==="Deleted"&&r.removed_at) lines.push(`Deleted ${usDate(r.removed_at.slice(0,10))}${byWhom(r.removed_by)}: ${r.removed_reason||""}`);
   if(kind==="hub"&&r.approved_at) lines.push(`Approved ${usDate(String(r.approved_at).slice(0,10))}${byWhom(r.approved_by)}`);
   const sources=(profile&&profile.sources)||[];
-  return html`<div class="pf-side-box"><h3>Sources and history</h3>
+  return html`<div class="pf-side-box"><h3>Sources and History</h3>
     ${kind==="actor"&&!profile?html`<div class="hint" style=${{margin:0}}><span class="spin"></span> Loading…</div>`:null}
     ${sources.map(s=>html`<div class="pf-source" key=${s.url}>${link(s.url)}
       ${(s.supports||[]).some(k=>FACT_LABELS[k])&&html`<div class="hint" style=${{margin:0}}>${s.supports.filter(k=>FACT_LABELS[k]).map(k=>FACT_LABELS[k]).join(", ")}</div>`}</div>`)}
@@ -1066,7 +1124,7 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
   const [editing,setEditing]=useState(false);
   const [deleting,setDeleting]=useState(false);
   const [profile,setProfile]=useState(null);
-  const removed=statusOf(r)==="Removed";
+  const removed=statusOf(r)==="Deleted";
   useEffect(()=>{ if(kind!=="actor") return; let live=true;
     api(`/api/browse/actors/${r.id}/profile`).then(d=>live&&setProfile(d)).catch(()=>live&&setProfile({sources:[],events:[],relationships:[]}));
     return ()=>{live=false;}; },[r.id]);
@@ -1076,8 +1134,8 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
       <button class="backlink" onClick=${onBack}>← Back to results</button>
       <span style=${{display:"inline-flex",gap:"8px"}}>
         ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
-        ${!editing&&!deleting&&html`<button class=${removed?"example":"example danger"} type="button"
-          onClick=${()=>setDeleting(true)}>${removed?"Restore":"Delete"}</button>`}
+        ${!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
+          onClick=${()=>setDeleting(true)}>Delete</button>`}
       </span>
     </div>
     ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
@@ -1090,7 +1148,7 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
       : html`<div class="pf-grid">
           <div class="pf-main">${body}${children}</div>
           <aside class="pf-side">
-            <div class="pf-side-box"><h3>At a glance</h3>
+            <div class="pf-side-box"><h3>At a Glance</h3>
               ${[...glance,["Owner",ownerOf(r)]].map(([k,v])=>html`<div class="pf-glance" key=${k}>
                 <span class="pf-k">${k}</span><span>${isEmpty(v)?NOT_FOUND:v}</span></div>`)}
             </div>
@@ -1109,7 +1167,7 @@ const FREQUENCIES=["One-time","Annual","Every two years","Twice a year","Quarter
 // [field, label, type, options-key]. Types: text, long, date, select, readonly.
 const EDIT_GROUPS={
   actor:[
-    ["Identity",[["name","Name"],["alt_names","Other names"],["actor_type","Organization type","select","types"],
+    ["Identity",[["name","Name"],["alt_names","Other names"],["actor_type","Category","select","types"],
       ["category_type","Category type"],["website","Website"]]],
     ["Location",[["city","City"],["state","State","select","states"],["country_raw","Country"],
       ["region","Region","select","regions"]]],
@@ -1123,7 +1181,7 @@ const EDIT_GROUPS={
     ["Identity",[["name","Name"],["sector","Sector","readonly"],["official_websites","Websites"]]],
     ["Location",[["primary_city","Primary city"],["state","State"],["country","Country"]]],
     ["What it is",[["description","Description","long"],["strategic_value_summary","Strategic value","long"],
-      ["core_topic_strengths","Core strengths","long"],["composition_narrative","Composition","long"],
+      ["core_topic_strengths","Core strengths","long"],
       ["programs_and_labs_narrative","Programs and labs","long"],["talent_narrative","Talent","long"],
       ["research_infrastructure_narrative","Research infrastructure","long"],
       ["industry_integration_narrative","Industry integration","long"],
@@ -1140,7 +1198,7 @@ const EDIT_GROUPS={
   person:[
     ["Identity",[["name","Name"],["title","Title"],["organizations","Organization"],
       ["profile_url","Public profile"],["orcid","ORCID"]]],
-    ["Expertise",[["topics","Topics","readonly"],["research_areas","Research areas","long"]]],
+    ["Expertise",[["topics","Sector","readonly"],["research_areas","Research areas","long"]]],
   ],
 };
 const asText=v=>Array.isArray(v)?v.join(", "):(v??"");
@@ -1188,7 +1246,7 @@ function RecordEditor({kind,record,options,onClose}){
       ${kind==="event"&&html`<div class="edit-field"><label>Attended</label>
         <label class="check"><input type="checkbox" checked=${attended} onChange=${e=>setAttended(e.target.checked)}/>
           GHUS attended this event</label></div>`}
-      <div class="edit-field"><label>Analyst notes</label>
+      <div class="edit-field"><label>GHUS Notes</label>
         <textarea class="field edit-long" rows="4" value=${notes} onInput=${e=>setNotes(e.target.value)}
           placeholder=${kind==="event"
             ?"Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
@@ -1208,18 +1266,22 @@ function Actors(){
   const [version,setVersion]=useState(0);
   const [notice,setNotice]=useState(null);
   const data=useOnce(()=>api("/api/browse/actors"),[version]);
-  const removedData=useOnce(()=>api("/api/browse/actors/removed").catch(()=>({actors:[]})),[version]);
+  const peopleData=useOnce(()=>api("/api/browse/people").catch(()=>({people:[]})));
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
   const {options}=data;
-  const actors=[...data.actors,...((removedData&&removedData.actors)||[])];
+  // Deleted organizations are not shown anywhere in the directory (2 Nov 2026).
+  const actors=data.actors.filter(a=>statusOf(a)!=="Deleted");
   const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
   const typeOf=a=>a.actor_category||a.actor_type||"";
   const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
+  const key=v=>String(v||"").trim().toLowerCase();
+  const peopleAt=a=>!peopleData?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
     subtitle=${[shortType(typeOf(sel)),[sel.city,sel.state].filter(Boolean).join(", "),(sel.sectors||[]).join(", ")].filter(Boolean).join("  ·  ")}
-    glance=${[["Type",[typeOf(sel),sel.category_type&&sel.category_type!=="Not classified"?sel.category_type:null].filter(Boolean).join(" · ")],
-      ["Location",[sel.city,sel.state,sel.country_raw].filter(Boolean).join(", ")],["Region",sel.region],
+    glance=${[["Category",[typeOf(sel),sel.category_type&&sel.category_type!=="Not classified"?sel.category_type:null].filter(Boolean).join(" · ")],
+      ["Location",[sel.city,sel.state,sel.country].filter(Boolean).join(", ")],["Region",sel.region],
+      ["Last updated",sel.updated_at?usDate(sel.updated_at.slice(0,10)):null],
       ["Lifecycle role",sel.primary_lifecycle_role],["Website",link(sel.website)],["Other names",sel.alt_names]]}
     sections=${profile=>[
       html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
@@ -1231,9 +1293,14 @@ function Actors(){
         ["Sector",(sel.sectors||[]).join(", ")],
         ...((profile&&profile.relationships)||[]).map(x=>[(RELATION_LABELS[x.type]||[x.type,x.type])[x.outgoing?0:1],x.name]),
         ["Events it organizes",!profile?"…":profile.events.length?profile.events.map(e=>e.name+(e.start_date?` (${usDate(e.start_date)})`:"")).join(" · ")
-          :html`<span class="dash">None recorded</span>`],
-        ["People",html`<span class="dash">None recorded</span>`]]}/>`,
-      html`<${Section} key="notes" title="GHUS notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
+          :html`<span class="dash">None recorded</span>`]]}/>`,
+      html`<${Section} key="people" title=${`People${peopleAt(sel)?` (${peopleAt(sel).length})`:""}`}>
+        ${!peopleAt(sel)?html`<span class="dash">Loading…</span>`
+          :!peopleAt(sel).length?html`<span class="dash">No people in the directory work here yet.</span>`
+          :html`<div class="pf-rows">${peopleAt(sel).map(x=>html`<${React.Fragment} key=${x.id||x.name}>
+              <span class="pf-k">${x.name}</span><span class="pf-v">${x.title||html`<span class="dash">Title not found</span>`}</span></${React.Fragment}>`)}</div>`}
+      </${Section}>`,
+      html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
         :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
   return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="organization" plural="organizations" nameLabel="Organization" rows=${actors} exportName="organizations"
     onOpen=${setSel} empty="No organizations in the database yet."
@@ -1241,23 +1308,26 @@ function Actors(){
       text:a=>[a.name,a.description,a.primary_technical_focus,a.alt_names].join(" ")}}
     filters=${[
       {key:"sector",label:"Sector",options:options.sectors||[],test:(a,v)=>(a.sectors||[]).includes(v)},
-      {key:"type",label:"Organization type",options:options.types,test:(a,v)=>typeOf(a)===v},
-      {key:"hub",label:"Hub",options:options.hubs,test:(a,v)=>a.hubs.includes(v)},
-      {key:"region",label:"Region",options:distinct(actors.map(a=>a.region)),test:(a,v)=>a.region===v},
-      {key:"state",label:"State",options:options.states,test:(a,v)=>a.state===v},
-      {key:"city",label:"City",options:vals=>distinct(actors.filter(a=>!vals.state||a.state===vals.state).map(a=>a.city)),
-        test:(a,v)=>a.city===v},
+      {key:"type",label:"Category",options:options.types,test:(a,v)=>typeOf(a)===v},
+      {key:"city",label:"City",options:vals=>distinct(actors.filter(a=>(!vals.state||a.state===vals.state)
+        &&(!vals.country||a.country===vals.country)).map(a=>a.city)),test:(a,v)=>a.city===v},
+      {key:"state",label:"State",usOnly:true,options:options.states,test:(a,v)=>a.state===v},
+      {key:"region",label:"Region",usOnly:true,options:distinct(actors.map(a=>a.region)),test:(a,v)=>a.region===v},
+      {key:"country",label:"Country",options:distinct(actors.map(a=>a.country)),test:(a,v)=>a.country===v},
+      {key:"hub",label:"Hub",usOnly:true,options:options.hubs,test:(a,v)=>a.hubs.includes(v)},
     ]}
     more=${[
-      {key:"country",label:"Country",options:options.countries,test:(a,v)=>a.country===v},
       {key:"profiled",label:"Curation",options:["Deeply profiled"],test:a=>a.has_profile},
     ]}
     columns=${[
-      {label:"Type",text:typeOf,cell:a=>dash(shortType(typeOf(a)))},
+      {label:"Category",text:typeOf,cell:a=>dash(shortType(typeOf(a)))},
       {label:"Sector",text:a=>(a.sectors||[]).join("; "),
         cell:a=>(a.sectors||[]).length?plusMore(a.sectors):html`<span class="dash">${a.hubs.length?"—":"Not in a hub"}</span>`},
-      {label:"Hub",text:a=>a.hubs.join("; "),cell:a=>a.hubs.length?plusMore(a.hubs):dash("")},
-      {label:"Location",text:a=>a.state||a.city||""},
+      {label:"City",text:a=>a.city||""},
+      {label:"State",usOnly:true,text:a=>a.state||""},
+      {label:"Region",usOnly:true,text:a=>a.region||""},
+      {label:"Country",text:a=>a.country||""},
+      {label:"Hub",usOnly:true,text:a=>a.hubs.join("; "),cell:a=>a.hubs.length?plusMore(a.hubs):dash("")},
     ]}/>`;
 }
 
@@ -1268,6 +1338,8 @@ function Hubs(){
   if(!data) return html`<${Loading}/>`;
   const {hubs}=data;
   const sectorOf=h=>h.sector||h.primary_sectors||"";
+  const hubState=h=>stateName(h.center_state_code)||stateName(h.state);
+  const hubRegion=h=>regionOfState(hubState(h));
   if(sel){
     const related=(actorsData?actorsData.actors:[]).filter(a=>a.hubs.includes(sel.name));
     return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)}
@@ -1281,14 +1353,14 @@ function Hubs(){
         html`<${Section} key="value" title="Strategic value and strengths" rows=${[["Strategic value",sel.strategic_value_summary&&html`<${RichText} text=${sel.strategic_value_summary} limit=${300}/>`],
           ["Core strengths",sel.core_topic_strengths],["Funding",sel.funding_summary],["Constraints",sel.constraints_summary]]}/>`,
         html`<${Section} key="narr" title="In depth">
-          ${[["composition_narrative","Composition"],["programs_and_labs_narrative","Programs and labs"],["talent_narrative","Talent"],
+          ${[["programs_and_labs_narrative","Programs and labs"],["talent_narrative","Talent"],
             ["research_infrastructure_narrative","Research infrastructure"],["industry_integration_narrative","Industry integration"],
             ["international_engagement_narrative","International engagement"]].map(([k,label])=>html`<details class="pf-narr" key=${k}>
               <summary>${label}</summary><${RichText} text=${sel[k]} limit=${100000}/></details>`)}
         </${Section}>`]}>
       <${Section} title=${`Organizations in this hub (${related.length})`}>
       ${related.length===0? html`<span class="dash">No organizations linked yet.</span>` : html`
-        <table class="grid"><thead><tr><th>Organization</th><th>Type</th><th>Location</th></tr></thead>
+        <table class="grid"><thead><tr><th>Organization</th><th>Category</th><th>Location</th></tr></thead>
         <tbody>${related.map(a=>html`<tr key=${a.id}><td><div class="name-link">${a.name}</div><${RecordBadges} r=${a}/></td>
           <td>${dash(shortType(a.actor_category||a.actor_type))}</td><td>${dash([a.city,a.state].filter(Boolean).join(", "))}</td></tr>`)}</tbody></table>`}
       </${Section}>
@@ -1300,13 +1372,16 @@ function Hubs(){
       text:h=>[h.name,h.primary_city,h.state,h.description,sectorOf(h)].join(" ")}}
     filters=${[
       {key:"sector",label:"Sector",options:distinct(hubs.map(sectorOf)),test:(h,v)=>sectorOf(h)===v},
-      {key:"state",label:"State",options:distinct(hubs.map(h=>h.state)),test:(h,v)=>h.state===v},
-      {key:"city",label:"City",kind:"text",placeholder:"Phoenix, Baltimore…",
-        test:(h,v)=>(h.primary_city||"").toLowerCase().includes(v.toLowerCase())},
+      {key:"city",label:"City",options:vals=>distinct(hubs.filter(h=>!vals.state||hubState(h)===vals.state).map(h=>h.center_city)),
+        test:(h,v)=>h.center_city===v},
+      {key:"state",label:"State",options:distinct(hubs.map(hubState)),test:(h,v)=>hubState(h)===v},
+      {key:"region",label:"Region",options:distinct(hubs.map(hubRegion)),test:(h,v)=>hubRegion(h)===v},
     ]}
     columns=${[
       {label:"Sector",text:sectorOf},
-      {label:"Location",text:h=>[h.primary_city,h.state].filter(Boolean).join(", ")},
+      {label:"City",text:h=>h.center_city||""},
+      {label:"State",text:h=>hubState(h)||""},
+      {label:"Region",text:h=>hubRegion(h)||""},
       {label:"Organizations",text:h=>String(h.actor_count??""),num:true},
     ]}/>`;
 }
@@ -1325,6 +1400,8 @@ function Events(){
     return x[0]-y[0]||String(x[1]).localeCompare(String(y[1]))||a.name.localeCompare(b.name);});
   const when=e=>{const d=(e.end_date||e.start_date||"").slice(0,10);return !d?"No date":d>=today()?"Upcoming":"Past";};
   const dated=events.filter(e=>e.start_date).length;
+  const eventState=e=>stateInText(e.location);
+  const eventRegion=e=>regionOfState(eventState(e));
   if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)}
     subtitle=${[capFirst(sel.event_type),sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
     glance=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],["When",when(sel)==="No date"?null:when(sel)],
@@ -1343,10 +1420,15 @@ function Events(){
     search=${{placeholder:"Search name, description, topic…",
       text:e=>[e.name,e.description,e.thematic_focus,e.organizer].join(" ")}}
     filters=${[
-      {key:"when",label:"When",options:["Upcoming","Past","No date"],test:(e,v)=>when(e)===v},
+      {key:"from",label:"From",kind:"date",test:(e,v)=>!!e.start_date&&(e.end_date||e.start_date).slice(0,10)>=v},
+      {key:"to",label:"To",kind:"date",test:(e,v)=>!!e.start_date&&e.start_date.slice(0,10)<=v},
       {key:"type",label:"Type",options:data.event_types||[],test:(e,v)=>e.event_type===v},
-      {key:"location",label:"City or place",kind:"text",placeholder:"Houston, Geneva, Texas…",
+      {key:"location",label:"City",kind:"text",placeholder:"Houston, New York…",
         test:(e,v)=>(e.location||"").toLowerCase().includes(v.toLowerCase())},
+      {key:"state",label:"State",options:distinct(events.map(eventState)),test:(e,v)=>eventState(e)===v},
+      {key:"region",label:"Region",options:distinct(events.map(eventRegion)),test:(e,v)=>eventRegion(e)===v},
+    ]}
+    more=${[
       {key:"frequency",label:"Frequency",options:distinct(events.map(e=>e.recurring_pattern)),test:(e,v)=>e.recurring_pattern===v},
     ]}
     columns=${[
@@ -1354,6 +1436,8 @@ function Events(){
       {label:"Dates",text:e=>e.start_date?eventDates(e.start_date,e.end_date):"",
         cell:e=>!e.start_date?dash(""):html`${eventDates(e.start_date,e.end_date)}${when(e)==="Past"?html` <span class="chip slate">past</span>`:""}`},
       {label:"Location",text:e=>e.location||""},
+      {label:"State",text:e=>eventState(e)||""},
+      {label:"Region",text:e=>eventRegion(e)||""},
       {label:"Frequency",text:e=>e.recurring_pattern||""},
     ]}/>`;
 }
@@ -1368,17 +1452,18 @@ function People(){
     glance=${[["Title",sel.title],["Organization",sel.organizations.join(", ")],["State",sel.states.join(", ")]]}
     sections=${[
       html`<${Section} key="role" title="Role" rows=${[["Title",sel.title],["Organization",sel.organizations.join(", ")]]}/>`,
-      html`<${Section} key="exp" title="Expertise" rows=${[["Topics",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")]]}/>`,
+      html`<${Section} key="exp" title="Expertise" rows=${[["Sector",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")]]}/>`,
       html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`]}/>`;
   return html`<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
     onOpen=${setSel}
     empty="No people in the database yet. People found in Build the Map appear here once they are verified into the database."
-    search=${{placeholder:"Search name, title, expertise…",
-      text:p=>[p.name,p.title,...p.topics,...p.research_areas].join(" ")}}
+    search=${{placeholder:"Search name, title, employer, expertise…",
+      text:p=>[p.name,p.title,...p.organizations,...p.topics,...p.research_areas].join(" ")}}
     filters=${[
-      {key:"org",label:"Organization",options:options.organizations,test:(p,v)=>p.organizations.includes(v)},
+      {key:"sector",label:"Sector",options:options.topics,test:(p,v)=>p.topics.includes(v)},
       {key:"state",label:"State",options:options.states,test:(p,v)=>p.states.includes(v)},
-      {key:"topic",label:"Topic",options:options.topics,test:(p,v)=>p.topics.includes(v)},
+      {key:"region",label:"Region",options:distinct(options.states.map(x=>regionOfState(stateName(x)))),
+        test:(p,v)=>p.states.some(x=>regionOfState(stateName(x))===v)},
     ]}
     columns=${[
       {label:"Title",text:p=>p.title||""},
@@ -1388,7 +1473,7 @@ function People(){
 }
 
 function Sel({v,set,opts}){ return html`<select class="field" value=${v} onChange=${e=>set(e.target.value)}>
-  <option value="">Any</option>${opts.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`; }
+  <option value="">All</option>${opts.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`; }
 function Loading(){ return html`<div class="empty"><span class="spin"></span> Loading…</div>`; }
 
 /* ------------------------------------------------------ Build the Map */
@@ -1402,13 +1487,13 @@ const MFIELDS={
   actor:[["actor_type","Category"],["category_type","Category type"],["country","Country"],["location_city","City"],["state","State"],
          ["region","Region"],["primary_technical_focus","Focus"],
          ["funding_summary","Funding"],["current_activities","Activity"]],
+  // People: LinkedIn only, no biography or affiliation note (30 Oct and 2 Nov 2026).
   person:[["title","Title"],["organization_name","Organization"],["organization_location","Location"],
-          ["affiliation_note","Affiliation"],
           ["expertise","Expertise"],["work_evidence","Relevant work"],["_um6p_ocp","UM6P/OCP"],["email","Email"]],
   event:[["event_type","Type"],["next_date","Date"],["date_status","Status"],["event_format","Format"],
          ["location","Location"],["organizer","Organizer"],["recurring_pattern","Frequency"],["previous_edition","Previous edition"],
          ["expected_attendance","Scale"],["audience","Audience"],["sector","Sector"],["thematic_focus","Topic"],
-         ["match_explanation","Why it matched"],["_um6p_ocp","UM6P/OCP"],
+         ["_um6p_ocp","UM6P/OCP"],
          // Older maps recorded these before the Architecture V2 event fields.
          ["sponsoring_orgs","Sponsors"],["access_type","Access"]],
 };
@@ -1459,6 +1544,27 @@ const US_REGIONS = {
   "Mountain West / Rocky Mountain": "AZ CO ID MT NV NM UT WY".split(" "),
   "West Coast / Pacific": "AK CA HI OR WA".split(" ")
 };
+// Full state names and the GHUS region for a state, for directory filters.
+const STATE_NAMES="Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|District of Columbia|Florida|Georgia|Hawaii|Idaho|Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|New York|North Carolina|North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|Texas|Utah|Vermont|Virginia|Washington|West Virginia|Wisconsin|Wyoming".split("|");
+const STATE_CODES="AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY".split(" ");
+function stateName(value){
+  let t=String(value||"").replace(/\./g,"").trim();
+  if(/^(washington )?dc$/i.test(t)) t="DC";
+  if(/^new york city$/i.test(t)) t="New York";
+  const i=/^[A-Za-z]{2}$/.test(t)?STATE_CODES.indexOf(t.toUpperCase()):STATE_NAMES.findIndex(n=>n.toLowerCase()===t.toLowerCase());
+  return i<0?null:STATE_NAMES[i];
+}
+function regionOfState(name){
+  const code=STATE_CODES[STATE_NAMES.indexOf(name)];
+  return code?Object.keys(US_REGIONS).find(r=>US_REGIONS[r].includes(code))||null:null;
+}
+// The state named in a free-text location ("UN Headquarters, New York, NY"), read
+// from the end; null when none is named (e.g. "Geneva, Switzerland").
+function stateInText(text){
+  const parts=String(text||"").split(/,|—|–/).map(x=>x.trim()).filter(Boolean).reverse();
+  for(const part of parts){ const n=stateName(part.replace(/\s+\d{5}(-\d{4})?$/,"")); if(n) return n; }
+  return null;
+}
 function regionalHub(actor){
   const country=hubCountryKey(actor.country);
   let state=hubStateKey(actor.state);
@@ -1519,28 +1625,83 @@ function PeopleSearch({actor,jobId,disabled}){
         <strong>${t.plan?.criteria||t.result?.criteria||"People search"}</strong>
         ${["running","planning","verifying"].includes(t.status)&&html`<button class="example" onClick=${()=>stop(t.id)}>Stop people search</button>`}
         ${t.error&&html`<div role="alert">${t.error}</div>`}
-        ${(t.result?.people||[]).map((p,i)=>html`<div class="mperson" key=${i}><div class="mperson-main"><div class="mperson-name">${p.full_name}</div><div>${p.title} · ${p.organization_name}</div><div class="mperson-meta">${p.bio}</div>${(p.sources||[]).map((s,j)=>html`<div key=${j}><a href=${s.url} target="_blank" rel="noopener noreferrer">Source ${j+1}</a> ${s.supports}</div>`)}</div></div>`)}
+        ${(t.result?.people||[]).map((p,i)=>html`<div class="mperson" key=${i}><div class="mperson-main"><div class="mperson-name">${p.full_name}</div><div>${p.title} · ${p.organization_name}</div>${linkedinOf(p)&&html`<div class="mperson-meta"><a href=${linkedinOf(p)} target="_blank" rel="noopener noreferrer">LinkedIn</a></div>`}${(p.sources||[]).map((s,j)=>html`<div key=${j}><a href=${s.url} target="_blank" rel="noopener noreferrer">Source ${j+1}</a> ${s.supports}</div>`)}</div></div>`)}
       </div>`)}
     </div>`}
   </div>`;
 }
-function ActorLightProfile({actor}){
-  if(actor.profile_version!==2)return null;
-  const fields=[["other_names","Other names"],
-    ["sector","Sector"],["mapped_topic","Mapped topic"],["match_strength","Topic match"],
-    ["match_explanation","Why it matched"],["international_connections","Africa / Morocco connections"]];
-  const ranked=rankingRows(actor);
-  return html`<details class="mpeople university-rankings"><summary>Actor profile</summary>
-    ${actor.category_note&&html`<div class="mperson-meta"><b>Category note:</b> ${actor.category_note}</div>`}
-    ${fields.map(([key,label])=>html`<div class="mperson-meta" key=${key}><b>${label}:</b> ${actor[key]||"Not found"}</div>`)}
-    ${isRankedInstitution(actor)&&html`
-      <div class="mperson-meta"><b>University rankings:</b> ${ranked.length?"":"Not found in collected sources"}</div>
-      ${ranked.map((r,i)=>html`<div class="mperson-meta" key=${i}>${r.system} · ${r.rank} · ${r.year} edition · ${r.scope==="subject"?r.subject+" (subject)":"Overall"} · <a href=${r.source_url} target="_blank" rel="noopener noreferrer">Source</a></div>`)}
-      ${ranked.length>0&&html`<div class="hint">Reported from collected evidence, not independently verified. Editions and scopes may differ; no combined score.</div>`}`}
-    <div class="mperson-meta"><b>Organization relationships:</b> ${(actor.actor_relationships||[]).length?"":"Not found — no parent is assumed"}</div>
-    ${(actor.actor_relationships||[]).map((r,i)=>html`<div class="mperson-meta" key=${i}>${r.relationship}: ${r.organization_name} · <a href=${r.source_url} target="_blank" rel="noopener noreferrer">Source</a></div>`)}
-    <div class="mperson-meta"><b>Category-specific information:</b> ${(actor.category_details||[]).length?"":"Not found"}</div>
-    ${(actor.category_details||[]).map((d,i)=>html`<div class="mperson-meta" key=${i}><b>${d.label}:</b> ${d.value}</div>`)}
+/* What we know about the organization, shown without a click (30 Oct 2026).
+   Why it matched and where it came from live in MatchBox at the bottom. */
+/* An organization card in the order agreed on 2 Nov 2026: relationships; category,
+   type, sector and public/private on one line; location on one line; focus,
+   activity, funding; the category's own facts. Facts the AI found outside the
+   category's light-pull list go to "Additional information"; a fact repeating
+   one already shown (another name for Focus, "Operator" next to "Operated by")
+   is left out. Display only: the saved map is unchanged. */
+const FOCUS_LIKE=/focus|program area/i;
+const PUBLIC_PRIVATE=/^public\s*\/?\s*(or\s*)?private$/i;
+// The category-specific light facts named in actor_profile.LIGHT_GUIDANCE.
+const LISTED_FACT=/^(land.grant|relevant cent|program|key program|operator|type|.*\btype$|recent project|projects?$|main funders?|funders?|sponsor|formal designation|facility|what it tests|current project|clinical|academic link|scale|initiative|size|company size|products?|key products?|relevant products?|segment|operating location|current activity|technology|problem|found|stage|trl|funding stage|pilot|customer|offerings?|headquarters|fund size|thesis|jurisdiction|parent|mandate|funding programs?|mission|geography|grant themes?|member|documented members|institution type|governance)/i;
+function orgFacts(actor){
+  const rels=actor.actor_relationships||[];
+  const operated=rels.some(r=>/operated by/i.test(r.relationship||""));
+  const listed=[],extra=[];let publicPrivate=null;
+  for(const d of actor.category_details||[]){
+    const label=String(d.label||"").trim();
+    if(PUBLIC_PRIVATE.test(label)){publicPrivate=d.value;continue;}
+    if(FOCUS_LIKE.test(label)&&actor.primary_technical_focus) continue;
+    if(/^operator$/i.test(label)&&operated) continue;
+    (LISTED_FACT.test(label)?listed:extra).push(d);
+  }
+  return {rels,listed,extra,publicPrivate};
+}
+function OrgCardBody({e}){
+  const {rels,listed,publicPrivate}=orgFacts(e);
+  const ranked=e.profile_version===2&&isRankedInstitution(e)?rankingRows(e):[];
+  const row=(label,value,key)=>value?html`<span key=${key||label}>${label}: <b>${value}</b></span>`:null;
+  const line=(...xs)=>xs.filter(Boolean).length?html`<div class="mrow">${xs}</div>`:null;
+  return html`
+    ${rels.length>0&&html`<div class="mrow">${rels.map((r,i)=>html`<span key=${"rel"+i}>${capFirst(String(r.relationship||"").replace(/_/g," "))}: <b>${r.organization_name}</b>${" · "}<a href=${r.source_url} target="_blank" rel="noopener noreferrer">source</a></span>`)}</div>`}
+    ${line(row("Category",e.actor_type),row("Category type",e.category_type),row("Sector",e.sector),row("Public/Private",publicPrivate))}
+    ${line(row("City",e.location_city),row("State",e.state),row("Region",actorRegion(e)),row("Country",e.country))}
+    <div class="mrow mfacts">
+      ${row("Focus",e.primary_technical_focus)}${row("Activity",e.current_activities)}${row("Funding",e.funding_summary)}
+    </div>
+    ${line(row("Other names",e.other_names),row("Africa / Morocco connections",e.international_connections),
+      ...listed.map((d,i)=>row(d.label,d.value,"cd"+i)),
+      ...ranked.map((r,i)=>html`<span key=${"rk"+i}>Ranking: <b>${r.system} ${r.rank}</b>${` (${r.year}, ${r.scope==="subject"?r.subject:"overall"}) · `}<a href=${r.source_url} target="_blank" rel="noopener noreferrer">source</a></span>`))}`;
+}
+function AdditionalInfo({e}){
+  const {extra}=orgFacts(e);
+  if(!extra.length) return null;
+  return html`<div class="madd-box">
+    <div class="mwhy-h">Additional information</div>
+    <div class="hint" style=${{margin:"0 0 6px"}}>Found while researching this organization, beyond the facts collected for its category.</div>
+    ${extra.map((d,i)=>html`<div class="mperson-meta" key=${i}><b>${d.label}:</b> ${d.value}</div>`)}
+  </div>`;
+}
+/* Why this result is on the map and the pages it came from: a gray box at the
+   bottom of every card. */
+function MatchBox({e,lc}){
+  const j=e._judge||null, sources=e.sources||[];
+  // Category notes explain the classification; useful while testing, not for the user (2 Nov 2026).
+  const rows=[["Mapped topic",e.mapped_topic],["Topic match",e.match_strength],
+    ["Why it matched",e.match_explanation]].filter(([,v])=>v);
+  if(!rows.length&&!e._why&&!(j&&j.reason)&&!sources.length) return null;
+  return html`<details class="mwhy-box">
+    <summary class="mwhy-h">Why it's on this map</summary>
+    ${rows.map(([k,v])=>html`<div class="mperson-meta" key=${k}><b>${k}:</b> ${v}</div>`)}
+    ${e._why&&html`<div class="mperson-meta">${e._why}</div>`}
+    ${j&&j.reason&&html`<div class="mperson-meta">${j.reason}</div>`}
+    ${sources.length>0&&html`<details class="msrc">
+      <summary>${sources.length} web source${sources.length>1?"s":""}</summary>
+      ${sources.map((src,i)=>{
+        const res=lc&&(lc.sources||[]).find(r=>r.url===src.url);
+        return html`<div key=${i} style=${{marginTop:"5px"}}>
+          <a class=${res&&!res.ok?"bad":""} href=${src.url} target="_blank" rel="noopener noreferrer">${src.url}</a>
+          ${src.supports&&html`<span class="dash"> — ${src.supports}</span>`}</div>`;
+      })}
+    </details>`}
   </details>`;
 }
 // Mirrors rankings.is_ranked_institution: a lab, department or named unit inside
@@ -1576,6 +1737,57 @@ function selectionOutcome(res){
 function matchCount(res){
   const actors=(res.entities&&res.entities.actor)||[];
   return actors.filter(e=>e._rank).length+" of "+actors.length+" match your request.";
+}
+
+// A person's LinkedIn page: linkedin_url, or a profile_url that is on linkedin.com.
+const linkedinOf=p=>[p.linkedin_url,p.profile_url].find(u=>/^https?:\/\/([a-z]+\.)?linkedin\.com\//i.test(String(u||"")))||null;
+/* A map's short title: the first sentence of its request, as Monitor titles its
+   requests (2 Nov 2026), cut at a word near 70 characters. */
+function mapTitle(text){
+  const first=String(text||"").trim().split(/\n|(?<=[.?!;])\s/)[0].replace(/[.;]$/,"").trim();
+  if(!first) return "Untitled map";
+  if(first.length<=70) return first;
+  const cut=first.slice(0,70), space=cut.lastIndexOf(" ");
+  return (space>40?cut.slice(0,space):cut)+"…";
+}
+// The saved maps: a dropdown with its own search box at the top (2 Nov 2026).
+// Newest first; typing narrows the list by any word of a map's request.
+function SavedMaps({maps,value,disabled,onPick,cls}){
+  const [open,setOpen]=useState(false);
+  const [q,setQ]=useState("");
+  const box=useRef(null), input=useRef(null);
+  useEffect(()=>{
+    if(!open) return undefined;
+    const away=e=>{if(box.current&&!box.current.contains(e.target)){setOpen(false);setQ("");}};
+    const esc=e=>{if(e.key==="Escape"){setOpen(false);setQ("");}};
+    document.addEventListener("mousedown",away); document.addEventListener("keydown",esc);
+    setTimeout(()=>input.current&&input.current.focus(),0);
+    return ()=>{document.removeEventListener("mousedown",away); document.removeEventListener("keydown",esc);};
+  },[open]);
+  if(!maps.length) return null;
+  const words=q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown=maps.filter(m=>words.every(w=>String(m.description||"").toLowerCase().includes(w)));
+  const current=maps.find(m=>m.id===value);
+  const pick=id=>{setOpen(false);setQ("");if(id!==value)onPick(id);};
+  return html`<div class=${"saved-maps "+cls} ref=${box}>
+    <button type="button" class="field saved-toggle" disabled=${disabled} aria-haspopup="listbox" aria-expanded=${open}
+      title=${current?current.description:""} onClick=${()=>{setOpen(!open);setQ("");}}>
+      <span>${current?mapTitle(current.description):"Select a saved map…"}</span><span aria-hidden="true">▾</span>
+    </button>
+    ${open&&html`<div class="saved-panel">
+      <input ref=${input} class="field saved-search" type="search" placeholder="Search saved maps…"
+        aria-label="Search saved maps" value=${q} onInput=${e=>setQ(e.target.value)}
+        onKeyDown=${e=>{if(e.key==="Enter"&&shown.length){e.preventDefault();pick(shown[0].id);}}}/>
+      <ul class="saved-list" role="listbox" aria-label="Saved maps">
+        ${shown.map(m=>html`<li key=${m.id} role="option" aria-selected=${m.id===value}>
+          <button type="button" class=${m.id===value?"on":""} title=${m.description||""} onClick=${()=>pick(m.id)}>
+            <span>${mapTitle(m.description)}</span>
+            ${m.status!=="done"&&html`<small>${m.status.replace(/_/g," ")}</small>`}
+          </button></li>`)}
+        ${!shown.length&&html`<li class="saved-none">No saved map matches “${q.trim()}”.</li>`}
+      </ul>
+    </div>`}
+  </div>`;
 }
 
 function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onReviewed,reviewDisabled}){
@@ -1623,9 +1835,9 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       ${badge}
       ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
       ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
-      ${savedDone?html`<span class=${"chip "+(saved.outcome==="directory"?"green":"amber")}>${saved.outcome==="directory"?"✓ In the directory":"In Review Results"}</span>`
-        :ready?html`<span class="chip green">Ready to save</span>`
-        :parked?html`<span class="chip slate">Parked</span>`:html`<span class="chip amber">Pending review</span>`}
+      ${savedDone?html`<span class=${"chip "+(saved.outcome==="directory"?"green":"amber dot")}>${saved.outcome==="directory"?"✓ In the directory":"In Review Results"}</span>`
+        :ready?html`<span class="chip green">✓ Verified</span>`
+        :parked?html`<span class="chip orange dot">Parked</span>`:html`<span class="chip amber dot">Pending review</span>`}
       ${!savedDone&&onReviewed&&html`<span style=${{marginLeft:"auto",display:"inline-flex",gap:"6px"}}>
         <button class=${"example"+(ready?" on":"")} type="button" disabled=${reviewing||reviewDisabled||confirmReject}
           title=${ready?"Undo: not checked yet":"You checked it and its sources; save it with “Save verified to Compass”"}
@@ -1652,16 +1864,17 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
     ${(e._possible_duplicates||[]).length>0&&html`<div class="hint" style=${{margin:"0 0 8px"}}>
       Possible duplicate of ${e._possible_duplicates.join(", ")}. Check before verifying.</div>`}
     ${e.description&&html`<div class="mdesc">${e.description}</div>`}
-    ${e.bio&&html`<div class="mdesc">${e.bio}</div>`}
-    ${e._entity_type==="actor"&&html`<${ActorLightProfile} actor=${e}/>`}
-    <div class="mrow">
+    ${e.bio&&e._entity_type!=="person"&&html`<div class="mdesc">${e.bio}</div>`}
+    ${e._entity_type==="actor"?html`<${OrgCardBody} e=${e}/>`:html`<div class="mrow">
       ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):
           k==="next_date"&&e[k]?eventDates(e[k],e.end_date):k==="previous_edition"&&e[k]?eventDates(e[k]):
           CAPITALIZED.has(k)&&e._entity_type==="event"?capFirst(e[k]):e[k]])
         .filter(([,,v])=>v).map(([k,label,v])=>
         html`<span key=${k}>${label}: <b>${v}</b></span>`)}
-    </div>
-    ${(e.website||e.linkedin_url||e.profile_url)&&html`<div class="msrc">
+    </div>`}
+    ${e._entity_type==="person"
+      ? linkedinOf(e)&&html`<div class="msrc"><a href=${linkedinOf(e)} target="_blank" rel="noopener noreferrer">LinkedIn</a></div>`
+      : (e.website||e.linkedin_url||e.profile_url)&&html`<div class="msrc">
       ${e.website&&html`<a class=${deadWeb?"bad":""} href=${e.website} target="_blank"
         rel="noopener noreferrer">${e.website}</a>`}
       ${e.profile_url&&html`${e.website?" · ":""}<a href=${e.profile_url} target="_blank"
@@ -1669,37 +1882,9 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       ${e.linkedin_url&&html`${e.website||e.profile_url?" · ":""}<a href=${e.linkedin_url} target="_blank"
         rel="noopener noreferrer">LinkedIn</a>`}
     </div>`}
-    ${(e.sources||[]).length>0&&html`<details class="msrc">
-      <summary>${e.sources.length} web source${e.sources.length>1?"s":""}</summary>
-      ${e.sources.map((s,i)=>{
-        const res=lc&&(lc.sources||[]).find(r=>r.url===s.url);
-        const bad=res&&!res.ok;
-        return html`<div key=${i} style=${{marginTop:"5px"}}>
-          <a class=${bad?"bad":""} href=${s.url} target="_blank"
-            rel="noopener noreferrer">${s.url}</a>
-          ${s.supports&&html`<span class="dash"> — ${s.supports}</span>`}</div>`;
-      })}
-    </details>`}
-    ${e._entity_type==="actor"&&(e.people||[]).length>0&&html`
-      <details class="mpeople">
-        <summary>${e.people.length} key ${e.people.length===1?"person":"people"}</summary>
-        ${e.people.map((p,i)=>html`<div class="mperson" key=${(p.full_name||"")+i}>
-          <div class="mperson-main">
-            <div class="mperson-name">${p.full_name}</div>
-            ${p.title&&html`<div class="mperson-meta">${p.title}</div>`}
-            ${p.bio&&html`<div class="mperson-meta">${p.bio}</div>`}
-          </div>
-          ${(p.linkedin_url||p.email)&&html`<div class="mperson-links">
-            ${p.linkedin_url&&html`<a href=${p.linkedin_url} target="_blank"
-              rel="noopener noreferrer">LinkedIn</a>`}
-            ${p.linkedin_url&&p.email?" · ":""}
-            ${p.email&&html`<a href=${"mailto:"+p.email}>Email</a>`}
-          </div>`}
-        </div>`)}
-      </details>`}
     ${e._entity_type==="actor"&&html`<${PeopleSearch} key=${jobId+":"+e.name+":"+(e.website||"")} actor=${e} jobId=${jobId} disabled=${disabled}/>`}
-    ${e._why&&html`<div class="why">${e._why}</div>`}
-    ${j&&j.reason&&html`<div class="mnote">${j.reason}</div>`}
+    ${e._entity_type==="actor"&&html`<${AdditionalInfo} e=${e}/>`}
+    <${MatchBox} e=${e} lc=${lc}/>
   </div>`;
 }
 
@@ -1848,11 +2033,12 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [researchReason,setResearchReason]=useState("Live research is disabled until a controlled test is approved.");
   const [runStatus,setRunStatus]=useState("draft");
   // Result filters for the whole conversation (Fatima's redesign, 27 Oct 2026).
-  const [statusFilter,setStatusFilter]=useState("all");   // all | pending | ready | parked | saved
+  const [statusFilter,setStatusFilter]=useState("all");   // all | pending | parked | verified
   const [saving,setSaving]=useState(false);
   const [saveSummary,setSaveSummary]=useState(null);
-  const [matchFilter,setMatchFilter]=useState("all");     // all | matches | leftout
-  const [whenFilter,setWhenFilter]=useState("all");       // all | upcoming | past
+  const [typeFilter,setTypeFilter]=useState("all");       // all | actor | person | event
+  // Results that don't match the request stay folded until asked for (2 Nov 2026).
+  const [othersOpen,setOthersOpen]=useState({});
   const boxRef=useRef(null);
   const activeJob=useRef(null);
   const stopped=useRef(false);
@@ -2200,9 +2386,10 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   }
   const statusOf=e=>e._db_save&&e._db_save.outcome!=="not_saved"?"saved":e._review==="ready"?"ready"
     :e._review==="parked"?"parked":"pending";
-  const passes=e=>(statusFilter==="all"||statusOf(e)===statusFilter)
-    &&(matchFilter==="all"||(matchFilter==="matches")===(e._selected!==false))
-    &&(whenFilter==="all"||e._entity_type!=="event"||e.date_status===whenFilter);
+  // Verified covers both a checked card and one already saved to Compass.
+  const statusGroup=e=>["ready","saved"].includes(statusOf(e))?"verified":statusOf(e);
+  const passes=e=>(statusFilter==="all"||statusGroup(e)===statusFilter)
+    &&(typeFilter==="all"||(e._entity_type||"actor")===typeFilter);
 
   function roundResults(r){
     const order=e=>e._rank?e._rank:(e._selected===false?1e6:5e5);
@@ -2230,19 +2417,20 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       ${parts.map(p=>html`<div class="mgroup" key=${p.k}>
         ${p.items.length>0&&html`<div class="mgroup-h"><span class=${"chip "+p.tone}>${p.label}</span>
           <span class="n">${p.items.length}</span></div>`}
-        ${p.items.map(card)}
+        ${p.items.filter(e=>e._selected!==false).map(card)}
+        ${(()=>{const others=p.items.filter(e=>e._selected===false), key=r+"-"+p.k, open=!!othersOpen[key];
+          return others.length>0&&html`<button class="example mothers" type="button" aria-expanded=${open}
+              onClick=${()=>setOthersOpen(o=>({...o,[key]:!open}))}>
+              ${open?"▾ Hide":"▸ Show"} ${others.length} ${others.length===1?"result that doesn't":"results that don't"} match your request</button>
+            ${open&&others.map(card)}`;})()}
         ${p.again.length>0&&html`<div class="hint">${"Also found again, shown above: "+p.again.map(ename).join(", ")+"."}</div>`}
       </div>`)}
       ${r>1&&!parts.length&&html`<div class="hint">This search found nothing new.</div>`}
     </div>`;
   }
 
-  const savedMaps=(cls)=>recent.length>0&&html`<select class=${"field "+cls} disabled=${busy||verifying}
-      value=${jobId||""} aria-label="Saved maps" onChange=${e=>{if(e.target.value)restore(e.target.value);}}>
-      <option value="">Select a saved map…</option>
-      ${recent.map(m=>html`<option value=${m.id} key=${m.id}>
-        ${(m.description||"Untitled map").slice(0,65)}${m.status==="done"?"":" — "+m.status}</option>`)}
-    </select>`;
+  const savedMaps=(cls)=>html`<${SavedMaps} maps=${recent} value=${jobId} disabled=${busy||verifying}
+      onPick=${restore} cls=${cls}/>`;
   const attach=html`${file
     ? html`<span class="attach-chip">📎 ${file.name}
         <button class="linkbtn" type="button" onClick=${()=>{setFile(null);
@@ -2259,7 +2447,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     class=${"fchip"+(current===value?" on":"")} onClick=${()=>set(value)}>${label}</button>`;
   const shown=visibleItems();
   const readyItems=shown.filter(e=>statusOf(e)==="ready");
-  const hasEvents=shown.some(e=>e._entity_type==="event");
+  const typesShown=MGROUPS.filter(([k])=>shown.some(e=>(e._entity_type||"actor")===k));
 
   // Before the first prompt: Fatima's start screen (27 Oct 2026 mockup).
   if(!started) return html`<div class="start">
@@ -2286,9 +2474,9 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 
   return html`<div>
     <div class="map-head">
-      <div class="map-title">${(request||msgs.find(m=>m.role==="user")?.content||"New map").split("\n")[0].slice(0,90)}</div>
+      <div class="map-title" title=${request||msgs.find(m=>m.role==="user")?.content||""}>${mapTitle(request||msgs.find(m=>m.role==="user")?.content||"New map")}</div>
       <div class="map-tools">
-        ${cost&&html`<span class="hint" style=${{margin:0}} aria-live="polite">Cost so far: $${cost.estimated_usd.toFixed(2)} of $${cost.budget_usd.toFixed(2)}</span>`}
+        ${cost&&html`<span class="hint" style=${{margin:0}} aria-live="polite">Cost so far: $${cost.estimated_usd.toFixed(2)}</span>`}
         ${savedMaps("map-select")}
         <button class="example" type="button" disabled=${busy||verifying} onClick=${reset}>+ New map</button>
       </div>
@@ -2307,18 +2495,12 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 
     ${total>0&&html`<div class="filter-bar" role="group" aria-label="Filter results">
       ${chip("all",statusFilter,setStatusFilter,`All ${shown.length}`)}
-      ${chip("pending",statusFilter,setStatusFilter,`Pending review ${shown.filter(e=>statusOf(e)==="pending").length}`)}
-      ${chip("ready",statusFilter,setStatusFilter,`Ready to save ${shown.filter(e=>statusOf(e)==="ready").length}`)}
-      ${chip("parked",statusFilter,setStatusFilter,`Parked ${shown.filter(e=>statusOf(e)==="parked").length}`)}
-      ${chip("saved",statusFilter,setStatusFilter,`Saved ${shown.filter(e=>statusOf(e)==="saved").length}`)}
-      <span class="fsep" aria-hidden="true"></span>
-      ${chip("all",matchFilter,setMatchFilter,"Everything")}
-      ${chip("matches",matchFilter,setMatchFilter,"Matches")}
-      ${chip("leftout",matchFilter,setMatchFilter,"Left out")}
-      ${hasEvents&&html`<span class="fsep" aria-hidden="true"></span>
-        ${chip("all",whenFilter,setWhenFilter,"Any date")}
-        ${chip("upcoming",whenFilter,setWhenFilter,"Upcoming")}
-        ${chip("past",whenFilter,setWhenFilter,"Past")}`}
+      ${chip("pending",statusFilter,setStatusFilter,`Pending review ${shown.filter(e=>statusGroup(e)==="pending").length}`)}
+      ${chip("parked",statusFilter,setStatusFilter,`Parked ${shown.filter(e=>statusGroup(e)==="parked").length}`)}
+      ${chip("verified",statusFilter,setStatusFilter,`Verified ${shown.filter(e=>statusGroup(e)==="verified").length}`)}
+      ${typesShown.length>1&&html`<span class="fsep" aria-hidden="true"></span>
+        ${chip("all",typeFilter,setTypeFilter,"All types")}
+        ${typesShown.map(([k,label])=>chip(k,typeFilter,setTypeFilter,label))}`}
     </div>`}
 
     <div class="thread">
@@ -2403,7 +2585,7 @@ function Browse(){
   return html`<div>
     <h1 class="hero-h">Ecosystem Directory</h1>
     <p class="start-lead">Find verified organizations, hubs, people, and events. View and edit profiles,
-      add analyst notes, and record team engagement.</p>
+      add GHUS Notes, and record team engagement.</p>
     <div class="subnav">
       ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${label}</button>`)}
@@ -2451,7 +2633,7 @@ function App(){
   // stop even though the backend worker continues.
   return html`
   <aside class="sidebar">
-    <div class="workspace-brand"><div class="brand-name">UM6P</div><div class="brand-caption">GLOBAL HUBS · UNITED STATES</div></div>
+    <div class="workspace-brand"><div class="brand-logo"><img src="/um6p-global-hubs-logo-light.png" alt="UM6P Global Hubs, United States"/></div></div>
     <div class="compass-brand">${COMPASS_MARK}<div><div class="compass-name">COMPASS</div>
       <div class="compass-tag">Ecosystem Intelligence</div></div></div>
     <nav class="workspace-nav" aria-label="Main navigation">

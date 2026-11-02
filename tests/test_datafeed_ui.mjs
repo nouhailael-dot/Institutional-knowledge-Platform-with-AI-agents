@@ -64,7 +64,7 @@ const ACTOR_ROW = {
 };
 
 test('three record types, chosen from a dropdown', () => {
-  assert.deepEqual(RECORD_TYPES.map(t => t.label), ['Actors / Organizations', 'People', 'Events']);
+  assert.deepEqual(RECORD_TYPES.map(t => t.label), ['Organizations', 'People', 'Events']);
   const source = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
   assert.match(source, /<select id="df-record-type"/);
   assert.match(source, /<select id="df-method"/);

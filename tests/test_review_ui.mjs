@@ -330,7 +330,7 @@ test('the queue groups the pre-redesign backlog first, then one group per run', 
 
 test('Run Type offers exactly six choices, and the reason filter is gone', () => {
   assert.deepEqual(RUN_TYPE_OPTIONS.map(o => o.label),
-    ['All Runs', 'Discovery Actors', 'Discovery Events', 'Discovery People', 'Actor Updates',
+    ['All Runs', 'Discovery Organizations', 'Discovery Events', 'Discovery People', 'Organization Updates',
      'Data Feed Imports']);
   assert.equal(runTypeName('map_checks'), 'Map Checks');
   assert.equal(runTypeName('data_feed'), 'Data Feed Imports');
@@ -403,7 +403,7 @@ test('header badges carry the record kind, the review state and every reason', (
   });
   // Stored "parked" by the agent is not a decision: it reads Pending.
   assert.deepEqual(badges.map(badge => badge.label),
-    ['Actor', 'Pending', 'Geocode Failed', 'Possible Duplicate']);
+    ['Organization', 'Pending', 'Geocode Failed', 'Possible Duplicate']);
   // Parked only when a person parked it - in Review, or on its Build the Map card.
   assert.equal(headerBadges({entity_type: 'actor', status: 'pending_review', record_status: 'parked',
     decision_kind: 'defer'})[1].label, 'Parked');
@@ -480,7 +480,7 @@ test('a record reads like a Build the Map result card, and the IDs live only in 
   // and Verify / Park / Reject on top; description; a profile that folds open;
   // the inline facts; its web sources; analyst notes at the bottom.
   for (const marker of ['class=${"mcard review-card"', '<span class="rank">',
-    'class=${"review-desc"', 'class="mpeople review-profile"', '>Actor profile<', '"Event profile" : "Person profile"',
+    'class=${"review-desc"', 'class="mpeople review-profile"', '>Organization profile<', '"Event profile" : "Person profile"',
     'class="review-facts-row"', 'web source${sources.length > 1', 'class="review-analyst-notes"',
     'class="why"']) {
     assert.ok(component.includes(marker), `missing on the card: ${marker}`);
@@ -502,7 +502,7 @@ test('a record reads like a Build the Map result card, and the IDs live only in 
   assert.ok(AUDIT_ONLY_FIELDS.has('actor_type_raw'));
   assert.doesNotMatch(auditPanel, /FIELDS\.legacyActorType/);
   assert.doesNotMatch(component, /summary\?\.legacy_actor_type/);
-  assert.equal(reviewFieldLabel('actor_type'), 'Legacy Actor Type');
+  assert.equal(reviewFieldLabel('actor_type'), 'Legacy Organization Type');
   assert.doesNotMatch(component, /class="review-provenance"/);
 });
 
@@ -591,7 +591,7 @@ test('field labels come from the dictionary', () => {
   assert.equal(reviewFieldLabel('actor_category'), 'Category');
   assert.equal(reviewFieldLabel('category_type'), 'Category Type');
   assert.equal(reviewFieldLabel('category_note'), 'Classification Note');
-  assert.equal(reviewFieldLabel('actor_type'), 'Legacy Actor Type');
+  assert.equal(reviewFieldLabel('actor_type'), 'Legacy Organization Type');
   assert.equal(reviewFieldLabel('location_city'), 'City');
 });
 

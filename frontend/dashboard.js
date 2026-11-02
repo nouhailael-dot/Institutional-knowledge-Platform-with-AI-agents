@@ -7,7 +7,7 @@
 
 import {
   OPEN_IN_REVIEW, STATUS_LABELS, durationLabel, formatUsd, reviewRunKey, runningLine,
-} from "./discovery.js?v=20261030b";
+} from "./discovery.js?v=20261102b";
 import {usDateTime} from "./dates.js?v=20261030b";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";

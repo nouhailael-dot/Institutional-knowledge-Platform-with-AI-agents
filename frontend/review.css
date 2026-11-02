@@ -300,3 +300,18 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
   font-weight:600;color:var(--ink);background:var(--surface);min-width:180px}
 .review-whoami.invalid input{border-color:#b42318}
 .review-status.parked{background:#eef2f7;color:#334155}
+
+/* One look for every status tag (30 Oct 2026): Verified alone has a check mark;
+   every other tag is a colored dot and the word. Parked orange; paused, rejected
+   and deleted red; waiting yellow. */
+.review-status{gap:6px}
+.review-status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.review-status.approved::before,.review-status.verified::before{content:"✓";width:auto;height:auto;border-radius:0;background:none}
+.review-status.approved,.review-status.verified{background:var(--green-soft);color:var(--green)}
+.review-status.pending_review{background:var(--amber-soft);color:var(--amber)}
+.review-status.parked{background:var(--orange-soft);color:var(--orange)}
+.review-status.rejected_by_reviewer,.review-status.rejected,.review-status.paused,.review-status.deleted{background:var(--red-soft);color:var(--red)}
+.review-status.imported{background:var(--slate-soft);color:var(--slate)}
+
+/* Larger text (2 Nov 2026). */
+.review-status,.duplicate-state,.review-chip{font-size:12px}
