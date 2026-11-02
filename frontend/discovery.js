@@ -724,8 +724,9 @@ export function updateRequestScope(request, sectors = []) {
 // One page (GHUS, 2026-10-30): search the Ecosystem Directory, add organizations
 // to one list, choose which to include, then what to update and when.
 
-export const ORG_UPDATE_TITLE = "Which organizations would you like to update?";
-export const ORG_UPDATE_LEAD = "Refresh information about organizations already saved in the Ecosystem Directory.";
+export const MONITOR_TITLE = "What would you like to monitor?";
+export const MONITOR_LEAD = "Monitor topics and discover relevant organizations, people, and events "
+  + "over time, or track updates to records already saved in Compass.";
 export const SPECIFIC_PLACEHOLDER = "Describe the information you’d like to update, such as research "
   + "projects, technologies, funding, partnerships, leadership, facilities, or capabilities in "
   + "another sector. Include relevant topics, dates, or requirements.";
@@ -1060,8 +1061,8 @@ export function draftProblems(rawForm, options) {
 
 export const DISCOVERY_KINDS = [
   {id: "actor", label: "Organizations"},
-  {id: "event", label: "Events"},
   {id: "person", label: "People"},
+  {id: "event", label: "Events"},
 ];
 
 export const EVENT_TYPE_LABELS = {
@@ -1073,12 +1074,48 @@ export const EVENT_TYPE_LABELS = {
 
 export function blankEntityForm(today, kind) {
   return {
-    kind, title: "", sector: "", focusTerms: [], focusInput: "",
+    kind, brief: "", title: "", sector: "", focusTerms: [], focusInput: "",
     areaKind: "us", region: "", state: "", city: "",
     dateFrom: "", dateTo: "", eventTypes: [], institution: "", role: "",
     // Chosen, never assumed: each starts on its placeholder.
     startDate: "", cadence: "", duration: "",
   };
+}
+
+/**
+ * An events request from its description: the first line names it, the lines
+ * after it are what to search for (the first line itself when there are none);
+ * a sector, region or state the description names is used unless one is chosen.
+ */
+export function resolveEventDraft(form, options = {}) {
+  const brief = String(form.brief || "").trim();
+  if (!brief) return form;
+  const found = briefMatches(brief, options);
+  const terms = briefTerms(brief, options.max_focus_terms || 8);
+  const resolved = {...form, title: briefTitle(brief),
+    sector: form.sector || found.sector || ANY_SECTOR,
+    focusTerms: terms.length ? terms : [briefTitle(brief)]};
+  if (!form.areaTouched) {
+    resolved.areaKind = found.state ? "state" : found.region ? "region" : "us";
+    resolved.region = found.region || "";
+    resolved.state = found.state || "";
+  }
+  return resolved;
+}
+
+/** The payload with its date range: upcoming events for EVENT_WINDOW_MONTHS when none is chosen. */
+export function withEventWindow(payload) {
+  const options = payload.discovery_options || {};
+  if (payload.discovery_entity !== "event" || options.date_from || options.date_to
+      || !payload.start_date) return payload;
+  return {...payload, discovery_options: {...options, date_from: payload.start_date,
+    date_to: addMonthsIso(payload.start_date, EVENT_WINDOW_MONTHS)}};
+}
+
+function addMonthsIso(iso, months) {
+  const [y, m, d] = String(iso).split("-").map(Number);
+  const last = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1 + months, Math.min(d, last))).toISOString().slice(0, 10);
 }
 
 /** What an event or people form sends. Empty optional fields are left out. */
@@ -1134,6 +1171,16 @@ export function entityDraftProblems(form, options = {}) {
 // People (GHUS, 2026-10-29): one question answered in the person's own words;
 // the backend reads it into search themes, a role and a name
 // (agents/collection/people_brief.py) and keeps the whole description.
+export const ORG_QUESTION = "Which organizations would you like to monitor?";
+export const ORG_PLACEHOLDER = "Describe the types of organizations you want to monitor. Include your "
+  + "objective, sector or topic, geographic focus, and any specific capabilities of interest.";
+export const EVENT_QUESTION = "Which events would you like to monitor?";
+export const EVENT_PLACEHOLDER = "Describe the events you want to monitor. Include your objective, "
+  + "sector or topic, geographic focus, and any specific themes of interest.";
+export const REVIEW_NOTE = "Review findings and check their sources before you verify them and add "
+  + "them to the Ecosystem Directory.";
+// Events with no date range chosen: upcoming ones, from the request's start.
+export const EVENT_WINDOW_MONTHS = 14;
 export const PEOPLE_QUESTION = "Who would you like to find?";
 export const PEOPLE_PLACEHOLDER = "Describe the expertise and professional profiles you’re looking "
   + "for. Include your objective, sector or topic, geographic focus, and any relevant affiliations "
@@ -1256,6 +1303,27 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
   }
 
   /** Frequency · Start Date · Duration, in one row; Duration only for a recurring request. */
+  /** Where the results are emailed: typed once here, kept in this browser (no sign-in yet). */
+  function EmailNote({requester, setRequester}) {
+    return html`<p class="discovery-email-note"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span>You’ll receive an email notification at <input type="email" aria-label="Email for results"
+        class=${"discovery-email" + (requester && !isEmail(requester) ? " invalid" : "")}
+        value=${requester} placeholder="you@um6p.ma" maxLength="254"
+        onInput=${(e) => setRequester(e.target.value)}/> when your results are ready to review in
+        Review Results.</span></p>`;
+  }
+
+  function RequestFooter({requester, setRequester, working, disabled, onCreate, note = ""}) {
+    return html`<div class="org-footer">
+      <div class="org-notes">
+        ${note && html`<p class="discovery-email-note"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>${note}</span></p>`}
+        <${EmailNote} requester=${requester} setRequester=${setRequester}/>
+      </div>
+      <button type="button" class="btn org-create" disabled=${disabled} onClick=${onCreate}>
+        ${working ? "Creating…" : "Create Request"}</button>
+    </div>`;
+  }
+
   function ScheduleRow({form, set, kind, options, today, shown}) {
     return html`<div class="discovery-row3">
       <${Field} label="Frequency" error=${shown.frequency}>
@@ -1296,28 +1364,17 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       : `“${title}” is created. Its first run is on ${formatDay(payload.start_date)}; findings go to Review Results.${email}`;
   }
 
-  function PeopleRequestForm({options, today, requester, onSaved}) {
+  function PeopleRequestForm({options, today, requester, setRequester, onSaved}) {
     const [form, setForm] = useState(blankPeopleForm);
     const [touched, setTouched] = useState(false);
-    const [preview, setPreview] = useState(null);
     const [working, setWorking] = useState("");
     const [message, setMessage] = useState(null);
-    const set = (patch) => { setForm((f) => ({...f, ...patch})); setPreview(null); };
+    const set = (patch) => setForm((f) => ({...f, ...patch}));
     const problems = peopleDraftProblems(form, today);
     const shown = touched ? problems : {};
     const ready = options.entity_requests_ready !== false;
     const states = statesForRegion(options, form.region);
 
-    async function runPreview() {
-      setTouched(true);
-      if (Object.keys(previewProblems(problems)).length) return;
-      setWorking("preview"); setMessage(null);
-      try {
-        const payload = previewSchedule(peopleDraftPayload(form), today);
-        setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(payload)}));
-      } catch (err) { setMessage({kind: "error", text: err.message}); }
-      setWorking("");
-    }
     async function create() {
       setTouched(true);
       if (Object.keys(problems).length) return;
@@ -1326,7 +1383,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         const payload = withRequester(peopleDraftPayload(form), requester);
         const result = await createRequest(payload, today);
         setMessage({kind: "success", text: createdMessage(result, payload)});
-        setForm(blankPeopleForm()); setTouched(false); setPreview(null);
+        setForm(blankPeopleForm()); setTouched(false);
         onSaved(result.started);
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setWorking("");
@@ -1364,17 +1421,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         <//>
       </div>
       <${ScheduleRow} form=${form} set=${set} kind="person" options=${options} today=${today} shown=${shown}/>
-      <p class="muted">Every person found goes to Review Results; nothing enters the Ecosystem Directory until it is verified.</p>
-
-      ${preview && html`<div class="discovery-preview">
-        <h4>${preview.request?.title || "Searches"} · ${preview.queries.length} searches</h4>
-        <ul>${preview.queries.map((q) => html`<li key=${q}>${q}</li>`)}</ul>
-      </div>`}
-
-      <div class="discovery-actions">
-        <button class="btn ghost" disabled=${!!working || !ready} onClick=${runPreview}>${working === "preview" ? "Preparing preview…" : "Preview searches"}</button>
-        <button class="btn" disabled=${!!working || !ready} onClick=${create}>${working === "create" ? "Creating…" : "Create Request"}</button>
-      </div>
+      <${RequestFooter} requester=${requester} setRequester=${setRequester} working=${working === "create"}
+        disabled=${!!working || !ready} onCreate=${create}/>
     </section>`;
   }
 
@@ -1416,7 +1464,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     </div>`;
   }
 
-  function OrganizationsUpdate({sectors, options, today, requester, onCreated}) {
+  function OrganizationsUpdate({sectors, options, today, requester, setRequester, onCreated}) {
     const [query, setQuery] = useState("");
     // Narrow the directory by a sector, type or state picked from the suggestions; with one
     // chosen, the group is listed.
@@ -1608,8 +1656,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         <div class="org-notes">
           <p><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
             Existing directory information remains unchanged until you verify the proposed updates.</p>
-          <p><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
-            You’ll receive an email notification when your results are ready in Review Results.</p>
+          <${EmailNote} requester=${requester} setRequester=${setRequester}/>
         </div>
         <button type="button" class="btn org-create" disabled=${!ready || busy || tooMany} onClick=${create}>
           ${busy ? "Creating…" : "Create Request"}</button>
@@ -1673,130 +1720,90 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     </article>`;
   }
 
-  function EntityRequestForm({kind, options, today, requester, onSaved}) {
+  function EntityRequestForm({kind, options, today, requester, setRequester, onSaved}) {
     const [form, setForm] = useState(() => blankEntityForm(today, kind));
     const [touched, setTouched] = useState(false);
-    const [preview, setPreview] = useState(null);
     const [working, setWorking] = useState("");
     const [message, setMessage] = useState(null);
-    useEffect(() => { setForm(blankEntityForm(today, kind)); setPreview(null); setTouched(false); setMessage(null); }, [kind]);
-    const set = (patch) => { setForm((f) => ({...f, ...patch})); setPreview(null); };
-    const isEvent = kind === "event";
-    const problems = entityDraftProblems(form, options);
+    useEffect(() => { setForm(blankEntityForm(today, kind)); setTouched(false); setMessage(null); }, [kind]);
+    const set = (patch) => setForm((f) => ({...f, ...patch}));
+    const draft = resolveEventDraft(form, options);
+    const problems = entityDraftProblems(draft, options);
     const shown = touched ? problems : {};
     const ready = options.entity_requests_ready !== false;
+    const regionShown = draft.areaKind === "us" ? "" : draft.region;
 
-    function withTyped() {
-      // A term still in the box counts, so "Preview" never ignores it.
-      const term = form.focusInput.trim();
-      return term && !form.focusTerms.includes(term)
-        ? {...form, focusTerms: [...form.focusTerms, term].slice(0, options.max_focus_terms || 8), focusInput: ""}
-        : form;
-    }
-    function addTerm() {
-      const next = withTyped();
-      if (next !== form) set({focusTerms: next.focusTerms, focusInput: ""});
-    }
-    function toggleType(type) {
-      set({eventTypes: form.eventTypes.includes(type)
-        ? form.eventTypes.filter((t) => t !== type) : [...form.eventTypes, type]});
-    }
-    async function send(action) {
+    async function create() {
       setTouched(true);
-      const draft = withTyped();
-      const issues = entityDraftProblems(draft, options);
-      if (Object.keys(action === "preview" ? previewProblems(issues) : issues).length) return;
-      if (draft !== form) setForm(draft);
-      setWorking(action); setMessage(null);
+      if (Object.keys(problems).length) return;
+      setWorking("create"); setMessage(null);
       try {
-        if (action === "preview") {
-          const payload = previewSchedule(entityDraftPayload(draft), today);
-          setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(payload)}));
-        } else {
-          const payload = withRequester(entityDraftPayload(draft), requester);
-          const result = await createRequest(payload, today);
-          setMessage({kind: "success", text: createdMessage(result, payload)});
-          setForm(blankEntityForm(today, kind)); setTouched(false); setPreview(null);
-          onSaved(result.started);
-        }
+        const payload = withRequester(withEventWindow(entityDraftPayload(draft)), requester);
+        const result = await createRequest(payload, today);
+        setMessage({kind: "success", text: createdMessage(result, payload)});
+        setForm(blankEntityForm(today, kind)); setTouched(false);
+        onSaved(result.started);
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setWorking("");
     }
 
-    const scheduled = !Object.keys(scheduleProblems(form)).length;
-    const summary = scheduled ? entitySummary(entityDraftPayload(form), options) : "";
     return html`<section class="discovery-card">
-      ${!ready && html`<p class="discovery-message error">Event and people requests need migration 580 on this database.</p>`}
+      ${!ready && html`<p class="discovery-message error">Event requests need migration 580 on this database.</p>`}
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
-      <div class="discovery-grid">
-        <${Field} label="Request name" error=${shown.title} wide=${true}>
-          <input value=${form.title} maxLength="160"
-            placeholder=${isEvent ? "Water reuse conferences in the Great Lakes, spring 2027" : "Battery storage researchers in Texas"}
-            onInput=${(e) => set({title: e.target.value})}/>
-        <//>
+      <${Field} label=${EVENT_QUESTION} error=${shown.title || shown.topic ? "Describe the events to monitor." : ""} wide=${true}>
+        <textarea class="discovery-brief" rows="3" maxLength="2000" value=${form.brief}
+          placeholder=${EVENT_PLACEHOLDER} onInput=${(e) => set({brief: e.target.value})}></textarea>
+      <//>
+      <div class="discovery-row4">
         <${Field} label="Sector" error=${shown.sector}>
-          <select value=${form.sector} onChange=${(e) => set({sector: e.target.value})}>
-            <option value="">Choose a sector</option>
-            <option value=${ANY_SECTOR}>Any sector</option>
+          <select value=${draft.sector || ANY_SECTOR} onChange=${(e) => set({sector: e.target.value})}>
+            <option value=${ANY_SECTOR}>Any</option>
             ${options.topics.map((t) => html`<option key=${t.code} value=${t.code}>${t.name}</option>`)}
           </select>
         <//>
-        <${Field} label=${isEvent ? "Topic and sub-topics" : "Topic or expertise"} error=${shown.topic}>
-          <div class="discovery-terms">
-            ${form.focusTerms.map((term) => html`<span key=${term} class="discovery-term">${term}
-              <button type="button" aria-label=${`Remove ${term}`} onClick=${() => set({focusTerms: form.focusTerms.filter((t) => t !== term)})}>×</button></span>`)}
-            <input value=${form.focusInput} placeholder=${form.focusTerms.length ? "Add another" : (isEvent ? "e.g. water reuse" : "e.g. battery storage")}
-              onInput=${(e) => set({focusInput: e.target.value})}
-              onKeyDown=${(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addTerm(); } }}
-              onBlur=${addTerm}/>
-          </div>
-        <//>
-        <${Field} label="Geographic scope" error=${shown.area} wide=${true}>
-          <div class="discovery-segment">
-            ${[["region", "Region"], ["state", "State"], ["us", "All United States"]].map(([id, label]) => html`
-              <button type="button" key=${id} class=${form.areaKind === id ? "active" : ""} onClick=${() => set({areaKind: id})}>${label}</button>`)}
-          </div>
-          ${form.areaKind === "region" && html`<select value=${form.region} onChange=${(e) => set({region: e.target.value})}>
-            <option value="">Choose a region</option>
+        <${Field} label="Region" error=${shown.area}>
+          <select value=${regionShown} onChange=${(e) => {
+            const region = e.target.value;
+            const keep = draft.areaKind === "state"
+              && statesForRegion(options, region).some((s) => s.code === draft.state);
+            set({region, state: keep ? draft.state : "", areaTouched: true,
+              areaKind: keep ? "state" : region ? "region" : "us"});
+          }}>
+            <option value="">All Regions</option>
             ${options.regions.map((r) => html`<option key=${r.code} value=${r.code}>${r.name}</option>`)}
-          </select>`}
-          ${form.areaKind === "state" && html`<div class="discovery-inline">
-            <select value=${form.state} onChange=${(e) => set({state: e.target.value})}>
-              <option value="">Choose a state</option>
-              ${options.states.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-            </select>
-            <input value=${form.city} maxLength="120" placeholder="City (optional)" onInput=${(e) => set({city: e.target.value})}/>
-          </div>`}
+          </select>
         <//>
-        ${isEvent && html`<${Field} label="Event dates" error=${shown.dates}>
-          <div class="discovery-inline">
-            <${DateInput} ariaLabel="From" value=${form.dateFrom} onChange=${(v) => set({dateFrom: v})}/>
-            <${DateInput} ariaLabel="To" value=${form.dateTo} min=${form.dateFrom} onChange=${(v) => set({dateTo: v})}/>
-          </div>
-          <small class="muted">Optional. Past events are kept as evidence; leave empty for any date.</small>
+        <${Field} label="State">
+          <select value=${draft.areaKind === "state" ? draft.state : ""} onChange=${(e) => {
+            const state = e.target.value;
+            set({state, areaTouched: true, areaKind: state ? "state" : draft.region ? "region" : "us"});
+          }}>
+            <option value="">All States</option>
+            ${statesForRegion(options, regionShown).map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
+          </select>
         <//>
-        <${Field} label="Event type (optional)" error=${shown.types}>
-          <div class="discovery-segment">
+        <${Field} label="Event Type" error=${shown.types}>
+          <select value=${form.eventTypes[0] || ""} onChange=${(e) => set({eventTypes: e.target.value ? [e.target.value] : []})}>
+            <option value="">All Event Types</option>
             ${(options.event_types || Object.keys(EVENT_TYPE_LABELS)).map((type) => html`
-              <button type="button" key=${type} class=${form.eventTypes.includes(type) ? "active" : ""}
-                onClick=${() => toggleType(type)}>${EVENT_TYPE_LABELS[type] || type}</button>`)}
-          </div>
-        <//>`}
+              <option key=${type} value=${type}>${EVENT_TYPE_LABELS[type] || type}</option>`)}
+          </select>
+        <//>
+      </div>
+      <div class="discovery-daterange">
+        <span class="discovery-label">Event Date Range</span>
+        <div class="discovery-daterange-row">
+          <label><span>From</span><${DateInput} ariaLabel="Events from" value=${form.dateFrom}
+            onChange=${(v) => set({dateFrom: v})}/></label>
+          <label><span>To</span><${DateInput} ariaLabel="Events to" value=${form.dateTo} min=${form.dateFrom}
+            onChange=${(v) => set({dateTo: v})}/></label>
+        </div>
+        ${shown.dates ? html`<small class="field-error">${shown.dates}</small>`
+          : html`<small class="muted">Defaults to upcoming events within the next ${EVENT_WINDOW_MONTHS} months.</small>`}
       </div>
       <${ScheduleRow} form=${form} set=${set} kind=${kind} options=${options} today=${today} shown=${shown}/>
-
-      ${summary && html`<p class="discovery-summary">${summary}</p>`}
-      <p class="muted">Every ${isEvent ? "event" : "person"} found goes to Review Results; nothing is added to the directory until a person verifies it.</p>
-
-      ${preview && html`<div class="discovery-preview">
-        <h4>${preview.queries.length} searches</h4>
-        <ul>${preview.queries.map((q) => html`<li key=${q}>${q}</li>`)}</ul>
-      </div>`}
-
-      <div class="discovery-actions">
-        <button class="btn ghost" disabled=${!!working || !ready} onClick=${() => send("preview")}>${working === "preview" ? "Preparing preview…" : "Preview searches"}</button>
-        <button class="btn" disabled=${!!working || !ready} onClick=${() => send("create")}>${working === "create" ? "Creating…" : "Create Request"}</button>
-      </div>
+      <${RequestFooter} requester=${requester} setRequester=${setRequester} working=${working === "create"}
+        disabled=${!!working || !ready} onCreate=${create} note=${REVIEW_NOTE}/>
     </section>`;
   }
 
@@ -1915,16 +1922,12 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       setRequesterState(value);
       try { localStorage.setItem("ghus.monitor.email", value); } catch { /* not kept */ }
     };
-    // The fields are folded away: the brief is what a person writes, and the
-    // panel below shows what it resolved to for anyone who wants to change it.
-    const [showDetails, setShowDetails] = useState(false);
     const [touched, setTouched] = useState(false);
-    const [preview, setPreview] = useState(null);
     const [busy, setBusy] = useState(false);
     const [working, setWorking] = useState("");
     const [message, setMessage] = useState(null);
 
-    const set = (patch) => { setForm((f) => ({...f, ...patch})); setPreview(null); };
+    const set = (patch) => setForm((f) => ({...f, ...patch}));
 
     async function load() {
       try {
@@ -1947,24 +1950,13 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     useEffect(() => {
       if (!handoff) return;
       setForm(handoffForm(handoff, today));
-      setView("new"); setShowDetails(true); setTouched(false); setPreview(null);
+      setView("new"); setTouched(false);
       if (status.configured) setMessage({kind: "running", text: "Proposed from your map. Check the "
-        + "sector, area and sub-topics, then preview the searches before creating the request. "
+        + "description, sector and area before creating the request. "
         + "Monitoring doesn't know this map's results, so its first run may send some of the same "
         + "organizations to Review Results again."});
       onHandoffUsed();
     }, [handoff]);
-
-    function addFocus() {
-      const term = form.focusInput.trim();
-      if (!term) return;
-      const max = options?.max_focus_terms || 8;
-      if (form.focusTerms.length >= max || form.focusTerms.some((t) => t.toLowerCase() === term.toLowerCase())) {
-        set({focusInput: ""});
-        return;
-      }
-      set({focusTerms: [...form.focusTerms, term], focusInput: ""});
-    }
 
     // Everything that is sent, summarised or validated runs on the RESOLVED
     // draft, so the brief and the panel can never disagree about what will run.
@@ -1972,17 +1964,6 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const problems = draftProblems(form, options || {});
     const valid = Object.keys(problems).length === 0;
     const shown = touched ? problems : {};
-
-    async function runPreview() {
-      setTouched(true);
-      if (Object.keys(previewProblems(problems)).length) return;
-      setBusy(true); setWorking("preview"); setMessage(null);
-      try {
-        const payload = previewSchedule(draftPayload(draft), today);
-        setPreview(await api("/api/discovery/preview", {method: "POST", body: JSON.stringify(payload)}));
-      } catch (err) { setMessage({kind: "error", text: err.message}); }
-      setBusy(false); setWorking("");
-    }
 
     async function create() {
       setTouched(true);
@@ -1992,7 +1973,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         const payload = withRequester(draftPayload(draft), requester);
         const result = await createRequest(payload, today);
         setMessage({kind: "success", text: createdMessage(result, payload)});
-        setForm(blankForm()); setTouched(false); setPreview(null); setShowDetails(false);
+        setForm(blankForm()); setTouched(false);
         await load();
         if (result.started) setWatchUntil(Date.now() + 20 * 60 * 1000);
         setView("requests");
@@ -2044,33 +2025,15 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       setBusy(false);
     }
 
-    const summaryDraft = {
-      ...draftPayload(draft),
-      start_date: draft.startDate,
-      region_code: draft.areaKind === "region" ? draft.region : null,
-      state_code: draft.areaKind === "state" ? draft.state : null,
-      city: draft.areaKind === "state" ? draft.city.trim() : null,
-    };
     // Requests are private to whoever made them (their email); older ones stay shared.
     const mine = visibleRequests(requests, requester);
     const myUpdates = visibleRequests(updates, requester);
     const listed = [...mine.map((r) => ({kind: "discovery", r})), ...myUpdates.map((r) => ({kind: "update", r}))]
       .sort((a, b) => String(b.r.created_at || "").localeCompare(String(a.r.created_at || "")));
-    const activeCount = [...mine, ...myUpdates].filter((r) => r.status === "active" || r.status === "paused").length;
 
     return html`<div class="discovery-page">
-      ${view === "actors" ? html`
-      <h1 class="hero-h">${ORG_UPDATE_TITLE}</h1>
-      <p class="lead">${ORG_UPDATE_LEAD}</p>` : html`
-      <h1 class="hero-h">What should Compass keep watching?</h1>
-      <p class="lead">Choose the organizations, events or people to follow, and where. Compass
-        searches only for that, on the schedule you set, and what it finds goes to Review Results.</p>`}
-      <label class=${"discovery-whoami" + (requester && !isEmail(requester) ? " invalid" : "")}>
-        <span>Email for results</span>
-        <input type="email" value=${requester} placeholder="you@um6p.ma" maxLength="254"
-          onInput=${(e) => setRequester(e.target.value)}/>
-        <small class="muted">You get an email when a request's findings are ready in Review Results.</small>
-      </label>
+      <h1 class="hero-h">${MONITOR_TITLE}</h1>
+      <p class="lead">${MONITOR_LEAD}</p>
 
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
       ${status.loaded && !status.configured && html`<p class="discovery-message error">Discovery requests are not available on this instance.</p>`}
@@ -2082,8 +2045,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       ${status.configured && options && html`
       <div class="subnav">
         <button class=${view === "new" ? "active" : ""} onClick=${() => setView("new")}>New Request</button>
-        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Organizations Update</button>
-        <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests (${activeCount})</button>
+        <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests</button>
+        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Record Updates</button>
       </div>
 
       ${view === "new" && html`<div class="discovery-segment discovery-kinds" role="group" aria-label="What to discover">
@@ -2093,115 +2056,55 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       </div>`}
 
       ${view === "new" && kind === "event" && html`<${EntityRequestForm} kind=${kind} options=${options}
-        today=${today} requester=${requester}
+        today=${today} requester=${requester} setRequester=${setRequester}
         onSaved=${async (started) => { await load(); if (started) setWatchUntil(Date.now() + 20 * 60 * 1000); }}/>`}
       ${view === "new" && kind === "person" && html`<${PeopleRequestForm} options=${options}
-        today=${today} requester=${requester}
+        today=${today} requester=${requester} setRequester=${setRequester}
         onSaved=${async (started) => { await load(); if (started) setWatchUntil(Date.now() + 20 * 60 * 1000); }}/>`}
 
       ${view === "new" && kind === "actor" && html`<section class="discovery-card">
-        <${Field} label="What should Compass look for?" error=${shown.brief} wide=${true}>
-          <textarea class="discovery-brief" rows="4" value=${form.brief}
-            placeholder=${"Water utilities and water-technology organizations in Wisconsin.\nwastewater reuse\nphosphorus removal"}
+        <${Field} label=${ORG_QUESTION} error=${shown.brief} wide=${true}>
+          <textarea class="discovery-brief" rows="4" value=${form.brief} placeholder=${ORG_PLACEHOLDER}
             onInput=${(e) => set({brief: e.target.value})}></textarea>
-          <small class="muted">
-            <strong>First line:</strong> what you want, naming a sector.
-            <strong>Each line after:</strong> one thing to search for, a few words.
-          </small>
         <//>
-
-        ${form.brief.trim() && html`<div class="discovery-resolved">
-          <p>
-            <strong>Sector:</strong> ${draft.sector === ANY_SECTOR ? "Any sector" : draft.sector
-              ? (options.topics.find((t) => t.code === draft.sector) || {}).name || draft.sector
-              : "none named yet"}
-            · <strong>Searches:</strong> ${draft.focusTerms.length || "the sector name"}
-          </p>
-          ${draft.focusTerms.length > 0 && html`<div class="discovery-terms">
-            ${draft.focusTerms.map((term) => html`<span key=${term}
-              class=${"discovery-term" + (termIsTooLong(term) ? " long" : "")}>${term}</span>`)}
-          </div>`}
-          ${draft.focusTerms.some(termIsTooLong) && html`<small class="muted">
-            A line marked in amber is long. Every word in it has to appear on the
-            organization's own page for it to count, so short lines find more.
-          </small>`}
-        </div>`}
-
-        <button type="button" class="discovery-disclose" aria-expanded=${showDetails}
-          onClick=${() => setShowDetails(!showDetails)}>
-          ${showDetails ? "Hide name, sector and sub-topics" : "Name, sector and sub-topics"}
-        </button>
-
-        ${showDetails && html`<div class="discovery-grid">
-          <${Field} label="Request name" error=${shown.title} wide=${true}>
-            <input value=${draft.title} maxLength="160" placeholder="Energy organizations in the Northeast"
-              onInput=${(e) => set({title: e.target.value})}/>
-          <//>
+        <div class="discovery-row3">
           <${Field} label="Sector" error=${shown.sector}>
             <select value=${draft.sector} onChange=${(e) => set({sector: e.target.value})}>
-              <option value="">Choose a sector</option>
-              <option value=${ANY_SECTOR}>Any sector</option>
+              ${!draft.sector && html`<option value="">Choose a sector</option>`}
+              <option value=${ANY_SECTOR}>Any</option>
               ${options.topics.map((t) => html`<option key=${t.code} value=${t.code}>${t.name}</option>`)}
             </select>
           <//>
-          <${Field} label=${`Sub-topics (up to ${options.max_focus_terms})`}>
-            <div class="discovery-terms">
-              ${draft.focusTerms.map((term) => html`<span key=${term} class=${"discovery-term" + (termIsTooLong(term) ? " long" : "")}>${term}
-                <button type="button" aria-label=${`Remove ${term}`} onClick=${() => set({focusTerms: draft.focusTerms.filter((t) => t !== term)})}>×</button></span>`)}
-              <input value=${form.focusInput} placeholder=${form.focusTerms.length ? "Add another" : "e.g. battery storage"}
-                onInput=${(e) => set({focusInput: e.target.value})}
-                onKeyDown=${(e) => { if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addFocus(); } }}
-                onBlur=${addFocus}/>
-            </div>
-          <//>
-        </div>`}
-
-        <div class="discovery-grid">
-          <${Field} label="Area" error=${shown.area} wide=${true}>
-            <div class="discovery-segment">
-              ${[["region", "Region"], ["state", "State"], ["us", "All United States"]].map(([id, label]) => html`
-                <button type="button" key=${id} class=${draft.areaKind === id ? "active" : ""} onClick=${() => set({areaKind: id, areaTouched: true})}>${label}</button>`)}
-            </div>
-            ${draft.areaKind === "region" && html`<select value=${draft.region} onChange=${(e) => set({region: e.target.value, areaTouched: true})}>
-              <option value="">Choose a region</option>
+          <${Field} label="Region" error=${shown.area}>
+            <select value=${draft.areaKind === "us" ? "" : draft.region} onChange=${(e) => {
+              const region = e.target.value;
+              const keep = draft.areaKind === "state"
+                && statesForRegion(options, region).some((s) => s.code === draft.state);
+              set({region, state: keep ? draft.state : "", areaTouched: true,
+                areaKind: keep ? "state" : region ? "region" : "us"});
+            }}>
+              <option value="">All Regions</option>
               ${options.regions.map((r) => html`<option key=${r.code} value=${r.code}>${r.name}</option>`)}
-            </select>`}
-            ${draft.areaKind === "state" && html`<div class="discovery-inline">
-              <select value=${draft.state} onChange=${(e) => set({state: e.target.value, areaTouched: true})}>
-                <option value="">Choose a state</option>
-                ${options.states.map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
-              </select>
-              <input value=${form.city} maxLength="120" placeholder="City (optional)" onInput=${(e) => set({city: e.target.value})}/>
-            </div>`}
-          <//>
-          <${Field} label="New organizations per run" error=${shown.cap}>
-            <input type="number" min="1" max=${options.max_new_actors_per_run} value=${form.cap} onInput=${(e) => set({cap: e.target.value})}/>
-          <//>
-          <${Field} label="For each organization found" wide=${true}>
-            <select value=${form.pullDepth || "light"} onChange=${(e) => set({pullDepth: e.target.value})}>
-              ${(options.pull_depths || ["light", "none"]).map((d) => html`<option key=${d} value=${d}>${PULL_DEPTH_LABELS[d] || d}</option>`)}
             </select>
-            <small class="muted">Deep Pull runs only after GHUS verifies an organization for a
-              sector, from Review.</small>
+          <//>
+          <${Field} label="State">
+            <select value=${draft.areaKind === "state" ? draft.state : ""} onChange=${(e) => {
+              const state = e.target.value;
+              set({state, areaTouched: true, areaKind: state ? "state" : draft.region ? "region" : "us"});
+            }}>
+              <option value="">All States</option>
+              ${statesForRegion(options, draft.areaKind === "us" ? "" : draft.region).map((s) => html`
+                <option key=${s.code} value=${s.code}>${s.name}</option>`)}
+            </select>
           <//>
         </div>
         <${ScheduleRow} form=${form} set=${set} kind="actor" options=${options} today=${today} shown=${shown}/>
-
-        ${!Object.keys(scheduleProblems(form)).length && html`<p class="discovery-summary">${requestSummary(summaryDraft, options)}</p>`}
-
-        ${preview && html`<div class="discovery-preview">
-          <h4>First run ${formatDay(preview.first_run)} · ${preview.queries.length} searches</h4>
-          <ul>${preview.queries.map((q) => html`<li key=${q}>${q}</li>`)}</ul>
-        </div>`}
-
-        <div class="discovery-actions">
-          <button class="btn ghost" disabled=${busy} onClick=${runPreview}>${working === "preview" ? "Preparing preview…" : "Preview searches"}</button>
-          <button class="btn" disabled=${busy} onClick=${create}>${working === "create" ? "Creating…" : "Create Request"}</button>
-        </div>
+        <${RequestFooter} requester=${requester} setRequester=${setRequester} working=${working === "create"}
+          disabled=${busy} onCreate=${create} note=${REVIEW_NOTE}/>
       </section>`}
 
       ${view === "actors" && html`<${OrganizationsUpdate} sectors=${options.topics} options=${options}
-        today=${today} requester=${requester}
+        today=${today} requester=${requester} setRequester=${setRequester}
         onCreated=${async ({started, text}) => {
           setMessage({kind: "success", text}); await load();
           if (started) setWatchUntil(Date.now() + 20 * 60 * 1000);

@@ -471,7 +471,7 @@ test('run now writes, says what it wrote, and opens Review - no findings table',
 test('events and people have their own request forms; organizations keep theirs', async () => {
   const {DISCOVERY_KINDS, blankEntityForm, entityDraftPayload, entityDraftProblems,
     entitySummary, entityResultFacts} = await import('../frontend/discovery.js');
-  assert.deepEqual(DISCOVERY_KINDS.map((k) => k.label), ['Organizations', 'Events', 'People']);
+  assert.deepEqual(DISCOVERY_KINDS.map((k) => k.label), ['Organizations', 'People', 'Events']);
 
   // Nothing is assumed about the schedule: each field starts on its placeholder.
   const blank = blankEntityForm('2026-10-23', 'event');
@@ -522,7 +522,9 @@ test('events and people have their own request forms; organizations keep theirs'
   // One submission button everywhere: Create Request, which runs at once when it starts today.
   const page = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
   assert.doesNotMatch(page, /Save request/);
-  assert.equal((page.match(/"Create Request"/g) || []).length, 4);
+  // The new-request forms share one footer (RequestFooter); Record Updates has its own.
+  assert.equal((page.match(/"Create Request"/g) || []).length, 2);
+  assert.equal((page.match(/<\$\{RequestFooter\}/g) || []).length, 3);
   assert.match(page, /const started = payload\.start_date === today;/);
   for (const placeholder of ['Select frequency\u2026', 'Select a date\u2026', 'Select duration\u2026']) {
     assert.ok(page.includes(placeholder), placeholder);
@@ -543,7 +545,8 @@ test('a request that ran, or whose period is over, offers Run again; a running o
   assert.equal(STATUS_LABELS[requestStatus(over)], 'Period over');
   assert.equal(STATUS_LABELS[requestStatus({...over, runs: [{status: 'running'}]})], 'Running');
   const source = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
-  assert.match(source, /\["us", "All United States"\]/);
+  // Where to look: Region and State lists, as on every new-request form.
+  assert.ok((source.match(/All Regions/g) || []).length >= 3 && (source.match(/All States/g) || []).length >= 3);
   assert.doesNotMatch(source, /Whole United States|How detailed should the update be/);
 });
 
@@ -618,17 +621,20 @@ test('requests stay with whoever made them; older ones without a requester stay 
   assert.deepEqual(visibleRequests(rows, '').map((r) => r.id), [3, 4]);
 });
 
-test('the Monitor page leads with New Request, Organizations Update, Requests and keeps no run list', async () => {
+test('the Monitor page leads with New Request, Requests, Record Updates and keeps no run list', async () => {
   const page = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
-  const order = ['setView("new")}>New Request<', 'setView("actors")}>Organizations Update<',
-    'setView("requests")}>Requests ('].map((s) => page.indexOf(s));
+  const order = ['setView("new")}>New Request<', 'setView("requests")}>Requests<',
+    'setView("actors")}>Record Updates<'].map((s) => page.indexOf(s));
   assert.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]);
   const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   for (const gone of ['One actor', 'Several actors', 'Save schedule', 'Update runs', 'org-kinds']) {
     assert.ok(!code.includes(gone), gone);
   }
   assert.ok(page.includes('Existing directory information remains unchanged until you verify the proposed updates.'));
-  assert.ok(page.includes('You’ll receive an email notification when your results are ready in Review Results.'));
+  assert.ok(page.includes('You’ll receive an email notification at <input'));
+  const {MONITOR_TITLE, REVIEW_NOTE} = await import('../frontend/discovery.js');
+  assert.equal(MONITOR_TITLE, 'What would you like to monitor?');
+  assert.match(REVIEW_NOTE, /^Review findings and check their sources/);
 });
 
 test('reasons saved with the old word read as organization, and code names stay', async () => {
@@ -638,4 +644,27 @@ test('reasons saved with the old word read as organization, and code names stay'
   assert.equal(orgWords('Actors per run'), 'Organizations per run');
   assert.equal(orgWords('actor_id stays'), 'actor_id stays');
   assert.equal(orgWords(null), '');
+});
+
+test('an events request is read from its description, with upcoming events by default', async () => {
+  const {resolveEventDraft, withEventWindow, blankEntityForm, entityDraftPayload, entityDraftProblems,
+    EVENT_WINDOW_MONTHS} = await import('../frontend/discovery.js');
+  const opts = {...OPTIONS, topics: [{code: 'WATER', name: 'Water'}],
+    states: [{code: 'TX', name: 'Texas'}], regions: []};
+  const form = {...blankEntityForm('2026-11-02', 'event'),
+    brief: 'Water reuse conferences in Texas\ndesalination; water reuse',
+    cadence: 'once', startDate: '2026-11-02'};
+  const draft = resolveEventDraft(form, opts);
+  assert.deepEqual([draft.title, draft.sector, draft.state, draft.focusTerms],
+    ['Water reuse conferences in Texas', 'WATER', 'TX', ['desalination', 'water reuse']]);
+  assert.deepEqual(entityDraftProblems(draft, opts), {});
+  // One line only: that line is what is searched for.
+  assert.deepEqual(resolveEventDraft({...form, brief: 'Hydrogen summits'}, opts).focusTerms, ['Hydrogen summits']);
+  // No range chosen: from the start date, for the next 14 months.
+  assert.equal(EVENT_WINDOW_MONTHS, 14);
+  const windowed = withEventWindow(entityDraftPayload(draft)).discovery_options;
+  assert.deepEqual([windowed.date_from, windowed.date_to], ['2026-11-02', '2028-01-02']);
+  // A range the person chose is kept as chosen.
+  const chosen = withEventWindow(entityDraftPayload({...draft, dateFrom: '2027-03-01'})).discovery_options;
+  assert.deepEqual([chosen.date_from, chosen.date_to], ['2027-03-01', undefined]);
 });
