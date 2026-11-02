@@ -23,7 +23,7 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261015";
+} from "./labels.js?v=20261102a";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const REVIEW_STATUS_LABELS = {
@@ -1738,6 +1738,11 @@ export function profileValue(candidate, draft, field, factKeys = []) {
   return null;
 }
 
+/** The Category filter is for organizations: shown once Organizations (or Organization Updates) is chosen. */
+export function showsCategoryFilter(filters = {}) {
+  return filters.entity_type === "actor" || filters.run_type === "actor_updates";
+}
+
 /** One row of an event's or person's card (CARD_FIELDS); `always` shows Not Found when empty. */
 function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors, always = false}) {
   if ((candidate?.editable_fields || []).includes(field)) {
@@ -1999,7 +2004,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     }
 
     function setFilter(key, value) {
-      setFilters(current => ({...current, [key]: value}));
+      setFilters(current => ({...current, [key]: value,
+        // Category is an organization's: it is cleared when another record type is chosen.
+        ...(key === "entity_type" && value !== "actor" ? {actor_category: "all"} : {})}));
       if (key === "run_type") { setSelectedId(null); setRunKey(null); }
     }
 
@@ -2423,12 +2430,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <option value="event">Events</option>
             <option value="person">People</option>
           </select></label>`}
-        <label><span>${FIELDS.actorCategory}</span>
+        ${showsCategoryFilter(filters) && html`<label><span>${FIELDS.actorCategory}</span>
           <select value=${filters.actor_category} onChange=${e => setFilter("actor_category", e.target.value)}>
             <option value="all">${QUEUE.allCategories}</option>
             ${categoryOptions().map(option => html`
               <option key=${option.value} value=${option.value}>${option.label}</option>`)}
-          </select></label>
+          </select></label>`}
         <label><span>${FIELDS.search}</span>
           <input type="search" value=${filters.search}
             onInput=${e => setFilter("search", e.target.value)} placeholder="Name or domain"/></label>

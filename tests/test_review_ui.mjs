@@ -1458,3 +1458,13 @@ test('a person card shows Public Profile and LinkedIn where an organization show
   const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
   assert.match(src, /selected\.entity_type === "person"\s*\? PERSON_LINK_FIELDS\.map/);
 });
+
+test('Category is a filter for organizations only, under Record Type', async () => {
+  const {showsCategoryFilter} = await import('../frontend/review.js');
+  const {FIELDS} = await import('../frontend/labels.js');
+  assert.equal(FIELDS.recordKind, 'Record Type');
+  assert.equal(showsCategoryFilter({entity_type: 'all', run_type: 'all'}), false);
+  assert.equal(showsCategoryFilter({entity_type: 'person', run_type: 'all'}), false);
+  assert.equal(showsCategoryFilter({entity_type: 'actor', run_type: 'all'}), true);
+  assert.equal(showsCategoryFilter({entity_type: 'all', run_type: 'actor_updates'}), true);
+});

@@ -86,7 +86,7 @@ export const FIELDS = {
   reviewer: "Reviewer",
   notes: "Notes",
   rejectionReason: "Rejection Reason",
-  recordKind: "Record Kind",
+  recordKind: "Record Type",
   reviewState: "Review State",
   reviewReason: "Review Reason",
   sourceRun: "Source Run",
