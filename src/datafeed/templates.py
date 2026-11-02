@@ -58,7 +58,7 @@ EXAMPLES: dict[str, list[dict[str, str]]] = {
          "parent_relationship": "Unit of", "source_url": "https://cagr.example.edu/about"},
     ],
     "person": [
-        {"name": "Ana Ruiz", "role": "Professor of Hydrology",
+        {"first_name": "Ana", "last_name": "Ruiz", "role": "Professor of Hydrology",
          "affiliation": "University of Arizona",
          "department": "Department of Hydrology and Atmospheric Sciences",
          "bio_url": "https://www.arizona.example.edu/people/ana-ruiz",
@@ -265,7 +265,8 @@ def build_xlsx(record_type: str, vocab: dict[str, Any]) -> bytes:
     examples.append([f.template_header for f in fields])
     for example in EXAMPLES[record_type]:
         values = dict(example)
-        values["name"] = f"{EXAMPLE_PREFIX} - {values['name']}"
+        first = "first_name" if record_type == "person" else "name"
+        values[first] = f"{EXAMPLE_PREFIX} - {values[first]}"
         examples.append([values.get(f.key, "") for f in fields])
     for cell in examples[2]:
         cell.font, cell.fill = _WHITE, _HEADER

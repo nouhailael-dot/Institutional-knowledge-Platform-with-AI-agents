@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TEMPLATE_VERSION = "2026-10-26.3"
+TEMPLATE_VERSION = "2026-11-02.1"
 RECORD_TYPES = ("actor", "person", "event")
 TYPE_LABELS = {"actor": "Organizations", "person": "People", "event": "Events"}
 # Templates made before 2026-11-01 keep their old sheet, column and label names.
@@ -45,6 +45,7 @@ class Field:
     target: str = ""               # where an admitted record keeps it
     category: str | None = None    # actor Light Pull box for one category only
     strict: bool = True            # dropdown refuses other values
+    hint: str = ""                 # the one line the manual form shows, only when it matters
 
     @property
     def template_header(self) -> str:
@@ -72,7 +73,8 @@ ACTOR_FIELDS: tuple[Field, ...] = (
     Field("category_type", "Category Type", "enum",
           "Which kind of that category. Leave empty when unknown: it stays Pending "
           "Classification for enrichment. 'Not Applicable' needs a Category note.",
-          "Small / Mid-Size Company", vocab="category_types", target="actor.category_type"),
+          "Small / Mid-Size Company", vocab="category_types", target="actor.category_type",
+          hint="Leave empty if unknown. 'Not Applicable' needs a Category note."),
     Field("category_note", "Category note", "text",
           "One line explaining a doubt about the category or type.", "", max_length=500,
           target="actor.category_note"),
@@ -95,7 +97,8 @@ ACTOR_FIELDS: tuple[Field, ...] = (
           vocab="states", target="actor.state_code"),
     Field("region", "Region", "enum",
           "Set automatically from the state. Leave empty; if filled it must match the state.",
-          "", vocab="regions", target="actor.region_code (derived)"),
+          "", vocab="regions", target="actor.region_code (derived)",
+          hint="Set automatically from the state."),
     Field("country", "Country", "enum", "Country. Use 'United States' for US organizations.",
           "United States", vocab="countries", strict=False, max_length=80,
           target="actor.country"),
@@ -104,17 +107,20 @@ ACTOR_FIELDS: tuple[Field, ...] = (
           "", max_length=255, target="entity_edge (unit_of / operated_by)"),
     Field("parent_relationship", "Relationship to parent", "enum",
           "How it belongs to the parent. Required when a parent is given.", "",
-          vocab="parent_links", target="entity_edge.relationship_type"),
+          vocab="parent_links", target="entity_edge.relationship_type",
+          hint="Required when a parent is given."),
     Field("source_url", "Source URL", "url",
           "Where this information can be checked. A Website or a Source URL is required.",
-          "https://prairiewaterlab.org/about", max_length=1000, target="source.url"),
+          "https://prairiewaterlab.org/about", max_length=1000, target="source.url",
+          hint="A Website or a Source URL is required."),
     Field("recent_activity", "Recent activity", "long_text",
           "One dated, documented project or development (give its date in the next column).",
           "Opened a sensor pilot with Kansas State University.", max_length=1000,
           target="actor_fact (Light Pull): recent_activity"),
     Field("recent_activity_date", "Recent activity date", "date",
           "The date of that activity (MM/DD/YYYY).", "05/14/2026", max_length=None,
-          target="actor_fact (Light Pull): recent_activity"),
+          target="actor_fact (Light Pull): recent_activity",
+          hint="Required when Recent activity is given."),
     Field("funding_signal", "Funding signal", "long_text",
           "One documented grant, award or investment.", "USDA SBIR Phase I, 2025",
           max_length=1000, target="actor_fact (Light Pull): funding_signal"),
@@ -171,7 +177,8 @@ ACTOR_FIELDS: tuple[Field, ...] = (
     Field("development_stage", "Startup: development stage", "text",
           "Required for a startup: its development stage exactly as it publishes it "
           "(e.g. 'pilot deployments with two utilities'). Never estimated.", "",
-          category="startup", max_length=300, target="classification evidence (startup)"),
+          category="startup", max_length=300, target="classification evidence (startup)",
+          hint="Required for a startup, exactly as it publishes it."),
     _box("technology_and_problem", "Startup: technology and problem", "startup",
          "Its technology and the problem it addresses."),
     _box("founding_year_location", "Startup: founded (year and place)", "startup",
@@ -227,13 +234,16 @@ ACTOR_FIELDS: tuple[Field, ...] = (
 BOX_CATEGORIES = {"geographic_focus": ("investor", "foundation_nonprofit")}
 
 PERSON_FIELDS: tuple[Field, ...] = (
-    Field("name", "Full name", "text", "The person's full name.", "Ana Ruiz", required=True,
-          target="person.full_name"),
+    Field("first_name", "First name", "text", "The person's first (given) name.", "Ana",
+          required=True, max_length=120, target="person.full_name (first part)"),
+    Field("last_name", "Last name", "text", "The person's last (family) name.", "Ruiz",
+          required=True, max_length=120, target="person.full_name (last part)"),
     Field("role", "Professional title", "text", "Their current professional title.",
           "Professor of Hydrology", target="person.title"),
     Field("affiliation", "Organization", "text",
           "The institution they work for, by its full name. Never a department or a role.",
-          "University of Arizona", required=True, target="actor_person (affiliation)"),
+          "University of Arizona", required=True, target="actor_person (affiliation)",
+          hint="The institution, never a department or a role."),
     Field("department", "Department", "text", "Department, lab, school or unit.",
           "Department of Hydrology and Atmospheric Sciences", target="Review profile fact"),
     Field("bio_url", "Official biography URL", "url",
@@ -245,7 +255,7 @@ PERSON_FIELDS: tuple[Field, ...] = (
     Field("bio", "Short professional bio", "long_text",
           "Up to three sentences of professional biography. Never private details.",
           "Hydrologist working on groundwater recharge in arid regions.", max_length=800,
-          target="Review profile fact"),
+          target="Review profile fact", hint="Never private details."),
     Field("expertise", "Expertise", "list", "Research areas or specialisms, separated by ';'.",
           "groundwater; aquifer recharge", max_length=500,
           target="person_discovery_profile.research_area"),
@@ -262,7 +272,8 @@ PERSON_FIELDS: tuple[Field, ...] = (
     Field("source_url", "Source URL", "url",
           "Where this information can be checked. A Source URL, a biography URL or a "
           "LinkedIn URL is required.", "https://www.arizona.edu/people/ana-ruiz",
-          max_length=1000, target="source.url"),
+          max_length=1000, target="source.url",
+          hint="A Source URL, a biography URL or a LinkedIn URL is required."),
 )
 
 EVENT_FIELDS: tuple[Field, ...] = (
@@ -272,11 +283,13 @@ EVENT_FIELDS: tuple[Field, ...] = (
           required=True, vocab="event_types", target="event.event_type"),
     Field("organizer", "Organizer", "text",
           "Who organizes it, as stated. Leave empty when no host is confirmed.",
-          "Kansas Water Office", target="event.sponsoring_orgs"),
+          "Kansas Water Office", target="event.sponsoring_orgs",
+          hint="Leave empty when no host is confirmed."),
     Field("start_date", "Start date", "date", "First day (MM/DD/YYYY).", "04/02/2027",
           required=True, max_length=None, target="event.start_date"),
     Field("end_date", "End date", "date", "Last day (MM/DD/YYYY); empty for one day.",
-          "04/03/2027", max_length=None, target="event.end_date"),
+          "04/03/2027", max_length=None, target="event.end_date",
+          hint="Empty for a one-day event."),
     Field("event_format", "Format", "enum", "In person, online or hybrid.", "Hybrid",
           vocab="event_formats", target="event.location / Review"),
     Field("venue", "Venue", "text", "Venue name, if any.", "Century II Convention Hall",
@@ -310,7 +323,8 @@ EVENT_FIELDS: tuple[Field, ...] = (
           target="event.expected_attendance"),
     Field("source_url", "Source URL", "url",
           "Where this can be checked. An Official event URL or a Source URL is required.",
-          "https://greatplainswatersummit.org/agenda", max_length=1000, target="source.url"),
+          "https://greatplainswatersummit.org/agenda", max_length=1000, target="source.url",
+          hint="An Official event URL or a Source URL is required."),
 )
 
 FIELDS = {"actor": ACTOR_FIELDS, "person": PERSON_FIELDS, "event": EVENT_FIELDS}
@@ -347,7 +361,7 @@ def as_payload() -> dict:
                     "key": f.key, "header": f.header, "kind": f.kind, "required": f.required,
                     "vocab": f.vocab, "description": f.description, "example": f.example,
                     "max_length": f.max_length, "target": f.target,
-                    "categories": list(box_categories(f)), "strict": f.strict,
+                    "categories": list(box_categories(f)), "strict": f.strict, "hint": f.hint,
                 } for f in fields(record_type)],
             } for record_type in RECORD_TYPES
         },

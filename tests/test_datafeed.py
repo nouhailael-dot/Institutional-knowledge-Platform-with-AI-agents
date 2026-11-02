@@ -282,15 +282,16 @@ def test_event_dates_and_identity():
 
 
 def test_people_need_an_organisation_a_checkable_link_and_a_real_linkedin():
-    person = {"Full name": "Ana Ruiz", "Organization": "University of Arizona",
+    person = {"First name": "Ana", "Last name": "Ruiz", "Organization": "University of Arizona",
               "Public LinkedIn URL": "https://www.linkedin.com/in/ana-test",
               "Expertise": "groundwater; aquifer recharge"}
     result = check("person", person)
     assert result["errors"] == []
+    assert result["payload"]["name"] == "Ana Ruiz"
     assert result["payload"]["research_area"] == "groundwater; aquifer recharge"
     result = check("person", {**person, "Public LinkedIn URL": "https://example.org/ana"})
     assert any("not a linkedin.com address" in e for e in result["errors"])
-    result = check("person", {"Full name": "Ana Ruiz", "Organization": "University of Arizona"})
+    result = check("person", {"First name": "Ana", "Last name": "Ruiz", "Organization": "University of Arizona"})
     assert any("so the record can be checked" in e for e in result["errors"])
     assert any("Profile incomplete" in w for w in check("person", {
         **person, "Public LinkedIn URL": "", "Source URL": "https://a.edu/x"})["warnings"])
@@ -534,7 +535,7 @@ def test_end_to_end_people_and_events(live):
     service, runs = live
     suffix = str(int(time.time() * 1000))
     people = service.validate_manual("person", [{
-        "name": f"Ana Ruiz {suffix}", "role": "Professor of Hydrology",
+        "first_name": "Ana", "last_name": f"Ruiz {suffix}", "role": "Professor of Hydrology",
         "affiliation": "University of Arizona", "linkedin_url": f"https://www.linkedin.com/in/ana-{suffix}",
         "expertise": "groundwater", "sectors": "Water"}])
     assert people["counts"]["valid"] == 1, people["rows"]

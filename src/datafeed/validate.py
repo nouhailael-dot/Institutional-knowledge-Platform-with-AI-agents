@@ -117,6 +117,9 @@ class RowChecker:
         errors: list[str] = []
         warnings: list[str] = []
         cells = self._cells(values)
+        if self.record_type == "person":
+            # The record keeps one full name, made from the two name columns.
+            cells["name"] = " ".join(p for p in (cells.get("first_name"), cells.get("last_name")) if p)
         for field in self.fields:
             value = cells.get(field.key, "")
             if value and parse.formula_like(value):

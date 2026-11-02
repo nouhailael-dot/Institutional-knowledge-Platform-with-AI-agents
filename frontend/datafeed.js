@@ -90,8 +90,10 @@ export function vocabLabel(vocab, name, code, category) {
 }
 
 export function rowTitle(row) {
-  return row?.payload?.name || row?.values?.["Official name *"] || row?.values?.["Full name *"]
-    || row?.values?.["Event name *"] || `Row ${row?.row_number ?? ""}`;
+  const v = row?.values || {};
+  const person = [v["First name *"], v["Last name *"]].filter(Boolean).join(" ");
+  return row?.payload?.name || v["Official name *"] || person
+    || v["Event name *"] || `Row ${row?.row_number ?? ""}`;
 }
 
 /** The second line of a preview row: what it is, in a few words. */
@@ -121,6 +123,11 @@ export function matchLine(match) {
 /** The fields the manual form shows: category-specific boxes only for the chosen category. */
 export function visibleFields(fields = [], category = "") {
   return fields.filter(f => !(f.categories || []).length || (f.categories || []).includes(category));
+}
+
+/** The name a manual draft shows in its header: a person's is first + last. */
+export function draftName(draft = {}) {
+  return draft.name || [draft.first_name, draft.last_name].filter(Boolean).join(" ");
 }
 
 /** Required fields the draft leaves empty (the server checks everything else). */
@@ -451,7 +458,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
       ${drafts.map((draft, index) => html`<div key=${index} class=${"df-record" + (open === index ? " open" : "")}>
         <button type="button" class="df-record-head" aria-expanded=${open === index}
           onClick=${() => setOpen(open === index ? -1 : index)}>
-          <span>Record ${index + 1}${draft.name ? ` · ${draft.name}` : ""}</span>
+          <span>Record ${index + 1}${draftName(draft) ? ` · ${draftName(draft)}` : ""}</span>
           <span aria-hidden="true">${open === index ? "−" : "+"}</span>
         </button>
         ${open === index && html`<div class="df-record-body">
@@ -466,7 +473,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
                   <label class="discovery-label" for=${`df-${field.key}`}>${field.header}${field.required ? " *" : ""}</label>
                   <${Control} field=${field} value=${draft[field.key]} vocab=${vocab}
                     category=${categoryCode(draft)} onChange=${(k, v) => update(index, k, v)}/>
-                  <small class="df-hint">${field.description}</small>
+                  ${field.hint && html`<small class="df-hint">${field.hint}</small>`}
                 </div>`)}
               </div>
             </fieldset>`;

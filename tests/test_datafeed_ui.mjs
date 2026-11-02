@@ -15,6 +15,7 @@ import {
   confirmLabel,
   costLine,
   defaultImportName,
+  draftName,
   filterCount,
   filterRows,
   historyLine,
@@ -24,6 +25,7 @@ import {
   missingRequired,
   previewCandidate,
   rowSubtitle,
+  rowTitle,
   stageable,
   summaryTiles,
   visibleFields,
@@ -120,6 +122,18 @@ test('the manual form shows a category-specific box only for its categories', ()
   assert.ok(visibleFields(FIELDS, 'company').some(f => f.key === 'ownership_and_size'));
   assert.ok(visibleFields(FIELDS, 'foundation_nonprofit').some(f => f.key === 'geographic_focus'));
   assert.ok(!visibleFields(FIELDS, 'company').some(f => f.key === 'geographic_focus'));
+});
+
+test('a person is named by first and last name', () => {
+  assert.equal(draftName({first_name: 'Ana', last_name: 'Ruiz'}), 'Ana Ruiz');
+  assert.equal(draftName({name: 'Prairie Water Lab'}), 'Prairie Water Lab');
+  assert.equal(rowTitle({values: {'First name *': 'Ana', 'Last name *': 'Ruiz'}}), 'Ana Ruiz');
+});
+
+test('the manual form shows a line under a box only when it matters', () => {
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.match(src, /field\.hint && html`<small class="df-hint">/);
+  assert.doesNotMatch(src, /\$\{field\.description\}/);
 });
 
 test('manual records send only known, filled fields, as text', () => {

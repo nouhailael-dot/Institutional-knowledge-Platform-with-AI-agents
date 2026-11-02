@@ -68,6 +68,7 @@ class RecordTests(unittest.TestCase):
         record = save.to_record("person", person, "Mining")
         self.assertNotIn("bio", record)
         self.assertEqual(record["affiliation"], "FIPR Institute")
+        self.assertEqual((record["first_name"], record["last_name"]), ("Ana", "Ruiz"))
 
 
 class SaveTests(unittest.TestCase):
