@@ -16,7 +16,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from src.datafeed.parse import MAX_BYTES
-from src.datafeed.service import DataFeedError, DataFeedService
+from src.datafeed.service import XLSX, DataFeedError, DataFeedService
 
 router = APIRouter(prefix="/api/datafeed", tags=["datafeed"])
 
@@ -95,6 +95,14 @@ def confirm(preview_id: str, body: Confirmation):
 @router.get("/history")
 def history():
     return {"imports": _call(datafeed_service().history)}
+
+
+@router.get("/example-import.xlsx")
+def example_import():
+    """The Excel file of Import history's example card (never real data)."""
+    data, name = _call(datafeed_service().example_file)
+    return Response(content=data, media_type=XLSX, headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
 @router.get("/imports/{run_id}")

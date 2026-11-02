@@ -89,7 +89,6 @@
 .df-records{margin-top:12px;overflow-x:auto}
 .df-example{margin-top:14px;border:1px dashed var(--line-strong);border-radius:12px;padding:12px;opacity:.85}
 .df-example-tag{margin:0 0 10px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.df-example .discovery-request{pointer-events:none}
 .df-records th,.df-records td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
 .df-completion{margin-top:14px;border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--surface-2)}
 .df-completion h4{margin:0 0 6px}

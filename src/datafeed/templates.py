@@ -126,6 +126,32 @@ def _guide_rows(record_type: str, vocab: dict[str, Any]) -> list[list[str]]:
 
 
 def build_xlsx(record_type: str, vocab: dict[str, Any]) -> bytes:
+    out = io.BytesIO()
+    _workbook(record_type, vocab).save(out)
+    return out.getvalue()
+
+
+def build_filled_xlsx(record_type: str, vocab: dict[str, Any],
+                      rows: list[dict[str, str]]) -> bytes:
+    """The template with these rows on its records sheet, keyed by column header.
+
+    How an import typed by hand is kept: the same workbook an upload would have
+    been, so Import history offers every import as an Excel file.
+    """
+    wb = _workbook(record_type, vocab)
+    data = wb[contract.SHEET_NAMES[record_type]]
+    by_header = {contract.header_key(f.header): i for i, f in enumerate(contract.fields(record_type), 1)}
+    for number, row in enumerate(rows, 2):
+        for header, value in row.items():
+            column = by_header.get(contract.header_key(header))
+            if column and value not in (None, ""):
+                data.cell(row=number, column=column, value=str(value))
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _workbook(record_type: str, vocab: dict[str, Any]) -> Workbook:
     fields = contract.fields(record_type)
     wb = Workbook()
     intro = wb.active
@@ -273,9 +299,7 @@ def build_xlsx(record_type: str, vocab: dict[str, Any]) -> bytes:
 
     wb.properties.title = f"GHUS Data Feed template - {label}"
     wb.properties.keywords = f"{MARKER};{record_type};{contract.TEMPLATE_VERSION}"
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()
+    return wb
 
 
 def build_csv(record_type: str) -> bytes:

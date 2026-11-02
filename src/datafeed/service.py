@@ -41,6 +41,27 @@ ATTESTATIONS = {
     "map": "I confirm that I am authorized GHUS staff, that I checked these records' sources, "
            "and that I verify the organizations among them.",
 }
+# The Excel file behind Import history's example card (page: EXAMPLE_IMPORT).
+# Every name starts with "Example", so the file is refused if it is uploaded.
+EXAMPLE_IMPORT_NAME = "Kansas water organizations"
+EXAMPLE_IMPORT_ROWS = [
+    {"Official name": "Example Water Lab", "Organization Category": "Research Center / Institute / Laboratory",
+     "Description": "An example research lab on water quality.", "Sector": "Water", "State": "Kansas",
+     "Website": "https://example.org/water-lab"},
+    {"Official name": "Example Irrigation Co.", "Organization Category": "Company / Corporate Organization",
+     "Description": "An example company selling irrigation equipment.", "Sector": "Agriculture",
+     "State": "Kansas", "Website": "https://example.org/irrigation"},
+    {"Official name": "Example Aquifer Center", "Organization Category": "Research Center / Institute / Laboratory",
+     "Description": "An example centre studying the High Plains aquifer.", "Sector": "Water",
+     "State": "Kansas", "Source URL": "https://example.org/aquifer"},
+    {"Official name": "Example Rural Water District", "Organization Category": "Government Agency / Public Authority",
+     "Description": "An example public water district.", "Sector": "Water", "State": "Kansas",
+     "Website": "https://example.org/rural-water"},
+    {"Official name": "Example Water Coalition", "Organization Category": "Association / Consortium / Network",
+     "Description": "An example row left out: it has no Sector.", "State": "Kansas",
+     "Website": "https://example.org/coalition"},
+]
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 # What a record is, in the words the page uses.
 STATUS_LABELS = {
     "invalid": "Needs correction", "new": "New record", "existing": "Matches an existing record",
@@ -96,12 +117,16 @@ class DataFeedService:
             raise DataFeedError("Unknown record type.")
         if extension == "xlsx":
             return (templates.build_xlsx(record_type, self.vocabularies()),
-                    templates.file_name(record_type, "xlsx"),
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    templates.file_name(record_type, "xlsx"), XLSX)
         if extension == "csv":
             return (templates.build_csv(record_type), templates.file_name(record_type, "csv"),
                     "text/csv; charset=utf-8")
         raise DataFeedError("Templates are .xlsx or .csv.")
+
+    def example_file(self) -> tuple[bytes, str]:
+        """The Excel file of Import history's example import (never real data)."""
+        return (templates.build_filled_xlsx("actor", self.vocabularies(), EXAMPLE_IMPORT_ROWS),
+                f"Example - {EXAMPLE_IMPORT_NAME}.xlsx")
 
     # ------------------------------------------------------------------ check
     def validate_upload(self, record_type: str, file_name: str, data: bytes) -> dict[str, Any]:
@@ -282,16 +307,27 @@ class DataFeedService:
     def _upload_path(self, preview_id: str) -> Path:
         return self._path(preview_id).with_suffix(".upload")
 
-    def _keep_original(self, preview: dict[str, Any], run_id: object) -> None:
-        """The uploaded file, kept under its import for Import history."""
+    def _keep_original(self, preview: dict[str, Any], run_id: object, import_name: str = "") -> None:
+        """The file, kept under its import for Import history.
+
+        An upload keeps the file as it came; records typed by hand (or sent from
+        Explore and Map) are kept as the filled template, so every import can be
+        downloaded as an Excel sheet.
+        """
         upload = self._upload_path(preview["preview_id"])
-        if not upload.is_file():
-            return
-        if _UUID.match(str(run_id or "")) and not self.original_file(str(run_id)):
-            safe = re.sub(r"[^\w.\- ]", "_", Path((preview.get("file") or {}).get("name") or "import").name)
+        keep = _UUID.match(str(run_id or "")) and not self.original_file(str(run_id))
+        if upload.is_file():
+            if keep:
+                safe = re.sub(r"[^\w.\- ]", "_", Path((preview.get("file") or {}).get("name") or "import").name)
+                self.originals_dir.mkdir(parents=True, exist_ok=True)
+                upload.replace(self.originals_dir / f"{run_id}__{safe}")
+            upload.unlink(missing_ok=True)
+        elif keep and preview.get("method") != "upload":
+            rows = [r["values"] for r in sorted(preview["rows"], key=lambda r: r["row_number"])]
+            data = templates.build_filled_xlsx(preview["record_type"], self.vocabularies(), rows)
+            safe = re.sub(r"[^\w.\- ]", "_", import_name or "Manual entry").strip() or "Manual entry"
             self.originals_dir.mkdir(parents=True, exist_ok=True)
-            upload.replace(self.originals_dir / f"{run_id}__{safe}")
-        upload.unlink(missing_ok=True)
+            (self.originals_dir / f"{run_id}__{safe}.xlsx").write_bytes(data)
 
     def original_file(self, run_id: str) -> Path | None:
         if not _UUID.match(run_id or "") or not self.originals_dir.is_dir():
@@ -367,7 +403,7 @@ class DataFeedService:
             outcome = self.bridge.stage(batch)
         except DataFeedBridgeError as exc:
             raise DataFeedError(str(exc)) from exc
-        self._keep_original(preview, outcome.get("run_id"))
+        self._keep_original(preview, outcome.get("run_id"), name)
         self._path(preview_id).unlink(missing_ok=True)
         rows = outcome.get("rows") or []
         admitted = outcome.get("admissions") or []

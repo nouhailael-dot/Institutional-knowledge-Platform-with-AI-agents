@@ -625,3 +625,36 @@ def test_the_uploaded_file_is_kept_with_its_import(tmp_path):
     assert not service._upload_path("a" * 32).exists()
     assert service.original_file("../etc") is None
 
+
+
+def _offline_service(tmp_path):
+    bridge = object.__new__(__import__("src.datafeed.bridge", fromlist=["DataFeedBridge"]).DataFeedBridge)
+    (tmp_path / "previews").mkdir(exist_ok=True)
+    service = DataFeedService(bridge=bridge, connect=lambda: None, preview_dir=tmp_path / "previews")
+    service.connect = None  # the reference lists, without a database
+    return service
+
+
+def test_a_hand_typed_import_is_kept_as_the_filled_template(tmp_path):
+    service = _offline_service(tmp_path)
+    run = "11111111-2222-4333-8444-555555555555"
+    preview = {"preview_id": "b" * 32, "record_type": "person", "method": "manual", "file": None,
+               "rows": [{"row_number": 2, "values": {"First name": "Ana", "Last name": "Ruiz",
+                                                     "Organization": "University of Arizona"}}]}
+    service._keep_original(preview, run, "Arizona people")
+    kept = service.original_file(run)
+    assert kept.name == f"{run}__Arizona people.xlsx"
+    parsed = parse.parse_upload(kept.name, kept.read_bytes(), "person")
+    assert parse.check_headers(parsed, "person") == []
+    values = {contract.header_key(k): v for k, v in parsed.rows[0]["values"].items() if v}
+    assert values == {"first name": "Ana", "last name": "Ruiz", "organization": "University of Arizona"}
+
+
+def test_the_example_import_file_reads_back_and_is_never_imported(tmp_path):
+    data, name = _offline_service(tmp_path).example_file()
+    assert name == "Example - Kansas water organizations.xlsx"
+    parsed = parse.parse_upload(name, data, "actor")
+    assert parse.check_headers(parsed, "actor") == [] and len(parsed.rows) == 5
+    checker = validate.RowChecker("actor", VOCAB)
+    results = [checker.check(r["row_number"], r["values"]) for r in parsed.rows]
+    assert all(any("example row" in e for e in r["errors"]) for r in results)

@@ -337,7 +337,7 @@ export function historyMeta(item = {}) {
 /** What an import looks like in the history, shown while there is none. Never real data. */
 export const EXAMPLE_IMPORT = {
   import_name: "Kansas water organizations", record_type: "actor", method: "upload",
-  file_name: "GHUS_Organizations_Template.xlsx", uploaded_at: "2026-11-02T10:30:00",
+  file_name: "Kansas water organizations.xlsx", uploaded_at: "2026-11-02T10:30:00",
   uploaded_by: "", admission: "review", status: "Partly reviewed",
   rows_total: 5, staged: 4, rows_invalid: 1,
   counts: {pending: 2, approved_new: 1, matched_existing: 1},
@@ -808,7 +808,8 @@ export function createDataFeedPage({html, useState, useEffect}) {
           </div>
           <span class="discovery-status paused">${item.status}</span>
         </div>
-        <p class="df-import-facts"><strong>${recordCount(item)}</strong> · ${formatDateTime(item.uploaded_at)} · Original file: ${item.file_name}</p>
+        <p class="df-import-facts"><strong>${recordCount(item)}</strong> · ${formatDateTime(item.uploaded_at)} · <a
+          href="/api/datafeed/example-import.xlsx" download>Excel sheet: ${item.file_name}</a></p>
         <p class="df-muted">${historyLine(item)}</p>
         <div class="discovery-actions">
           <button class="btn ghost" disabled>Hide records</button>
@@ -873,7 +874,8 @@ export function createDataFeedPage({html, useState, useEffect}) {
           <span class=${"discovery-status " + (item.status === "Reviewed" ? "active" : "paused")}>${item.status}</span>
         </div>
         <p class="df-import-facts"><strong>${recordCount(item)}</strong> · ${formatDateTime(item.uploaded_at)}
-          ${item.has_file ? html` · <a href=${`/api/datafeed/imports/${item.run_id}/file`} download>Original file: ${item.file_name || "download"}</a>`
+          ${item.has_file ? html` · <a href=${`/api/datafeed/imports/${item.run_id}/file`} download>${item.method === "upload"
+            ? `Original file: ${item.file_name || "download"}` : `Excel sheet: ${item.import_name}.xlsx`}</a>`
             : item.method === "upload" ? " · Original file not kept" : " · Entered by hand"}</p>
         <p class="df-muted">${historyLine(item)}</p>
         <div class="discovery-actions">
