@@ -1447,3 +1447,14 @@ test('a card line is editable in place only where Review may change it', async (
   assert.match(audience, /Utilities/);
   assert.match(cardLine(html, 'Other names', ''), /Not Found/);
 });
+
+test('a person card shows Public Profile and LinkedIn where an organization shows its website', async () => {
+  const {personLink, PERSON_LINK_FIELDS} = await import('../frontend/review.js');
+  assert.deepEqual(PERSON_LINK_FIELDS.map(([field]) => field), ['public_profile_url', 'linkedin_url']);
+  const person = {entity_type: 'person', original_payload: {linkedin_url: 'https://www.linkedin.com/in/x'}};
+  assert.equal(personLink(person, {}), 'https://www.linkedin.com/in/x');
+  assert.equal(personLink(person, {public_profile_url: 'https://asu.edu/x'}), 'https://asu.edu/x');
+  assert.equal(personLink({entity_type: 'person', original_payload: {}}, {}), null);
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.match(src, /selected\.entity_type === "person"\s*\? PERSON_LINK_FIELDS\.map/);
+});

@@ -1686,9 +1686,22 @@ const CARD_FIELDS = {
     ["organization_location", "Location", ["work_location"]],
     ["affiliation_note", "Affiliation", ["department", "other_affiliations"]],
     ["research_area", "Expertise", ["expertise"]], ["work_evidence", "Relevant Work", ["relevant_work"]],
-    ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_connection"]], ["public_profile_url", "Public Profile"],
-    ["linkedin_url", "LinkedIn", ["linkedin_url"]], ["orcid", "ORCID"]],
+    ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_connection"]], ["orcid", "ORCID"]],
 };
+// A person has no website of their own: these two take its place, under Name.
+export const PERSON_LINK_FIELDS = [["public_profile_url", "Public Profile"],
+  ["linkedin_url", "LinkedIn", ["linkedin_url"]]];
+
+/** The rows a record's card already shows, so they are not listed again. */
+function cardRows(entityType) {
+  return [...(CARD_FIELDS[entityType] || []), ...(entityType === "person" ? PERSON_LINK_FIELDS : [])];
+}
+
+/** A person's own page for the card's first line: the public profile, else LinkedIn. */
+export function personLink(candidate, draft) {
+  return PERSON_LINK_FIELDS.map(([field, , facts]) => profileValue(candidate, draft, field, facts))
+    .find(value => /^https?:\/\//.test(String(value || ""))) || null;
+}
 const CARD_DATE_FIELDS = new Set(["next_date", "previous_edition"]);
 const CARD_CAPITALIZED = new Set(["event_type", "date_status", "event_format", "recurring_pattern", "sector"]);
 
@@ -1725,13 +1738,13 @@ export function profileValue(candidate, draft, field, factKeys = []) {
   return null;
 }
 
-/** One row of an event's or person's card (CARD_FIELDS). */
-function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors}) {
+/** One row of an event's or person's card (CARD_FIELDS); `always` shows Not Found when empty. */
+function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors, always = false}) {
   if ((candidate?.editable_fields || []).includes(field)) {
     return cardField(html, candidate, field, draft[field], edit, disabled, errors[field], label);
   }
   const value = profileValue(candidate, draft, field, factKeys);
-  if (!value) return null;
+  if (!value) return always ? cardLine(html, label, "") : null;
   return /^https?:\/\//.test(String(value))
     ? cardLine(html, label, html`<a href=${value} target="_blank" rel="noreferrer">${value}</a>`)
     : cardLine(html, label, value);
@@ -2320,7 +2333,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
            "location_city", "state", "country", "primary_sector", "primary_technical_focus",
            "funding_summary", "current_activities"].includes(field)
       // Already on the record card.
-      && !(CARD_FIELDS[selected?.entity_type] || []).some(([cardField]) => cardField === field));
+      && !cardRows(selected?.entity_type).some(([cardField]) => cardField === field));
 
     return html`<section class="review-page" aria-labelledby="review-title">
       <h1 class="hero-h" id="review-title">${SENTENCES.pageTitle}</h1>
@@ -2506,9 +2519,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   title=${badge.hint || ""}>${badge.label}</span>`)}
             </div>
             <p class="review-card-sub">
-              ${present(draft.website)
-                ? html`<a href=${draft.website} target="_blank" rel="noreferrer">${draft.website}</a>`
-                : MISSING.notProvided} · ${runChip(selected)}
+              ${selected.entity_type === "person"
+                ? (personLink(selected, draft) && html`<a href=${personLink(selected, draft)} target="_blank"
+                    rel="noreferrer">${personLink(selected, draft)}</a> · `)
+                : html`${present(draft.website)
+                  ? html`<a href=${draft.website} target="_blank" rel="noreferrer">${draft.website}</a>`
+                  : MISSING.notProvided} · `}${runChip(selected)}
             </p>
             ${isMigratedBaseline(selected) && html`<div class="review-notice" role="status">
               <strong>${BADGES.migratedBaseline}.</strong> ${SENTENCES.migratedBaseline}
@@ -2529,7 +2545,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               onInput=${e => edit("description", e.target.value)}></textarea>`}
             ${draftErrors.description && html`<small class="field-error">${draftErrors.description}</small>`}
             ${cardField(html, selected, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
-            ${cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
+            ${selected.entity_type === "person"
+              ? PERSON_LINK_FIELDS.map(row => profileRow(html, selected, draft, row,
+                {edit, disabled: !pending || busy, errors: draftErrors, always: true}))
+              : cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
 
             ${isActor ? html`
             <details class="mpeople review-profile" open>
