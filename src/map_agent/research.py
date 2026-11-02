@@ -46,6 +46,11 @@ such; an institution's share is unknown unless explicitly stated. Do not infer
 amounts or currency, convert currencies, sum unrelated awards, or describe a
 funding opportunity as an awarded grant. If funding is documented but its amount
 is absent, say amount not disclosed. Otherwise omit unsupported funding details.
+List every documented award related to the map's topic, not only the first one
+found. Keep awards made in the current year or still active in it (a five-year
+grant from three years ago counts); leave out one-time awards that ended in an
+earlier year. For each give the funder, what it is for, the amount when
+disclosed, and its timeline (award year, and end year when stated).
 Use only evidence already supplied; do not request additional funding research.
 Search snippets are preliminary evidence, not proof that a full page was read.
 For organizations include named people already supported by these sources. For
@@ -60,7 +65,8 @@ does not establish water-treatment expertise. Recent publication criteria need
 an actual dated publication record. For every supported people criterion return
 a verbatim evidence_quote and source_url from the supplied evidence; otherwise
 mark it not established. Keep leadership distinct from participation.
-Use the submit_entities tool exactly once. There are no other tools."""
+Use the submit_entities tool exactly once. There are no other tools.""" + (
+    f"\nThe current year is {date.today().year}.")
 
 # Architecture V2 §5.3 and §5.4 light pulls, for people and event maps.
 PEOPLE_MAP_GUIDANCE = """This is a map of PEOPLE. Use the Architecture V2 light pull only:
@@ -211,22 +217,45 @@ def _adopt_edition(event, newer):
     event["previous_edition"] = previous
 
 
+def _ordinal(n):
+    suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
+def edition_query(event, today=None):
+    """The search for an event's next edition: its name without years or
+    edition numbers, the next edition's number ("49th" -> "50th Annual") and the
+    year it should fall in. Asking for "2026 2027" found only pages about the
+    edition already known (2 Nov 2026: the 49th phosphate conference, not the 50th)."""
+    name = str(event.get("name") or "")
+    core = re.sub(r"\b(19|20)\d{2}\b|\b\d+(st|nd|rd|th)\b|\b(annual|edition|inaugural)\b|[()]",
+                  " ", name, flags=re.I)
+    numbers = [int(n) for n in re.findall(r"\b(\d+)(?:st|nd|rd|th)\b", name, flags=re.I)]
+    known = _event_date(event)
+    gap = {"Annual": 1, "Every two years": 2}.get(event.get("recurring_pattern"))
+    if known and gap:
+        years = str(known.year + gap)
+    else:
+        start = known.year if known else (today or date.today()).year
+        years = f"{start} {start + 1}"
+    edition = f"{_ordinal(numbers[0] + 1)} Annual " if numbers and re.search(r"annual", name, re.I) else (
+        f"{_ordinal(numbers[0] + 1)} " if numbers else "")
+    return f'{edition}"{" ".join(core.split())}" {years}'
+
+
 def check_event_editions(state, run, sources, client=None):
     """One targeted search per past, recurring event (at most EDITION_CHECKS per
     map), so a 2025 edition is not shown when the 2026 one exists. Resumable."""
     if state.get("edition_queue") is None:
         state["edition_queue"] = [entity_key(e) for e in state["found"] if _needs_edition_check(e)][:EDITION_CHECKS]
         state["edition_index"] = 0
-    year = date.today().year
     request = state.get("round_description") or state["description"]
     while state["edition_index"] < len(state["edition_queue"]):
         run.check()
         key = state["edition_queue"][state["edition_index"]]
         event = next((e for e in state["found"] if entity_key(e) == key), None)
         if event is not None:
-            core = re.sub(r"\b(19|20)\d{2}\b|\b\d+(st|nd|rd|th)\b|\b(annual|edition|inaugural)\b|[()]",
-                          " ", str(event.get("name") or ""), flags=re.I)
-            query = f'"{" ".join(core.split())}" {year} {year + 1}'
+            query = edition_query(event)
             evidence = _collect(sources, query, state["gaps"], max_pages=2)
             rows, _ = extract(run, request, {"entity_type": "event", "query": query,
                                              "focus": f"Only the newest edition of {event.get('name')}."},

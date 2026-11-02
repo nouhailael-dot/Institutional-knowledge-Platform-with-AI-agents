@@ -301,7 +301,7 @@ class RunStore:
         with self.connect() as db:
             return [dict(r) for r in db.execute(
                 "SELECT id,description,status,stage,created,updated FROM runs "
-                "WHERE id NOT IN (SELECT run_id FROM people_tasks) ORDER BY created DESC LIMIT 30")]
+                "WHERE id NOT IN (SELECT run_id FROM people_tasks) ORDER BY created DESC LIMIT 200")]
 
     def create_people_task(self, parent_id, actor_key, request_key, description, plan):
         """Atomically link an explicitly approved $3 task; retry keys never spend twice."""
