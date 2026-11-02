@@ -564,7 +564,7 @@
 </style>
 <link rel="stylesheet" href="/review.css?v=20261102e"/>
 <link rel="stylesheet" href="/discovery.css?v=20261102i"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261102h"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261102n"/>
 <link rel="stylesheet" href="/dashboard.css?v=20261102d"/>
 <script type="importmap">
 { "imports": {
@@ -585,13 +585,13 @@ import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261102h";
 import {createDiscoveryPage} from "./discovery.js?v=20261102i";
 import {createDateInput, usDate} from "./dates.js?v=20261102d";
-import {createDataFeedPage} from "./datafeed.js?v=20261102m";
+import {createDataFeedPage} from "./datafeed.js?v=20261102o";
 import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261102i";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect,useRef});
-const DataFeed=createDataFeedPage({html,useState,useEffect});
+const DataFeed=createDataFeedPage({html,useState,useEffect,Fragment:React.Fragment});
 // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
 const DateInput=createDateInput({html,useState,useEffect});
 const Dashboard=createDashboardPage({html,useState,useEffect});

@@ -290,3 +290,22 @@ test('import history stays with its uploader and links what is incomplete to Rev
   assert.equal(completionCap(900), 5);
 });
 
+
+test('Import History: search, Category, and a Result that says what Review did', async () => {
+  const {importResult, filterImports, DATAFEED_LEAD, IMPORT_NAME_HINT} = await import('../frontend/datafeed.js');
+  assert.equal(IMPORT_NAME_HINT, 'This name will be used to identify your import in Import History.');
+  assert.match(DATAFEED_LEAD, /reviewed by GHUS/);
+  assert.deepEqual(importResult({counts: {pending: 3}}), {label: 'Awaiting Review', tone: 'waiting'});
+  assert.equal(importResult({counts: {pending: 1, approved_new: 2}}).label, 'Partly Reviewed');
+  assert.equal(importResult({counts: {approved_new: 2, rejected: 1}}).label, 'Added to Directory');
+  assert.equal(importResult({counts: {rejected: 2}}).label, 'Reviewed');
+  const items = [{import_name: 'San Francisco Diaspora Event', record_type: 'person'},
+    {import_name: 'Energy Optimization Partners', record_type: 'actor'}];
+  assert.deepEqual(filterImports(items, 'energy').map(i => i.record_type), ['actor']);
+  assert.deepEqual(filterImports(items, '', 'person').map(i => i.import_name), ['San Francisco Diaspora Event']);
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  for (const words of ['Import Name <span class="df-req">*</span>', 'Record Type <span class="df-req">*</span>',
+    'How to Add Records <span class="df-req">*</span>', 'Add Another Record', '"Submit Import"']) {
+    assert.ok(src.includes(words), words);
+  }
+});
