@@ -286,3 +286,82 @@
 }
 /* The mockups' field labels: title case, not the small capitals of the other forms. */
 .org-update .discovery-label{text-transform:none;letter-spacing:0;font-size:14.5px;font-weight:600;color:var(--ink)}
+
+/* One look for every status tag (30 Oct 2026): a colored dot and the word;
+   Verified alone has a check mark. Paused is red, Parked orange. */
+.discovery-status{display:inline-flex;align-items:center;gap:6px}
+.discovery-status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.discovery-status.paused{background:var(--red-soft);color:var(--red);border-color:transparent}
+.org-status{display:inline-flex;align-items:center;gap:5px;border-radius:999px}
+.org-status::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+.org-status.verified::before{content:"✓";width:auto;height:auto;border-radius:0;background:none}
+.org-status.parked{background:var(--orange-soft);color:var(--orange)}
+.org-status.imported{background:var(--slate-soft);color:var(--slate)}
+
+/* Requests: a table and a Request Details panel (Fatima's 27 Oct 2026 mockup). */
+.requests-view{display:grid;gap:16px}
+.requests-filters{display:grid;gap:16px}
+.requests-search{width:100%;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:8px;padding:11px 14px 11px 38px;font:inherit;color:var(--ink);min-height:44px;
+  background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%236b7079' stroke-width='2' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") no-repeat 13px center}
+.requests-search:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+.requests-selects{display:grid;grid-template-columns:repeat(2,minmax(0,280px));gap:16px}
+.requests-selects label{display:grid;gap:7px}
+.requests-selects span{font-size:13px;font-weight:650;color:var(--muted)}
+.requests-selects select{border:1px solid var(--line-strong);border-radius:8px;padding:10px 12px;background:var(--surface);color:var(--ink);font:inherit;min-height:42px}
+.requests-table{padding:0;overflow:hidden}
+.requests-table table{width:100%;border-collapse:collapse;font-size:14px}
+.requests-table th{text-align:left;font-weight:650;color:var(--muted);background:var(--surface-2);padding:13px 18px;border-bottom:1px solid var(--line)}
+.requests-table td{padding:14px 18px;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:middle}
+.requests-table tbody tr{cursor:pointer}
+.requests-table tbody tr:hover,.requests-table tbody tr:focus{background:var(--accent-soft);outline:none}
+.requests-table .requests-name{color:var(--ink);font-weight:600}
+.requests-table .requests-go{width:24px;color:var(--muted);font-size:18px}
+.requests-table .discovery-empty{margin:18px;border:0}
+.requests-note{display:flex;gap:8px;align-items:center;margin:0;padding:14px 18px;color:var(--muted);font-size:13px}
+.requests-pill{display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:999px;background:var(--surface-2);color:var(--ink);font-size:13px;white-space:nowrap}
+.requests-pill::before{content:"";width:7px;height:7px;border-radius:50%;background:#6b7079}
+.requests-pill.running,.requests-pill.stalled{background:#fff3ec;color:#b2400f}
+.requests-pill.running::before,.requests-pill.stalled::before{background:#e8590c}
+.requests-pill.expired,.requests-pill.succeeded,.requests-pill.period_over{background:#ecfdf3;color:#05603a}
+.requests-pill.expired::before,.requests-pill.succeeded::before,.requests-pill.period_over::before{background:#12b76a}
+.requests-pill.attention{background:#fffaeb;color:#93370d}
+.requests-pill.attention::before{background:#f79009}
+.requests-pill.failed,.requests-pill.cancelled{background:#fef3f2;color:#b42318}
+.requests-pill.failed::before,.requests-pill.cancelled::before{background:#f04438}
+.requests-backdrop{position:fixed;inset:0;background:rgba(17,20,24,.38);z-index:40}
+.requests-drawer{position:fixed;top:0;right:0;bottom:0;width:min(640px,100vw);overflow-y:auto;box-sizing:border-box;background:var(--surface);z-index:41;
+  box-shadow:-12px 0 32px rgba(17,20,24,.18);padding:30px 34px 40px}
+.requests-drawer header{display:flex;justify-content:space-between;align-items:center;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.requests-drawer header h2{margin:0;font-size:28px;letter-spacing:-.01em}
+.requests-close{border:0;background:transparent;font-size:30px;line-height:1;color:var(--ink);cursor:pointer;padding:0 4px}
+.requests-drawer section{padding:22px 0;border-bottom:1px solid var(--line)}
+.requests-drawer section:last-of-type{border-bottom:0}
+.requests-drawer h3{margin:0 0 12px;font-size:26px;letter-spacing:-.01em}
+.requests-drawer h4{margin:0 0 10px;font-size:19px}
+.requests-drawer section > p{margin:0;color:var(--muted);line-height:1.55}
+.requests-pair{display:grid;grid-template-columns:1fr 1fr;gap:16px 24px;margin:18px 0 0}
+.requests-pair dt{font-weight:650;color:var(--ink)}
+.requests-pair dd{margin:4px 0 0;color:var(--muted)}
+.requests-drawer .discovery-message{margin:16px 0 0}
+.requests-actions{display:flex;flex-wrap:wrap;gap:12px;padding:20px 0;border-bottom:1px solid var(--line)}
+.requests-actions .btn{min-height:44px;padding:0 20px}
+.requests-actions .requests-cancel{margin-left:auto}
+.requests-hint{margin:10px 0 0}
+.requests-drawer .discovery-enddate{margin-top:16px}
+.requests-runs{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:10px}
+.requests-runs li{display:grid;grid-template-columns:1.3fr auto 1fr auto;gap:14px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line);color:var(--muted);font-size:14px}
+.requests-runs li:last-child{border-bottom:0}
+.requests-runs .link{border:0;background:transparent;color:var(--accent-ink);font:inherit;font-weight:600;cursor:pointer;padding:0}
+.requests-drawer .requests-note{padding:12px 0 0}
+.requests-found{margin-top:20px}
+.requests-found > summary{cursor:pointer;font-weight:650}
+@media (max-width:700px){.requests-selects{grid-template-columns:1fr}.requests-runs li{grid-template-columns:1fr 1fr}.requests-pair{grid-template-columns:1fr}}
+/* 2 Nov 2026: Paused red (agreed 30 Oct); Cancel Request outlined in red, as in the mockup. */
+.requests-pill.paused{background:var(--red-soft);color:var(--red)}
+.requests-pill.paused::before{background:var(--red)}
+.requests-actions .requests-cancel{border:1px solid var(--red);color:var(--red);background:var(--surface)}
+
+/* Larger text (2 Nov 2026). */
+.requests-table table{font-size:15px}
+.requests-pill{font-size:14px}
+.requests-note{font-size:14px}

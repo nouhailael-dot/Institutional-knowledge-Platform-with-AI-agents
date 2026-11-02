@@ -609,10 +609,10 @@ test('requests stay with whoever made them; older ones without a requester stay 
   assert.deepEqual(visibleRequests(rows, '').map((r) => r.id), [3, 4]);
 });
 
-test('the Monitor page leads with New Request, Organizations Update, Requests and keeps no run list', async () => {
+test('the Monitor page leads with New Request, Requests, Record Updates (2 Nov mockup) and keeps no run list', async () => {
   const page = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
-  const order = ['setView("new")}>New Request<', 'setView("actors")}>Organizations Update<',
-    'setView("requests")}>Requests ('].map((s) => page.indexOf(s));
+  const order = ['setView("new")}>New Request<', 'setView("requests")}>Requests<',
+    'setView("actors")}>Record Updates<'].map((s) => page.indexOf(s));
   assert.ok(order.every((i) => i > 0) && order[0] < order[1] && order[1] < order[2]);
   const code = page.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
   for (const gone of ['One actor', 'Several actors', 'Save schedule', 'Update runs']) {

@@ -1010,8 +1010,8 @@ export function draftProblems(rawForm, options) {
     problems.title = "Give the request a name.";
   }
   if (form.sector === ANY_SECTOR && !form.focusTerms.length) {
-    problems.sector = "Any sector needs a sub-topic to search for.";
-    problems.brief = "With any sector, add at least one line naming what to search for.";
+    problems.sector = "All sectors needs a sub-topic to search for.";
+    problems.brief = "With all sectors, add at least one line naming what to search for.";
   }
   if (!form.sector) {
     problems.sector = "Choose a sector.";
@@ -1179,6 +1179,40 @@ export function entitySummary(request, options) {
   return `${when}: find ${role} working on ${topic}${at}.`;
 }
 
+// ------------------------------------------------- the Requests list (27 Oct mockup)
+export const REQUEST_TYPES = {find: "Find New Records", update: "Update Existing Records"};
+
+/** One row per request: monitoring requests find new records, update requests
+ * refresh records already in the directory. Newest first. */
+export function requestRows(requests = [], updates = []) {
+  const noun = {actor: "Organizations", event: "Events", person: "People"};
+  const row = (r, type) => ({
+    key: `${type}:${r.subscription_id}`, type, request: r,
+    title: r.title || (type === "update" ? "Update request" : "Untitled request"),
+    recordType: type === "update" ? "Organizations" : noun[r.discovery_entity || "actor"],
+    status: requestStatus(r),
+  });
+  return [...requests.map((r) => row(r, "find")), ...updates.filter((r) => !r.test_sector).map((r) => row(r, "update"))]
+    .sort((a, b) => String(b.request.created_at || "").localeCompare(String(a.request.created_at || "")));
+}
+
+/** "Once", "3 months", "2 weeks" - the span from start to end date. */
+export function requestDuration(request) {
+  if (request.cadence === "once") return "Once";
+  const start = Date.parse(request.start_date), end = Date.parse(request.end_date);
+  if (!start || !end || end < start) return "Not recorded";
+  const days = Math.round((end - start) / 86400000);
+  if (days < 28) return days < 14 ? `${days} days` : `${Math.round(days / 7)} weeks`;
+  const months = Math.round(days / 30.44);
+  return months === 1 ? "1 month" : `${months} months`;
+}
+
+/** What a run produced: records added plus records sent to Review Results. */
+export function runFindings(run) {
+  if (run.actor_results) return run.found_count ?? 0;
+  return (run.staged_count ?? 0) + (run.review_item_count ?? 0);
+}
+
 function blankForm() {
   return {
     brief: "", areaTouched: false,
@@ -1319,7 +1353,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       <div class="discovery-row3">
         <${Field} label="Sector">
           <select value=${form.sector} onChange=${(e) => set({sector: e.target.value})}>
-            <option value=${ANY_SECTOR}>Any</option>
+            <option value=${ANY_SECTOR}>All</option>
             ${options.topics.map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
           </select>
         <//>
@@ -1712,7 +1746,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         <${Field} label="Sector" error=${shown.sector}>
           <select value=${form.sector} onChange=${(e) => set({sector: e.target.value})}>
             <option value="">Choose a sector</option>
-            <option value=${ANY_SECTOR}>Any sector</option>
+            <option value=${ANY_SECTOR}>All sectors</option>
             ${options.topics.map((t) => html`<option key=${t.code} value=${t.code}>${t.name}</option>`)}
           </select>
         <//>
@@ -1844,7 +1878,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         </details>`}
         <h4>Runs</h4>
         ${runs.length === 0 ? html`<p class="muted">Not run yet.</p>` : html`<table class="discovery-runs">
-          <thead><tr><th>Date</th><th>Result</th><th>Time</th><th>Pages found</th><th>Added</th><th>To Review</th><th>Spent</th><th>Per Relevant Actor</th><th></th></tr></thead>
+          <thead><tr><th>Date</th><th>Result</th><th>Time</th><th>Pages found</th><th>Added</th><th>To Review</th><th>Spent</th><th>Per Relevant Organization</th><th></th></tr></thead>
           <tbody>${runs.map((run) => html`<tr key=${run.collection_run_id}>
             <td>${formatDay(run.started_at)}</td>
             <td>${run.status === "running" && run.stalled ? "Stopped responding"
@@ -1856,6 +1890,140 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           </tr>`)}</tbody></table>`}
       </div>`}
     </article>`;
+  }
+
+  function RequestsTable({rows, onOpen}) {
+    const [query, setQuery] = useState("");
+    const [status, setStatus] = useState("");
+    const [type, setType] = useState("");
+    const statuses = [...new Set(rows.map((r) => r.status))];
+    const shown = rows.filter((r) => (!status || r.status === status) && (!type || r.type === type)
+      && (!query.trim() || r.title.toLowerCase().includes(query.trim().toLowerCase())));
+    return html`<section class="requests-view">
+      <div class="discovery-card requests-filters">
+        <input class="requests-search" type="search" placeholder="Search requests…" aria-label="Search requests"
+          value=${query} onInput=${(e) => setQuery(e.target.value)}/>
+        <div class="requests-selects">
+          <label><span>Status</span>
+            <select value=${status} onChange=${(e) => setStatus(e.target.value)}>
+              <option value="">All Statuses</option>
+              ${statuses.map((s) => html`<option key=${s} value=${s}>${STATUS_LABELS[s] || s}</option>`)}
+            </select></label>
+          <label><span>Request Type</span>
+            <select value=${type} onChange=${(e) => setType(e.target.value)}>
+              <option value="">All Types</option>
+              ${Object.entries(REQUEST_TYPES).map(([id, label]) => html`<option key=${id} value=${id}>${label}</option>`)}
+            </select></label>
+        </div>
+      </div>
+      <div class="discovery-card requests-table">
+        ${!rows.length ? html`<p class="discovery-empty">No requests yet.</p>`
+          : !shown.length ? html`<p class="discovery-empty">No requests match these filters.</p>`
+          : html`<table>
+            <thead><tr><th>Request</th><th>Request Type</th><th>Record Type</th><th>Status</th><th>Next Run</th><th aria-hidden="true"></th></tr></thead>
+            <tbody>${shown.map((r) => html`<tr key=${r.key} tabindex="0" onClick=${() => onOpen(r.key)}
+                onKeyDown=${(e) => { if (e.key === "Enter") onOpen(r.key); }}>
+              <td class="requests-name">${r.title}</td><td>${REQUEST_TYPES[r.type]}</td><td>${r.recordType}</td>
+              <td><span class=${"requests-pill " + r.status}>${STATUS_LABELS[r.status] || r.status}</span></td>
+              <td>${runningRun(r.request) ? "Running now" : ["active", "paused"].includes(r.request.status) ? nextRunLabel(r.request) : "None"}</td>
+              <td class="requests-go" aria-hidden="true">›</td></tr>`)}</tbody>
+          </table>`}
+        <p class="requests-note"><span aria-hidden="true">ⓘ</span> Open a request to view its criteria, schedule, and run history.</p>
+      </div>
+    </section>`;
+  }
+
+  function RequestDrawer({row, options, busy, onAction, onRun, today, onChanged, onClose}) {
+    const [editing, setEditing] = useState(false);
+    useEffect(() => {
+      const close = (e) => { if (e.key === "Escape") onClose(); };
+      window.addEventListener("keydown", close);
+      return () => window.removeEventListener("keydown", close);
+    }, []);
+    const request = row.request;
+    const find = row.type === "find";
+    const runs = request.runs || [];
+    const results = request.results || [];
+    const excluded = request.excluded || [];
+    const last = runs[0];
+    const live = request.status === "active" || request.status === "paused";
+    const current = runningRun(request);
+    const entity = request.discovery_entity || "actor";
+    const canEdit = find && live && request.cadence !== "once";
+    const brief = !find ? updateRequestScope(request, options?.topics || [])
+      : entity === "actor" ? requestSummary(request, options) : entitySummary(request, options);
+    return html`<div class="requests-backdrop" onClick=${onClose}></div>
+    <aside class="requests-drawer" role="dialog" aria-modal="true" aria-label="Request details">
+      <header><h2>Request Details</h2>
+        <button type="button" class="requests-close" aria-label="Close" onClick=${onClose}>×</button></header>
+      <section>
+        <h3>${row.title}</h3>
+        <span class=${"requests-pill " + row.status}>${STATUS_LABELS[row.status] || row.status}</span>
+        <dl class="requests-pair">
+          <div><dt>Request Type</dt><dd>${REQUEST_TYPES[row.type]}</dd></div>
+          <div><dt>Record Type</dt><dd>${row.recordType}</dd></div>
+        </dl>
+      </section>
+      <section><h4>Search Brief</h4><p>${brief || "Not recorded"}</p></section>
+      <section><h4>Schedule</h4>
+        <dl class="requests-pair">
+          <div><dt>Frequency</dt><dd>${CADENCE_LABELS[request.cadence] || request.cadence || "Not recorded"}</dd></div>
+          <div><dt>Start Date</dt><dd>${formatDay(request.start_date) || "Not recorded"}</dd></div>
+          <div><dt>Duration</dt><dd>${requestDuration(request)}</dd></div>
+          <div><dt>Next Run</dt><dd>${current ? "Running now" : live ? nextRunLabel(request) : "None"}</dd></div>
+        </dl>
+        ${editing && html`<${EndDate} request=${request} today=${today} onSaved=${onChanged}/>`}
+      </section>
+      ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${last.status_reason || "no reason recorded"}</p>`}
+      ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
+        ${runningLine(current)}. Results appear in Review Results when it finishes.</p>`}
+      ${row.status === "stalled" && html`<p class="discovery-message error">The last run stopped responding before it finished. Its spend so far is recorded; you can run the request again.</p>`}
+      <div class="requests-actions">
+        ${current ? html`<button class="btn running" disabled aria-live="polite">Running…</button>`
+          : request.status === "active" && html`<button class="btn" disabled=${!!busy} onClick=${() => onRun(row)}>${runButtonLabel(request)}</button>`}
+        ${canEdit && html`<button class="btn ghost" onClick=${() => setEditing(!editing)}>${editing ? "Done editing" : "✎ Edit Request"}</button>`}
+        ${request.status === "active" && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => onAction(row, "pause")}>❚❚ Pause</button>`}
+        ${request.status === "paused" && html`<button class="btn ghost" disabled=${!!busy} onClick=${() => onAction(row, "resume")}>▶ Resume</button>`}
+        ${live && html`<button class="btn ghost danger requests-cancel" disabled=${!!busy} onClick=${() => onAction(row, "cancel")}>🗑 Cancel Request</button>`}
+      </div>
+      ${editing && html`<p class="muted requests-hint">For now the end date is the part of a request that can be changed.</p>`}
+      <section><h4>Run History</h4>
+        ${runs.length === 0 ? html`<p class="muted">Not run yet.</p>` : html`<ul class="requests-runs">
+          ${runs.map((run) => html`<li key=${run.collection_run_id}>
+            <span>${formatDay(run.started_at)}</span>
+            <span class=${"requests-pill " + (run.status === "running" && run.stalled ? "stalled" : run.status)}>${
+              run.status === "running" && run.stalled ? "Stopped responding" : RUN_STATUS[run.status] || run.status}</span>
+            <span>${runFindings(run)} ${runFindings(run) === 1 ? "finding" : "findings"}</span>
+            ${find && run.status !== "running" && reviewRunKey(run)
+              ? html`<button class="link" onClick=${() => openRunInReview(run, entity)}>Show Results</button>` : html`<span></span>`}
+          </li>`)}</ul>
+        <p class="requests-note"><span aria-hidden="true">ⓘ</span> ${find
+          ? "Show Results opens the selected run in Review Results." : "What an update changed is listed in Record Updates."}</p>`}
+      </section>
+      ${find && (results.length > 0 || excluded.length > 0) && html`<details class="discovery-results requests-found">
+        <summary>What was found (${results.length})</summary>
+        <ul>${results.map((r) => html`<li key=${r.candidate_id}>
+            <div><strong>${r.name || r.url}</strong>
+              ${r.website && html` · <a href=${r.website} target="_blank" rel="noopener noreferrer">${r.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>`}</div>
+            ${r.description && html`<p>${r.description}</p>`}
+            <span class=${"discovery-band " + r.score_band}>${entity === "actor"
+              ? RESULT_LABELS[r.score_band] || r.score_band : "Sent to Review Results"}</span>
+            ${r.fit_score != null && html`<span class="discovery-scores">${scoreLine(r)}</span>`}
+            <dl class="discovery-detail">
+              ${(entity === "actor" ? resultFacts(r) : entityResultFacts(r)).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}
+            </dl>
+            ${r.score_band === "review" && r.triage_reason && html`<p class="discovery-held"><strong>Why a person should look:</strong> ${r.triage_reason}</p>`}
+            <a class="discovery-source" href=${r.url} target="_blank" rel="noopener noreferrer">Page read</a>
+          </li>`)}</ul>
+        ${excluded.length > 0 && html`<details class="discovery-excluded">
+          <summary>Not added (${excluded.length}): ${exclusionSummary(excluded)}</summary>
+          <ul>${excluded.map((x) => html`<li key=${x.url}>
+            <strong>${x.name || x.url}</strong> <span class="muted">${EXCLUSION_LABELS[exclusionKind(x)]}</span>
+            <p>${x.triage_reason || "No reason was recorded."}</p>
+          </li>`)}</ul>
+        </details>`}
+      </details>`}
+    </aside>`;
   }
 
   return function Discovery({handoff = null, onHandoffUsed = () => {}} = {}) {
@@ -2004,6 +2172,11 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       setBusy(false);
     }
 
+    // The table and panel act on a row; monitoring and update requests keep their own handlers.
+    const [openKey, setOpenKey] = useState(null);
+    const rowRun = (row) => (row.type === "update" ? onUpdateAction(row.request, "run") : runNow(row.request));
+    const rowAction = (row, action) => (row.type === "update" ? onUpdateAction(row.request, action) : onAction(row.request, action));
+
     const summaryDraft = {
       ...draftPayload(draft),
       start_date: draft.startDate,
@@ -2014,17 +2187,15 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     // Requests are private to whoever made them (their email); older ones stay shared.
     const mine = visibleRequests(requests, requester);
     const myUpdates = visibleRequests(updates, requester);
-    const listed = [...mine.map((r) => ({kind: "discovery", r})), ...myUpdates.map((r) => ({kind: "update", r}))]
-      .sort((a, b) => String(b.r.created_at || "").localeCompare(String(a.r.created_at || "")));
-    const activeCount = [...mine, ...myUpdates].filter((r) => r.status === "active" || r.status === "paused").length;
+    const rows = requestRows(mine, myUpdates);
+    const openRow = rows.find((r) => r.key === openKey);
 
     return html`<div class="discovery-page">
       ${view === "actors" ? html`
       <h1 class="hero-h">${ORG_UPDATE_TITLE}</h1>
       <p class="lead">${ORG_UPDATE_LEAD}</p>` : html`
-      <h1 class="hero-h">What should Compass keep watching?</h1>
-      <p class="lead">Choose the organizations, events or people to follow, and where. Compass
-        searches only for that, on the schedule you set, and what it finds goes to Review Results.</p>`}
+      <h1 class="hero-h">What would you like to monitor?</h1>
+      <p class="lead">Monitor topics and discover relevant organizations, people, and events.</p>`}
       <label class=${"discovery-whoami" + (requester && !isEmail(requester) ? " invalid" : "")}>
         <span>Email for results</span>
         <input type="email" value=${requester} placeholder="you@um6p.ma" maxLength="254"
@@ -2042,8 +2213,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       ${status.configured && options && html`
       <div class="subnav">
         <button class=${view === "new" ? "active" : ""} onClick=${() => setView("new")}>New Request</button>
-        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Organizations Update</button>
-        <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests (${activeCount})</button>
+        <button class=${view === "requests" ? "active" : ""} onClick=${() => setView("requests")}>Requests</button>
+        <button class=${view === "actors" ? "active" : ""} onClick=${() => setView("actors")}>Record Updates</button>
       </div>
 
       ${view === "new" && html`<div class="discovery-segment discovery-kinds" role="group" aria-label="What to discover">
@@ -2072,7 +2243,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
 
         ${form.brief.trim() && html`<div class="discovery-resolved">
           <p>
-            <strong>Sector:</strong> ${draft.sector === ANY_SECTOR ? "Any sector" : draft.sector
+            <strong>Sector:</strong> ${draft.sector === ANY_SECTOR ? "All sectors" : draft.sector
               ? (options.topics.find((t) => t.code === draft.sector) || {}).name || draft.sector
               : "none named yet"}
             · <strong>Searches:</strong> ${draft.focusTerms.length || "the sector name"}
@@ -2100,7 +2271,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           <${Field} label="Sector" error=${shown.sector}>
             <select value=${draft.sector} onChange=${(e) => set({sector: e.target.value})}>
               <option value="">Choose a sector</option>
-              <option value=${ANY_SECTOR}>Any sector</option>
+              <option value=${ANY_SECTOR}>All sectors</option>
               ${options.topics.map((t) => html`<option key=${t.code} value=${t.code}>${t.name}</option>`)}
             </select>
           <//>
@@ -2168,15 +2339,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           setView("requests");
         }}/>`}
 
-      ${view === "requests" && html`<section class="discovery-list">
-        ${listed.length === 0
-          ? html`<p class="discovery-empty">No requests yet.</p>`
-          : listed.map(({kind: k, r}) => k === "update"
-            ? html`<${UpdateRequestCard} key=${r.subscription_id} request=${r} sectors=${options.topics}
-                busy=${busy} onAction=${onUpdateAction} today=${today} onChanged=${load}/>`
-            : html`<${RequestCard} key=${r.subscription_id} request=${r} options=${options}
-                busy=${busy} onAction=${onAction} onRun=${runNow} today=${today} onChanged=${load}/>`)}
-      </section>`}
+      ${view === "requests" && html`<${RequestsTable} rows=${rows} onOpen=${setOpenKey}/>`}
+      ${view === "requests" && openRow && html`<${RequestDrawer} key=${openRow.key} row=${openRow} options=${options}
+        busy=${busy} onAction=${rowAction} onRun=${rowRun} today=${today} onChanged=${load}
+        onClose=${() => setOpenKey(null)}/>`}
       `}
     </div>`;
   };
