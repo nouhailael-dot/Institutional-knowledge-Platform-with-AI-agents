@@ -6,8 +6,8 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261102c";
-import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261102c";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261102d";
+import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const RECORD_TYPES = [
   {id: "actor", label: "Organizations", short: "Organizations", noun: "organization"},
@@ -520,14 +520,13 @@ export function createDataFeedPage({html, useState, useEffect}) {
     }
     return html`<section class="discovery-card df-upload">
       <h3>Upload Excel or CSV</h3>
-      <p class="df-muted">Each kind of record has its own template. Download it, fill one record per
+      <p class="df-muted">Download the ${typeInfo(recordType).label} template, fill one record per
         row, and upload it. Required columns are marked *; the Field Guide sheet explains every column.</p>
-      <div class="df-templates">${RECORD_TYPES.map(t => html`<div key=${t.id}
-        class=${"df-template" + (t.id === recordType ? " on" : "")}>
-        <strong>${t.label}</strong>
-        <a class="btn ghost" href=${`/api/datafeed/templates/${t.id}.xlsx`} download>Excel (.xlsx)</a>
-        <a class="btn ghost" href=${`/api/datafeed/templates/${t.id}.csv`} download>CSV (.csv)</a>
-      </div>`)}</div>
+      <div class="df-templates"><div class="df-template on">
+        <strong>${typeInfo(recordType).label} template</strong>
+        <a class="btn ghost" href=${`/api/datafeed/templates/${recordType}.xlsx`} download>Excel (.xlsx)</a>
+        <a class="btn ghost" href=${`/api/datafeed/templates/${recordType}.csv`} download>CSV (.csv)</a>
+      </div></div>
       <label class=${"df-drop" + (drag ? " drag" : "")}
         onDragOver=${e => { e.preventDefault(); setDrag(true); }}
         onDragLeave=${() => setDrag(false)}
@@ -849,7 +848,8 @@ export function createDataFeedPage({html, useState, useEffect}) {
   return function DataFeed() {
     const [catalog, setCatalog] = useState(null);
     const [view, setView] = useState("add");
-    const [recordType, setRecordType] = useState("actor");
+    // Nothing to fill until a record type is chosen (GHUS, 2026-11-02): each has its own template.
+    const [recordType, setRecordType] = useState("");
     const [method, setMethod] = useState("upload");
     const [preview, setPreview] = useState(null);
     const [done, setDone] = useState(null);
@@ -896,6 +896,7 @@ export function createDataFeedPage({html, useState, useEffect}) {
               <label class="discovery-label" for="df-record-type">Record type</label>
               <select id="df-record-type" value=${recordType}
                 onChange=${e => { setRecordType(e.target.value); setMessage(null); }}>
+                <option value="" disabled>Choose a record type</option>
                 ${RECORD_TYPES.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
               </select>
             </div>
@@ -907,9 +908,11 @@ export function createDataFeedPage({html, useState, useEffect}) {
               </select>
             </div>
           </div>
-          ${method === "upload"
-            ? html`<${UploadCard} recordType=${recordType} catalog=${catalog} onChecked=${setPreview} setMessage=${setMessage}/>`
-            : html`<${ManualForm} recordType=${recordType} catalog=${catalog} onChecked=${setPreview} setMessage=${setMessage}/>`}
+          ${!recordType ? html`<p class="df-muted df-choose">Choose Organizations, People or Events to
+              get its template.</p>`
+            : method === "upload"
+            ? html`<${UploadCard} key=${recordType} recordType=${recordType} catalog=${catalog} onChecked=${setPreview} setMessage=${setMessage}/>`
+            : html`<${ManualForm} key=${recordType} recordType=${recordType} catalog=${catalog} onChecked=${setPreview} setMessage=${setMessage}/>`}
         `}
       `}`}
     </div>`;

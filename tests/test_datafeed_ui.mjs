@@ -69,6 +69,11 @@ test('three record types, chosen from a dropdown', () => {
   assert.match(source, /<select id="df-record-type"/);
   assert.match(source, /<select id="df-method"/);
   assert.doesNotMatch(source, /df-steps/);
+  // Nothing to fill until a type is chosen, then only that type's template.
+  assert.match(source, /useState\(""\);/);
+  assert.match(source, /Choose a record type/);
+  assert.match(source, /templates\/\$\{recordType\}\.xlsx/);
+  assert.doesNotMatch(source, /df-templates">\$\{RECORD_TYPES\.map/);
   assert.deepEqual(Object.keys(STATUS), ['invalid', 'new', 'existing', 'possible', 'waiting']);
 });
 
