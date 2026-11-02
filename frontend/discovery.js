@@ -729,7 +729,6 @@ export const ORG_UPDATE_LEAD = "Refresh information about organizations already 
 export const SPECIFIC_PLACEHOLDER = "Describe the information you’d like to update, such as research "
   + "projects, technologies, funding, partnerships, leadership, facilities, or capabilities in "
   + "another sector. Include relevant topics, dates, or requirements.";
-export const PRIORITY_AREAS = INFORMATION_FOCUS;
 export const MAX_SPECIFIC_CHARS = 1000;
 
 /** Add a directory record to the list, checked; never twice. */
@@ -1428,7 +1427,6 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const [searched, setSearched] = useState(false);
     const [active, setActive] = useState(0);
     const [list, setList] = useState([]);
-    const [interests, setInterests] = useState([]);
     const [focus, setFocus] = useState("");
     const [form, setForm] = useState({cadence: "", startDate: "", duration: ""});
     const [touched, setTouched] = useState(false);
@@ -1508,7 +1506,6 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const setAll = (checked) => setList((rows) => rows.map((row) => ({...row, checked})));
     const setOne = (id, checked) => setList((rows) => rows.map((row) =>
       row.actor.actor_id === id ? {...row, checked} : row));
-    const toggleArea = (id) => setInterests((xs) => xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]);
     const setSchedule = (patch) => setForm((f) => ({...f, ...patch}));
 
     const problems = orgUpdateProblems({list, form}, today);
@@ -1520,7 +1517,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       setTouched(true);
       if (!ready || busy || tooMany) return;
       setBusy(true); setError("");
-      const payload = orgUpdatePayload({list, interests, focus, form, requester});
+      const payload = orgUpdatePayload({list, focus, form, requester});
       try {
         const made = await api("/api/discovery/update-requests", {method: "POST", body: JSON.stringify(payload)});
         // A request that starts today runs its first check now, like every Monitor request.
@@ -1532,7 +1529,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             + "Its findings go to Review Results; you can follow it under Requests."
           : `Request created for ${n} ${n === 1 ? "organization" : "organizations"}. `
             + `Its first check is on ${formatDay(payload.start_date)}; you can manage it under Requests.`});
-        setList([]); setInterests([]); setFocus("");
+        setList([]); setFocus("");
         setForm({cadence: "", startDate: "", duration: ""}); setTouched(false);
       } catch (err) { setError(err.message); }
       setBusy(false);
@@ -1604,11 +1601,6 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         onInput=${(e) => setFocus(e.target.value)}></textarea>
       <p class="muted org-hint">Leave this blank for a general update: the full profile is checked for
         new, missing, or outdated information. These instructions apply to all selected organizations.</p>
-      ${!focus.trim() && html`
-        <p class="org-label">Priority Areas (optional)</p>
-        <div class="org-areas">${PRIORITY_AREAS.map((x) => html`<label key=${x.id}>
-          <input type="checkbox" checked=${interests.includes(x.id)} onChange=${() => toggleArea(x.id)}/>${x.label}</label>`)}</div>
-        <p class="muted org-hint">Select areas to prioritize. The full profile will still be checked.</p>`}
 
       <${ScheduleRow} form=${form} set=${setSchedule} kind="update" options=${options} today=${today} shown=${shown}/>
 

@@ -563,7 +563,7 @@
   @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 </style>
 <link rel="stylesheet" href="/review.css?v=20261102d"/>
-<link rel="stylesheet" href="/discovery.css?v=20261102e"/>
+<link rel="stylesheet" href="/discovery.css?v=20261102f"/>
 <link rel="stylesheet" href="/datafeed.css?v=20261102h"/>
 <link rel="stylesheet" href="/dashboard.css?v=20261102d"/>
 <script type="importmap">
@@ -583,10 +583,10 @@ import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261102e";
-import {createDiscoveryPage} from "./discovery.js?v=20261102e";
+import {createDiscoveryPage} from "./discovery.js?v=20261102f";
 import {createDateInput, usDate} from "./dates.js?v=20261102d";
-import {createDataFeedPage} from "./datafeed.js?v=20261102i";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261102e";
+import {createDataFeedPage} from "./datafeed.js?v=20261102j";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261102f";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});

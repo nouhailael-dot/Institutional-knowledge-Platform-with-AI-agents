@@ -138,7 +138,7 @@ test('the manual form shows a line under a box only when it matters', () => {
 });
 
 test('an empty history shows an example import, marked as not real', () => {
-  assert.ok(EXAMPLE_IMPORT.records.every(r => r.name.startsWith('Example ')));
+  assert.equal(EXAMPLE_IMPORT.file_name, 'Kansas water organizations.xlsx');
   assert.equal(historyLine(EXAMPLE_IMPORT),
     '4 staged · 2 awaiting Review · 1 approved and added · 1 matched to existing · 1 failed validation');
   const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');

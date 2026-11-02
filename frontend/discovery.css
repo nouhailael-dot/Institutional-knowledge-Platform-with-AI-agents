@@ -255,7 +255,7 @@
 .org-table td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:middle}
 .org-table tr.off td{color:var(--faint)}
 .org-table .org-check{width:44px;text-align:center}
-.org-table input[type=checkbox],.org-areas input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+.org-table input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
 .org-name{font-weight:500;color:var(--ink)}
 .org-table tr.off .org-name{color:var(--faint)}
 .org-status{display:inline-block;margin-left:10px;font-size:12px;font-weight:600;border-radius:6px;padding:2px 8px;vertical-align:1px}
@@ -264,9 +264,6 @@
 .org-count{margin:10px 0 22px;font-size:14px;color:var(--muted)}
 .org-count.error{color:#b42318}
 .org-hint{margin:8px 0 0;font-size:14px}
-.org-label{margin:14px 0 8px;font-weight:600;font-size:14.5px;color:var(--muted)}
-.org-areas{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
-.org-areas label{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--ink);cursor:pointer}
 .org-specific{display:block;width:100%;margin:12px 0 0;border:1px solid var(--line-strong);border-radius:8px;padding:12px 14px;font:inherit;font-size:14.5px;color:var(--ink);background:var(--surface);resize:vertical;box-sizing:border-box}
 .org-specific:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .org-specific.invalid{border-color:#b42318}
@@ -277,7 +274,6 @@
 .org-footer .org-create{min-height:46px;min-width:170px;border-radius:8px;font-size:15.5px}
 @media (max-width:720px){
   .org-search{flex-direction:column}
-  .org-areas{grid-template-columns:1fr}
   .org-footer{flex-direction:column;align-items:stretch}
   .org-table th:nth-child(3),.org-table td:nth-child(3){display:none}
 }

@@ -341,12 +341,6 @@ export const EXAMPLE_IMPORT = {
   uploaded_by: "", admission: "review", status: "Partly reviewed",
   rows_total: 5, staged: 4, rows_invalid: 1,
   counts: {pending: 2, approved_new: 1, matched_existing: 1},
-  records: [
-    {row_number: 2, name: "Example Water Lab", status: "Approved and inserted"},
-    {row_number: 3, name: "Example Irrigation Co.", status: "Matched to existing record"},
-    {row_number: 4, name: "Example Aquifer Center", status: "Awaiting Review"},
-    {row_number: 5, name: "Example Rural Water District", status: "Awaiting Review"},
-  ],
 };
 
 export function formatDateTime(value) {
@@ -812,14 +806,9 @@ export function createDataFeedPage({html, useState, useEffect}) {
           href="/api/datafeed/example-import.xlsx" download>Excel sheet: ${item.file_name}</a></p>
         <p class="df-muted">${historyLine(item)}</p>
         <div class="discovery-actions">
-          <button class="btn ghost" disabled>Hide records</button>
+          <button class="btn ghost" disabled>Show records</button>
           <button class="btn ghost" disabled>${item.counts.pending} incomplete: open in Review Results</button>
           <button class="btn ghost" disabled>Complete missing information with AI</button>
-        </div>
-        <div class="df-records">
-          <table class="discovery-runs"><thead><tr><th>Row</th><th>Record</th><th>Status</th></tr></thead>
-            <tbody>${item.records.map(r => html`<tr key=${r.row_number}>
-              <td>${r.row_number}</td><td>${r.name}</td><td>${r.status}</td></tr>`)}</tbody></table>
         </div>
       </div>
     </div>`;
