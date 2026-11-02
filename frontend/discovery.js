@@ -976,6 +976,23 @@ export function groupCaption(total, shown, group = {}, sectors = [], states = []
     shown < total ? `showing ${shown}` : null].filter(Boolean).join(" · ");
 }
 
+/**
+ * Sectors, types and states whose name contains what was typed: picking one
+ * narrows the directory to that group, as a filter would. Chosen ones are left out.
+ */
+export function groupSuggestions(query, sectors = [], states = [], chosen = {}, limit = 6) {
+  const q = String(query || "").trim().toLowerCase();
+  if (q.length < 2) return [];
+  const all = [
+    ...sectors.map((s) => ({key: "sector", kind: "Sector", code: s.code, label: s.name})),
+    ...Object.entries(CATEGORY_LABELS).map(([code, label]) => ({key: "category", kind: "Type", code, label})),
+    ...states.map((s) => ({key: "state", kind: "State", code: s.code, label: s.name})),
+  ];
+  return all.filter((g) => chosen[g.key] !== g.code && String(g.label || "").toLowerCase().includes(q))
+    .sort((a, b) => Number(!a.label.toLowerCase().startsWith(q)) - Number(!b.label.toLowerCase().startsWith(q)))
+    .slice(0, limit);
+}
+
 /** "1 new · 2 changed · 1 conflicts requiring review", most consequential first. */
 export function outcomeSummary(counts = {}) {
   return RESULT_GROUPS.filter((g) => counts[g.id])
@@ -1402,7 +1419,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
 
   function OrganizationsUpdate({sectors, options, today, requester, onCreated}) {
     const [query, setQuery] = useState("");
-    // Narrow the directory by sector, type and state; with one chosen, the group is listed.
+    // Narrow the directory by a sector, type or state picked from the suggestions; with one
+    // chosen, the group is listed.
     const [group, setGroup] = useState({sector: "", category: "", state: ""});
     const [results, setResults] = useState([]);
     const [total, setTotal] = useState(0);
@@ -1447,6 +1465,20 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     useEffect(() => { if (headerBox.current) headerBox.current.indeterminate = state === "some"; }, [state]);
 
     const inList = (actor) => list.some((row) => row.actor.actor_id === actor.actor_id);
+    const states = options?.states || [];
+    const groupHits = groupSuggestions(query, allSectors, states, group);
+    // Suggestions in one list: matching groups first, then organizations.
+    const items = [...groupHits.map((g) => ({group: g})), ...results.map((a) => ({actor: a}))];
+    const chips = [
+      group.sector && {key: "sector", kind: "Sector", label: sectorName(group.sector)},
+      group.category && {key: "category", kind: "Type", label: CATEGORY_LABELS[group.category] || group.category},
+      group.state && {key: "state", kind: "State", label: (states.find((s) => s.code === group.state) || {}).name || group.state},
+    ].filter(Boolean);
+
+    function pickGroup(g) {
+      setGroup((current) => ({...current, [g.key]: g.code}));
+      setQuery(""); setActive(0); setError("");
+    }
 
     // One click adds it. The filters stay, so several can be added from one group.
     function addActor(actor) {
@@ -1457,14 +1489,19 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     }
 
     function add() {
-      const actor = results[active];
-      if (actor) addActor(actor);
-      else setError(searching ? "Still searching; one moment." : "Search for an organization by name, or choose a filter.");
+      const item = items[active];
+      if (item?.group) pickGroup(item.group);
+      else if (item?.actor) addActor(item.actor);
+      else setError(searching ? "Still searching; one moment."
+        : "Type an organization's name, or a sector, type or state.");
     }
 
     function onKey(e) {
-      if (e.key === "ArrowDown" && results.length) { e.preventDefault(); setActive((i) => (i + 1) % results.length); }
-      else if (e.key === "ArrowUp" && results.length) { e.preventDefault(); setActive((i) => (i - 1 + results.length) % results.length); }
+      if (e.key === "ArrowDown" && items.length) { e.preventDefault(); setActive((i) => (i + 1) % items.length); }
+      else if (e.key === "ArrowUp" && items.length) { e.preventDefault(); setActive((i) => (i - 1 + items.length) % items.length); }
+      else if (e.key === "Backspace" && !query && chips.length) {
+        setGroup((current) => ({...current, [chips[chips.length - 1].key]: ""}));
+      }
       else if (e.key === "Enter") { e.preventDefault(); add(); }
     }
 
@@ -1503,45 +1540,42 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
 
     return html`<section class="discovery-card org-update">
       <h3 class="org-update-h">Select Organizations</h3>
-      <p class="muted org-update-sub">Search by name and add organizations from the Ecosystem Directory.</p>
-      <div class="org-filters" role="group" aria-label="Narrow the directory">
-        <select aria-label="Sector" value=${group.sector} onChange=${(e) => setGroup((g) => ({...g, sector: e.target.value}))}>
-          <option value="">Every sector</option>
-          ${allSectors.map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-        </select>
-        <select aria-label="Type" value=${group.category} onChange=${(e) => setGroup((g) => ({...g, category: e.target.value}))}>
-          <option value="">Every type</option>
-          ${Object.entries(CATEGORY_LABELS).map(([code, label]) => html`<option key=${code} value=${code}>${label}</option>`)}
-        </select>
-        <select aria-label="State" value=${group.state} onChange=${(e) => setGroup((g) => ({...g, state: e.target.value}))}>
-          <option value="">Every state</option>
-          ${(options?.states || []).map((x) => html`<option key=${x.code} value=${x.code}>${x.name}</option>`)}
-        </select>
-      </div>
+      <p class="muted org-update-sub">Type an organization's name, or a sector, type or state to list
+        a group, and add organizations from the Ecosystem Directory.</p>
+      ${chips.length > 0 && html`<div class="org-chips" role="group" aria-label="Narrowed to">
+        ${chips.map((c) => html`<span key=${c.key} class="org-chip"><span class="muted">${c.kind}:</span> ${c.label}
+          <button type="button" aria-label=${`Remove ${c.kind.toLowerCase()} ${c.label}`}
+            onClick=${() => setGroup((g) => ({...g, [c.key]: ""}))}>×</button></span>`)}
+      </div>`}
       <div class="org-search">
         <div class="org-search-box">
           <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input role="combobox" aria-expanded=${results.length > 0} aria-controls="org-suggestions"
+          <input role="combobox" aria-expanded=${items.length > 0} aria-controls="org-suggestions"
             aria-autocomplete="list" autocomplete="off" value=${query}
-            placeholder=${grouped ? "Type to narrow this group..." : "Enter an organization name..."}
+            placeholder=${grouped ? "Type to narrow this group..." : "Organization, sector, type or state..."}
             onInput=${(e) => setQuery(e.target.value)} onKeyDown=${onKey}/>
         </div>
-        <button type="button" class="btn org-add" disabled=${!results.length} onClick=${add}>Add</button>
+        <button type="button" class="btn org-add" disabled=${!items.length} onClick=${add}>Add</button>
       </div>
       ${searching && html`<p class="muted org-none" role="status">Searching the directory…</p>`}
-      ${!searching && searched && results.length === 0 && html`
+      ${!searching && searched && items.length === 0 && html`
         <p class="muted org-none">No organization in the Ecosystem Directory matches this search.</p>`}
-      ${results.length > 0 && html`<div class="org-results">
-        <p class="muted org-results-head">${groupCaption(total, results.length, group, allSectors, options?.states || [])}. Click an organization to add it.</p>
+      ${items.length > 0 && html`<div class="org-results">
+        ${results.length > 0 && html`<p class="muted org-results-head">${groupCaption(total, results.length, group, allSectors, states)}. Click an organization to add it.</p>`}
         <ul id="org-suggestions" role="listbox" class="org-suggest">
-          ${results.map((a, i) => html`<li key=${a.actor_id} role="option" aria-selected=${i === active}>
+          ${groupHits.map((g, i) => html`<li key=${`${g.key}-${g.code}`} role="option" aria-selected=${i === active}>
+            <button type="button" class=${"org-group" + (i === active ? " active" : "")}
+              onMouseEnter=${() => setActive(i)} onClick=${() => pickGroup(g)}>
+              <strong>${g.label}</strong><span>${g.kind} · list every organization</span>
+            </button></li>`)}
+          ${results.map((a, n) => { const i = groupHits.length + n; return html`<li key=${a.actor_id} role="option" aria-selected=${i === active}>
             <button type="button" class=${i === active ? "active" : ""} disabled=${inList(a)}
               onMouseEnter=${() => setActive(i)} onClick=${() => addActor(a)}>
               <strong>${a.name}</strong>${inList(a) ? " · Added" : ""}
               <span>${[directoryStatus(a), a.actor_category && (CATEGORY_LABELS[a.actor_category] || a.actor_category.replaceAll("_", " ")),
                 (a.sectors || []).map(sectorName).join(", "),
                 [a.city, a.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")}</span>
-            </button></li>`)}
+            </button></li>`; })}
         </ul>
       </div>`}
 

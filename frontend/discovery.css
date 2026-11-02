@@ -237,8 +237,11 @@
 .org-search-box:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .org-search-box input{flex:1;border:0;outline:none;background:transparent;font:inherit;color:var(--ink);min-height:40px}
 .org-search .org-add{min-height:42px;min-width:120px;border-radius:8px}
-.org-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px}
-.org-filters select{min-height:42px;border:1px solid var(--line-strong);border-radius:8px;padding:0 10px;background:var(--surface);color:var(--ink);font:inherit;max-width:240px}
+.org-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.org-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 12px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);font-size:13.5px}
+.org-chip button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:16px;line-height:1;width:22px;height:22px;border-radius:50%;cursor:pointer}
+.org-chip button:hover{background:var(--accent-soft);color:var(--ink)}
+.org-suggest .org-group strong::before{content:"\25B8  ";color:var(--muted)}
 .org-results{margin-top:10px}
 .org-results-head{margin:0 0 6px;font-size:13.5px}
 .org-suggest{margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;max-height:280px;overflow:auto}

@@ -344,6 +344,13 @@ test('suggestions highlight what was typed, and the group narrows the search', a
   assert.equal(groupCaption(17, 12, {sector: 'WATER', category: 'research_center'},
     [{code: 'WATER', name: 'Water'}]), '17 organizations · Water · Research centre · showing 12');
   assert.equal(groupCaption(1, 1, {}), '1 organization');
+  const {groupSuggestions} = await import('../frontend/discovery.js');
+  const sectors = [{code: 'WATER', name: 'Water'}, {code: 'ENERGY', name: 'Energy Transition'}];
+  const states = [{code: 'KS', name: 'Kansas'}, {code: 'AR', name: 'Arkansas'}];
+  assert.deepEqual(groupSuggestions('kansas', sectors, states).map((g) => g.label), ['Kansas', 'Arkansas']);
+  assert.deepEqual(groupSuggestions('wat', sectors, states).map((g) => [g.kind, g.code]), [['Sector', 'WATER']]);
+  assert.deepEqual(groupSuggestions('water', sectors, states, {sector: 'WATER'}), []);
+  assert.deepEqual(groupSuggestions('w', sectors, states), []);
 });
 
 test('an update request is sent as one actor, the picked actors, or a group with a sector', async () => {
