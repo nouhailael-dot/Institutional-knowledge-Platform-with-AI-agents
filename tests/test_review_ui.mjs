@@ -523,7 +523,8 @@ test('decisions, the sticky footer and the queue are reachable and keyboard-oper
 });
 
 test('every action is disabled while the canonical writer is unavailable', () => {
-  assert.match(component, /const writerDown = !data\.admission_configured/);
+  // Off only when the server says so; while loading it is unknown, not "off".
+  assert.match(component, /const writerDown = data.admission_configured === false/);
   assert.match(component, /disabled=\$\{!pending \|\| busy \|\| writerDown\}/);
   assert.match(component, /SENTENCES\.writerUnavailable/);
 });
@@ -1488,7 +1489,10 @@ test('why COMPASS identified an organization: its run, its search and its source
   assert.deepEqual(supportingSources(candidate), [{url: 'https://www.bilh.org/about', title: null,
     publisher: 'bilh.org', date: null, supports: 'Fetched page used for scoring'}]);
   assert.match(identifiedThrough(candidate), /Search: “research institute clinical AI Massachusetts”$/);
-  assert.deepEqual(REVIEW_COUNT_STATUSES, ['pending_review', 'parked', 'approved', 'rejected_by_reviewer']);
+  assert.deepEqual(REVIEW_COUNT_STATUSES, ['pending_review', 'approved', 'parked', 'rejected_by_reviewer']);
+  const {REVIEW_COUNT_CAPTIONS} = await import('../frontend/review.js');
+  assert.equal(REVIEW_COUNT_CAPTIONS.approved, 'Your verified records (last 30 days)');
+  assert.equal(REVIEW_COUNT_CAPTIONS.rejected_by_reviewer, 'Your rejected records (last 30 days)');
   assert.equal(reviewStatusLabel('parked'), 'Parked');
   const rows = [{status: 'pending_review', decision_kind: 'defer'}, {status: 'pending_review'}];
   assert.equal(filterReviewCandidates(rows, {status: 'parked'}).length, 1);

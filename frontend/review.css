@@ -6,23 +6,23 @@
 .review-page{max-width:1480px;margin:0 auto}
 
 /* ---------------------------------------------------------------- counts */
-/* The counts row in the directory's status-tag look (Nouhaila, 30 Oct 2026): a colored
-   dot and the word - Pending amber, Parked orange, Verified green with a check,
-   Rejected red - and the count beside it. The chosen one is filled. */
-.review-counts{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}
-.review-count{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:999px;border:1px solid transparent;font:inherit;font-size:13px;font-weight:600;cursor:pointer;background:var(--surface-2);color:var(--muted)}
-.review-count::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
-.review-count strong{font-size:13px;color:inherit}
-.review-count span{order:-1}
-.review-count.pending_review{color:var(--amber)}
-.review-count.parked{color:var(--orange)}
-.review-count.approved{color:var(--green)}
-.review-count.approved::before{content:"✓";width:auto;height:auto;border-radius:0;background:none}
-.review-count.rejected_by_reviewer{color:var(--red)}
-.review-count.pending_review.active{background:var(--amber-soft);border-color:currentColor}
-.review-count.parked.active{background:var(--orange-soft);border-color:currentColor}
-.review-count.approved.active{background:var(--green-soft);border-color:currentColor}
-.review-count.rejected_by_reviewer.active{background:var(--red-soft);border-color:currentColor}
+/* The counts row (3 Nov 2026 mockup): four cards - icon in its status color
+   (Pending orange, Verified green, Parked amber, Rejected red), the number, the word
+   and what it holds. The chosen card is tinted orange. */
+.review-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
+.review-count{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;font:inherit;color:var(--ink);cursor:pointer;box-shadow:var(--shadow-sm)}
+.review-count:hover{border-color:var(--line-strong)}
+.review-count-icon{display:inline-flex;flex:none;margin-top:2px}
+.review-count-text{display:grid;gap:1px;min-width:0}
+.review-count-text strong{font-size:24px;line-height:1.1;color:var(--ink)}
+.review-count-text b{font-size:15px;font-weight:650;color:var(--ink)}
+.review-count-text small{font-size:12px;color:var(--muted)}
+.review-count.pending_review .review-count-icon{color:var(--accent)}
+.review-count.approved .review-count-icon{color:var(--green)}
+.review-count.parked .review-count-icon{color:var(--amber)}
+.review-count.rejected_by_reviewer .review-count-icon{color:var(--red)}
+.review-count.active{background:color-mix(in srgb,var(--accent-soft) 70%,var(--surface));border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+@media (max-width:900px){.review-counts{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* ------------------------------------------------------- notices and messages */
 .review-notice,.review-message{padding:13px 15px;border-radius:8px;margin:12px 0}

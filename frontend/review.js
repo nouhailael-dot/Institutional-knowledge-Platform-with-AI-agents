@@ -23,7 +23,7 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261103a";
+} from "./labels.js?v=20261103b";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const REVIEW_STATUS_LABELS = {
@@ -32,8 +32,21 @@ export const REVIEW_STATUS_LABELS = {
   approved: BADGES.verified,
   rejected_by_reviewer: BADGES.rejected,
 };
-// The counts row (3 Nov 2026): Parked apart from Pending; Verified lists the last 30 days.
-export const REVIEW_COUNT_STATUSES = ["pending_review", "parked", "approved", "rejected_by_reviewer"];
+// The counts row (3 Nov 2026 mockup): one card each - icon, number, word and what it
+// holds. Parked apart from Pending; Verified and Rejected list the last 30 days.
+export const REVIEW_COUNT_STATUSES = ["pending_review", "approved", "parked", "rejected_by_reviewer"];
+export const REVIEW_COUNT_CAPTIONS = {
+  pending_review: "All pending records for you",
+  approved: "Your verified records (last 30 days)",
+  parked: "All records you've parked",
+  rejected_by_reviewer: "Your rejected records (last 30 days)",
+};
+const REVIEW_COUNT_ICONS = {
+  pending_review: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>`,
+  approved: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>`,
+  parked: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>`,
+  rejected_by_reviewer: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>`,
+};
 // A discovered record is stored "parked" until someone decides; that is the
 // agent's default, not a decision, so it reads Pending (see waitingLabel).
 export const RECORD_STATUS_LABELS = {
@@ -1866,7 +1879,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const listScroll = useRef(0);
     const [data, setData] = useState({
       candidates: [], counts: {}, source_maps: [], run_groups: [], sync_warnings: [],
-      last_sync: [], admission_configured: false,
+      // Unknown until the server answers: "decisions are off" is never shown while loading.
+      last_sync: [], admission_configured: null,
     });
     const [selectedId, setSelectedId] = useState(null);
     const [selected, setSelected] = useState(null);
@@ -2342,7 +2356,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const factRows = isActor ? lightFactRows(selected) : [];
     const historyRows = isActor ? factHistoryRows(selected) : [];
     const deepFacts = deepPullFacts(selected);
-    const writerDown = !data.admission_configured;
+    const writerDown = data.admission_configured === false;
     // The record card (Build the Map's form): its number in the run, why it
     // matched, its other names and connections, and the pages it came from.
     const position = selected ? records.findIndex(item => item.candidate_id === selected.candidate_id) + 1 : 0;
@@ -2385,8 +2399,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       <div class="review-counts" aria-label="Review queue counts">
         ${REVIEW_COUNT_STATUSES.map(status => html`
           <button key=${status} class=${"review-count " + status + (filters.status === status ? " active" : "")}
-            onClick=${() => setFilter("status", status)}>
-            <strong>${counts[status] || 0}</strong><span>${reviewStatusLabel(status)}</span>
+            aria-pressed=${filters.status === status} onClick=${() => setFilter("status", status)}>
+            <span class="review-count-icon" dangerouslySetInnerHTML=${{__html: REVIEW_COUNT_ICONS[status]}}></span>
+            <span class="review-count-text"><strong>${counts[status] || 0}</strong>
+              <b>${reviewStatusLabel(status)}</b><small>${REVIEW_COUNT_CAPTIONS[status]}</small></span>
           </button>`)}
       </div>
       <div class="review-sync">

@@ -110,6 +110,19 @@ class ReviewStoreTests(unittest.TestCase):
         self.assertEqual([r["candidate_id"] for r in self.store.list(status="approved")["candidates"]],
                          [person["candidate_id"]])
 
+    def test_rejected_also_shows_the_last_30_days(self):
+        import time as _time
+        rows = self.candidates()
+        old, recent = rows[0], rows[1]
+        with self.store.connect() as db:
+            db.execute("UPDATE review_candidate SET status='rejected_by_reviewer', reviewed_at=? "
+                       "WHERE candidate_id=?", (_time.time() - 40 * 86400, old["candidate_id"]))
+            db.execute("UPDATE review_candidate SET status='rejected_by_reviewer', reviewed_at=? "
+                       "WHERE candidate_id=?", (_time.time() - 86400, recent["candidate_id"]))
+        listed = self.store.list(status="rejected_by_reviewer")
+        self.assertEqual(listed["counts"]["rejected_by_reviewer"], 1)
+        self.assertEqual([r["candidate_id"] for r in listed["candidates"]], [recent["candidate_id"]])
+
     def test_candidates_derive_from_saved_results_with_stable_ids_and_no_duplicates(self):
         first = self.candidates()
         self.assertEqual({row["entity_type"] for row in first}, {"actor", "person", "event"})

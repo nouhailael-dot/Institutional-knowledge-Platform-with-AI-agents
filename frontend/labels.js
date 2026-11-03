@@ -223,10 +223,7 @@ export const SENTENCES = {
   queueSelectOne: "Select a result from the list.",
   noFacts: "No details have been recorded for this record yet.",
   pageTitle: "Review Results",
-  pageLead:
-    "Everything Compass found — from monitoring, Explore and Map and the Data Feed — waits here, " +
-    "Pending, for a GHUS decision. Verify adds it to the Ecosystem Directory and collects its full " +
-    "profile, Park keeps it for later, and Reject closes it with its reason. Nothing is deleted.",
+  pageLead: "Review and make a decision on COMPASS findings — new records and updates for your review.",
   failClosed:
     "Decisions are turned off on this computer: saving decisions to the directory isn't " +
     "set up yet.",

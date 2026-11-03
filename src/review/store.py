@@ -33,8 +33,8 @@ from .taxonomy import (
 
 STATUSES = ("pending_review", "approved", "rejected_by_reviewer")
 # What Review lists and counts (3 Nov 2026): Parked is a waiting record a person
-# parked, counted apart from Pending; Verified shows only the last 30 days (the
-# record stays in the directory - it only leaves this list).
+# parked, counted apart from Pending; Verified and Rejected show only the last 30
+# days (the decision stands - the record only leaves this list).
 LIST_STATUSES = ("pending_review", "parked", "approved", "rejected_by_reviewer")
 VERIFIED_SHOWN_DAYS = 30
 
@@ -1067,9 +1067,9 @@ class ReviewStore:
         where, params = ["folded_into IS NULL"], []
         if status == "parked":
             where.append("status='pending_review'")
-        elif status == "approved":
-            where.append("status='approved' AND COALESCE(reviewed_at, 0) >= ?")
-            params.append(verified_since)
+        elif status in ("approved", "rejected_by_reviewer"):
+            where.append("status=? AND COALESCE(reviewed_at, 0) >= ?")
+            params.extend((status, verified_since))
         elif status not in (None, "all"):
             where.append("status=?"); params.append(status)
         if entity_type not in (None, "all"):
@@ -1095,7 +1095,7 @@ class ReviewStore:
             ).fetchall()
             counts = {row["status"]: row["n"] for row in db.execute(
                 "SELECT status,count(*) AS n FROM review_candidate WHERE folded_into IS NULL "
-                "AND (status <> 'approved' OR COALESCE(reviewed_at, 0) >= ?) GROUP BY status",
+                "AND (status = 'pending_review' OR COALESCE(reviewed_at, 0) >= ?) GROUP BY status",
                 (verified_since,),
             )}
             counts["parked"] = sum(1 for row in db.execute(
