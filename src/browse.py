@@ -179,6 +179,7 @@ def load_actors() -> list[dict]:
                NULLIF(to_jsonb(a)->>'primary_lifecycle_role', '') AS primary_lifecycle_role,
                to_jsonb(a)->'alt_names' AS alt_names,
                NULLIF(to_jsonb(ac)->>'ghus_notes', '') AS ghus_notes,
+               a.updated_at,
                (pp.why_valuable_for_um6p IS NOT NULL
                 AND btrim(pp.why_valuable_for_um6p) <> '') AS has_profile,
                (SELECT string_agg(h.name, '{_HUB_SEP}')
@@ -230,9 +231,107 @@ def load_actors() -> list[dict]:
                 "primary_lifecycle_role": r["primary_lifecycle_role"],
                 "alt_names": ", ".join(r["alt_names"]) if isinstance(r["alt_names"], list) else "",
                 "ghus_notes": r["ghus_notes"],
+                "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
                 "owner": OWNER_NOT_RECORDED,
             })
     return out
+
+
+# What a Directory removal records (backend agents/review/admission.py); the
+# "Removed" view lists only these, not the placeholders rejected in September.
+REMOVED_REASON_PREFIX = "Removed from the Ecosystem Directory"
+
+
+def load_removed_actors() -> list[dict]:
+    """Organizations removed from the Directory with its Delete, newest first,
+    with who removed them, when and why (29 Oct 2026). Read-only."""
+    sql = """
+        SELECT a.actor_id, a.name, coalesce(cd.display_name, a.actor_category) AS category,
+               COALESCE(NULLIF(to_jsonb(a)->>'city', ''), NULLIF(to_jsonb(a)->>'location_city', '')) AS city,
+               coalesce(rs.state_name, NULLIF(to_jsonb(a)->>'state_code', '')) AS state,
+               a.website, a.description, a.source_origin,
+               e.decided_by, e.decided_at, e.rejection_reason
+        FROM actor a
+        JOIN LATERAL (
+            SELECT decided_by, decided_at, rejection_reason, reason
+              FROM actor_verification_event v
+             WHERE v.actor_id = a.actor_id
+             ORDER BY v.recorded_at DESC NULLS LAST, v.decided_at DESC NULLS LAST
+             LIMIT 1) e ON true
+        LEFT JOIN actor_category_definition cd ON cd.category_code = a.actor_category
+        LEFT JOIN region_state rs ON rs.state_code = to_jsonb(a)->>'state_code'
+        WHERE a.status = 'rejected' AND a.merged_into_actor_id IS NULL
+          AND e.reason LIKE %s
+        ORDER BY e.decided_at DESC
+    """
+    out = []
+    with _readonly() as conn, conn.cursor() as cur:
+        cur.execute(sql, (REMOVED_REASON_PREFIX + "%",))
+        cols = [c.name for c in cur.description]
+        for row in cur.fetchall():
+            r = dict(zip(cols, row))
+            out.append({
+                "id": str(r["actor_id"]), "name": r["name"], "actor_type": r["category"],
+                "city": r["city"], "state": r["state"], "website": r["website"],
+                "description": r["description"], "origin": origin_label(r["source_origin"]),
+                "status": "removed", "hubs": [], "sectors": [], "owner": OWNER_NOT_RECORDED,
+                "removed_by": r["decided_by"], "removed_reason": r["rejection_reason"],
+                "removed_at": r["decided_at"].isoformat() if r["decided_at"] else None,
+            })
+    return out
+
+
+def load_actor_profile(actor_id: str) -> dict:
+    """What an organization's profile adds to the list (29 Oct 2026): the sources
+    behind its facts, its latest verification, the events it organizes and its
+    sourced relationships. Read-only; unknown ids give empty lists."""
+    try:
+        actor_id = str(UUID(str(actor_id)))
+    except ValueError:
+        return {"sources": [], "verification": None, "events": [], "relationships": []}
+    with _readonly() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT s.url, array_agg(DISTINCT f.fact_key ORDER BY f.fact_key), max(s.retrieved_at)
+              FROM actor_fact f JOIN source s ON s.source_id = f.source_id
+             WHERE f.actor_id = %s::uuid AND s.url IS NOT NULL AND s.url <> ''
+             GROUP BY s.url ORDER BY count(*) DESC LIMIT 12""", (actor_id,))
+        sources = [{"url": url, "supports": keys or [],
+                    "retrieved_at": when.isoformat() if when else None}
+                   for url, keys, when in cur.fetchall()]
+        cur.execute("""
+            SELECT decision, decided_by, decided_at, recorded_at, decision_origin
+              FROM actor_verification_event WHERE actor_id = %s::uuid
+             ORDER BY recorded_at DESC NULLS LAST LIMIT 1""", (actor_id,))
+        row = cur.fetchone()
+        verification = None if row is None else {
+            "decision": row[0], "decided_by": row[1], "origin": row[4],
+            "at": (row[2] or row[3]).isoformat() if (row[2] or row[3]) else None}
+        cur.execute("""
+            SELECT DISTINCT e.event_id::text, e.name, e.next_date
+              FROM event e
+              LEFT JOIN entity_edge g ON g.object_type = 'event' AND g.object_id = e.event_id
+                   AND g.subject_type = 'actor' AND g.relationship_type = 'organizes'
+             WHERE e.host_actor_id = %s::uuid OR g.subject_id = %s::uuid
+             ORDER BY e.next_date DESC NULLS LAST LIMIT 20""", (actor_id, actor_id))
+        events = [{"id": i, "name": n, "start_date": d.isoformat() if d else None}
+                  for i, n, d in cur.fetchall()]
+        cur.execute("""
+            SELECT g.relationship_type, (g.subject_id = %s::uuid) AS outgoing, o.name
+              FROM entity_edge g
+              JOIN actor o ON o.actor_id = CASE WHEN g.subject_id = %s::uuid
+                                                THEN g.object_id ELSE g.subject_id END
+             WHERE g.subject_type = 'actor' AND g.object_type = 'actor'
+               AND (g.subject_id = %s::uuid OR g.object_id = %s::uuid)
+             LIMIT 30""", (actor_id,) * 4)
+        relationships = [{"type": t, "outgoing": bool(out), "name": n} for t, out, n in cur.fetchall()]
+        # Where the record first came from (a Phase 1 spreadsheet, an agent run...).
+        cur.execute("""
+            SELECT s.source_type, s.description FROM actor a JOIN source s ON s.source_id = a.source_id
+             WHERE a.actor_id = %s::uuid""", (actor_id,))
+        row = cur.fetchone()
+        origin_source = {"type": row[0], "description": row[1]} if row else None
+    return {"sources": sources, "verification": verification, "events": events,
+            "relationships": relationships, "origin_source": origin_source}
 
 
 def load_hubs() -> list[dict]:

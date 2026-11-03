@@ -73,7 +73,10 @@ _ACTOR_ITEM = {
             "organization's share; never attribute the total to one member without evidence. "
             "For documented funding with no disclosed amount, say amount not disclosed. "
             "Do not estimate, convert currencies, add unrelated awards together, or treat "
-            "an open funding opportunity as an awarded grant. Omit if no funding is supported."},
+            "an open funding opportunity as an awarded grant. List every award related to the "
+            "map's topic that was made this year or is still active, each with funder, purpose, "
+            "amount if disclosed and timeline; leave out awards that ended in earlier years. "
+            "Omit if no funding is supported."},
         "people": {
             "type": "array",
             "description": "Named founders, researchers, directors, or other key people who currently belong to this organization.",

@@ -6,7 +6,7 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261102h";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261103a";
 import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const RECORD_TYPES = [
@@ -347,7 +347,7 @@ export function doneLine(done = {}) {
   return parts.join(" ");
 }
 
-/** "Actors / Organizations · file.xlsx · Oct 26, 2026 · Uploaded by Not recorded (no sign-in yet)" */
+/** "Organizations · file.xlsx · Oct 26, 2026 · Uploaded by Not recorded (no sign-in yet)" */
 export function historyMeta(item = {}) {
   return [typeInfo(item.record_type).label,
     item.method === "upload" ? item.file_name : "Manual entry",

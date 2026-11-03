@@ -50,6 +50,21 @@ class EditionTests(unittest.TestCase):
         self.assertEqual(len(old["sources"]), 2)
         self.assertTrue(old["_edition_checked"])
 
+    def test_the_search_asks_for_the_next_edition_by_number_and_year(self):
+        # 2 Nov 2026: "2026 2027" found only pages about the 49th edition, never the 50th.
+        q = research.edition_query(event("49th Annual International Phosphate Fertilizer & Sulfuric Acid "
+                                         "Technology Conference", date(2026, 6, 5)))
+        self.assertEqual(q, '50th Annual "International Phosphate Fertilizer & Sulfuric Acid Technology '
+                            'Conference" 2027')
+        self.assertEqual(research.edition_query(event("2026 Soil Health Webinar Series", date(2026, 1, 15))),
+                         '"Soil Health Webinar Series" 2027')
+        self.assertEqual(research.edition_query(event("Mining Expo", date(2025, 9, 1), frequency="Every two years")),
+                         '"Mining Expo" 2027')
+        self.assertEqual(research.edition_query(event("3rd Lithium Forum", date(2026, 3, 1), frequency="Irregular")),
+                         '4th "Lithium Forum" 2026 2027')
+        self.assertEqual([research._ordinal(n) for n in (1, 2, 3, 11, 12, 13, 21, 50, 112)],
+                         ["1st", "2nd", "3rd", "11th", "12th", "13th", "21st", "50th", "112th"])
+
     def test_no_newer_edition_leaves_the_card_and_says_so(self):
         old = event("Tailings and Mine Waste 2025", date(2025, 11, 2))
         state, _ = self.run_checks([old], lambda q: [{"name": "Some Other Event", "next_date": "2026-05-01"}])

@@ -305,7 +305,7 @@ class RunStore:
                 "json_extract(plan,'$.map_type') AS map_type,"
                 "(SELECT COALESCE(SUM(cost),0) FROM calls WHERE run_id=runs.id OR run_id IN "
                 "(SELECT run_id FROM people_tasks WHERE parent_id=runs.id))*1.0/? AS spent_usd "
-                "FROM runs WHERE id NOT IN (SELECT run_id FROM people_tasks) ORDER BY created DESC LIMIT 30",
+                "FROM runs WHERE id NOT IN (SELECT run_id FROM people_tasks) ORDER BY created DESC LIMIT 200",
                 (MICRO,))]
 
     def create_people_task(self, parent_id, actor_key, request_key, description, plan):

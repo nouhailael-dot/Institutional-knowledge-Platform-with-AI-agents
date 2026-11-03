@@ -23,7 +23,7 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261102a";
+} from "./labels.js?v=20261103a";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const REVIEW_STATUS_LABELS = {
@@ -2772,7 +2772,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
             <div class="review-card-foot">
               ${["actor", "event"].includes(selected.entity_type) ? html`<label class="review-analyst-notes">
-                <b>Analyst notes</b>
+                <b>GHUS Notes</b>
                 <textarea rows="3" maxlength="5000" value=${analystNotes} disabled=${!pending || busy}
                   placeholder=${selected.entity_type === "event"
                     ? "Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
@@ -2780,7 +2780,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   onInput=${e => setAnalystNotes(e.target.value)}></textarea>
                 <small class="muted">Kept on the record when you verify it, as written by GHUS; Compass never writes here.</small>
               </label>`
-              : html`<p class="muted">Analyst notes are kept for organizations and events; people have no notes field yet.</p>`}
+              : html`<p class="muted">GHUS Notes are kept for organizations and events; people have no notes field yet.</p>`}
             </div>
             ${(selected.agent_metadata?._why || (isActor && why?.reason)) && html`<div class="why">
               ${selected.agent_metadata?._why || why.reason}</div>`}
@@ -2838,7 +2838,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 || selected.agent_metadata?._verification || null, null, 2)}</pre></details>
           </details>
 
-        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the organization's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the organization is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate actor"}</button></section>`}
+        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the organization's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the organization is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate organization"}</button></section>`}
         ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
           <!-- DECISION + STICKY FOOTER -->
           ${!reviewItemKind(selected) && html`
