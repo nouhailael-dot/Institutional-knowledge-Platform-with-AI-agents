@@ -87,6 +87,29 @@ class ReviewStoreTests(unittest.TestCase):
     def candidate(self, entity_type):
         return self.candidates(entity_type)[0]
 
+    def test_parked_is_counted_apart_and_verified_shows_the_last_30_days(self):
+        import time as _time
+        rows = self.candidates()
+        actor = next(r for r in rows if r["entity_type"] == "actor")
+        event = next(r for r in rows if r["entity_type"] == "event")
+        person = next(r for r in rows if r["entity_type"] == "person")
+        with self.store.connect() as db:
+            db.execute("UPDATE review_candidate SET decision_kind='defer' WHERE candidate_id=?",
+                       (actor["candidate_id"],))
+            db.execute("UPDATE review_candidate SET status='approved', reviewed_at=? WHERE candidate_id=?",
+                       (_time.time() - 31 * 86400, event["candidate_id"]))
+            db.execute("UPDATE review_candidate SET status='approved', reviewed_at=? WHERE candidate_id=?",
+                       (_time.time() - 2 * 86400, person["candidate_id"]))
+        listed = self.store.list(status="pending_review")
+        self.assertEqual(listed["counts"],
+                         {"pending_review": 0, "parked": 1, "approved": 1, "rejected_by_reviewer": 0})
+        self.assertEqual(listed["candidates"], [])
+        self.assertEqual([r["candidate_id"] for r in self.store.list(status="parked")["candidates"]],
+                         [actor["candidate_id"]])
+        # Verified 31 days ago leaves the list; 2 days ago stays.
+        self.assertEqual([r["candidate_id"] for r in self.store.list(status="approved")["candidates"]],
+                         [person["candidate_id"]])
+
     def test_candidates_derive_from_saved_results_with_stable_ids_and_no_duplicates(self):
         first = self.candidates()
         self.assertEqual({row["entity_type"] for row in first}, {"actor", "person", "event"})
@@ -386,7 +409,7 @@ class ReviewApiTests(unittest.TestCase):
         listed = self.list()
         self.assertEqual(len(listed["candidates"]), 3)
         self.assertEqual(listed["counts"], {
-            "pending_review": 3, "approved": 0, "rejected_by_reviewer": 0,
+            "pending_review": 3, "parked": 0, "approved": 0, "rejected_by_reviewer": 0,
         })
         self.assertTrue(listed["admission_configured"])
         filtered = self.list(entity_type="event", search="summit")

@@ -28,9 +28,12 @@ import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
+  parked: BADGES.parked,
   approved: BADGES.verified,
   rejected_by_reviewer: BADGES.rejected,
 };
+// The counts row (3 Nov 2026): Parked apart from Pending; Verified lists the last 30 days.
+export const REVIEW_COUNT_STATUSES = ["pending_review", "parked", "approved", "rejected_by_reviewer"];
 // A discovered record is stored "parked" until someone decides; that is the
 // agent's default, not a decision, so it reads Pending (see waitingLabel).
 export const RECORD_STATUS_LABELS = {
@@ -231,7 +234,11 @@ export function runChip(candidate = {}) {
 export function filterReviewCandidates(candidates, filters = {}) {
   const needle = String(filters.search || "").trim().toLocaleLowerCase();
   return (candidates || []).filter(candidate => {
-    if (filters.status && filters.status !== "all" && candidate.status !== filters.status) return false;
+    if (filters.status === "parked") {
+      if (!isParkedByReviewer(candidate)) return false;
+    } else if (filters.status === "pending_review") {
+      if (candidate.status !== "pending_review" || isParkedByReviewer(candidate)) return false;
+    } else if (filters.status && filters.status !== "all" && candidate.status !== filters.status) return false;
     if (filters.entity_type && filters.entity_type !== "all" && candidate.entity_type !== filters.entity_type) return false;
     if (filters.source_run_id && candidate.source_run_id !== filters.source_run_id) return false;
     if (filters.run_group && filters.run_group !== "all" && candidate.run_group_key !== filters.run_group) return false;
@@ -1175,6 +1182,27 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
+/**
+ * The pages a record was found and read on, for "Supporting Sources": title and
+ * date only when the source recorded them (never composed); the publisher is
+ * the page's own site.
+ */
+export function supportingSources(candidate) {
+  return (candidate?.evidence || []).filter(item => item && item.url).map(item => ({
+    url: item.url,
+    title: item.title || null,
+    publisher: item.publisher || hostOf(item.url),
+    date: item.published_at || item.date || null,
+    supports: item.supports || "",
+  }));
+}
+
+/** How COMPASS came to this record: its run, and the search that found it. */
+export function identifiedThrough(candidate) {
+  const query = candidate?.agent_metadata?.query;
+  return [runChip(candidate), query && `Search: “${query}”`].filter(Boolean).join(" · ");
+}
+
 function otherHost(source, website) {
   const host = hostOf(source);
   return host && hostOf(website) && host !== hostOf(website) ? host : null;
@@ -1294,6 +1322,11 @@ const LIGHT_ROWS_SHOWN_AS_CONTROLS = new Set([
  * Section 5.2 fields for this actor's category. Changing the category changes
  * only the second group, and nothing the reviewer has typed is touched.
  */
+// Shown elsewhere on an organization's card: why it matched (the bar at the
+// bottom), its connections and category boxes (the profile), funding (under Funding).
+const SHOWN_ELSEWHERE = new Set(["why_matched", "international_connection", "um6p_ocp_connection",
+  "funding_signal"]);
+
 export function lightPullBoxes(candidate, category) {
   const resolved = String(
     category ?? candidate?.reviewed_payload?.actor_category ?? "",
@@ -2350,8 +2383,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       <p class="lead">${SENTENCES.pageLead}</p>
 
       <div class="review-counts" aria-label="Review queue counts">
-        ${["pending_review", "approved", "rejected_by_reviewer"].map(status => html`
-          <button key=${status} class=${"review-count " + (filters.status === status ? "active" : "")}
+        ${REVIEW_COUNT_STATUSES.map(status => html`
+          <button key=${status} class=${"review-count " + status + (filters.status === status ? " active" : "")}
             onClick=${() => setFilter("status", status)}>
             <strong>${counts[status] || 0}</strong><span>${reviewStatusLabel(status)}</span>
           </button>`)}
@@ -2598,8 +2631,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ${(selected.agent_metadata?.sector_codes || []).length > 0 && cardLine(html, FIELDS.otherSectors,
                 (selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · "))}
               ${cardLine(html, "Mapped Topic", mappedTopic)}
-              ${cardLine(html, "Topic Match", why ? matchStrengthLabel(why.strength) : "")}
-              ${cardLine(html, FIELDS.whyItMatched, why?.reason || "", sourceLink(html, why?.source_url))}
               ${connections.map(row => cardLine(html, row.label,
                 row.state ? missingWithPages(row) : formatCardValue(row.value), sourceLink(html, row.source)))}
               <div class="review-line read"><b>Organization Relationships</b>
@@ -2688,6 +2719,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               !pending || busy, draftErrors.primary_technical_focus, "Focus")}
             ${cardField(html, selected, "funding_summary", draft.funding_summary, edit,
               !pending || busy, draftErrors.funding_summary, "Funding")}
+            ${(() => {
+              const read = lightBoxes.common.find(row => row.key === "funding_signal" && !row.state && row.value);
+              return read && lightLine(html, {...read, label: "Funding found on its pages"});
+            })()}
             ${cardField(html, selected, "current_activities", draft.current_activities, edit,
               !pending || busy, draftErrors.current_activities, "Current Programs")}
 
@@ -2714,7 +2749,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 {edit, disabled: !pending || busy, errors: draftErrors}))}
             </details>`}
 
-            ${sources.length > 0 && html`<details class="msrc">
+            ${!isActor && sources.length > 0 && html`<details class="msrc">
               <summary>${sources.length} web source${sources.length > 1 ? "s" : ""}</summary>
               ${sources.map((item, index) => html`<div key=${index} class="review-source">
                 <a href=${item.url} target="_blank" rel="noreferrer">${item.url}</a>
@@ -2729,12 +2764,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               (selected.agent_metadata?.changes || []).some(change => change.kind === "fact")
                 && "A value marked Proposed has a change waiting below."].filter(Boolean).join(" ")}</p>`}
             <p class="review-group-title">${FIELDS.commonLightPull}</p>
-            ${lightLines(html, lightBoxes.common)}
-
-            <p class="review-group-title">${categoryLabel(draft.actor_category) || FIELDS.categoryLightPull}</p>
-            ${!lightBoxes.specific.length && html`
-              <p class="muted">${SENTENCES.chooseCategoryForBoxes}</p>`}
-            ${lightLines(html, lightBoxes.specific)}
+            ${lightLines(html, lightBoxes.common.filter(row => !SHOWN_ELSEWHERE.has(row.key)))}
 
             <details class="review-subsection">
               <summary>${FACTS.history}</summary>
@@ -2773,8 +2803,33 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               </label>`
               : html`<p class="muted">GHUS Notes are kept for organizations and events; people have no notes field yet.</p>`}
             </div>
-            ${(selected.agent_metadata?._why || (isActor && why?.reason)) && html`<div class="why">
-              ${selected.agent_metadata?._why || why.reason}</div>`}
+            ${!isActor && selected.agent_metadata?._why && html`<div class="why">${selected.agent_metadata._why}</div>`}
+            ${isActor && (() => {
+              const found = supportingSources(selected);
+              const strength = String(why?.strength || "").toLowerCase();
+              return html`<details class="review-why">
+                <summary>
+                  <span class="review-why-title"><span aria-hidden="true">✦</span> Why COMPASS Identified This Organization</span>
+                  <span class="review-why-meta">
+                    ${why?.strength && html`<span class=${"review-status " + (strength === "strong" ? "verified" : "pending_review")}>${matchStrengthLabel(why.strength)} match</span>`}
+                    <span class="muted">${found.length} supporting source${found.length === 1 ? "" : "s"}</span>
+                  </span>
+                </summary>
+                <div class="review-why-body">
+                  ${cardLine(html, "Identified Through", identifiedThrough(selected))}
+                  ${cardLine(html, FIELDS.whyItMatched, why?.reason || selected.agent_metadata?._why || "",
+                    sourceLink(html, why?.source_url))}
+                  <details class="review-why-sources">
+                    <summary>Supporting Sources (${found.length})</summary>
+                    ${found.length ? html`<ul>${found.map((s, index) => html`<li key=${index}>
+                      <a class="compass-link" href=${s.url} target="_blank" rel="noreferrer">${s.title || s.publisher || s.url}</a>
+                      <span class="muted">${[s.title && s.publisher, s.date && shortDate(s.date)].filter(Boolean).join(" · ")}</span>
+                      ${s.supports && html`<p>${s.supports}</p>`}
+                    </li>`)}</ul>` : html`<p class="muted">No source page was recorded for this record.</p>`}
+                  </details>
+                </div>
+              </details>`;
+            })()}
           </div>
 
           ${isFactReview(selected) && factChangeBlock(html, selected)}

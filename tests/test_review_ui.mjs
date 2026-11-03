@@ -796,8 +796,11 @@ test('Light Pull fills information boxes, and the category drives which ones', (
   assert.match(component, /lightPullBoxes\(selected, draft\.actor_category\)/);
   assert.match(component, /FIELDS\.commonLightPull/);
   // As lines, not boxes: found facts each on a line, the rest named together.
-  assert.match(component, /lightLines\(html, lightBoxes\.common\)/);
-  assert.match(component, /lightLines\(html, lightBoxes\.specific\)/);
+  // Shown once: the collected list leaves out what the card shows elsewhere, and the
+  // category boxes appear in the profile only (no second copy below).
+  assert.match(component, /lightLines\(html, lightBoxes\.common\.filter\(row => !SHOWN_ELSEWHERE\.has\(row\.key\)\)\)/);
+  assert.match(component, /\(mapDetails\.length \? \[\] : lightBoxes\.specific\)\.map\(/);
+  assert.doesNotMatch(component, /lightLines\(html, lightBoxes\.specific\)/);
   assert.doesNotMatch(component, /review-boxes|light-box/);
 
   const candidate = {reviewed_payload: {actor_category: 'university_academic'}};
@@ -1475,4 +1478,23 @@ test('decisions are signed by the account, as the server records it; no Refresh 
   const {storedReviewer, SIGNED_IN_USER} = await import('../frontend/review.js');
   assert.equal(storedReviewer(), SIGNED_IN_USER);
   assert.equal(SIGNED_IN_USER, 'Not recorded (no sign-in yet)');
+});
+
+test('why COMPASS identified an organization: its run, its search and its sources, never composed', async () => {
+  const {supportingSources, identifiedThrough, filterReviewCandidates, REVIEW_COUNT_STATUSES, reviewStatusLabel} =
+    await import('../frontend/review.js');
+  const candidate = {evidence: [{url: 'https://www.bilh.org/about', supports: 'Fetched page used for scoring'},
+    {evidence_type: 'x'}], agent_metadata: {query: 'research institute clinical AI Massachusetts'}};
+  assert.deepEqual(supportingSources(candidate), [{url: 'https://www.bilh.org/about', title: null,
+    publisher: 'bilh.org', date: null, supports: 'Fetched page used for scoring'}]);
+  assert.match(identifiedThrough(candidate), /Search: “research institute clinical AI Massachusetts”$/);
+  assert.deepEqual(REVIEW_COUNT_STATUSES, ['pending_review', 'parked', 'approved', 'rejected_by_reviewer']);
+  assert.equal(reviewStatusLabel('parked'), 'Parked');
+  const rows = [{status: 'pending_review', decision_kind: 'defer'}, {status: 'pending_review'}];
+  assert.equal(filterReviewCandidates(rows, {status: 'parked'}).length, 1);
+  assert.equal(filterReviewCandidates(rows, {status: 'pending_review'}).length, 1);
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.match(src, /<details class="review-why">/);              // closed until clicked
+  assert.match(src, /<details class="review-why-sources">/);
+  assert.doesNotMatch(src, /cardLine\(html, "Topic Match"/);       // no longer repeated in the profile
 });
