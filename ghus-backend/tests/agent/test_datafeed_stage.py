@@ -316,7 +316,7 @@ def test_a_verified_import_needs_an_actor_batch_a_named_uploader_and_both_attest
         ({"record_type": "event"}, "only organizations"),
         ({"uploaded_by": " "}, "uploader's name"),
         ({"attestation": {"source": True}}, "attestation"),
-        ({"admission": "auto"}, "review or verified"),
+        ({"admission": "auto"}, "review, verified or directory"),
     ]:
         with pytest.raises(feed.DataFeedRefused, match=message):
             feed.check_header({**ok, **change})
@@ -366,3 +366,87 @@ def test_only_new_typed_actors_are_admitted_as_verified(monkeypatch):
     assert verification["by"] == "Test Uploader"
     assert "GHUS_Actors_Template.xlsx, row 2" in verification["reason"]
     assert "authorized GHUS staff" in verification["reason"]
+
+
+# ------------------------------------------------------------------ directory (3 Nov 2026)
+def test_a_directory_import_needs_both_attestations_for_every_record_type():
+    for record_type in ("actor", "event", "person"):
+        ok = batch(record_type=record_type, admission="directory",
+                   attestation={"source": True, "authorized": True})
+        feed.check_header(ok)
+        with pytest.raises(feed.DataFeedRefused, match="attestation"):
+            feed.check_header({**ok, "attestation": {"source": True}})
+
+
+def test_a_directory_import_stores_every_record_and_updates_a_matching_one(monkeypatch):
+    from agents.review import admission
+
+    calls = []
+
+    def fake(session, decision, *, import_verification=None):
+        calls.append((decision, import_verification))
+        if decision["source_ref"]["id"] == "c4":
+            raise admission.AdmissionValidationError("category_type 'x' is not a type")
+        return {"canonical_entity_id": "a-" + decision["source_ref"]["id"],
+                "promotion_action": "created"}
+
+    monkeypatch.setattr(admission, "apply_review_decision", fake)
+
+    class _Session:
+        def rollback(self):
+            pass
+
+    b = batch(admission="directory", attestation={"source": True, "authorized": True}, rows=[
+        actor_row(2), actor_row(3, category_type=None), actor_row(4), actor_row(5)])
+    b["rows"][2]["match"] = {"kind": "existing", "entity_id": "x-1"}
+    result = {"batch_key": "k", "rows": [
+        {"row_number": n, "outcome": "staged", "source_table": "search_candidate",
+         "source_id": f"c{i}"} for i, n in ((1, 2), (2, 3), (3, 4), (4, 5))]}
+    result["rows"][3]["source_id"] = "c4"
+    out = {o["row_number"]: o for o in feed.admit_directory(_Session(), b, result)}
+    # Nothing waits in Review: stored, or a matching record updated, or refused with why.
+    assert out[2]["outcome"] == "stored" and out[3]["outcome"] == "stored"   # no type: stored
+    assert out[4]["outcome"] == "matched_existing"
+    assert out[5]["outcome"] == "not_stored" and "refused" in out[5]["reason"]
+    first, verification = calls[0]
+    assert first["decision_kind"] == "new" and verification["by"] == "Test Uploader"
+    assert first["idempotency_key"] == "datafeed-directory:k:2"
+    same, same_verification = calls[2]
+    assert same["decision_kind"] == "same_existing" and same["target_id"] == "x-1"
+    assert same_verification is None
+
+
+def test_people_and_events_are_stored_without_the_organization_verification_label(monkeypatch):
+    from agents.review import admission
+
+    calls = []
+    monkeypatch.setattr(admission, "apply_review_decision",
+                        lambda s, d, *, import_verification=None: calls.append((d, import_verification))
+                        or {"canonical_entity_id": "p-1"})
+    b = batch(record_type="person", admission="directory",
+              attestation={"source": True, "authorized": True},
+              rows=[{"row_number": 2, "payload": {"name": "Ana Ruiz"}, "match": {"kind": "new"}}])
+    result = {"batch_key": "k", "rows": [{"row_number": 2, "outcome": "staged",
+                                          "source_table": "person_review_queue", "source_id": "q1"}]}
+    out = feed.admit_directory(type("S", (), {"rollback": lambda self: None})(), b, result)
+    assert out[0]["outcome"] == "stored"
+    decision, verification = calls[0]
+    assert decision["entity_type"] == "person" and verification is None
+    assert decision["source_ref"] == {"table": "person_review_queue", "id": "q1"}
+
+
+def test_a_possible_duplicate_is_never_added_twice(monkeypatch):
+    from agents.review import admission
+
+    def fake(session, decision, *, import_verification=None):
+        raise admission.AdmissionConflict(
+            "frozen entity resolution found an existing or ambiguous match; choose same existing or defer")
+
+    monkeypatch.setattr(admission, "apply_review_decision", fake)
+    b = batch(record_type="person", admission="directory",
+              attestation={"source": True, "authorized": True},
+              rows=[{"row_number": 2, "payload": {"name": "Ana Ruiz"}, "match": {"kind": "new"}}])
+    result = {"batch_key": "k", "rows": [{"row_number": 2, "outcome": "staged",
+                                          "source_table": "person_review_queue", "source_id": "q1"}]}
+    out = feed.admit_directory(type("S", (), {"rollback": lambda self: None})(), b, result)
+    assert out[0]["outcome"] == "possible_duplicate" and "not added twice" in out[0]["reason"]

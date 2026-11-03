@@ -320,10 +320,21 @@ class FakeBridge:
 
     def stage(self, batch):
         self.staged.append(batch)
-        return {"status": "staged", "run_id": "00000000-0000-0000-0000-00000000abcd",
-                "staged": len(batch["rows"]), "already_awaiting_review": 0,
-                "rows": [{"row_number": r["row_number"], "outcome": "staged"}
-                         for r in batch["rows"]]}
+        out = {"status": "staged", "run_id": "00000000-0000-0000-0000-00000000abcd",
+               "staged": len(batch["rows"]), "already_awaiting_review": 0,
+               "rows": [{"row_number": r["row_number"], "outcome": "staged"}
+                        for r in batch["rows"]]}
+        if batch.get("admission") == "directory":
+            if batch["record_type"] == "actor":
+                out["admissions_pending"] = True
+            else:
+                out["admissions"] = [{"row_number": r["row_number"], "outcome": "stored"}
+                                     for r in batch["rows"]]
+        return out
+
+    def start_enrich_then_admit(self, run_id, max_usd, log_path):
+        self.enriched = (run_id, max_usd)
+        return 4242
 
 
 @pytest.fixture
@@ -339,8 +350,8 @@ def test_preview_then_explicit_confirmation_stages_only_valid_rows(service):
     assert len(preview["file"]["sha256"]) == 64
     assert service.bridge.staged == []                               # nothing yet
     with pytest.raises(DataFeedError, match="would be left out"):
-        service.confirm(preview["preview_id"], uploaded_by="Test Uploader", attest_source=True, import_name="Kansas", accept_left_out=False)
-    result = service.confirm(preview["preview_id"], uploaded_by="Test Uploader", attest_source=True, import_name="Kansas", accept_left_out=True)
+        service.confirm(preview["preview_id"], uploaded_by="Test Uploader", attest_source=True, admission="review", import_name="Kansas", accept_left_out=False)
+    result = service.confirm(preview["preview_id"], uploaded_by="Test Uploader", attest_source=True, admission="review", import_name="Kansas", accept_left_out=True)
     assert result["staged"] == 1 and result["left_out"] == 1
     batch = service.bridge.staged[0]
     assert [r["row_number"] for r in batch["rows"]] == [2]
@@ -438,8 +449,8 @@ def test_routes(monkeypatch, tmp_path):
     assert response.status_code == 200 and preview["counts"]["valid"] == 1
     done = client.post(f"/api/datafeed/previews/{preview['preview_id']}/confirm",
                        json={"import_name": "Route test", "uploaded_by": "Test Uploader",
-                             "attest_source": True}).json()
-    assert done["staged"] == 1
+                             "attest_source": True, "attest_authorized": True}).json()
+    assert done["staged"] == 1 and done["admission"] == "directory"   # the default since 3 Nov
     assert client.post("/api/datafeed/validate", data={"record_type": "actor"},
                        files={"file": ("a.txt", b"x", "text/plain")}).status_code == 400
 
@@ -498,7 +509,7 @@ def test_end_to_end_upload_matches_stages_and_appears_in_review(live):
     assert preview["backend_checked"]
     assert preview["rows"][1]["match"]["name"] == "ADM (Archer Daniels Midland)"
     assert preview["rows"][2]["payload"]["parent_connection"]["relationship_type"] == "unit_of"
-    result = service.confirm(preview["preview_id"], uploaded_by="Test Uploader", attest_source=True, import_name=f"E2E {suffix}",
+    result = service.confirm(preview["preview_id"], uploaded_by="Test Uploader", attest_source=True, admission="review", import_name=f"E2E {suffix}",
                              accept_left_out=False)
     runs.append(result["run_id"])
     assert result["status"] == "staged" and result["staged"] == (3 if statuses[1] == "existing" else 2)
@@ -539,7 +550,7 @@ def test_end_to_end_people_and_events(live):
         "affiliation": "University of Arizona", "linkedin_url": f"https://www.linkedin.com/in/ana-{suffix}",
         "expertise": "groundwater", "sectors": "Water"}])
     assert people["counts"]["valid"] == 1, people["rows"]
-    staged = service.confirm(people["preview_id"], uploaded_by="Test Uploader", attest_source=True, import_name=f"People {suffix}",
+    staged = service.confirm(people["preview_id"], uploaded_by="Test Uploader", attest_source=True, admission="review", import_name=f"People {suffix}",
                              accept_left_out=False)
     runs.append(staged["run_id"])
     events = service.validate_upload("event", "ev.csv", csv_bytes("event", [{
@@ -548,7 +559,7 @@ def test_end_to_end_people_and_events(live):
         "Event name": f"Water Forum {suffix}", "Event type": "Forum", "Start date": "2027-05-02",
         "Official event URL": "https://wf-test.org"}]))
     assert [r["status"] for r in events["rows"]] == ["invalid", "new"]
-    staged = service.confirm(events["preview_id"], uploaded_by="Test Uploader", attest_source=True, import_name=f"Events {suffix}",
+    staged = service.confirm(events["preview_id"], uploaded_by="Test Uploader", attest_source=True, admission="review", import_name=f"Events {suffix}",
                              accept_left_out=True)
     runs.append(staged["run_id"])
     item = next(i for i in service.history() if i["run_id"] == staged["run_id"])
@@ -658,3 +669,25 @@ def test_the_example_import_file_reads_back_and_is_never_imported(tmp_path):
     checker = validate.RowChecker("actor", VOCAB)
     results = [checker.check(r["row_number"], r["values"]) for r in parsed.rows]
     assert all(any("example row" in e for e in r["errors"]) for r in results)
+
+
+def test_a_directory_import_is_stored_and_organizations_are_completed_first(service):
+    """GHUS, 3 Nov 2026: Data Feed records are stored in the directory; nothing goes to Review."""
+    preview = service.validate_upload("actor", "a.csv", csv_bytes("actor", [ACTOR]))
+    with pytest.raises(DataFeedError, match="authorized GHUS staff"):
+        service.confirm(preview["preview_id"], import_name="K", accept_left_out=False,
+                        uploaded_by="Ana", attest_source=True)
+    done = service.confirm(preview["preview_id"], import_name="K", accept_left_out=False,
+                           uploaded_by="Ana", attest_source=True, attest_authorized=True)
+    batch = service.bridge.staged[-1]
+    assert batch["admission"] == "directory" and batch["attestation"]["authorized"] is True
+    assert "stored in the Ecosystem Directory" in batch["attestation"]["text"]
+    # Organizations: completed from their pages first, then stored, within a capped spend.
+    assert done["enriching"] == {"started": True, "max_usd": 0.5}
+    assert service.bridge.enriched == ("00000000-0000-0000-0000-00000000abcd", 0.5)
+    people = service.validate_manual("person", [{"first_name": "Ana", "last_name": "Ruiz",
+                                                 "affiliation": "University of Arizona",
+                                                 "linkedin_url": "https://www.linkedin.com/in/ana-t"}])
+    stored = service.confirm(people["preview_id"], import_name="P", accept_left_out=False,
+                             uploaded_by="Ana", attest_source=True, attest_authorized=True)
+    assert stored["stored"] == 1 and stored["enriching"] is None and stored["not_stored"] == []
