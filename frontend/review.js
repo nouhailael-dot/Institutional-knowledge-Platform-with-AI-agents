@@ -1624,6 +1624,32 @@ export function hubProposalPlace(proposal = {}) {
  * The count alone does not say whether it passed, and the requirement alone
  * does not say by how much.
  */
+/**
+ * One hub proposal shown as an example (3 Nov 2026): how detection presents a
+ * cluster for GHUS to decide. It lives only in the page - nothing of it is in
+ * the database, and its buttons do nothing.
+ */
+export const EXAMPLE_HUB_PROPOSAL = {
+  example: true, proposed_hub_id: "example",
+  name: "Example · Wichita – Manhattan Water & Agriculture Innovation Cluster",
+  primary_city: "Wichita", state: "Kansas", country: "United States",
+  dimension: "sector", dimension_key: "WATER",
+  rationale: "Six organizations within 60 miles of Wichita work on agricultural water management: "
+    + "two universities' research units, a federal laboratory partner, two companies and a state "
+    + "agency. They come from five independent families (no two share a parent) and four GHUS "
+    + "categories, so the cluster met every threshold for a new hub.",
+  family_count: 5, families_required: 4, category_count: 4, categories_required: 3,
+  core_radius_miles: 25, radius_miles: 60, created_hub: false,
+  members: [
+    {name: "Example State University · Water Research Institute", actor_category: "university_academic"},
+    {name: "Example State University · Agronomy Department", actor_category: "university_academic"},
+    {name: "Example Plains Irrigation Research Center", actor_category: "research_center"},
+    {name: "Example AquaSense Technologies", actor_category: "startup"},
+    {name: "Example Prairie Pumps & Controls", actor_category: "company"},
+    {name: "Example Kansas Water Office", actor_category: "government"},
+  ],
+};
+
 export function thresholdLabel(count, required) {
   if (count === null || count === undefined) return MISSING.notYetChecked;
   if (required === null || required === undefined) return String(count);
@@ -2430,14 +2456,24 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           <p class="muted">${SENTENCES.hubProposalsUnavailable}</p>`}
         ${hubDemo.loaded && hubDemo.configured && !hubDemo.proposals.length && html`
           <p class="muted">${SENTENCES.hubProposalsNone}</p>`}
-        ${hubDemo.proposals.map(proposal => html`
-          <div class="review-match" key=${proposal.proposed_hub_id}>
+        ${[...hubDemo.proposals, EXAMPLE_HUB_PROPOSAL].map(proposal => html`
+          <div class=${"review-match" + (proposal.example ? " review-hub-example" : "")} key=${proposal.proposed_hub_id}>
+            ${proposal.example && html`<p class="review-example-tag">Example · how a hub proposal works
+              (not real data, not stored in the database)</p>`}
             <div class="review-detail-head">
               <div><strong>${proposal.name}</strong>
                 <p class="review-subhead">${hubProposalPlace(proposal)}</p></div>
               <span class=${"review-status " + (proposal.created_hub ? "verified" : "parked")}>
                 ${proposal.created_hub ? BADGES.verified : BADGES.parked}</span>
             </div>
+            ${proposal.example && html`<ol class="review-hub-steps">
+              <li><b>Detected.</b> COMPASS finds organizations in the directory clustered in one place and sector.</li>
+              <li><b>Checked.</b> The cluster must meet every threshold: enough independent families, enough
+                different categories, and members inside the core and cluster radius.</li>
+              <li><b>Proposed.</b> It appears here with its members and the reasons. Nothing is created yet.</li>
+              <li><b>Decided by GHUS.</b> Accept creates the hub and links its members; Refuse closes the
+                proposal with its reason. Either way the decision is recorded.</li>
+            </ol>`}
             <p>${proposal.rationale}</p>
             <dl class="review-facts">
               <div><dt>${FIELDS.families}</dt>
@@ -2457,6 +2493,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   ? " · " + typeLabel(member.actor_category, member.category_type) : ""}</span>
               </li>`)}
             </ul>
+            ${proposal.example && html`<div class="review-hub-actions">
+              <button class="btn" disabled title="Example: creates the hub and links its six members">Accept and create the hub</button>
+              <button class="btn ghost" disabled title="Example: closes the proposal with its reason">Refuse</button>
+              <small class="muted">In a real proposal, these buttons record GHUS's decision.</small>
+            </div>`}
           </div>`)}
       </section>`}
 
