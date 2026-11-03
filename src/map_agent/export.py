@@ -9,8 +9,7 @@ the server restarts that otherwise wipe a map.
 """
 
 import io
-import json
-import textwrap
+import re
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -33,43 +32,117 @@ WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
 SERIF  = "Cambria"                    # titles
 SANS   = "Calibri"                    # body / labels
 
-# Human-facing columns per entity type: (field, header). Order matters — this is
-# the column order in the sheet and the field order on a slide.
+# Human-facing columns per entity type: (field, header). Order matters: it is
+# the column order in the sheet and the field order on a slide, and it follows
+# the Explore and Map cards (2 Nov 2026). Fields starting with "_" are computed.
 FIELDS = {
     "actor": [
-        ("name", "Name"), ("_review", "Review"), ("_found_by", "Found by"), ("actor_type", "Category"), ("category_type", "Category type"),
-        ("description", "Description"),
-        ("location_city", "City"), ("state", "State"),
-        ("primary_technical_focus", "Focus"), ("technical_approach", "Approach"),
-        ("current_activities", "Current activities"),
-        ("funding_summary", "Funding"), ("rankings", "University rankings"), ("website", "Website"),
-        ("other_names", "Other names"), ("category_note", "Category note"),
-        ("country", "Country"), ("region", "Region"),
-        ("sector", "Sector"), ("mapped_topic", "Mapped topic"),
-        ("match_strength", "Topic match"), ("match_explanation", "Why it matched"),
-        ("international_connections", "Africa / Morocco connections"),
-        ("actor_relationships", "Organization relationships"), ("category_details", "Category-specific information"),
+        ("name", "Name"), ("_review", "Review"), ("_found_by", "Found by"),
+        ("description", "Description"), ("_relationships", "Organization relationships"),
+        ("actor_type", "Category"), ("category_type", "Category type"), ("sector", "Sector"),
+        ("_public_private", "Public/Private"),
+        ("location_city", "City"), ("state", "State"), ("region", "Region"), ("country", "Country"),
+        ("primary_technical_focus", "Focus"), ("current_activities", "Activity"),
+        ("funding_summary", "Funding"),
+        ("other_names", "Other names"), ("international_connections", "Africa / Morocco connections"),
+        ("rankings", "University rankings"), ("_category_facts", "Category facts"),
+        ("_additional", "Additional information"), ("website", "Website"),
+        ("mapped_topic", "Mapped topic"), ("match_strength", "Topic match"),
+        ("match_explanation", "Why it matched"),
     ],
+    # People: LinkedIn only, no biography or affiliation note (30 Oct and 2 Nov 2026).
     "person": [
-        ("full_name", "Name"), ("_review", "Review"), ("_found_by", "Found by"), ("title", "Title"), ("organization_name", "Organization"),
-        ("organization_location", "Organization location"), ("affiliation_note", "Affiliation"),
-        ("organizations", "Organizations"),
+        ("full_name", "Name"), ("_review", "Review"), ("_found_by", "Found by"),
+        ("title", "Title"), ("organization_name", "Organization"),
+        ("organization_location", "Location"),
         ("expertise", "Expertise"), ("work_evidence", "Relevant work"),
-        ("profile_url", "Profile"), ("um6p_ocp_status", "UM6P/OCP connection"),
-        ("um6p_ocp_detail", "UM6P/OCP details"), ("bio", "Bio"),
-        ("email", "Email"), ("linkedin_url", "LinkedIn"),
+        ("um6p_ocp_status", "UM6P/OCP connection"), ("um6p_ocp_detail", "UM6P/OCP details"),
+        ("_linkedin", "LinkedIn / profile page"), ("email", "Email"),
     ],
     "event": [
-        ("name", "Name"), ("_review", "Review"), ("_found_by", "Found by"), ("event_type", "Type"), ("description", "Description"),
-        ("sector", "Sector"), ("thematic_focus", "Topic"),
-        ("next_date", "Date"), ("date_status", "Date status"), ("event_format", "Format"),
-        ("location", "Location"), ("organizer", "Organizer"), ("recurring_pattern", "Frequency"),
+        ("name", "Name"), ("_review", "Review"), ("_found_by", "Found by"),
+        ("description", "Description"),
+        ("event_type", "Type"), ("event_format", "Format"), ("sector", "Sector"),
+        ("next_date", "Date"), ("date_status", "Date status"), ("recurring_pattern", "Frequency"),
         ("previous_edition", "Previous edition"),
+        ("location", "Location"), ("_event_region", "Region"),
+        ("organizer", "Organizer"), ("thematic_focus", "Topic"),
         ("expected_attendance", "Scale"), ("audience", "Audience"),
-        ("match_explanation", "Why it matched"), ("um6p_ocp_status", "UM6P/OCP involvement"),
-        ("um6p_ocp_detail", "UM6P/OCP details"), ("website", "Website"),
+        ("um6p_ocp_status", "UM6P/OCP involvement"), ("um6p_ocp_detail", "UM6P/OCP details"),
+        ("website", "Website"), ("match_explanation", "Why it matched"),
     ],
 }
+# On a slide these go to the "Why it's on this map" panel, not the facts card.
+WHY_FIELDS = ("mapped_topic", "match_strength", "match_explanation")
+
+# The category's light-pull facts (actor_profile.LIGHT_GUIDANCE); anything else
+# the AI labelled itself is "Additional information". Mirrors the Explore and
+# Map card, so a repeat of Focus or of "Operated by" is left out here too.
+_FOCUS_LIKE = re.compile(r"focus|program area", re.I)
+_PUBLIC_PRIVATE = re.compile(r"^public\s*/?\s*(or\s*)?private$", re.I)
+_LISTED_FACT = re.compile(
+    r"^(land.grant|relevant cent|program|key program|operator|type|.*\btype$|recent project|projects?$|"
+    r"main funders?|funders?|sponsor|formal designation|facility|what it tests|current project|clinical|"
+    r"academic link|scale|initiative|size|company size|products?|key products?|relevant products?|segment|"
+    r"operating location|current activity|technology|problem|found|stage|trl|funding stage|pilot|customer|"
+    r"offerings?|headquarters|fund size|thesis|jurisdiction|parent|mandate|funding programs?|mission|"
+    r"geography|grant themes?|member|documented members|institution type|governance)", re.I)
+
+
+def _plain(text) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", str(text or "").lower()))
+
+
+def _restates(value, names) -> bool:
+    """A fact that only repeats a relationship's organization; one adding detail stays."""
+    v = _plain(value)
+    return any(n and (v == n or (v.startswith(n) and len(v) - len(n) <= 12) or (n.startswith(v) and len(v) > 3))
+               for n in names)
+
+
+def _merged_details(details) -> list[dict]:
+    """One row per label: a label given twice keeps both values, once each."""
+    rows: dict[str, dict] = {}
+    for d in details or []:
+        if not isinstance(d, dict) or not d.get("label") or not d.get("value"):
+            continue
+        key, row = _plain(d["label"]), rows.get(_plain(d["label"]))
+        if row is None:
+            rows[key] = {"label": d["label"], "value": str(d["value"])}
+        elif _plain(d["value"]) not in _plain(row["value"]):
+            row["value"] += "; " + str(d["value"])
+    return list(rows.values())
+
+
+def org_facts(entity: dict) -> dict:
+    """The category details split as the card shows them, without repeats."""
+    rels = entity.get("actor_relationships") or []
+    operated = any("operated by" in str(r.get("relationship", "")).lower() for r in rels if isinstance(r, dict))
+    names = [_plain(re.sub(r"\s*\([^)]*\)", "", str(r.get("organization_name") or "")))
+             for r in rels if isinstance(r, dict)]
+    funding = _plain(entity.get("funding_summary"))
+    listed, extra, public_private = [], [], None
+    for d in _merged_details(entity.get("category_details")):
+        label = str(d.get("label") or "").strip()
+        if _restates(d.get("value"), names):
+            continue
+        if re.search(r"fund|sponsor", label, re.I) and funding and \
+                _plain(re.sub(r"\s*\([^)]*\)", "", str(d.get("value")))) in funding:
+            continue
+        if _PUBLIC_PRIVATE.match(label):
+            public_private = d.get("value")
+        elif _FOCUS_LIKE.search(label) and entity.get("primary_technical_focus"):
+            continue
+        elif label.lower() == "operator" and operated:
+            continue
+        else:
+            (listed if _LISTED_FACT.match(label) else extra).append(d)
+    return {"listed": listed, "extra": extra, "public_private": public_private}
+
+
+def _lines(rows) -> str:
+    return "\n".join(f"{d.get('label')}: {d.get('value')}" for d in rows if d.get("value"))
+
 
 GROUPS = [("actor", "Organizations"), ("person", "People"), ("event", "Events")]
 
@@ -91,8 +164,35 @@ def _field_value(entity: dict, field: str):
     if field in ("next_date", "previous_edition"):
         end = entity.get("end_date") if field == "next_date" else None
         return dates_text(value, end) if value else value
-    if field in ("category_details", "actor_relationships"):
-        return "\n".join(json.dumps(row, ensure_ascii=False) for row in (value or []))
+    if field in ("event_type", "date_status", "event_format", "recurring_pattern") and isinstance(value, str) and value:
+        return value[0].upper() + value[1:]
+    if field == "_review":
+        if (entity.get("_db_save") or {}).get("outcome") in ("directory", "review"):
+            return "Verified, saved"
+        return {"ready": "Verified", "parked": "Parked"}.get(value, "Pending review")
+    if field == "_relationships":
+        return "\n".join(f"{str(r.get('relationship', '')).replace('_', ' ').capitalize()}: {r.get('organization_name', '')}"
+                         for r in entity.get("actor_relationships") or [] if isinstance(r, dict))
+    if field == "_public_private":
+        return org_facts(entity)["public_private"]
+    if field == "_category_facts":
+        return _lines(org_facts(entity)["listed"])
+    if field == "_additional":
+        return _lines(org_facts(entity)["extra"])
+    if field == "_linkedin":
+        # LinkedIn when found, otherwise the person's profile page (3 Nov 2026).
+        linked = next((u for u in (entity.get("linkedin_url"), entity.get("profile_url"))
+                       if re.match(r"^https?://([a-z]+\.)?linkedin\.com/", str(u or ""), re.I)), None)
+        profile = entity.get("profile_url") if re.match(r"^https?://", str(entity.get("profile_url") or "")) else None
+        return linked or profile
+    if field == "_event_region":
+        from src.map_agent.actor_profile import region_for
+        from src.map_agent.save import _place
+        _, state, country = _place(entity.get("location"))
+        return region_for(country, state) or None
+    if field == "region" and not value and entity.get("_entity_type", "actor") == "actor":
+        from src.map_agent.actor_profile import region_for
+        return region_for(entity.get("country"), entity.get("state")) or None
     if field == "rankings":
         from src.map_agent.rankings import is_university, PUBLISHERS
         if not is_university(entity):
@@ -246,65 +346,82 @@ def to_pptx(result: dict, request: str = "") -> bytes:
     _text(_tb(s, 0.9, 6.7, 10, 0.3), "UM6P Intelligence  ·  cited web sources",
           12, MUTED)
 
-    # ---------- One slide per entity ----------
+    # ---------- One slide per record (2 Nov 2026: never "continued") ----------
     for key, label in GROUPS:
         for e in selected.get(key) or []:
             entries = []
             for field, head in FIELDS[key]:
-                value = _field_value(e, field)
-                if value is None or value == "" or field in ("name", "full_name", "website"):
+                if field in ("name", "full_name", "website", "_review", "_found_by") or field in WHY_FIELDS:
                     continue
-                for part in textwrap.wrap(str(value), width=420, replace_whitespace=False):
-                    entries.append((head, part))
-            pages, page, used = [], [], 0
+                value = _field_value(e, field)
+                if value in (None, ""):
+                    continue
+                entries.append((head, " ".join(str(value).split())))
+            # One Location line on a slide, as on the card: City, State, Region, Country.
+            place = [v for h, v in entries if h in ("City", "State", "Region", "Country")]
+            if len(place) > 1:
+                at = next(i for i, (h, _) in enumerate(entries) if h in ("City", "State", "Region", "Country"))
+                entries = [x for x in entries if x[0] not in ("City", "State", "Region", "Country")]
+                entries.insert(at, ("Location", ", ".join(place)))
+            # Fit one slide: shorten long values, then stop with a pointer to the Excel.
+            budget, used, page, cut = 24, 0, [], False
             for head, value in entries:
-                # Approximate wrapped lines including label and paragraph spacing.
-                lines = (len(head) + len(value)) // 70 + 2
-                if page and used + lines > 21:
-                    pages.append(page); page, used = [], 0
+                if len(value) > 330:
+                    value = value[:330].rsplit(" ", 1)[0] + "…"
+                lines = (len(head) + len(value)) // 82 + 1
+                if used + lines > budget:
+                    cut = True
+                    break
                 page.append((head, value)); used += lines
-            pages.append(page)
-            for page_number, entries_page in enumerate(pages):
-                s = prs.slides.add_slide(blank)
-                rank = f"  ·  #{e['_rank']}" if e.get("_rank") else ""
-                _kicker_and_title(s, label[:-1].upper() + rank, _name(e) + (f" · continued {page_number + 1}" if page_number else ""))
+            s = prs.slides.add_slide(blank)
+            rank = f"  ·  #{e['_rank']}" if e.get("_rank") else ""
+            _kicker_and_title(s, {"actor": "Organization", "person": "Person", "event": "Event"}[key].upper() + rank, _name(e))
 
-                # left column: the schema fields, in a gray card
-                _box(s, 0.65, 1.75, 7.2, 5.15, fill=GRAY)
-                body = _tb(s, 0.95, 1.95, 6.7, 4.8)
-                tf = body.text_frame; tf.word_wrap = True
-                first = True
-                for head, v in entries_page:
-                    p = tf.paragraphs[0] if first else tf.add_paragraph()
-                    first = False
-                    r1 = p.add_run(); r1.text = f"{head}:  "
-                    r1.font.size = Pt(12); r1.font.bold = True
-                    r1.font.name = SANS; r1.font.color.rgb = INK
-                    r2 = p.add_run(); r2.text = str(v)
-                    r2.font.size = Pt(12); r2.font.name = SANS; r2.font.color.rgb = INK
-                    p.space_after = Pt(7)
+            # left column: the record's facts, in the card's order, in a gray card
+            _box(s, 0.65, 1.75, 7.2, 5.15, fill=GRAY)
+            tf = _tb(s, 0.95, 1.95, 6.7, 4.8).text_frame
+            tf.word_wrap = True
+            rows = page + ([("More", "the full record is in the Excel export")] if cut else [])
+            for i, (head, v) in enumerate(rows):
+                p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+                r1 = p.add_run(); r1.text = f"{head}:  "
+                r1.font.size = Pt(10.5); r1.font.bold = True; r1.font.name = SANS; r1.font.color.rgb = INK
+                r2 = p.add_run(); r2.text = v
+                r2.font.size = Pt(10.5); r2.font.name = SANS; r2.font.color.rgb = MUTED if head == "More" else INK
+                p.space_after = Pt(4)
 
-                # right column: why-relevant (peach) over sources
-                _box(s, 8.05, 1.75, 4.6, 2.6, fill=PEACH)
-                _box(s, 8.05, 1.75, 0.08, 2.6, fill=ACCENT)   # left accent stripe
-                _text(_tb(s, 8.35, 1.95, 4.1, 0.3), "WHY RELEVANT", 11, ACCENT, bold=True)
-                _text(_tb(s, 8.35, 2.35, 4.1, 1.9),
-                      e.get("_why") or "—", 13, INK, bold=True)
+            # right column: why it is on this map (peach) over sources
+            why = [(h, _field_value(e, f)) for f, h in FIELDS[key] if f in WHY_FIELDS and _field_value(e, f)]
+            _box(s, 8.05, 1.75, 4.6, 2.6, fill=PEACH)
+            _box(s, 8.05, 1.75, 0.08, 2.6, fill=ACCENT)   # left accent stripe
+            _text(_tb(s, 8.35, 1.95, 4.1, 0.3), "WHY IT'S ON THIS MAP", 11, ACCENT, bold=True)
+            wf = _tb(s, 8.35, 2.32, 4.1, 1.95).text_frame
+            wf.word_wrap = True
+            why_rows = why or [("", e.get("_why") or "—")]
+            for i, (h, v) in enumerate(why_rows):
+                p = wf.paragraphs[0] if i == 0 else wf.add_paragraph()
+                text = " ".join(str(v).split())
+                if h:
+                    r = p.add_run(); r.text = f"{h}:  "; r.font.size = Pt(10.5); r.font.bold = True
+                    r.font.name = SANS; r.font.color.rgb = INK
+                r = p.add_run(); r.text = text[:260] + ("…" if len(text) > 260 else "")
+                r.font.size = Pt(10.5); r.font.name = SANS; r.font.color.rgb = INK
+                p.space_after = Pt(3)
 
-                srcs = [x.get("url") for x in (e.get("sources") or []) if x.get("url")]
-                web = e.get("website")
-                _box(s, 8.05, 4.55, 4.6, 2.35, fill=GRAY)
-                _text(_tb(s, 8.35, 4.72, 4.1, 0.3), "SOURCES", 11, ACCENT, bold=True)
-                links = ([web] if web else []) + [u for u in srcs if u != web]
-                sf = _tb(s, 8.35, 5.08, 4.1, 1.7).text_frame
-                sf.word_wrap = True
-                for i, u in enumerate(links[:6]):
-                    p = sf.paragraphs[0] if i == 0 else sf.add_paragraph()
-                    r = p.add_run(); r.text = u
-                    r.font.size = Pt(9.5); r.font.name = SANS; r.font.color.rgb = MUTED
-                if not links:
-                    _text(sf.paragraphs[0]._parent if False else _tb(s, 8.35, 5.08, 4.1, 0.4),
-                          "none recorded", 10, MUTED)
+            srcs = [x.get("url") for x in (e.get("sources") or []) if x.get("url")]
+            web = e.get("website") or (_field_value(e, "_linkedin") if key == "person" else None)
+            _box(s, 8.05, 4.55, 4.6, 2.35, fill=GRAY)
+            _text(_tb(s, 8.35, 4.72, 4.1, 0.3), "SOURCES", 11, ACCENT, bold=True)
+            links = ([web] if web else []) + [u for u in srcs if u != web]
+            sf = _tb(s, 8.35, 5.08, 4.1, 1.7).text_frame
+            sf.word_wrap = True
+            for i, u in enumerate(links[:6]):
+                p = sf.paragraphs[0] if i == 0 else sf.add_paragraph()
+                r = p.add_run(); r.text = u
+                r.font.size = Pt(9.5); r.font.name = SANS; r.font.color.rgb = MUTED
+            if not links:
+                r = sf.paragraphs[0].add_run(); r.text = "none recorded"
+                r.font.size = Pt(10); r.font.name = SANS; r.font.color.rgb = MUTED
 
     buf = io.BytesIO()
     prs.save(buf)

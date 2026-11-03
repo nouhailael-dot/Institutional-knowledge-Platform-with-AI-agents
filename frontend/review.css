@@ -6,8 +6,8 @@
 .review-page{max-width:1480px;margin:0 auto}
 
 /* ---------------------------------------------------------------- counts */
-/* The counts row (3 Nov 2026 mockup): four cards - icon in its status color
-   (Pending orange, Verified green, Parked amber, Rejected red), the number, the word
+/* The counts row (3 Nov 2026 mockup): four cards - icon in its status color, as the
+   directory's tags (Pending review amber, Verified green, Parked orange, Rejected red), the number, the word
    and what it holds. The chosen card is tinted orange. */
 .review-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:18px 0}
 .review-count{display:flex;align-items:flex-start;gap:14px;padding:16px 18px;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;font:inherit;color:var(--ink);cursor:pointer;box-shadow:var(--shadow-sm)}
@@ -17,9 +17,9 @@
 .review-count-text strong{font-size:24px;line-height:1.1;color:var(--ink)}
 .review-count-text b{font-size:15px;font-weight:650;color:var(--ink)}
 .review-count-text small{font-size:12px;color:var(--muted)}
-.review-count.pending_review .review-count-icon{color:var(--accent)}
+.review-count.pending_review .review-count-icon{color:var(--amber)}
 .review-count.approved .review-count-icon{color:var(--green)}
-.review-count.parked .review-count-icon{color:var(--amber)}
+.review-count.parked .review-count-icon{color:var(--orange)}
 .review-count.rejected_by_reviewer .review-count-icon{color:var(--red)}
 .review-count.active{background:color-mix(in srgb,var(--accent-soft) 70%,var(--surface));border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
 @media (max-width:900px){.review-counts{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -347,3 +347,6 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 .review-why-sources li{display:grid;gap:2px}
 .review-why-sources p{margin:0;font-size:13px;color:var(--ink)}
 .compass-link{color:var(--link);font-weight:600;text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+
+/* Filter labels: first letter capital, not all capitals (2 Nov 2026). */
+.review-filters label>span{text-transform:none;letter-spacing:0;font-size:13px}

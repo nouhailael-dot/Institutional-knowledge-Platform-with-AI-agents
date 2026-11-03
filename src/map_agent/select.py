@@ -17,6 +17,7 @@ Two deliberate choices:
     a judgment call should be overridable.
 """
 
+import json
 import os
 from datetime import date
 
@@ -161,6 +162,32 @@ def _mark(entity, selected, rank=None, why=None, why_not=None, beyond_limit=Fals
     entity["_beyond_limit"] = beyond_limit
 
 
+
+def _decoded(value):
+    """JSON the model wrote as text instead of structure (3 Nov 2026: the whole
+    selection arrived as a string); a complete object followed by stray text is
+    read up to its end. Anything else is returned unchanged."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.JSONDecoder().raw_decode(value.strip())[0]
+    except ValueError:
+        return value
+
+
+def _selection_lists(tool_input) -> tuple[list, list]:
+    """(selected, excluded) as lists of dicts, whatever shape the tool input took."""
+    data = _decoded(tool_input) if isinstance(tool_input, str) else dict(tool_input or {})
+    picked, excluded = _decoded(data.get("selected")), _decoded(data.get("excluded"))
+    if isinstance(picked, dict):          # the whole answer nested under "selected"
+        excluded = excluded or _decoded(picked.get("excluded"))
+        picked = _decoded(picked.get("selected"))
+    if isinstance(picked, str):           # unreadable: let the caller fail open
+        return None, None
+    rows = lambda v: [x for x in (v if isinstance(v, list) else []) if isinstance(x, dict)]
+    return rows(picked), rows(excluded)
+
+
 def apply_request(entities: list[dict], request: str, requirements: dict,
                   doc_text: str | None = None, run=None) -> dict:
     """Rank/filter `entities` against the request. Annotates in place.
@@ -209,8 +236,9 @@ def apply_request(entities: list[dict], request: str, requirements: dict,
         picked = excluded = None
         for block in resp.content:
             if block.type == "tool_use" and block.name == "submit_selection":
-                picked = block.input.get("selected") or []
-                excluded = block.input.get("excluded") or []
+                picked, excluded = _selection_lists(block.input)
+                if picked is None:
+                    raise RuntimeError("the selection came back unreadable")
                 break
         if picked is None:
             raise RuntimeError("the output limit was reached before it answered"

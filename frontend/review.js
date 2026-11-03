@@ -23,7 +23,7 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261103b";
+} from "./labels.js?v=20261103i";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const REVIEW_STATUS_LABELS = {

@@ -402,13 +402,13 @@ test('header badges carry the record kind, the review state and every reason', (
   });
   // Stored "parked" by the agent is not a decision: it reads Pending.
   assert.deepEqual(badges.map(badge => badge.label),
-    ['Organization', 'Pending', 'Geocode Failed', 'Possible Duplicate']);
+    ['Organization', 'Pending Review', 'Geocode Failed', 'Possible Duplicate']);
   // Parked only when a person parked it - in Review, or on its Build the Map card.
   assert.equal(headerBadges({entity_type: 'actor', status: 'pending_review', record_status: 'parked',
     decision_kind: 'defer'})[1].label, 'Parked');
   assert.equal(headerBadges({entity_type: 'event', status: 'pending_review',
     agent_metadata: {_review: 'parked'}})[1].label, 'Parked');
-  assert.equal(reviewStatusLabel('pending_review'), 'Pending');
+  assert.equal(reviewStatusLabel('pending_review'), 'Pending Review');
   // One decision bar, at the bottom: none beside the name, and no hub checkbox,
   // reviewer or notes in each record; the reviewer is named once at the top.
   assert.doesNotMatch(component, /review-card-actions|checked=\$\{proposeHub\}/);

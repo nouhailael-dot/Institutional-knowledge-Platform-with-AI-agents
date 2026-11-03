@@ -116,7 +116,7 @@ export const BADGES = {
   person: "Person",
   imported: "Imported",
   parked: "Parked",
-  pending: "Pending",
+  pending: "Pending Review",  // as the directory says it (Nouhaila, 3 Nov 2026)
   verified: "Verified",
   rejected: "Rejected",
   migratedBaseline: "Verified · Migrated Baseline",

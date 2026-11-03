@@ -368,3 +368,6 @@
 .requests-table table{font-size:15px}
 .requests-pill{font-size:14px}
 .requests-note{font-size:14px}
+
+/* Table headers in capitals, as in the directory (2 Nov 2026). */
+.requests-table th{text-transform:uppercase;font-size:12px;letter-spacing:.05em}
