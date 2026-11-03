@@ -118,8 +118,16 @@ export const STATUS_LABELS = {
 
 export const RESULT_LABELS = {
   auto_high: "Added to the directory · verified by Compass",
+  met_criteria: "Sent to Review Results · met every criterion",
   review: "Sent to Review Results",
 };
+
+// What happened to a kept organisation. Meeting every criterion verifies it only
+// where GHUS switched automatic verification on; otherwise it went to Review.
+export function resultOutcome(row) {
+  if (row.score_band !== "auto_high") return "review";
+  return row.verified_by_compass === true ? "auto_high" : "met_criteria";
+}
 
 // Why a candidate was not added. Every exclusion carries its recorded reason.
 export const EXCLUSION_LABELS = {
@@ -1875,8 +1883,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         <div><dt>Next run</dt><dd>${current ? "Running now" : live ? nextRunLabel(request) : "None"}</dd></div>
         <div><dt>Runs so far</dt><dd>${runs.length}</dd></div>
         ${entity === "actor" ? html`
-        <div><dt>Added to the directory</dt><dd>${results.filter((r) => r.score_band === "auto_high").length}</dd></div>
-        <div><dt>Sent to Review Results</dt><dd>${results.filter((r) => r.score_band === "review").length}</dd></div>` : html`
+        <div><dt>Added to the directory</dt><dd>${results.filter((r) => resultOutcome(r) === "auto_high").length}</dd></div>
+        <div><dt>Sent to Review Results</dt><dd>${results.filter((r) => resultOutcome(r) !== "auto_high").length}</dd></div>` : html`
         <div><dt>Sent to Review Results</dt><dd>${results.length}</dd></div>
         <div><dt>Excluded</dt><dd>${excluded.length}</dd></div>`}
       </dl>
@@ -1902,7 +1910,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
                 ${r.website && html` · <a href=${r.website} target="_blank" rel="noopener noreferrer">${r.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>`}</div>
               ${r.description && html`<p>${r.description}</p>`}
               <span class=${"discovery-band " + r.score_band}>${entity === "actor"
-                ? RESULT_LABELS[r.score_band] || r.score_band : "Sent to Review Results"}</span>
+                ? RESULT_LABELS[resultOutcome(r)] : "Sent to Review Results"}</span>
               ${r.fit_score != null && html`<span class="discovery-scores">${scoreLine(r)}</span>`}
               <dl class="discovery-detail">
                 ${(entity === "actor" ? resultFacts(r) : entityResultFacts(r)).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}
@@ -2048,7 +2056,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
               ${r.website && html` · <a href=${r.website} target="_blank" rel="noopener noreferrer">${r.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}</a>`}</div>
             ${r.description && html`<p>${r.description}</p>`}
             <span class=${"discovery-band " + r.score_band}>${entity === "actor"
-              ? RESULT_LABELS[r.score_band] || r.score_band : "Sent to Review Results"}</span>
+              ? RESULT_LABELS[resultOutcome(r)] : "Sent to Review Results"}</span>
             ${r.fit_score != null && html`<span class="discovery-scores">${scoreLine(r)}</span>`}
             <dl class="discovery-detail">
               ${(entity === "actor" ? resultFacts(r) : entityResultFacts(r)).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}

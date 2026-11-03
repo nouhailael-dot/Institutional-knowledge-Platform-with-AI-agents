@@ -684,3 +684,12 @@ test('update instructions that name a sector look for updates in that sector', a
   assert.equal('topic' in orgUpdatePayload({...base, focus: 'leadership changes'}), false);
   assert.equal('topic' in orgUpdatePayload({...base, focus: ''}), false);   // a general update
 });
+
+test('an accepted organisation reads as verified only when Compass could verify it', async () => {
+  const {resultOutcome, RESULT_LABELS} = await import('../frontend/discovery.js');
+  assert.equal(resultOutcome({score_band: 'auto_high', verified_by_compass: true}), 'auto_high');
+  assert.equal(resultOutcome({score_band: 'auto_high', verified_by_compass: false}), 'met_criteria');
+  assert.equal(resultOutcome({score_band: 'auto_high'}), 'met_criteria');
+  assert.equal(resultOutcome({score_band: 'review'}), 'review');
+  assert.equal(RESULT_LABELS.met_criteria, 'Sent to Review Results · met every criterion');
+});
