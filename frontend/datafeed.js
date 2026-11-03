@@ -235,7 +235,7 @@ export function costLine(estimate) {
 }
 
 /**
- * An import's Result column: what Review has done with it, never more. "Stored in the
+ * An import's Status column: what Review has done with it, never more. "Stored in the
  * Directory" only once nothing waits and something was added or matched.
  */
 export function importResult(item = {}) {
@@ -883,7 +883,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       <a href="/api/datafeed/example-import.xlsx" download>Download its Excel sheet</a></p>`}
     <div class=${"df-history-table" + (example ? " df-example" : "")}>
       <table>
-        <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Result</th></tr></thead>
+        <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Status</th></tr></thead>
         <tbody>
           ${rows.length === 0 && html`<tr><td colspan="5" class="df-muted">No import matches this search.</td></tr>`}
           ${rows.map(item => {
