@@ -246,7 +246,7 @@ export function importResult(item = {}) {
   return {label: "Reviewed", tone: "reviewed"};
 }
 
-/** Imports matching the history's search box and Category filter. */
+/** Imports matching the history's search box and Record Type filter. */
 export function filterImports(items = [], search = "", category = "all") {
   const q = String(search || "").trim().toLowerCase();
   return items.filter((item) => (category === "all" || item.record_type === category)
@@ -873,7 +873,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       <label class="df-search"><span class="sr-only">Search imports by name</span>
         <input type="search" value=${search} placeholder="Search imports by name…"
           onInput=${e => setSearch(e.target.value)} disabled=${example}/></label>
-      <label class="df-category"><span>Category:</span>
+      <label class="df-category"><span>Record Type:</span>
         <select value=${category} onChange=${e => setCategory(e.target.value)} disabled=${example}>
           <option value="all">All</option>
           ${RECORD_TYPES.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
@@ -883,7 +883,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       <a href="/api/datafeed/example-import.xlsx" download>Download its Excel sheet</a></p>`}
     <div class=${"df-history-table" + (example ? " df-example" : "")}>
       <table>
-        <thead><tr><th>Import Name</th><th>Category</th><th>Date</th><th class="num">Entries</th><th>Result</th></tr></thead>
+        <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Result</th></tr></thead>
         <tbody>
           ${rows.length === 0 && html`<tr><td colspan="5" class="df-muted">No import matches this search.</td></tr>`}
           ${rows.map(item => {
