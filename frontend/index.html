@@ -113,6 +113,9 @@
   .mwhy-box>summary{cursor:pointer;margin:0}.mwhy-box[open]>summary{margin-bottom:6px}
   .mwhy-h{font-weight:600;font-size:.9em;margin-bottom:4px;color:var(--slate)}
   .mothers{margin:6px 0 14px}
+  .pf-card{margin-top:10px}.pf-card .pf-section{margin-bottom:6px}
+  .pf-card .mfg{margin-top:6px}
+  .pf-origin{margin-top:18px}.pf-origin-body{margin-top:8px}
   .mtags{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
   .mtag{font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink)}
   .mtag.cat{background:var(--teal-soft);color:var(--teal)}
@@ -1125,7 +1128,7 @@ const RELATION_LABELS={unit_of:["Unit of","Has unit"],operated_by:["Operated by"
   portfolio_of:["In the portfolio of","Has in its portfolio"],spinout_of:["Spinout of","Spun out"],funded_by:["Funded by","Funds"],
   collaborates_with:["Collaborates with","Collaborates with"]};
 
-function SourcesHistory({kind,r,profile}){
+function SourcesHistory({kind,r,profile,bare}){
   const lines=[];
   const origin=r.origin==="AI-Mapped"?"Found by Explore and Map or monitoring":r.origin==="Imported"?"Imported from the Phase 1 map":null;
   if(origin) lines.push(origin);
@@ -1133,7 +1136,7 @@ function SourcesHistory({kind,r,profile}){
   // spreadsheet it came from when that is recorded.
   const sheet=profile&&profile.origin_source&&profile.origin_source.type==="spreadsheet"
     ? String(profile.origin_source.description||"").split(/ ingested from /i)[0].trim() : "";
-  const mappedFor=[(r.sectors||[]).length?`the ${r.sectors.join(", ")} sector`:"",
+  const mappedFor=[(r.sectors||[]).length?`the ${r.sectors.join(", ")} sector${r.sectors.length>1?"s":""}`:"",
     (r.hubs||[]).length?`the ${r.hubs.join(", ")}${/\bhub\b/i.test(r.hubs.join(" "))?"":" hub"}`:""].filter(Boolean).join(", in ");
   if(kind==="actor"&&(mappedFor||sheet)) lines.push(`Mapped for ${mappedFor||"a GHUS spreadsheet"}${sheet?` (${sheet})`:""}`);
   const v=profile&&profile.verification;
@@ -1141,6 +1144,18 @@ function SourcesHistory({kind,r,profile}){
   if(statusOf(r)==="Deleted"&&r.removed_at) lines.push(`Deleted ${usDate(r.removed_at.slice(0,10))}${byWhom(r.removed_by)}: ${r.removed_reason||""}`);
   if(kind==="hub"&&r.approved_at) lines.push(`Approved ${usDate(String(r.approved_at).slice(0,10))}${byWhom(r.approved_by)}`);
   const sources=(profile&&profile.sources)||[];
+  if(bare){
+    if(r.updated_at) lines.push(`Last updated ${usDate(r.updated_at.slice(0,10))}`);
+    lines.push(`Owner: ${ownerOf(r)}`);
+    return html`<div class="pf-origin-body">
+      ${lines.map(l=>html`<div class="pf-history" key=${l}>${l}</div>`)}
+      <div class="mhead" style=${{marginTop:"10px"}}>Source pages</div>
+      ${kind==="actor"&&!profile?html`<div class="hint" style=${{margin:0}}><span class="spin"></span> Loading…</div>`:null}
+      ${sources.map(s=>html`<div class="pf-source" key=${s.url}>${link(s.url)}
+        ${(s.supports||[]).some(k=>FACT_LABELS[k])&&html`<span class="dash"> — ${s.supports.filter(k=>FACT_LABELS[k]).map(k=>FACT_LABELS[k]).join(", ")}</span>`}</div>`)}
+      ${profile&&!sources.length&&html`<div class="dash">No source pages recorded</div>`}
+    </div>`;
+  }
   return html`<div class="pf-side-box"><h3>Sources and History</h3>
     ${kind==="actor"&&!profile?html`<div class="hint" style=${{margin:0}}><span class="spin"></span> Loading…</div>`:null}
     ${sources.map(s=>html`<div class="pf-source" key=${s.url}>${link(s.url)}
@@ -1151,7 +1166,7 @@ function SourcesHistory({kind,r,profile}){
   </div>`;
 }
 
-function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],children,options}){
+function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],children,options,layout,tags,meta}){
   const [editing,setEditing]=useState(false);
   const [deleting,setDeleting]=useState(false);
   const [profile,setProfile]=useState(null);
@@ -1172,10 +1187,19 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
     ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
       onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
     <h2>${r.name}</h2>
-    ${subtitle&&html`<div class="loc">${subtitle}</div>`}
+    ${layout==="card"&&tags}
+    ${layout==="card"&&meta&&html`<div class="mmeta" style=${{margin:"4px 0 8px"}}>${meta}</div>`}
+    ${layout!=="card"&&subtitle&&html`<div class="loc">${subtitle}</div>`}
     <div class="badges"><${RecordBadges} r=${r}/></div>
     ${editing
       ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}/>`
+      : layout==="card"
+      ? html`<div class="pf-card">${body}${children}
+          <details class="mwhy-box pf-origin">
+            <summary><span class="mwhy-t">✦ Where This Record Comes From</span>
+              <span class="mwhy-right"><span class="mwhy-n">${sourceOf(r)||""}</span><span class="mchev" aria-hidden="true">▾</span></span></summary>
+            <${SourcesHistory} kind=${kind} r=${r} profile=${profile} bare=${true}/>
+          </details></div>`
       : html`<div class="pf-grid">
           <div class="pf-main">${body}${children}</div>
           <aside class="pf-side">
@@ -1308,28 +1332,39 @@ function Actors(){
   const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
   const key=v=>String(v||"").trim().toLowerCase();
   const peopleAt=a=>!peopleData?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
+  // The organization page in the Explore and Map card's style (3 Nov 2026): tags and
+  // a one-line location under the name, facts in two columns, where the record comes
+  // from folded at the bottom. Approach and Lifecycle role stay in the Edit form only.
+  const orFound=v=>isEmpty(v)?NOT_FOUND:html`<${RichText} text=${v} limit=${320}/>`;
+  const longText=v=>isEmpty(v)?null:html`<${RichText} text=${v} limit=${320}/>`;
+  const us=!!sel&&(!sel.country||sel.country===US);
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
-    subtitle=${[shortType(typeOf(sel)),[sel.city,sel.state].filter(Boolean).join(", "),(sel.sectors||[]).join(", ")].filter(Boolean).join("  ·  ")}
-    glance=${[["Category",[typeOf(sel),sel.category_type&&sel.category_type!=="Not classified"?sel.category_type:null].filter(Boolean).join(" · ")],
-      ["Location",[sel.city,sel.state,sel.country].filter(Boolean).join(", ")],["Region",sel.region],
-      ["Last updated",sel.updated_at?usDate(sel.updated_at.slice(0,10)):null],
-      ["Lifecycle role",sel.primary_lifecycle_role],["Website",link(sel.website)],["Other names",sel.alt_names]]}
+    layout="card"
+    tags=${html`<div class="mtags">${typeOf(sel)&&html`<span class="mtag cat">${typeOf(sel)}</span>`}
+      ${(sel.sectors||[]).map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`}
+    meta=${html`📍 ${[sel.city,us&&sel.state,us&&sel.region,sel.country].filter(Boolean).join(" · ")||"Location not found"}${us&&html` <span class="msep">·</span> Hub: ${!sel.hubs.length?"not in a hub":sel.hubs.length===1?sel.hubs[0]:`${sel.hubs[0]} +${sel.hubs.length-1} more`}`}`}
     sections=${profile=>[
       html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
-      html`<${Section} key="does" title="What it does" rows=${[["Technical focus",sel.primary_technical_focus],
-        ["Approach",sel.technical_approach],["Current activities",sel.current_activities],["Technology and IP",sel.technology_ip_notes]]}/>`,
-      html`<${Section} key="funding" title="Funding and constraints" rows=${[["Funding",sel.funding_summary],["Constraints",sel.key_constraints]]}/>`,
-      html`<${Section} key="links" title="Connections" rows=${[
-        ["Hub",sel.hubs.length?sel.hubs.join(" · "):html`<span class="dash">Not in a hub</span>`],
-        ["Sector",(sel.sectors||[]).join(", ")],
+      html`<${Section} key="facts" title="Key Facts"><${Facts} items=${[
+        ["Category type",sel.category_type&&sel.category_type!=="Not classified"?sel.category_type:NOT_FOUND],
+        ["Website",sel.website?extLink(sel.website):NOT_FOUND],
+        ["Focus",orFound(sel.primary_technical_focus),true],
+        ["Activity",orFound(sel.current_activities),true],
+        ["Technology and IP",longText(sel.technology_ip_notes),true],
+        ["Funding",orFound(sel.funding_summary),true],
+        ["Constraints",longText(sel.key_constraints),true],
+        ["Other names",sel.alt_names],
+      ]}/></${Section}>`,
+      html`<${Section} key="links" title="Connections"><${Facts} items=${[
+        [sel.hubs.length>1?`Hubs (${sel.hubs.length})`:"Hub",sel.hubs.length?html`${sel.hubs.map(h=>html`<div key=${h}>${h}</div>`)}`:html`<span class="dash">Not in a hub</span>`,true],
         ...((profile&&profile.relationships)||[]).map(x=>[(RELATION_LABELS[x.type]||[x.type,x.type])[x.outgoing?0:1],x.name]),
         ["Events it organizes",!profile?"…":profile.events.length?profile.events.map(e=>e.name+(e.start_date?` (${usDate(e.start_date)})`:"")).join(" · ")
-          :html`<span class="dash">None recorded</span>`]]}/>`,
+          :html`<span class="dash">None recorded</span>`,true],
+      ]}/></${Section}>`,
       html`<${Section} key="people" title=${`People${peopleAt(sel)?` (${peopleAt(sel).length})`:""}`}>
         ${!peopleAt(sel)?html`<span class="dash">Loading…</span>`
           :!peopleAt(sel).length?html`<span class="dash">No people in the directory work here yet.</span>`
-          :html`<div class="pf-rows">${peopleAt(sel).map(x=>html`<${React.Fragment} key=${x.id||x.name}>
-              <span class="pf-k">${x.name}</span><span class="pf-v">${x.title||html`<span class="dash">Title not found</span>`}</span></${React.Fragment}>`)}</div>`}
+          :html`<${Facts} items=${peopleAt(sel).map(x=>[x.name,x.title||html`<span class="dash">Title not found</span>`])}/>`}
       </${Section}>`,
       html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
         :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
