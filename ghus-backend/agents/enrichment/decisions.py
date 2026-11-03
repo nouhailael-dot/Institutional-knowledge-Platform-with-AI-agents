@@ -961,6 +961,61 @@ def record_hub_membership_decision(
 CATEGORY_TYPE_PROPOSAL = "category_type"
 
 
+ACTOR_SECTOR_STRENGTHS = ("strong", "moderate")
+
+
+def link_actor_sector(
+    session,
+    *,
+    actor_id: str,
+    sector_code: str,
+    source_id: str | None,
+    reason: str,
+    match_strength: str = "moderate",
+    primary: bool = False,
+    live: bool = False,
+) -> dict[str, object]:
+    """Link an existing actor to a sector, with the evidence that supports it.
+
+    The approved path for a sector added after admission (Phase 1 records were
+    migrated with none, and updates refuse an actor without one). An existing
+    link is never changed, and ``primary`` is honoured only while the actor has
+    no primary sector, so a reviewer's earlier choice always stands.
+    """
+    if match_strength not in ACTOR_SECTOR_STRENGTHS:
+        raise ValueError("match_strength must be strong or moderate")
+    reason = " ".join(str(reason or "").split())
+    if not reason:
+        raise ValueError("a sector link needs its reason")
+    code = str(sector_code or "").strip().upper()
+    sector_id = session.execute(text(
+        "SELECT sector_id::text FROM sector WHERE active AND code=:code"), {"code": code}).scalar()
+    if sector_id is None:
+        raise ValueError(f"no active sector {code!r}")
+    state = session.execute(text(
+        "SELECT EXISTS(SELECT 1 FROM actor WHERE actor_id=CAST(:actor AS uuid)) AS actor, "
+        "EXISTS(SELECT 1 FROM actor_sector WHERE actor_id=CAST(:actor AS uuid) "
+        "AND sector_id=CAST(:sector AS uuid)) AS linked, "
+        "EXISTS(SELECT 1 FROM actor_sector WHERE actor_id=CAST(:actor AS uuid) AND is_primary) "
+        "AS has_primary"), {"actor": actor_id, "sector": sector_id}).mappings().one()
+    if not state["actor"]:
+        raise ValueError("actor not found")
+    if state["linked"]:
+        return {"action": "already_linked", "sector": code}
+    primary = bool(primary) and not state["has_primary"]
+    if not live:
+        return {"action": "would_link", "sector": code, "primary": primary}
+    if not source_id:
+        raise ValueError("a live sector link needs its source")
+    execute_canonical_write(session, text(
+        "INSERT INTO actor_sector (actor_id,sector_id,source_id,match_strength,match_reason,"
+        "is_primary) VALUES (CAST(:actor AS uuid),CAST(:sector AS uuid),CAST(:source AS uuid),"
+        ":strength,:reason,:primary) ON CONFLICT DO NOTHING"
+    ), {"actor": actor_id, "sector": sector_id, "source": source_id, "strength": match_strength,
+        "reason": reason[:1000], "primary": primary})
+    return {"action": "linked", "sector": code, "primary": primary}
+
+
 def propose_category_type(
     session,
     *,
