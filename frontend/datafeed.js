@@ -359,12 +359,23 @@ export function historyMeta(item = {}) {
 }
 
 /** What an import looks like in the history, shown while there is none. Never real data. */
+// A finished import, always listed and marked Example (3 Nov 2026). It lives only in
+// this page - nothing of it is in the database - and tells the same story as its
+// Excel sheet (/api/datafeed/example-import.xlsx, made on request, never stored):
+// three organizations added, one matched to an existing record, one left out.
 export const EXAMPLE_IMPORT = {
-  import_name: "Kansas water organizations", record_type: "actor", method: "upload",
-  file_name: "Kansas water organizations.xlsx", uploaded_at: "2026-11-02T10:30:00",
-  uploaded_by: "", admission: "review", status: "Partly reviewed",
+  example: true, import_name: "Kansas water organizations", record_type: "actor",
+  method: "upload", file_name: "Kansas water organizations.xlsx",
+  uploaded_at: "2026-11-02T10:30:00", uploaded_by: "", admission: "review",
   rows_total: 5, staged: 4, rows_invalid: 1,
-  counts: {pending: 2, approved_new: 1, matched_existing: 1},
+  counts: {pending: 0, approved_new: 3, matched_existing: 1},
+  records: [
+    {row_number: 2, name: "Example Water Lab", status: "Stored in the Directory"},
+    {row_number: 3, name: "Example Irrigation Co.", status: "Matched to an existing record"},
+    {row_number: 4, name: "Example Aquifer Center", status: "Stored in the Directory"},
+    {row_number: 5, name: "Example Rural Water District", status: "Stored in the Directory"},
+    {row_number: 6, name: "Example Water Coalition", status: "Left out: no Sector"},
+  ],
 };
 
 export function formatDateTime(value) {
@@ -806,6 +817,19 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     </div>`;
   }
 
+  /** The example import's details: nothing is fetched, nothing is in the database. */
+  function ExampleDetails({item}) {
+    return html`<div class="df-import-details">
+      <p class="df-example-tag">Example · not real data, and not stored in the database</p>
+      <p class="df-import-facts"><strong>${recordCount(item)}</strong> · ${usDate(item.uploaded_at)} · <a
+        href="/api/datafeed/example-import.xlsx" download>Excel sheet: ${item.file_name}</a></p>
+      <p class="df-muted">${historyLine(item)}</p>
+      <div class="df-records"><table class="discovery-runs"><thead><tr><th>Row</th><th>Record</th><th>Status</th></tr></thead>
+        <tbody>${item.records.map(r => html`<tr key=${r.row_number}><td>${r.row_number}</td><td>${r.name}</td>
+          <td>${r.status}</td></tr>`)}</tbody></table></div>
+    </div>`;
+  }
+
   /** One import's details, opened from its row: records, file, counts and actions. */
   function ImportDetails({item, records, completing, setCompleting}) {
     return html`<div class="df-import-details">
@@ -853,7 +877,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     async function toggle(item) {
       if (open === item.run_id) { setOpen(null); return; }
       setOpen(item.run_id);
-      if (!records[item.run_id]) {
+      if (!item.example && !records[item.run_id]) {
         try {
           const r = await api(`/api/datafeed/imports/${item.run_id}`);
           setRecords(map => ({...map, [item.run_id]: r.records}));
@@ -867,21 +891,20 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     // The signed-in user's imports once accounts exist; every import until then.
     const mine = items;
     const shown = filterImports(mine, search, category);
-    const example = !mine.length;
-    const rows = example ? [{...EXAMPLE_IMPORT, run_id: "example"}] : shown;
+    // The example finished import, listed after the real ones while it matches the filters.
+    const exampleRow = {...EXAMPLE_IMPORT, run_id: "example"};
+    const rows = [...shown, ...filterImports([exampleRow], search, category)];
     return html`<div class="df-history-tools">
       <label class="df-search"><span class="sr-only">Search imports by name</span>
         <input type="search" value=${search} placeholder="Search imports by name…"
-          onInput=${e => setSearch(e.target.value)} disabled=${example}/></label>
+          onInput=${e => setSearch(e.target.value)}/></label>
       <label class="df-category"><span>Record Type:</span>
-        <select value=${category} onChange=${e => setCategory(e.target.value)} disabled=${example}>
+        <select value=${category} onChange=${e => setCategory(e.target.value)}>
           <option value="all">All</option>
           ${RECORD_TYPES.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
         </select></label>
     </div>
-    ${example && html`<p class="df-example-tag">Example · how an import will appear here (not real data).
-      <a href="/api/datafeed/example-import.xlsx" download>Download its Excel sheet</a></p>`}
-    <div class=${"df-history-table" + (example ? " df-example" : "")}>
+    <div class="df-history-table">
       <table>
         <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Status</th></tr></thead>
         <tbody>
@@ -890,17 +913,18 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
             const result = importResult(item);
             return html`<${Fragment} key=${item.run_id}>
               <tr class=${open === item.run_id ? "open" : ""}>
-                <td>${example ? html`<span class="df-import-link">${item.import_name}</span>`
-                  : html`<button type="button" class="df-import-link" aria-expanded=${open === item.run_id}
-                    onClick=${() => toggle(item)}>${item.import_name}</button>`}</td>
+                <td><button type="button" class="df-import-link" aria-expanded=${open === item.run_id}
+                    onClick=${() => toggle(item)}>${item.import_name}</button>
+                  ${item.example && html` <span class="df-example-chip">Example</span>`}</td>
                 <td>${typeInfo(item.record_type).label}</td>
                 <td>${usDate(item.uploaded_at)}</td>
                 <td class="num">${item.rows_total ?? item.staged ?? 0}</td>
                 <td><span class=${"df-result " + result.tone}>${result.tone === "added" ? "✓ " : ""}${result.label}</span></td>
               </tr>
               ${open === item.run_id && html`<tr class="df-import-row"><td colspan="5">
-                <${ImportDetails} item=${item} records=${records[item.run_id]}
-                  completing=${completing} setCompleting=${setCompleting}/></td></tr>`}
+                ${item.example ? html`<${ExampleDetails} item=${item}/>`
+                  : html`<${ImportDetails} item=${item} records=${records[item.run_id]}
+                    completing=${completing} setCompleting=${setCompleting}/>`}</td></tr>`}
             <//>`;
           })}
         </tbody>

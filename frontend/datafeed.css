@@ -154,3 +154,5 @@ span.df-import-link{cursor:default}
 .df-import-row td{background:var(--surface-2)}
 .df-import-details{display:grid;gap:4px}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+.df-example-chip{display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:var(--slate-soft);color:var(--slate);font-size:12px;font-weight:600;vertical-align:middle}

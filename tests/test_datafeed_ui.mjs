@@ -137,10 +137,17 @@ test('the manual form shows a line under a box only when it matters', () => {
   assert.doesNotMatch(src, /\$\{field\.description\}/);
 });
 
-test('an empty history shows an example import, marked as not real', () => {
+test('the history lists an example finished import, marked as not real', async () => {
   assert.equal(EXAMPLE_IMPORT.file_name, 'Kansas water organizations.xlsx');
   assert.equal(historyLine(EXAMPLE_IMPORT),
-    '4 staged · 2 awaiting Review · 1 approved and added · 1 matched to existing · 1 failed validation');
+    '4 staged · 3 approved and added · 1 matched to existing · 1 failed validation');
+  // A finished import: Stored in the Directory, marked Example, records from the page only.
+  const {importResult} = await import('../frontend/datafeed.js');
+  assert.equal(importResult(EXAMPLE_IMPORT).label, 'Stored in the Directory');
+  assert.equal(EXAMPLE_IMPORT.example, true);
+  assert.ok(EXAMPLE_IMPORT.records.every(r => r.name.startsWith('Example ')));
+  const page = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.match(page, /if \(!item\.example && !records\[item\.run_id\]\)/);   // never fetched
   const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
   assert.match(src, /not real data/);
 });
