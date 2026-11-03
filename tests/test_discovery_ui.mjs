@@ -671,3 +671,16 @@ test('an events request is read from its description, with upcoming events by de
   const chosen = withEventWindow(entityDraftPayload({...draft, dateFrom: '2027-03-01'})).discovery_options;
   assert.deepEqual([chosen.date_from, chosen.date_to], ['2027-03-01', undefined]);
 });
+
+test('update instructions that name a sector look for updates in that sector', async () => {
+  const {orgUpdatePayload, updateSector, SPECIFIC_PLACEHOLDER} = await import('../frontend/discovery.js');
+  const sectors = [{code: 'WATER', name: 'Water'}, {code: 'ENERGY', name: 'Energy Transition'}];
+  assert.match(SPECIFIC_PLACEHOLDER, /Name a sector .* to look for updates in that sector\.$/);
+  assert.equal(updateSector('new desalination projects in water', sectors).code, 'WATER');
+  assert.equal(updateSector('recent funding rounds', sectors), null);
+  const base = {list: [{checked: true, actor: {actor_id: 'a1'}}],
+    form: {cadence: 'once', startDate: '2026-11-03', duration: ''}, sectors};
+  assert.equal(orgUpdatePayload({...base, focus: 'Energy Transition partnerships'}).topic, 'ENERGY');
+  assert.equal('topic' in orgUpdatePayload({...base, focus: 'leadership changes'}), false);
+  assert.equal('topic' in orgUpdatePayload({...base, focus: ''}), false);   // a general update
+});

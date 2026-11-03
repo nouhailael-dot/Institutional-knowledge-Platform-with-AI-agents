@@ -2369,8 +2369,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         ? {reason: mapProfile.match_explanation, strength: mapProfile.match_strength} : null)) : null;
     const otherNames = isActor ? [].concat(draft.alt_names || draft.alternate_names
       || selected?.agent_metadata?.alt_names || mapProfile.other_names || []).filter(Boolean) : [];
-    const mappedTopic = selected?.agent_metadata?.topic_name || mapProfile.mapped_topic
-      || (selected?.agent_metadata?.sector_codes || []).map(sectorLabel).join(", ");
     const lightConnections = lightBoxes.common.filter(row =>
       ["international_connection", "um6p_ocp_connection"].includes(row.key));
     // Build the Map's names for the two connection boxes.
@@ -2646,7 +2644,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               </div>`}
               ${(selected.agent_metadata?.sector_codes || []).length > 0 && cardLine(html, FIELDS.otherSectors,
                 (selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · "))}
-              ${cardLine(html, "Mapped Topic", mappedTopic)}
               ${connections.map(row => cardLine(html, row.label,
                 row.state ? missingWithPages(row) : formatCardValue(row.value), sourceLink(html, row.source)))}
               <div class="review-line read"><b>Organization Relationships</b>

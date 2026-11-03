@@ -119,10 +119,10 @@ class DiscoveryBridge:
 
     # ---------------------------------------------------------------- reads
     def options(self) -> dict[str, Any]:
-        return self._call(["options"])
+        return self._call(["options"], retries=1)
 
     def list_requests(self) -> dict[str, Any]:
-        return self._call(["list"])
+        return self._call(["list"], retries=1)
 
     def preview(self, draft: dict[str, Any]) -> dict[str, Any]:
         return self._call(["preview", "--json", json.dumps(draft)])
@@ -195,7 +195,7 @@ class DiscoveryBridge:
     # They are saved as requests and run by the backend's request runner -
     # the same one as Discovery requests ("Run now" starts it for one request).
     def list_update_requests(self) -> dict[str, Any]:
-        return self._call(["requests"], module="agents.collection.actor_updates")
+        return self._call(["requests"], module="agents.collection.actor_updates", retries=1)
 
     def plan_update_request(self, draft: dict[str, Any]) -> dict[str, Any]:
         """What a request would do on its first run. Free: nothing read or written."""
@@ -226,7 +226,21 @@ class DiscoveryBridge:
 
     # ------------------------------------------------------------- plumbing
     def _call(self, arguments: list[str], *, module: str = "agents.collection.discovery_requests",
-              timeout: float = 120, extra_env: dict[str, str] | None = None) -> dict[str, Any]:
+              timeout: float = 120, extra_env: dict[str, str] | None = None,
+              retries: int = 0) -> dict[str, Any]:
+        """Run one backend command. ``retries`` is for read-only commands only (options,
+        the request lists): on 2026-11-03 one crashed mid-start under load ("no readable
+        answer") and the whole Monitor page switched itself off; a second try answered."""
+        for attempt in range(retries + 1):
+            try:
+                return self._call_once(arguments, module=module, timeout=timeout, extra_env=extra_env)
+            except DiscoveryBridgeError as exc:
+                if exc.rejected or attempt == retries:
+                    raise
+        raise DiscoveryBridgeError("GHUS refused the request.")  # pragma: no cover
+
+    def _call_once(self, arguments: list[str], *, module: str, timeout: float,
+                   extra_env: dict[str, str] | None) -> dict[str, Any]:
         if not self.configured:
             raise DiscoveryBridgeError(
                 "Discovery requests are not configured. Set GHUS_DISCOVERY_PROJECT_ROOT and "

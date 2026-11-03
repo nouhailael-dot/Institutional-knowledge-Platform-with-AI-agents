@@ -1502,3 +1502,8 @@ test('why COMPASS identified an organization: its run, its search and its source
   assert.match(src, /<details class="review-why-sources">/);
   assert.doesNotMatch(src, /cardLine\(html, "Topic Match"/);       // no longer repeated in the profile
 });
+
+test('an organization card has no Mapped Topic line (3 Nov 2026)', () => {
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /"Mapped Topic"/);
+});

@@ -729,7 +729,14 @@ export const MONITOR_LEAD = "Monitor topics and discover relevant organizations,
   + "over time, or track updates to records already saved in Compass.";
 export const SPECIFIC_PLACEHOLDER = "Describe the information you’d like to update, such as research "
   + "projects, technologies, funding, partnerships, leadership, facilities, or capabilities in "
-  + "another sector. Include relevant topics, dates, or requirements.";
+  + "another sector. Include relevant topics, dates, or requirements. Name a sector (for example "
+  + "Water or Energy Transition) to look for updates in that sector.";
+
+/** The sector the update instructions name, if any: the update then looks in that sector. */
+export function updateSector(focus, sectors = []) {
+  const code = briefMatches(focus, {topics: sectors}).sector;
+  return code ? sectors.find((s) => s.code === code) || null : null;
+}
 export const MAX_SPECIFIC_CHARS = 1000;
 
 /** Add a directory record to the list, checked; never twice. */
@@ -778,13 +785,16 @@ export function orgUpdateProblems({list, form}, today = null) {
  * scope; left blank, it is a general update of the full profile, the priority
  * areas first (GHUS, 2026-11-01).
  */
-export function orgUpdatePayload({list, interests = [], focus = "", form, requester = ""}) {
+export function orgUpdatePayload({list, interests = [], focus = "", form, requester = "", sectors = []}) {
   const ids = list.filter((row) => row.checked).map((row) => row.actor.actor_id);
   const payload = {actor_ids: ids, max_actors_per_run: Math.max(ids.length, 1), depth: "light",
     cadence: form.cadence, start_date: form.startDate, end_date: scheduleEnd(form)};
   const instructions = String(focus || "").trim();
   if (instructions) {
     Object.assign(payload, {scope: "topic", focus: instructions.slice(0, MAX_SPECIFIC_CHARS)});
+    // A sector named in the instructions wins over each organization's own (the backend's rule).
+    const sector = updateSector(instructions, sectors);
+    if (sector) payload.topic = sector.code;
   } else {
     payload.scope = "general";
     const categories = focusCategories(interests);
@@ -1596,7 +1606,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       setTouched(true);
       if (!ready || busy || tooMany) return;
       setBusy(true); setError("");
-      const payload = orgUpdatePayload({list, focus, form, requester});
+      const payload = orgUpdatePayload({list, focus, form, requester, sectors: allSectors});
       try {
         const made = await api("/api/discovery/update-requests", {method: "POST", body: JSON.stringify(payload)});
         // A request that starts today runs its first check now, like every Monitor request.
@@ -1678,6 +1688,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       <textarea class="org-specific" rows="3" maxLength=${MAX_SPECIFIC_CHARS}
         aria-label="Update instructions (optional)" placeholder=${SPECIFIC_PLACEHOLDER} value=${focus}
         onInput=${(e) => setFocus(e.target.value)}></textarea>
+      ${updateSector(focus, allSectors) && html`<p class="org-hint org-sector">Looking for updates in the
+        <strong>${updateSector(focus, allSectors).name}</strong> sector.</p>`}
       <p class="muted org-hint">Leave this blank for a general update: the full profile is checked for
         new, missing, or outdated information. These instructions apply to all selected organizations.</p>
 
@@ -2089,21 +2101,32 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const [busy, setBusy] = useState(false);
     const [working, setWorking] = useState("");
     const [message, setMessage] = useState(null);
+    const [loadFailed, setLoadFailed] = useState(false);
 
     const set = (patch) => setForm((f) => ({...f, ...patch}));
 
     async function load() {
+      let s;
       try {
-        const s = await api("/api/discovery/status");
-        setStatus({loaded: true, configured: !!s.configured});
-        if (!s.configured) return;
+        s = await api("/api/discovery/status");
+      } catch (err) {
+        setStatus({loaded: true, configured: false});
+        setMessage({kind: "error", text: err.message});
+        return;
+      }
+      setStatus({loaded: true, configured: !!s.configured});
+      if (!s.configured) return;
+      // A list that fails once (the backend under load) is an error to retry, never
+      // "not available on this instance" (3 Nov 2026).
+      try {
         const [o, r, u] = await Promise.all([api("/api/discovery/options"), api("/api/discovery/requests"),
           api("/api/discovery/update-requests").catch(() => ({requests: []}))]);
         setOptions(o);
         setRequests(r.requests || []);
         setUpdates((u.requests || []).filter((x) => !x.test_sector));
+        setLoadFailed(false);
       } catch (err) {
-        setStatus({loaded: true, configured: false});
+        setLoadFailed(true);
         setMessage({kind: "error", text: err.message});
       }
     }
@@ -2204,6 +2227,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       <p class="lead">${MONITOR_LEAD}</p>
 
       ${message && html`<p class=${"discovery-message " + message.kind}>${message.text}</p>`}
+      ${loadFailed && html`<div class="discovery-actions"><button class="btn ghost"
+        onClick=${() => { setMessage(null); load(); }}>Try again</button></div>`}
       ${status.loaded && !status.configured && html`<p class="discovery-message error">Discovery requests are not available on this instance.</p>`}
       ${status.loaded && !status.configured && form.brief && html`<section class="discovery-card">
         <p class="muted">The request proposed from your map, kept here until Discovery is set up:</p>
