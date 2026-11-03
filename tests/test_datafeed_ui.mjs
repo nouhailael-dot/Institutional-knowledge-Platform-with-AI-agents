@@ -302,7 +302,7 @@ test('import history stays with its uploader and links what is incomplete to Rev
 test('Import History: search, Category, and a Result that says what Review did', async () => {
   const {importResult, filterImports, DATAFEED_LEAD, IMPORT_NAME_HINT} = await import('../frontend/datafeed.js');
   assert.equal(IMPORT_NAME_HINT, 'This name will be used to identify your import in Import History.');
-  assert.match(DATAFEED_LEAD, /reviewed by GHUS/);
+  assert.match(DATAFEED_LEAD, /Once successfully submitted, your entries will be available in the Ecosystem Directory\.$/);
   assert.deepEqual(importResult({counts: {pending: 3}}), {label: 'Awaiting Review', tone: 'waiting'});
   assert.equal(importResult({counts: {pending: 1, approved_new: 2}}).label, 'Partly Reviewed');
   assert.equal(importResult({counts: {approved_new: 2, rejected: 1}}).label, 'Stored in the Directory');

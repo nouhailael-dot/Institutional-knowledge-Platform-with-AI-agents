@@ -74,8 +74,8 @@ export function stageable(counts = {}) {
 }
 
 export const DATAFEED_LEAD = "Add organizations, people, and events to the COMPASS Ecosystem "
-  + "Directory using a template or manual entry. Every entry is checked, then reviewed by GHUS "
-  + "before it appears in the Ecosystem Directory.";
+  + "Directory using a template or manual entry. Once successfully submitted, your entries will be "
+  + "available in the Ecosystem Directory.";
 export const IMPORT_NAME_HINT = "This name will be used to identify your import in Import History.";
 
 /** A suggested import name: the file's name, or "Manual entry" with the date. */
