@@ -147,7 +147,7 @@
 .df-import-link{border:0;background:transparent;padding:0;font:inherit;font-weight:600;color:var(--accent-ink);text-decoration:underline;text-underline-offset:3px;cursor:pointer;text-align:left}
 span.df-import-link{cursor:default}
 .df-result{display:inline-block;border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600;white-space:nowrap}
-.df-result.added{background:#e7f6ec;color:#1f7a3d}
+.df-result.added{background:var(--green-soft);color:var(--green)}
 .df-result.waiting{background:#fff4e5;color:#9a3412}
 .df-result.partly{background:#eef2ff;color:#3730a3}
 .df-result.reviewed{background:var(--surface-2);color:var(--muted)}

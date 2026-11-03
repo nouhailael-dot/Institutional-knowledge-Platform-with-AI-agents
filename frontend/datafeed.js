@@ -235,14 +235,14 @@ export function costLine(estimate) {
 }
 
 /**
- * An import's Result column: what Review has done with it, never more. "Added to
+ * An import's Result column: what Review has done with it, never more. "Stored in the
  * Directory" only once nothing waits and something was added or matched.
  */
 export function importResult(item = {}) {
   const c = item.counts || {};
   const decided = (c.approved_new || 0) + (c.matched_existing || 0) + (c.rejected || 0) + (c.deferred || 0);
   if (c.pending) return decided ? {label: "Partly Reviewed", tone: "partly"} : {label: "Awaiting Review", tone: "waiting"};
-  if ((c.approved_new || 0) + (c.matched_existing || 0)) return {label: "Added to Directory", tone: "added"};
+  if ((c.approved_new || 0) + (c.matched_existing || 0)) return {label: "Stored in the Directory", tone: "added"};
   return {label: "Reviewed", tone: "reviewed"};
 }
 

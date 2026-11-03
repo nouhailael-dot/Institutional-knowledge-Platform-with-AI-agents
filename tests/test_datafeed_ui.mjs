@@ -298,7 +298,7 @@ test('Import History: search, Category, and a Result that says what Review did',
   assert.match(DATAFEED_LEAD, /reviewed by GHUS/);
   assert.deepEqual(importResult({counts: {pending: 3}}), {label: 'Awaiting Review', tone: 'waiting'});
   assert.equal(importResult({counts: {pending: 1, approved_new: 2}}).label, 'Partly Reviewed');
-  assert.equal(importResult({counts: {approved_new: 2, rejected: 1}}).label, 'Added to Directory');
+  assert.equal(importResult({counts: {approved_new: 2, rejected: 1}}).label, 'Stored in the Directory');
   assert.equal(importResult({counts: {rejected: 2}}).label, 'Reviewed');
   const items = [{import_name: 'San Francisco Diaspora Event', record_type: 'person'},
     {import_name: 'Energy Optimization Partners', record_type: 'actor'}];
