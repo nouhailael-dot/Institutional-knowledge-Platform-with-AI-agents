@@ -113,6 +113,33 @@
   .mwhy-box>summary{cursor:pointer;margin:0}.mwhy-box[open]>summary{margin-bottom:6px}
   .mwhy-h{font-weight:600;font-size:.9em;margin-bottom:4px;color:var(--slate)}
   .mothers{margin:6px 0 14px}
+  .mtags{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
+  .mtag{font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent-ink)}
+  .mtag.cat{background:var(--teal-soft);color:var(--teal)}
+  .mmeta{color:var(--muted);font-size:14.5px;margin:0 0 10px}.msep{margin:0 4px;color:var(--line-strong)}
+  .mfg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 32px;margin:14px 0 6px}
+  .mfg .f{min-width:0}.mfg .f.wide{grid-column:1/-1}
+  .mfg .k{font-size:12.5px;font-weight:650;color:var(--muted);margin-bottom:2px}
+  .mfg .v{font-size:14.5px;color:var(--ink);line-height:1.5;overflow-wrap:anywhere}
+  .mfg a{color:var(--link);text-decoration:none;font-weight:550}.mfg a:hover{text-decoration:underline}
+  .mpill{display:inline-block;margin:0 6px 4px 0;padding:2px 10px;border-radius:999px;background:#eaf1fb;color:#1f5fa8!important;font-size:12.5px}
+  .madd{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
+  .mhead{font-size:13px;font-weight:700;color:var(--ink);margin-bottom:2px}
+  .mwhy-box>summary{display:flex;justify-content:space-between;align-items:center;gap:12px;list-style:none;cursor:pointer}
+  .mwhy-box>summary::-webkit-details-marker,.msources>summary::-webkit-details-marker{display:none}
+  .mwhy-t{font-weight:650;color:var(--ink);font-size:14.5px}
+  .mwhy-right{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:13.5px}
+  .mstrength{font-weight:600;padding:2px 10px;border-radius:999px;background:var(--green-soft);color:var(--green)}
+  .mstrength.moderate{background:var(--amber-soft);color:var(--amber)}
+  .mchev{transition:transform .15s;font-size:16px;line-height:1;color:var(--muted)}
+  .mbar .btn{padding:9px 18px;font-size:14px}details[open]>summary .mchev{transform:rotate(180deg)}
+  .msources{margin-top:8px;border-top:1px solid var(--line);padding-top:8px}
+  .msources>summary{display:flex;justify-content:space-between;cursor:pointer;list-style:none;font-weight:600;font-size:14px;color:var(--ink)}
+  .msources ul{list-style:none;margin:8px 0 0;padding:0}
+  .msources li{display:grid;grid-template-columns:minmax(0,220px) 1fr;gap:16px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .msources li:last-child{border-bottom:0}.msources a{color:var(--link);text-decoration:none;font-weight:550}
+  .msupp{color:var(--muted)}
+  @media(max-width:700px){.mfg{grid-template-columns:1fr}.msources li{grid-template-columns:1fr;gap:2px}}
   .madd-box{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid var(--line)}
   .mrow.mfacts{flex-direction:column;align-items:flex-start;gap:4px}
   .badges.inline{display:inline-flex;gap:5px;margin:4px 0 0}
@@ -639,9 +666,13 @@
   .ask-form>.btn{font-size:16px;padding:0 30px;min-width:120px}
   .dir-tabs button,.tabs button,.subnav button{font-size:16px;padding-top:12px;padding-bottom:12px}
   @media(max-width:760px){.nav-item{font-size:12px}}
+  /* Filter labels: first letter capital ("Sector", "Category type"); table
+     headers: all capitals. Asked for on 2 Nov 2026. */
+  .filters label{text-transform:none;letter-spacing:0;font-size:13px}
+  table.grid th{text-transform:uppercase}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261102c"/>
-<link rel="stylesheet" href="/discovery.css?v=20261102c"/>
+<link rel="stylesheet" href="/review.css?v=20261102d"/>
+<link rel="stylesheet" href="/discovery.css?v=20261102d"/>
 <link rel="stylesheet" href="/datafeed.css?v=20261030b"/>
 <link rel="stylesheet" href="/dashboard.css?v=20261030b"/>
 <script type="importmap">
@@ -1625,7 +1656,7 @@ function PeopleSearch({actor,jobId,disabled}){
         <strong>${t.plan?.criteria||t.result?.criteria||"People search"}</strong>
         ${["running","planning","verifying"].includes(t.status)&&html`<button class="example" onClick=${()=>stop(t.id)}>Stop people search</button>`}
         ${t.error&&html`<div role="alert">${t.error}</div>`}
-        ${(t.result?.people||[]).map((p,i)=>html`<div class="mperson" key=${i}><div class="mperson-main"><div class="mperson-name">${p.full_name}</div><div>${p.title} · ${p.organization_name}</div>${linkedinOf(p)&&html`<div class="mperson-meta"><a href=${linkedinOf(p)} target="_blank" rel="noopener noreferrer">LinkedIn</a></div>`}${(p.sources||[]).map((s,j)=>html`<div key=${j}><a href=${s.url} target="_blank" rel="noopener noreferrer">Source ${j+1}</a> ${s.supports}</div>`)}</div></div>`)}
+        ${(t.result?.people||[]).map((p,i)=>html`<div class="mperson" key=${i}><div class="mperson-main"><div class="mperson-name">${p.full_name}</div><div>${p.title} · ${p.organization_name}</div>${personLink(p)&&html`<div class="mperson-meta"><a href=${personLink(p).url} target="_blank" rel="noopener noreferrer">${personLink(p).label}</a></div>`}${(p.sources||[]).map((s,j)=>html`<div key=${j}><a href=${s.url} target="_blank" rel="noopener noreferrer">Source ${j+1}</a> ${s.supports}</div>`)}</div></div>`)}
       </div>`)}
     </div>`}
   </div>`;
@@ -1642,11 +1673,31 @@ const FOCUS_LIKE=/focus|program area/i;
 const PUBLIC_PRIVATE=/^public\s*\/?\s*(or\s*)?private$/i;
 // The category-specific light facts named in actor_profile.LIGHT_GUIDANCE.
 const LISTED_FACT=/^(land.grant|relevant cent|program|key program|operator|type|.*\btype$|recent project|projects?$|main funders?|funders?|sponsor|formal designation|facility|what it tests|current project|clinical|academic link|scale|initiative|size|company size|products?|key products?|relevant products?|segment|operating location|current activity|technology|problem|found|stage|trl|funding stage|pilot|customer|offerings?|headquarters|fund size|thesis|jurisdiction|parent|mandate|funding programs?|mission|geography|grant themes?|member|documented members|institution type|governance)/i;
+// Words only, lower case, for comparing names ("U.S. Department of Energy (DOE)").
+const plainWords=t=>String(t||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+// A fact that only restates a relationship ("Sponsor: U.S. Department of Energy (DOE)"
+// next to "Funded by: U.S. Department of Energy") adds nothing; one that adds detail stays.
+const restates=(value,names)=>{const v=plainWords(value);
+  return names.some(n=>n&&(v===n||(v.startsWith(n)&&v.length-n.length<=12)||(n.startsWith(v)&&v.length>3)));};
+function mergedDetails(details){
+  const byLabel=new Map();
+  for(const d of details||[]){
+    if(!d||!d.label||!d.value) continue;
+    const k=plainWords(d.label), row=byLabel.get(k);
+    if(!row) byLabel.set(k,{label:d.label,value:String(d.value)});
+    else if(!plainWords(row.value).includes(plainWords(d.value))) row.value+="; "+d.value;
+  }
+  return [...byLabel.values()];
+}
 function orgFacts(actor){
   const rels=actor.actor_relationships||[];
   const operated=rels.some(r=>/operated by/i.test(r.relationship||""));
+  const relNames=rels.map(r=>plainWords(String(r.organization_name||"").replace(/\s*\([^)]*\)/g,"")));
+  const funding=plainWords(actor.funding_summary);
   const listed=[],extra=[];let publicPrivate=null;
-  for(const d of actor.category_details||[]){
+  for(const d of mergedDetails(actor.category_details)){
+    if(restates(d.value,relNames)) continue;
+    if(/fund|sponsor/i.test(d.label)&&funding&&funding.includes(plainWords(String(d.value).replace(/\s*\([^)]*\)/g,"")))) continue;
     const label=String(d.label||"").trim();
     if(PUBLIC_PRIVATE.test(label)){publicPrivate=d.value;continue;}
     if(FOCUS_LIKE.test(label)&&actor.primary_technical_focus) continue;
@@ -1655,52 +1706,98 @@ function orgFacts(actor){
   }
   return {rels,listed,extra,publicPrivate};
 }
-function OrgCardBody({e}){
-  const {rels,listed,publicPrivate}=orgFacts(e);
+/* Card layout from the 3 Nov 2026 design, in a lighter style: tags and a
+   one-line location under the name, facts in a borderless two-column list, and
+   "Why COMPASS Identified This ..." folded at the bottom with its sources. */
+const hostOf=u=>{try{return new URL(u).hostname.replace(/^www\./,"");}catch{return u;}};
+const extLink=(u,label,bad)=>html`<a class=${bad?"bad":""} href=${u} target="_blank" rel="noopener noreferrer">${label||hostOf(u)} ↗</a>`;
+function Facts({items}){
+  const shown=items.filter(([,v])=>v!=null&&v!==""&&!(Array.isArray(v)&&!v.length));
+  if(!shown.length) return null;
+  return html`<div class="mfg">${shown.map(([k,v,wide])=>html`<div class=${"f"+(wide?" wide":"")} key=${k}>
+    <div class="k">${k}</div><div class="v">${v}</div></div>`)}</div>`;
+}
+function CardTags({e}){
+  if(e._entity_type!=="actor") return null;
+  const sectors=String(e.sector||"").split(/\s*;\s*/).filter(Boolean);
+  if(!e.actor_type&&!sectors.length) return null;
+  return html`<div class="mtags">
+    ${e.actor_type&&html`<span class="mtag cat">${e.actor_type}</span>`}
+    ${sectors.map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`;
+}
+function CardMeta({e}){
+  if(e._entity_type==="actor"){
+    const place=[e.location_city,e.state,actorRegion(e),e.country].filter(Boolean).join(" · ");
+    return html`<div class="mmeta">📍 ${place||"Location not found"} <span class="msep">·</span> Hub: not currently assigned</div>`;
+  }
+  if(e._entity_type==="event"){
+    const when=e.next_date?eventDates(e.next_date,e.end_date):"Date not found";
+    const where=[e.location,regionOfState(stateInText(e.location))].filter(Boolean).join(" · ");
+    return html`<div class="mmeta">📅 ${when}${e.date_status?` (${capFirst(e.date_status)})`:""} <span class="msep">·</span> 📍 ${where||"Location not found"}</div>`;
+  }
+  const line=[e.title,e.organization_name,e.organization_location].filter(Boolean).join(" · ");
+  return line?html`<div class="mmeta">${line}</div>`:null;
+}
+function OrgCardBody({e,deadWeb}){
+  const {rels,listed,extra,publicPrivate}=orgFacts(e);
   const ranked=e.profile_version===2&&isRankedInstitution(e)?rankingRows(e):[];
-  const row=(label,value,key)=>value?html`<span key=${key||label}>${label}: <b>${value}</b></span>`:null;
-  const line=(...xs)=>xs.filter(Boolean).length?html`<div class="mrow">${xs}</div>`:null;
   return html`
-    ${rels.length>0&&html`<div class="mrow">${rels.map((r,i)=>html`<span key=${"rel"+i}>${capFirst(String(r.relationship||"").replace(/_/g," "))}: <b>${r.organization_name}</b>${" · "}<a href=${r.source_url} target="_blank" rel="noopener noreferrer">source</a></span>`)}</div>`}
-    ${line(row("Category",e.actor_type),row("Category type",e.category_type),row("Sector",e.sector),row("Public/Private",publicPrivate))}
-    ${line(row("City",e.location_city),row("State",e.state),row("Region",actorRegion(e)),row("Country",e.country))}
-    <div class="mrow mfacts">
-      ${row("Focus",e.primary_technical_focus)}${row("Activity",e.current_activities)}${row("Funding",e.funding_summary)}
-    </div>
-    ${line(row("Other names",e.other_names),row("Africa / Morocco connections",e.international_connections),
-      ...listed.map((d,i)=>row(d.label,d.value,"cd"+i)),
-      ...ranked.map((r,i)=>html`<span key=${"rk"+i}>Ranking: <b>${r.system} ${r.rank}</b>${` (${r.year}, ${r.scope==="subject"?r.subject:"overall"}) · `}<a href=${r.source_url} target="_blank" rel="noopener noreferrer">source</a></span>`))}`;
+    <${Facts} items=${[
+      ["Category type",e.category_type&&e.category_type!=="Not classified"?e.category_type:null],
+      ["Public/Private",publicPrivate],
+      ...rels.map(r=>[capFirst(String(r.relationship||"").replace(/_/g," ")),html`${r.organization_name} ${r.source_url?extLink(r.source_url,"source"):""}`]),
+      ["Focus",e.primary_technical_focus,true],
+      ["Activity",e.current_activities,true],
+      ["Funding",e.funding_summary,true],
+      ...listed.map(d=>[d.label,d.value]),
+      ["Rankings",ranked.length?html`${ranked.map((r,i)=>html`<a key=${i} class="mpill" href=${r.source_url} target="_blank" rel="noopener noreferrer">${r.system} #${r.rank} (${r.scope==="subject"?r.subject:"Global"})</a>`)}`:null],
+      ["Other names",e.other_names],
+      ["Africa / Morocco connections",e.international_connections],
+      ["Official website",e.website?extLink(e.website,null,deadWeb):null],
+    ]}/>
+    ${extra.length>0&&html`<div class="madd">
+      <div class="mhead">Additional information</div>
+      <div class="hint" style=${{margin:"0 0 4px"}}>Found while researching this organization, beyond the facts collected for its category.</div>
+      <${Facts} items=${extra.map(d=>[d.label,d.value])}/></div>`}`;
 }
-function AdditionalInfo({e}){
-  const {extra}=orgFacts(e);
-  if(!extra.length) return null;
-  return html`<div class="madd-box">
-    <div class="mwhy-h">Additional information</div>
-    <div class="hint" style=${{margin:"0 0 6px"}}>Found while researching this organization, beyond the facts collected for its category.</div>
-    ${extra.map((d,i)=>html`<div class="mperson-meta" key=${i}><b>${d.label}:</b> ${d.value}</div>`)}
-  </div>`;
+function EventCardBody({e}){
+  return html`<${Facts} items=${[
+    ["Type",capFirst(e.event_type)],["Format",capFirst(e.event_format)],["Sector",capFirst(e.sector)],
+    ["Frequency",capFirst(e.recurring_pattern)],["Previous edition",e.previous_edition?eventDates(e.previous_edition):null],
+    ["Organizer",e.organizer],["Topic",e.thematic_focus,true],["Scale",e.expected_attendance],["Audience",e.audience],
+    ["UM6P/OCP",um6pOcp(e)],["Sponsors",e.sponsoring_orgs],["Access",e.access_type],
+    ["Official website",e.website?extLink(e.website):null],
+  ]}/>`;
 }
-/* Why this result is on the map and the pages it came from: a gray box at the
-   bottom of every card. */
+function PersonCardBody({e}){
+  return html`<${Facts} items=${[
+    ["Expertise",e.expertise,true],["Relevant work",e.work_evidence,true],
+    ["UM6P/OCP",um6pOcp(e)],["Email",e.email],
+    [personLink(e)&&personLink(e).label==="Profile page"?"Profile":"LinkedIn",personLink(e)?extLink(personLink(e).url,personLink(e).label):null],
+  ]}/>`;
+}
+const STRENGTH={strong:"Strong match",moderate:"Moderate match"};
 function MatchBox({e,lc}){
   const j=e._judge||null, sources=e.sources||[];
+  const noun={actor:"Organization",person:"Person",event:"Event"}[e._entity_type||"actor"];
   // Category notes explain the classification; useful while testing, not for the user (2 Nov 2026).
-  const rows=[["Mapped topic",e.mapped_topic],["Topic match",e.match_strength],
-    ["Why it matched",e.match_explanation]].filter(([,v])=>v);
-  if(!rows.length&&!e._why&&!(j&&j.reason)&&!sources.length) return null;
+  const rows=[["Identified through",e.mapped_topic],["Why it matched",e.match_explanation],
+    ["Notes",[e._why,j&&j.reason].filter(Boolean).join(" ")]].filter(([,v])=>v);
+  if(!rows.length&&!sources.length) return null;
+  const strength=STRENGTH[String(e.match_strength||"").toLowerCase()];
   return html`<details class="mwhy-box">
-    <summary class="mwhy-h">Why it's on this map</summary>
-    ${rows.map(([k,v])=>html`<div class="mperson-meta" key=${k}><b>${k}:</b> ${v}</div>`)}
-    ${e._why&&html`<div class="mperson-meta">${e._why}</div>`}
-    ${j&&j.reason&&html`<div class="mperson-meta">${j.reason}</div>`}
-    ${sources.length>0&&html`<details class="msrc">
-      <summary>${sources.length} web source${sources.length>1?"s":""}</summary>
-      ${sources.map((src,i)=>{
+    <summary><span class="mwhy-t">✦ Why COMPASS Identified This ${noun}</span>
+      <span class="mwhy-right">${strength&&html`<span class=${"mstrength "+(String(e.match_strength).toLowerCase())}>✓ ${strength}</span>`}
+        ${sources.length>0&&html`<span class="mwhy-n">${sources.length} supporting source${sources.length===1?"":"s"}</span>`}
+        <span class="mchev" aria-hidden="true">▾</span></span></summary>
+    <${Facts} items=${rows.map(([k,v])=>[k,v,true])}/>
+    ${sources.length>0&&html`<details class="msources">
+      <summary><span>🔗 Supporting Sources (${sources.length})</span><span class="mchev" aria-hidden="true">▾</span></summary>
+      <ul>${sources.map((src,i)=>{
         const res=lc&&(lc.sources||[]).find(r=>r.url===src.url);
-        return html`<div key=${i} style=${{marginTop:"5px"}}>
-          <a class=${res&&!res.ok?"bad":""} href=${src.url} target="_blank" rel="noopener noreferrer">${src.url}</a>
-          ${src.supports&&html`<span class="dash"> — ${src.supports}</span>`}</div>`;
-      })}
+        return html`<li key=${i}>${extLink(src.url,hostOf(src.url),res&&!res.ok)}
+          ${src.supports&&html`<span class="msupp">${src.supports}</span>`}</li>`;
+      })}</ul>
     </details>`}
   </details>`;
 }
@@ -1741,6 +1838,9 @@ function matchCount(res){
 
 // A person's LinkedIn page: linkedin_url, or a profile_url that is on linkedin.com.
 const linkedinOf=p=>[p.linkedin_url,p.profile_url].find(u=>/^https?:\/\/([a-z]+\.)?linkedin\.com\//i.test(String(u||"")))||null;
+// A person's link: LinkedIn when found, otherwise their profile page (3 Nov 2026).
+const personLink=p=>linkedinOf(p)?{url:linkedinOf(p),label:"LinkedIn profile"}
+  :/^https?:\/\//i.test(String(p.profile_url||""))?{url:p.profile_url,label:"Profile page"}:null;
 /* A map's short title: the first sentence of its request, as Monitor titles its
    requests (2 Nov 2026), cut at a word near 70 characters. */
 function mapTitle(text){
@@ -1863,27 +1963,13 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       :html`<div class="whynot">✕ Doesn't match your request — ${e._why_not||"no reason was recorded for this map."}</div>`)}
     ${(e._possible_duplicates||[]).length>0&&html`<div class="hint" style=${{margin:"0 0 8px"}}>
       Possible duplicate of ${e._possible_duplicates.join(", ")}. Check before verifying.</div>`}
+    <${CardTags} e=${e}/>
+    <${CardMeta} e=${e}/>
     ${e.description&&html`<div class="mdesc">${e.description}</div>`}
     ${e.bio&&e._entity_type!=="person"&&html`<div class="mdesc">${e.bio}</div>`}
-    ${e._entity_type==="actor"?html`<${OrgCardBody} e=${e}/>`:html`<div class="mrow">
-      ${(MFIELDS[e._entity_type]||[]).map(([k,label])=>[k,label,k==="region"?actorRegion(e):k==="_um6p_ocp"?um6pOcp(e):
-          k==="next_date"&&e[k]?eventDates(e[k],e.end_date):k==="previous_edition"&&e[k]?eventDates(e[k]):
-          CAPITALIZED.has(k)&&e._entity_type==="event"?capFirst(e[k]):e[k]])
-        .filter(([,,v])=>v).map(([k,label,v])=>
-        html`<span key=${k}>${label}: <b>${v}</b></span>`)}
-    </div>`}
-    ${e._entity_type==="person"
-      ? linkedinOf(e)&&html`<div class="msrc"><a href=${linkedinOf(e)} target="_blank" rel="noopener noreferrer">LinkedIn</a></div>`
-      : (e.website||e.linkedin_url||e.profile_url)&&html`<div class="msrc">
-      ${e.website&&html`<a class=${deadWeb?"bad":""} href=${e.website} target="_blank"
-        rel="noopener noreferrer">${e.website}</a>`}
-      ${e.profile_url&&html`${e.website?" · ":""}<a href=${e.profile_url} target="_blank"
-        rel="noopener noreferrer">Public profile</a>`}
-      ${e.linkedin_url&&html`${e.website||e.profile_url?" · ":""}<a href=${e.linkedin_url} target="_blank"
-        rel="noopener noreferrer">LinkedIn</a>`}
-    </div>`}
+    ${e._entity_type==="actor"?html`<${OrgCardBody} e=${e} deadWeb=${deadWeb}/>`
+      :e._entity_type==="event"?html`<${EventCardBody} e=${e}/>`:html`<${PersonCardBody} e=${e}/>`}
     ${e._entity_type==="actor"&&html`<${PeopleSearch} key=${jobId+":"+e.name+":"+(e.website||"")} actor=${e} jobId=${jobId} disabled=${disabled}/>`}
-    ${e._entity_type==="actor"&&html`<${AdditionalInfo} e=${e}/>`}
     <${MatchBox} e=${e} lc=${lc}/>
   </div>`;
 }
