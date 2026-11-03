@@ -73,10 +73,10 @@ def _readonly():
     url = os.environ.get("BROWSE_DATABASE_URL")
     if not url:
         return get_readonly_connection()
-    import psycopg
+    from src.db import connect_resilient
 
-    conn = psycopg.connect(psycopg_database_url(url), connect_timeout=10,
-                           options="-c statement_timeout=8000")
+    conn = connect_resilient(psycopg_database_url(url), connect_timeout=10,
+                             options="-c statement_timeout=8000")
     conn.read_only = True
     return conn
 
@@ -147,7 +147,9 @@ def load_actors() -> list[dict]:
     # fact store, so it is cast defensively rather than trusted to be a number.
     sql = f"""
         SELECT a.actor_id, a.name,
-               coalesce(cd.display_name, a.actor_category) AS category,
+               -- The word on screen is organization; the reference row keeps its old label.
+               replace(coalesce(cd.display_name, a.actor_category), 'Corporate Actor',
+                       'Corporate Organization') AS category,
                NULLIF(to_jsonb(a)->>'category_type', '') AS category_type,
                -- Migration 500 drops verification_status, estimated_trl and
                -- renames location_city -> city, state -> state_code, so each is

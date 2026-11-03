@@ -300,8 +300,13 @@ class RunStore:
     def recent(self):
         with self.connect() as db:
             return [dict(r) for r in db.execute(
-                "SELECT id,description,status,stage,created,updated FROM runs "
-                "WHERE id NOT IN (SELECT run_id FROM people_tasks) ORDER BY created DESC LIMIT 200")]
+                # map_type and the spend (its people searches included) are for the Dashboard.
+                "SELECT id,description,status,stage,created,updated,"
+                "json_extract(plan,'$.map_type') AS map_type,"
+                "(SELECT COALESCE(SUM(cost),0) FROM calls WHERE run_id=runs.id OR run_id IN "
+                "(SELECT run_id FROM people_tasks WHERE parent_id=runs.id))*1.0/? AS spent_usd "
+                "FROM runs WHERE id NOT IN (SELECT run_id FROM people_tasks) ORDER BY created DESC LIMIT 200",
+                (MICRO,))]
 
     def create_people_task(self, parent_id, actor_key, request_key, description, plan):
         """Atomically link an explicitly approved $3 task; retry keys never spend twice."""

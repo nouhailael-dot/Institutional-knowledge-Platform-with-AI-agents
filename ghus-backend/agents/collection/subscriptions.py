@@ -128,7 +128,7 @@ class Subscription:
             raise SubscriptionError("a subscription cannot end before it starts")
         if not self.has_scope:
             raise SubscriptionError(
-                "a subscription needs a scope: actors, sectors, topics or a place. "
+                "a subscription needs a scope: organizations, sectors, topics or a place. "
                 "An unscoped subscription is the all-sector sweep it replaces."
             )
         if self.requested_via == DISCOVERY_PAGE and not (self.sector_codes or self.topic_ids):
@@ -138,10 +138,10 @@ class Subscription:
             )
         if self.requested_via == ACTOR_UPDATES:
             if not self.update_options.get("scope"):
-                raise SubscriptionError("an actor update request needs a scope")
+                raise SubscriptionError("an organization update request needs a scope")
             if self.max_usd_per_run is None or not 0 < float(self.max_usd_per_run) <= MAX_USD_PER_RUN:
                 raise SubscriptionError(
-                    f"an actor update request needs a spend ceiling above $0 and at most "
+                    f"an organization update request needs a spend ceiling above $0 and at most "
                     f"${MAX_USD_PER_RUN:.2f} per run")
         self._check_discovery_scope()
         if self.title is not None and not 1 <= len(self.title.strip()) <= MAX_TITLE_CHARS:

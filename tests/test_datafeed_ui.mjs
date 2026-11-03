@@ -15,6 +15,8 @@ import {
   confirmLabel,
   costLine,
   defaultImportName,
+  draftName,
+  EXAMPLE_IMPORT,
   filterCount,
   filterRows,
   historyLine,
@@ -24,6 +26,7 @@ import {
   missingRequired,
   previewCandidate,
   rowSubtitle,
+  rowTitle,
   stageable,
   summaryTiles,
   visibleFields,
@@ -31,7 +34,7 @@ import {
 import {lightFactRows, lightPullBoxes} from '../frontend/review.js';
 
 const VOCAB = {
-  actor_categories: [{code: 'company', label: 'Company / Corporate Actor'},
+  actor_categories: [{code: 'company', label: 'Company / Corporate Organization'},
     {code: 'university_academic', label: 'University / Academic Institution'}],
   category_types: {company: [{code: 'small_mid_size', label: 'SME'}],
     university_academic: [{code: 'university_system', label: 'Main Institution'}]},
@@ -45,7 +48,7 @@ const VOCAB = {
 };
 const FIELDS = [
   {key: 'name', header: 'Official name', required: true, categories: []},
-  {key: 'actor_category', header: 'Actor Category', required: true, categories: []},
+  {key: 'actor_category', header: 'Organization Category', required: true, categories: []},
   {key: 'website', header: 'Website', required: false, categories: []},
   {key: 'ownership_and_size', header: 'Company: ownership and size', required: false,
     categories: ['company']},
@@ -69,6 +72,11 @@ test('three record types, chosen from a dropdown', () => {
   assert.match(source, /<select id="df-record-type"/);
   assert.match(source, /<select id="df-method"/);
   assert.doesNotMatch(source, /df-steps/);
+  // Nothing to fill until a type is chosen, then only that type's template.
+  assert.match(source, /useState\(""\);/);
+  assert.match(source, /Choose a record type/);
+  assert.match(source, /templates\/\$\{recordType\}\.xlsx/);
+  assert.doesNotMatch(source, /df-templates">\$\{RECORD_TYPES\.map/);
   assert.deepEqual(Object.keys(STATUS), ['invalid', 'new', 'existing', 'possible', 'waiting']);
 });
 
@@ -117,14 +125,34 @@ test('the manual form shows a category-specific box only for its categories', ()
   assert.ok(!visibleFields(FIELDS, 'company').some(f => f.key === 'geographic_focus'));
 });
 
+test('a person is named by first and last name', () => {
+  assert.equal(draftName({first_name: 'Ana', last_name: 'Ruiz'}), 'Ana Ruiz');
+  assert.equal(draftName({name: 'Prairie Water Lab'}), 'Prairie Water Lab');
+  assert.equal(rowTitle({values: {'First name *': 'Ana', 'Last name *': 'Ruiz'}}), 'Ana Ruiz');
+});
+
+test('the manual form shows a line under a box only when it matters', () => {
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.match(src, /field\.hint && html`<small class="df-hint">/);
+  assert.doesNotMatch(src, /\$\{field\.description\}/);
+});
+
+test('an empty history shows an example import, marked as not real', () => {
+  assert.equal(EXAMPLE_IMPORT.file_name, 'Kansas water organizations.xlsx');
+  assert.equal(historyLine(EXAMPLE_IMPORT),
+    '4 staged · 2 awaiting Review · 1 approved and added · 1 matched to existing · 1 failed validation');
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.match(src, /not real data/);
+});
+
 test('manual records send only known, filled fields, as text', () => {
-  assert.deepEqual(missingRequired(FIELDS, {name: ' '}), ['Official name', 'Actor Category']);
+  assert.deepEqual(missingRequired(FIELDS, {name: ' '}), ['Official name', 'Organization Category']);
   assert.deepEqual(manualRecords([{name: 'X', website: '', bogus: 'y', sectors: ['Water', 'AGRI']}],
     [...FIELDS, {key: 'sectors'}]), [{name: 'X', sectors: 'Water; AGRI'}]);
 });
 
 test('the preview row uses labels, never codes', () => {
-  assert.equal(rowSubtitle(ACTOR_ROW, 'actor', VOCAB), 'Company / Corporate Actor · SME · Wichita, KS');
+  assert.equal(rowSubtitle(ACTOR_ROW, 'actor', VOCAB), 'Company / Corporate Organization · SME · Wichita, KS');
   const event = {payload: {event_type: 'summit', start_date: '2027-04-02', end_date: '2027-04-03',
     location: 'Wichita, KS'}};
   assert.equal(rowSubtitle(event, 'event', VOCAB), 'Summit · 04/02/2027 - 04/03/2027 · Wichita, KS');
@@ -229,12 +257,13 @@ test('in Review, the empty boxes of an imported record were never looked for', (
     agent_metadata: {facts}}).find(r => r.key === 'recent_activity').state, 'Not Found');
 });
 
-test('nothing is sent before the uploader is named and confirms the source', () => {
+test('nothing is sent before the source is confirmed; the uploader is the account, never typed', () => {
   const preview = {can_confirm: true, counts: {needs_correction: 0}};
-  const base = {preview, name: 'Kansas', uploader: 'Ana Ruiz', attestSource: true,
+  const base = {preview, name: 'Kansas', attestSource: true,
     admission: 'review', attestAuthorized: false, accept: false};
   assert.ok(canSend(base));
-  assert.ok(!canSend({...base, uploader: ' '}));
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /id="df-uploader"|uploaded_by: uploader/);
   assert.ok(!canSend({...base, attestSource: false}));
   assert.ok(!canSend({...base, admission: 'verified'}));              // needs the second attestation
   assert.ok(canSend({...base, admission: 'verified', attestAuthorized: true}));
@@ -247,4 +276,37 @@ test('a Verified import says what was added and what waits in Review', () => {
     held_for_review: [{row_number: 4, reason: 'x'}], left_out: 1}),
   "2 organizations were added to the directory as Verified, on Ana Ruiz's attestation. "
   + '1 record waits in Review Results. 1 needed correction and was left out.');
+});
+
+test('import history stays with its uploader and links what is incomplete to Review', async () => {
+  const {myImports, recordCount, completionCap} = await import('../frontend/datafeed.js');
+  const items = [{run_id: 'a', uploaded_by: 'Ismail Sabbar', rows_total: 3}, {run_id: 'b', uploaded_by: 'Nouhaila'},
+    {run_id: 'c', uploaded_by: null, staged: 1}];
+  assert.deepEqual(myImports(items, ' ismail sabbar ').map((i) => i.run_id), ['a', 'c']);
+  assert.deepEqual(myImports(items, '').map((i) => i.run_id), ['c']);
+  assert.equal(recordCount(items[0]), '3 records');
+  assert.equal(recordCount(items[2]), '1 record');
+  assert.equal(completionCap(3), 0.5);
+  assert.equal(completionCap(20), 2);
+  assert.equal(completionCap(900), 5);
+});
+
+
+test('Import History: search, Category, and a Result that says what Review did', async () => {
+  const {importResult, filterImports, DATAFEED_LEAD, IMPORT_NAME_HINT} = await import('../frontend/datafeed.js');
+  assert.equal(IMPORT_NAME_HINT, 'This name will be used to identify your import in Import History.');
+  assert.match(DATAFEED_LEAD, /reviewed by GHUS/);
+  assert.deepEqual(importResult({counts: {pending: 3}}), {label: 'Awaiting Review', tone: 'waiting'});
+  assert.equal(importResult({counts: {pending: 1, approved_new: 2}}).label, 'Partly Reviewed');
+  assert.equal(importResult({counts: {approved_new: 2, rejected: 1}}).label, 'Added to Directory');
+  assert.equal(importResult({counts: {rejected: 2}}).label, 'Reviewed');
+  const items = [{import_name: 'San Francisco Diaspora Event', record_type: 'person'},
+    {import_name: 'Energy Optimization Partners', record_type: 'actor'}];
+  assert.deepEqual(filterImports(items, 'energy').map(i => i.record_type), ['actor']);
+  assert.deepEqual(filterImports(items, '', 'person').map(i => i.import_name), ['San Francisco Diaspora Event']);
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  for (const words of ['Import Name <span class="df-req">*</span>', 'Record Type <span class="df-req">*</span>',
+    'How to Add Records <span class="df-req">*</span>', 'Add Another Record', '"Submit Import"']) {
+    assert.ok(src.includes(words), words);
+  }
 });

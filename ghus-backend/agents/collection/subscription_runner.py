@@ -193,7 +193,7 @@ def run_due_requests(
             updates.append(subscription)
             report.outcomes.append(RequestOutcome(
                 subscription_id=subscription.subscription_id,
-                title=subscription.title or "Actor update request",
+                title=subscription.title or "Organization update request",
                 queries=[f"{a['name']}: {a['boxes']} box(es) to read" for a in plan["chosen"]],
                 kind="actor_update", entity="update",
                 notify_to=subscription.requested_by,
@@ -336,9 +336,9 @@ def _run_update(session, subscription, outcome, *, config, topic_id, today, upda
         outcome.status = "succeeded"
     reasons = [result["stopped"]] if result["stopped"] else []
     if result["failed"]:
-        reasons.append(f"{result['failed']} actor(s) could not be updated")
+        reasons.append(f"{result['failed']} organization(s) could not be updated")
     if not results:
-        reasons.append("no actor had anything missing or out of date")
+        reasons.append("no organization had anything missing or out of date")
     outcome.status_reason = "; ".join(reasons)
     outcome.counts = {"found": result["found"], "review": result["review_items"],
                       "actors": len(reached)}

@@ -23,13 +23,31 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261102a";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261030b";
+} from "./labels.js?v=20261103i";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
+  parked: BADGES.parked,
   approved: BADGES.verified,
   rejected_by_reviewer: BADGES.rejected,
+};
+// The counts row (3 Nov 2026 mockup): one card each - icon, number, word and what it
+// holds. Parked apart from Pending; Verified and Rejected list the last 30 days.
+export const REVIEW_COUNT_STATUSES = ["pending_review", "approved", "parked", "rejected_by_reviewer"];
+export const REVIEW_COUNT_CAPTIONS = {
+  pending_review: "All pending records for you",
+  approved: "Your verified records (last 30 days)",
+  parked: "All records you've parked",
+  rejected_by_reviewer: "Your rejected records (last 30 days)",
+};
+// Pending Review carries the directory's sign for it (Nouhaila's amber dot); the others
+// keep the mockup's check, pause and cross, all in the same circle.
+const REVIEW_COUNT_ICONS = {
+  pending_review: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>`,
+  approved: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/></svg>`,
+  parked: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9v6M14 9v6"/></svg>`,
+  rejected_by_reviewer: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>`,
 };
 // A discovered record is stored "parked" until someone decides; that is the
 // agent's default, not a decision, so it reads Pending (see waitingLabel).
@@ -231,7 +249,11 @@ export function runChip(candidate = {}) {
 export function filterReviewCandidates(candidates, filters = {}) {
   const needle = String(filters.search || "").trim().toLocaleLowerCase();
   return (candidates || []).filter(candidate => {
-    if (filters.status && filters.status !== "all" && candidate.status !== filters.status) return false;
+    if (filters.status === "parked") {
+      if (!isParkedByReviewer(candidate)) return false;
+    } else if (filters.status === "pending_review") {
+      if (candidate.status !== "pending_review" || isParkedByReviewer(candidate)) return false;
+    } else if (filters.status && filters.status !== "all" && candidate.status !== filters.status) return false;
     if (filters.entity_type && filters.entity_type !== "all" && candidate.entity_type !== filters.entity_type) return false;
     if (filters.source_run_id && candidate.source_run_id !== filters.source_run_id) return false;
     if (filters.run_group && filters.run_group !== "all" && candidate.run_group_key !== filters.run_group) return false;
@@ -250,20 +272,26 @@ export function filterReviewCandidates(candidates, filters = {}) {
 // ------------------------------------------------------------- runs (left panel)
 // Review is organised Run Type -> named run -> records -> one record's review.
 
-/** The Run Type dropdown: exactly these six, in this order. */
+/** The Request Type dropdown: where results come from (GHUS, 2026-11-01). */
 export const RUN_TYPE_OPTIONS = [
-  {value: "all", label: "All Runs"},
-  {value: "discovery_actors", label: "Discovery Organizations"},
-  {value: "discovery_events", label: "Discovery Events"},
-  {value: "discovery_people", label: "Discovery People"},
+  {value: "all", label: "All Requests"},
+  {value: "new_requests", label: "New Requests"},
   {value: "actor_updates", label: "Organization Updates"},
-  {value: "data_feed", label: "Data Feed Imports"},
+  {value: "data_feed", label: "Import Updates"},
 ];
 
+// A run's own type stays specific; the dropdown groups the three kinds of New Request.
+const NEW_REQUEST_TYPES = ["discovery_actors", "discovery_events", "discovery_people"];
+
+/** The dropdown value for a run type, for links that open one run. */
+export function runTypeFilter(type) {
+  return NEW_REQUEST_TYPES.includes(type) ? "new_requests" : type || "all";
+}
+
 const RUN_TYPE_NAMES = {
-  discovery_actors: "Discovery Organizations", discovery_events: "Discovery Events",
-  discovery_people: "Discovery People", actor_updates: "Organization Updates", map_checks: "Map Checks",
-  data_feed: "Data Feed Imports",
+  discovery_actors: "New Request · Organizations", discovery_events: "New Request · Events",
+  discovery_people: "New Request · People", actor_updates: "Organization Updates", map_checks: "Map Checks",
+  data_feed: "Import Updates",
 };
 
 export function runTypeName(type) {
@@ -281,7 +309,8 @@ export function runsForType(groups = [], candidates = [], runType = "all") {
     shown.set(candidate.run_group_key, (shown.get(candidate.run_group_key) || 0) + 1);
   }
   return groups
-    .filter(group => runType === "all" || group.run_type === runType)
+    .filter(group => runType === "all" || group.run_type === runType
+      || (runType === "new_requests" && NEW_REQUEST_TYPES.includes(group.run_type)))
     .filter(group => shown.get(group.key))
     .map(group => ({...group, shown_count: shown.get(group.key)}));
 }
@@ -831,8 +860,8 @@ function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewe
   return html`<section class="review-section review-changes">
     <h3>Changes to Review ${rows.length > 0 && html`<span class="review-chip">${rows.length}</span>`}</h3>
     ${!rows.length && html`<p class="review-hint">Every change has been decided.</p>`}
-    ${rows.length > 0 && pending && !reviewer.trim() && html`<p class="review-hint">Type your name in
-      Reviewer at the top of Review to decide these changes.</p>`}
+    ${rows.length > 0 && pending && !reviewer.trim() && html`<p class="review-hint">Type your name at
+      the top of Review to decide these changes.</p>`}
     ${rows.map(row => html`<div class="review-change" key=${row.id}>
       <div class="review-change-head"><strong>${row.label}</strong>
         ${row.topic && html`<span class="review-chip">${row.topic}</span>`}</div>
@@ -924,7 +953,7 @@ export function decisionOptions(entityType, candidate = null) {
       {value: "defer", label: BUTTONS.park},
     ];
   }
-  const noun = {actor: "actor", event: "event", person: "person"}[entityType] || "record";
+  const noun = {actor: "organization", event: "event", person: "person"}[entityType] || "record";
   return [
     {value: "same_existing", label: `Same as existing ${noun}`},
     {value: "new", label: `New ${noun}`},
@@ -1168,6 +1197,27 @@ function hostOf(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 
+/**
+ * The pages a record was found and read on, for "Supporting Sources": title and
+ * date only when the source recorded them (never composed); the publisher is
+ * the page's own site.
+ */
+export function supportingSources(candidate) {
+  return (candidate?.evidence || []).filter(item => item && item.url).map(item => ({
+    url: item.url,
+    title: item.title || null,
+    publisher: item.publisher || hostOf(item.url),
+    date: item.published_at || item.date || null,
+    supports: item.supports || "",
+  }));
+}
+
+/** How COMPASS came to this record: its run, and the search that found it. */
+export function identifiedThrough(candidate) {
+  const query = candidate?.agent_metadata?.query;
+  return [runChip(candidate), query && `Search: “${query}”`].filter(Boolean).join(" · ");
+}
+
 function otherHost(source, website) {
   const host = hostOf(source);
   return host && hostOf(website) && host !== hostOf(website) ? host : null;
@@ -1287,6 +1337,11 @@ const LIGHT_ROWS_SHOWN_AS_CONTROLS = new Set([
  * Section 5.2 fields for this actor's category. Changing the category changes
  * only the second group, and nothing the reviewer has typed is touched.
  */
+// Shown elsewhere on an organization's card: why it matched (the bar at the
+// bottom), its connections and category boxes (the profile), funding (under Funding).
+const SHOWN_ELSEWHERE = new Set(["why_matched", "international_connection", "um6p_ocp_connection",
+  "funding_signal"]);
+
 export function lightPullBoxes(candidate, category) {
   const resolved = String(
     category ?? candidate?.reviewed_payload?.actor_category ?? "",
@@ -1679,9 +1734,22 @@ const CARD_FIELDS = {
     ["organization_location", "Location", ["work_location"]],
     ["affiliation_note", "Affiliation", ["department", "other_affiliations"]],
     ["research_area", "Expertise", ["expertise"]], ["work_evidence", "Relevant Work", ["relevant_work"]],
-    ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_connection"]], ["public_profile_url", "Public Profile"],
-    ["linkedin_url", "LinkedIn", ["linkedin_url"]], ["orcid", "ORCID"]],
+    ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_connection"]], ["orcid", "ORCID"]],
 };
+// A person has no website of their own: these two take its place, under Name.
+export const PERSON_LINK_FIELDS = [["public_profile_url", "Public Profile"],
+  ["linkedin_url", "LinkedIn", ["linkedin_url"]]];
+
+/** The rows a record's card already shows, so they are not listed again. */
+function cardRows(entityType) {
+  return [...(CARD_FIELDS[entityType] || []), ...(entityType === "person" ? PERSON_LINK_FIELDS : [])];
+}
+
+/** A person's own page for the card's first line: the public profile, else LinkedIn. */
+export function personLink(candidate, draft) {
+  return PERSON_LINK_FIELDS.map(([field, , facts]) => profileValue(candidate, draft, field, facts))
+    .find(value => /^https?:\/\//.test(String(value || ""))) || null;
+}
 const CARD_DATE_FIELDS = new Set(["next_date", "previous_edition"]);
 const CARD_CAPITALIZED = new Set(["event_type", "date_status", "event_format", "recurring_pattern", "sector"]);
 
@@ -1718,13 +1786,18 @@ export function profileValue(candidate, draft, field, factKeys = []) {
   return null;
 }
 
-/** One row of an event's or person's card (CARD_FIELDS). */
-function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors}) {
+/** The Category filter is for organizations: shown once Organizations (or Organization Updates) is chosen. */
+export function showsCategoryFilter(filters = {}) {
+  return filters.entity_type === "actor" || filters.run_type === "actor_updates";
+}
+
+/** One row of an event's or person's card (CARD_FIELDS); `always` shows Not Found when empty. */
+function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors, always = false}) {
   if ((candidate?.editable_fields || []).includes(field)) {
     return cardField(html, candidate, field, draft[field], edit, disabled, errors[field], label);
   }
   const value = profileValue(candidate, draft, field, factKeys);
-  if (!value) return null;
+  if (!value) return always ? cardLine(html, label, "") : null;
   return /^https?:\/\//.test(String(value))
     ? cardLine(html, label, html`<a href=${value} target="_blank" rel="noreferrer">${value}</a>`)
     : cardLine(html, label, value);
@@ -1785,10 +1858,17 @@ function sourceLink(html, url) {
   return url ? html`<small><a href=${url} target="_blank" rel="noreferrer">Source</a></small>` : null;
 }
 
-/** The reviewer's name as typed earlier in this browser, or empty. */
-function storedReviewer() {
-  try { return localStorage.getItem("ghus.review.reviewer") || ""; } catch { return ""; }
+/**
+ * Who decides, until sign-in attaches it to the user: the name typed earlier in
+ * this browser for Review, else the one typed for the Data Feed. Empty when
+ * neither is known - only then does Review ask for it.
+ */
+export function storedReviewer() {
+  return SIGNED_IN_USER;
 }
+// The server records who decided (src.identity.current_user); this mirrors its
+// words until sign-in. Nobody types a reviewer name (3 Nov 2026).
+export const SIGNED_IN_USER = "Not recorded (no sign-in yet)";
 
 export function createReviewPage({html, useEffect, useRef, useState}) {
   return function Review() {
@@ -1801,18 +1881,15 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const listScroll = useRef(0);
     const [data, setData] = useState({
       candidates: [], counts: {}, source_maps: [], run_groups: [], sync_warnings: [],
-      last_sync: [], admission_configured: false,
+      // Unknown until the server answers: "decisions are off" is never shown while loading.
+      last_sync: [], admission_configured: null,
     });
     const [selectedId, setSelectedId] = useState(null);
     const [selected, setSelected] = useState(null);
     const [draft, setDraft] = useState({});
-    // Typed once at the top of Review and remembered in this browser, so each
-    // record does not ask again. Never defaulted: empty until a person types it.
-    const [reviewer, setReviewerState] = useState(storedReviewer());
-    const setReviewer = value => {
-      setReviewerState(value);
-      try { localStorage.setItem("ghus.review.reviewer", value); } catch { /* not kept */ }
-    };
+    // Attached to the account: the server records who decided. Nothing to type.
+    const reviewer = storedReviewer();
+    const setReviewer = () => {};
     const [notes, setNotes] = useState("");
     // GHUS analyst notes, kept on the actor or event when it is verified.
     const [analystNotes, setAnalystNotes] = useState("");
@@ -1881,7 +1958,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         const wanted = event.detail?.run_key;
         if (wanted) {
           setView("queue");
-          setFilters(current => ({...current, run_type: event.detail.run_type || "all",
+          setFilters(current => ({...current, run_type: runTypeFilter(event.detail.run_type),
             status: "all"}));
           setSelectedId(null);
           loaded.current = null;
@@ -1979,7 +2056,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     }
 
     function setFilter(key, value) {
-      setFilters(current => ({...current, [key]: value}));
+      setFilters(current => ({...current, [key]: value,
+        // Category is an organization's: it is cleared when another record type is chosen.
+        ...(key === "entity_type" && value !== "actor" ? {actor_category: "all"} : {})}));
       if (key === "run_type") { setSelectedId(null); setRunKey(null); }
     }
 
@@ -2130,7 +2209,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         .filter(row => categoryIds.includes(row.candidate_id));
       if (!canConfirmCategories({selectedIds: rows.map(row => row.candidate_id), reviewer,
         busy, admissionConfigured: data.admission_configured})) return;
-      if (!window.confirm(`Confirm the shown category for ${rows.length} actors?`)) return;
+      if (!window.confirm(`Confirm the shown category for ${rows.length} organizations?`)) return;
       const keyName = `categories:${rows.map(row => row.candidate_id).sort().join(",")}`;
       if (!keys.current.has(keyName)) keys.current.set(keyName, decisionKey());
       setBusy(true); setError(""); setFeedback("");
@@ -2279,7 +2358,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const factRows = isActor ? lightFactRows(selected) : [];
     const historyRows = isActor ? factHistoryRows(selected) : [];
     const deepFacts = deepPullFacts(selected);
-    const writerDown = !data.admission_configured;
+    const writerDown = data.admission_configured === false;
     // The record card (Build the Map's form): its number in the run, why it
     // matched, its other names and connections, and the pages it came from.
     const position = selected ? records.findIndex(item => item.candidate_id === selected.candidate_id) + 1 : 0;
@@ -2292,8 +2371,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         ? {reason: mapProfile.match_explanation, strength: mapProfile.match_strength} : null)) : null;
     const otherNames = isActor ? [].concat(draft.alt_names || draft.alternate_names
       || selected?.agent_metadata?.alt_names || mapProfile.other_names || []).filter(Boolean) : [];
-    const mappedTopic = selected?.agent_metadata?.topic_name || mapProfile.mapped_topic
-      || (selected?.agent_metadata?.sector_codes || []).map(sectorLabel).join(", ");
     const lightConnections = lightBoxes.common.filter(row =>
       ["international_connection", "um6p_ocp_connection"].includes(row.key));
     // Build the Map's names for the two connection boxes.
@@ -2313,28 +2390,23 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
            "location_city", "state", "country", "primary_sector", "primary_technical_focus",
            "funding_summary", "current_activities"].includes(field)
       // Already on the record card.
-      && !(CARD_FIELDS[selected?.entity_type] || []).some(([cardField]) => cardField === field));
+      && !cardRows(selected?.entity_type).some(([cardField]) => cardField === field));
 
     return html`<section class="review-page" aria-labelledby="review-title">
       <h1 class="hero-h" id="review-title">${SENTENCES.pageTitle}</h1>
       <p class="lead">${SENTENCES.pageLead}</p>
 
       <div class="review-counts" aria-label="Review queue counts">
-        ${["pending_review", "approved", "rejected_by_reviewer"].map(status => html`
-          <button key=${status} class=${"review-count " + (filters.status === status ? "active" : "")}
-            onClick=${() => setFilter("status", status)}>
-            <strong>${counts[status] || 0}</strong><span>${reviewStatusLabel(status)}</span>
+        ${REVIEW_COUNT_STATUSES.map(status => html`
+          <button key=${status} class=${"review-count " + status + (filters.status === status ? " active" : "")}
+            aria-pressed=${filters.status === status} onClick=${() => setFilter("status", status)}>
+            <span class="review-count-icon" dangerouslySetInnerHTML=${{__html: REVIEW_COUNT_ICONS[status]}}></span>
+            <span class="review-count-text"><strong>${counts[status] || 0}</strong>
+              <b>${reviewStatusLabel(status)}</b><small>${REVIEW_COUNT_CAPTIONS[status]}</small></span>
           </button>`)}
       </div>
       <div class="review-sync">
-        <label class=${"review-whoami" + (reviewer.trim() ? "" : " invalid")}>
-          <span>${FIELDS.reviewer}</span>
-          <input value=${reviewer} placeholder="Your name" onInput=${e => setReviewer(e.target.value)}/>
-        </label>
-        <span>Last updated: ${formatSync(data.last_sync)}</span>
-        <button class="btn ghost" disabled=${loading} onClick=${() => load(undefined, true)}>
-          ${BUTTONS.refresh}
-        </button>
+        <span class="review-updated">Last updated ${formatSync(data.last_sync)}</span>
       </div>
       ${writerDown && html`<div class="review-notice" role="alert">
         <strong>${SENTENCES.failClosed}</strong> ${SENTENCES.writerUnavailable}
@@ -2391,24 +2463,24 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
 
 
       ${view === "queue" && html`<div class="review-filters" aria-label="Review filters">
-        <label><span>Run Type</span>
+        <label><span>Request Type</span>
           <select value=${filters.run_type} onChange=${e => setFilter("run_type", e.target.value)}>
             ${RUN_TYPE_OPTIONS.map(option => html`
               <option key=${option.value} value=${option.value}>${option.label}</option>`)}
           </select></label>
-        ${filters.run_type === "all" && html`<label><span>${FIELDS.recordKind}</span>
+        ${filters.run_type !== "actor_updates" && html`<label><span>${FIELDS.recordKind}</span>
           <select value=${filters.entity_type} onChange=${e => setFilter("entity_type", e.target.value)}>
             <option value="all">${QUEUE.allTypes}</option>
-            <option value="actor">${BADGES.actor}</option>
-            <option value="person">${BADGES.person}</option>
-            <option value="event">${BADGES.event}</option>
+            <option value="actor">Organizations</option>
+            <option value="event">Events</option>
+            <option value="person">People</option>
           </select></label>`}
-        <label><span>${FIELDS.actorCategory}</span>
+        ${showsCategoryFilter(filters) && html`<label><span>${FIELDS.actorCategory}</span>
           <select value=${filters.actor_category} onChange=${e => setFilter("actor_category", e.target.value)}>
             <option value="all">${QUEUE.allCategories}</option>
             ${categoryOptions().map(option => html`
               <option key=${option.value} value=${option.value}>${option.label}</option>`)}
-          </select></label>
+          </select></label>`}
         <label><span>${FIELDS.search}</span>
           <input type="search" value=${filters.search}
             onInput=${e => setFilter("search", e.target.value)} placeholder="Name or domain"/></label>
@@ -2436,7 +2508,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           ${deep.state === "running" ? "Running Deep Pull…" : "Run Deep Pull"}</button>`}
       </section>`}
 
-      ${view === "queue" && categoryRows.length>0&&html`<section class="review-section review-category-bulk" aria-labelledby="category-bulk-title"><h3 id="category-bulk-title">Category reviews</h3><p class="muted">Each row shows the proposed actor category. Confirm only the ones you agree with; open a row below to change its category first. Collections of organizations are not listed here: they need a separate GHUS decision.</p><label><input type="checkbox" checked=${categoryIds.length===categoryRows.length} onChange=${e=>setCategoryIds(e.target.checked?categoryRows.map(row=>row.candidate_id):[])}/> Select all (${categoryRows.length})</label><ul class="review-category-list">${categoryRows.map(row=>html`<li key=${row.candidate_id}><label><input type="checkbox" checked=${categoryIds.includes(row.candidate_id)} onChange=${e=>setCategoryIds(current=>e.target.checked?[...current,row.candidate_id]:current.filter(id=>id!==row.candidate_id))}/> <strong>${row.display_name}</strong> → ${row.reviewed_payload.actor_category}${row.agent_metadata?.pipeline?.proposal_confidence?html` <small>(${row.agent_metadata.pipeline.proposal_confidence} confidence)</small>`:""}</label></li>`)}</ul><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${busy} onInput=${e=>setReviewer(e.target.value)} required/></label><button class="btn" disabled=${!canConfirmCategories({selectedIds:categoryIds,reviewer,busy,admissionConfigured:data.admission_configured})} onClick=${confirmCategories}>${busy?"Committing…":`Confirm ${categoryIds.length} categor${categoryIds.length===1?"y":"ies"}`}</button></section>`}
+      ${view === "queue" && categoryRows.length>0&&html`<section class="review-section review-category-bulk" aria-labelledby="category-bulk-title"><h3 id="category-bulk-title">Category reviews</h3><p class="muted">Each row shows the proposed organization category. Confirm only the ones you agree with; open a row below to change its category first. Collections of organizations are not listed here: they need a separate GHUS decision.</p><label><input type="checkbox" checked=${categoryIds.length===categoryRows.length} onChange=${e=>setCategoryIds(e.target.checked?categoryRows.map(row=>row.candidate_id):[])}/> Select all (${categoryRows.length})</label><ul class="review-category-list">${categoryRows.map(row=>html`<li key=${row.candidate_id}><label><input type="checkbox" checked=${categoryIds.includes(row.candidate_id)} onChange=${e=>setCategoryIds(current=>e.target.checked?[...current,row.candidate_id]:current.filter(id=>id!==row.candidate_id))}/> <strong>${row.display_name}</strong> → ${row.reviewed_payload.actor_category}${row.agent_metadata?.pipeline?.proposal_confidence?html` <small>(${row.agent_metadata.pipeline.proposal_confidence} confidence)</small>`:""}</label></li>`)}</ul><button class="btn" disabled=${!canConfirmCategories({selectedIds:categoryIds,reviewer,busy,admissionConfigured:data.admission_configured})} onClick=${confirmCategories}>${busy?"Committing…":`Confirm ${categoryIds.length} categor${categoryIds.length===1?"y":"ies"}`}</button></section>`}
 
       ${view === "queue" && html`<div class="review-workspace">
         <!-- NAMED RUNS (left panel) -->
@@ -2452,7 +2524,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               aria-pressed=${activeRun?.key === run.key}
               onClick=${() => { setRunKey(run.key); setSelectedId(null); }}>
               <strong>${run.run_name || run.label}</strong>
-              ${filters.run_type === "all" && html`<span class="review-run-type">${runTypeName(run.run_type)}</span>`}
+              ${["all", "new_requests"].includes(filters.run_type) && html`<span class="review-run-type">${runTypeName(run.run_type)}</span>`}
               <small>${runMeta(run, filters.status)}</small>
             </button>`)}
         </nav>
@@ -2499,9 +2571,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   title=${badge.hint || ""}>${badge.label}</span>`)}
             </div>
             <p class="review-card-sub">
-              ${present(draft.website)
-                ? html`<a href=${draft.website} target="_blank" rel="noreferrer">${draft.website}</a>`
-                : MISSING.notProvided} · ${runChip(selected)}
+              ${selected.entity_type === "person"
+                ? (personLink(selected, draft) && html`<a href=${personLink(selected, draft)} target="_blank"
+                    rel="noreferrer">${personLink(selected, draft)}</a> · `)
+                : html`${present(draft.website)
+                  ? html`<a href=${draft.website} target="_blank" rel="noreferrer">${draft.website}</a>`
+                  : MISSING.notProvided} · `}${runChip(selected)}
             </p>
             ${isMigratedBaseline(selected) && html`<div class="review-notice" role="status">
               <strong>${BADGES.migratedBaseline}.</strong> ${SENTENCES.migratedBaseline}
@@ -2522,7 +2597,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               onInput=${e => edit("description", e.target.value)}></textarea>`}
             ${draftErrors.description && html`<small class="field-error">${draftErrors.description}</small>`}
             ${cardField(html, selected, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
-            ${cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
+            ${selected.entity_type === "person"
+              ? PERSON_LINK_FIELDS.map(row => profileRow(html, selected, draft, row,
+                {edit, disabled: !pending || busy, errors: draftErrors, always: true}))
+              : cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
 
             ${isActor ? html`
             <details class="mpeople review-profile" open>
@@ -2568,9 +2646,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               </div>`}
               ${(selected.agent_metadata?.sector_codes || []).length > 0 && cardLine(html, FIELDS.otherSectors,
                 (selected.agent_metadata.sector_codes || []).map(sectorLabel).join(" · "))}
-              ${cardLine(html, "Mapped Topic", mappedTopic)}
-              ${cardLine(html, "Topic Match", why ? matchStrengthLabel(why.strength) : "")}
-              ${cardLine(html, FIELDS.whyItMatched, why?.reason || "", sourceLink(html, why?.source_url))}
               ${connections.map(row => cardLine(html, row.label,
                 row.state ? missingWithPages(row) : formatCardValue(row.value), sourceLink(html, row.source)))}
               <div class="review-line read"><b>Organization Relationships</b>
@@ -2659,8 +2734,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               !pending || busy, draftErrors.primary_technical_focus, "Focus")}
             ${cardField(html, selected, "funding_summary", draft.funding_summary, edit,
               !pending || busy, draftErrors.funding_summary, "Funding")}
+            ${(() => {
+              const read = lightBoxes.common.find(row => row.key === "funding_signal" && !row.state && row.value);
+              return read && lightLine(html, {...read, label: "Funding found on its pages"});
+            })()}
             ${cardField(html, selected, "current_activities", draft.current_activities, edit,
-              !pending || busy, draftErrors.current_activities, "Activity")}
+              !pending || busy, draftErrors.current_activities, "Current Programs")}
 
             <div class="review-hubs">
               ${cardLine(html, FIELDS.currentHubs, memberships.map(hub => `${hub.name || hub.hub_id}${
@@ -2685,7 +2764,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 {edit, disabled: !pending || busy, errors: draftErrors}))}
             </details>`}
 
-            ${sources.length > 0 && html`<details class="msrc">
+            ${!isActor && sources.length > 0 && html`<details class="msrc">
               <summary>${sources.length} web source${sources.length > 1 ? "s" : ""}</summary>
               ${sources.map((item, index) => html`<div key=${index} class="review-source">
                 <a href=${item.url} target="_blank" rel="noreferrer">${item.url}</a>
@@ -2700,12 +2779,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               (selected.agent_metadata?.changes || []).some(change => change.kind === "fact")
                 && "A value marked Proposed has a change waiting below."].filter(Boolean).join(" ")}</p>`}
             <p class="review-group-title">${FIELDS.commonLightPull}</p>
-            ${lightLines(html, lightBoxes.common)}
-
-            <p class="review-group-title">${categoryLabel(draft.actor_category) || FIELDS.categoryLightPull}</p>
-            ${!lightBoxes.specific.length && html`
-              <p class="muted">${SENTENCES.chooseCategoryForBoxes}</p>`}
-            ${lightLines(html, lightBoxes.specific)}
+            ${lightLines(html, lightBoxes.common.filter(row => !SHOWN_ELSEWHERE.has(row.key)))}
 
             <details class="review-subsection">
               <summary>${FACTS.history}</summary>
@@ -2744,8 +2818,33 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               </label>`
               : html`<p class="muted">GHUS Notes are kept for organizations and events; people have no notes field yet.</p>`}
             </div>
-            ${(selected.agent_metadata?._why || (isActor && why?.reason)) && html`<div class="why">
-              ${selected.agent_metadata?._why || why.reason}</div>`}
+            ${!isActor && selected.agent_metadata?._why && html`<div class="why">${selected.agent_metadata._why}</div>`}
+            ${isActor && (() => {
+              const found = supportingSources(selected);
+              const strength = String(why?.strength || "").toLowerCase();
+              return html`<details class="review-why">
+                <summary>
+                  <span class="review-why-title"><span aria-hidden="true">✦</span> Why COMPASS Identified This Organization</span>
+                  <span class="review-why-meta">
+                    ${why?.strength && html`<span class=${"review-status " + (strength === "strong" ? "verified" : "pending_review")}>${matchStrengthLabel(why.strength)} match</span>`}
+                    <span class="muted">${found.length} supporting source${found.length === 1 ? "" : "s"}</span>
+                  </span>
+                </summary>
+                <div class="review-why-body">
+                  ${cardLine(html, "Identified Through", identifiedThrough(selected))}
+                  ${cardLine(html, FIELDS.whyItMatched, why?.reason || selected.agent_metadata?._why || "",
+                    sourceLink(html, why?.source_url))}
+                  <details class="review-why-sources">
+                    <summary>Supporting Sources (${found.length})</summary>
+                    ${found.length ? html`<ul>${found.map((s, index) => html`<li key=${index}>
+                      <a class="compass-link" href=${s.url} target="_blank" rel="noreferrer">${s.title || s.publisher || s.url}</a>
+                      <span class="muted">${[s.title && s.publisher, s.date && shortDate(s.date)].filter(Boolean).join(" · ")}</span>
+                      ${s.supports && html`<p>${s.supports}</p>`}
+                    </li>`)}</ul>` : html`<p class="muted">No source page was recorded for this record.</p>`}
+                  </details>
+                </div>
+              </details>`;
+            })()}
           </div>
 
           ${isFactReview(selected) && factChangeBlock(html, selected)}
@@ -2800,8 +2899,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 || selected.agent_metadata?._verification || null, null, 2)}</pre></details>
           </details>
 
-        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the organization's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the organization is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate organization"}</button></section>`}
-        ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
+        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the organization's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the organization is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate organization"}</button></section>`}
+        ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
           <!-- DECISION + STICKY FOOTER -->
           ${!reviewItemKind(selected) && html`
           <section class="review-section review-decision">

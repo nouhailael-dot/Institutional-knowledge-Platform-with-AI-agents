@@ -32,6 +32,23 @@ from .taxonomy import (
 )
 
 STATUSES = ("pending_review", "approved", "rejected_by_reviewer")
+# What Review lists and counts (3 Nov 2026): Parked is a waiting record a person
+# parked, counted apart from Pending; Verified and Rejected show only the last 30
+# days (the decision stands - the record only leaves this list).
+LIST_STATUSES = ("pending_review", "parked", "approved", "rejected_by_reviewer")
+VERIFIED_SHOWN_DAYS = 30
+
+
+def is_parked(decision_kind: object, metadata: object) -> bool:
+    """A waiting record a person parked: Park in Review, or on its Build the Map card."""
+    if decision_kind == "defer":
+        return True
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata or "{}")
+        except ValueError:
+            return False
+    return isinstance(metadata, dict) and metadata.get("_review") == "parked"
 ENTITY_TYPES = ("actor", "person", "event")
 DECISION_KINDS = ("same_existing", "new", "reject", "defer")
 REJECTION_REASONS = (
@@ -390,7 +407,8 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
     if request:
         parts = ["Monitoring request", request.group(1)]
     elif kind:
-        parts = [f"{kind.group(1).capitalize()} discovery"]
+        word = kind.group(1).lower()
+        parts = [f"{'Organization' if word == 'actor' else word.capitalize()} discovery"]
         if "dry_run" in raw or "dry run" in raw.casefold():
             parts.append("test run")
     elif run_id.startswith(DATAFEED_PREFIX):
@@ -1039,14 +1057,20 @@ class ReviewStore:
              source_run_id: str | None = None, search: str | None = None,
              run_group: str | None = None, actor_category: str | None = None,
              review_reason: str | None = None, region: str | None = None) -> dict[str, Any]:
-        if status not in (*STATUSES, None, "all"):
+        if status not in (*LIST_STATUSES, None, "all"):
             raise ReviewValidationError("Unsupported review status.")
+        verified_since = time.time() - VERIFIED_SHOWN_DAYS * 86400
         if entity_type not in (*ENTITY_TYPES, None, "all"):
             raise ReviewValidationError("Unsupported entity type.")
         if actor_category and actor_category != "all" and actor_category not in CATEGORY_LABELS:
-            raise ReviewValidationError("Unsupported actor category.")
+            raise ReviewValidationError("Unsupported organization category.")
         where, params = ["folded_into IS NULL"], []
-        if status not in (None, "all"):
+        if status == "parked":
+            where.append("status='pending_review'")
+        elif status in ("approved", "rejected_by_reviewer"):
+            where.append("status=? AND COALESCE(reviewed_at, 0) >= ?")
+            params.extend((status, verified_since))
+        elif status not in (None, "all"):
             where.append("status=?"); params.append(status)
         if entity_type not in (None, "all"):
             where.append("entity_type=?"); params.append(entity_type)
@@ -1071,14 +1095,24 @@ class ReviewStore:
             ).fetchall()
             counts = {row["status"]: row["n"] for row in db.execute(
                 "SELECT status,count(*) AS n FROM review_candidate WHERE folded_into IS NULL "
-                "GROUP BY status"
+                "AND (status = 'pending_review' OR COALESCE(reviewed_at, 0) >= ?) GROUP BY status",
+                (verified_since,),
             )}
+            counts["parked"] = sum(1 for row in db.execute(
+                "SELECT decision_kind, agent_metadata FROM review_candidate "
+                "WHERE folded_into IS NULL AND status='pending_review'")
+                if is_parked(row["decision_kind"], row["agent_metadata"]))
+            counts["pending_review"] = counts.get("pending_review", 0) - counts["parked"]
             maps = [dict(row) for row in db.execute(
                 "SELECT source_run_id, max(source_description) AS description, count(*) AS candidate_count "
                 "FROM review_candidate WHERE folded_into IS NULL GROUP BY source_run_id "
                 "ORDER BY source_run_id"
             )]
         candidates = [self._decode(row) for row in rows]
+        if status in ("parked", "pending_review"):
+            parked = status == "parked"
+            candidates = [item for item in candidates
+                          if is_parked(item.get("decision_kind"), item.get("agent_metadata")) == parked]
         # Category, review reason and region live inside JSON payloads, so they
         # are filtered after decoding rather than in SQL. Deterministic either
         # way: the SQL order is preserved.
@@ -1106,7 +1140,7 @@ class ReviewStore:
             ]
         return {
             "candidates": candidates,
-            "counts": {key: counts.get(key, 0) for key in STATUSES},
+            "counts": {key: counts.get(key, 0) for key in LIST_STATUSES},
             "source_maps": maps,
             "run_groups": self.run_groups(),
             "reason_counts": dict(sorted(reason_counts.items(), key=lambda kv: (-kv[1], kv[0]))),
@@ -1476,7 +1510,7 @@ class ReviewStore:
         if ghus_notes and decision_kind not in {"new", "same_existing"}:
             raise ReviewValidationError("Analyst notes are saved when the record is verified.")
         if candidate.get("folded_into"):
-            raise ReviewConflict("This card is now part of the actor's update profile; "
+            raise ReviewConflict("This card is now part of the organization's update profile; "
                                  "decide it there.")
         if (metadata.get("review_kind") == "actor_profile" and decision_kind == "new"
                 and metadata.get("changes")):
@@ -1571,7 +1605,7 @@ class ReviewStore:
             # created and no field is edited by this decision.
             if decision_kind not in {"new", "same_existing", "reject"}:
                 raise ReviewValidationError(
-                    "An actor awaiting verification is verified or rejected; "
+                    "An organization awaiting verification is verified or rejected; "
                     "leave it in the queue to decide later.")
             return {
                 "decision_kind": "verify_actor",
@@ -1638,7 +1672,7 @@ class ReviewStore:
         candidate = self.get(candidate_id)
         metadata = candidate["agent_metadata"]
         if metadata.get("review_kind") != "actor_profile":
-            raise ReviewValidationError("Only an actor's update profile holds changes.")
+            raise ReviewValidationError("Only an organization's update profile holds changes.")
         if candidate["status"] != "pending_review":
             raise ReviewConflict("This profile has already been reviewed.")
         change = next((c for c in metadata.get("changes") or []
@@ -1689,6 +1723,17 @@ class ReviewStore:
                  _clean_text(notes, max_length=5000), _now(), _json(outcome)),
             )
         return self.get(candidate_id)
+
+    def pending_by_run(self, run_ids: list[str]) -> dict[str, int]:
+        """Listed records still awaiting a decision, per source run (the Dashboard's maps)."""
+        if not run_ids:
+            return {}
+        marks = ",".join("?" * len(run_ids))
+        with self.connect() as db:
+            return {row[0]: int(row[1]) for row in db.execute(
+                f"SELECT source_run_id, COUNT(*) FROM review_candidate WHERE status='pending_review' "
+                f"AND folded_into IS NULL AND source_run_id IN ({marks}) GROUP BY source_run_id",
+                list(run_ids))}
 
     SET_ASIDE_PREFIX = "set_aside:"
 
@@ -1832,7 +1877,7 @@ class ReviewStore:
                 max_length=80,
             )
             if not category:
-                raise ReviewValidationError(f"Choose an actor category for {name}.")
+                raise ReviewValidationError(f"Choose an organization category for {name}.")
             items.append({
                 "candidate_id": candidate_id,
                 "review_item_id": str(metadata.get("review_item_id")),
@@ -1890,9 +1935,9 @@ class ReviewStore:
                 raise ReviewValidationError("This is not a location review.")
             if keep_unlocated:
                 if not notes:
-                    raise ReviewValidationError("Explain why the actor stays unlocated.")
+                    raise ReviewValidationError("Explain why the organization stays unlocated.")
             elif not (_clean_text(city) and _clean_text(state)):
-                raise ReviewValidationError("Enter the actor's city and state.")
+                raise ReviewValidationError("Enter the organization's city and state.")
             request.update({"city": _clean_text(city, max_length=120),
                             "state": _clean_text(state, max_length=80),
                             "country": _clean_text(country, max_length=80) or "US",

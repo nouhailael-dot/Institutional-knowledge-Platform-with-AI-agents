@@ -52,6 +52,8 @@ def main(argv: list[str] | None = None) -> int:
         "DATAFEED_DATABASE_URL": driver_url,
         "GHUS_ADMISSION_PROJECT_ROOT": str(BACKEND),
         "REVIEW_ADMISSION_DATABASE_URL": driver_url,
+        # Uploaded files, for Import history: outside the repository, like the store.
+        "GHUS_DATAFEED_ORIGINALS": str(args.store.parent.parent / "datafeed-originals"),
     })
     # No demo banner and no local test canonical: this is the real queue.
     for demo_only in ("GHUS_DEMO_MODE", "REVIEW_DEMO_MODE", "REVIEW_SOURCE_RUN_DB"):

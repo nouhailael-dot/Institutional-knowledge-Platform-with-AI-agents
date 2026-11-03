@@ -1,29 +1,62 @@
-/* Dashboard. Same tokens and cards as Discovery, so it follows light and dark. */
-.dashboard-page .discovery-card + .discovery-card{margin-top:16px}
-.dashboard-page h3{margin:0 0 10px;font-size:17px}
-.dash-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:6px 0 18px}
-.dash-tile{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;gap:2px}
-.dash-tile strong{font-size:22px;line-height:1.1}
-.dash-tile span{font-size:12px;color:var(--muted);font-weight:600}
-.dash-tile.warn{border-color:#fde68a;background:#fffbeb}
-.dash-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.dash-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
-.dash-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;border:1px solid var(--line);border-left:4px solid var(--line-strong);border-radius:8px;padding:10px 14px;background:var(--surface)}
-.dash-row.running{border-left-color:var(--accent)}
-.dash-row.succeeded{border-left-color:#059669}
-.dash-row.attention{border-left-color:#d97706}
-.dash-row.failed,.dash-row.stalled{border-left-color:#b42318}
-.dash-main{display:grid;gap:2px;min-width:0}
-.dash-main strong,.dash-main small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.dash-main small{color:var(--muted)}
-.dash-kind{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
-.dash-new{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;letter-spacing:0}
+/* Dashboard (GHUS Dashboard Design, 2026-11-02). Platform tokens, so it follows light and dark. */
+.dashboard-page{display:grid;gap:18px}
+.dashboard-page .hero-h{margin-bottom:0}
+.dash-lead{margin:-12px 0 0}
+.dash-summaries{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.dash-summary,.dash-spending{display:flex;align-items:center;gap:18px;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;padding:16px 20px}
+.dash-summary-icon,.dash-spending-icon{flex:none;display:grid;place-items:center;color:var(--accent);padding-right:18px;border-right:1px solid var(--line)}
+.dash-summary strong{display:block;font-size:22px;line-height:1.15}
+.dash-summary span:not(.dash-summary-icon){font-size:14px;color:var(--muted)}
+.dash-spending{border-left-width:1px}
+.dash-spending-icon{width:52px;height:52px;border-radius:10px;background:var(--accent-soft);padding:0;border:0;margin-right:4px}
+.dash-spending-label{display:grid;gap:2px;padding-right:28px;border-right:1px solid var(--line)}
+.dash-spending-label strong{font-size:17px}
+.dash-spending-label span{font-size:14px;color:var(--muted)}
+.dash-spending-amount{font-size:30px;color:var(--accent);margin-left:12px}
+.dash-activity-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px}
+.dash-activity-head h2{margin:0;font-size:24px}
+.dash-windows{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:3px;background:var(--surface)}
+.dash-windows button{border:0;background:none;color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:6px 16px;border-radius:999px;cursor:pointer}
+.dash-windows button + button{box-shadow:-1px 0 0 var(--line)}
+.dash-windows button.active{background:var(--accent);color:#fff;box-shadow:none}
+.dash-windows button.active + button{box-shadow:none}
+.dash-panels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.dash-panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 14px 10px;display:flex;flex-direction:column;min-height:100%}
+.dash-panel header{display:flex;gap:12px;align-items:flex-start;margin-bottom:8px}
+.dash-panel-icon{color:var(--accent);flex:none;margin-top:2px}
+.dash-panel h3{margin:0;font-size:17px}
+.dash-panel header p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.dash-entries{list-style:none;margin:0;padding:0;flex:1}
+.dash-entries li + li{border-top:1px solid var(--line)}
+.dash-entry{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;gap:10px;align-items:center;background:none;border:0;padding:9px 4px;text-align:left;font:inherit;color:inherit;cursor:pointer;border-radius:6px}
+.dash-entry:hover:not(:disabled){background:var(--surface-2)}
+.dash-entry:disabled{cursor:default}
+.dash-entry-icon{color:var(--muted);display:grid}
+.dash-entry-text{display:grid;min-width:0}
+.dash-entry-text strong,.dash-entry-text small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-entry-text strong{font-size:13.5px}
+.dash-entry-text small{color:var(--muted);font-size:12.5px}
+.dash-chevron{color:var(--muted);display:grid}
+.dash-empty{flex:1;margin:6px 4px 12px}
+.dash-footer{align-self:flex-end;display:inline-flex;align-items:center;gap:6px;background:none;border:0;color:var(--accent);font:inherit;font-weight:600;font-size:14px;padding:10px 4px 4px;cursor:pointer}
+.dash-footer:hover{text-decoration:underline}
+/* Status pills: the platform's colors (Discovery and Review Results). */
+.dash-pill{font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);white-space:nowrap}
+.dash-pill.completed,.dash-pill.new_update{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}
+.dash-pill.pending_review,.dash-pill.in_progress{background:#fff1ec;color:#c2410c;border-color:#fed7c3}
+.dash-pill.attention{background:#fef2f2;color:#991b1b;border-color:#fecaca}
+.dash-pill.paused{background:#fffbeb;color:#92400e;border-color:#fde68a}
+/* Request statuses Discovery shows (kept here since the first Dashboard). */
 .discovery-status.running{background:var(--accent-soft);color:var(--accent-ink);border-color:var(--accent)}
 .discovery-status.stalled,.discovery-status.failed{background:#fef2f2;color:#991b1b;border-color:#fecaca}
 .discovery-status.succeeded{background:#ecfdf5;color:#065f46;border-color:#a7f3d0}
 .discovery-status.attention{background:#fffbeb;color:#92400e;border-color:#fde68a}
+.discovery-request.focused{outline:2px solid var(--accent);outline-offset:2px}
 .nav-badge{margin-left:auto;min-width:18px;padding:1px 6px;border-radius:999px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;text-align:center}
+@media (max-width:1100px){.dash-panels{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:760px){
-  .dash-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .dash-row{grid-template-columns:minmax(0,1fr)}
+  .dash-summaries{grid-template-columns:minmax(0,1fr)}
+  .dash-spending{flex-wrap:wrap}
+  .dash-spending-label{border-right:0}
+  .dash-spending-amount{margin-left:0}
 }

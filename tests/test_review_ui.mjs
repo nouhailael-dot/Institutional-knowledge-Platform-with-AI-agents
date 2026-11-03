@@ -106,7 +106,7 @@ test('the Category Type dropdown depends on the chosen category, and cross pairs
   assert.equal(isValidPair('startup', RETIRED_CATCH_ALL), false);
 });
 
-test('changing the Actor Category clears an incompatible type after a confirmation', () => {
+test('changing the Organization Category clears an incompatible type after a confirmation', () => {
   // The control asks before it clears, because carrying a type across
   // categories would record a relationship that is not true.
   assert.match(component, /function editCategory\(value\)/);
@@ -328,12 +328,11 @@ test('the queue groups the pre-redesign backlog first, then one group per run', 
   assert.deepEqual(orphan.map(group => group.key), ['unrecorded']);
 });
 
-test('Run Type offers exactly six choices, and the reason filter is gone', () => {
+test('Run Type names where results come from, and the reason filter is gone', () => {
   assert.deepEqual(RUN_TYPE_OPTIONS.map(o => o.label),
-    ['All Runs', 'Discovery Organizations', 'Discovery Events', 'Discovery People', 'Organization Updates',
-     'Data Feed Imports']);
+    ['All Requests', 'New Requests', 'Organization Updates', 'Import Updates']);
   assert.equal(runTypeName('map_checks'), 'Map Checks');
-  assert.equal(runTypeName('data_feed'), 'Data Feed Imports');
+  assert.equal(runTypeName('data_feed'), 'Import Updates');
   assert.doesNotMatch(component, /review_reason:\s*"all"/);
   assert.doesNotMatch(component, /FIELDS\.reviewReason/);
   assert.doesNotMatch(component, /FIELDS\.sourceRun/);
@@ -372,7 +371,7 @@ test('a record row says what it is: an update result, or the kind and reason', (
   assert.equal(recordRowNote({agent_metadata: {source_table: 'actor_update'}, entity_type: 'actor'}),
     'Update result · check what it wrote');
   assert.match(recordRowNote({entity_type: 'actor', review_reason: 'below_threshold', agent_metadata: {}}),
-    /^Actor · /);
+    /^Organization · /);
 });
 
 test('run labels and chips hide raw UUIDs without changing the stored run id', () => {
@@ -403,18 +402,20 @@ test('header badges carry the record kind, the review state and every reason', (
   });
   // Stored "parked" by the agent is not a decision: it reads Pending.
   assert.deepEqual(badges.map(badge => badge.label),
-    ['Organization', 'Pending', 'Geocode Failed', 'Possible Duplicate']);
+    ['Organization', 'Pending Review', 'Geocode Failed', 'Possible Duplicate']);
   // Parked only when a person parked it - in Review, or on its Build the Map card.
   assert.equal(headerBadges({entity_type: 'actor', status: 'pending_review', record_status: 'parked',
     decision_kind: 'defer'})[1].label, 'Parked');
   assert.equal(headerBadges({entity_type: 'event', status: 'pending_review',
     agent_metadata: {_review: 'parked'}})[1].label, 'Parked');
-  assert.equal(reviewStatusLabel('pending_review'), 'Pending');
+  assert.equal(reviewStatusLabel('pending_review'), 'Pending Review');
   // One decision bar, at the bottom: none beside the name, and no hub checkbox,
   // reviewer or notes in each record; the reviewer is named once at the top.
   assert.doesNotMatch(component, /review-card-actions|checked=\$\{proposeHub\}/);
-  assert.match(component, /class=\$\{"review-whoami"/);
-  assert.match(component, /localStorage\.getItem\("ghus\.review\.reviewer"\)/);
+  // Named by the user, not typed on every visit: the box shows only when this browser knows no name.
+  // Nobody types a reviewer: the server records the account (src.identity).
+  assert.doesNotMatch(component, /review-whoami|<span>Reviewer<\/span><input/);
+  assert.doesNotMatch(component, /BUTTONS\.refresh/);
   assert.equal(reviewReasonLabel('hub_member_outside_radius'), 'Hub Member Outside Radius');
   assert.equal(reviewReasonLabel(''), '');
   assert.equal(reviewStatusLabel('rejected_by_reviewer'), 'Rejected');
@@ -522,7 +523,8 @@ test('decisions, the sticky footer and the queue are reachable and keyboard-oper
 });
 
 test('every action is disabled while the canonical writer is unavailable', () => {
-  assert.match(component, /const writerDown = !data\.admission_configured/);
+  // Off only when the server says so; while loading it is unknown, not "off".
+  assert.match(component, /const writerDown = data.admission_configured === false/);
   assert.match(component, /disabled=\$\{!pending \|\| busy \|\| writerDown\}/);
   assert.match(component, /SENTENCES\.writerUnavailable/);
 });
@@ -795,8 +797,11 @@ test('Light Pull fills information boxes, and the category drives which ones', (
   assert.match(component, /lightPullBoxes\(selected, draft\.actor_category\)/);
   assert.match(component, /FIELDS\.commonLightPull/);
   // As lines, not boxes: found facts each on a line, the rest named together.
-  assert.match(component, /lightLines\(html, lightBoxes\.common\)/);
-  assert.match(component, /lightLines\(html, lightBoxes\.specific\)/);
+  // Shown once: the collected list leaves out what the card shows elsewhere, and the
+  // category boxes appear in the profile only (no second copy below).
+  assert.match(component, /lightLines\(html, lightBoxes\.common\.filter\(row => !SHOWN_ELSEWHERE\.has\(row\.key\)\)\)/);
+  assert.match(component, /\(mapDetails\.length \? \[\] : lightBoxes\.specific\)\.map\(/);
+  assert.doesNotMatch(component, /lightLines\(html, lightBoxes\.specific\)/);
   assert.doesNotMatch(component, /review-boxes|light-box/);
 
   const candidate = {reviewed_payload: {actor_category: 'university_academic'}};
@@ -1447,4 +1452,58 @@ test('a card line is editable in place only where Review may change it', async (
   assert.doesNotMatch(audience, /<input/);
   assert.match(audience, /Utilities/);
   assert.match(cardLine(html, 'Other names', ''), /Not Found/);
+});
+
+test('a person card shows Public Profile and LinkedIn where an organization shows its website', async () => {
+  const {personLink, PERSON_LINK_FIELDS} = await import('../frontend/review.js');
+  assert.deepEqual(PERSON_LINK_FIELDS.map(([field]) => field), ['public_profile_url', 'linkedin_url']);
+  const person = {entity_type: 'person', original_payload: {linkedin_url: 'https://www.linkedin.com/in/x'}};
+  assert.equal(personLink(person, {}), 'https://www.linkedin.com/in/x');
+  assert.equal(personLink(person, {public_profile_url: 'https://asu.edu/x'}), 'https://asu.edu/x');
+  assert.equal(personLink({entity_type: 'person', original_payload: {}}, {}), null);
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.match(src, /selected\.entity_type === "person"\s*\? PERSON_LINK_FIELDS\.map/);
+});
+
+test('Category is a filter for organizations only, under Record Type', async () => {
+  const {showsCategoryFilter} = await import('../frontend/review.js');
+  const {FIELDS} = await import('../frontend/labels.js');
+  assert.equal(FIELDS.recordKind, 'Record Type');
+  assert.equal(showsCategoryFilter({entity_type: 'all', run_type: 'all'}), false);
+  assert.equal(showsCategoryFilter({entity_type: 'person', run_type: 'all'}), false);
+  assert.equal(showsCategoryFilter({entity_type: 'actor', run_type: 'all'}), true);
+  assert.equal(showsCategoryFilter({entity_type: 'all', run_type: 'actor_updates'}), true);
+});
+
+test('decisions are signed by the account, as the server records it; no Refresh button', async () => {
+  const {storedReviewer, SIGNED_IN_USER} = await import('../frontend/review.js');
+  assert.equal(storedReviewer(), SIGNED_IN_USER);
+  assert.equal(SIGNED_IN_USER, 'Not recorded (no sign-in yet)');
+});
+
+test('why COMPASS identified an organization: its run, its search and its sources, never composed', async () => {
+  const {supportingSources, identifiedThrough, filterReviewCandidates, REVIEW_COUNT_STATUSES, reviewStatusLabel} =
+    await import('../frontend/review.js');
+  const candidate = {evidence: [{url: 'https://www.bilh.org/about', supports: 'Fetched page used for scoring'},
+    {evidence_type: 'x'}], agent_metadata: {query: 'research institute clinical AI Massachusetts'}};
+  assert.deepEqual(supportingSources(candidate), [{url: 'https://www.bilh.org/about', title: null,
+    publisher: 'bilh.org', date: null, supports: 'Fetched page used for scoring'}]);
+  assert.match(identifiedThrough(candidate), /Search: “research institute clinical AI Massachusetts”$/);
+  assert.deepEqual(REVIEW_COUNT_STATUSES, ['pending_review', 'approved', 'parked', 'rejected_by_reviewer']);
+  const {REVIEW_COUNT_CAPTIONS} = await import('../frontend/review.js');
+  assert.equal(REVIEW_COUNT_CAPTIONS.approved, 'Your verified records (last 30 days)');
+  assert.equal(REVIEW_COUNT_CAPTIONS.rejected_by_reviewer, 'Your rejected records (last 30 days)');
+  assert.equal(reviewStatusLabel('parked'), 'Parked');
+  const rows = [{status: 'pending_review', decision_kind: 'defer'}, {status: 'pending_review'}];
+  assert.equal(filterReviewCandidates(rows, {status: 'parked'}).length, 1);
+  assert.equal(filterReviewCandidates(rows, {status: 'pending_review'}).length, 1);
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.match(src, /<details class="review-why">/);              // closed until clicked
+  assert.match(src, /<details class="review-why-sources">/);
+  assert.doesNotMatch(src, /cardLine\(html, "Topic Match"/);       // no longer repeated in the profile
+});
+
+test('an organization card has no Mapped Topic line (3 Nov 2026)', () => {
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /"Mapped Topic"/);
 });

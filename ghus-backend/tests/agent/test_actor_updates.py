@@ -181,7 +181,7 @@ def test_specific_reads_only_the_chosen_boxes_and_refuses_inapplicable_ones():
                                 today=NOW, limits=LIMITS)
     assert read == ["funding_signal"]
     assert skipped == [{"field": "rankings", "reason":
-                        "Not in this actor's category schema, so it is never filled."}]
+                        "Not in this organization's category schema, so it is never filled."}]
     with pytest.raises(ActorUpdateError):
         plan_fields("specific", SCHEMA, {}, fields=["rankings"], today=NOW, limits=LIMITS)
 
@@ -296,7 +296,7 @@ def test_a_request_is_normalised_into_what_the_table_stores():
     ({"scope": "specific"}, "at least one box"),
     ({"max_usd_per_run": 9}, "spend ceiling"),
     ({"max_usd_per_run": -1}, "spend ceiling"),
-    ({"max_actors_per_run": 99}, "Actors per run"),
+    ({"max_actors_per_run": 99}, "Organizations per run"),
     ({"actor_ids": [str(uuid.uuid4()) for _ in range(21)]}, "at most 20"),
     ({"end_date": None}, "end date"),
     ({"start_date": "2026-10-01"}, "past"),

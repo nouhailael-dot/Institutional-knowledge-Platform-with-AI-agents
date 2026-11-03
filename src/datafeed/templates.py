@@ -41,7 +41,7 @@ _STRIP = (" ", "/", "(", ")", "&", "-")
 EXAMPLES: dict[str, list[dict[str, str]]] = {
     "actor": [
         {"name": "Prairie Water Lab", "alternate_names": "PWL",
-         "website": "https://prairiewaterlab.example", "actor_category": "Company / Corporate Actor",
+         "website": "https://prairiewaterlab.example", "actor_category": "Company / Corporate Organization",
          "category_type": "SME",
          "description": "A company that builds low-cost water-quality sensors for farms.",
          "primary_sector": "Water", "city": "Wichita", "state_code": "Kansas",
@@ -58,7 +58,7 @@ EXAMPLES: dict[str, list[dict[str, str]]] = {
          "parent_relationship": "Unit of", "source_url": "https://cagr.example.edu/about"},
     ],
     "person": [
-        {"name": "Ana Ruiz", "role": "Professor of Hydrology",
+        {"first_name": "Ana", "last_name": "Ruiz", "role": "Professor of Hydrology",
          "affiliation": "University of Arizona",
          "department": "Department of Hydrology and Atmospheric Sciences",
          "bio_url": "https://www.arizona.example.edu/people/ana-ruiz",
@@ -100,7 +100,7 @@ def _labels(vocab: dict[str, Any], name: str) -> list[str]:
 
 def _allowed(field: Field, vocab: dict[str, Any]) -> str:
     if field.vocab == "category_types":
-        return "Depends on the Actor Category (see the dropdown)"
+        return "Depends on the Organization Category (see the dropdown)"
     if not field.vocab:
         return ""
     labels = _labels(vocab, field.vocab)
@@ -126,6 +126,32 @@ def _guide_rows(record_type: str, vocab: dict[str, Any]) -> list[list[str]]:
 
 
 def build_xlsx(record_type: str, vocab: dict[str, Any]) -> bytes:
+    out = io.BytesIO()
+    _workbook(record_type, vocab).save(out)
+    return out.getvalue()
+
+
+def build_filled_xlsx(record_type: str, vocab: dict[str, Any],
+                      rows: list[dict[str, str]]) -> bytes:
+    """The template with these rows on its records sheet, keyed by column header.
+
+    How an import typed by hand is kept: the same workbook an upload would have
+    been, so Import history offers every import as an Excel file.
+    """
+    wb = _workbook(record_type, vocab)
+    data = wb[contract.SHEET_NAMES[record_type]]
+    by_header = {contract.header_key(f.header): i for i, f in enumerate(contract.fields(record_type), 1)}
+    for number, row in enumerate(rows, 2):
+        for header, value in row.items():
+            column = by_header.get(contract.header_key(header))
+            if column and value not in (None, ""):
+                data.cell(row=number, column=column, value=str(value))
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def _workbook(record_type: str, vocab: dict[str, Any]) -> Workbook:
     fields = contract.fields(record_type)
     wb = Workbook()
     intro = wb.active
@@ -265,16 +291,15 @@ def build_xlsx(record_type: str, vocab: dict[str, Any]) -> bytes:
     examples.append([f.template_header for f in fields])
     for example in EXAMPLES[record_type]:
         values = dict(example)
-        values["name"] = f"{EXAMPLE_PREFIX} - {values['name']}"
+        first = "first_name" if record_type == "person" else "name"
+        values[first] = f"{EXAMPLE_PREFIX} - {values[first]}"
         examples.append([values.get(f.key, "") for f in fields])
     for cell in examples[2]:
         cell.font, cell.fill = _WHITE, _HEADER
 
     wb.properties.title = f"GHUS Data Feed template - {label}"
     wb.properties.keywords = f"{MARKER};{record_type};{contract.TEMPLATE_VERSION}"
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()
+    return wb
 
 
 def build_csv(record_type: str) -> bytes:

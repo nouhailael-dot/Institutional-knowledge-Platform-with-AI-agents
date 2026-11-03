@@ -411,14 +411,9 @@ def browse_actors():
 # --- Delete in the Ecosystem Directory (29 Oct 2026). Removable, never wiped: the
 # backend appends a GHUS decision ("rejected" to remove, "verified" to restore)
 # through its own writer, and the database hides a rejected organization.
-# Who is acting. There are no accounts yet, so nobody types a name: decisions
-# record this placeholder, as the Owner column does. When logins exist, this is
-# the one place that returns the signed-in user (decided 29 Oct 2026).
-NO_SIGN_IN_YET = "Not recorded (no sign-in yet)"
-
-
-def current_user(request=None) -> str:
-    return NO_SIGN_IN_YET
+# Who is acting: src.identity, the one place (decided 29 Oct 2026; Review, Monitor
+# and the Data Feed since 3 Nov). Nobody types a name or an email.
+from src.identity import NO_SIGN_IN_YET, current_user, current_user_email  # noqa: E402
 
 
 class DirectoryDecision(BaseModel):
@@ -525,7 +520,44 @@ def map_session():
 @app.get("/api/maps")
 def maps_recent():
     enabled, reason = research_availability()
-    return {"maps": map_store().recent(), "research_available": enabled, "research_disabled_reason": reason}
+    maps = map_store().recent()
+    # Records each map sent to Review Results that nobody has decided yet (Dashboard).
+    try:
+        pending = review_store().pending_by_run([m["id"] for m in maps])
+    except Exception:
+        logger.warning("Could not count maps' pending Review records", exc_info=True)
+        pending = {}
+    for m in maps:
+        m["pending_review"] = pending.get(m["id"], 0)
+    return {"maps": maps, "research_available": enabled, "research_disabled_reason": reason}
+
+
+@app.get("/api/dashboard/directory-activity")
+def dashboard_directory_activity(reviewer: str = Query("", max_length=120),
+                                 days: int = Query(30, ge=1, le=366)):
+    """The name's latest Directory contributions (Review decisions), newest first."""
+    from src.dashboard import directory_activity
+    try:
+        return {"activity": directory_activity(reviewer, days=days)}
+    except Exception:
+        logger.exception("Dashboard directory activity failed")
+        raise HTTPException(503, "The Directory activity could not be read right now.")
+
+
+@app.get("/api/dashboard/spending")
+def dashboard_spending():
+    """Every month's request spending and the maps run on this computer. For the admin."""
+    from src.dashboard import spending_by_month
+    try:
+        months = spending_by_month()
+    except Exception:
+        logger.exception("Dashboard spending failed")
+        raise HTTPException(503, "Spending could not be read right now.")
+    maps: dict[str, float] = {}
+    for m in map_store().recent():
+        month = time.strftime("%Y-%m", time.localtime(m["created"]))
+        maps[month] = round(maps.get(month, 0.0) + float(m.get("spent_usd") or 0), 4)
+    return {"months": months, "maps_on_this_computer": maps}
 
 
 def require_research():
@@ -1115,7 +1147,7 @@ class ReviewUpdateRequest(BaseModel):
 
 
 class ReviewDecisionRequest(BaseModel):
-    reviewer: str = Field(min_length=1, max_length=120)
+    reviewer: str = Field(default="", max_length=120)  # ignored: current_user() is recorded
     idempotency_key: str = Field(min_length=1, max_length=200)
     confirmed: bool = False
     notes: str | None = Field(default=None, max_length=5000)
@@ -1128,7 +1160,7 @@ class ReviewRejectionRequest(ReviewDecisionRequest):
 
 class ReviewCategoryRequest(BaseModel):
     candidate_ids: list[str] = Field(min_length=1, max_length=500)
-    reviewer: str = Field(min_length=1, max_length=120)
+    reviewer: str = Field(default="", max_length=120)  # ignored: current_user() is recorded
     idempotency_key: str = Field(min_length=1, max_length=200)
     confirmed: bool = False
     notes: str | None = Field(default=None, max_length=5000)
@@ -1137,7 +1169,7 @@ class ReviewCategoryRequest(BaseModel):
 
 class ReviewItemDecisionRequest(BaseModel):
     decision_kind: str = Field(pattern="^(resolve_location|resolve_relationship)$")
-    reviewer: str = Field(min_length=1, max_length=120)
+    reviewer: str = Field(default="", max_length=120)  # ignored: current_user() is recorded
     idempotency_key: str = Field(min_length=1, max_length=200)
     confirmed: bool = False
     notes: str | None = Field(default=None, max_length=5000)
@@ -1151,7 +1183,7 @@ class ReviewItemDecisionRequest(BaseModel):
 
 class ReviewChangeRequest(BaseModel):
     choice: str = Field(min_length=1, max_length=20)
-    reviewer: str = Field(min_length=1, max_length=120)
+    reviewer: str = Field(default="", max_length=120)  # ignored: current_user() is recorded
     idempotency_key: str = Field(min_length=1, max_length=200)
     confirmed: bool = False
     notes: str | None = Field(default=None, max_length=5000)
@@ -1204,7 +1236,7 @@ class SectorCreate(BaseModel):
     name: str = Field(min_length=2, max_length=80)
     code: str | None = Field(default=None, max_length=20)
     description: str | None = Field(default=None, max_length=500)
-    reviewer: str = Field(min_length=1, max_length=120)
+    reviewer: str = Field(default="", max_length=120)  # ignored: current_user() is recorded
 
 
 def _fallback_sectors() -> list[dict]:
@@ -1239,7 +1271,8 @@ def review_create_sector(body: SectorCreate):
         raise HTTPException(status_code=503, detail=(
             "Sectors can only be added when admission is configured on this instance."))
     try:
-        outcome = bridge.apply({"decision_kind": "create_sector", **body.model_dump()})
+        outcome = bridge.apply({"decision_kind": "create_sector", **body.model_dump(),
+                                "reviewer": current_user()})
     except AdmissionBridgeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     register_sector_codes([outcome.get("code") or ""])
@@ -1338,7 +1371,7 @@ def review_candidate_update(candidate_id: str, payload: ReviewUpdateRequest):
 def review_candidate_approve(candidate_id: str, payload: ReviewDecisionRequest):
     try:
         return review_store().approve(
-            candidate_id, reviewer=payload.reviewer,
+            candidate_id, reviewer=current_user(),
             idempotency_key=payload.idempotency_key, confirmed=payload.confirmed,
             notes=payload.notes, edited_payload=payload.edited_payload,
         )
@@ -1350,7 +1383,7 @@ def review_candidate_approve(candidate_id: str, payload: ReviewDecisionRequest):
 def review_candidate_reject(candidate_id: str, payload: ReviewRejectionRequest):
     try:
         return review_store().reject(
-            candidate_id, reviewer=payload.reviewer,
+            candidate_id, reviewer=current_user(),
             rejection_reason=payload.rejection_reason,
             idempotency_key=payload.idempotency_key, confirmed=payload.confirmed,
             notes=payload.notes,
@@ -1366,7 +1399,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
         decision = store.admission_request(
             candidate_id,
             decision_kind=payload.decision_kind,
-            reviewer=payload.reviewer,
+            reviewer=current_user(),
             idempotency_key=payload.idempotency_key,
             target_id=payload.target_id,
             keep_both=payload.keep_both,
@@ -1391,7 +1424,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
             candidate_id,
             idempotency_key=payload.idempotency_key,
             decision_kind=payload.decision_kind,
-            reviewer=payload.reviewer,
+            reviewer=current_user(),
             notes=payload.notes,
             rejection_reason=payload.rejection_reason,
             outcome=outcome,
@@ -1423,13 +1456,13 @@ def review_candidate_change(candidate_id: str, review_item_id: str, payload: Rev
         raise HTTPException(status_code=404, detail="Unknown change.") from exc
     try:
         decision = store.change_request(
-            candidate_id, review_item_id, choice=payload.choice, reviewer=payload.reviewer,
+            candidate_id, review_item_id, choice=payload.choice, reviewer=current_user(),
             idempotency_key=payload.idempotency_key, notes=payload.notes,
             confirmed=payload.confirmed,
         )
         outcome = review_admission_bridge().apply(decision)
         updated = store.record_change_decision(
-            candidate_id, review_item_id, choice=payload.choice, reviewer=payload.reviewer,
+            candidate_id, review_item_id, choice=payload.choice, reviewer=current_user(),
             idempotency_key=payload.idempotency_key, notes=payload.notes, outcome=outcome,
         )
         # Re-read the map so the boxes show the value now current.
@@ -1503,7 +1536,7 @@ def discovery_preview(draft: DiscoveryDraft):
 
 @app.post("/api/discovery/requests")
 def discovery_create(draft: DiscoveryDraft):
-    return _discovery_call(discovery_bridge().create, draft.model_dump(exclude_none=True))
+    return _discovery_call(discovery_bridge().create, _as_requester(draft))
 
 
 @app.post("/api/discovery/requests/{subscription_id}/run")
@@ -1559,7 +1592,7 @@ def discovery_actor_search(q: str = Query("", max_length=120),
     """
     source = review_postgres_source()
     if source is None:
-        raise HTTPException(status_code=503, detail="Actor search is not available on this instance.")
+        raise HTTPException(status_code=503, detail="Organization search is not available on this instance.")
     try:
         return source.search_actors(q, sector=sector, category=category, state=state,
                                     updatable_only=not everyone, limit=limit)
@@ -1571,7 +1604,7 @@ def _actor_update_call(actor_id: str, step: str, payload: ActorUpdateRequest):
     try:
         UUID(actor_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail="unknown actor") from exc
+        raise HTTPException(status_code=404, detail="unknown organization") from exc
     bridge = discovery_bridge()
     call = bridge.plan_update if step == "plan" else bridge.check_update
     return _discovery_call(lambda: call(actor_id, payload.model_dump()))
@@ -1641,8 +1674,17 @@ def discovery_update_request_plan(draft: UpdateRequestDraft):
 
 @app.post("/api/discovery/update-requests")
 def discovery_update_request_create(draft: UpdateRequestDraft):
-    return _discovery_call(discovery_bridge().create_update_request,
-                           draft.model_dump(exclude_none=True))
+    return _discovery_call(discovery_bridge().create_update_request, _as_requester(draft))
+
+
+def _as_requester(draft) -> dict:
+    """A request is the current user's: emailed to their account's address, never a typed one."""
+    body = draft.model_dump(exclude_none=True)
+    body.pop("requested_by", None)
+    email = current_user_email()
+    if email:
+        body["requested_by"] = email
+    return body
 
 
 @app.post("/api/discovery/update-requests/{subscription_id}/{action}")
@@ -1675,7 +1717,8 @@ def review_item_decision(candidate_id: str, payload: ReviewItemDecisionRequest):
     """Resolve a V2 location or relationship review item through GHUS."""
     store = review_store()
     try:
-        request = store.review_item_decision_request(candidate_id, **payload.model_dump())
+        request = store.review_item_decision_request(
+            candidate_id, **{**payload.model_dump(), "reviewer": current_user()})
         outcome = review_admission_bridge().apply(request)
         return store.record_review_item_success(request, outcome)
     except Exception as exc:
@@ -1689,7 +1732,7 @@ def review_category_decisions(payload: ReviewCategoryRequest):
     try:
         request = store.category_decision_request(
             payload.candidate_ids,
-            reviewer=payload.reviewer,
+            reviewer=current_user(),
             idempotency_key=payload.idempotency_key,
             notes=payload.notes,
             categories=payload.categories,

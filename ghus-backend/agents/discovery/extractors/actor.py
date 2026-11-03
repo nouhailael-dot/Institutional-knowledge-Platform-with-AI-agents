@@ -110,8 +110,13 @@ FIELD_GUIDANCE: dict[str, str] = {
         "names explicitly."
     ),
     "current_activities": (
-        "Work the page says is happening now or recently: named projects, programmes, "
-        "trials, services or facilities. Not aspirations or history."
+        "The organisation's ongoing programmes: named projects, programmes, trials, "
+        "services or facilities it runs now, as the page names them (for example "
+        "'Runs the Clinical NLP Lab and the VA-funded Suicide Risk Prediction project'). "
+        "Not dated news or one-off events (those are its recent activity, read "
+        "separately), and never conferences attended, talks, retreats, thesis "
+        "defences, staff or student news, aspirations or history. Null if the page "
+        "names no ongoing programme."
     ),
     "key_constraints": (
         "Limits the page itself states - capacity, funding, regulatory or geographic. "
@@ -122,8 +127,11 @@ FIELD_GUIDANCE: dict[str, str] = {
         "'research', 'scale-up', 'deployment'), only if the page makes that explicit."
     ),
     "funding_summary": (
-        "What the page states about how it is funded: named funders, grants, awards or "
-        "budget figures. Null if the page does not say."
+        "A specific funding fact the page states about THIS organisation: a named funder, "
+        "grant, award, investment round or budget figure, with the amount and year when "
+        "given (for example 'NIH R01 grant, $2.1M, 2025'). Not 'supported by partners', "
+        "donation buttons, or funding of another organisation on the page. Null if the "
+        "page does not say."
     ),
 }
 

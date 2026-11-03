@@ -121,6 +121,9 @@ def _reachable_hostaddr(database_url: str) -> str | None:
                 break
         except OSError:
             continue
+    if found is None and cached and cached[1]:
+        # A failed lookup (DNS blip) keeps the address that last worked, not None.
+        found = cached[1]
     _hostaddr_cache[key] = (time.monotonic(), found)
     return found
 
@@ -323,7 +326,9 @@ class PostgresReviewSource:
                 "disable" if parsed.hostname in {"127.0.0.1", "localhost", "::1"}
                 else "require"
             )
-            db = psycopg.connect(
+            from src.db import connect_resilient
+
+            db = connect_resilient(
                 self.database_url,
                 autocommit=False,
                 connect_timeout=10,
@@ -938,7 +943,7 @@ class PostgresReviewSource:
         }.items() if v is not None}
         evidence = []
         for url in dict.fromkeys([*pages, *(f["source_url"] for f in facts if f["source_url"])]):
-            evidence.extend(_source_evidence(url, supports="Page read by the actor update"))
+            evidence.extend(_source_evidence(url, supports="Page read by the organization update"))
         return {
             "source_key": f"postgres:actor_update:{run['run_id']}:{actor_id}",
             "source_run_id": f"actor-update:{run['run_id']}",
@@ -1695,7 +1700,7 @@ class PostgresReviewSource:
                         "distance_miles": round(miles, 2),
                         "suggested": True,
                         "reason": (
-                            f"Sector {hub['sector_code']} matches and the actor is "
+                            f"Sector {hub['sector_code']} matches and the organization is "
                             f"{miles:.1f} miles from the hub centre, inside its "
                             f"{hub['radius_miles']:g}-mile radius."
                         ),
@@ -2106,8 +2111,11 @@ def _attach_page_facts(payload: dict[str, Any], metadata: dict[str, Any], *,
     hubs = [str(row.get("name")) for row in (rubric.get("hub_matches") or [])
             if isinstance(row, dict) and row.get("name")]
     fact("hub_assignment", {"suggested_hubs": hubs} if hubs else None)
-    fact("recent_activity", _text(payload.get("current_activities")))
-    fact("funding_signal", _text(payload.get("funding_summary")))
+    # Recent activity and funding are boxes only a Light Pull read fills: dated
+    # and quoted. The scoring page's own "current activities" and "funding"
+    # text stays on the record's Current Programs and Funding rows; copied
+    # here as well, it showed twice and passed undated trivia (a group
+    # retreat, a 2024 thesis defence) and sales figures off as found (2026-11-02).
     if reason:
         fact("why_matched", {"reason": reason, "strength": strength,
                              "source_url": str(url or "") or None})

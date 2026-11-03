@@ -16,7 +16,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from src.datafeed.parse import MAX_BYTES
-from src.datafeed.service import DataFeedError, DataFeedService
+from src.datafeed.service import XLSX, DataFeedError, DataFeedService
+from src.identity import current_user
 
 router = APIRouter(prefix="/api/datafeed", tags=["datafeed"])
 
@@ -41,7 +42,7 @@ class ManualRecords(BaseModel):
 class Confirmation(BaseModel):
     import_name: str = Field(min_length=1, max_length=120)
     accept_left_out: bool = False
-    # Who sends it, as they type it (there is no sign-in yet), and what they confirm.
+    # Ignored: who sends it is the current user (src.identity). What they confirm stays theirs.
     uploaded_by: str = Field(default="", max_length=120)
     attest_source: bool = False
     admission: str = "review"
@@ -87,7 +88,7 @@ def preview(preview_id: str):
 @router.post("/previews/{preview_id}/confirm")
 def confirm(preview_id: str, body: Confirmation):
     return _call(datafeed_service().confirm, preview_id, import_name=body.import_name,
-                 accept_left_out=body.accept_left_out, uploaded_by=body.uploaded_by,
+                 accept_left_out=body.accept_left_out, uploaded_by=current_user(),
                  attest_source=body.attest_source, admission=body.admission,
                  attest_authorized=body.attest_authorized)
 
@@ -97,9 +98,28 @@ def history():
     return {"imports": _call(datafeed_service().history)}
 
 
+@router.get("/example-import.xlsx")
+def example_import():
+    """The Excel file of Import history's example card (never real data)."""
+    data, name = _call(datafeed_service().example_file)
+    return Response(content=data, media_type=XLSX, headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
+
+
 @router.get("/imports/{run_id}")
 def import_records(run_id: str):
     return {"records": _call(datafeed_service().import_records, run_id)}
+
+
+@router.get("/imports/{run_id}/file")
+def original_file(run_id: str):
+    """The file as it was uploaded, for Import history."""
+    path = datafeed_service().original_file(run_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail="The original file is not kept on this computer.")
+    name = path.name.split("__", 1)[1].replace('"', "")
+    return Response(content=path.read_bytes(), media_type="application/octet-stream", headers={
+        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
 @router.post("/imports/{run_id}/estimate")

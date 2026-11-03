@@ -89,7 +89,7 @@ APPENDIX_A = (
         ("academic_medical_center", "University-Affiliated"),
         ("not_applicable", "Not Applicable"),
     )),
-    ("company", "Company / Corporate Actor", (
+    ("company", "Company / Corporate Organization", (
         ("public_company", "Public Company"),
         ("private_company", "Private Company"),
         ("small_mid_size", "SME"),

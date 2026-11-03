@@ -86,7 +86,7 @@ export const FIELDS = {
   reviewer: "Reviewer",
   notes: "Notes",
   rejectionReason: "Rejection Reason",
-  recordKind: "Record Kind",
+  recordKind: "Record Type",
   reviewState: "Review State",
   reviewReason: "Review Reason",
   sourceRun: "Source Run",
@@ -116,7 +116,7 @@ export const BADGES = {
   person: "Person",
   imported: "Imported",
   parked: "Parked",
-  pending: "Pending",
+  pending: "Pending Review",  // as the directory says it (Nouhaila, 3 Nov 2026)
   verified: "Verified",
   rejected: "Rejected",
   migratedBaseline: "Verified · Migrated Baseline",
@@ -223,10 +223,7 @@ export const SENTENCES = {
   queueSelectOne: "Select a result from the list.",
   noFacts: "No details have been recorded for this record yet.",
   pageTitle: "Review Results",
-  pageLead:
-    "Everything Compass found — from monitoring, Explore and Map and the Data Feed — waits here, " +
-    "Pending, for a GHUS decision. Verify adds it to the Ecosystem Directory and collects its full " +
-    "profile, Park keeps it for later, and Reject closes it with its reason. Nothing is deleted.",
+  pageLead: "Review and make a decision on COMPASS findings — new records and updates for your review.",
   failClosed:
     "Decisions are turned off on this computer: saving decisions to the directory isn't " +
     "set up yet.",

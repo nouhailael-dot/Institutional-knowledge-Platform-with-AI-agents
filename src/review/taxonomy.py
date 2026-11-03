@@ -89,7 +89,7 @@ CATEGORIES: tuple[tuple[str, str, tuple[tuple[str, str, str], ...]], ...] = (
          "itself is a separate Category 1 record"),
         ("not_applicable", "Not Applicable", "Nothing listed fits yet"),
     )),
-    ("company", "Company / Corporate Actor", (
+    ("company", "Company / Corporate Organization", (
         ("public_company", "Public Company", "Publicly traded"),
         ("private_company", "Private Company", "Privately held, not SME-scale"),
         ("small_mid_size", "SME", "Small or medium enterprise, privately held"),
@@ -153,7 +153,7 @@ CATEGORIES: tuple[tuple[str, str, tuple[tuple[str, str, str], ...]], ...] = (
          "rather than research"),
         ("multi_location_network", "Statewide / Multi-Location Network",
          "One parent record, with each individual physical location mapped as its own "
-         "linked child actor"),
+         "linked child organization"),
         ("professional_network", "Professional Network",
          "Organized around a shared profession or role, not research or innovation"),
         ("diaspora_network", "Diaspora Network",
@@ -291,7 +291,7 @@ def type_codes(category_code: str) -> tuple[str, ...]:
     try:
         return TYPES_BY_CATEGORY[category_code]
     except KeyError as exc:
-        raise TaxonomyError(f"unknown actor category {category_code!r}") from exc
+        raise TaxonomyError(f"unknown organization category {category_code!r}") from exc
 
 
 def is_valid_pair(category_code: Any, type_code: Any) -> bool:
@@ -309,9 +309,9 @@ def validate_pair(category_code: Any, type_code: Any, *, allow_null_type: bool =
 
     category = str(category_code or "").strip()
     if not category:
-        raise TaxonomyError("actor category is required")
+        raise TaxonomyError("organization category is required")
     if category not in CATEGORY_LABELS:
-        raise TaxonomyError(f"{category!r} is not one of the 12 actor categories")
+        raise TaxonomyError(f"{category!r} is not one of the 12 organization categories")
     stored = type_code if type_code is None else str(type_code).strip()
     if not stored:
         if allow_null_type:

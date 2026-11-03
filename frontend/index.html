@@ -669,15 +669,17 @@
   .ask-form>.btn{font-size:16px;padding:0 30px;min-width:120px}
   .dir-tabs button,.tabs button,.subnav button{font-size:16px;padding-top:12px;padding-bottom:12px}
   @media(max-width:760px){.nav-item{font-size:12px}}
+  .load-error{display:grid;gap:8px;justify-items:center;text-align:center}
+  .load-error span{color:var(--muted);font-size:13px;max-width:560px}
   /* Filter labels: first letter capital ("Sector", "Category type"); table
      headers: all capitals. Asked for on 2 Nov 2026. */
   .filters label{text-transform:none;letter-spacing:0;font-size:13px}
   table.grid th{text-transform:uppercase}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261102d"/>
-<link rel="stylesheet" href="/discovery.css?v=20261102d"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261030b"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261030b"/>
+<link rel="stylesheet" href="/review.css?v=20261103h"/>
+<link rel="stylesheet" href="/discovery.css?v=20261103h"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261103a"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261102d"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -694,16 +696,16 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261102b";
-import {createDiscoveryPage} from "./discovery.js?v=20261102b";
-import {createDateInput, usDate} from "./dates.js?v=20261030b";
-import {createDataFeedPage} from "./datafeed.js?v=20261102a";
-import {createDashboardPage, DASHBOARD_UNSEEN} from "./dashboard.js?v=20261030b";
+import {createReviewPage} from "./review.js?v=20261103j";
+import {createDiscoveryPage} from "./discovery.js?v=20261103d";
+import {createDateInput, usDate} from "./dates.js?v=20261102d";
+import {createDataFeedPage} from "./datafeed.js?v=20261103c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261103d";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect,useRef});
-const DataFeed=createDataFeedPage({html,useState,useEffect});
+const DataFeed=createDataFeedPage({html,useState,useEffect,Fragment:React.Fragment});
 // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
 const DateInput=createDateInput({html,useState,useEffect});
 const Dashboard=createDashboardPage({html,useState,useEffect});
@@ -929,7 +931,30 @@ function Ask({onCarryOver,onExplore}){
 }
 
 /* --------------------------------------------------------------- Browse */
-const api = (p)=>fetch(p).then(r=>r.json());
+// A failed request comes back as {__error}, never as data: on 2026-11-03 a 500 from
+// /api/browse/actors was read as a list, "data.actors.filter" threw, and since every
+// page stays mounted, the whole app went blank.
+const api = (p)=>fetch(p).then(async r=>{
+  const body=await r.json().catch(()=>({}));
+  return r.ok?body:{__error:body.detail||`The server answered ${r.status}.`};
+}).catch(()=>({__error:"The server could not be reached."}));
+function LoadError({message}){
+  return html`<div class="empty load-error" role="alert"><b>This list could not be loaded.</b>
+    <span>${message}</span><button class="btn ghost" onClick=${()=>location.reload()}>Try again</button></div>`;
+}
+/* One page failing never takes the others (or the sidebar) down with it: each
+   page is drawn inside its own boundary. */
+class PageBoundary extends React.Component{
+  constructor(props){super(props);this.state={error:null};}
+  static getDerivedStateFromError(error){return {error};}
+  componentDidCatch(error){console.error(`${this.props.name} failed:`,error);}
+  render(){
+    if(!this.state.error) return this.props.children;
+    return html`<div class="empty load-error" role="alert"><b>${this.props.name} could not be shown.</b>
+      <span>${String(this.state.error?.message||this.state.error)}</span>
+      <button class="btn ghost" onClick=${()=>this.setState({error:null})}>Try again</button></div>`;
+  }
+}
 const dash = (v)=> (v===null||v===undefined||v==="") ? html`<span class="dash">—</span>` : v;
 
 function useOnce(fn,dep){ const[d,setD]=useState(null);
@@ -1317,13 +1342,21 @@ function RecordEditor({kind,record,options,onClose}){
 }
 
 /* ------------------------------------------------- The four tabs */
-function Actors(){
+// The Dashboard opens one record: select it once the list has loaded.
+function useFocus(focus,rows,setSel){
+  useEffect(()=>{if(!focus||!rows) return;
+    const row=rows.find(r=>String(r.id)===String(focus.id)); if(row) setSel(row);},[focus,rows]);
+}
+
+function Actors({focus}){
   const [version,setVersion]=useState(0);
   const [notice,setNotice]=useState(null);
   const data=useOnce(()=>api("/api/browse/actors"),[version]);
   const peopleData=useOnce(()=>api("/api/browse/people").catch(()=>({people:[]})));
   const [sel,setSel]=useState(null);
+  useFocus(focus,data?.actors,setSel);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {options}=data;
   // Deleted organizations are not shown anywhere in the directory (2 Nov 2026).
   const actors=data.actors.filter(a=>statusOf(a)!=="Deleted");
@@ -1331,7 +1364,7 @@ function Actors(){
   const typeOf=a=>a.actor_category||a.actor_type||"";
   const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
   const key=v=>String(v||"").trim().toLowerCase();
-  const peopleAt=a=>!peopleData?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
+  const peopleAt=a=>!peopleData||peopleData.__error?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
   // The organization page in the Explore and Map card's style (3 Nov 2026): tags and
   // a one-line location under the name, facts in two columns, where the record comes
   // from folded at the bottom. Approach and Lifecycle role stay in the Edit form only.
@@ -1402,12 +1435,13 @@ function Hubs(){
   const actorsData=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {hubs}=data;
   const sectorOf=h=>h.sector||h.primary_sectors||"";
   const hubState=h=>stateName(h.center_state_code)||stateName(h.state);
   const hubRegion=h=>regionOfState(hubState(h));
   if(sel){
-    const related=(actorsData?actorsData.actors:[]).filter(a=>a.hubs.includes(sel.name));
+    const related=(actorsData?.actors||[]).filter(a=>(a.hubs||[]).includes(sel.name));
     return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)}
       subtitle=${[sectorOf(sel),[sel.primary_city,sel.state].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
       glance=${[["Sector",sectorOf(sel)],["Organizations",String(sel.actor_count??related.length)],
@@ -1458,10 +1492,12 @@ function eventOrder(e){
   if(!e.start_date) return [1,""];
   return d>=t?[0,e.start_date]:[2,String(99999999-+e.start_date.slice(0,10).replace(/-/g,""))];
 }
-function Events(){
+function Events({focus}){
   const data=useOnce(()=>api("/api/browse/events"));
   const [sel,setSel]=useState(null);
+  useFocus(focus,data?.events,setSel);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const events=[...data.events].sort((a,b)=>{const x=eventOrder(a),y=eventOrder(b);
     return x[0]-y[0]||String(x[1]).localeCompare(String(y[1]))||a.name.localeCompare(b.name);});
   const when=e=>{const d=(e.end_date||e.start_date||"").slice(0,10);return !d?"No date":d>=today()?"Upcoming":"Past";};
@@ -1508,10 +1544,12 @@ function Events(){
     ]}/>`;
 }
 
-function People(){
+function People({focus}){
   const data=useOnce(()=>api("/api/browse/people"));
   const [sel,setSel]=useState(null);
+  useFocus(focus,data?.people,setSel);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {people,options}=data;
   if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)}
     subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
@@ -1641,7 +1679,7 @@ function regionalHub(actor){
   const region=Object.keys(US_REGIONS).find(name=>US_REGIONS[name].includes(state.toUpperCase()));
   if(!region)return {region:null,status:"Needs review",reason:"A single recognized US state or Washington, DC is required. Territories and multiple-state locations need separate review."};
   return {region,state:state.toUpperCase(),city,status:"Assigned by state",
-    reason:"Geographic grouping based on the actor’s recorded state, not a hotspot quality assessment."};
+    reason:"Geographic grouping based on the organization’s recorded state, not a hotspot quality assessment."};
 }
 // Legacy records predate the stored region, so fall back to the local calculation.
 function actorRegion(actor){
@@ -2210,6 +2248,13 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     if(carried&&!carried.raw&&!msgs.length) setDesc(requestFromRows(carried));
   },[carried,msgs.length]);
 
+  // The Dashboard opens one map, with its conversation (restore, as Saved maps does).
+  useEffect(()=>{const on=(e)=>{const id=e.detail?.map_id;
+      if(e.detail?.tab!=="map"||!id||id===activeJob.current) return;
+      if(busy||verifying){setErr("A map is still running. Stop it or wait before opening another map.");return;}
+      restore(id);};
+    window.addEventListener(NAVIGATE,on); return ()=>window.removeEventListener(NAVIGATE,on);},[busy,verifying]);
+
   function remember(id){
     activeJob.current=id; setJobId(id);
     try{if(id) localStorage.setItem("um6p.mapJobId",id);
@@ -2702,6 +2747,12 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 /* ------------------------------------------------------------------ App */
 function Browse(){
   const [k,setK]=useState("actors");
+  const [focus,setFocus]=useState(null);
+  useEffect(()=>{const on=(e)=>{const record=e.detail?.record;
+      if(e.detail?.tab!=="browse"||!record) return;
+      setK({actor:"actors",person:"people",event:"events"}[record.kind]||"actors");
+      setFocus({...record,at:Date.now()});};
+    window.addEventListener(NAVIGATE,on); return ()=>window.removeEventListener(NAVIGATE,on);},[]);
   const V={actors:Actors,hubs:Hubs,events:Events,people:People}[k];
   return html`<div>
     <h1 class="hero-h">Ecosystem Directory</h1>
@@ -2710,7 +2761,7 @@ function Browse(){
     <div class="subnav">
       ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${label}</button>`)}
-    </div><${V}/></div>`;
+    </div><${V} focus=${focus}/></div>`;
 }
 const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="1.7"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="6" r="2.3"/>
@@ -2740,7 +2791,10 @@ function App(){
   // Discovery's Run now opens the actor's profile in Review (discovery.js openInReview).
   useEffect(()=>{const go=()=>setTab("review");window.addEventListener("ghus:open-review",go);
     return ()=>window.removeEventListener("ghus:open-review",go);},[]);
-  // Completed runs not yet seen on the Dashboard: a count on its nav item.
+  // The Dashboard's entries open their page; the page itself opens the item.
+  useEffect(()=>{const go=(e)=>{if(e.detail?.tab) setTab(e.detail.tab);};window.addEventListener(NAVIGATE,go);
+    return ()=>window.removeEventListener(NAVIGATE,go);},[]);
+  // Requests with findings not yet opened from the Dashboard: a count on its nav item.
   const [unseen,setUnseen]=useState(0);
   useEffect(()=>{const on=(e)=>setUnseen(e.detail?.count||0);window.addEventListener(DASHBOARD_UNSEEN,on);
     return ()=>window.removeEventListener(DASHBOARD_UNSEEN,on);},[]);
@@ -2765,17 +2819,17 @@ function App(){
   <div class="workspace-main">
   <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${Object.fromEntries(NAV)[tab]}</strong></div></header>
   <main class="wrap">
-    <div style=${{display:tab==="dashboard"?"block":"none"}}><${Dashboard}/></div>
-    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask} onExplore=${()=>setTab("map")}
-      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/></div>
-    <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
-    <div style=${{display:tab==="discovery"?"block":"none"}}><${Discovery}
-      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/></div>
-    <div style=${{display:tab==="datafeed"?"block":"none"}}><${DataFeed}/></div>
-    <div style=${{display:tab==="review"?"block":"none"}}><${Review}/></div>
-    <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
+    <div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard"><${Dashboard}/><//></div>
+    <div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
+      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>
+    <div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>
+    <div style=${{display:tab==="discovery"?"block":"none"}}><${PageBoundary} name="Monitor and Update"><${Discovery}
+      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/><//></div>
+    <div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>
+    <div style=${{display:tab==="review"?"block":"none"}}><${PageBoundary} name="Review Results"><${Review}/><//></div>
+    <div style=${{display:tab==="map"?"block":"none"}}><${PageBoundary} name="Explore and Map"><${BuildMap}
       carried=${carried} onCarriedChange=${setCarried}
-      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/></div>
+      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/><//></div>
   </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);

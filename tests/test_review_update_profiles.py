@@ -206,7 +206,7 @@ def test_the_change_route_applies_through_the_bridge_and_returns_the_profile(sto
     body = {"choice": "keep_current", "reviewer": "R", "idempotency_key": "k1", "confirmed": True}
     response = client.post(f"/api/review/candidates/{profile_id}/changes/{CHANGE}", json=body)
     assert response.status_code == 200, response.text
-    assert applied == [{"review_item_id": CHANGE, "reviewer": "R", "notes": None,
+    assert applied == [{"review_item_id": CHANGE, "reviewer": "Not recorded (no sign-in yet)", "notes": None,  # the account, not the page
                         "idempotency_key": "k1", "decision_kind": "resolve_fact",
                         "accept": False, "keep_both": False}]
     assert response.json()["agent_metadata"]["decided_changes"][0]["choice"] == "keep_current"

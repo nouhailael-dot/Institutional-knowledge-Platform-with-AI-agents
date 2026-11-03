@@ -211,23 +211,33 @@
 .update-attempts{margin:6px 0 0;font-size:13px}
 
 /* What a new request finds: organizations, events or people. */
-.discovery-kinds{margin:0 0 14px}
+.discovery-kinds{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;max-width:780px;margin:0 0 14px;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;background:var(--surface)}
+.discovery-kinds button{border:0;border-radius:0;border-left:1px solid var(--line-strong);padding:11px 14px;background:transparent}
+.discovery-kinds button:first-child{border-left:0}
+.discovery-kinds button.active{background:var(--accent);border-color:var(--accent);color:#fff}
 .discovery-kind{display:inline-block;font-size:12px;font-weight:600;color:var(--accent-ink);background:var(--accent-soft);border-radius:999px;padding:2px 10px;margin-bottom:4px}
 
 /* One schedule row for every new request; three fields per row (2026-10-29). */
 .discovery-row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px 18px;margin:14px 0}
 .discovery-row3 .discovery-field{min-width:0}
+.discovery-row4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px 18px;margin:14px 0}
+.discovery-row4 .discovery-field{min-width:0}
+.discovery-row4 select{width:100%}
+.discovery-daterange{display:grid;gap:6px;margin:6px 0 14px;padding-top:12px;border-top:1px solid var(--line)}
+.discovery-daterange-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px}
+.discovery-daterange-row label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
+.discovery-daterange-row .date-input{width:100%}
 .discovery-row3 select,.discovery-row3 .date-input{width:100%}
-.discovery-whoami{display:grid;grid-template-columns:auto minmax(0,320px);align-items:center;gap:6px 12px;margin:10px 0 18px;font-size:13.5px}
-.discovery-whoami>span{font-weight:600}
-.discovery-whoami input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:inherit;background:var(--surface);color:var(--ink)}
-.discovery-whoami.invalid input{border-color:#b42318}
-.discovery-whoami small{grid-column:1/-1}
+.discovery-email-note{display:flex;align-items:center;gap:10px;margin:4px 0;font-size:13.5px;color:var(--muted)}
+.discovery-email-note svg{flex:none}
+.discovery-email{border:0;border-bottom:1px solid var(--line-strong);background:transparent;font:inherit;color:var(--ink);padding:1px 2px;width:190px;max-width:100%}
+.discovery-email:focus{outline:none;border-bottom-color:var(--accent)}
+.discovery-email.invalid{border-bottom-color:#b42318}
 .discovery-enddate{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:10px 0}
 .discovery-enddate .discovery-label{margin:0}
 .discovery-saved{color:#2f7d4f;flex-basis:100%}
 .discovery-enddate .field-error{flex-basis:100%}
-@media (max-width:760px){.discovery-row3{grid-template-columns:1fr}.discovery-whoami{grid-template-columns:1fr}}
+@media (max-width:760px){.discovery-row3,.discovery-row4,.discovery-daterange-row{grid-template-columns:1fr}}
 
 /* Organizations Update (GHUS, 2026-10-30): one list, one option, one schedule. */
 .org-update-h{margin:0 0 4px;font-size:17px;font-weight:700}
@@ -237,10 +247,11 @@
 .org-search-box:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .org-search-box input{flex:1;border:0;outline:none;background:transparent;font:inherit;color:var(--ink);min-height:40px}
 .org-search .org-add{min-height:42px;min-width:120px;border-radius:8px}
-.org-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px}
-.org-filters select{min-height:42px;border:1px solid var(--line-strong);border-radius:8px;padding:0 10px;background:var(--surface);color:var(--ink);font:inherit;max-width:240px}
-.org-everyone{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted);cursor:pointer}
-.org-everyone input{accent-color:var(--accent)}
+.org-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+.org-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 6px 5px 12px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);font-size:13.5px}
+.org-chip button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:16px;line-height:1;width:22px;height:22px;border-radius:50%;cursor:pointer}
+.org-chip button:hover{background:var(--accent-soft);color:var(--ink)}
+.org-suggest .org-group strong::before{content:"\25B8  ";color:var(--muted)}
 .org-results{margin-top:10px}
 .org-results-head{margin:0 0 6px;font-size:13.5px}
 .org-suggest{margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;max-height:280px;overflow:auto}
@@ -254,7 +265,7 @@
 .org-table td{padding:10px 12px;border-top:1px solid var(--line);vertical-align:middle}
 .org-table tr.off td{color:var(--faint)}
 .org-table .org-check{width:44px;text-align:center}
-.org-table input[type=checkbox],.org-areas input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+.org-table input[type=checkbox]{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
 .org-name{font-weight:500;color:var(--ink)}
 .org-table tr.off .org-name{color:var(--faint)}
 .org-status{display:inline-block;margin-left:10px;font-size:12px;font-weight:600;border-radius:6px;padding:2px 8px;vertical-align:1px}
@@ -262,14 +273,7 @@
 .org-status.parked,.org-status.imported{background:color-mix(in srgb,var(--line) 70%,var(--surface));color:var(--muted)}
 .org-count{margin:10px 0 22px;font-size:14px;color:var(--muted)}
 .org-count.error{color:#b42318}
-.org-kinds{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:10px 0 0}
-.org-kinds button{min-height:42px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:inherit;font-weight:600;font-size:15.5px;cursor:pointer}
-.org-kinds button:hover{border-color:var(--accent)}
-.org-kinds button.active{background:linear-gradient(180deg,var(--accent-2),var(--accent));border-color:var(--accent);color:#fff}
 .org-hint{margin:8px 0 0;font-size:14px}
-.org-label{margin:14px 0 8px;font-weight:600;font-size:14.5px;color:var(--muted)}
-.org-areas{display:grid;grid-template-columns:1fr 1fr;gap:10px 18px}
-.org-areas label{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--ink);cursor:pointer}
 .org-specific{display:block;width:100%;margin:12px 0 0;border:1px solid var(--line-strong);border-radius:8px;padding:12px 14px;font:inherit;font-size:14.5px;color:var(--ink);background:var(--surface);resize:vertical;box-sizing:border-box}
 .org-specific:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .org-specific.invalid{border-color:#b42318}
@@ -280,12 +284,11 @@
 .org-footer .org-create{min-height:46px;min-width:170px;border-radius:8px;font-size:15.5px}
 @media (max-width:720px){
   .org-search{flex-direction:column}
-  .org-kinds,.org-areas{grid-template-columns:1fr}
   .org-footer{flex-direction:column;align-items:stretch}
   .org-table th:nth-child(3),.org-table td:nth-child(3){display:none}
 }
 /* The mockups' field labels: title case, not the small capitals of the other forms. */
-.org-update .discovery-label{text-transform:none;letter-spacing:0;font-size:14.5px;font-weight:600;color:var(--ink)}
+.org-update .discovery-label,.discovery-page .discovery-card .discovery-label{text-transform:none;letter-spacing:0;font-size:14.5px;font-weight:600;color:var(--ink)}
 
 /* One look for every status tag (30 Oct 2026): a colored dot and the word;
    Verified alone has a check mark. Paused is red, Parked orange. */

@@ -20,7 +20,7 @@ CATEGORY_TYPES = {
     'Hospital / Clinical System / Medical Center': [
         'Independent-Standalone', 'Nonprofit Health System', 'For-Profit Health System',
         'Public or Government Hospital', 'University-Affiliated'],
-    'Company / Corporate Actor': [
+    'Company / Corporate Organization': [
         'Public Company', 'Private Company', 'SME', 'Subsidiary / Business Unit', 'Joint Venture'],
     'Startup / Emerging Technology Company': [
         'Independent', 'University Spinout', 'Corporate Spinout', 'Accelerator Portfolio Company'],
@@ -79,7 +79,8 @@ def _check_category_type(entity):
     if not chosen:
         entity['category_type'] = NOT_CLASSIFIED
         return
-    allowed = CATEGORY_TYPES.get(entity.get('actor_type'))
+    allowed = CATEGORY_TYPES.get(str(entity.get('actor_type') or '').replace(
+        'Corporate Actor', 'Corporate Organization'))
     if allowed is None or chosen in allowed:
         return
     entity['category_type'] = NOT_APPLICABLE

@@ -106,9 +106,12 @@ def to_record(kind: str, entity: dict, sector: str) -> dict:
             "expected_attendance": _clean(entity.get("expected_attendance")),
             "source_url": _source(entity),
         }.items() if v}
-    # People: no biography (the backend's people rules keep it out).
+    # People: no biography (the backend's people rules keep it out). The full
+    # name is split at its last space; the Data Feed joins the two back as is.
+    first, _, last = _clean(entity.get("full_name")).rpartition(" ")
     return {k: v for k, v in {
-        "name": _clean(entity.get("full_name")),
+        "first_name": first or last,
+        "last_name": last if first else "",
         "role": _clean(entity.get("title")),
         "affiliation": _clean(entity.get("organization_name")),
         "bio_url": _clean(entity.get("profile_url")),

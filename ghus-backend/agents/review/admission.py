@@ -118,14 +118,14 @@ def _normalise_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
         raise AdmissionValidationError("edited_payload must be an object")
     hub_ids = decision.get("hub_ids") or []
     if entity_type != "actor" and hub_ids:
-        raise AdmissionValidationError("hub assignments apply only to actors")
+        raise AdmissionValidationError("hub assignments apply only to organizations")
     if not isinstance(hub_ids, list):
         raise AdmissionValidationError("hub_ids must be a list")
     proposed_hub = decision.get("proposed_hub")
     if proposed_hub is not None and entity_type != "actor":
-        raise AdmissionValidationError("a proposed hub applies only to actors")
+        raise AdmissionValidationError("a proposed hub applies only to organizations")
     if proposed_hub is not None and kind not in {"same_existing", "new"}:
-        raise AdmissionValidationError("a proposed hub requires an admitted actor decision")
+        raise AdmissionValidationError("a proposed hub requires an admitted organization decision")
     if proposed_hub is not None and not isinstance(proposed_hub, Mapping):
         raise AdmissionValidationError("proposed_hub must be an object")
     reason = str(decision.get("rejection_reason") or "").strip() or None
@@ -140,7 +140,7 @@ def _normalise_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
     ghus_notes = str(decision.get("ghus_notes") or "").strip() or None
     if ghus_notes is not None:
         if entity_type == "person":
-            raise AdmissionValidationError("GHUS notes exist only for actors and events")
+            raise AdmissionValidationError("GHUS notes exist only for organizations and events")
         if kind not in {"same_existing", "new"}:
             raise AdmissionValidationError("GHUS notes are saved with an admitted record")
         if len(ghus_notes) > 5000:
@@ -400,7 +400,7 @@ def _resolve_person_affiliation(session, payload: Mapping[str, Any]) -> dict[str
     affiliation = str(payload.get("affiliation") or "").strip()
     if not is_institution_affiliation(affiliation):
         raise AdmissionValidationError(
-            "affiliation must be an institution; departments and role text cannot become actors"
+            "affiliation must be an institution; departments and role text cannot become organizations"
         )
     resolver = load_actor_resolver_class()(session)
     actor_route = route_actor({"name": affiliation}, resolver)

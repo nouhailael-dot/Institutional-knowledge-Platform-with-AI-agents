@@ -232,7 +232,7 @@ def check_actor(payload: Mapping[str, Any], *, method: str, submitted_at: str) -
     type_code = _clean(payload.get("category_type"))
     catalog = load_category_catalog()
     if category not in catalog.by_code:
-        problems.append(f"Actor Category {category or '(empty)'!r} is not one of the 12 categories.")
+        problems.append(f"Organization Category {category or '(empty)'!r} is not one of the 12 categories.")
     elif type_code and not catalog.validates(category, type_code):
         problems.append(f"Category Type {type_code!r} is not a type of {category!r}.")
     if (type_code in CATCH_ALL_TYPE_CODES or payload.get("category_needs_review")) \
