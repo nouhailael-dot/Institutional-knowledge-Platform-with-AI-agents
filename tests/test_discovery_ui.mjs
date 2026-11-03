@@ -613,12 +613,12 @@ test('Organizations Update sends only the checked organizations; blank instructi
   assert.match(SPECIFIC_PLACEHOLDER, /capabilities in another sector/);
 });
 
-test('requests stay with whoever made them; older ones without a requester stay shared', async () => {
+test('requests stay with whoever made them once accounts exist; until then all are shown', async () => {
   const {visibleRequests} = await import('../frontend/discovery.js');
   const rows = [{id: 1, requested_by: 'me@um6p.ma'}, {id: 2, requested_by: 'other@um6p.ma'},
     {id: 3, requested_by: null}, {id: 4, requested_by: 'actor_updates_page'}];
   assert.deepEqual(visibleRequests(rows, 'ME@um6p.ma').map((r) => r.id), [1, 3, 4]);
-  assert.deepEqual(visibleRequests(rows, '').map((r) => r.id), [3, 4]);
+  assert.deepEqual(visibleRequests(rows, '').map((r) => r.id), [1, 2, 3, 4]);
 });
 
 test('the Monitor page leads with New Request, Requests, Organization Updates and keeps no run list', async () => {
@@ -631,7 +631,10 @@ test('the Monitor page leads with New Request, Requests, Organization Updates an
     assert.ok(!code.includes(gone), gone);
   }
   assert.ok(page.includes('Existing directory information remains unchanged until you verify the proposed updates.'));
-  assert.ok(page.includes('You’ll receive an email notification at <input'));
+  // The results email is the account's: a notice, never an address to type.
+  const {EMAIL_NOTE} = await import('../frontend/discovery.js');
+  assert.equal(EMAIL_NOTE, 'You’ll receive an email notification when your results are ready to review in Review Results.');
+  assert.doesNotMatch(page, /type="email"|ghus\.monitor\.email/);
   const {MONITOR_TITLE, REVIEW_NOTE} = await import('../frontend/discovery.js');
   assert.equal(MONITOR_TITLE, 'What would you like to monitor?');
   assert.match(REVIEW_NOTE, /^Review findings and check their sources/);

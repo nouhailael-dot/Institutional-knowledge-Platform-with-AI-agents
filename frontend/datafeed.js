@@ -6,7 +6,7 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261103a";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261103b";
 import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const RECORD_TYPES = [
@@ -311,11 +311,11 @@ export const ATTEST_AUTHORIZED = "I am authorized GHUS staff and I verify the or
   + "this import.";
 
 /** The confirm button may be pressed. */
-export function canSend({preview, name, uploader, attestSource, admission, attestAuthorized,
+export function canSend({preview, name, attestSource, admission, attestAuthorized,
   accept}) {
   const counts = preview?.counts || {};
   return Boolean(preview?.can_confirm && String(name || "").trim()
-    && String(uploader || "").trim() && attestSource
+    && attestSource
     && (admission !== "verified" || attestAuthorized)
     && (!counts.needs_correction || accept));
 }
@@ -369,16 +369,6 @@ export const EXAMPLE_IMPORT = {
 
 export function formatDateTime(value) {
   return value ? usDateTime(value) : "";
-}
-
-const UPLOADER_KEY = "ghus.datafeed.uploader";
-
-function rememberedUploader() {
-  try { return window.localStorage.getItem(UPLOADER_KEY) || ""; } catch { return ""; }
-}
-
-function rememberUploader(value) {
-  try { window.localStorage.setItem(UPLOADER_KEY, value); } catch { /* a private window */ }
 }
 
 export function boxesLine(org = {}) {
@@ -622,7 +612,6 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     const [openRow, setOpenRow] = useState(null);
     const [name, setName] = useState(importName.trim() || defaultImportName(preview));
     const [accept, setAccept] = useState(false);
-    const [uploader, setUploader] = useState(() => rememberedUploader());
     const [attestSource, setAttestSource] = useState(false);
     const [admission, setAdmission] = useState("review");
     const [attestAuthorized, setAttestAuthorized] = useState(false);
@@ -638,10 +627,9 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       setBusy(true);
       setMessage(null);
       try {
-        rememberUploader(uploader.trim());
         const result = await api(`/api/datafeed/previews/${preview.preview_id}/confirm`, {
           method: "POST", body: JSON.stringify({import_name: name, accept_left_out: accept,
-            uploaded_by: uploader, attest_source: attestSource, admission,
+            attest_source: attestSource, admission,
             attest_authorized: admission === "verified" && attestAuthorized})});
         // The import stands whatever the AI read does; its outcome is reported beside it.
         if (aiOffered && completeAI && result.run_id && result.status !== "already_imported") {
@@ -732,13 +720,6 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         ${counts.needs_correction > 0 && html`<label class="df-check">
           <input type="checkbox" checked=${accept} onChange=${e => setAccept(e.target.checked)}/>
           ${leftOutLine(counts.needs_correction)}</label>`}
-        <div class="discovery-field">
-          <label class="discovery-label" for="df-uploader">Your name</label>
-          <input id="df-uploader" value=${uploader} maxlength="120" autocomplete="name"
-            onInput=${e => setUploader(e.target.value)}/>
-          <small class="df-hint">Recorded as the uploader, separately from whoever reviews the records.
-            There is no sign-in yet, so it is recorded as you type it.</small>
-        </div>
         <label class="df-check"><input type="checkbox" checked=${attestSource}
           onChange=${e => setAttestSource(e.target.checked)}/> ${ATTEST_SOURCE}</label>
         <div class="discovery-segment df-admission" role="group" aria-label="What happens to the records">
@@ -766,7 +747,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
               $0.05 per organization, never more than $${completionCap(send).toFixed(2)} for this import.</span></label>`
           : html`<p class="df-muted">Complete Missing Information with AI is available when sending to Review Results.</p>`)}
         <div class="discovery-actions">
-          <button type="button" class="btn" disabled=${busy || !canSend({preview, name, uploader,
+          <button type="button" class="btn" disabled=${busy || !canSend({preview, name,
             attestSource, admission, attestAuthorized, accept})} onClick=${confirm}>
             ${busy ? (admission === "verified" ? "Adding… (this can take a few minutes)" : "Sending…")
               : admission === "verified" ? "Add to the directory as Verified" : confirmLabel(counts)}</button>
@@ -883,9 +864,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     }
     if (error) return html`<p class="discovery-message error">${error}</p>`;
     if (!items) return html`<p class="df-muted">Loading the import history…</p>`;
-    // Attached to the user once there is sign-in; until then, the name this browser uploaded under.
-    const me = rememberedUploader();
-    const mine = me ? myImports(items, me) : items;
+    // The signed-in user's imports once accounts exist; every import until then.
+    const mine = items;
     const shown = filterImports(mine, search, category);
     const example = !mine.length;
     const rows = example ? [{...EXAMPLE_IMPORT, run_id: "example"}] : shown;

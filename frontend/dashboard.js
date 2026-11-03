@@ -10,7 +10,7 @@
 // Directory activity by the name typed in Review Results, and maps are the ones
 // made on this computer.
 
-import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261103a";
+import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261103b";
 import {usDate} from "./dates.js?v=20261102d";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";
@@ -257,7 +257,7 @@ export function createDashboardPage({html, useState, useEffect}) {
     const [reviewer, setReviewer] = useState(() => readText("ghus.review.reviewer"));
 
     function load() {
-      const email = readText("ghus.monitor.email");
+      const email = "";  // the signed-in user's, once accounts exist: everything until then
       setReviewer(readText("ghus.review.reviewer"));
       const read = (name, path, apply) => get(path)
         .then(body => { setData(prev => ({...prev, ...apply(body)})); setProblems(prev => ({...prev, [name]: false})); })

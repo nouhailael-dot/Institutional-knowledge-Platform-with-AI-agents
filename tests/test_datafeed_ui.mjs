@@ -257,12 +257,13 @@ test('in Review, the empty boxes of an imported record were never looked for', (
     agent_metadata: {facts}}).find(r => r.key === 'recent_activity').state, 'Not Found');
 });
 
-test('nothing is sent before the uploader is named and confirms the source', () => {
+test('nothing is sent before the source is confirmed; the uploader is the account, never typed', () => {
   const preview = {can_confirm: true, counts: {needs_correction: 0}};
-  const base = {preview, name: 'Kansas', uploader: 'Ana Ruiz', attestSource: true,
+  const base = {preview, name: 'Kansas', attestSource: true,
     admission: 'review', attestAuthorized: false, accept: false};
   assert.ok(canSend(base));
-  assert.ok(!canSend({...base, uploader: ' '}));
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /id="df-uploader"|uploaded_by: uploader/);
   assert.ok(!canSend({...base, attestSource: false}));
   assert.ok(!canSend({...base, admission: 'verified'}));              // needs the second attestation
   assert.ok(canSend({...base, admission: 'verified', attestAuthorized: true}));

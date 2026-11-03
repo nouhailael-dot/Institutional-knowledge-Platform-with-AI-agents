@@ -1815,12 +1815,12 @@ function sourceLink(html, url) {
  * this browser for Review, else the one typed for the Data Feed. Empty when
  * neither is known - only then does Review ask for it.
  */
-export function storedReviewer(storage = null) {
-  try {
-    const store = storage || localStorage;
-    return store.getItem("ghus.review.reviewer") || store.getItem("ghus.datafeed.uploader") || "";
-  } catch { return ""; }
+export function storedReviewer() {
+  return SIGNED_IN_USER;
 }
+// The server records who decided (src.identity.current_user); this mirrors its
+// words until sign-in. Nobody types a reviewer name (3 Nov 2026).
+export const SIGNED_IN_USER = "Not recorded (no sign-in yet)";
 
 export function createReviewPage({html, useEffect, useRef, useState}) {
   return function Review() {
@@ -1838,14 +1838,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [selectedId, setSelectedId] = useState(null);
     const [selected, setSelected] = useState(null);
     const [draft, setDraft] = useState({});
-    // Attached to the user (storedReviewer); asked for only when this browser
-    // knows no name, and remembered once typed. Never invented.
-    const [reviewer, setReviewerState] = useState(storedReviewer());
-    const [askName] = useState(() => !storedReviewer().trim());
-    const setReviewer = value => {
-      setReviewerState(value);
-      try { localStorage.setItem("ghus.review.reviewer", value); } catch { /* not kept */ }
-    };
+    // Attached to the account: the server records who decided. Nothing to type.
+    const reviewer = storedReviewer();
+    const setReviewer = () => {};
     const [notes, setNotes] = useState("");
     // GHUS analyst notes, kept on the actor or event when it is verified.
     const [analystNotes, setAnalystNotes] = useState("");
@@ -2362,10 +2357,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           </button>`)}
       </div>
       <div class="review-sync">
-        ${askName && html`<label class=${"review-whoami" + (reviewer.trim() ? "" : " invalid")}>
-          <span>${FIELDS.reviewer}</span>
-          <input value=${reviewer} placeholder="Your name" onInput=${e => setReviewer(e.target.value)}/>
-        </label>`}
         <span class="review-updated">Last updated ${formatSync(data.last_sync)}</span>
       </div>
       ${writerDown && html`<div class="review-notice" role="alert">
@@ -2468,7 +2459,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           ${deep.state === "running" ? "Running Deep Pull…" : "Run Deep Pull"}</button>`}
       </section>`}
 
-      ${view === "queue" && categoryRows.length>0&&html`<section class="review-section review-category-bulk" aria-labelledby="category-bulk-title"><h3 id="category-bulk-title">Category reviews</h3><p class="muted">Each row shows the proposed organization category. Confirm only the ones you agree with; open a row below to change its category first. Collections of organizations are not listed here: they need a separate GHUS decision.</p><label><input type="checkbox" checked=${categoryIds.length===categoryRows.length} onChange=${e=>setCategoryIds(e.target.checked?categoryRows.map(row=>row.candidate_id):[])}/> Select all (${categoryRows.length})</label><ul class="review-category-list">${categoryRows.map(row=>html`<li key=${row.candidate_id}><label><input type="checkbox" checked=${categoryIds.includes(row.candidate_id)} onChange=${e=>setCategoryIds(current=>e.target.checked?[...current,row.candidate_id]:current.filter(id=>id!==row.candidate_id))}/> <strong>${row.display_name}</strong> → ${row.reviewed_payload.actor_category}${row.agent_metadata?.pipeline?.proposal_confidence?html` <small>(${row.agent_metadata.pipeline.proposal_confidence} confidence)</small>`:""}</label></li>`)}</ul><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${busy} onInput=${e=>setReviewer(e.target.value)} required/></label><button class="btn" disabled=${!canConfirmCategories({selectedIds:categoryIds,reviewer,busy,admissionConfigured:data.admission_configured})} onClick=${confirmCategories}>${busy?"Committing…":`Confirm ${categoryIds.length} categor${categoryIds.length===1?"y":"ies"}`}</button></section>`}
+      ${view === "queue" && categoryRows.length>0&&html`<section class="review-section review-category-bulk" aria-labelledby="category-bulk-title"><h3 id="category-bulk-title">Category reviews</h3><p class="muted">Each row shows the proposed organization category. Confirm only the ones you agree with; open a row below to change its category first. Collections of organizations are not listed here: they need a separate GHUS decision.</p><label><input type="checkbox" checked=${categoryIds.length===categoryRows.length} onChange=${e=>setCategoryIds(e.target.checked?categoryRows.map(row=>row.candidate_id):[])}/> Select all (${categoryRows.length})</label><ul class="review-category-list">${categoryRows.map(row=>html`<li key=${row.candidate_id}><label><input type="checkbox" checked=${categoryIds.includes(row.candidate_id)} onChange=${e=>setCategoryIds(current=>e.target.checked?[...current,row.candidate_id]:current.filter(id=>id!==row.candidate_id))}/> <strong>${row.display_name}</strong> → ${row.reviewed_payload.actor_category}${row.agent_metadata?.pipeline?.proposal_confidence?html` <small>(${row.agent_metadata.pipeline.proposal_confidence} confidence)</small>`:""}</label></li>`)}</ul><button class="btn" disabled=${!canConfirmCategories({selectedIds:categoryIds,reviewer,busy,admissionConfigured:data.admission_configured})} onClick=${confirmCategories}>${busy?"Committing…":`Confirm ${categoryIds.length} categor${categoryIds.length===1?"y":"ies"}`}</button></section>`}
 
       ${view === "queue" && html`<div class="review-workspace">
         <!-- NAMED RUNS (left panel) -->
@@ -2838,8 +2829,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 || selected.agent_metadata?._verification || null, null, 2)}</pre></details>
           </details>
 
-        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the organization's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the organization is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate organization"}</button></section>`}
-        ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Reviewer</span><input value=${reviewer} disabled=${!pending||busy} onInput=${e=>setReviewer(e.target.value)} required/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
+        ${reviewItemKind(selected)==="location"&&html`<section class="review-section review-decision"><h3>Location review</h3><p class="muted">The location could not be resolved${selected.agent_metadata?.pipeline?.reason?` (${String(selected.agent_metadata.pipeline.reason).replaceAll("_"," ")})`:""}. Enter the organization's US city and state; it is looked up in the Census gazetteer, nothing is guessed. If the organization is outside the US or has no single location, keep it unlocated and say why in the notes.</p><div class="review-field-grid"><label class="review-field"><span>City</span><input value=${itemCity} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemCity(e.target.value)}/></label><label class="review-field"><span>State</span><input value=${itemState} disabled=${!pending||busy||keepUnlocated} onInput=${e=>setItemState(e.target.value)} placeholder="Texas or TX"/></label></div><label><input type="checkbox" checked=${keepUnlocated} disabled=${!pending||busy} onChange=${e=>setKeepUnlocated(e.target.checked)}/> Keep unlocated (reason required in notes)</label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"location",reviewer,city:itemCity,state:itemState,keepUnlocated,notes,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>${busy?"Committing…":keepUnlocated?"Keep unlocated":"Locate organization"}</button></section>`}
+        ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
           <!-- DECISION + STICKY FOOTER -->
           ${!reviewItemKind(selected) && html`
           <section class="review-section review-decision">

@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from src.datafeed.parse import MAX_BYTES
 from src.datafeed.service import XLSX, DataFeedError, DataFeedService
+from src.identity import current_user
 
 router = APIRouter(prefix="/api/datafeed", tags=["datafeed"])
 
@@ -41,7 +42,7 @@ class ManualRecords(BaseModel):
 class Confirmation(BaseModel):
     import_name: str = Field(min_length=1, max_length=120)
     accept_left_out: bool = False
-    # Who sends it, as they type it (there is no sign-in yet), and what they confirm.
+    # Ignored: who sends it is the current user (src.identity). What they confirm stays theirs.
     uploaded_by: str = Field(default="", max_length=120)
     attest_source: bool = False
     admission: str = "review"
@@ -87,7 +88,7 @@ def preview(preview_id: str):
 @router.post("/previews/{preview_id}/confirm")
 def confirm(preview_id: str, body: Confirmation):
     return _call(datafeed_service().confirm, preview_id, import_name=body.import_name,
-                 accept_left_out=body.accept_left_out, uploaded_by=body.uploaded_by,
+                 accept_left_out=body.accept_left_out, uploaded_by=current_user(),
                  attest_source=body.attest_source, admission=body.admission,
                  attest_authorized=body.attest_authorized)
 

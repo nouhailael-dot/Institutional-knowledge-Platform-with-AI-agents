@@ -796,6 +796,8 @@ export function orgUpdatePayload({list, interests = [], focus = "", form, reques
 /** Requests stay with whoever made them; those made before requesters were recorded stay shared. */
 export function visibleRequests(requests = [], email = "") {
   const me = String(email || "").trim().toLowerCase();
+  // No signed-in user yet: every request is shown (nobody types an email any more).
+  if (!me) return requests;
   return requests.filter((r) => {
     const by = String(r.requested_by || "").trim().toLowerCase();
     return !by || !by.includes("@") || (me && by === me);
@@ -1310,10 +1312,9 @@ export function handoffForm(handoff, today) {
   return form;
 }
 
-/** The requester's email as typed earlier in this browser, or empty. */
-function storedRequester() {
-  try { return localStorage.getItem("ghus.monitor.email") || ""; } catch { return ""; }
-}
+// Sent to the signed-in user's own email: there is no address to type.
+export const EMAIL_NOTE = "You’ll receive an email notification when your results are ready to "
+  + "review in Review Results.";
 
 export function createDiscoveryPage({html, useState, useEffect, useRef = () => ({current: null})}) {
   // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
@@ -1338,13 +1339,9 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
 
   /** Frequency · Start Date · Duration, in one row; Duration only for a recurring request. */
   /** Where the results are emailed: typed once here, kept in this browser (no sign-in yet). */
-  function EmailNote({requester, setRequester}) {
+  function EmailNote() {
     return html`<p class="discovery-email-note"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-      <span>You’ll receive an email notification at <input type="email" aria-label="Email for results"
-        class=${"discovery-email" + (requester && !isEmail(requester) ? " invalid" : "")}
-        value=${requester} placeholder="you@um6p.ma" maxLength="254"
-        onInput=${(e) => setRequester(e.target.value)}/> when your results are ready to review in
-        Review Results.</span></p>`;
+      <span>${EMAIL_NOTE}</span></p>`;
   }
 
   function RequestFooter({requester, setRequester, working, disabled, onCreate, note = ""}) {
@@ -2084,12 +2081,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     // What the new request finds. Organizations keep their form exactly.
     const [kind, setKind] = useState("actor");
     const [form, setForm] = useState(blankForm);
-    // Who asked: emailed when a run has findings. Typed once, kept in this browser.
-    const [requester, setRequesterState] = useState(storedRequester());
-    const setRequester = (value) => {
-      setRequesterState(value);
-      try { localStorage.setItem("ghus.monitor.email", value); } catch { /* not kept */ }
-    };
+    // Who asked is the signed-in user: their results go to their account's email
+    // (the server sets it). Nobody types an address (3 Nov 2026).
+    const requester = "";
+    const setRequester = () => {};
     const [touched, setTouched] = useState(false);
     const [busy, setBusy] = useState(false);
     const [working, setWorking] = useState("");
