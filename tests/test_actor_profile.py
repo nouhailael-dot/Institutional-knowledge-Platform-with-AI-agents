@@ -131,4 +131,6 @@ class ActorProfileTests(unittest.TestCase):
         text=' '.join(s.text for slide in deck.slides for s in slide.shapes if s.has_text_frame)
         self.assertIn('Agricultural research',text)
         self.assertIn('Mid-Atlantic',text)
-        self.assertGreater(len(deck.slides),2)
+        # One slide per organization, never "continued" (2 Nov 2026): the cover and the record.
+        self.assertEqual(len(deck.slides),2)
+        self.assertNotIn('continued',text)
