@@ -38,6 +38,8 @@ function harness(fetcher){
     // Helpers the component calls that live outside the sliced source.
     CarriedRows(){}, requestFromRows:()=>'', askContextFrom:()=>null,
     selectionOutcome:()=>'no_requirements', matchCount:()=>'',
+    PromptList(){}, fillPrompt(){}, MAP_PROMPTS:[], SavedMaps(){}, mapTitle:m=>m?.description||'',
+    React:{Fragment(){}},
   });
   vm.runInContext(component,context);
   const render=()=>{cursor=0;context.BuildMap({});return context.view;};

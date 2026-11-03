@@ -639,6 +639,8 @@
   .ask-form>.btn{font-size:16px;padding:0 30px;min-width:120px}
   .dir-tabs button,.tabs button,.subnav button{font-size:16px;padding-top:12px;padding-bottom:12px}
   @media(max-width:760px){.nav-item{font-size:12px}}
+  .load-error{display:grid;gap:8px;justify-items:center;text-align:center}
+  .load-error span{color:var(--muted);font-size:13px;max-width:560px}
 </style>
 <link rel="stylesheet" href="/review.css?v=20261103a"/>
 <link rel="stylesheet" href="/discovery.css?v=20261103a"/>
@@ -895,7 +897,30 @@ function Ask({onCarryOver,onExplore}){
 }
 
 /* --------------------------------------------------------------- Browse */
-const api = (p)=>fetch(p).then(r=>r.json());
+// A failed request comes back as {__error}, never as data: on 2026-11-03 a 500 from
+// /api/browse/actors was read as a list, "data.actors.filter" threw, and since every
+// page stays mounted, the whole app went blank.
+const api = (p)=>fetch(p).then(async r=>{
+  const body=await r.json().catch(()=>({}));
+  return r.ok?body:{__error:body.detail||`The server answered ${r.status}.`};
+}).catch(()=>({__error:"The server could not be reached."}));
+function LoadError({message}){
+  return html`<div class="empty load-error" role="alert"><b>This list could not be loaded.</b>
+    <span>${message}</span><button class="btn ghost" onClick=${()=>location.reload()}>Try again</button></div>`;
+}
+/* One page failing never takes the others (or the sidebar) down with it: each
+   page is drawn inside its own boundary. */
+class PageBoundary extends React.Component{
+  constructor(props){super(props);this.state={error:null};}
+  static getDerivedStateFromError(error){return {error};}
+  componentDidCatch(error){console.error(`${this.props.name} failed:`,error);}
+  render(){
+    if(!this.state.error) return this.props.children;
+    return html`<div class="empty load-error" role="alert"><b>${this.props.name} could not be shown.</b>
+      <span>${String(this.state.error?.message||this.state.error)}</span>
+      <button class="btn ghost" onClick=${()=>this.setState({error:null})}>Try again</button></div>`;
+  }
+}
 const dash = (v)=> (v===null||v===undefined||v==="") ? html`<span class="dash">—</span>` : v;
 
 function useOnce(fn,dep){ const[d,setD]=useState(null);
@@ -1276,6 +1301,7 @@ function Actors({focus}){
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.actors,setSel);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {options}=data;
   // Deleted organizations are not shown anywhere in the directory (2 Nov 2026).
   const actors=data.actors.filter(a=>statusOf(a)!=="Deleted");
@@ -1283,7 +1309,7 @@ function Actors({focus}){
   const typeOf=a=>a.actor_category||a.actor_type||"";
   const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
   const key=v=>String(v||"").trim().toLowerCase();
-  const peopleAt=a=>!peopleData?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
+  const peopleAt=a=>!peopleData||peopleData.__error?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
     subtitle=${[shortType(typeOf(sel)),[sel.city,sel.state].filter(Boolean).join(", "),(sel.sectors||[]).join(", ")].filter(Boolean).join("  ·  ")}
     glance=${[["Category",[typeOf(sel),sel.category_type&&sel.category_type!=="Not classified"?sel.category_type:null].filter(Boolean).join(" · ")],
@@ -1343,12 +1369,13 @@ function Hubs(){
   const actorsData=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {hubs}=data;
   const sectorOf=h=>h.sector||h.primary_sectors||"";
   const hubState=h=>stateName(h.center_state_code)||stateName(h.state);
   const hubRegion=h=>regionOfState(hubState(h));
   if(sel){
-    const related=(actorsData?actorsData.actors:[]).filter(a=>a.hubs.includes(sel.name));
+    const related=(actorsData?.actors||[]).filter(a=>(a.hubs||[]).includes(sel.name));
     return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)}
       subtitle=${[sectorOf(sel),[sel.primary_city,sel.state].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
       glance=${[["Sector",sectorOf(sel)],["Organizations",String(sel.actor_count??related.length)],
@@ -1404,6 +1431,7 @@ function Events({focus}){
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.events,setSel);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const events=[...data.events].sort((a,b)=>{const x=eventOrder(a),y=eventOrder(b);
     return x[0]-y[0]||String(x[1]).localeCompare(String(y[1]))||a.name.localeCompare(b.name);});
   const when=e=>{const d=(e.end_date||e.start_date||"").slice(0,10);return !d?"No date":d>=today()?"Upcoming":"Past";};
@@ -1455,6 +1483,7 @@ function People({focus}){
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.people,setSel);
   if(!data) return html`<${Loading}/>`;
+  if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {people,options}=data;
   if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)}
     subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
@@ -2669,17 +2698,17 @@ function App(){
   <div class="workspace-main">
   <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${Object.fromEntries(NAV)[tab]}</strong></div></header>
   <main class="wrap">
-    <div style=${{display:tab==="dashboard"?"block":"none"}}><${Dashboard}/></div>
-    <div style=${{display:tab==="ask"?"block":"none"}}><${Ask} onExplore=${()=>setTab("map")}
-      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/></div>
-    <div style=${{display:tab==="browse"?"block":"none"}}><${Browse}/></div>
-    <div style=${{display:tab==="discovery"?"block":"none"}}><${Discovery}
-      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/></div>
-    <div style=${{display:tab==="datafeed"?"block":"none"}}><${DataFeed}/></div>
-    <div style=${{display:tab==="review"?"block":"none"}}><${Review}/></div>
-    <div style=${{display:tab==="map"?"block":"none"}}><${BuildMap}
+    <div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard"><${Dashboard}/><//></div>
+    <div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
+      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>
+    <div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>
+    <div style=${{display:tab==="discovery"?"block":"none"}}><${PageBoundary} name="Monitor and Update"><${Discovery}
+      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/><//></div>
+    <div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>
+    <div style=${{display:tab==="review"?"block":"none"}}><${PageBoundary} name="Review Results"><${Review}/><//></div>
+    <div style=${{display:tab==="map"?"block":"none"}}><${PageBoundary} name="Explore and Map"><${BuildMap}
       carried=${carried} onCarriedChange=${setCarried}
-      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/></div>
+      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/><//></div>
   </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);

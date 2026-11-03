@@ -73,10 +73,10 @@ def _readonly():
     url = os.environ.get("BROWSE_DATABASE_URL")
     if not url:
         return get_readonly_connection()
-    import psycopg
+    from src.db import connect_resilient
 
-    conn = psycopg.connect(psycopg_database_url(url), connect_timeout=10,
-                           options="-c statement_timeout=8000")
+    conn = connect_resilient(psycopg_database_url(url), connect_timeout=10,
+                             options="-c statement_timeout=8000")
     conn.read_only = True
     return conn
 

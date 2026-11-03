@@ -121,6 +121,9 @@ def _reachable_hostaddr(database_url: str) -> str | None:
                 break
         except OSError:
             continue
+    if found is None and cached and cached[1]:
+        # A failed lookup (DNS blip) keeps the address that last worked, not None.
+        found = cached[1]
     _hostaddr_cache[key] = (time.monotonic(), found)
     return found
 
@@ -323,7 +326,9 @@ class PostgresReviewSource:
                 "disable" if parsed.hostname in {"127.0.0.1", "localhost", "::1"}
                 else "require"
             )
-            db = psycopg.connect(
+            from src.db import connect_resilient
+
+            db = connect_resilient(
                 self.database_url,
                 autocommit=False,
                 connect_timeout=10,

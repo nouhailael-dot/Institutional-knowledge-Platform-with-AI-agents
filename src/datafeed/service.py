@@ -80,10 +80,10 @@ def readonly_connector(url: str | None = None) -> Callable[[], Any] | None:
     conninfo = raw.replace("postgresql+psycopg://", "postgresql://", 1)
 
     def connect():
-        import psycopg
+        from src.db import connect_resilient
 
-        return psycopg.connect(conninfo, options="-c default_transaction_read_only=on",
-                               connect_timeout=15)
+        return connect_resilient(conninfo, options="-c default_transaction_read_only=on",
+                                 connect_timeout=15)
     return connect
 
 
