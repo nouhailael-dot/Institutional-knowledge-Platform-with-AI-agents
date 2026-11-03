@@ -29,3 +29,11 @@ test('one page failing never takes the others or the sidebar down', () => {
   }
   assert.match(page, /static getDerivedStateFromError\(error\)\{return \{error\};\}/);
 });
+
+test('the always-light page keeps light status colors on a computer set to dark mode', () => {
+  const block = page.slice(page.indexOf(':root{color-scheme:light;'), page.indexOf('body{background-image:none'));
+  for (const v of ['--amber-soft:#fbf0d9', '--amber:#94600a', '--green-soft:#e5f2e3', '--orange-soft:#fdeedd',
+    '--red-soft:#fdecec', '--link:#1f5fa8']) {
+    assert.ok(block.includes(v), v);
+  }
+});
