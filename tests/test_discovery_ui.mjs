@@ -713,3 +713,17 @@ test('an event shows its whole span, start to closing day', async () => {
     ['Dates', '01/11/2027 – 01/12/2027 (2 days)']);
   assert.deepEqual(entityResultFacts({start_date: '2027-01-11'})[0], ['Date', '01/11/2027']);
 });
+
+test('a request just started by Run now reads Running, not Scheduled', async () => {
+  const {requestStatus} = await import('../frontend/discovery.js');
+  assert.equal(requestStatus({status: 'active', starting: true, runs: []}), 'running');
+  assert.equal(requestStatus({status: 'active', runs: []}), 'active');
+});
+
+test('a starting request has a running run that says it is starting up', async () => {
+  const {runningRun, runningLine} = await import('../frontend/discovery.js');
+  const run = runningRun({starting: true, runs: []});
+  assert.equal(run.status, 'running');
+  assert.equal(runningLine(run), 'Starting up: searching the web in a moment');
+  assert.equal(runningRun({runs: []}), null);
+});

@@ -249,3 +249,51 @@ def test_an_entry_box_adds_a_new_grant_and_keeps_the_old_one_in_the_history(conn
         {"f": second}).one()
     assert state[0] == "accepted" and state[1] == first
     session.close()
+
+
+def test_event_and_person_facts_are_kept_with_their_source_and_never_overwritten(connection):
+    """Migration 600: what Review shows about an event or a person has a home."""
+    from datetime import UTC, datetime
+
+    from agents.discovery.promote import _append_record_facts
+    from agents.discovery.stage import StagedRecord
+    from agents.enrichment.decisions import append_entity_fact
+
+    if not connection.execute(text("SELECT to_regclass('public.event_fact')")).scalar():
+        pytest.skip("migration 600 not applied to this database")
+    event_id = connection.execute(text("SELECT event_id::text FROM event LIMIT 1")).scalar()
+    if event_id is None:
+        pytest.skip("needs an event")
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    now = datetime.now(UTC)
+    kw = dict(entity_type="event", entity_id=event_id, fact_key="test_format",
+              source_url="https://example.org/event", date_read=now, created_by="agent:test")
+    assert append_entity_fact(session, value="Hybrid", live=True, **kw)["action"] == "appended"
+    assert append_entity_fact(session, value="Hybrid", live=True, **kw)["action"] == "same_value"
+    assert append_entity_fact(session, value="In person", live=True, **kw)["action"] == "superseded"
+    rows = connection.execute(text(
+        "SELECT count(*) FROM event_fact WHERE event_id=CAST(:e AS uuid) AND fact_key='test_format'"),
+        {"e": event_id}).scalar()
+    current = connection.execute(text(
+        "SELECT fact_value FROM event_fact_current WHERE event_id=CAST(:e AS uuid) "
+        "AND fact_key='test_format'"), {"e": event_id}).scalar()
+    assert rows == 2 and current == "In person"
+    staged = StagedRecord(
+        run_id="r", entity_type="event", natural_key="x", source_url="https://example.org/event",
+        payload={}, prompt_version="t", extracted_at=now.isoformat(),
+        normalized_payload={"audience": "Growers and agtech investors", "facts": {
+            "format": "In person", "standing_claims": ["The largest agtech summit in the US"],
+            "dropped": ["organizer"], "evidence": {"format": {
+                "source_url": "https://example.org/event/about", "date_read": now.isoformat()}}}})
+    assert _append_record_facts(session, entity_type="event", entity_id=event_id, staged=staged) == 3
+    keys = {r[0] for r in connection.execute(text(
+        "SELECT fact_key FROM event_fact_current WHERE event_id=CAST(:e AS uuid)"), {"e": event_id})}
+    assert {"format", "audience"} <= keys and "dropped" not in keys
+    assert connection.execute(text(
+        "SELECT count(*) FROM event_claim WHERE event_id=CAST(:e AS uuid) "
+        "AND claim_text='The largest agtech summit in the US'"), {"e": event_id}).scalar() == 1
+    source = connection.execute(text(
+        "SELECT s.url FROM event_fact_current f JOIN source s USING (source_id) "
+        "WHERE f.event_id=CAST(:e AS uuid) AND f.fact_key='format'"), {"e": event_id}).scalar()
+    assert source == "https://example.org/event/about"
+    session.close()

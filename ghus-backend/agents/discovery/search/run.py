@@ -444,6 +444,10 @@ def run_search_triage(
                 config, cost_meter, session=session, sectors=sectors,
                 request=discovery_request,
             ))
+            # A real search only: a lead whose article does not link to it is
+            # looked up by name (a few per run).
+            actor_context["lead_search"] = (search_provider.search
+                                            if built_provider and not offline else None)
             if actor_resolver is None and session is not None:
                 actor_resolver = load_actor_resolver_class()(session, project_root=root)
             actor_outcome = fetch_score_stage_actors(

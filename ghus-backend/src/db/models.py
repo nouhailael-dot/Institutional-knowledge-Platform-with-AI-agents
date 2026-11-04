@@ -74,16 +74,6 @@ class Source(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class FundingSource(Base):
-    """Reference table for funding origins (USDA, NSF, etc.)."""
-    __tablename__ = "funding_source"
-
-    funding_source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    category: Mapped[Optional[str]] = mapped_column(String(40))
-    description: Mapped[Optional[str]] = mapped_column(Text)
-
-
 class Sector(Base):
     """Controlled vocabulary of priority sectors."""
     __tablename__ = "sector"
@@ -419,31 +409,9 @@ class EventSector(Base):
     sector_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sector.sector_id"), primary_key=True)
 
 
-class HubFunding(Base):
-    """Funding source connections for hubs."""
-    __tablename__ = "hub_funding"
-
-    hub_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("hub.hub_id"), primary_key=True)
-    funding_source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("funding_source.funding_source_id"), primary_key=True)
-    narrative: Mapped[Optional[str]] = mapped_column(Text)
-    source_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("source.source_id"))
-
-
 # ============================================================
 # PRECOMPUTED / DERIVED TABLES
 # ============================================================
-
-class HubSectorStrength(Base):
-    """Precomputed nightly. Powers 'which hubs are strongest for X' queries instantly."""
-    __tablename__ = "hub_sector_strength"
-
-    hub_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("hub.hub_id"), primary_key=True)
-    sector_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sector.sector_id"), primary_key=True)
-    strength_score: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
-    actor_count: Mapped[Optional[int]] = mapped_column(Integer)
-    top_actor_ids: Mapped[Optional[list[uuid.UUID]]] = mapped_column(ARRAY(UUID(as_uuid=True)))
-    narrative_summary: Mapped[Optional[str]] = mapped_column(Text)
-    last_computed: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
 class SearchDoc(Base):

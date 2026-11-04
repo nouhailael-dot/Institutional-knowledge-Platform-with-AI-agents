@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import re
+from urllib.parse import urlsplit
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -527,6 +528,59 @@ def _resolve_lead_websites(leads, source, *, limit: int, stats) -> list:
         if website:
             stats["actor_lead_websites_resolved"] = int(
                 stats.get("actor_lead_websites_resolved", 0) or 0) + 1
+            lead = replace(lead, website=website)
+        resolved.append(lead)
+    return resolved
+
+
+_NOT_OFFICIAL_HOST = re.compile(
+    r"(^|\.)(wikipedia|linkedin|facebook|twitter|x|instagram|youtube|crunchbase|bloomberg|"
+    r"zoominfo|dnb|glassdoor|indeed|yelp|mapquest|bizapedia|opencorporates)\.", re.I)
+
+
+def _search_lead_websites(leads, search, source, *, limit: int, known, stats) -> list:
+    """A lead its article does not link to: its official site, found by one search.
+
+    4 Nov 2026: 'Arizona Lithium' opened a research centre in Tempe, but the
+    article had no link, so the lead was dropped as 'no official website is
+    known'. A result counts only when its page names the organisation in full
+    and is not a social, directory, encyclopaedia or news page. A few per run.
+    """
+    from agents.collection.site_access import distinct_terms, identity
+
+    if search is None or limit <= 0:
+        return leads
+    done, resolved = 0, []
+    for lead in leads:
+        if lead.website or done >= limit or _name_key(lead.name) in known:
+            resolved.append(lead)
+            continue
+        done += 1
+        stats["actor_lead_website_searches"] = int(
+            stats.get("actor_lead_website_searches", 0) or 0) + 1
+        try:
+            hits = search(f'"{lead.name}" official website', count=5) or []
+        except Exception:  # noqa: BLE001 - the lead stays without a website
+            hits = []
+        website = None
+        for hit in hits:
+            url = str(getattr(hit, "url", "") or "")
+            host = urlsplit(url).hostname or ""
+            if (not url or _NOT_OFFICIAL_HOST.search(host)
+                    or registrable_domain(url) == registrable_domain(lead.source_url or "")
+                    or re.search(r"/(news|article|story|press|blog)s?/", url, re.I)):
+                continue
+            try:
+                doc = source.fetch(url)
+            except Exception:  # noqa: BLE001 - try the next result
+                continue
+            if identity(doc.content or "", doc.content or "",
+                        distinct_terms(lead.name, url)) == "full":
+                website = homepage(url) or url
+                break
+        if website:
+            stats["actor_lead_websites_found_by_search"] = int(
+                stats.get("actor_lead_websites_found_by_search", 0) or 0) + 1
             lead = replace(lead, website=website)
         resolved.append(lead)
     return resolved
@@ -1116,6 +1170,11 @@ def fetch_score_stage_actors(
         leads = _resolve_lead_websites(
             leads, source, limit=int(config.get("actor_lead_source_fetches", 10)), stats=stats,
         )
+        leads = _search_lead_websites(
+            leads, actor_context.get("lead_search"), source,
+            limit=int(config.get("actor_lead_website_searches", 4)),
+            known=existing_names, stats=stats,
+        )
         read = 0
         for lead in leads:
             key = _name_key(lead.name)
@@ -1316,6 +1375,54 @@ def _auto_accept_reasons(candidate, settings, actor_context) -> str:
         f"meets the {settings.auto_high:.2f} accept threshold and every quality gate held "
         f"({'; '.join(checks)}). Source: {candidate.url}"
     )
+
+
+def _event_words(name: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", str(name or "").casefold())
+            if len(w) > 2 and not w.isdigit() and w not in {"the", "and", "for", "conference",
+                                                           "summit", "annual"}}
+
+
+def collapse_same_events(candidates):
+    """One event found on two pages (its own site and a listing) is kept once.
+
+    4 Nov 2026: World Agri-Tech Innovation Summit reached Review twice - from
+    worldagritechusa.com and from a potato-industry listing. Two kept events
+    with the same start date and mostly the same name are one: the copy read on
+    its own site (or the higher score) stays, the other becomes its duplicate.
+    """
+    kept = [c for c in candidates if c.score_band in ("auto_high", "review")]
+
+    def strength(c):
+        record = c.record_preview or {}
+        own = registrable_domain(str(record.get("website") or "")) == registrable_domain(c.url)
+        return (own, c.score_band == "auto_high", float(c.fit_score or 0.0))
+
+    winner_of: dict[str, object] = {}
+    for c in sorted(kept, key=strength, reverse=True):
+        record = c.record_preview or {}
+        start, words = str(record.get("start_date") or ""), _event_words(
+            record.get("title") or record.get("name") or c.title)
+        for w in winner_of.values():
+            other = w.record_preview or {}
+            other_words = _event_words(other.get("title") or other.get("name") or w.title)
+            if (start and start == str(other.get("start_date") or "") and words and other_words
+                    and len(words & other_words) >= 0.7 * min(len(words), len(other_words))):
+                winner_of[c.candidate_id] = w
+                break
+        else:
+            winner_of[c.candidate_id] = c
+    result, merged = [], 0
+    for c in candidates:
+        w = winner_of.get(c.candidate_id)
+        if w is not None and w is not c:
+            merged += 1
+            result.append(replace(c, score_band=None, triage_verdict="duplicate", duplicate_of=w.candidate_id,
+                                  triage_reason=f"The same event as {w.url} (same dates and name); "
+                                                "kept once, from its own site."))
+        else:
+            result.append(c)
+    return result, merged
 
 
 def fetch_score_stage_events(
@@ -1779,6 +1886,8 @@ def fetch_score_stage_events(
         )
 
     stats["cost_stage_followups_usd"] = round(followup_budget.spent_usd, 6)
+    final, merged = collapse_same_events(final)
+    stats["events_collapsed_by_name_and_date"] = merged
     if request is not None:
         # At most the request's number of new events per run, strongest first.
         final, held_back = apply_new_actor_cap(final, request.max_new_actors, noun="events")

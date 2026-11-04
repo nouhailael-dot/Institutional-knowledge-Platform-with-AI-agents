@@ -213,6 +213,8 @@ def test_actor_rubric_content_strips_page_chrome_before_truncating():
 
 def test_actor_phase_reports_prompt_cache_hit_rate_and_truncation_count(tmp_path):
     config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
+    # This test counts pages and calls; the official-site follow-up has its own test.
+    config["actor_followup_min_score"] = 0.60
     config.update(
         {
             "max_pages_fetched": 2,
@@ -283,6 +285,8 @@ def test_actor_phase_reports_prompt_cache_hit_rate_and_truncation_count(tmp_path
 
 def test_actor_fetch_failure_is_backfilled_until_loaded_page_budget_is_full(tmp_path):
     config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
+    # This test counts pages and calls; the official-site follow-up has its own test.
+    config["actor_followup_min_score"] = 0.60
     config.update({"max_pages_fetched": 2, "max_new_domains": 2})
 
     class Source:
@@ -416,6 +420,8 @@ def test_actor_record_longer_than_canonical_column_is_rejected():
 
 def test_actor_record_validation_failure_does_not_stop_other_candidates(tmp_path):
     config = copy.deepcopy(load_sources_config(PROJECT_ROOT)["open_web_discovery"])
+    # This test counts pages and calls; the official-site follow-up has its own test.
+    config["actor_followup_min_score"] = 0.60
     from agents.discovery.extractors.actor import ACTOR_STRING_MAX_LENGTHS
 
     # Classification runs after banding by default; this test is about the
@@ -865,3 +871,12 @@ def _candidate(index, *, score):
         triage_reason="fetch",
         fit_score=score,
     )
+
+
+def test_a_review_band_candidate_read_off_its_own_site_is_reread_on_it_from_045():
+    """4 Nov 2026: a 0.45 fund read from a listing site never got its own pages read."""
+    config = load_sources_config(PROJECT_ROOT)["open_web_discovery"]
+    floor = float(config["actor_followup_min_score"])
+    low, high = (float(v) for v in (config["actor_score_thresholds"]["auto_low"],
+                                     config["actor_score_thresholds"]["auto_high"]))
+    assert floor == low == 0.45 and floor < high

@@ -188,3 +188,23 @@ class SelectionDateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EndDateBoxTests(unittest.TestCase):
+    """4 Nov 2026: End Date became editable after events were captured, and the
+    box showed empty although the record held the date."""
+
+    def test_a_copy_captured_before_end_date_was_editable_still_shows_it(self):
+        from src.review.store import _with_new_fields
+        original = {"name": "Plant-2027", "next_date": "2027-04-12", "end_date": "2027-04-14"}
+        old_copy = {"name": "Plant-2027", "next_date": "2027-04-12"}
+        merged = _with_new_fields("event", old_copy, original)
+        self.assertEqual(merged["end_date"], "2027-04-14")
+
+    def test_a_reviewer_edit_is_never_replaced(self):
+        from src.review.store import _with_new_fields
+        original = {"name": "A", "next_date": "2027-04-12", "end_date": "2027-04-14"}
+        edited = {"name": "A", "next_date": "2027-04-12", "end_date": "2027-04-15"}
+        self.assertEqual(_with_new_fields("event", edited, original)["end_date"], "2027-04-15")
+        cleared = {"name": "A", "next_date": "2027-04-12", "end_date": ""}
+        self.assertEqual(_with_new_fields("event", cleared, original)["end_date"], "")

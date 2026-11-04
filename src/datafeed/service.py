@@ -77,6 +77,10 @@ STATUS_LABELS = {
 }
 
 
+# The block Explore and Map adds to a record: card fields with no template column.
+MAP_FACTS = "map_facts"
+
+
 class DataFeedError(ValueError):
     """A request the Data Feed cannot carry out; the message is for the person."""
 
@@ -167,19 +171,28 @@ class DataFeedService:
             raise DataFeedError(f"At most {MAX_MANUAL_ROWS} records at a time by hand; "
                                 "use a spreadsheet for more.")
         by_key = {f.key: f for f in contract.fields(record_type)}
-        rows = []
+        rows, extras = [], {}
         for index, record in enumerate(records, 1):
+            record = dict(record)
+            # Explore and Map only: the card fields the template has no column for,
+            # stored as sourced facts at admission (4 Nov 2026).
+            facts = record.pop(MAP_FACTS, None) if method == "map" else None
+            if isinstance(facts, dict) and facts:
+                extras[index] = facts
             unknown = sorted(set(record) - set(by_key))
             if unknown:
                 raise DataFeedError("Unknown fields: " + ", ".join(unknown))
             values = {by_key[k].header: str(v if v is not None else "") for k, v in record.items()}
             rows.append((index, values))
-        return self._preview(record_type, method, rows)
+        return self._preview(record_type, method, rows, extras=extras)
 
-    def _preview(self, record_type, method, rows, *, file_info=None, notes=None):
+    def _preview(self, record_type, method, rows, *, file_info=None, notes=None, extras=None):
         vocab = self.vocabularies()
         checker = validate.RowChecker(record_type, vocab)
         results = [checker.check(number, values) for number, values in rows]
+        for result in results:
+            if (extras or {}).get(result["row_number"]) and isinstance(result.get("payload"), dict):
+                result["payload"][MAP_FACTS] = extras[result["row_number"]]
         matcher_notes: list[str] = list(notes or [])
         self._match(record_type, results, matcher_notes)
         validate.file_duplicates(record_type, results)

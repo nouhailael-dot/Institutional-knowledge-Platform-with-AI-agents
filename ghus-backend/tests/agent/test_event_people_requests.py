@@ -738,3 +738,86 @@ def test_every_kept_person_without_a_linkedin_gets_one_search_never_an_excluded_
     assert not wants_linkedin_search(gate("exclude"), with_bio)
     assert not wants_linkedin_search(
         gate("accept"), {"facts": {"linkedin_url": "https://www.linkedin.com/in/x"}})
+
+
+def test_universities_only_keeps_university_sites_never_a_lab_or_agency():
+    from agents.discovery.search.people_targets import institution_domains
+
+    class Rows:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self.rows
+
+    rows = [
+        {"name": "University of Colorado Boulder", "site": "https://www.colorado.edu",
+         "category": "university_academic", "about": "hydrogen research", "state": "CO", "in_sector": True},
+        {"name": "National Renewable Energy Laboratory", "site": "https://www.nrel.gov",
+         "category": "national_laboratory", "about": "hydrogen", "state": "CO", "in_sector": True},
+        {"name": "Carbon Initiatives", "site": "https://www.energy.gov",
+         "category": "university_academic", "about": "hydrogen", "state": "CO", "in_sector": True},
+    ]
+    session = type("S", (), {"execute": lambda self, *a, **k: Rows(rows)})()
+    picked = institution_domains(session, states=("CO",), sector_codes=("ENERGY",),
+                                 keywords=["hydrogen"], universities_only=True)
+    assert [t["domain"] for t in picked] == ["colorado.edu"]
+    both = institution_domains(session, states=("CO",), sector_codes=("ENERGY",),
+                               keywords=["hydrogen"], academic_only=True)
+    assert {"colorado.edu", "nrel.gov"} <= {t["domain"] for t in both}
+
+
+def test_one_event_found_on_its_site_and_on_a_listing_reaches_review_once():
+    from agents.discovery.search.models import CandidateRecord
+    from agents.discovery.search.phase2 import collapse_same_events
+
+    def event(cid, url, title, website, band, score):
+        return CandidateRecord(
+            candidate_id=cid, run_id="r", entity_type="event", query="q", provider="p", url=url,
+            title=title, snippet="", domain="", triage_verdict="accepted", triage_reason="",
+            score_band=band, fit_score=score,
+            record_preview={"title": title, "start_date": "2027-03-09", "website": website})
+
+    own = event("a", "https://worldagritechusa.com", "World Agri-Tech Innovation Summit San Francisco",
+                "https://worldagritechusa.com", "auto_high", 1.0)
+    listing = event("b", "https://www.potatopro.com/world-agri-tech-innovation-summit-2027",
+                    "World Agri-Tech Innovation Summit 2027", "https://worldagritechusa.com",
+                    "auto_high", 0.75)
+    other = event("c", "https://animalagtech.com", "Animal AgTech Innovation Summit",
+                  "https://animalagtech.com", "auto_high", 0.95)
+    result, merged = collapse_same_events([listing, own, other])
+    by_id = {c.candidate_id: c for c in result}
+    assert merged == 1
+    assert by_id["b"].score_band is None and by_id["b"].duplicate_of == "a"
+    assert by_id["a"].score_band == "auto_high" and by_id["c"].score_band == "auto_high"
+
+
+def test_expert_system_ids_are_profiles_and_a_topical_lab_page_lists_its_people():
+    from agents.discovery.search.people_targets import directory_leads, profile_page_kind
+
+    assert profile_page_kind("https://experts.colorado.edu/display/spinId_1265000") == "profile"
+    assert profile_page_kind("https://experts.colorado.edu/display/fisid_157952") == "profile"
+    assert profile_page_kind("https://aeml.mines.edu/people") == "directory"
+    html = ('<html><head><title>Hydrogen Electrolysis Lab - People</title></head><body>'
+            '<div><a href="/people/jane-doe">Jane Doe</a><p>Associate Professor</p></div>'
+            '<div><a href="/people/john-roe">John Roe</a><p>Research Scientist</p></div>'
+            '</body></html>')
+    leads = directory_leads(html, "https://h2lab.mines.edu/people", ["electrolysis"])
+    assert [lead["name"] for lead in leads] == ["Jane Doe", "John Roe"]
+    other = html.replace("Hydrogen Electrolysis Lab", "Chemistry Department")
+    assert directory_leads(other, "https://chem.mines.edu/people", ["electrolysis"]) == []
+
+
+def test_a_strong_well_placed_person_missing_only_a_bio_goes_to_review_not_away():
+    from types import SimpleNamespace
+
+    from agents.discovery.quality_gates import cap_band
+
+    missing_bio = SimpleNamespace(decision="research", missing_mandatory=("bio or LinkedIn",))
+    assert cap_band("auto_high", missing_bio) == "review"
+    assert cap_band("auto_low", missing_bio) == "auto_low"
+    unplaced = SimpleNamespace(decision="research", missing_mandatory=("affiliation",))
+    assert cap_band("auto_high", unplaced) == "auto_low"

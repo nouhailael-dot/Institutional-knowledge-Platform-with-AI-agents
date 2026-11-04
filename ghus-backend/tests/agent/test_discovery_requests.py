@@ -390,3 +390,80 @@ def test_a_duplicate_event_page_no_longer_stops_the_batch_saving():
     row = session.rows[0]
     assert row["score_band"] is None and row["triage_verdict"] == "duplicate"
     assert row["duplicate_of"] == "00000000-0000-4000-8000-000000000002"
+
+
+def test_a_request_naming_a_kind_of_organization_searches_for_that_kind_only():
+    """4 Nov 2026: a research-centre request searched 'investor ...' and kept an investor."""
+    from agents.discovery.search.discovery_request import (
+        DiscoveryRequest,
+        request_actor_queries,
+        requested_kinds,
+    )
+
+    request = DiscoveryRequest(
+        subscription_id="r", title="AI in healthcare research centers in Massachusetts",
+        sector_codes=("HEALTH",), focus_terms=("healthcare AI research center",
+                                               "medical AI research lab"),
+        states=("MA",), region_code=None, city=None, max_new_actors=10)
+    assert requested_kinds(request) == ("research center", "research institute")
+    queries, meta = request_actor_queries(request, [{"code": "HEALTH", "name": "Healthcare"}],
+                                          max_queries=12)
+    assert not any(word in q for q in queries
+                   for word in ("investor", "startup", "company", "accelerator"))
+    assert all("research center research center" not in q for q in queries)
+    assert all(q.count("research center") <= 1 for q in meta["use_case_queries"])
+    assert meta["requested_kinds"] == ["research center", "research institute"]
+    # A request naming no kind still searches every kind.
+    open_request = DiscoveryRequest(
+        subscription_id="o", title="Water technology in the Great Lakes", sector_codes=("WATER",),
+        focus_terms=("water technology",), states=("MI",), region_code=None, city=None,
+        max_new_actors=10)
+    assert requested_kinds(open_request) == ()
+    queries, _ = request_actor_queries(open_request, [{"code": "WATER", "name": "Water"}],
+                                       max_queries=16)
+    assert any(q.startswith("investor") for q in queries)
+    national = DiscoveryRequest(subscription_id="n", title="National labs working on batteries",
+                                sector_codes=("ENERGY",), focus_terms=(), states=(),
+                                region_code=None, city=None, max_new_actors=10)
+    assert requested_kinds(national) == ("national laboratory",)
+
+
+def test_a_lead_without_a_linked_website_is_found_by_one_search_and_its_own_page():
+    """4 Nov 2026: 'Arizona Lithium' was dropped because its article had no link."""
+    from types import SimpleNamespace
+
+    from agents.discovery.search.phase2 import _search_lead_websites
+    from agents.discovery.sources.base import FetchedDoc
+
+    pages = {
+        "https://en.wikipedia.org/wiki/Arizona_Lithium": "<p>Arizona Lithium is a company.</p>",
+        "https://www.arizonalithium.com/research-center": (
+            "<title>Arizona Lithium</title><p>Arizona Lithium Research Center in Tempe.</p>"),
+    }
+    source = SimpleNamespace(fetch=lambda url: FetchedDoc.from_content(
+        url=url, content=pages[url], content_type="text/html"))
+    calls = []
+
+    def search(query, count=10):
+        calls.append(query)
+        return [SimpleNamespace(url=u) for u in pages]
+
+    lead = SimpleNamespace(name="Arizona Lithium", website=None,
+                           source_url="https://www.gpec.org/news/arizona-lithium")
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class Lead:
+        name: str
+        website: str | None
+        source_url: str
+
+    stats = {}
+    found = _search_lead_websites([Lead(lead.name, None, lead.source_url),
+                                   Lead("Already Mapped Co", None, lead.source_url)],
+                                  search, source, limit=4, known={"already mapped co"}, stats=stats)
+    assert found[0].website == "https://www.arizonalithium.com/"
+    assert found[1].website is None and calls == ['"Arizona Lithium" official website']
+    assert stats["actor_lead_websites_found_by_search"] == 1
+    assert _search_lead_websites([Lead("X", None, "")], None, source, limit=4, known=set(),
+                                 stats={})[0].website is None

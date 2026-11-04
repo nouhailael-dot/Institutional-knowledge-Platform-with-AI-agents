@@ -124,8 +124,8 @@ def _ledger(session):
 
 EVIDENCE = {
     "location": "Austin, TX",                                   # new
-    "funding_signal": "$2M grant from NSF in 2026.",            # changed
-    "recent_activity": "Opened a pilot plant in May 2026.",     # conflict (current is newer)
+    "funding_signal": "$2M grant from NSF in 2026.",            # additional: a list box keeps both entries
+    "recent_activity": "Opened a pilot plant in May 2026.",     # additional: a list box keeps both entries
     "international_connection": "Office in Rabat, Morocco.",    # protected (GHUS)
     "um6p_ocp_connection": "Has a partnership with UM6P on water reuse.",  # corroborated
     "why_matched": None,                                        # not found
@@ -156,8 +156,8 @@ def test_plan_is_free_and_writes_nothing(session_factory, world, tmp_path):
     assert plan["topic"]["code"] == world["code"]
     assert plan["fields"] == au.schema_fields("company")
     assert plan["cost"]["cap_usd"] == CONFIG["actor_updates"]["max_usd_per_actor"]
-    # Three page requests at most; a fallback search is disclosed, never hidden.
-    assert plan["pages"].startswith("Up to 3 page requests in total")
+    # Five pages of its own site at most; a fallback search is disclosed, never hidden.
+    assert plan["pages"].startswith("Up to 5 pages of its own website")
     assert "web search" in plan["pages"]
     assert plan["summary"].startswith("Re-read ")
 
@@ -286,11 +286,11 @@ def test_check_predicts_and_apply_writes_exactly_the_phase11_outcomes(
         assert _ledger(session) == before
         predicted = {f["field"]: f["outcome"] for f in check["findings"]}
         assert predicted == {
-            "location": "new", "funding_signal": "changed", "recent_activity": "conflict",
+            "location": "new", "funding_signal": "additional", "recent_activity": "additional",
             "international_connection": "protected", "um6p_ocp_connection": "corroborated",
             "why_matched": "not_found",
         }
-        assert check["counts"] == {"new": 1, "changed": 1, "conflicts": 2, "confirmed": 1,
+        assert check["counts"] == {"new": 1, "additional": 2, "conflicts": 1, "confirmed": 1,
                                    "missing": 1}
         finding = next(f for f in check["findings"] if f["field"] == "funding_signal")
         assert finding["previous"]["value"] == "$1M grant from DOE in 2024."
@@ -302,7 +302,7 @@ def test_check_predicts_and_apply_writes_exactly_the_phase11_outcomes(
         assert applied["ok"], applied
         actual = {r["field"]: r["actual"] for r in applied["results"]}
         assert actual == predicted
-        assert applied["review_items"] == 2
+        assert applied["review_items"] == 1
 
         # GHUS's value is still current; the old funding fact is history, not gone.
         pointer = session.execute(text(
@@ -323,13 +323,13 @@ def test_check_predicts_and_apply_writes_exactly_the_phase11_outcomes(
         ).mappings().one()
         assert (run["status"], float(run["spent_usd"]), run["fetch_count"]) == (
             "succeeded", 0.03, 2)
-        assert run["review_item_count"] == 2 and run["actor_id"] == world["actor"]
+        assert run["review_item_count"] == 1 and run["actor_id"] == world["actor"]
         assert _count(session, "SELECT count(*) FROM actor_fact WHERE request_id="
                                "CAST(:r AS uuid)", r=run["request_id"]) == 5
         assert _count(session, "SELECT count(*) FROM review_item WHERE entity_id="
                                "CAST(:a AS uuid) AND topic_id=CAST(:t AS uuid) AND status="
                                "'pending' AND review_kind IN ('fact_conflict','pending_update')",
-                      a=world["actor"], t=world["topic"]) == 2
+                      a=world["actor"], t=world["topic"]) == 1
 
         # Applying the same check again writes nothing twice.
         again = au.apply_check(session, check["check_id"], runs_dir=tmp_path, config=CONFIG)
@@ -749,7 +749,7 @@ def test_one_actor_failing_does_not_stop_the_run(session_factory, world, three_a
                                  live=True)
         outcome = _runner(session, made["subscription_id"], tmp_path, reader).outcomes[0]
         assert outcome.status == "attention"
-        assert "1 actor(s) could not be updated" in outcome.status_reason
+        assert "1 organization(s) could not be updated" in outcome.status_reason
         assert outcome.counts["actors"] == 2
 
 

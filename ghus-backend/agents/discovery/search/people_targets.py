@@ -73,7 +73,8 @@ def registrable(url_or_host: str) -> str:
 
 def institution_domains(session, *, states: Sequence[str], sector_codes: Sequence[str],
                         institution: str | None = None, keywords: Sequence[str] = (),
-                        academic_only: bool = False, limit: int = 8) -> list[dict]:
+                        academic_only: bool = False, universities_only: bool = False,
+                        limit: int = 8) -> list[dict]:
     """The official sites to search, best first: [{domain, institutions, score}].
 
     An institution named by the request is the only target when the map holds
@@ -115,14 +116,21 @@ def institution_domains(session, *, states: Sequence[str], sector_codes: Sequenc
         if not _DOMAIN.fullmatch(domain):
             continue
         entry = scores.setdefault(domain, {"domain": domain, "institutions": [],
-                                           "in_sector": 0, "academic": False})
+                                           "in_sector": 0, "academic": False,
+                                           "university": False})
         entry["institutions"].append(row["name"])
         about = str(row["about"] or "").lower()
         topical = row["in_sector"] or (words and any(w in about for w in words))
         entry["in_sector"] += 1 if topical else 0
         entry["academic"] |= row["category"] in ("university_academic", "national_laboratory")
+        entry["university"] |= (row["category"] == "university_academic"
+                                and domain.endswith(".edu"))
     entries = list(scores.values())
-    if academic_only and any(e["academic"] for e in entries):
+    if universities_only:
+        # "Researchers at Colorado universities" (4 Nov 2026): a university's own
+        # .edu site only - never a national lab or an agency named among them.
+        entries = [e for e in entries if e["university"]]
+    elif academic_only and any(e["academic"] for e in entries):
         # A professor or researcher is on a university's or a laboratory's site.
         entries = [e for e in entries if e["academic"]]
     # A site with nothing in the requested sector is searched only when no
@@ -182,6 +190,10 @@ def profile_page_kind(url: str) -> str:
                 return "profile"
             if rest[-1].isdigit() or re.match(r"^n\d+$", rest[-1]):
                 return "profile"            # ids: /people/1234, /display/n123
+            if re.match(r"^[a-z]*[_-]?id[_-]?\d{3,}$|^[a-z]+[_-]\d{4,}$", rest[-1], re.I):
+                # Expert systems' ids (4 Nov 2026: experts.colorado.edu/display/
+                # spinId_1265000 is one person's official profile).
+                return "profile"
             return "directory"
     if parts.query and re.search(r"(^|&)(id|uid|person|user|profile)=", parts.query, re.I):
         return "profile"
@@ -246,6 +258,12 @@ def directory_leads(html: str, page_url: str, themes: Sequence[str], *,
     soup = BeautifulSoup(html or "", "html.parser")
     site = registrable(page_url)
     words = {w for t in themes for w in re.findall(r"[a-z]{4,}", t.lower())}
+    # A directory that is itself about the topic (a hydrogen lab's or network's
+    # people page) lists people on the topic even when their cards do not say it
+    # (4 Nov 2026: two Mines energy-lab pages gave nobody).
+    heading = " ".join(t.get_text(" ", strip=True) for t in soup.find_all(["title", "h1", "h2"])[:6])
+    page_topical = bool(words) and (any(w in heading.lower() for w in words)
+                                    or any(w in page_url.lower() for w in words))
     seen: set[str] = set()
     leads: list[tuple[int, int, dict]] = []
     for order, anchor in enumerate(soup.find_all("a", href=True)):
@@ -275,7 +293,7 @@ def directory_leads(html: str, page_url: str, themes: Sequence[str], *,
             continue
         context = " ".join(block.get_text(" ", strip=True).split())[:400]
         hits = sum(w in context.lower() for w in words)
-        if words and not hits:
+        if words and not hits and not page_topical:
             continue
         seen.add(href)
         leads.append((hits, order, {"url": href, "name": name, "context": context,

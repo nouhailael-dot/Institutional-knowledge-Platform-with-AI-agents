@@ -428,7 +428,10 @@ class QueryGenerator:
         database) or with no institution held in the area, the open search
         built from the request is used instead.
         """
-        from agents.discovery.search.discovery_request import request_person_queries
+        from agents.discovery.search.discovery_request import (
+            request_person_queries,
+            requested_kinds,
+        )
         from agents.discovery.search.people_targets import (
             academic_role,
             institution_domains,
@@ -443,13 +446,22 @@ class QueryGenerator:
             institution=request.institution,
             keywords=[*themes, *(names.get(c, c) for c in request.sector_codes)],
             academic_only=academic_role(request.role),
+            # "Researchers at Colorado universities": university sites only.
+            universities_only="university" in requested_kinds(request),
             limit=int(self.config.get("person_target_domains", 8)),
         ) if session is not None else []
         if not targets:
             return request_person_queries(request, sectors, max_queries=limit)
+        open_queries: list[str] = []
+        if "university" in requested_kinds(request) and len(targets) < 3:
+            # The map holds few of the area's universities: open faculty searches
+            # across the state reach the others (Mines, Colorado State...).
+            open_queries, _ = request_person_queries(request, sectors,
+                                                     max_queries=max(2, limit // 2))
         queries, where = profile_queries(
             themes, [t["domain"] for t in targets], role=request.role,
             max_queries=min(limit, int(self.config.get("person_request_searches", 6))))
+        queries = [*queries, *[q for q in open_queries if q not in queries]][:limit]
         return queries, {
             "discovery_request": request.describe(),
             "query_domains": where,

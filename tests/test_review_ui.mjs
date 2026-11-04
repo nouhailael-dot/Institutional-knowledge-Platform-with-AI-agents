@@ -165,12 +165,17 @@ test('a retired type still displays on the record that holds it', () => {
   assert.equal(summary.category_type_label, 'Other (Retired)');
 });
 
-test('Not Applicable requires a one-line note, and a cross-category pair is refused', () => {
+test('Not Applicable needs no typed note (one is sent for it), and a cross-category pair is refused', async () => {
+  const {editableReviewPayload, NOT_APPLICABLE_NOTE} = await import('../frontend/review.js');
   const candidate = {entity_type: 'actor', editable_fields: ['name', 'actor_category', 'category_type', 'category_note']};
   assert.deepEqual(
     validateReviewDraft(candidate, {name: 'X', actor_category: 'company', category_type: NOT_APPLICABLE}),
-    {category_note: 'Required when the type is Not Applicable.'},
+    {},
   );
+  assert.equal(editableReviewPayload(candidate, {name: 'X', actor_category: 'company',
+    category_type: NOT_APPLICABLE}).category_note, NOT_APPLICABLE_NOTE);
+  assert.equal(editableReviewPayload(candidate, {name: 'X', actor_category: 'company',
+    category_type: 'public_company'}).category_note, undefined);
   assert.deepEqual(
     validateReviewDraft(candidate, {
       name: 'X', actor_category: 'company', category_type: NOT_APPLICABLE,
@@ -1544,4 +1549,9 @@ test('a list box shows one line per entry, dates first for activities', async ()
   assert.equal(formatFactValue({entries: [{date: '2026-03-14', description: 'Opened a pilot'}]}),
     '• 03/14/2026 — Opened a pilot');
   assert.equal(formatFactValue({entries: []}), 'No value recorded');
+});
+
+test('the organization card no longer shows a Category Note field', () => {
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /"category_note", draft\.category_note/);
 });

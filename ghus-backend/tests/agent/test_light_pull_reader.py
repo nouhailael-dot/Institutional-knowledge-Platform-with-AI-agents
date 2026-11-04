@@ -431,3 +431,51 @@ def test_a_news_or_funding_page_is_read_beside_home_about_and_topic():
     assert urls[:3] == ["https://lab.example/", "https://lab.example/about",
                         "https://lab.example/research"]
     assert "https://lab.example/news" in urls and len(urls) <= 5
+
+
+
+def test_a_website_field_holding_several_addresses_is_read_at_its_first_one():
+    from agents.collection.light_pull_reader import first_address
+
+    assert first_address("https://www.arizona.edu College of Engineering: "
+                         "https://engineering.arizona.edu Department: https://has.arizona.edu") \
+        == "https://www.arizona.edu"
+    assert first_address("https://thewatercouncil.com/") == "https://thewatercouncil.com/"
+    assert first_address("thewatercouncil.com") == "thewatercouncil.com"
+    assert first_address("") == ""
+
+
+def test_a_save_on_a_dropped_connection_is_retried_once_on_a_fresh_one():
+    from sqlalchemy.exc import OperationalError
+
+    from agents.collection.light_pull_candidates import _saved
+
+    events = []
+
+    class Session:
+        def commit(self):
+            events.append("commit")
+
+        def rollback(self):
+            events.append("rollback")
+
+    def write():
+        events.append("write")
+        if events.count("write") == 1:
+            raise OperationalError("UPDATE", {}, Exception("server closed the connection"))
+
+    _saved(Session(), write)
+    assert events == ["write", "rollback", "write"]
+
+
+def test_search_results_naming_the_organization_are_read_first_with_their_own_allowance():
+    from types import SimpleNamespace
+
+    from agents.collection.light_pull_reader import MAX_EVIDENCE_ATTEMPTS, _names_it_first
+
+    hits = [SimpleNamespace(url="https://avweb.com/x", title="FAA grant for BVLOS", snippet=""),
+            SimpleNamespace(url="https://ksn.com/y", title="Kansas drone company gets $3 million",
+                            snippet="Kansas Agricultural Drone Services")]
+    ordered = _names_it_first(hits, "Kansas Agricultural Drone Services, llc")
+    assert ordered[0].url == "https://ksn.com/y"
+    assert MAX_EVIDENCE_ATTEMPTS >= 5

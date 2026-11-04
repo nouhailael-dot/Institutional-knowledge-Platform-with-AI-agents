@@ -416,10 +416,20 @@ export function groupQueue(candidates, groups = []) {
   return ordered;
 }
 
+// The category note is no longer typed (4 Nov 2026); Not Applicable still carries
+// the one line the classification contract requires, written for the reviewer.
+export const NOT_APPLICABLE_NOTE = "No type in its category's list fits.";
+
 export function editableReviewPayload(candidate, draft) {
-  return Object.fromEntries((candidate?.editable_fields || [])
+  const payload = Object.fromEntries((candidate?.editable_fields || [])
     .filter(field => Object.prototype.hasOwnProperty.call(draft || {}, field))
     .map(field => [field, draft[field]]));
+  if (String(payload.category_type ?? "") === NOT_APPLICABLE
+      && !String(payload.category_note ?? draft?.category_note ?? "").trim()
+      && (candidate?.editable_fields || []).includes("category_note")) {
+    payload.category_note = NOT_APPLICABLE_NOTE;
+  }
+  return payload;
 }
 
 // Review items about one box's value: the decision is between two values.
@@ -982,6 +992,13 @@ export function validateReviewDraft(candidate, draft) {
     const value = String(payload[field] ?? "").trim();
     if (value && !isoFromUs(value)) errors[field] = "Use MM/DD/YYYY.";
   });
+  // An event closes on or after the day it starts.
+  const start = isoFromUs(String(payload.next_date ?? "").trim()) || String(payload.next_date ?? "");
+  const end = isoFromUs(String(payload.end_date ?? "").trim()) || String(payload.end_date ?? "");
+  if (!errors.end_date && /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end)
+      && end < start) {
+    errors.end_date = "The end date is before the start date.";
+  }
   if (candidate?.entity_type === "actor") {
     const category = String(payload.actor_category ?? "").trim();
     const type = String(payload.category_type ?? "").trim();
@@ -990,10 +1007,6 @@ export function validateReviewDraft(candidate, draft) {
     if (type && !category) errors.actor_category = "Choose the Category first.";
     if (type && category && !isValidPair(category, type)) {
       errors.category_type = "This type belongs to a different Category.";
-    }
-    // Not Applicable is a decision, so it carries a reason.
-    if (type === NOT_APPLICABLE && !String(payload.category_note ?? "").trim()) {
-      errors.category_note = "Required when the type is Not Applicable.";
     }
   }
   return errors;
@@ -1697,7 +1710,7 @@ export function whyMatchedFact(candidate) {
 const LONG_FIELDS = /description|activities|approach|summary|constraints|focus|research|category_note|thematic/;
 
 // Fields holding a calendar day: shown and typed as MM/DD/YYYY, kept as ISO.
-const DATE_FIELDS = new Set(["next_date"]);
+const DATE_FIELDS = new Set(["next_date", "end_date"]);
 
 function textField(html, candidate, field, value, onChange, disabled, error) {
   if (DATE_FIELDS.has(field)) {
@@ -2691,10 +2704,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${isActor ? html`
             <details class="mpeople review-profile" open>
               <summary>Organization profile</summary>
-              ${cardField(html, selected, "category_note", draft.category_note, edit, !pending || busy,
-                draftErrors.category_note, "Category Note")}
-              ${String(draft.category_type ?? "") === NOT_APPLICABLE && html`
-                <p class="review-hint">${SENTENCES.notApplicableNeedsNote}</p>`}
               ${cardLine(html, "Other Names", otherNames.join(", "))}
               <label class="review-line"><b>${FIELDS.primarySector}</b>
                 <span class="review-value review-value-row">
@@ -2818,11 +2827,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             })()}
             ${cardField(html, selected, "primary_technical_focus", draft.primary_technical_focus, edit,
               !pending || busy, draftErrors.primary_technical_focus, "Focus")}
-            ${cardField(html, selected, "funding_summary", draft.funding_summary, edit,
-              !pending || busy, draftErrors.funding_summary, "Funding")}
             ${(() => {
+              // Funding the Light Pull found shows in the Funding box itself when the
+              // record has none of its own (4 Nov 2026: the box said Not Found while
+              // the funding sat on a separate line below it).
               const read = lightBoxes.common.find(row => row.key === "funding_signal" && !row.state && row.value);
-              return read && lightLine(html, {...read, label: "Funding found on its pages"});
+              const found = read ? formatFactValue(read.value) : "";
+              const own = draft.funding_summary;
+              return html`${cardField(html, selected, "funding_summary",
+                own === undefined || own === null || own === "" ? found : own, edit,
+                !pending || busy, draftErrors.funding_summary, "Funding")}
+                ${read && own && lightLine(html, {...read, label: "Funding found on its pages"})}`;
             })()}
             ${cardField(html, selected, "current_activities", draft.current_activities, edit,
               !pending || busy, draftErrors.current_activities, "Current Programs")}

@@ -257,6 +257,8 @@ def promote(
             )
             event_id = _insert_event(session, staged.normalized_payload, source_id)
             _append_event_topics(session, event_id=event_id, staged=staged, source_id=source_id)
+            if _table_columns(session, "event_fact"):
+                _append_record_facts(session, entity_type="event", entity_id=event_id, staged=staged)
             _mark_index_dirty(session, entity_type="event", entity_id=event_id)
             result = PromotionResult(
                 action="created",
@@ -280,6 +282,9 @@ def promote(
                     description="agent discovery event sighting",
                 ),
             )
+            if _table_columns(session, "event_fact"):
+                _append_record_facts(session, entity_type="event",
+                                     entity_id=route.target_entity_id, staged=staged)
             if fields:
                 _mark_index_dirty(session, entity_type="event", entity_id=route.target_entity_id)
             result = PromotionResult(
@@ -434,6 +439,72 @@ def _append_actor_sectors(session, *, actor_id: str, staged: StagedRecord, sourc
                 ),
             },
         )
+        written += 1
+    return written
+
+
+# What a record shows in Review that no column holds (migration 600): kept as
+# sourced facts. Columns already hold these, so they are not repeated as facts.
+_EVENT_COLUMN_FACTS = frozenset({"description", "themes"})
+_PERSON_COLUMN_FACTS = frozenset({"bio", "linkedin_url", "description"})
+# Fields the Data Feed and Explore and Map carry beside the facts block.
+_EVENT_EXTRA_FIELDS = ("event_format", "audience", "previous_edition", "match_explanation",
+                       "um6p_ocp_involvement", "organizer")
+_PERSON_EXTRA_FIELDS = ("department", "relevant_work", "work_location", "other_affiliations",
+                        "um6p_ocp_connection")
+
+
+def _fact_moment(value, fallback) -> datetime:
+    for raw in (value, fallback):
+        try:
+            moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+        except (TypeError, ValueError):
+            continue
+    return datetime.now(UTC)
+
+
+def _append_record_facts(session, *, entity_type: str, entity_id: str, staged: StagedRecord) -> int:
+    """Every fact Review showed for an event or a person, kept with its own source.
+
+    4 Nov 2026: a format, an audience, a department or relevant work was shown
+    to the reviewer and lost at verification. Each value keeps the page and the
+    date its evidence names; standing claims about an event go to event_claim.
+    """
+    from agents.enrichment.decisions import append_entity_fact, append_event_claim
+
+    payload = staged.normalized_payload or {}
+    facts = dict(payload.get("facts") or {}) if isinstance(payload.get("facts"), dict) else {}
+    # Explore and Map: every card field the Data Feed template has no column for.
+    if isinstance(payload.get("map_facts"), dict):
+        facts.update(payload["map_facts"])
+    evidence = facts.pop("evidence", None) or {}
+    facts.pop("dropped", None)
+    skip = _EVENT_COLUMN_FACTS if entity_type == "event" else _PERSON_COLUMN_FACTS
+    extras = _EVENT_EXTRA_FIELDS if entity_type == "event" else _PERSON_EXTRA_FIELDS
+    for key in extras:
+        if payload.get(key) not in (None, "", [], {}) and key not in facts:
+            facts[key] = payload[key]
+    written = 0
+    for key, value in facts.items():
+        if key in skip or value in (None, "", [], {}):
+            continue
+        proof = evidence.get(key) if isinstance(evidence, dict) else None
+        proof = proof if isinstance(proof, dict) else {}
+        url = str(proof.get("source_url") or staged.source_url or "")
+        if not url.startswith(("http://", "https://")):
+            continue
+        moment = _fact_moment(proof.get("date_read"), staged.extracted_at)
+        if entity_type == "event" and key == "standing_claims":
+            for claim in (value if isinstance(value, list) else [value]):
+                if str(claim or "").strip():
+                    append_event_claim(session, event_id=entity_id, claim_text=str(claim),
+                                       source_url=url, date_read=moment, live=True)
+                    written += 1
+            continue
+        append_entity_fact(session, entity_type=entity_type, entity_id=entity_id, fact_key=key,
+                           value=value, source_url=url, date_read=moment,
+                           created_by="agent:promote", live=True)
         written += 1
     return written
 
@@ -835,6 +906,7 @@ def map_new_actor(
                 topic_id=topic_id,
                 light_pull=light_pull,
             )
+            _append_actor_map_facts(session, actor_id=actor_id, staged=staged, topic_id=topic_id)
             if classification is not None:
                 _append_actor_classification(
                     session,
@@ -1131,6 +1203,35 @@ def _append_actor_sighting(
         run_id=staged.run_id,
     )
     return ["discovery_sighting"]
+
+
+def _append_actor_map_facts(session, *, actor_id: str, staged: StagedRecord,
+                            topic_id: str | None) -> int:
+    """Explore and Map card fields with no Data Feed column, kept as sourced facts.
+
+    4 Nov 2026: focus, current activities, category details, relationships and
+    why it matched were shown on the map card and lost when it was saved.
+    """
+    payload = staged.normalized_payload or {}
+    facts = payload.get("map_facts")
+    if not topic_id or not isinstance(facts, dict):
+        return 0
+    url = str(payload.get("source_url") or staged.source_url or "")
+    if not url.startswith(("http://", "https://")):
+        return 0
+    moment = _fact_moment(None, staged.extracted_at)
+    written = 0
+    for key, value in facts.items():
+        if value in (None, "", [], {}):
+            continue
+        append_actor_fact(session, ActorFactWrite(
+            actor_id=actor_id, topic_id=topic_id, field_key=str(key), fact_type="explore_map",
+            layer=1, value=value, collection_state="found", source_url=url,
+            source_origin="newly_found", date_read=moment, confidence="medium",
+            created_by="agent:explore_map", request_id=staged.run_id
+            if re.fullmatch(r"[0-9a-f-]{36}", str(staged.run_id or "")) else None), live=True)
+        written += 1
+    return written
 
 
 def _append_actor_light_facts(
@@ -1762,6 +1863,9 @@ def _promote_person(
                 source_id=source_id,
                 needs_actor_enrichment=created_affiliation_stub,
             )
+            if _table_columns(session, "person_fact"):
+                _append_record_facts(session, entity_type="person", entity_id=person_id,
+                                     staged=staged)
             _mark_index_dirty(session, entity_type="person", entity_id=person_id)
             result = PromotionResult(
                 action="created",

@@ -49,8 +49,10 @@ from agents.collection.site_access import (
     PLAIN,
     SOURCE_TYPES,
     BoundedFetch,
+    distinct_terms,
     failure_of,
     host_of,
+    identity,
     source_type,
 )
 from agents.common.fact_parts import (
@@ -242,6 +244,8 @@ class LightRead:
     attempts: list[dict] = field(default_factory=list)
     # url -> the page's text, kept for the run (never written to a record).
     texts: dict[str, str] = field(default_factory=dict)
+    # Its recorded address no longer exists and this is its current site (4 Nov 2026).
+    moved_to: str | None = None
 
     def as_record(self, *, model: str, read_at: datetime) -> dict:
         return {
@@ -253,6 +257,7 @@ class LightRead:
             "cost_usd": round(self.cost_usd, 6),
             "rejected_answers": dict(self.rejected),
             "error": self.error,
+            "moved_to": self.moved_to,
         }
 
 
@@ -361,6 +366,20 @@ def _evidence_pages(home, site: str, seen: set[str]) -> list[str]:
         kinds.add(kind)
         picked.append(target)
     return picked
+
+
+def first_address(website: str) -> str:
+    """The first web address in a website field.
+
+    Phase 1 stored some websites as several addresses with labels ("https://www.
+    arizona.edu College of Engineering: https://engineering.arizona.edu ..."),
+    which no reader can open: the first address is the organisation's own.
+    """
+    text = str(website or "").strip()
+    match = re.search(r"https?://[^\s,;|]+", text)
+    if match:
+        return match.group(0).rstrip(".)")
+    return text.split()[0] if text else text
 
 
 def address_variants(website: str) -> list[str]:
@@ -627,6 +646,22 @@ EVIDENCE_SEARCHES: dict[str, str] = {
     "recent_activity": '{name} {year} OR {last_year} announces OR launched OR opened OR new',
 }
 MAX_EVIDENCE_PAGES = 2   # read per searched box
+# Page requests per searched box, its own allowance (4 Nov 2026: two results not
+# naming the company used the whole run's allowance before a news story about
+# its $3 million award was read).
+MAX_EVIDENCE_ATTEMPTS = 5
+
+
+def _names_it_first(hits, name: str) -> list:
+    """Search results whose title or snippet names the organisation, first."""
+    words = {w for w in re.findall(r"[a-z0-9]+", name.casefold())
+             if len(w) > 3 and w not in _GENERIC_NAME_WORDS}
+
+    def named(hit) -> int:
+        text = f"{getattr(hit, 'title', '') or ''} {getattr(hit, 'snippet', '') or ''}".casefold()
+        return sum(w in text for w in words)
+
+    return sorted(hits, key=lambda hit: -named(hit))
 
 
 def names_in_full(name: str, website: str, html: str, text: str) -> bool:
@@ -676,6 +711,7 @@ class LightPullReader:
              category_type: str = "", topic_terms: Sequence[str] = (),
              read_at: datetime | None = None, fields: Sequence[str] | None = None) -> LightRead:
         read_at = read_at or datetime.now(UTC)
+        website = first_address(website)
         result = LightRead()
         wanted = list(fields) if fields is not None else [
             *COMMON_READ_FIELDS, *CATEGORY_LIGHT_FIELDS.get(actor_category or "", ())]
@@ -709,6 +745,14 @@ class LightPullReader:
                         continue
                     failure = None
                     break
+            if (failure is not None and failure["kind"] == "unreachable"
+                    and fallback is not None and fallback.search is not None):
+                # The address no longer exists (it fails under every spelling): its
+                # current official site, found by one search and named on its page.
+                moved = self._current_site(name, website, fallback)
+                if moved is not None:
+                    docs, failure = moved, None
+                    result.moved_to = moved[0].url
             if failure is not None:
                 if fallback:
                     fallback.blocked.record(website, failure)
@@ -783,6 +827,51 @@ class LightPullReader:
         if cost_meter is not None:
             result.cost_usd = float(cost_meter.spent_usd) - spent
         return result
+
+    def _current_site(self, name: str, website: str, fallback) -> list | None:
+        """The organisation's current site when its recorded address is dead.
+
+        One web search for its name; a result counts only if its page names the
+        organisation in full and either sits on the same domain as the old
+        address or names it in its title - never a social, directory or news
+        page. Its About page is read beside it when it links one.
+        """
+        terms = distinct_terms(name, website)
+        old_host, old_domain = host_of(website), registrable_domain(website)
+        try:
+            hits = fallback.search(f'"{name}" official website') or []
+        except Exception as exc:  # noqa: BLE001 - the dead address is then reported
+            fallback.note(website, "search_failed",
+                          "The search for its current site could not be made: "
+                          + failure_of(exc)["plain"])
+            return None
+        fetch = BoundedFetch(self.fetch, MAX_FALLBACK_PAGES)
+        for hit in hits[:5]:
+            url = str(getattr(hit, "url", "") or "")
+            host = host_of(url)
+            if (not url or host == old_host or _NOT_SOURCES.search(host + ".")
+                    or re.search(r"/(news|article|story|press|blog)s?/", url, re.I)):
+                continue
+            doc = fallback.try_fetch(fetch, url)
+            if doc is None:
+                continue
+            text = _page_text(doc.content or "")
+            title = re.search(r"<title[^>]*>(.*?)</title>", doc.content or "", re.S | re.I)
+            titled = bool(title) and identity(title.group(1), title.group(1), terms) == "full"
+            if identity(doc.content or "", text, terms) != "full" or not (
+                    registrable_domain(url) == old_domain or titled):
+                fallback.note(url, "not_about_it", "This page is not its official site.")
+                continue
+            fallback.note(website, "moved", f"Its recorded address no longer exists; its "
+                                             f"current site is {url}.")
+            docs = [doc]
+            about = about_link(doc)
+            if about and registrable_domain(about) == registrable_domain(url):
+                extra = fallback.try_fetch(fetch, about)
+                if extra is not None:
+                    docs.append(extra)
+            return docs
+        return None
 
     def _judge(self, result: LightRead, key: str, answer: Mapping, texts: Mapping[str, str],
                partial: set[str], *, first: str, read_at: datetime,
@@ -928,7 +1017,7 @@ class LightPullReader:
         if not missing:
             return
         own = host_of(website)
-        fetch = BoundedFetch(self.fetch, MAX_EVIDENCE_PAGES * len(missing))
+
         for key in missing:
             query = self.evidence_searches[key].format(
                 name=f'"{name}"', year=read_at.year, last_year=read_at.year - 1)
@@ -941,7 +1030,8 @@ class LightPullReader:
             fallback.note(query, "searched",
                           f"Searched for {key.replace('_', ' ')}: {len(hits)} result(s).")
             docs = []
-            for hit in hits:
+            fetch = BoundedFetch(self.fetch, MAX_EVIDENCE_ATTEMPTS)
+            for hit in _names_it_first(hits, name):
                 url = str(getattr(hit, "url", "") or "")
                 if len(docs) >= MAX_EVIDENCE_PAGES:
                     break

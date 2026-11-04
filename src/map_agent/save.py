@@ -66,7 +66,43 @@ def event_type(raw) -> str:
     return next((t for t in reference.EVENT_TYPES if t in text), "")
 
 
+# Card fields that are bookkeeping, not facts about the record.
+_NOT_FACTS = frozenset({"sources", "profile_version", "record_status", "field_evidence",
+                        "unsupported_fields", "verification_history", "ghus_notes", "hub_status",
+                        "id", "entity_id", "_why", "selected", "excluded", "reason"})
+# Card fields to_record reads, per kind: everything else goes to map_facts.
+_READ = {
+    "actor": {"name", "other_names", "website", "actor_type", "category_type", "category_note",
+              "description", "location_city", "state", "country", "funding_summary",
+              "um6p_ocp_detail"},
+    "event": {"name", "event_type", "organizer", "next_date", "end_date", "event_format",
+              "location", "thematic_focus", "description", "website", "recurring_pattern",
+              "expected_attendance"},
+    "person": {"full_name", "title", "organization_name", "profile_url", "linkedin_url",
+               "expertise"},
+}
+
+
+def map_facts(kind: str, entity: dict) -> dict:
+    """Every non-empty card field the Data Feed record does not carry (4 Nov 2026):
+    stored as sourced facts at admission, so nothing the card showed is lost."""
+    return {key: value for key, value in entity.items()
+            if key not in _READ[kind] and key not in _NOT_FACTS and not str(key).startswith("_")
+            and value not in (None, "", [], {}) and str(value).strip().casefold()
+            not in ("not found", "not classified")}
+
+
 def to_record(kind: str, entity: dict, sector: str) -> dict:
+    """The Data Feed record (contract field keys) for one map card, its other
+    fields under map_facts."""
+    record = _contract_record(kind, entity, sector)
+    extra = map_facts(kind, entity)
+    if extra:
+        record["map_facts"] = extra
+    return record
+
+
+def _contract_record(kind: str, entity: dict, sector: str) -> dict:
     """The Data Feed record (contract field keys) for one map card."""
     if kind == "actor":
         category_type = _clean(entity.get("category_type"))
