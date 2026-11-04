@@ -646,6 +646,22 @@ EVIDENCE_SEARCHES: dict[str, str] = {
     "recent_activity": '{name} {year} OR {last_year} announces OR launched OR opened OR new',
 }
 MAX_EVIDENCE_PAGES = 2   # read per searched box
+# Page requests per searched box, its own allowance (4 Nov 2026: two results not
+# naming the company used the whole run's allowance before a news story about
+# its $3 million award was read).
+MAX_EVIDENCE_ATTEMPTS = 5
+
+
+def _names_it_first(hits, name: str) -> list:
+    """Search results whose title or snippet names the organisation, first."""
+    words = {w for w in re.findall(r"[a-z0-9]+", name.casefold())
+             if len(w) > 3 and w not in _GENERIC_NAME_WORDS}
+
+    def named(hit) -> int:
+        text = f"{getattr(hit, 'title', '') or ''} {getattr(hit, 'snippet', '') or ''}".casefold()
+        return sum(w in text for w in words)
+
+    return sorted(hits, key=lambda hit: -named(hit))
 
 
 def names_in_full(name: str, website: str, html: str, text: str) -> bool:
@@ -1001,7 +1017,7 @@ class LightPullReader:
         if not missing:
             return
         own = host_of(website)
-        fetch = BoundedFetch(self.fetch, MAX_EVIDENCE_PAGES * len(missing))
+
         for key in missing:
             query = self.evidence_searches[key].format(
                 name=f'"{name}"', year=read_at.year, last_year=read_at.year - 1)
@@ -1014,7 +1030,8 @@ class LightPullReader:
             fallback.note(query, "searched",
                           f"Searched for {key.replace('_', ' ')}: {len(hits)} result(s).")
             docs = []
-            for hit in hits:
+            fetch = BoundedFetch(self.fetch, MAX_EVIDENCE_ATTEMPTS)
+            for hit in _names_it_first(hits, name):
                 url = str(getattr(hit, "url", "") or "")
                 if len(docs) >= MAX_EVIDENCE_PAGES:
                     break

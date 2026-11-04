@@ -2827,11 +2827,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             })()}
             ${cardField(html, selected, "primary_technical_focus", draft.primary_technical_focus, edit,
               !pending || busy, draftErrors.primary_technical_focus, "Focus")}
-            ${cardField(html, selected, "funding_summary", draft.funding_summary, edit,
-              !pending || busy, draftErrors.funding_summary, "Funding")}
             ${(() => {
+              // Funding the Light Pull found shows in the Funding box itself when the
+              // record has none of its own (4 Nov 2026: the box said Not Found while
+              // the funding sat on a separate line below it).
               const read = lightBoxes.common.find(row => row.key === "funding_signal" && !row.state && row.value);
-              return read && lightLine(html, {...read, label: "Funding found on its pages"});
+              const found = read ? formatFactValue(read.value) : "";
+              const own = draft.funding_summary;
+              return html`${cardField(html, selected, "funding_summary",
+                own === undefined || own === null || own === "" ? found : own, edit,
+                !pending || busy, draftErrors.funding_summary, "Funding")}
+                ${read && own && lightLine(html, {...read, label: "Funding found on its pages"})}`;
             })()}
             ${cardField(html, selected, "current_activities", draft.current_activities, edit,
               !pending || busy, draftErrors.current_activities, "Current Programs")}
