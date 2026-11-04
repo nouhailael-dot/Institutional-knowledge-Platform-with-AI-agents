@@ -1518,3 +1518,9 @@ test('Hub Proposals shows one example proposal, marked, with inert buttons', asy
   assert.match(src, /\[\.\.\.hubDemo\.proposals, EXAMPLE_HUB_PROPOSAL\]/);
   assert.match(src, /<button class="btn" disabled title="Example: creates the hub/);
 });
+
+test('agent reasons in Review use the platform spelling of organization', async () => {
+  const {usSpelling} = await import('../frontend/review.js');
+  assert.equal(usSpelling('The page names no organisation.'), 'The page names no organization.');
+  assert.equal(usSpelling(null), null);
+});

@@ -100,3 +100,20 @@ def test_pending_by_run_counts_listed_undecided_records(tmp_path):
                        "status,created_at,folded_into) VALUES(?,?,?,'actor','N','{}','{}','[]','{}','none',?,?,?)",
                        (cid, run, cid, status, now, folded))
     assert store.pending_by_run(["m1", "m3"]) == {"m1": 2}
+
+
+def test_directory_activity_is_the_accounts_never_a_typed_name(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from backend import app as app_module
+    from src import dashboard
+
+    seen = []
+    monkeypatch.setattr(dashboard, "directory_activity",
+                        lambda who, days=30: seen.append(who) or [{"name": "X"}])
+    client = TestClient(app_module.app)
+    body = client.get("/api/dashboard/directory-activity?reviewer=Someone&days=7").json()
+    assert body == {"activity": [], "signed_in": False} and seen == []
+    monkeypatch.setattr(app_module, "current_user", lambda request=None: "Ismail Sabbar")
+    body = client.get("/api/dashboard/directory-activity?reviewer=Someone&days=7").json()
+    assert body["signed_in"] is True and seen == ["Ismail Sabbar"]

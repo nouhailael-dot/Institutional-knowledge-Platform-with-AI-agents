@@ -6,7 +6,7 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261104a";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261104c";
 import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const RECORD_TYPES = [
@@ -373,7 +373,7 @@ export function historyMeta(item = {}) {
     formatDateTime(item.uploaded_at),
     `Uploaded by ${item.uploaded_by ? `${item.uploaded_by} (as typed; no sign-in yet)`
       : "Not recorded"}`,
-    item.admission === "directory" ? "Stored in the directory"
+    item.admission === "directory" ? "Stored in the Directory"
       : item.admission === "verified" ? "Imported as Verified" : "Sent to Review Results",
   ].filter(Boolean).join(" · ");
 }

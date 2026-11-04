@@ -10,7 +10,7 @@
 // Directory activity by the name typed in Review Results, and maps are the ones
 // made on this computer.
 
-import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261104a";
+import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261104c";
 import {usDate} from "./dates.js?v=20261102d";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";
@@ -198,6 +198,10 @@ export function whenText(value) {
 const icon = (html, d, size = 22) => html`<svg width=${size} height=${size} viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 
+/** Until sign-in exists COMPASS cannot tell whose activity this is (3 Nov 2026: no typed names). */
+export const NOT_SIGNED_IN_ACTIVITY =
+  "Your verifications, additions and updates appear here once sign-in is on: COMPASS takes your name from your account.";
+
 export function createDashboardPage({html, useState, useEffect}) {
   const ICONS = {
     clipboard: icon(html, html`<path d="M9 4.5h6v2.5H9z"/><path d="M15 5.5h2.5v15h-11v-15H9"/><path d="m9.5 13 2 2 3.5-4"/>`, 30),
@@ -252,13 +256,11 @@ export function createDashboardPage({html, useState, useEffect}) {
     const [data, setData] = useState({requests: null, updates: null, oneTime: null, maps: null});
     const [problems, setProblems] = useState({});
     const [days, setDays] = useState(30);
-    const [activity, setActivity] = useState({loaded: false, rows: [], error: null});
+    const [activity, setActivity] = useState({loaded: false, rows: [], error: null, signedIn: true});
     const [seen, setSeen] = useState(() => readJson(REQUEST_SEEN_KEY, {}));
-    const [reviewer, setReviewer] = useState(() => readText("ghus.review.reviewer"));
 
     function load() {
       const email = "";  // the signed-in user's, once accounts exist: everything until then
-      setReviewer(readText("ghus.review.reviewer"));
       const read = (name, path, apply) => get(path)
         .then(body => { setData(prev => ({...prev, ...apply(body)})); setProblems(prev => ({...prev, [name]: false})); })
         .catch(() => setProblems(prev => ({...prev, [name]: true})));
@@ -276,12 +278,13 @@ export function createDashboardPage({html, useState, useEffect}) {
     }, [running]);
 
     useEffect(() => {
-      if (!reviewer.trim()) { setActivity({loaded: true, rows: [], error: null}); return; }
-      const query = new URLSearchParams({reviewer: reviewer.trim(), days: String(days)});
-      get(`/api/dashboard/directory-activity?${query}`)
-        .then(r => setActivity({loaded: true, rows: r.activity || [], error: null}))
-        .catch(() => setActivity({loaded: true, rows: [], error: "The Directory activity could not be read right now."}));
-    }, [reviewer, days]);
+      // Who is asking comes from the account on the server; nobody types a name.
+      get(`/api/dashboard/directory-activity?${new URLSearchParams({days: String(days)})}`)
+        .then(r => setActivity({loaded: true, rows: r.activity || [], error: null,
+          signedIn: r.signed_in !== false}))
+        .catch(() => setActivity({loaded: true, rows: [], error: "The Directory activity could not be read right now.",
+          signedIn: true}));
+    }, [days]);
 
     const requestsReady = data.requests !== null && data.updates !== null;
     const rows = requestRows({requests: data.requests || [], updates: data.updates || []},
@@ -348,7 +351,7 @@ export function createDashboardPage({html, useState, useEffect}) {
 
         <${Panel} symbol=${ICONS.building} title="Recent Directory Activity"
           lead="My latest contributions to the Ecosystem Directory"
-          empty=${!reviewer.trim() ? "Type your name in Review Results to see what you verified, parked, added or updated."
+          empty=${!activity.signedIn ? NOT_SIGNED_IN_ACTIVITY
             : activity.error || (activity.loaded ? `Nothing in the last ${days} days.` : "Loading…")}
           rows=${records.map((r, i) => html`<${Entry} key=${`${r.id}:${i}`} symbol=${RECORD_ICONS[r.kind] || ICONS.building}
             name=${r.name} meta=${`${r.category} · ${r.action}`}

@@ -693,3 +693,10 @@ test('an accepted organisation reads as verified only when Compass could verify 
   assert.equal(resultOutcome({score_band: 'review'}), 'review');
   assert.equal(RESULT_LABELS.met_criteria, 'Sent to Review Results · met every criterion');
 });
+
+test('agent text reads with the platform spelling of organization', async () => {
+  const {orgWords} = await import('../frontend/discovery.js');
+  assert.equal(orgWords('The page names no organisation.'), 'The page names no organization.');
+  assert.equal(orgWords('Organisations named; actor already in database'),
+    'Organizations named; organization already in database');
+});

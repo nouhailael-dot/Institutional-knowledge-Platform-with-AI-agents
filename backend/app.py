@@ -533,12 +533,18 @@ def maps_recent():
 
 
 @app.get("/api/dashboard/directory-activity")
-def dashboard_directory_activity(reviewer: str = Query("", max_length=120),
-                                 days: int = Query(30, ge=1, le=366)):
-    """The name's latest Directory contributions (Review decisions), newest first."""
+def dashboard_directory_activity(days: int = Query(30, ge=1, le=366)):
+    """The signed-in user's latest Directory contributions (Review decisions), newest first.
+
+    Who is asking comes from the account (src.identity), never a typed name: until
+    sign-in exists nobody is known, so the list is empty and says so.
+    """
     from src.dashboard import directory_activity
+    who = current_user()
+    if who == NO_SIGN_IN_YET:
+        return {"activity": [], "signed_in": False}
     try:
-        return {"activity": directory_activity(reviewer, days=days)}
+        return {"activity": directory_activity(who, days=days), "signed_in": True}
     except Exception:
         logger.exception("Dashboard directory activity failed")
         raise HTTPException(503, "The Directory activity could not be read right now.")

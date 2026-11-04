@@ -17,8 +17,10 @@ export const CADENCE_LABELS = {
 
 /** Reasons saved before the word changed read the same as new ones: "actor" -> "organization". */
 export function orgWords(text) {
+  // The agents write "actor" and British "organisation"; the platform says "organization".
   return String(text ?? "").replace(/\b([Aa])ctor(s?)\b(?![_.])/g,
-    (_, a, s) => `${a === "A" ? "O" : "o"}rganization${s}`);
+    (_, a, s) => `${a === "A" ? "O" : "o"}rganization${s}`)
+    .replace(/\b([Oo])rganis(ation|ations|e|es|ed|ing|er|ers)\b/g, "$1rganiz$2");
 }
 
 export function formatUsd(value) {
@@ -2061,14 +2063,14 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             <dl class="discovery-detail">
               ${(entity === "actor" ? resultFacts(r) : entityResultFacts(r)).map(([label, value]) => html`<div key=${label}><dt>${label}</dt><dd>${value}</dd></div>`)}
             </dl>
-            ${r.score_band === "review" && r.triage_reason && html`<p class="discovery-held"><strong>Why a person should look:</strong> ${r.triage_reason}</p>`}
+            ${r.score_band === "review" && r.triage_reason && html`<p class="discovery-held"><strong>Why a person should look:</strong> ${orgWords(r.triage_reason)}</p>`}
             <a class="discovery-source" href=${r.url} target="_blank" rel="noopener noreferrer">Page read</a>
           </li>`)}</ul>
         ${excluded.length > 0 && html`<details class="discovery-excluded">
           <summary>Not added (${excluded.length}): ${exclusionSummary(excluded)}</summary>
           <ul>${excluded.map((x) => html`<li key=${x.url}>
             <strong>${x.name || x.url}</strong> <span class="muted">${EXCLUSION_LABELS[exclusionKind(x)]}</span>
-            <p>${x.triage_reason || "No reason was recorded."}</p>
+            <p>${orgWords(x.triage_reason) || "No reason was recorded."}</p>
           </li>`)}</ul>
         </details>`}
       </details>`}

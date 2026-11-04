@@ -209,8 +209,8 @@ export const CADENCES = {
 // Prose the UI owns. Full sentences, so normal sentence capitalisation applies
 // and the Title Case test skips this block by design.
 export const SENTENCES = {
-  noSectorMatched: (described) => `No GHUS sector matched this organisation. Its page describes its work as: ${described}. If none of the sectors fits, add a new one.`,
-  sectorNeedsReviewer: "Enter your name in the decision section first: a new sector is recorded as your decision.",
+  noSectorMatched: (described) => `No GHUS sector matched this organization. Its page describes its work as: ${described}. If none of the sectors fits, add a new one.`,
+  sectorNeedsReviewer: "A new sector is recorded as your decision: COMPASS could not tell who you are, so try again after signing in.",
   sectorCreated: (name) => `Sector “${name}” added. It is now in every sector list.`,
   sectorExisted: (name) => `Sector “${name}” already exists and has been selected.`,
   noHubCreated: "No — a proposal only.",

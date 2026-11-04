@@ -23,7 +23,7 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261103i";
+} from "./labels.js?v=20261104c";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
 
 export const REVIEW_STATUS_LABELS = {
@@ -99,7 +99,7 @@ export const REVIEW_REASON_LABELS = {
   data_feed: "Supplied by GHUS (Data Feed)",
   third_party_page: "Read From Another Site",
   website_unverified: "Website Not Confirmed",
-  page_not_organisation: "A Page, Not an Organisation",
+  page_not_organisation: "A Page, Not an Organization",
   focus_unconfirmed: "Sub-topic Not Confirmed",
   thin_evidence: "Too Little Evidence",
   weak_description: "Description Too Thin",
@@ -115,9 +115,9 @@ export const REVIEW_REASON_LABELS = {
 export const REVIEW_REASON_HINTS = {
   borderline_score: "Compass scored it between reject and accept, so a person decides.",
   data_feed: "GHUS supplied it through the Data Feed; a person decides whether it is added.",
-  third_party_page: "It was read from a page about the organisation on someone else's site, not its own.",
+  third_party_page: "It was read from a page about the organization on someone else's site, not its own.",
   website_unverified: "The page states no website of its own, so who published it is unconfirmed.",
-  page_not_organisation: "The description reads like a web page or portal, not an organisation.",
+  page_not_organisation: "The description reads like a web page or portal, not an organization.",
   focus_unconfirmed: "Its own pages do not use the sub-topic words the request asked for.",
   thin_evidence: "Too few of the scoring criteria are evidenced on its page to accept it unseen.",
   weak_description: "The description is missing, too short, or a slogan.",
@@ -126,7 +126,7 @@ export const REVIEW_REASON_HINTS = {
   new_record: "A new record found by discovery, waiting for a decision.",
   possible_duplicate: "It may already be in the directory; confirm it is new, or the same one.",
   location_unplaced: "Its address could not be placed on the map; give the city and state.",
-  relationship_check: "A link between two organisations needs confirming before it is shown.",
+  relationship_check: "A link between two organizations needs confirming before it is shown.",
   map_agent: "Found by an Explore and Map search, waiting for a decision.",
   verify_actor: "In the directory but not yet verified for this topic; Deep Pull needs this.",
   category_doubt: "Compass was unsure which organization type fits; choose one.",
@@ -171,7 +171,7 @@ export const RECORD_KIND_LABELS = {actor: BADGES.actor, event: BADGES.event, per
 
 export const REJECTION_REASONS = [
   "Not relevant to GHUS sectors",
-  "Not an organisation / event / person page",
+  "Not an organization / event / person page",
   "Duplicate of an existing record",
   "Outside target geography",
   "Past event with no useful participants",
@@ -517,6 +517,12 @@ const CHECK_WORDS = {
  * A list, whatever arrived: staged records stored before 2026-10-24 carried
  * Python's text of a tuple ("('a', 'b')"), and joining that crashed the page.
  */
+/** Agent text in the platform's spelling: British "organisation" reads "organization". */
+export function usSpelling(text) {
+  return typeof text === "string"
+    ? text.replace(/\b([Oo])rganis(ation|ations|e|es|ed|ing|er|ers)\b/g, "$1rganiz$2") : text;
+}
+
 export function asList(value) {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string" || !value.trim()) return [];
@@ -539,13 +545,13 @@ export function qualityOf(candidate) {
     label: COMPLETENESS_WORDS[quality.completeness] || "Not checked",
     decision: quality.decision || null,
     outcome: OUTCOME_WORDS[quality.outcome] || null,
-    whyMatched: quality.why_matched || null,
+    whyMatched: usSpelling(quality.why_matched) || null,
     timing: TIMING_WORDS[quality.freshness] || null,
-    reasons: asList(quality.reasons),
+    reasons: asList(quality.reasons).map(usSpelling),
     checks: asList(quality.checks).filter(check => check && typeof check === "object").map(check => ({
       name: CHECK_WORDS[check.name] || check.name,
       state: check.passed === true ? "ok" : check.passed === false ? "missing" : "unknown",
-      detail: check.detail || "",
+      detail: usSpelling(check.detail) || "",
     })),
     missing: asList(quality.missing_mandatory),
     priorityMissing: asList(quality.missing_priority),
@@ -860,8 +866,6 @@ function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewe
   return html`<section class="review-section review-changes">
     <h3>Changes to Review ${rows.length > 0 && html`<span class="review-chip">${rows.length}</span>`}</h3>
     ${!rows.length && html`<p class="review-hint">Every change has been decided.</p>`}
-    ${rows.length > 0 && pending && !reviewer.trim() && html`<p class="review-hint">Type your name at
-      the top of Review to decide these changes.</p>`}
     ${rows.map(row => html`<div class="review-change" key=${row.id}>
       <div class="review-change-head"><strong>${row.label}</strong>
         ${row.topic && html`<span class="review-chip">${row.topic}</span>`}</div>
@@ -2984,8 +2988,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <input value=${proposedHub.rationale} disabled=${!pending || busy}
                   onInput=${e => setProposedHub(current => ({...current, rationale: e.target.value}))}/></label>
             </div>`}
-            ${pending && !reviewer.trim() && html`<p class="review-hint">Type your name in Reviewer at the
-              top of Review to decide.</p>`}
           </section>
 
           <footer class="review-footer">
