@@ -23,8 +23,8 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261103i";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
+} from "./labels.js?v=20261104c";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261104e";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
@@ -99,7 +99,7 @@ export const REVIEW_REASON_LABELS = {
   data_feed: "Supplied by GHUS (Data Feed)",
   third_party_page: "Read From Another Site",
   website_unverified: "Website Not Confirmed",
-  page_not_organisation: "A Page, Not an Organisation",
+  page_not_organisation: "A Page, Not an Organization",
   focus_unconfirmed: "Sub-topic Not Confirmed",
   thin_evidence: "Too Little Evidence",
   weak_description: "Description Too Thin",
@@ -115,9 +115,9 @@ export const REVIEW_REASON_LABELS = {
 export const REVIEW_REASON_HINTS = {
   borderline_score: "Compass scored it between reject and accept, so a person decides.",
   data_feed: "GHUS supplied it through the Data Feed; a person decides whether it is added.",
-  third_party_page: "It was read from a page about the organisation on someone else's site, not its own.",
+  third_party_page: "It was read from a page about the organization on someone else's site, not its own.",
   website_unverified: "The page states no website of its own, so who published it is unconfirmed.",
-  page_not_organisation: "The description reads like a web page or portal, not an organisation.",
+  page_not_organisation: "The description reads like a web page or portal, not an organization.",
   focus_unconfirmed: "Its own pages do not use the sub-topic words the request asked for.",
   thin_evidence: "Too few of the scoring criteria are evidenced on its page to accept it unseen.",
   weak_description: "The description is missing, too short, or a slogan.",
@@ -126,7 +126,7 @@ export const REVIEW_REASON_HINTS = {
   new_record: "A new record found by discovery, waiting for a decision.",
   possible_duplicate: "It may already be in the directory; confirm it is new, or the same one.",
   location_unplaced: "Its address could not be placed on the map; give the city and state.",
-  relationship_check: "A link between two organisations needs confirming before it is shown.",
+  relationship_check: "A link between two organizations needs confirming before it is shown.",
   map_agent: "Found by an Explore and Map search, waiting for a decision.",
   verify_actor: "In the directory but not yet verified for this topic; Deep Pull needs this.",
   category_doubt: "Compass was unsure which organization type fits; choose one.",
@@ -171,7 +171,7 @@ export const RECORD_KIND_LABELS = {actor: BADGES.actor, event: BADGES.event, per
 
 export const REJECTION_REASONS = [
   "Not relevant to GHUS sectors",
-  "Not an organisation / event / person page",
+  "Not an organization / event / person page",
   "Duplicate of an existing record",
   "Outside target geography",
   "Past event with no useful participants",
@@ -205,7 +205,7 @@ export function reviewReasonLabel(value) {
 // actor_topic.match_strength and actor_fact.confidence are controlled values
 // stored lower case. They are vocabulary, not source data, so they display as
 // labels; an unrecognised value is shown as stored rather than guessed at.
-export const MATCH_STRENGTH_LABELS = {strong: BADGES.strong, moderate: BADGES.moderate};
+export const MATCH_STRENGTH_LABELS = {strong: BADGES.strong, moderate: BADGES.moderate, weak: BADGES.weak};
 export const CONFIDENCE_LABELS = {high: BADGES.high, medium: BADGES.medium, low: BADGES.low};
 
 export function matchStrengthLabel(value) {
@@ -517,6 +517,12 @@ const CHECK_WORDS = {
  * A list, whatever arrived: staged records stored before 2026-10-24 carried
  * Python's text of a tuple ("('a', 'b')"), and joining that crashed the page.
  */
+/** Agent text in the platform's spelling: British "organisation" reads "organization". */
+export function usSpelling(text) {
+  return typeof text === "string"
+    ? text.replace(/\b([Oo])rganis(ation|ations|e|es|ed|ing|er|ers)\b/g, "$1rganiz$2") : text;
+}
+
 export function asList(value) {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string" || !value.trim()) return [];
@@ -539,13 +545,13 @@ export function qualityOf(candidate) {
     label: COMPLETENESS_WORDS[quality.completeness] || "Not checked",
     decision: quality.decision || null,
     outcome: OUTCOME_WORDS[quality.outcome] || null,
-    whyMatched: quality.why_matched || null,
+    whyMatched: usSpelling(quality.why_matched) || null,
     timing: TIMING_WORDS[quality.freshness] || null,
-    reasons: asList(quality.reasons),
+    reasons: asList(quality.reasons).map(usSpelling),
     checks: asList(quality.checks).filter(check => check && typeof check === "object").map(check => ({
       name: CHECK_WORDS[check.name] || check.name,
       state: check.passed === true ? "ok" : check.passed === false ? "missing" : "unknown",
-      detail: check.detail || "",
+      detail: usSpelling(check.detail) || "",
     })),
     missing: asList(quality.missing_mandatory),
     priorityMissing: asList(quality.missing_priority),
@@ -860,8 +866,6 @@ function changesBlock(html, candidate, {onDecide, disabled, reviewer, setReviewe
   return html`<section class="review-section review-changes">
     <h3>Changes to Review ${rows.length > 0 && html`<span class="review-chip">${rows.length}</span>`}</h3>
     ${!rows.length && html`<p class="review-hint">Every change has been decided.</p>`}
-    ${rows.length > 0 && pending && !reviewer.trim() && html`<p class="review-hint">Type your name at
-      the top of Review to decide these changes.</p>`}
     ${rows.map(row => html`<div class="review-change" key=${row.id}>
       <div class="review-change-head"><strong>${row.label}</strong>
         ${row.topic && html`<span class="review-chip">${row.topic}</span>`}</div>
@@ -1174,7 +1178,10 @@ export function formatFactValue(value) {
   // A value that is a date (an event's next date) reads MM/DD/YYYY; other text as written.
   if (typeof value === "string") return usDate(value);
   if (typeof value !== "object") return String(value);
+  // A list box (funding, recent activity, projects - 4 Nov 2026): one line per entry.
+  if (Array.isArray(value.entries)) return formatEntries(value.entries);
   if (Array.isArray(value)) {
+    if (value.some(item => item && typeof item === "object")) return formatEntries(value);
     const items = value.map(item => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
     return items.length ? items.join(", ") : "No value recorded";
   }
@@ -1191,6 +1198,17 @@ export function formatFactValue(value) {
     return "No value recorded";
   }
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+/** "• 03/14/2026 — Opened a pilot · • Amount: $2M · Funder: NSF": each entry on its line. */
+export function formatEntries(entries) {
+  const lines = (entries || []).map(entry => {
+    if (!entry) return "";
+    if (typeof entry !== "object") return String(entry).trim();
+    if (entry.date && entry.description) return `${usDate(entry.date)} — ${entry.description}`;
+    return formatFactValue(entry).split("\n").join(" · ");
+  }).filter(line => line && line !== "No value recorded");
+  return lines.length ? lines.map(line => `• ${line}`).join("\n") : "No value recorded";
 }
 
 function hostOf(url) {
@@ -1624,6 +1642,32 @@ export function hubProposalPlace(proposal = {}) {
  * The count alone does not say whether it passed, and the requirement alone
  * does not say by how much.
  */
+/**
+ * One hub proposal shown as an example (3 Nov 2026): how detection presents a
+ * cluster for GHUS to decide. It lives only in the page - nothing of it is in
+ * the database, and its buttons do nothing.
+ */
+export const EXAMPLE_HUB_PROPOSAL = {
+  example: true, proposed_hub_id: "example",
+  name: "Example · Wichita – Manhattan Water & Agriculture Innovation Cluster",
+  primary_city: "Wichita", state: "Kansas", country: "United States",
+  dimension: "sector", dimension_key: "WATER",
+  rationale: "Six organizations within 60 miles of Wichita work on agricultural water management: "
+    + "two universities' research units, a federal laboratory partner, two companies and a state "
+    + "agency. They come from five independent families (no two share a parent) and four GHUS "
+    + "categories, so the cluster met every threshold for a new hub.",
+  family_count: 5, families_required: 4, category_count: 4, categories_required: 3,
+  core_radius_miles: 25, radius_miles: 60, created_hub: false,
+  members: [
+    {name: "Example State University · Water Research Institute", actor_category: "university_academic"},
+    {name: "Example State University · Agronomy Department", actor_category: "university_academic"},
+    {name: "Example Plains Irrigation Research Center", actor_category: "research_center"},
+    {name: "Example AquaSense Technologies", actor_category: "startup"},
+    {name: "Example Prairie Pumps & Controls", actor_category: "company"},
+    {name: "Example Kansas Water Office", actor_category: "government"},
+  ],
+};
+
 export function thresholdLabel(count, required) {
   if (count === null || count === undefined) return MISSING.notYetChecked;
   if (required === null || required === undefined) return String(count);
@@ -1723,7 +1767,8 @@ export function normalizeMapDraft(payload = {}, original = {}) {
  * record's own, else Build the Map's, else what the agent read from its page.
  */
 const CARD_FIELDS = {
-  event: [["event_type", "Type"], ["next_date", "Date"], ["date_status", "Status", ["event_status"]],
+  event: [["event_type", "Type"], ["next_date", "Start Date"], ["end_date", "End Date"],
+    ["date_status", "Status", ["event_status"]],
     ["event_format", "Format", ["format"]], ["location", "Location"], ["organizer", "Organizer", ["organizer"]],
     ["recurring_pattern", "Frequency"], ["previous_edition", "Previous Edition"],
     ["expected_attendance", "Scale"], ["audience", "Audience"], ["sector", "Sector"],
@@ -1750,7 +1795,7 @@ export function personLink(candidate, draft) {
   return PERSON_LINK_FIELDS.map(([field, , facts]) => profileValue(candidate, draft, field, facts))
     .find(value => /^https?:\/\//.test(String(value || ""))) || null;
 }
-const CARD_DATE_FIELDS = new Set(["next_date", "previous_edition"]);
+const CARD_DATE_FIELDS = new Set(["next_date", "end_date", "previous_edition"]);
 const CARD_CAPITALIZED = new Set(["event_type", "date_status", "event_format", "recurring_pattern", "sector"]);
 
 /**
@@ -1843,6 +1888,32 @@ export function textRows(value) {
 }
 
 /** A read-only label / value row; an empty value says Not Found, never blank. */
+// The match badge is the overall fit (relevance): strong, moderate or weak.
+export const MATCH_STRENGTH_CLASSES = {strong: "verified", moderate: "pending_review", weak: "parked"};
+
+/** Why GHUS should care, as the scoring evidenced it (4 Nov 2026): the request fit,
+ *  the value for GHUS, what a person should check, and the two scores. */
+export function ghusFitRows(fit) {
+  if (!fit || typeof fit !== "object") return [];
+  const list = value => (Array.isArray(value) ? value : []).map(usSpelling).filter(Boolean);
+  const scores = [fit.relevance != null && `Relevance ${Number(fit.relevance).toFixed(2)}`,
+    fit.priority != null && `Engagement priority ${Number(fit.priority).toFixed(2)}`].filter(Boolean);
+  return [
+    ["Fits the Request", list(fit.fits)],
+    ["Value for GHUS", list(fit.value)],
+    ["To Check", list(fit.concerns)],
+    ["Scores", scores.length ? [scores.join(" · ")] : []],
+  ];
+}
+
+function ghusFitLines(html, fit, source) {
+  // A row the page gave nothing for is left out, not shown as Not Found.
+  const rows = ghusFitRows(fit).filter(([, items]) => items.length);
+  return rows.map(([label, items], index) => cardLine(html, label,
+    html`<ul class="review-fit-list">${items.map((item, i) => html`<li key=${i}>${item}</li>`)}</ul>`,
+    index === 0 ? source : null));
+}
+
 export function cardLine(html, label, value, extra = null) {
   return html`<div class="review-line read" key=${label}><b>${label}</b>
     <span class="review-value">${value || html`<span class="review-missing">${MISSING.notFound}</span>`}${
@@ -2430,14 +2501,24 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           <p class="muted">${SENTENCES.hubProposalsUnavailable}</p>`}
         ${hubDemo.loaded && hubDemo.configured && !hubDemo.proposals.length && html`
           <p class="muted">${SENTENCES.hubProposalsNone}</p>`}
-        ${hubDemo.proposals.map(proposal => html`
-          <div class="review-match" key=${proposal.proposed_hub_id}>
+        ${[...hubDemo.proposals, EXAMPLE_HUB_PROPOSAL].map(proposal => html`
+          <div class=${"review-match" + (proposal.example ? " review-hub-example" : "")} key=${proposal.proposed_hub_id}>
+            ${proposal.example && html`<p class="review-example-tag">Example · how a hub proposal works
+              (not real data, not stored in the database)</p>`}
             <div class="review-detail-head">
               <div><strong>${proposal.name}</strong>
                 <p class="review-subhead">${hubProposalPlace(proposal)}</p></div>
               <span class=${"review-status " + (proposal.created_hub ? "verified" : "parked")}>
                 ${proposal.created_hub ? BADGES.verified : BADGES.parked}</span>
             </div>
+            ${proposal.example && html`<ol class="review-hub-steps">
+              <li><b>Detected.</b> COMPASS finds organizations in the directory clustered in one place and sector.</li>
+              <li><b>Checked.</b> The cluster must meet every threshold: enough independent families, enough
+                different categories, and members inside the core and cluster radius.</li>
+              <li><b>Proposed.</b> It appears here with its members and the reasons. Nothing is created yet.</li>
+              <li><b>Decided by GHUS.</b> Accept creates the hub and links its members; Refuse closes the
+                proposal with its reason. Either way the decision is recorded.</li>
+            </ol>`}
             <p>${proposal.rationale}</p>
             <dl class="review-facts">
               <div><dt>${FIELDS.families}</dt>
@@ -2457,6 +2538,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   ? " · " + typeLabel(member.actor_category, member.category_type) : ""}</span>
               </li>`)}
             </ul>
+            ${proposal.example && html`<div class="review-hub-actions">
+              <button class="btn" disabled title="Example: creates the hub and links its six members">Accept and create the hub</button>
+              <button class="btn ghost" disabled title="Example: closes the proposal with its reason">Refuse</button>
+              <small class="muted">In a real proposal, these buttons record GHUS's decision.</small>
+            </div>`}
           </div>`)}
       </section>`}
 
@@ -2826,14 +2912,15 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <summary>
                   <span class="review-why-title"><span aria-hidden="true">✦</span> Why COMPASS Identified This Organization</span>
                   <span class="review-why-meta">
-                    ${why?.strength && html`<span class=${"review-status " + (strength === "strong" ? "verified" : "pending_review")}>${matchStrengthLabel(why.strength)} match</span>`}
+                    ${why?.strength && html`<span class=${"review-status " + (MATCH_STRENGTH_CLASSES[strength] || "pending_review")}>${matchStrengthLabel(why.strength)} match</span>`}
                     <span class="muted">${found.length} supporting source${found.length === 1 ? "" : "s"}</span>
                   </span>
                 </summary>
                 <div class="review-why-body">
                   ${cardLine(html, "Identified Through", identifiedThrough(selected))}
-                  ${cardLine(html, FIELDS.whyItMatched, why?.reason || selected.agent_metadata?._why || "",
-                    sourceLink(html, why?.source_url))}
+                  ${why?.ghus_fit ? ghusFitLines(html, why.ghus_fit, sourceLink(html, why?.source_url))
+                    : cardLine(html, FIELDS.whyItMatched, why?.reason || selected.agent_metadata?._why || "",
+                      sourceLink(html, why?.source_url))}
                   <details class="review-why-sources">
                     <summary>Supporting Sources (${found.length})</summary>
                     ${found.length ? html`<ul>${found.map((s, index) => html`<li key=${index}>
@@ -2943,8 +3030,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <input value=${proposedHub.rationale} disabled=${!pending || busy}
                   onInput=${e => setProposedHub(current => ({...current, rationale: e.target.value}))}/></label>
             </div>`}
-            ${pending && !reviewer.trim() && html`<p class="review-hint">Type your name in Reviewer at the
-              top of Review to decide.</p>`}
           </section>
 
           <footer class="review-footer">

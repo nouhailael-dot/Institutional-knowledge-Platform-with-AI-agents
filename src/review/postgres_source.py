@@ -2051,6 +2051,103 @@ def _text(value: Any) -> str | None:
     return text or None
 
 
+# GHUS's eight use cases, as the discovery rubric names them.
+_USE_CASE_LABELS = {
+    "research_collaboration": "research collaboration", "learning_expeditions": "learning expeditions",
+    "executive_education": "executive education", "mentorship": "mentorship",
+    "student_and_faculty_mobility": "student and faculty mobility",
+    "open_innovation": "open innovation", "corporate_engagement": "corporate engagement",
+    "opportunity_development": "opportunity development",
+}
+# Engagement signals, in the order a reviewer weighs them.
+_VALUE_ITEMS = (
+    ("open_programmes", "Open programmes"), ("named_route_in", "A route in"),
+    ("partnership_precedent", "Partnership record"),
+    ("partnerships_or_tech_transfer", "Partnerships or technology transfer"),
+    ("network_membership", "Networks"),
+)
+# Relevance bands (agents/config/sources.yaml accepts at 0.80).
+STRONG_FIT, MODERATE_FIT = 0.80, 0.60
+
+
+def _present(item: Any) -> str | None:
+    """The evidence of a rubric item the page showed, or None."""
+    if isinstance(item, dict) and item.get("present") is True:
+        return _text(item.get("evidence"))
+    return None
+
+
+def ghus_fit(rubric: dict[str, Any] | None, breakdown: dict[str, Any] | None,
+             relevance: Any) -> dict[str, Any] | None:
+    """Why an organization is worth GHUS's attention, from the scoring's own evidence.
+
+    The match sentence named only the request and one quote, so it never said
+    why GHUS should care (4 Nov 2026). This reads what the rubric already
+    checked on the page - the request fit, the GHUS use cases and engagement
+    signals, how new the ground is - and what a person should check. Nothing is
+    inferred: an item the page did not show is not claimed.
+    """
+    rubric = rubric if isinstance(rubric, dict) else {}
+    breakdown = breakdown if isinstance(breakdown, dict) else {}
+    if not rubric:
+        return None
+    fits, value, concerns = [], [], []
+    sectors = [row for row in (rubric.get("sector_codes") or []) if isinstance(row, dict)]
+    if sectors and _text(sectors[0].get("evidence")):
+        codes = ", ".join(str(row.get("code")) for row in sectors if row.get("code"))
+        fits.append(f"Works in {codes}: {_text(sectors[0].get('evidence'))}")
+    work = _present(rubric.get("research_development_or_programmes"))
+    if work:
+        fits.append(f"Research or programmes: {work}")
+    use_cases = rubric.get("use_cases") if isinstance(rubric.get("use_cases"), dict) else {}
+    shown = [(label, _present(use_cases.get(name))) for name, label in _USE_CASE_LABELS.items()]
+    shown = [(label, evidence) for label, evidence in shown if evidence]
+    if shown:
+        value.append("GHUS use cases: " + "; ".join(f"{label} ({evidence})"
+                                                     for label, evidence in shown))
+    for key, label in _VALUE_ITEMS:
+        evidence = _present(rubric.get(key))
+        if evidence:
+            value.append(f"{label}: {evidence}")
+    for hub in rubric.get("hub_matches") or []:
+        if isinstance(hub, dict) and _text(hub.get("name")):
+            value.append(f"Near the GHUS hub {_text(hub.get('name'))}")
+            break
+    distinct = breakdown.get("priority.distinctiveness")
+    try:
+        # distinctiveness = 0.15 / (1 + organizations already mapped in that hub and sector)
+        mapped = round(0.15 / float(distinct) - 1) if distinct else None
+    except (TypeError, ValueError, ZeroDivisionError):
+        mapped = None
+    if mapped == 0:
+        value.append("New ground: no organization is mapped yet in that hub and sector")
+    elif mapped and mapped > 0:
+        value.append(f"{mapped} organization{'s' if mapped != 1 else ''} already mapped "
+                     "in that hub and sector")
+    own = rubric.get("own_organisational_page")
+    if isinstance(own, dict) and own.get("present") is False:
+        concerns.append("Read from a page about it on another site, not its own website")
+    if not work:
+        concerns.append("No research, development or programmes named on the page")
+    if not shown:
+        concerns.append("No GHUS use case is evidenced on the page")
+    operating = rubric.get("real_operating_entity")
+    if isinstance(operating, dict) and operating.get("present") is False:
+        concerns.append("The page does not show it operating (staff, programmes, sites)")
+    try:
+        score = float(relevance)
+    except (TypeError, ValueError):
+        score = None
+    try:
+        priority = float(breakdown.get("priority_score"))
+    except (TypeError, ValueError):
+        priority = None
+    strength = (None if score is None else "strong" if score >= STRONG_FIT
+                else "moderate" if score >= MODERATE_FIT else "weak")
+    return {"strength": strength, "relevance": score, "priority": priority,
+            "fits": fits, "value": value, "concerns": concerns}
+
+
 def _attach_page_facts(payload: dict[str, Any], metadata: dict[str, Any], *,
                        url: Any, read_at: Any, request_title: Any = None) -> None:
     rubric = metadata.get("rubric") or {}
@@ -2075,10 +2172,14 @@ def _attach_page_facts(payload: dict[str, Any], metadata: dict[str, Any], *,
                   f"{', '.join(sectors)} sector evidence.")
     # The page's own sector evidence is a "strong" match by the agent's rule.
     strength = payload.get("match_strength") or ("strong" if evidence_quotes else None)
-    if reason:
+    fit = ghus_fit(rubric, metadata.get("score_breakdown"), metadata.get("rubric_score"))
+    if fit and fit["strength"]:
+        # The badge is the overall fit (relevance), not only "the sector was evidenced".
+        strength = fit["strength"]
+    if reason or fit:
         metadata["why_matched"] = {
             "reason": reason, "strength": strength,
-            "source_url": str(url or "") or None,
+            "source_url": str(url or "") or None, "ghus_fit": fit,
         }
 
     date_read = str(read_at or "")[:10] or None

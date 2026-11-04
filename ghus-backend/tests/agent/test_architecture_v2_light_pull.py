@@ -58,7 +58,7 @@ def test_light_pull_is_topic_scoped_provenanced_and_explicit_about_missing_evide
     )
 
 
-def test_orchestrator_fetches_at_most_three_distinct_pages_and_restricts_extractor_schema():
+def test_orchestrator_fetches_at_most_five_distinct_pages_and_restricts_extractor_schema():
     calls = []
 
     def fetch(url):
@@ -77,15 +77,15 @@ def test_orchestrator_fetches_at_most_three_distinct_pages_and_restricts_extract
             "confidence": "high",
         }}
 
-    urls = [f"https://evidence.example.org/{index}" for index in range(5)]
+    urls = [f"https://evidence.example.org/{index}" for index in range(7)]
     result = run_light_pull(
         payload=_payload(light_pull_urls=[*urls, urls[0]]),
         actor_category="research_center", topic_id=TOPIC_ID,
         source_url="https://evidence.example.org", date_read=NOW,
         fetcher=fetch, extractor=extract,
     )
-    assert calls == urls[:3]
-    assert result.fetched_urls == tuple(urls[:3])
+    assert calls == urls[:MAX_LIGHT_PULL_FETCHES] and MAX_LIGHT_PULL_FETCHES == 5
+    assert result.fetched_urls == tuple(urls[:MAX_LIGHT_PULL_FETCHES])
     assert next(f for f in result.facts if f.field_key == "topic_research_focus").confidence == "high"
 
     with pytest.raises(ValueError, match="outside its schema"):

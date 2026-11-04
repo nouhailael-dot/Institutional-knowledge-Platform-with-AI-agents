@@ -6,8 +6,8 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261103j";
-import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261102d";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261104f";
+import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261104e";
 
 export const RECORD_TYPES = [
   {id: "actor", label: "Organizations", short: "Organizations", noun: "organization"},
@@ -74,8 +74,8 @@ export function stageable(counts = {}) {
 }
 
 export const DATAFEED_LEAD = "Add organizations, people, and events to the COMPASS Ecosystem "
-  + "Directory using a template or manual entry. Every entry is checked, then reviewed by GHUS "
-  + "before it appears in the Ecosystem Directory.";
+  + "Directory using a template or manual entry. Once successfully submitted, your entries will be "
+  + "available in the Ecosystem Directory.";
 export const IMPORT_NAME_HINT = "This name will be used to identify your import in Import History.";
 
 /** A suggested import name: the file's name, or "Manual entry" with the date. */
@@ -235,14 +235,16 @@ export function costLine(estimate) {
 }
 
 /**
- * An import's Result column: what Review has done with it, never more. "Added to
+ * An import's Status column: what Review has done with it, never more. "Stored in the
  * Directory" only once nothing waits and something was added or matched.
  */
 export function importResult(item = {}) {
   const c = item.counts || {};
+  // A directory import is stored after COMPASS completes it: waiting means completing.
+  if (item.admission === "directory" && c.pending) return {label: "Completing Information", tone: "partly"};
   const decided = (c.approved_new || 0) + (c.matched_existing || 0) + (c.rejected || 0) + (c.deferred || 0);
   if (c.pending) return decided ? {label: "Partly Reviewed", tone: "partly"} : {label: "Awaiting Review", tone: "waiting"};
-  if ((c.approved_new || 0) + (c.matched_existing || 0)) return {label: "Added to Directory", tone: "added"};
+  if ((c.approved_new || 0) + (c.matched_existing || 0)) return {label: "Stored in the Directory", tone: "added"};
   return {label: "Reviewed", tone: "reviewed"};
 }
 
@@ -307,16 +309,16 @@ export function leftOutLine(n) {
 /** What the uploader confirms, before anything is sent. */
 export const ATTEST_SOURCE = "I confirm these records come from a GHUS source (a GHUS file, a "
   + "Compass import or a Notion CRM export copied into this template).";
-export const ATTEST_AUTHORIZED = "I am authorized GHUS staff and I verify the organizations in "
+export const ATTEST_AUTHORIZED = "I am authorized GHUS staff and I verify the records in "
   + "this import.";
 
 /** The confirm button may be pressed. */
-export function canSend({preview, name, attestSource, admission, attestAuthorized,
+export function canSend({preview, name, attestSource, admission = "directory", attestAuthorized,
   accept}) {
   const counts = preview?.counts || {};
   return Boolean(preview?.can_confirm && String(name || "").trim()
     && attestSource
-    && (admission !== "verified" || attestAuthorized)
+    && (!["verified", "directory"].includes(admission) || attestAuthorized)
     && (!counts.needs_correction || accept));
 }
 
@@ -324,6 +326,23 @@ export function canSend({preview, name, attestSource, admission, attestAuthorize
 export function doneLine(done = {}) {
   if (done.status === "already_imported") {
     return "This exact file was imported before; nothing was sent twice.";
+  }
+  if (done.admission === "directory") {
+    const parts = [];
+    if (done.enriching?.started) {
+      parts.push(`${plural(done.staged ?? 0, "organization is", "organizations are")} being completed `
+        + "by COMPASS from their own pages, then stored in the Ecosystem Directory (a few minutes; "
+        + `at most $${Number(done.enriching.max_usd).toFixed(2)}). Import History shows when they are stored.`);
+    } else if (done.enriching && !done.enriching.started) {
+      parts.push(`The records were saved, but completing them did not start: ${done.enriching.error}`);
+    } else {
+      parts.push(`${plural(done.stored ?? 0, "record was", "records were")} stored in the Ecosystem Directory.`);
+    }
+    const refused = (done.not_stored || []).length;
+    if (refused) parts.push(`${plural(refused, "record could", "records could")} not be stored (see below).`);
+    const left = done.left_out || 0;
+    if (left) parts.push(`${left} needed correction and ${left === 1 ? "was" : "were"} left out.`);
+    return parts.join(" ");
   }
   if (done.admission === "verified") {
     const verified = done.verified || 0;
@@ -354,17 +373,29 @@ export function historyMeta(item = {}) {
     formatDateTime(item.uploaded_at),
     `Uploaded by ${item.uploaded_by ? `${item.uploaded_by} (as typed; no sign-in yet)`
       : "Not recorded"}`,
-    item.admission === "verified" ? "Imported as Verified" : "Sent to Review Results",
+    item.admission === "directory" ? "Stored in the Directory"
+      : item.admission === "verified" ? "Imported as Verified" : "Sent to Review Results",
   ].filter(Boolean).join(" · ");
 }
 
 /** What an import looks like in the history, shown while there is none. Never real data. */
+// A finished import, always listed and marked Example (3 Nov 2026). It lives only in
+// this page - nothing of it is in the database - and tells the same story as its
+// Excel sheet (/api/datafeed/example-import.xlsx, made on request, never stored):
+// three organizations added, one matched to an existing record, one left out.
 export const EXAMPLE_IMPORT = {
-  import_name: "Kansas water organizations", record_type: "actor", method: "upload",
-  file_name: "Kansas water organizations.xlsx", uploaded_at: "2026-11-02T10:30:00",
-  uploaded_by: "", admission: "review", status: "Partly reviewed",
+  example: true, import_name: "Kansas water organizations", record_type: "actor",
+  method: "upload", file_name: "Kansas water organizations.xlsx",
+  uploaded_at: "2026-11-02T10:30:00", uploaded_by: "", admission: "review",
   rows_total: 5, staged: 4, rows_invalid: 1,
-  counts: {pending: 2, approved_new: 1, matched_existing: 1},
+  counts: {pending: 0, approved_new: 3, matched_existing: 1},
+  records: [
+    {row_number: 2, name: "Example Water Lab", status: "Stored in the Directory"},
+    {row_number: 3, name: "Example Irrigation Co.", status: "Matched to an existing record"},
+    {row_number: 4, name: "Example Aquifer Center", status: "Stored in the Directory"},
+    {row_number: 5, name: "Example Rural Water District", status: "Stored in the Directory"},
+    {row_number: 6, name: "Example Water Coalition", status: "Left out: no Sector"},
+  ],
 };
 
 export function formatDateTime(value) {
@@ -613,35 +644,22 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     const [name, setName] = useState(importName.trim() || defaultImportName(preview));
     const [accept, setAccept] = useState(false);
     const [attestSource, setAttestSource] = useState(false);
-    const [admission, setAdmission] = useState("review");
+    // Every import is stored in the directory (GHUS decision, 3 Nov 2026).
+    const admission = "directory";
     const [attestAuthorized, setAttestAuthorized] = useState(false);
-    const [completeAI, setCompleteAI] = useState(false);
     const [busy, setBusy] = useState(false);
     const recordType = preview.record_type;
     const vocab = catalog.vocabularies;
     const rows = filterRows(preview.rows, filter);
     const counts = preview.counts;
     const send = stageable(counts);
-    const aiOffered = recordType === "actor" && admission === "review";
     async function confirm() {
       setBusy(true);
       setMessage(null);
       try {
         const result = await api(`/api/datafeed/previews/${preview.preview_id}/confirm`, {
           method: "POST", body: JSON.stringify({import_name: name, accept_left_out: accept,
-            attest_source: attestSource, admission,
-            attest_authorized: admission === "verified" && attestAuthorized})});
-        // The import stands whatever the AI read does; its outcome is reported beside it.
-        if (aiOffered && completeAI && result.run_id && result.status !== "already_imported") {
-          try {
-            await api(`/api/datafeed/imports/${result.run_id}/complete`, {method: "POST",
-              body: JSON.stringify({max_usd: completionCap(send), confirmed: true})});
-            result.completion = "Compass is now reading their pages to fill what is missing; "
-              + "the findings appear on each record in Review Results.";
-          } catch (error) {
-            result.completion = `The records were sent, but the AI read did not start: ${error.message}`;
-          }
-        }
+            attest_source: attestSource, admission, attest_authorized: attestAuthorized})});
         onDone(result);
       } catch (error) {
         setMessage({kind: "error", text: error.message});
@@ -663,7 +681,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         <div class="df-preview-head">
           <div>
             <h3>Preview${preview.file ? ` · ${preview.file.name}` : " · manual entry"}</h3>
-            <p class="df-muted">Nothing has been saved. Check the records, then send them to Review Results.</p>
+            <p class="df-muted">Nothing has been saved. Check the records, then store them in the Ecosystem Directory.</p>
           </div>
           <button type="button" class="btn ghost" onClick=${onBack}>
             ${preview.file ? "Upload a corrected file" : "Edit the records"}</button>
@@ -693,7 +711,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
             </button>
             ${(row.errors.length > 0 || row.warnings.length > 0 || matchLine(row.match)) && html`<div class="df-issues">
               ${row.errors.map(e => html`<p key=${e} class="df-error">${e}</p>`)}
-              ${matchLine(row.match) && html`<p class="df-match">${matchLine(row.match)}. Review will offer “Same as existing”.</p>`}
+              ${matchLine(row.match) && html`<p class="df-match">${matchLine(row.match)}.${row.match?.kind === "existing"
+                ? " That record is updated instead of adding a new one." : ""}</p>`}
               ${openRow === row.row_number && row.warnings.map(w => html`<p key=${w} class="df-warning">${w}</p>`)}
             </div>`}
             ${openRow === row.row_number && html`<div class="df-row-body">
@@ -710,8 +729,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
 
       <section class="discovery-card df-confirm">
         <h3>Confirm</h3>
-        ${!preview.staging_configured && html`<p class="discovery-message error">Sending records to
-          Review is not configured on this instance. You can still check files.</p>`}
+        ${!preview.staging_configured && html`<p class="discovery-message error">Storing records is not
+          configured on this instance. You can still check files.</p>`}
         <div class="discovery-field">
           <label class="discovery-label" for="df-import-name">Import Name <span class="df-req">*</span></label>
           <input id="df-import-name" value=${name} maxlength="120" onInput=${e => setName(e.target.value)}/>
@@ -722,35 +741,20 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           ${leftOutLine(counts.needs_correction)}</label>`}
         <label class="df-check"><input type="checkbox" checked=${attestSource}
           onChange=${e => setAttestSource(e.target.checked)}/> ${ATTEST_SOURCE}</label>
-        <div class="discovery-segment df-admission" role="group" aria-label="What happens to the records">
-          <button type="button" class=${admission === "review" ? "active" : ""} aria-pressed=${admission === "review"}
-            onClick=${() => setAdmission("review")}>Send to Review Results</button>
-          ${recordType === "actor" && html`<button type="button" class=${admission === "verified" ? "active" : ""}
-            aria-pressed=${admission === "verified"} onClick=${() => setAdmission("verified")}>Add as Verified</button>`}
-        </div>
-        ${admission === "review" ? html`<p class="df-muted">The records wait in Review Results. A GHUS reviewer adds
-          each one, matches it to an existing record, or rejects it. Nothing is verified because it was
-          imported; your values are kept as entered and labelled Imported.</p>`
-        : html`<div class="df-verified">
-          <p>New organizations are added to the directory as <strong>Verified</strong> at once, through the same
-            admission checks as Review, and labelled as an import made on your attestation (your name, the
-            file and the row). Records that may already be in the directory, or have no Category Type, still go
-            to Review Results. A reviewer can reject any of them later. Deep Pull still needs a reviewer's
-            verification.</p>
+        <div class="df-verified">
+          <p>The records are stored in the <strong>Ecosystem Directory</strong> through the same checks as
+            every directory record, and labelled as an import made on your attestation (the file and the row).
+            A record that matches one already in the directory updates it instead of adding a copy.
+            ${recordType === "actor" && html` Missing information is completed by COMPASS from each organization's
+              own pages first: only empty fields, your values are never replaced (about $0.05 per organization,
+              at most $${completionCap(send).toFixed(2)} for this import).`}</p>
           <label class="df-check"><input type="checkbox" checked=${attestAuthorized}
             onChange=${e => setAttestAuthorized(e.target.checked)}/> ${ATTEST_AUTHORIZED}</label>
-        </div>`}
-        ${recordType === "actor" && (aiOffered ? html`<label class="df-check">
-            <input type="checkbox" checked=${completeAI} onChange=${e => setCompleteAI(e.target.checked)}/>
-            <span><strong>Complete Missing Information with AI</strong> — reads each organization's own
-              pages after sending and fills only what is empty; your values are never replaced. About
-              $0.05 per organization, never more than $${completionCap(send).toFixed(2)} for this import.</span></label>`
-          : html`<p class="df-muted">Complete Missing Information with AI is available when sending to Review Results.</p>`)}
+        </div>
         <div class="discovery-actions">
           <button type="button" class="btn" disabled=${busy || !canSend({preview, name,
             attestSource, admission, attestAuthorized, accept})} onClick=${confirm}>
-            ${busy ? (admission === "verified" ? "Adding… (this can take a few minutes)" : "Sending…")
-              : admission === "verified" ? "Add to the directory as Verified" : confirmLabel(counts)}</button>
+            ${busy ? "Storing… (this can take a few minutes)" : "Store in the Directory"}</button>
         </div>
         ${send === 0 && html`<p class="df-muted">There is nothing new to send.</p>`}
       </section>
@@ -806,6 +810,19 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     </div>`;
   }
 
+  /** The example import's details: nothing is fetched, nothing is in the database. */
+  function ExampleDetails({item}) {
+    return html`<div class="df-import-details">
+      <p class="df-example-tag">Example · not real data, and not stored in the database</p>
+      <p class="df-import-facts"><strong>${recordCount(item)}</strong> · ${usDate(item.uploaded_at)} · <a
+        href="/api/datafeed/example-import.xlsx" download>Excel sheet: ${item.file_name}</a></p>
+      <p class="df-muted">${historyLine(item)}</p>
+      <div class="df-records"><table class="discovery-runs"><thead><tr><th>Row</th><th>Record</th><th>Status</th></tr></thead>
+        <tbody>${item.records.map(r => html`<tr key=${r.row_number}><td>${r.row_number}</td><td>${r.name}</td>
+          <td>${r.status}</td></tr>`)}</tbody></table></div>
+    </div>`;
+  }
+
   /** One import's details, opened from its row: records, file, counts and actions. */
   function ImportDetails({item, records, completing, setCompleting}) {
     return html`<div class="df-import-details">
@@ -853,7 +870,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     async function toggle(item) {
       if (open === item.run_id) { setOpen(null); return; }
       setOpen(item.run_id);
-      if (!records[item.run_id]) {
+      if (!item.example && !records[item.run_id]) {
         try {
           const r = await api(`/api/datafeed/imports/${item.run_id}`);
           setRecords(map => ({...map, [item.run_id]: r.records}));
@@ -867,40 +884,40 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     // The signed-in user's imports once accounts exist; every import until then.
     const mine = items;
     const shown = filterImports(mine, search, category);
-    const example = !mine.length;
-    const rows = example ? [{...EXAMPLE_IMPORT, run_id: "example"}] : shown;
+    // The example finished import, listed after the real ones while it matches the filters.
+    const exampleRow = {...EXAMPLE_IMPORT, run_id: "example"};
+    const rows = [...shown, ...filterImports([exampleRow], search, category)];
     return html`<div class="df-history-tools">
       <label class="df-search"><span class="sr-only">Search imports by name</span>
         <input type="search" value=${search} placeholder="Search imports by name…"
-          onInput=${e => setSearch(e.target.value)} disabled=${example}/></label>
+          onInput=${e => setSearch(e.target.value)}/></label>
       <label class="df-category"><span>Record Type:</span>
-        <select value=${category} onChange=${e => setCategory(e.target.value)} disabled=${example}>
+        <select value=${category} onChange=${e => setCategory(e.target.value)}>
           <option value="all">All</option>
           ${RECORD_TYPES.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
         </select></label>
     </div>
-    ${example && html`<p class="df-example-tag">Example · how an import will appear here (not real data).
-      <a href="/api/datafeed/example-import.xlsx" download>Download its Excel sheet</a></p>`}
-    <div class=${"df-history-table" + (example ? " df-example" : "")}>
+    <div class="df-history-table">
       <table>
-        <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Result</th></tr></thead>
+        <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Status</th></tr></thead>
         <tbody>
           ${rows.length === 0 && html`<tr><td colspan="5" class="df-muted">No import matches this search.</td></tr>`}
           ${rows.map(item => {
             const result = importResult(item);
             return html`<${Fragment} key=${item.run_id}>
               <tr class=${open === item.run_id ? "open" : ""}>
-                <td>${example ? html`<span class="df-import-link">${item.import_name}</span>`
-                  : html`<button type="button" class="df-import-link" aria-expanded=${open === item.run_id}
-                    onClick=${() => toggle(item)}>${item.import_name}</button>`}</td>
+                <td><button type="button" class="df-import-link" aria-expanded=${open === item.run_id}
+                    onClick=${() => toggle(item)}>${item.import_name}</button>
+                  ${item.example && html` <span class="df-example-chip">Example</span>`}</td>
                 <td>${typeInfo(item.record_type).label}</td>
                 <td>${usDate(item.uploaded_at)}</td>
                 <td class="num">${item.rows_total ?? item.staged ?? 0}</td>
                 <td><span class=${"df-result " + result.tone}>${result.tone === "added" ? "✓ " : ""}${result.label}</span></td>
               </tr>
               ${open === item.run_id && html`<tr class="df-import-row"><td colspan="5">
-                <${ImportDetails} item=${item} records=${records[item.run_id]}
-                  completing=${completing} setCompleting=${setCompleting}/></td></tr>`}
+                ${item.example ? html`<${ExampleDetails} item=${item}/>`
+                  : html`<${ImportDetails} item=${item} records=${records[item.run_id]}
+                    completing=${completing} setCompleting=${setCompleting}/>`}</td></tr>`}
             <//>`;
           })}
         </tbody>
@@ -939,14 +956,19 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         ${!catalog.staging_configured && html`<p class="discovery-message error">Sending records to
           Review is not configured on this instance; files and forms can still be checked.</p>`}
         ${done ? html`<section class="discovery-card df-done">
-            <h3>${done.status === "already_imported" ? "Already imported" : "Sent to Review Results"}</h3>
+            <h3>${done.status === "already_imported" ? "Already imported"
+              : done.admission === "directory" ? (done.enriching?.started ? "Completing, then storing"
+                : "Stored in the Ecosystem Directory") : "Sent to Review Results"}</h3>
             <p>${doneLine(done)}</p>
             ${done.completion && html`<p>${done.completion}</p>`}
-            ${(done.held_for_review || []).length > 0 && html`<ul class="df-notes">
-              ${done.held_for_review.map(h => html`<li key=${h.row_number}>Row ${h.row_number}: ${h.reason}</li>`)}</ul>`}
+            ${[...(done.held_for_review || []), ...(done.not_stored || [])].length > 0 && html`<ul class="df-notes">
+              ${[...(done.held_for_review || []), ...(done.not_stored || [])].map(h => html`<li key=${h.row_number}>
+                Row ${h.row_number}: ${h.reason}</li>`)}</ul>`}
             <div class="discovery-actions">
-              <button class="btn" onClick=${() => done.run_id ? openImportInReview(done.run_id) : openReview()}>Open Review</button>
-              <button class="btn ghost" onClick=${() => { reset(); setView("history"); }}>Import History</button>
+              ${done.admission !== "directory" && html`<button class="btn"
+                onClick=${() => done.run_id ? openImportInReview(done.run_id) : openReview()}>Open Review</button>`}
+              <button class=${done.admission === "directory" ? "btn" : "btn ghost"}
+                onClick=${() => { reset(); setView("history"); }}>Import History</button>
               <button class="btn ghost" onClick=${reset}>Add more records</button>
             </div>
           </section>`

@@ -217,11 +217,18 @@ def load_request_results(session, search_run_ids, *, limit: int = 50,
         "record_preview->>'match_reason' AS why_matched, "
         # Events and people: when, what kind, who and where they work.
         "record_preview->>'start_date' AS start_date, "
+        "record_preview->>'end_date' AS end_date, "
         "record_preview->>'event_type' AS event_type, "
         "record_preview->>'role' AS role, record_preview->>'affiliation' AS affiliation, "
         "record_preview->'quality'->>'completeness' AS completeness, "
 
         "(score_breakdown->>'priority_score')::float AS priority, "
+        # Accepted means verified by Compass only when the run was set to verify and
+        # could: before 14 Oct 2026 accepted actors were Parked, and without
+        # GHUS_AGENT_AUTO_VERIFY=confirmed they went to Review instead.
+        "(score_band = 'auto_high' AND COALESCE((SELECT r.config->>'actor_auto_accept_status' = "
+        "'verified' AND NOT (r.stats ? 'actor_auto_verify_disabled') FROM scrape_run r "
+        "WHERE r.run_id = search_candidate.run_id), FALSE)) AS verified_by_compass, "
         "triage_reason, created_at FROM search_candidate "
         "WHERE run_id = ANY(CAST(:ids AS uuid[])) AND entity_type = :entity "
         "AND score_band IN ('auto_high', 'review') "

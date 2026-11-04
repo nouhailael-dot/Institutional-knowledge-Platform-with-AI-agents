@@ -211,3 +211,41 @@ def test_a_proposed_category_type_is_set_only_on_acceptance_and_only_while_untyp
     assert accepted["action"] == "decided" and type_of() == "professional_network"
     # Typed now: nothing more is proposed for it.
     assert propose()["action"] == "already_typed"
+
+
+def test_an_entry_box_adds_a_new_grant_and_keeps_the_old_one_in_the_history(connection):
+    from datetime import UTC, datetime, timedelta
+
+    from agents.common.facts import ActorFactWrite
+    from agents.enrichment.decisions import append_actor_fact
+
+    row = connection.execute(text(
+        "SELECT a.actor_id::text, t.topic_id::text FROM actor a CROSS JOIN topic t "
+        "WHERE NOT EXISTS (SELECT 1 FROM actor_fact_current_pointer p WHERE p.actor_id=a.actor_id "
+        "AND p.topic_id=t.topic_id AND p.fact_key='funding_signal') LIMIT 1")).first()
+    if row is None:
+        pytest.skip("needs an actor and a topic")
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    now = datetime.now(UTC)
+
+    def write(value, confidence, when):
+        return append_actor_fact(session, ActorFactWrite(
+            actor_id=row[0], topic_id=row[1], field_key="funding_signal", fact_type="light_pull",
+            layer=1, value=value, collection_state="found", source_url="https://x.example/news",
+            source_origin="newly_found", date_read=when, confidence=confidence,
+            created_by="agent.test"), live=True)
+
+    first = write({"entries": [{"amount": "$1M", "funder": "DOE"}]}, "high", now)
+    # Weaker evidence, but it only adds: it becomes current, the first stays in history.
+    second = write({"entries": [{"amount": "$2M", "funder": "NSF"},
+                                {"amount": "$1M", "funder": "DOE"}]}, "medium",
+                   now + timedelta(minutes=1))
+    current = connection.execute(text(
+        "SELECT actor_fact_id::text FROM actor_fact_current_pointer WHERE actor_id=CAST(:a AS uuid) "
+        "AND topic_id=CAST(:t AS uuid) AND fact_key='funding_signal'"), {"a": row[0], "t": row[1]}).scalar()
+    assert current == second != first
+    state = connection.execute(text(
+        "SELECT lifecycle_state, supersedes_fact_id::text FROM actor_fact WHERE actor_fact_id=CAST(:f AS uuid)"),
+        {"f": second}).one()
+    assert state[0] == "accepted" and state[1] == first
+    session.close()

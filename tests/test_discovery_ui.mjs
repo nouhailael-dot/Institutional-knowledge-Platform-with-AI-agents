@@ -684,3 +684,32 @@ test('update instructions that name a sector look for updates in that sector', a
   assert.equal('topic' in orgUpdatePayload({...base, focus: 'leadership changes'}), false);
   assert.equal('topic' in orgUpdatePayload({...base, focus: ''}), false);   // a general update
 });
+
+test('an accepted organisation reads as verified only when Compass could verify it', async () => {
+  const {resultOutcome, RESULT_LABELS} = await import('../frontend/discovery.js');
+  assert.equal(resultOutcome({score_band: 'auto_high', verified_by_compass: true}), 'auto_high');
+  assert.equal(resultOutcome({score_band: 'auto_high', verified_by_compass: false}), 'met_criteria');
+  assert.equal(resultOutcome({score_band: 'auto_high'}), 'met_criteria');
+  assert.equal(resultOutcome({score_band: 'review'}), 'review');
+  assert.equal(RESULT_LABELS.met_criteria, 'Sent to Review Results · met every criterion');
+});
+
+test('agent text reads with the platform spelling of organization', async () => {
+  const {orgWords} = await import('../frontend/discovery.js');
+  assert.equal(orgWords('The page names no organisation.'), 'The page names no organization.');
+  assert.equal(orgWords('Organisations named; actor already in database'),
+    'Organizations named; organization already in database');
+});
+
+test('an event shows its whole span, start to closing day', async () => {
+  const {eventSpan} = await import('../frontend/dates.js');
+  const {entityResultFacts} = await import('../frontend/discovery.js');
+  assert.equal(eventSpan('2027-03-01', '2027-03-04'), '03/01/2027 – 03/04/2027 (4 days)');
+  assert.equal(eventSpan('2027-03-01', '2027-03-01'), '03/01/2027');
+  assert.equal(eventSpan('2027-03-01', null), '03/01/2027');
+  assert.equal(eventSpan('2027-03-04', '2027-03-01'), '03/04/2027');
+  assert.equal(eventSpan('', '2027-03-01'), '');
+  assert.deepEqual(entityResultFacts({start_date: '2027-01-11', end_date: '2027-01-12'})[0],
+    ['Dates', '01/11/2027 – 01/12/2027 (2 days)']);
+  assert.deepEqual(entityResultFacts({start_date: '2027-01-11'})[0], ['Date', '01/11/2027']);
+});

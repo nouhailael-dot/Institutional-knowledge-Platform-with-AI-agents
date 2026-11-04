@@ -37,6 +37,15 @@ approved path, entity resolution included - and verified by a labelled
 matches one on the map, lacks a type, or that admission refuses stays in
 Review, and the result says why. Events and people always go to Review.
 
+"directory" (GHUS decision of 2026-11-03: Data Feed records are stored in the
+directory, nothing goes to Review): every staged record goes through the same
+approved admission path. A record matching one already in the directory updates
+that record (same_existing); every other one is created - an organization
+verified by the labelled ``ghus_import`` event. People and events are admitted
+at once. Organizations are admitted after the Light Pull completed their empty
+boxes from their own pages (``--enrich-then-admit``), so they arrive with what
+could be found; a record the writer refuses is reported, never guessed.
+
 Output: one JSON object on stdout.
 """
 
@@ -63,7 +72,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CONTRACT = "ghus-datafeed-batch/1"
 SOURCE_NAME = "ghus_data_feed"
 RECORD_TYPES = ("actor", "event", "person")
-ADMISSIONS = ("review", "verified")
+ADMISSIONS = ("review", "verified", "directory")
 # "map": a result of the platform's Explore and Map that a GHUS reviewer checked
 # and verified (28 Oct 2026). It was found by the mapping pipeline, so it keeps
 # that origin (claude_discovered, shown as AI mapped), never "imported".
@@ -192,7 +201,12 @@ def check_header(batch: Mapping[str, Any]) -> None:
         raise DataFeedRefused(f"at most {MAX_ROWS} records per import")
     admission = batch.get("admission") or "review"
     if admission not in ADMISSIONS:
-        raise DataFeedRefused("admission must be review or verified")
+        raise DataFeedRefused("admission must be review, verified or directory")
+    if admission == "directory":
+        attestation = batch.get("attestation") or {}
+        if not (attestation.get("source") is True and attestation.get("authorized") is True):
+            raise DataFeedRefused("storing records in the directory needs the uploader's "
+                                  "attestation of the source and of their authority")
     if admission == "verified":
         attestation = batch.get("attestation") or {}
         if batch.get("record_type") != "actor":
@@ -732,18 +746,150 @@ def admit_verified(session, batch: Mapping[str, Any], result: Mapping[str, Any])
     return outcomes
 
 
+def directory_decision(batch: Mapping[str, Any], batch_key: str, row: Mapping[str, Any],
+                       sent: Mapping[str, Any]) -> tuple[dict, dict | None]:
+    """The admission decision storing one staged record in the directory.
+
+    A record matching one already in the directory updates it (same_existing); any
+    other one is created. A new organization is verified as a labelled GHUS import.
+    """
+    entity = batch["record_type"]
+    uploader = _clean(batch.get("uploaded_by"))
+    match = sent.get("match") or {}
+    same = match.get("kind") == "existing" and str(match.get("entity_id") or "").strip()
+    decision = {
+        "entity_type": entity, "decision_kind": "same_existing" if same else "new",
+        "source_ref": {"table": row["source_table"], "id": row["source_id"]},
+        "reviewer": uploader, "edited_payload": {},
+        "idempotency_key": f"datafeed-directory:{batch_key}:{row.get('row_number')}",
+        "notes": "Data Feed import stored in the directory (GHUS decision, 3 Nov 2026).",
+    }
+    if same:
+        decision["target_id"] = str(match["entity_id"])
+    verification = ({"by": uploader, "reason": import_reason(batch, row.get("row_number"))}
+                    if entity == "actor" and not same else None)
+    return decision, verification
+
+
+def admit_directory(session, batch: Mapping[str, Any], result: Mapping[str, Any]) -> list[dict]:
+    """Store every staged record of a "directory" import, one at a time.
+
+    Each goes through agents.review.admission.apply_review_decision (its own
+    transaction, idempotent on the batch and row): a record the writer refuses is
+    reported with the reason and the others stand.
+    """
+    from agents.review.admission import apply_review_decision
+
+    by_row = {row.get("row_number"): row for row in batch["rows"]}
+    outcomes = []
+    for row in result.get("rows") or []:
+        if row.get("outcome") != "staged":
+            continue
+        sent = by_row.get(row.get("row_number")) or {}
+        decision, verification = directory_decision(batch, result["batch_key"], row, sent)
+        item = {"row_number": row.get("row_number"), "source_id": row.get("source_id")}
+        try:
+            done = apply_review_decision(session, decision, import_verification=verification)
+            outcomes.append({**item, "outcome": "matched_existing"
+                             if decision["decision_kind"] == "same_existing" else "stored",
+                             "entity_id": done.get("canonical_entity_id"),
+                             "promotion_action": done.get("promotion_action")})
+        except Exception as exc:  # noqa: BLE001 - one record must not stop the others
+            session.rollback()
+            if "existing or ambiguous match" in str(exc):
+                # Never merged by guess: a person decides which record it is (the one case
+                # that still waits, so the directory gets no second copy).
+                outcomes.append({**item, "outcome": "possible_duplicate",
+                                 "reason": "It may already be in the directory, so it was not "
+                                           "added twice; it waits for a person to confirm which "
+                                           "record it is."})
+            else:
+                outcomes.append({**item, "outcome": "not_stored",
+                                 "reason": f"The directory writer refused it: {exc}"[:300]})
+    return outcomes
+
+
+def staged_run(session, run_id: str) -> tuple[dict, dict]:
+    """A staged organization import, read back as (batch, result) to admit it later."""
+    meta = session.execute(text(
+        "SELECT config->'datafeed' FROM scrape_run WHERE run_id = CAST(:id AS uuid) "
+        "AND source_name = :source"), {"id": run_id, "source": SOURCE_NAME}).scalar_one_or_none()
+    if not meta:
+        raise DataFeedRefused("unknown Data Feed import")
+    meta = json.loads(meta) if isinstance(meta, str) else dict(meta)
+    rows = session.execute(text(
+        "SELECT candidate_id::text, record_preview->'data_feed' FROM search_candidate "
+        "WHERE run_id = CAST(:id AS uuid) AND entity_type = 'actor' "
+        "AND COALESCE(review_status, 'pending') = 'pending' ORDER BY candidate_id"),
+        {"id": run_id}).all()
+    sent, staged = [], []
+    for candidate_id, block in rows:
+        block = json.loads(block) if isinstance(block, str) else dict(block or {})
+        sent.append({"row_number": block.get("row_number"), "match": block.get("match") or {}})
+        staged.append({"row_number": block.get("row_number"), "outcome": "staged",
+                       "source_table": "search_candidate", "source_id": candidate_id})
+    batch = {"record_type": meta.get("record_type") or "actor", "method": meta.get("method"),
+             "import_name": meta.get("import_name"), "file_name": meta.get("file_name"),
+             "file_sha256": meta.get("file_sha256"), "uploaded_by": meta.get("uploaded_by"),
+             "rows": sent}
+    return batch, {"batch_key": meta.get("batch_key") or run_id, "rows": staged}
+
+
+def enrich_then_admit(run_id: str, *, max_usd: float, allow_shared: bool) -> dict[str, Any]:
+    """Complete an organization import's empty boxes from its pages, then store it.
+
+    The Light Pull reads only the boxes a record has no value for and never replaces
+    what GHUS supplied; a read that fails or runs out of budget still stores the
+    records with what they have.
+    """
+    from agents.collection import light_pull_candidates
+    from agents.collection.discovery_requests import open_session
+
+    read = {"status": "done"}
+    try:
+        light_pull_candidates.main(["--search-run", run_id, "--missing-only", "--live",
+                                    "--max-usd", f"{max_usd:.2f}",
+                                    *(["--allow-shared-database"] if allow_shared else [])])
+    except SystemExit as exc:  # the guard, or a stop: the records are stored all the same
+        read = {"status": "not_completed", "reason": str(exc)[:300]}
+    except Exception as exc:  # noqa: BLE001
+        read = {"status": "not_completed", "reason": f"{type(exc).__name__}: {exc}"[:300]}
+    with open_session() as session:
+        batch, result = staged_run(session, run_id)
+        # Reading opened a transaction; each admission runs its own.
+        session.rollback()
+        outcomes = admit_directory(session, batch, result)
+    return {"run_id": run_id, "light_pull": read, "admissions": outcomes}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--batch", required=True, help="the batch JSON file")
+    parser.add_argument("--batch", help="the batch JSON file")
     parser.add_argument("--live", action="store_true", help="stage; absent means check only")
+    parser.add_argument("--enrich-then-admit", metavar="RUN_ID",
+                        help="complete a staged organization import's empty boxes, then store it")
+    parser.add_argument("--max-usd", type=float, default=1.0)
+    parser.add_argument("--allow-shared-database", action="store_true")
     args = parser.parse_args(argv)
     sys.path.insert(0, str(ROOT))
-    if args.live and os.environ.get("DATAFEED_WRITES_ENABLED", "").lower() != "true":
+    if (args.live or args.enrich_then_admit) and \
+            os.environ.get("DATAFEED_WRITES_ENABLED", "").lower() != "true":
         print(json.dumps({"status": "refused",
                           "error": "Data Feed writes are not enabled for this database."}))
         return 2
     from agents.collection.discovery_requests import open_session
 
+    if args.enrich_then_admit:
+        try:
+            print(json.dumps(enrich_then_admit(args.enrich_then_admit, max_usd=args.max_usd,
+                                               allow_shared=args.allow_shared_database),
+                             default=str))
+        except DataFeedRefused as exc:
+            print(json.dumps({"status": "refused", "error": str(exc)}))
+            return 2
+        return 0
+    if not args.batch:
+        parser.error("--batch is required")
     batch = json.loads(Path(args.batch).read_text(encoding="utf-8"))
     try:
         with open_session() as session:
@@ -752,6 +898,12 @@ def main(argv: list[str] | None = None) -> int:
                     result = stage_batch(session, batch)
                 if result.get("status") == "staged" and batch.get("admission") == "verified":
                     result["admissions"] = admit_verified(session, batch, result)
+                elif result.get("status") == "staged" and batch.get("admission") == "directory":
+                    if batch.get("record_type") == "actor":
+                        # Stored after the Light Pull completes them (--enrich-then-admit).
+                        result["admissions_pending"] = True
+                    else:
+                        result["admissions"] = admit_directory(session, batch, result)
             else:
                 result = {**check_batch(session, batch), "status": "checked"}
                 session.rollback()

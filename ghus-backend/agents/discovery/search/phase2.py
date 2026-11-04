@@ -1954,6 +1954,15 @@ def _event_followup(record, page_url, doc, *, budget, source, run_log, raw_store
     return None if read is None else (read[0], read[2])
 
 
+def wants_linkedin_search(gate, record) -> bool:
+    """A person kept for GHUS whose pages gave no LinkedIn profile, or one complete but
+    for a bio or LinkedIn. Excluded people are never searched for."""
+    if (record.get("facts") or {}).get("linkedin_url"):
+        return False
+    return gate.decision in ("accept", "review") or (
+        gate.decision == "research" and set(gate.missing_mandatory) == {"bio or LinkedIn"})
+
+
 def _linkedin_lookup(linkedin_search, record, *, stats, cost_meter, budget):
     """{url, title} of this person's matched public LinkedIn profile, or None."""
     name = str(record.get("name") or "").strip()
@@ -2522,13 +2531,13 @@ def fetch_score_stage_people(
                             stats.get("followups_resolved", 0) or 0) + 1
                         outside = (person_outside_request(record, request)
                                    if request is not None else None)
-            if (gate.decision == "research" and outside is None
-                    and linkedin_search is not None
-                    and set(gate.missing_mandatory) == {"bio or LinkedIn"}
-                    and followup_budget.take()):
-                # Complete but for a bio: one LinkedIn-only search for this name
-                # and organization. The profile's address is taken from the
-                # search result; LinkedIn itself is never opened.
+            # Every person kept for GHUS gets a LinkedIn search when their pages gave
+            # none (4 Nov 2026) - it was only a last resort for a missing bio, so
+            # anyone with a faculty bio came without one. One LinkedIn-only search
+            # for this name and organization; the profile's address is taken from
+            # the search result and LinkedIn itself is never opened.
+            if (outside is None and linkedin_search is not None
+                    and wants_linkedin_search(gate, record) and followup_budget.take()):
                 found = _linkedin_lookup(linkedin_search, record, stats=stats,
                                          cost_meter=cost_meter, budget=followup_budget)
                 if found is not None:

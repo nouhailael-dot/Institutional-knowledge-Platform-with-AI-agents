@@ -371,7 +371,10 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
             # Same writer as its siblings above. It was missing only because
             # nothing wrote actor_sector at all, which is why no discovered
             # actor carried a sector and Phase 7 had nothing to cluster.
-            "actor_sector": {Path("agents/discovery/promote.py")},
+            # decisions.link_actor_sector: a sector added to an existing actor
+            # (Phase 1 records were migrated with none), add-only.
+            "actor_sector": {Path("agents/discovery/promote.py"),
+                             Path("agents/enrichment/decisions.py")},
             # Promotion places a new actor; the fact-review writer adds an
             # additional location when GHUS keeps both (record_fact_review_decision).
             "actor_location": {Path("agents/discovery/promote.py"),

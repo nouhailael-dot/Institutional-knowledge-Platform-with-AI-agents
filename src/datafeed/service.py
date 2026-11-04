@@ -40,7 +40,15 @@ ATTESTATIONS = {
     # Explore and Map's Verify (28 Oct 2026): web results a reviewer checked.
     "map": "I confirm that I am authorized GHUS staff, that I checked these records' sources, "
            "and that I verify the organizations among them.",
+    # Stored in the directory (GHUS decision, 3 Nov 2026).
+    "directory": "I confirm these records come from a GHUS source, that I am authorized GHUS "
+                 "staff, and that they may be stored in the Ecosystem Directory.",
 }
+
+
+def enrichment_cap(count: int) -> float:
+    """The AI completion's ceiling for an import: about $0.10 each, at least $0.50, at most $5."""
+    return round(min(5.0, max(0.5, count * 0.10)), 2)
 # The Excel file behind Import history's example card (page: EXAMPLE_IMPORT).
 # Every name starts with "Example", so the file is refused if it is uploaded.
 EXAMPLE_IMPORT_NAME = "Kansas water organizations"
@@ -352,7 +360,7 @@ class DataFeedService:
     # ------------------------------------------------------------------ confirm
     def confirm(self, preview_id: str, *, import_name: str, accept_left_out: bool,
                 uploaded_by: str | None = None, attest_source: bool = False,
-                admission: str = "review", attest_authorized: bool = False) -> dict[str, Any]:
+                admission: str = "directory", attest_authorized: bool = False) -> dict[str, Any]:
         """Send a checked preview, after the uploader's confirmation.
 
         Every import names its uploader and confirms the records come from a
@@ -360,6 +368,11 @@ class DataFeedService:
         attestation that they are authorized GHUS staff verifying them: new
         actors are then admitted Verified through the approved admission path,
         labelled as an import; the rest wait in Review.
+
+        "directory" (the default since 3 Nov 2026): every record is stored in the
+        directory through the approved admission path, nothing waits in Review.
+        Organizations are first completed by the Light Pull from their own pages
+        (background, capped by ``enrichment_cap``), then stored.
         """
         preview = self.preview(preview_id)
         name = " ".join(str(import_name or "").split())
@@ -370,8 +383,11 @@ class DataFeedService:
             raise DataFeedError("Give your name: every import records who sent it.")
         if not attest_source:
             raise DataFeedError("Confirm that these records come from a GHUS source.")
-        if admission not in ("review", "verified"):
-            raise DataFeedError("Choose Review or Verified.")
+        if admission not in ("review", "verified", "directory"):
+            raise DataFeedError("Choose how the records are stored.")
+        if admission == "directory" and not attest_authorized:
+            raise DataFeedError("Storing records in the directory needs your confirmation that "
+                                "you are authorized GHUS staff.")
         if admission == "verified":
             if preview["record_type"] != "actor":
                 raise DataFeedError("Only organizations can be imported as Verified; events and "
@@ -394,9 +410,9 @@ class DataFeedService:
             preview["record_type"], preview["method"], results, preview["file"],
             import_name=name, uploaded_by=uploader, rows_invalid=invalid, admission=admission,
             attestation={"source": True, "authorized": bool(attest_authorized and
-                                                              admission == "verified"),
+                                                              admission in ("verified", "directory")),
                          "text": ATTESTATIONS["map" if preview["method"] == "map"
-                                              else "verified" if admission == "verified"
+                                              else admission if admission in ("verified", "directory")
                                               else "source"]})
         batch["rows_total"] = preview["counts"]["total"]
         try:
@@ -407,7 +423,20 @@ class DataFeedService:
         self._path(preview_id).unlink(missing_ok=True)
         rows = outcome.get("rows") or []
         admitted = outcome.get("admissions") or []
+        enriching = None
+        if outcome.get("admissions_pending") and outcome.get("run_id"):
+            cap = enrichment_cap(outcome.get("staged", 0))
+            try:
+                self.bridge.start_enrich_then_admit(outcome["run_id"], cap,
+                                                    self.runs_dir / f"{outcome['run_id']}.log")
+                enriching = {"started": True, "max_usd": cap}
+            except DataFeedBridgeError as exc:
+                enriching = {"started": False, "error": str(exc)}
         return {"status": outcome.get("status"), "run_id": outcome.get("run_id"),
+                "stored": sum(a.get("outcome") in ("stored", "matched_existing") for a in admitted),
+                "not_stored": [a for a in admitted
+                               if a.get("outcome") in ("not_stored", "possible_duplicate")],
+                "enriching": enriching,
                 "import_name": name, "staged": outcome.get("staged", 0),
                 "already_awaiting_review": outcome.get("already_awaiting_review", 0),
                 "left_out": invalid, "admission": admission, "uploaded_by": uploader,
@@ -425,6 +454,11 @@ class DataFeedService:
         out = []
         for r in rows:
             meta, stats = r[3] or {}, r[4] or {}
+            # Import History lists imports stored in the Directory (GHUS decision,
+            # 3 Nov 2026). Earlier imports sent to Review are hidden, not deleted:
+            # their records stay in Review until decided.
+            if meta.get("admission") not in HISTORY_ADMISSIONS:
+                continue
             counts = {"pending": r[5], "approved_new": r[6], "matched_existing": r[7],
                       "rejected": r[8], "deferred": r[9]}
             pending = counts["pending"] + counts["deferred"]
@@ -504,6 +538,8 @@ class DataFeedService:
 
 
 # Per import: what Review has done with its records. Read only.
+HISTORY_ADMISSIONS = ("directory",)
+
 HISTORY_SQL = """
 WITH runs AS (
     SELECT run_id, entity_type, started_at, config->'datafeed' AS meta, stats->'datafeed' AS stats

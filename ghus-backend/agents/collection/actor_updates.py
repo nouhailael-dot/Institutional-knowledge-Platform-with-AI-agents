@@ -676,7 +676,7 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
     """
     from agents.enrichment.decisions import _confidence_rank
 
-    from agents.common.fact_parts import compare_values, parts_line
+    from agents.common.fact_parts import ENTRY_BOXES, compare_values, parts_line
 
     had = bool(before) and before.get("collection_state") == "found"
     found = bool(evidence) and evidence.get("collection_state") == "found"
@@ -693,6 +693,10 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
         outcome = "corroborated"
     elif before.get("creator_class") == "ghus_human":
         outcome = "protected"
+    elif field in ENTRY_BOXES:
+        # A new grant, activity or project is added beside the recorded ones,
+        # whatever the confidence: it contradicts nothing (4 Nov 2026).
+        outcome = "additional"
     else:
         previous_read = before.get("retrieved_at")
         if isinstance(previous_read, str):
@@ -722,6 +726,10 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
     parts = (comparison or {}).get("parts") or []
     write_value = (comparison or {}).get("merged") if outcome in {
         "additional", "changed", "conflict", "protected"} else None
+    if outcome == "new" and field in ENTRY_BOXES:
+        # The first value of an entry box is stored as its list from the start.
+        from agents.common.fact_parts import entries_of, entry_value
+        write_value = entry_value(entries_of(evidence.get("value")))
     if proposed and write_value is not None:
         # What the box would hold: the new facts, and the recorded facts this
         # reading did not restate - never a poorer value than the record's.

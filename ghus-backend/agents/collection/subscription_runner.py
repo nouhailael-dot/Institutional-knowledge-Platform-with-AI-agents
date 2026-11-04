@@ -412,14 +412,17 @@ def _notify_after(report: RunnerReport, *, environ=None, smtp_factory=None) -> N
                                            smtp_factory=smtp_factory)
 
 
-def _light_pull_after(report: RunnerReport, *, everything: bool = False) -> None:
+def _light_pull_after(report: RunnerReport, *, everything: bool = False,
+                      allow_shared: bool = False) -> None:
     """Read the kept candidates of each discovery request that just ran.
 
     A discovery run scores pages; the Light Pull read - the organisation's own
     homepage, About page and one topic page - is what fills its boxes, the
     location among them. Without it, a reviewer saw most boxes empty. Uses
     light_pull_candidates as is: its own spend cap, and its refusal of any
-    database but a local *_test one unless an operator allows it.
+    database but a local *_test one unless an operator allows it
+    (``allow_shared``: the platform's Run now on the team database, authorised
+    by the platform owner on 4 Nov 2026).
     """
     from agents.collection import light_pull_candidates
 
@@ -440,7 +443,8 @@ def _light_pull_after(report: RunnerReport, *, everything: bool = False) -> None
             # model timeout leaves a candidate unread); it costs nothing when
             # every candidate was read.
             for _ in range(2):
-                light_pull_candidates.main(["--request-id", outcome.subscription_id, "--live"])
+                light_pull_candidates.main(["--request-id", outcome.subscription_id, "--live",
+                                            *(["--allow-shared-database"] if allow_shared else [])])
             outcome.status_reason = "; ".join(filter(None, [
                 outcome.status_reason, "candidates' own pages read (Light Pull)"]))
         except SystemExit as exc:  # the guard refuses a shared database: say so
@@ -463,6 +467,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--light-pull", action="store_true",
                         help="After a live discovery request, read every kept candidate's own "
                              "pages so Review shows its boxes filled (capped).")
+    parser.add_argument("--allow-shared-database", action="store_true",
+                        help="Let the Light Pull write to a shared database (the operator's "
+                             "decision; the platform's Run now passes it on the team database).")
     return parser
 
 
@@ -478,7 +485,8 @@ def main(argv: list[str] | None = None) -> int:
         report = run_due_requests(session, live=args.live, today=args.today,
                                   request_id=args.request_id)
     if args.live:
-        _light_pull_after(report, everything=args.light_pull)
+        _light_pull_after(report, everything=args.light_pull,
+                          allow_shared=args.allow_shared_database)
         _notify_after(report)
     text_report = render_report(report)
     out = Path(args.report_out)

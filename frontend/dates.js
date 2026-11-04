@@ -100,3 +100,15 @@ export function createDateInput({html, useState, useEffect}) {
     </span>`;
   };
 }
+
+/** An event's span (4 Nov 2026): "03/01/2027 – 03/04/2027 (4 days)", or its one day.
+ *  An end date missing, the same as the start or before it shows the start only. */
+export function eventSpan(start, end) {
+  const first = parse(start);
+  if (!first) return "";
+  const last = parse(end);
+  if (!last || last <= first) return usDate(first);
+  const days = Math.round((Date.UTC(last.getFullYear(), last.getMonth(), last.getDate())
+    - Date.UTC(first.getFullYear(), first.getMonth(), first.getDate())) / 86400000) + 1;
+  return `${usDate(first)} – ${usDate(last)} (${days} days)`;
+}

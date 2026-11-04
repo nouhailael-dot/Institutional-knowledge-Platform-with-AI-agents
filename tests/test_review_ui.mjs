@@ -1507,3 +1507,41 @@ test('an organization card has no Mapped Topic line (3 Nov 2026)', () => {
   const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /"Mapped Topic"/);
 });
+
+test('Hub Proposals shows one example proposal, marked, with inert buttons', async () => {
+  const {EXAMPLE_HUB_PROPOSAL, thresholdLabel, hubProposalPlace} = await import('../frontend/review.js');
+  assert.equal(EXAMPLE_HUB_PROPOSAL.example, true);
+  assert.ok(EXAMPLE_HUB_PROPOSAL.members.every(m => m.name.startsWith('Example ')));
+  assert.equal(thresholdLabel(EXAMPLE_HUB_PROPOSAL.family_count, EXAMPLE_HUB_PROPOSAL.families_required), '5 of 4 required');
+  assert.equal(hubProposalPlace(EXAMPLE_HUB_PROPOSAL), 'Wichita, Kansas, United States · sector WATER');
+  const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
+  assert.match(src, /\[\.\.\.hubDemo\.proposals, EXAMPLE_HUB_PROPOSAL\]/);
+  assert.match(src, /<button class="btn" disabled title="Example: creates the hub/);
+});
+
+test('agent reasons in Review use the platform spelling of organization', async () => {
+  const {usSpelling} = await import('../frontend/review.js');
+  assert.equal(usSpelling('The page names no organisation.'), 'The page names no organization.');
+  assert.equal(usSpelling(null), null);
+});
+
+test('Why It Matched explains the GHUS fit and the badge follows relevance', async () => {
+  const {ghusFitRows, MATCH_STRENGTH_CLASSES, matchStrengthLabel} = await import('../frontend/review.js');
+  const rows = ghusFitRows({strength: 'weak', relevance: 0.45, priority: 0.225,
+    fits: ['Works in HEALTH: digital health.'], value: ['GHUS use cases: corporate engagement (fund)'],
+    concerns: ['Read from a page about it on another site, not its own website']});
+  assert.deepEqual(rows.map(([label]) => label), ['Fits the Request', 'Value for GHUS', 'To Check', 'Scores']);
+  assert.deepEqual(rows[3][1], ['Relevance 0.45 · Engagement priority 0.23']);
+  assert.equal(matchStrengthLabel('weak'), 'Weak');
+  assert.equal(MATCH_STRENGTH_CLASSES.weak, 'parked');
+  assert.deepEqual(ghusFitRows(null), []);
+});
+
+test('a list box shows one line per entry, dates first for activities', async () => {
+  const {formatFactValue} = await import('../frontend/review.js');
+  assert.equal(formatFactValue({entries: [{amount: '$2M', funder: 'NSF'}, {amount: '$1M', funder: 'DOE'}]}),
+    '• Amount: $2M · Funder: NSF\n• Amount: $1M · Funder: DOE');
+  assert.equal(formatFactValue({entries: [{date: '2026-03-14', description: 'Opened a pilot'}]}),
+    '• 03/14/2026 — Opened a pilot');
+  assert.equal(formatFactValue({entries: []}), 'No value recorded');
+});

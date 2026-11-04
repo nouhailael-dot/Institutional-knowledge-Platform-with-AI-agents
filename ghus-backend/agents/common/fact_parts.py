@@ -119,6 +119,20 @@ DESCRIPTIVE = frozenset({
 # Kept inside a stored value to say which parts an earlier reading supplied.
 CARRIED_OVER = "carried_over"
 
+# Boxes that record dated events, not one state (GHUS decision, 4 Nov 2026): a
+# new grant, activity or project is ADDED beside the recorded ones instead of
+# replacing them. Stored as {"entries": [...]}, newest first; an entry older than
+# ENTRY_YEARS leaves the current value (it stays in the fact history).
+ENTRY_BOXES = frozenset({
+    "funding_signal", "recent_activity", "current_project", "current_initiative",
+    "relevant_program", "pilot_customer_evidence", "current_initiative_working_group",
+    "international_connection",
+})
+ENTRIES = "entries"
+MAX_ENTRIES = 10
+MAX_ENTRIES_PER_READ = 5
+ENTRY_YEARS = 2
+
 _STOP = frozenset({"the", "and", "for", "with", "its", "from", "this", "that", "are", "has",
                    "was", "our", "inc", "llc", "ltd", "corp"})
 
@@ -261,6 +275,58 @@ def _same_part(before, after) -> bool:
     return same_text(before, after)
 
 
+def entries_of(value) -> list:
+    """An entry box's entries, whatever shape was stored: a list, one item, or none."""
+    value = _decode(value)
+    if value in (None, "", [], {}):
+        return []
+    if isinstance(value, Mapping) and isinstance(value.get(ENTRIES), list):
+        return [e for e in value[ENTRIES] if e not in (None, "", [], {})]
+    if isinstance(value, list):
+        return [e for e in value if e not in (None, "", [], {})]
+    return [value]
+
+
+def _entry_year(entry) -> int | None:
+    text = " ".join(str(entry.get(part) or "") for part in ("date", "end_year", "year")) \
+        if isinstance(entry, Mapping) else ""
+    years = [int(y) for y in re.findall(r"(?<!\d)((?:19|20)\d{2})(?!\d)", text)]
+    return max(years) if years else None
+
+
+def entry_value(entries, *, today_year: int | None = None) -> dict:
+    """The stored value of an entry box: newest first, at most MAX_ENTRIES, none stale."""
+    from datetime import date
+
+    year = today_year or date.today().year
+    ordered = sorted(entries, key=lambda e: _entry_year(e) or year, reverse=True)
+    kept = [e for e in ordered if (_entry_year(e) or year) >= year - ENTRY_YEARS]
+    # Never an empty box from a found value: when every entry is old, the newest stays.
+    return {ENTRIES: (kept or ordered[:1])[:MAX_ENTRIES]}
+
+
+def same_entry(before, after) -> bool:
+    """Two readings of one event: the same figures and most of the same words."""
+    return same_text(before, after) or covers(before, after) or covers(after, before)
+
+
+def compare_entries(before, after) -> dict:
+    """An entry box: each new entry is confirmed (already recorded) or added.
+
+    Never "changed": a different grant or activity is another one, recorded
+    beside the others. The merged value keeps every recorded entry.
+    """
+    old, new = entries_of(before), entries_of(after)
+    added = [e for e in new if not any(same_entry(o, e) for o in old)]
+    added = [e for i, e in enumerate(added) if not any(same_entry(p, e) for p in added[:i])]
+    if not added:
+        return {"outcome": "corroborated", "parts": [], "merged": entry_value(old)}
+    return {"outcome": "additional",
+            "parts": [{"part": ENTRIES, "previous": len(old), "new": added,
+                       "outcome": "additional"}],
+            "merged": entry_value([*added, *old])}
+
+
 def compare_values(key: str, before, after) -> dict:
     """Compare a recorded value with a new reading, fact by fact.
 
@@ -271,6 +337,8 @@ def compare_values(key: str, before, after) -> dict:
     and in a list, what it does not restate is kept.
     """
     before, after = _decode(before), _decode(after)
+    if key in ENTRY_BOXES:
+        return compare_entries(before, after)
     if key == "why_matched" and isinstance(before, Mapping) and isinstance(after, Mapping):
         # The agent's own explanation: a new wording of it is not new
         # information. Only a different strength of match is a change.
@@ -361,6 +429,10 @@ def parts_line(parts) -> str:
             words.append(f"{label}: {_short(part['previous'])} → {_short(part['new'])}")
         elif part["outcome"] == "confirmed":
             words.append(f"{label}: confirmed")
+        elif part["outcome"] == "additional" and part["part"] == ENTRIES:
+            count = len(part["new"])
+            words.append(f"{count} new {'entry' if count == 1 else 'entries'} added beside "
+                         f"the {part['previous']} recorded")
         elif part["outcome"] == "additional":
             words.append(f"{label}: added ({_short(part['new'])})")
         elif part["outcome"] == "not_restated":

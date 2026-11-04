@@ -129,3 +129,11 @@ test('the page is navigation only and every destination listens for it', () => {
   const monitor = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
   assert.ok(monitor.includes('id=${"request-" + request.subscription_id}'), 'Requests scrolls to the request');
 });
+
+test('the Directory activity panel never asks for a typed name', async () => {
+  const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /Type your name/);
+  assert.doesNotMatch(src, /ghus\.review\.reviewer/);
+  const {NOT_SIGNED_IN_ACTIVITY} = await import('../frontend/dashboard.js');
+  assert.match(NOT_SIGNED_IN_ACTIVITY, /takes your name from your account/);
+});

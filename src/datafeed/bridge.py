@@ -149,6 +149,20 @@ class DataFeedBridge:
         except json.JSONDecodeError as exc:
             raise DataFeedBridgeError("The estimate could not be read.") from exc
 
+    def start_enrich_then_admit(self, run_id: str, max_usd: float, log_path: Path) -> int:
+        """Complete a staged organization import's empty boxes, then store it in the
+        directory - in the background (minutes); returns its process id."""
+        self._require()
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        command = [self.python_executable, "-m", "agents.datafeed.stage_import",
+                   "--enrich-then-admit", run_id, "--max-usd", f"{max_usd:.2f}"]
+        if not self.local_database:
+            command.append("--allow-shared-database")
+        with open(log_path, "w", encoding="utf-8") as log:
+            process = self._start(command, cwd=self.project_root, env=self._env(writes=True),
+                                  stdout=log, stderr=subprocess.STDOUT)
+        return int(getattr(process, "pid", 0) or 0)
+
     def start_completion(self, run_id: str, max_usd: float, log_path: Path) -> int:
         """Start the paid read in the background; returns its process id."""
         self._require()

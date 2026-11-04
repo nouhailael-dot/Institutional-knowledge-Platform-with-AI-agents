@@ -340,6 +340,11 @@
     --accent:#d7410b;--accent-2:#ba3508;--accent-ink:#b5360b;--accent-soft:#fff0e9;
     --teal:#14756d;--teal-soft:#e7f4f1;--violet:#6557ad;--violet-soft:#f0edfa;
     --slate:#556072;--slate-soft:#edf0f4;--radius:12px;--radius-sm:8px;
+    /* The page is always light, so the status colors are too: on a computer set to
+       dark mode they kept their dark values (a dark brown "Pending review" on a white
+       card, 3 Nov 2026). */
+    --green:#2f7a33;--green-soft:#e5f2e3;--amber:#94600a;--amber-soft:#fbf0d9;--link:#1f5fa8;
+    --orange:#c2570c;--orange-soft:#fdeedd;--red:#b42318;--red-soft:#fdecec;
     --shadow-sm:0 1px 3px #18203005;--shadow:0 4px 20px #18203006;
     --shadow-lg:0 12px 36px #18203012;--serif:var(--sans)}
   body{background-image:none;font-size:14px}
@@ -707,9 +712,9 @@
   .mcard .mpeople>.example{color:var(--accent-ink);border-color:var(--line);padding:8px 16px}
   @media(max-width:760px){.mcard{padding:18px 16px}.mcard .mh{flex-wrap:wrap}.mcard .mactions{width:100%}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261103h"/>
+<link rel="stylesheet" href="/review.css?v=20261104f"/>
 <link rel="stylesheet" href="/discovery.css?v=20261103h"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261103a"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261103f"/>
 <link rel="stylesheet" href="/dashboard.css?v=20261102d"/>
 <script type="importmap">
 { "imports": {
@@ -727,11 +732,11 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261103j";
-import {createDiscoveryPage} from "./discovery.js?v=20261103d";
-import {createDateInput, usDate} from "./dates.js?v=20261102d";
-import {createDataFeedPage} from "./datafeed.js?v=20261103c";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261103d";
+import {createReviewPage} from "./review.js?v=20261104f";
+import {createDiscoveryPage} from "./discovery.js?v=20261104e";
+import {createDateInput, usDate} from "./dates.js?v=20261104e";
+import {createDataFeedPage} from "./datafeed.js?v=20261104c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261104c";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -1005,11 +1010,11 @@ function statusOf(r){
   if(s==="parked") return "Parked";
   if(s==="rejected") return "Rejected";
   if(s==="removed") return "Deleted";
-  return "Pending review";
+  return "Pending Review";
 }
 // One look for every record tag (30 Oct 2026): Verified alone has a check mark;
 // every other tag is a colored dot and the word.
-const STATUS_CHIP={"Verified":"green","Pending review":"amber","Parked":"orange","Rejected":"slate","Deleted":"red"};
+const STATUS_CHIP={"Verified":"green","Pending Review":"amber","Parked":"orange","Rejected":"slate","Deleted":"red"};
 
 /* Delete in the Ecosystem Directory (30 Oct 2026): one confirmation, no reason
    to type, no restore. The backend still records the GHUS decision (with a fixed
@@ -2071,7 +2076,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
         <div class="mstatus">
           ${savedDone?html`<span class=${"chip "+(saved.outcome==="directory"?"green":"amber dot")}>${saved.outcome==="directory"?"✓ In the directory":"In Review Results"}</span>`
             :ready?html`<span class="chip green">✓ Verified</span>`
-            :parked?html`<span class="chip orange dot">Parked</span>`:html`<span class="chip amber dot">Pending review</span>`}
+            :parked?html`<span class="chip orange dot">Parked</span>`:html`<span class="chip amber dot">Pending Review</span>`}
           ${e._rank&&html`<span class="rank" title="Rank on this map">${e._rank}</span>`}
           ${badge}
           ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
@@ -2726,7 +2731,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 
     ${total>0&&html`<div class="filter-bar" role="group" aria-label="Filter results">
       ${chip("all",statusFilter,setStatusFilter,`All ${shown.length}`)}
-      ${chip("pending",statusFilter,setStatusFilter,`Pending review ${shown.filter(e=>statusGroup(e)==="pending").length}`)}
+      ${chip("pending",statusFilter,setStatusFilter,`Pending Review ${shown.filter(e=>statusGroup(e)==="pending").length}`)}
       ${chip("parked",statusFilter,setStatusFilter,`Parked ${shown.filter(e=>statusGroup(e)==="parked").length}`)}
       ${chip("verified",statusFilter,setStatusFilter,`Verified ${shown.filter(e=>statusGroup(e)==="verified").length}`)}
       ${typesShown.length>1&&html`<span class="fsep" aria-hidden="true"></span>

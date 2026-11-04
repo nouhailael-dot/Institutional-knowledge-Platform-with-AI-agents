@@ -45,7 +45,7 @@ class Confirmation(BaseModel):
     # Ignored: who sends it is the current user (src.identity). What they confirm stays theirs.
     uploaded_by: str = Field(default="", max_length=120)
     attest_source: bool = False
-    admission: str = "review"
+    admission: str = "directory"
     attest_authorized: bool = False
 
 
