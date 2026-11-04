@@ -204,6 +204,21 @@ def _candidate_name(entity_type: str, payload: dict[str, Any]) -> str:
     return str(payload.get("name") or f"Unnamed {entity_type}")
 
 
+def _with_new_fields(entity_type: str, reviewed: dict[str, Any],
+                     original: dict[str, Any]) -> dict[str, Any]:
+    """The reviewed copy plus any editable field it was captured without.
+
+    4 Nov 2026: End Date became editable after many events were captured; their
+    reviewed copy had no end_date key, so the box showed empty although the
+    record held the date. A field a reviewer edits is always written, so a
+    missing key never stands for a reviewer's choice.
+    """
+    merged = dict(reviewed or {})
+    for field, value in _editable_payload(entity_type, original or {}).items():
+        merged.setdefault(field, value)
+    return merged
+
+
 def _editable_payload(entity_type: str, payload: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(payload)
     for source, target in PAYLOAD_ALIASES[entity_type].items():
@@ -961,8 +976,9 @@ class ReviewStore:
                     ).fetchone()
                     if current is not None:
                         stored = json.loads(current["original_payload"] or "{}")
-                        untouched = (json.loads(current["reviewed_payload"] or "{}")
-                                     == _editable_payload(entity_type, stored))
+                        untouched = (_with_new_fields(
+                            entity_type, json.loads(current["reviewed_payload"] or "{}"), stored)
+                            == _editable_payload(entity_type, stored))
                         if untouched:
                             db.execute(
                                 "UPDATE review_candidate SET original_payload=?,"
@@ -1001,6 +1017,9 @@ class ReviewStore:
         ):
             if field in item:
                 item[field] = _loads(item[field], default)
+        if item.get("entity_type") in EDITABLE_FIELDS and isinstance(item.get("reviewed_payload"), dict):
+            item["reviewed_payload"] = _with_new_fields(
+                item["entity_type"], item["reviewed_payload"], item.get("original_payload") or {})
         item["editable_fields"] = list(EDITABLE_FIELDS.get(item.get("entity_type"), ()))
         item["field_constraints"] = {
             field: {"max_length": length}
@@ -1300,7 +1319,8 @@ class ReviewStore:
                 raise KeyError(candidate_id)
             if row["status"] != "pending_review":
                 raise ReviewConflict("Only pending candidates can be edited.")
-            current = _loads(row["reviewed_payload"], {})
+            current = _with_new_fields(row["entity_type"], _loads(row["reviewed_payload"], {}),
+                                       _loads(row["original_payload"], {}))
             unknown = sorted(set(fields) - set(EDITABLE_FIELDS[row["entity_type"]]))
             if unknown:
                 raise ReviewValidationError("Unsupported reviewed fields: " + ", ".join(unknown))
@@ -1399,7 +1419,9 @@ class ReviewStore:
                 raise KeyError(candidate_id)
             if row["status"] != "pending_review":
                 raise ReviewConflict("This candidate has already been decided.")
-            payload = edited_payload if edited_payload is not None else _loads(row["reviewed_payload"], {})
+            payload = edited_payload if edited_payload is not None else _with_new_fields(
+                row["entity_type"], _loads(row["reviewed_payload"], {}),
+                _loads(row["original_payload"], {}))
             payload = self.validate_payload(row["entity_type"], payload)
             matches = self._duplicate_matches(db, row["entity_type"], payload)
             if matches:
