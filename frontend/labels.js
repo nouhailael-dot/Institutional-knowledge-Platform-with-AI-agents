@@ -161,6 +161,7 @@ export const BADGES = {
   low: "Low",
   strong: "Strong",
   moderate: "Moderate",
+  weak: "Weak",
 };
 
 export const QUEUE = {

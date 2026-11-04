@@ -1524,3 +1524,15 @@ test('agent reasons in Review use the platform spelling of organization', async 
   assert.equal(usSpelling('The page names no organisation.'), 'The page names no organization.');
   assert.equal(usSpelling(null), null);
 });
+
+test('Why It Matched explains the GHUS fit and the badge follows relevance', async () => {
+  const {ghusFitRows, MATCH_STRENGTH_CLASSES, matchStrengthLabel} = await import('../frontend/review.js');
+  const rows = ghusFitRows({strength: 'weak', relevance: 0.45, priority: 0.225,
+    fits: ['Works in HEALTH: digital health.'], value: ['GHUS use cases: corporate engagement (fund)'],
+    concerns: ['Read from a page about it on another site, not its own website']});
+  assert.deepEqual(rows.map(([label]) => label), ['Fits the Request', 'Value for GHUS', 'To Check', 'Scores']);
+  assert.deepEqual(rows[3][1], ['Relevance 0.45 · Engagement priority 0.23']);
+  assert.equal(matchStrengthLabel('weak'), 'Weak');
+  assert.equal(MATCH_STRENGTH_CLASSES.weak, 'parked');
+  assert.deepEqual(ghusFitRows(null), []);
+});

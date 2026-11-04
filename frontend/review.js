@@ -205,7 +205,7 @@ export function reviewReasonLabel(value) {
 // actor_topic.match_strength and actor_fact.confidence are controlled values
 // stored lower case. They are vocabulary, not source data, so they display as
 // labels; an unrecognised value is shown as stored rather than guessed at.
-export const MATCH_STRENGTH_LABELS = {strong: BADGES.strong, moderate: BADGES.moderate};
+export const MATCH_STRENGTH_LABELS = {strong: BADGES.strong, moderate: BADGES.moderate, weak: BADGES.weak};
 export const CONFIDENCE_LABELS = {high: BADGES.high, medium: BADGES.medium, low: BADGES.low};
 
 export function matchStrengthLabel(value) {
@@ -1873,6 +1873,32 @@ export function textRows(value) {
 }
 
 /** A read-only label / value row; an empty value says Not Found, never blank. */
+// The match badge is the overall fit (relevance): strong, moderate or weak.
+export const MATCH_STRENGTH_CLASSES = {strong: "verified", moderate: "pending_review", weak: "parked"};
+
+/** Why GHUS should care, as the scoring evidenced it (4 Nov 2026): the request fit,
+ *  the value for GHUS, what a person should check, and the two scores. */
+export function ghusFitRows(fit) {
+  if (!fit || typeof fit !== "object") return [];
+  const list = value => (Array.isArray(value) ? value : []).map(usSpelling).filter(Boolean);
+  const scores = [fit.relevance != null && `Relevance ${Number(fit.relevance).toFixed(2)}`,
+    fit.priority != null && `Engagement priority ${Number(fit.priority).toFixed(2)}`].filter(Boolean);
+  return [
+    ["Fits the Request", list(fit.fits)],
+    ["Value for GHUS", list(fit.value)],
+    ["To Check", list(fit.concerns)],
+    ["Scores", scores.length ? [scores.join(" · ")] : []],
+  ];
+}
+
+function ghusFitLines(html, fit, source) {
+  // A row the page gave nothing for is left out, not shown as Not Found.
+  const rows = ghusFitRows(fit).filter(([, items]) => items.length);
+  return rows.map(([label, items], index) => cardLine(html, label,
+    html`<ul class="review-fit-list">${items.map((item, i) => html`<li key=${i}>${item}</li>`)}</ul>`,
+    index === 0 ? source : null));
+}
+
 export function cardLine(html, label, value, extra = null) {
   return html`<div class="review-line read" key=${label}><b>${label}</b>
     <span class="review-value">${value || html`<span class="review-missing">${MISSING.notFound}</span>`}${
@@ -2871,14 +2897,15 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <summary>
                   <span class="review-why-title"><span aria-hidden="true">✦</span> Why COMPASS Identified This Organization</span>
                   <span class="review-why-meta">
-                    ${why?.strength && html`<span class=${"review-status " + (strength === "strong" ? "verified" : "pending_review")}>${matchStrengthLabel(why.strength)} match</span>`}
+                    ${why?.strength && html`<span class=${"review-status " + (MATCH_STRENGTH_CLASSES[strength] || "pending_review")}>${matchStrengthLabel(why.strength)} match</span>`}
                     <span class="muted">${found.length} supporting source${found.length === 1 ? "" : "s"}</span>
                   </span>
                 </summary>
                 <div class="review-why-body">
                   ${cardLine(html, "Identified Through", identifiedThrough(selected))}
-                  ${cardLine(html, FIELDS.whyItMatched, why?.reason || selected.agent_metadata?._why || "",
-                    sourceLink(html, why?.source_url))}
+                  ${why?.ghus_fit ? ghusFitLines(html, why.ghus_fit, sourceLink(html, why?.source_url))
+                    : cardLine(html, FIELDS.whyItMatched, why?.reason || selected.agent_metadata?._why || "",
+                      sourceLink(html, why?.source_url))}
                   <details class="review-why-sources">
                     <summary>Supporting Sources (${found.length})</summary>
                     ${found.length ? html`<ul>${found.map((s, index) => html`<li key=${index}>

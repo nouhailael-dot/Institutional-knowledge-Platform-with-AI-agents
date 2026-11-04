@@ -721,3 +721,20 @@ def test_a_website_with_text_after_it_still_gives_a_clean_search_domain():
     assert registrable("https://www.nrel.gov DOE National Laboratories: https://x.gov") == "nrel.gov"
     assert registrable("https://www.asu.edu/research") == "asu.edu"
     assert registrable("") == ""
+
+
+def test_every_kept_person_without_a_linkedin_gets_one_search_never_an_excluded_one():
+    from types import SimpleNamespace
+
+    from agents.discovery.search.phase2 import wants_linkedin_search
+
+    def gate(decision, missing=()):
+        return SimpleNamespace(decision=decision, missing_mandatory=tuple(missing))
+    with_bio = {"facts": {"bio": "Professor of solar engineering."}}
+    assert wants_linkedin_search(gate("accept"), with_bio)
+    assert wants_linkedin_search(gate("review"), with_bio)
+    assert wants_linkedin_search(gate("research", ["bio or LinkedIn"]), {"facts": {}})
+    assert not wants_linkedin_search(gate("research", ["affiliation"]), {"facts": {}})
+    assert not wants_linkedin_search(gate("exclude"), with_bio)
+    assert not wants_linkedin_search(
+        gate("accept"), {"facts": {"linkedin_url": "https://www.linkedin.com/in/x"}})
