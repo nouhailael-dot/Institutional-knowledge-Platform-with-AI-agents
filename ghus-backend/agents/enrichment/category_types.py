@@ -89,6 +89,9 @@ def build_plan(session, client, *, max_usd: float, limit: int | None = None) -> 
 
     catalog = load_category_catalog()
     actors = [dict(r) for r in session.execute(text(UNTYPED_SQL)).mappings()]
+    # Release the connection before half an hour of classifying: the shared
+    # database's pooler closes an idle one (4 Nov 2026: the whole plan was lost).
+    session.rollback()
     if limit:
         actors = actors[:limit]
     planned, unclear = [], []
@@ -147,10 +150,15 @@ def main(argv: list[str] | None = None) -> int:
 
         client = ClaudeToolClient(args.model, cost_meter=CostMeter(max_usd=args.max_usd),
                                   **MODELS[args.model])
-        with open_session() as session:
+        session = open_session()
+        try:
             plan = build_plan(session, client, max_usd=args.max_usd, limit=args.limit)
             plan["model"] = args.model
-            session.rollback()
+        finally:
+            try:
+                session.close()
+            except Exception:  # noqa: BLE001 - a dropped connection never loses the plan
+                pass
         Path(args.plan).write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
         print(json.dumps(plan["summary"]))
         return 0
