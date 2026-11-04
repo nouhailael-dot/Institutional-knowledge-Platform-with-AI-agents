@@ -141,6 +141,12 @@ def cap_band(band: str, gate: GateResult) -> str:
 
     Needs More Research counts as excluded until a follow-up resolves it.
     """
+    if (gate.decision == "research" and set(gate.missing_mandatory) == {"bio or LinkedIn"}
+            and band in ("auto_high", "review")):
+        # Placed at their institution and scored well; only a bio or LinkedIn is
+        # missing after the follow-ups: a person decides, with the gap shown
+        # (4 Nov 2026: a Colorado State professor scoring 1.00 was dropped).
+        return "review"
     if gate.decision in ("exclude", "research"):
         return "auto_low"
     if gate.decision == "review" and band == "auto_high":

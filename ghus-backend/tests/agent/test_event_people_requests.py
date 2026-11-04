@@ -793,3 +793,31 @@ def test_one_event_found_on_its_site_and_on_a_listing_reaches_review_once():
     assert merged == 1
     assert by_id["b"].score_band is None and by_id["b"].duplicate_of == "a"
     assert by_id["a"].score_band == "auto_high" and by_id["c"].score_band == "auto_high"
+
+
+def test_expert_system_ids_are_profiles_and_a_topical_lab_page_lists_its_people():
+    from agents.discovery.search.people_targets import directory_leads, profile_page_kind
+
+    assert profile_page_kind("https://experts.colorado.edu/display/spinId_1265000") == "profile"
+    assert profile_page_kind("https://experts.colorado.edu/display/fisid_157952") == "profile"
+    assert profile_page_kind("https://aeml.mines.edu/people") == "directory"
+    html = ('<html><head><title>Hydrogen Electrolysis Lab - People</title></head><body>'
+            '<div><a href="/people/jane-doe">Jane Doe</a><p>Associate Professor</p></div>'
+            '<div><a href="/people/john-roe">John Roe</a><p>Research Scientist</p></div>'
+            '</body></html>')
+    leads = directory_leads(html, "https://h2lab.mines.edu/people", ["electrolysis"])
+    assert [lead["name"] for lead in leads] == ["Jane Doe", "John Roe"]
+    other = html.replace("Hydrogen Electrolysis Lab", "Chemistry Department")
+    assert directory_leads(other, "https://chem.mines.edu/people", ["electrolysis"]) == []
+
+
+def test_a_strong_well_placed_person_missing_only_a_bio_goes_to_review_not_away():
+    from types import SimpleNamespace
+
+    from agents.discovery.quality_gates import cap_band
+
+    missing_bio = SimpleNamespace(decision="research", missing_mandatory=("bio or LinkedIn",))
+    assert cap_band("auto_high", missing_bio) == "review"
+    assert cap_band("auto_low", missing_bio) == "auto_low"
+    unplaced = SimpleNamespace(decision="research", missing_mandatory=("affiliation",))
+    assert cap_band("auto_high", unplaced) == "auto_low"
