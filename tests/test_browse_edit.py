@@ -21,10 +21,12 @@ class BrowseEditTests(unittest.TestCase):
         for column in ("website", "recurring_pattern", "description", "record_status"):
             self.assertIn(column, sql)
 
-    def test_save_is_off_and_says_so_until_the_backend_writers_exist(self):
+    def test_there_is_no_save_until_logins_exist_and_it_says_so(self):
+        # 4 Nov 2026: no Save button at all (it read as broken in the demo).
         page = PAGE.read_text(encoding="utf-8")
-        self.assertIn('disabled=${true} title="Saving is not connected yet"', page)
-        self.assertIn("Saving isn't connected yet: edits here are not stored.", page)
+        form = page[page.index("function RecordEditor("):page.index("/* ------------------------------------------------- The four tabs */")]
+        self.assertNotIn(">Save</button>", form)
+        self.assertIn("Editing will be saved once logins are in place.", form)
         for kind in ('kind="actor"', 'kind="event"', 'kind="person"', 'kind="hub"'):
             self.assertIn(kind, page)
 
