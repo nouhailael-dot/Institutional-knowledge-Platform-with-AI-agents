@@ -454,6 +454,11 @@ class DataFeedService:
         out = []
         for r in rows:
             meta, stats = r[3] or {}, r[4] or {}
+            # Import History lists imports stored in the Directory (GHUS decision,
+            # 3 Nov 2026). Earlier imports sent to Review are hidden, not deleted:
+            # their records stay in Review until decided.
+            if meta.get("admission") not in HISTORY_ADMISSIONS:
+                continue
             counts = {"pending": r[5], "approved_new": r[6], "matched_existing": r[7],
                       "rejected": r[8], "deferred": r[9]}
             pending = counts["pending"] + counts["deferred"]
@@ -533,6 +538,8 @@ class DataFeedService:
 
 
 # Per import: what Review has done with its records. Read only.
+HISTORY_ADMISSIONS = ("directory",)
+
 HISTORY_SQL = """
 WITH runs AS (
     SELECT run_id, entity_type, started_at, config->'datafeed' AS meta, stats->'datafeed' AS stats

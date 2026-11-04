@@ -519,8 +519,10 @@ def test_end_to_end_upload_matches_stages_and_appears_in_review(live):
     assert again["already_imported_run_id"] == result["run_id"] and not again["can_confirm"]
     assert {r["status"] for r in again["rows"]} <= {"waiting", "existing"}
 
-    # History and per-record status.
-    item = next(i for i in service.history() if i["run_id"] == result["run_id"])
+    # History and per-record status. A Review import is hidden from Import History
+    # since the Directory decision (3 Nov 2026); its counts still work underneath.
+    assert result["run_id"] not in {i["run_id"] for i in service.history()}
+    item = next(i for i in _history_with_review(service) if i["run_id"] == result["run_id"])
     assert (item["import_name"], item["counts"]["pending"], item["status"]) == (
         f"E2E {suffix}", result["staged"], "Awaiting Review")
     assert {r["status"] for r in service.import_records(result["run_id"])} == {"Awaiting Review"}
@@ -562,7 +564,7 @@ def test_end_to_end_people_and_events(live):
     staged = service.confirm(events["preview_id"], uploaded_by="Test Uploader", attest_source=True, admission="review", import_name=f"Events {suffix}",
                              accept_left_out=True)
     runs.append(staged["run_id"])
-    item = next(i for i in service.history() if i["run_id"] == staged["run_id"])
+    item = next(i for i in _history_with_review(service) if i["run_id"] == staged["run_id"])
     assert item["rows_invalid"] == 1 and item["staged"] == 1 and item["rows_total"] == 2
 
 
@@ -691,3 +693,38 @@ def test_a_directory_import_is_stored_and_organizations_are_completed_first(serv
     stored = service.confirm(people["preview_id"], import_name="P", accept_left_out=False,
                              uploaded_by="Ana", attest_source=True, attest_authorized=True)
     assert stored["stored"] == 1 and stored["enriching"] is None and stored["not_stored"] == []
+
+
+def _history_with_review(service):
+    """Import History as it was before 3 Nov 2026, Review imports included."""
+    from src.datafeed import service as module
+
+    kept = module.HISTORY_ADMISSIONS
+    module.HISTORY_ADMISSIONS = ("directory", "review", "verified")
+    try:
+        return service.history()
+    finally:
+        module.HISTORY_ADMISSIONS = kept
+
+
+def test_import_history_lists_only_imports_stored_in_the_directory():
+    from datetime import datetime
+
+    from src.datafeed import service as module
+
+    def row(run, admission):
+        return (run, "actor", datetime(2026, 11, 4), {"import_name": run, "admission": admission},
+                {}, 0, 0, 0, 0, 0, False)
+
+    class Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params):
+            class R:
+                def fetchall(_):
+                    return [row("old-review", "review"), row("old-verified", "verified"),
+                            row("new-directory", "directory"), row("no-admission", None)]
+            return R()
+
+    service = module.DataFeedService(bridge=None, connect=lambda: Conn())
+    assert [i["run_id"] for i in service.history()] == ["new-directory"]
