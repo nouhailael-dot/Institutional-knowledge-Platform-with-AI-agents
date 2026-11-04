@@ -153,10 +153,11 @@ def test_quotes_are_checked_against_the_page(quote, ok):
     assert quote_on_page(quote, ABOUT) is ok
 
 
-def test_evidence_cannot_depend_on_a_fifth_quote_that_would_be_discarded():
+def test_evidence_cannot_depend_on_a_quote_past_the_limit_that_would_be_discarded():
+    # An entry box keeps eight quotes (several entries); a ninth would be discarded.
     model = Model({"funding_signal": {
         "stated": True, "page": ABOUT_URL, "value": {"amount": "$2 million"},
-        "quotes": ["The Water Council"] * 4 + ["received a $2 million grant"],
+        "quotes": ["The Water Council"] * 8 + ["received a $2 million grant"],
     }})
     read = LightPullReader(model, _fetch).read(
         name="The Water Council", website="https://thewatercouncil.com",
@@ -343,3 +344,90 @@ def test_no_search_when_its_own_pages_state_it(tmp_path):
         name="The Water Council", website="https://thewatercouncil.com", actor_category=None,
         read_at=NOW, fields=["funding_signal"])
     assert read.evidence["funding_signal"]["collection_state"] == "found" and searches == []
+
+
+
+def test_an_entry_box_keeps_every_quoted_entry_and_refuses_one_riding_on_another_quote():
+    model = Model({"funding_signal": {
+        "stated": True, "page": ABOUT_URL,
+        "value": [{"amount": "$2 million", "funder": "Fund for Lake Michigan"},
+                  {"amount": "$5 million", "funder": "National Science Foundation"}],
+        "quotes": ["It received a $2 million grant from the Fund for Lake Michigan."]}})
+    read = LightPullReader(model, _fetch).read(
+        name="The Water Council", website="https://thewatercouncil.com",
+        actor_category="association_network", read_at=NOW, fields=["funding_signal"])
+    value = read.evidence["funding_signal"]["value"]
+    assert value == {"entries": [{"amount": "$2 million", "funder": "Fund for Lake Michigan"}]}
+    assert read.evidence["funding_signal"]["dropped_entries"]
+
+
+PARENT = {
+    "https://www.bighealth.org/": ('<title>Big Health System</title><a href="/about">About</a>'
+                                   '<p>Big Health System serves Greater Boston.</p>'),
+    "https://www.bighealth.org/about": ('<p>Big Health System has 20 hospitals across '
+                                        'Massachusetts. The Big Health Innovation Fund invests '
+                                        '$1 million in digital health startups.</p>'),
+}
+
+
+def test_on_a_parents_site_only_facts_whose_quotes_name_the_unit_are_kept():
+    def fetch(url):
+        if url not in PARENT:
+            raise RuntimeError(f"not found: {url}")
+        return FetchedDoc.from_content(url=url, content=PARENT[url], content_type="text/html")
+
+    model = Model({
+        "geographic_focus": {"stated": True, "page": "https://www.bighealth.org/about",
+                             "value": {"places": ["Massachusetts"]},
+                             "quotes": ["Big Health System has 20 hospitals across Massachusetts."]},
+        "published_fund_size": {"stated": True, "page": "https://www.bighealth.org/about",
+                                "value": {"amount": "$1 million"},
+                                "quotes": ["The Big Health Innovation Fund invests $1 million in "
+                                           "digital health startups."]}})
+    read = LightPullReader(model, fetch).read(
+        name="Big Health Innovation Fund", website="https://www.bighealth.org/",
+        actor_category="investor", read_at=NOW,
+        fields=["geographic_focus", "published_fund_size"])
+    assert read.evidence["geographic_focus"]["collection_state"] == "not_found"
+    assert "parent" in read.rejected["geographic_focus"]
+    assert read.evidence["published_fund_size"]["collection_state"] == "found"
+
+
+def test_an_unreachable_address_is_tried_under_its_other_spelling():
+    from agents.collection.light_pull_reader import address_variants
+
+    assert address_variants("http://example.org/") == ["https://www.example.org/",
+                                                       "https://example.org/"]
+    assert address_variants("https://www.example.org") == ["https://example.org/"]
+
+    def fetch(url):
+        if url.startswith("https://www.thewatercouncil.com"):
+            return _fetch(url.replace("https://www.", "https://"))
+        raise RuntimeError("ConnectError: getaddrinfo failed")
+
+    read = LightPullReader(Model({}), fetch).read(
+        name="The Water Council", website="https://thewatercouncil.com/",
+        actor_category="association_network", read_at=NOW, fields=["um6p_ocp_connection"])
+    assert read.error is None and read.pages
+
+
+def test_a_news_or_funding_page_is_read_beside_home_about_and_topic():
+    site = {
+        "https://lab.example/": ('<title>Lab Example</title><a href="/about">About</a>'
+                                 '<a href="/research">Research</a><a href="/news">News</a>'
+                                 '<a href="/funding">Funding</a><p>Lab Example.</p>'),
+        "https://lab.example/about": "<p>About Lab Example.</p>",
+        "https://lab.example/research": "<p>Water research.</p>",
+        "https://lab.example/news": "<p>In 2026 Lab Example won a $1M award.</p>",
+        "https://lab.example/funding": "<p>Funded by NSF.</p>",
+    }
+
+    def fetch(url):
+        return FetchedDoc.from_content(url=url, content=site[url], content_type="text/html")
+
+    docs = choose_pages(fetch, "https://lab.example", topic_terms=["water research"],
+                        actor_category="research_center")
+    urls = [d.url for d in docs]
+    assert urls[:3] == ["https://lab.example/", "https://lab.example/about",
+                        "https://lab.example/research"]
+    assert "https://lab.example/news" in urls and len(urls) <= 5

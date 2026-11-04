@@ -50,7 +50,7 @@ def test_a_box_that_was_empty_and_is_now_stated_is_new():
 
 
 def test_stronger_newer_evidence_changes_the_value_and_keeps_the_old_one():
-    box = _outcome(_recorded("$1M grant."), _read("$2M grant."))
+    box = _outcome(_recorded("$1M grant."), _read("$2M grant."), field="published_fund_size")
     assert (box["outcome"], box["group"]) == ("changed", "changed")
     assert box["previous"]["value"] == "$1M grant."
     assert box["proposed"]["value"] == "$2M grant."
@@ -60,7 +60,8 @@ def test_stronger_newer_evidence_changes_the_value_and_keeps_the_old_one():
 
 def test_weaker_or_older_evidence_is_a_conflict_for_review():
     later = (NOW + timedelta(days=30)).isoformat()
-    box = _outcome(_recorded("$1M grant.", confidence="high", when=later), _read("$2M grant."))
+    box = _outcome(_recorded("$1M grant.", confidence="high", when=later), _read("$2M grant."),
+                   field="published_fund_size")
     assert (box["outcome"], box["group"]) == ("conflict", "conflicts")
     assert "Review" in box["resolution"]
 
@@ -99,7 +100,7 @@ def test_a_reading_that_only_says_less_corroborates_instead_of_replacing():
 def test_a_different_number_is_a_different_fact():
     before = _recorded("Paid customers over $1.5 billion from demand response.")
     after = _read("Paid customers over $2 billion from demand response.")
-    assert _outcome(before, after)["outcome"] == "changed"
+    assert _outcome(before, after, field="scale_indicator")["outcome"] == "changed"
 
 
 def test_a_silent_page_never_erases_what_is_recorded():
@@ -361,3 +362,28 @@ def test_request_writes_outside_a_local_test_database_need_the_bridge_switch(mon
     monkeypatch.delenv("ACTOR_UPDATE_WRITES_ENABLED", raising=False)
     assert au.main(["request-create", "--json", "{}", "--live"]) == 0
     assert "ACTOR_UPDATE_WRITES_ENABLED" in json.loads(capsys.readouterr().out)["error"]
+
+
+
+def test_a_new_grant_is_added_beside_the_recorded_one_never_replacing_it():
+    """GHUS decision, 4 Nov 2026: funding, activities and projects are lists."""
+    later = (NOW + timedelta(days=30)).isoformat()
+    before = _recorded({"amount": "$1M", "funder": "DOE", "date": "2025"}, confidence="high",
+                       when=later)
+    box = _outcome(before, _read({"amount": "$2M", "funder": "Texas Energy Fund", "date": "2026"}))
+    # Added even from weaker or older evidence: it contradicts nothing.
+    assert (box["outcome"], box["group"]) == ("additional", "additional")
+    assert box["proposed"]["value"] == {"entries": [
+        {"amount": "$2M", "funder": "Texas Energy Fund", "date": "2026"},
+        {"amount": "$1M", "funder": "DOE", "date": "2025"}]}
+    assert "1 new entry added beside the 1 recorded" in box["what_changed"]
+    # The same grant read again only confirms it.
+    again = _outcome(_recorded({"entries": [{"amount": "$1M", "funder": "DOE", "date": "2025"}]}),
+                     _read([{"amount": "$1M", "funder": "DOE", "date": "2025"}]))
+    assert again["outcome"] == "corroborated"
+    # A first value is stored as its list.
+    first = _outcome(None, _read({"amount": "$2M", "funder": "Texas Energy Fund"}))
+    assert first["_write_value"] == {"entries": [{"amount": "$2M", "funder": "Texas Energy Fund"}]}
+    # GHUS's own value is still never changed by the agent.
+    assert _outcome(_recorded({"amount": "$1M"}, by="ghus_human"),
+                    _read({"amount": "$2M", "funder": "X"}))["outcome"] == "protected"

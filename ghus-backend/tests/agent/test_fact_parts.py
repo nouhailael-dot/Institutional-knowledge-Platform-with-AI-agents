@@ -67,7 +67,7 @@ def test_one_sentence_becomes_separate_facts_in_their_own_boxes():
         "ownership": "subsidiary of Acme Holdings", "parent_organization": "Acme Holdings",
         "employees": 500}
     assert ev["mapped_geography_operations"]["value"] == {"places": ["Texas"]}
-    assert ev["funding_signal"]["value"]["amount"] == "$2M"
+    assert ev["funding_signal"]["value"]["entries"][0]["amount"] == "$2M"
     assert ev["funding_signal"]["quotes"]        # the evidence is kept with the fact
     # The model is asked for the parts, and told to split one paragraph into boxes.
     parts = model.schema["properties"]["ownership_and_size"]["properties"]["value"]["properties"]
@@ -143,10 +143,15 @@ def test_more_details_are_additional_not_a_change():
 
 
 def test_one_thing_described_is_replaced_whole_when_it_is_a_different_one():
+    fund = compare_values("published_fund_size", {"amount": "$1M", "fund": "Fund I", "date": "2025"},
+                          {"amount": "$2M", "fund": "Fund II"})
+    assert fund["outcome"] == "changed"
+    assert fund["merged"] == {"amount": "$2M", "fund": "Fund II"}
+    # Funding, activities and projects are lists: a different grant joins the others.
     grant = compare_values("funding_signal", {"amount": "$1M", "funder": "DOE", "date": "2025"},
                            {"amount": "$2M", "funder": "Texas Energy Fund"})
-    assert grant["outcome"] == "changed"
-    assert grant["merged"] == {"amount": "$2M", "funder": "Texas Energy Fund"}
+    assert grant["outcome"] == "additional"
+    assert len(grant["merged"]["entries"]) == 2
     # A different city never keeps the old state.
     moved = compare_values("location", {"city": "Baltimore", "state": "MD"}, {"city": "Houston"})
     assert moved["merged"] == {"city": "Houston"}
@@ -224,3 +229,18 @@ def test_the_agents_own_wording_is_not_a_change():
 def test_rewording_does_not_hide_changed_figures():
     assert compare_values("description", "Employs 500 engineers in Boston",
                           "Employs 600 engineers in Boston")["outcome"] == "changed"
+
+
+
+def test_entry_lists_are_newest_first_bounded_and_drop_old_entries():
+    from agents.common.fact_parts import MAX_ENTRIES, entries_of, entry_value
+
+    assert entries_of(None) == [] and entries_of("A grant.") == ["A grant."]
+    assert entries_of({"entries": [{"amount": "$1M"}]}) == [{"amount": "$1M"}]
+    value = entry_value([{"amount": "$1M", "date": "2019"}, {"amount": "$2M", "date": "2026"},
+                         {"amount": "$3M", "date": "2025"}], today_year=2026)
+    assert [e["amount"] for e in value["entries"]] == ["$2M", "$3M"]   # 2019 leaves the view
+    only_old = entry_value([{"amount": "$1M", "date": "2019"}], today_year=2026)
+    assert only_old == {"entries": [{"amount": "$1M", "date": "2019"}]}  # never emptied
+    many = entry_value([{"amount": f"${i}M"} for i in range(15)], today_year=2026)
+    assert len(many["entries"]) == MAX_ENTRIES

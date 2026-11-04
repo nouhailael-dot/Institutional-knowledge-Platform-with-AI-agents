@@ -159,6 +159,11 @@ def append_actor_fact(
         state, supersedes = "accepted", None
     elif current["creator_class"] == "ghus_human":
         state, supersedes = "pending_update", None
+    elif _adds_entries(fact, current):
+        # An entry box (4 Nov 2026): the new value keeps every recorded entry and
+        # adds others, so it contradicts nothing - it becomes current whatever
+        # its confidence; the earlier value stays in the history.
+        state, supersedes = "accepted", str(current["actor_fact_id"])
     elif (_confidence_rank(fact.confidence) >= _confidence_rank(current["confidence"])
           and fact.date_read > current["retrieved_at"]):
         state, supersedes = "accepted", str(current["actor_fact_id"])
@@ -188,6 +193,18 @@ def append_actor_fact(
                                 fact.created_by, state)
         _insert_fact_review(session, fact, fact_id, str(current["actor_fact_id"]), state)
     return fact_id
+
+
+def _adds_entries(fact, current) -> bool:
+    """A found entry-box value holding every current entry and at least one more."""
+    from agents.common.fact_parts import ENTRY_BOXES, entries_of, same_entry
+
+    if (fact.field_key not in ENTRY_BOXES or fact.collection_state != "found"
+            or current.get("collection_state") != "found"):
+        return False
+    old, new = entries_of(current.get("fact_value")), entries_of(fact.value)
+    return (len(new) > len(old)
+            and all(any(same_entry(o, n) for n in new) for o in old))
 
 
 def _insert_resolved_fact(session, *, fact, source_id, semantic_hash, creator_class,

@@ -364,3 +364,6 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 
 /* Why COMPASS identified it (4 Nov 2026): the GHUS fit as short lists. */
 .review-fit-list{margin:0;padding-left:18px;display:grid;gap:4px}
+
+/* List boxes (4 Nov 2026): one entry per line. */
+.review-value{white-space:pre-line}

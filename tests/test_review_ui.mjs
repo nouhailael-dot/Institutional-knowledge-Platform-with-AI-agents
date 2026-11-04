@@ -1536,3 +1536,12 @@ test('Why It Matched explains the GHUS fit and the badge follows relevance', asy
   assert.equal(MATCH_STRENGTH_CLASSES.weak, 'parked');
   assert.deepEqual(ghusFitRows(null), []);
 });
+
+test('a list box shows one line per entry, dates first for activities', async () => {
+  const {formatFactValue} = await import('../frontend/review.js');
+  assert.equal(formatFactValue({entries: [{amount: '$2M', funder: 'NSF'}, {amount: '$1M', funder: 'DOE'}]}),
+    '• Amount: $2M · Funder: NSF\n• Amount: $1M · Funder: DOE');
+  assert.equal(formatFactValue({entries: [{date: '2026-03-14', description: 'Opened a pilot'}]}),
+    '• 03/14/2026 — Opened a pilot');
+  assert.equal(formatFactValue({entries: []}), 'No value recorded');
+});

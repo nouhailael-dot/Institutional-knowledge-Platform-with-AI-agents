@@ -15,7 +15,9 @@ from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-MAX_LIGHT_PULL_FETCHES = 3
+# Home, About, a topic page, a news or funding page, and one more evidence page
+# (4 Nov 2026: three pages left most boxes Not Found).
+MAX_LIGHT_PULL_FETCHES = 5
 RANKING_PUBLISHERS = frozenset({"QS", "THE", "U.S. News", "ARWU"})
 RANKING_NAMES = {
     "QS": frozenset({"World University Rankings", "World University Rankings by Subject"}),
@@ -333,12 +335,13 @@ def _validate_evidence_rule(
             raise ValueError("why_matched strength must be strong or moderate")
         if not 1 <= _sentence_count(str(value.get("reason") or "")) <= 2:
             raise ValueError("why_matched reason must contain 1 to 2 sentences")
-    if field == "recent_activity" and (
-        not isinstance(value, Mapping)
-        or not value.get("date")
-        or not value.get("description")
-    ):
-        raise ValueError("recent activity requires a date and description")
+    if field == "recent_activity":
+        # One activity, or a list of them (an entry box, 4 Nov 2026): each dated.
+        from agents.common.fact_parts import entries_of
+
+        for item in entries_of(value):
+            if not isinstance(item, Mapping) or not item.get("date") or not item.get("description"):
+                raise ValueError("recent activity requires a date and description")
     if field == "rankings":
         if category != "university_academic":
             raise ValueError("rankings are collected only for university actors")

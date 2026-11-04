@@ -1178,7 +1178,10 @@ export function formatFactValue(value) {
   // A value that is a date (an event's next date) reads MM/DD/YYYY; other text as written.
   if (typeof value === "string") return usDate(value);
   if (typeof value !== "object") return String(value);
+  // A list box (funding, recent activity, projects - 4 Nov 2026): one line per entry.
+  if (Array.isArray(value.entries)) return formatEntries(value.entries);
   if (Array.isArray(value)) {
+    if (value.some(item => item && typeof item === "object")) return formatEntries(value);
     const items = value.map(item => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
     return items.length ? items.join(", ") : "No value recorded";
   }
@@ -1195,6 +1198,17 @@ export function formatFactValue(value) {
     return "No value recorded";
   }
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+/** "• 03/14/2026 — Opened a pilot · • Amount: $2M · Funder: NSF": each entry on its line. */
+export function formatEntries(entries) {
+  const lines = (entries || []).map(entry => {
+    if (!entry) return "";
+    if (typeof entry !== "object") return String(entry).trim();
+    if (entry.date && entry.description) return `${usDate(entry.date)} — ${entry.description}`;
+    return formatFactValue(entry).split("\n").join(" · ");
+  }).filter(line => line && line !== "No value recorded");
+  return lines.length ? lines.map(line => `• ${line}`).join("\n") : "No value recorded";
 }
 
 function hostOf(url) {

@@ -54,6 +54,11 @@ from agents.collection.site_access import (
     source_type,
 )
 from agents.common.fact_parts import (
+    ENTRY_BOXES,
+    MAX_ENTRIES_PER_READ,
+    entries_of,
+    entry_value,
+    same_entry,
     FACT_PARTS,
     missing_core,
     part_schema,
@@ -89,15 +94,15 @@ FIELD_CRITERIA: dict[str, str] = {
     "why_matched": "Why this organisation fits the requested topic, in 1-2 sentences that "
                    "cite what a page says it does on that topic. 'strong' only when the "
                    "topic is its main work; 'moderate' when it is one part of its work.",
-    "recent_activity": "One dated, specific thing it did recently (programme launched, "
+    "recent_activity": "Each dated, specific thing it did recently (programme launched, "
                        "facility opened, project started, report published, award made), "
-                       "with the date the page gives. Undated or generic activity is not "
-                       "recent activity.",
+                       "with the date the page gives - up to five, newest first. Undated or "
+                       "generic activity is not recent activity.",
     # Build the Map's funding rules (4 Nov 2026): the award, its funder, purpose, amount
     # and years, exactly as documented; never an inferred amount or an opportunity.
-    "funding_signal": "The most relevant documented award, grant, investment or budget THIS "
-                      "organisation received, preferring one related to the topic and made "
-                      "this year or still active in it (a five-year grant from three years "
+    "funding_signal": "Every documented award, grant, investment or budget THIS "
+                      "organisation received (up to five, those related to the topic "
+                      "first), each made this year or still active in it (a five-year grant from three years "
                       "ago counts; a one-time award that ended in an earlier year does not). "
                       "Give the funder, what it is for (program), the amount exactly as "
                       "written with its currency and qualifiers such as 'up to' or "
@@ -201,6 +206,15 @@ _CATEGORY_PAGE_HINTS: dict[str, tuple[str, ...]] = {
                             "programs"),
 }
 _GENERIC_HINTS = ("programs", "projects", "research", "initiatives", "news")
+# A site that refuses the agent is read through other pages naming it: three at
+# most, so a parent's site is not read further than it was.
+MAX_FALLBACK_PAGES = 3
+# Where funding, awards and recent work are announced: read beside the topic page.
+_EVIDENCE_HINTS = ("news", "press", "funding", "grants", "awards", "announcements",
+                   "projects", "impact", "annual-report", "stories", "media")
+# Boxes about the organisation as a whole, judged on the page even when it does
+# not repeat the organisation's name.
+_ABOUT_ITSELF = frozenset({"why_matched", "location"})
 MAX_PAGE_CHARS = 7000
 
 
@@ -297,6 +311,17 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
             docs.append(fetch(best[1]))
         except Exception as exc:  # noqa: BLE001
             logger.info("topic page unavailable for %s: %s", website, exc)
+    # Then the pages where funding, awards and recent work are announced (news,
+    # funding, projects), leaving a place for the contact page when the location
+    # is still unstated.
+    reserve = 1 if want_location and not _states_an_address(docs) else 0
+    for target in _evidence_pages(home, site, {d.url.rstrip("/") for d in docs}):
+        if len(docs) >= MAX_LIGHT_PULL_FETCHES - reserve:
+            break
+        try:
+            docs.append(fetch(target))
+        except Exception as exc:  # noqa: BLE001
+            logger.info("evidence page unavailable for %s: %s", website, exc)
     if want_location and len(docs) < MAX_LIGHT_PULL_FETCHES and not _states_an_address(docs):
         seen = {d.url.rstrip("/") for d in docs}
         for href, label in _HREF.findall(home.content or ""):
@@ -311,6 +336,64 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
                     logger.info("contact page unavailable for %s: %s", website, exc)
                 break
     return docs[:MAX_LIGHT_PULL_FETCHES]
+
+
+def _evidence_pages(home, site: str, seen: set[str]) -> list[str]:
+    """Same-site links whose path or label names news, funding, awards or projects,
+    best first, one per kind of page."""
+    scored: list[tuple[int, str]] = []
+    for href, label in _HREF.findall(home.content or ""):
+        target = urljoin(home.url, href.strip())
+        if registrable_domain(target) != site or target.rstrip("/") in seen:
+            continue
+        if re.search(r"\.(pdf|jpg|png|zip|docx?)$|^mailto:|/(login|cart|donate)", target, re.I):
+            continue
+        words = f"{urlsplit(target).path} {re.sub(r'<[^>]+>', ' ', label)}".casefold()
+        score = sum(hint in words for hint in _EVIDENCE_HINTS)
+        if score:
+            scored.append((score, target))
+    picked, kinds = [], set()
+    for _score, target in sorted(scored, key=lambda pair: -pair[0]):
+        path = urlsplit(target).path.casefold()
+        kind = next((hint for hint in _EVIDENCE_HINTS if hint in path), target)
+        if kind in kinds or target.rstrip("/") in {p.rstrip("/") for p in picked}:
+            continue
+        kinds.add(kind)
+        picked.append(target)
+    return picked
+
+
+def address_variants(website: str) -> list[str]:
+    """Other spellings of the same site address: with or without www, on https.
+
+    "Could not be reached" was often the address as stored (no www, or http),
+    not the site: the same site under its other spelling is tried - never a
+    different site, and never a way around a refusal.
+    """
+    parts = urlsplit(website if "://" in website else f"https://{website}")
+    host = parts.hostname or ""
+    if not host:
+        return []
+    other = host[4:] if host.startswith("www.") else f"www.{host}"
+    path = parts.path or "/"
+    return [u for u in (f"https://{other}{path}", f"https://{host}{path}")
+            if u.rstrip("/") != website.rstrip("/")]
+
+
+_GENERIC_NAME_WORDS = frozenset({"the", "and", "for", "inc", "llc", "center", "centre",
+                                 "institute", "university", "group", "company"})
+
+
+def quotes_name(name: str, quotes: Sequence[str]) -> bool:
+    """The quotes name this organisation: its full name, or every distinctive word of it."""
+    text = " ".join(" ".join(str(q) for q in quotes).casefold().split())
+    if not text or not name:
+        return False
+    if " ".join(name.casefold().split()) in text:
+        return True
+    words = {w for w in re.findall(r"[a-z0-9]+", name.casefold())
+             if len(w) > 3 and w not in _GENERIC_NAME_WORDS}
+    return bool(words) and all(w in text for w in words)
 
 
 # A page's footer is where most organisations print their address. The shared
@@ -427,10 +510,16 @@ def _answer_schema(fields: Sequence[str], urls: Sequence[str],
             "properties": {
                 "stated": {"type": "boolean",
                            "description": "true only if one of the pages states this"},
-                "value": {**_value_shape(key),
-                          "description": "the answer, from the page only; omit if not stated"},
+                "value": ({"type": "array", "maxItems": MAX_ENTRIES_PER_READ,
+                           "items": _value_shape(key),
+                           "description": "each one the pages state, newest first; "
+                                          "omit if not stated"}
+                          if key in ENTRY_BOXES else
+                          {**_value_shape(key),
+                           "description": "the answer, from the page only; omit if not stated"}),
                 "page": {"type": "string", "enum": list(urls)},
-                "quotes": {"type": "array", "maxItems": 4, "items": {"type": "string"},
+                "quotes": {"type": "array", "maxItems": 8 if key in ENTRY_BOXES else 4,
+                           "items": {"type": "string"},
                            "description": "the sentences that state it, each up to 30 words "
                                           "copied exactly from that page"},
             },
@@ -609,6 +698,18 @@ class LightPullReader:
                                     want_location="location" in wanted)
             except Exception as exc:  # noqa: BLE001 - an unreachable site is a stated outcome
                 failure = failure_of(exc)
+            if failure is not None and failure["kind"] in ("unreachable", "not_found", "timeout"):
+                # The same site under its other address spelling (www, https).
+                for variant in address_variants(website):
+                    try:
+                        docs = choose_pages(fetch, variant, topic_terms=topic_terms,
+                                            actor_category=actor_category,
+                                            want_location="location" in wanted)
+                    except Exception:  # noqa: BLE001 - the first failure is the one reported
+                        continue
+                    failure = None
+                    break
+            if failure is not None:
                 if fallback:
                     fallback.blocked.record(website, failure)
                     fallback.note(website, "refused", failure["plain"],
@@ -622,11 +723,23 @@ class LightPullReader:
             fallback.blocked.clear(website)
         kinds = {d.url: "official" for d in docs}
         partial: set[str] = set()
+        # A sub-unit whose website is its parent's: what those pages state is the
+        # parent's unless the quotes name the unit (4 Nov 2026: a fund's
+        # "geographic focus" came from its parent's rehabilitation services page).
+        def names_it(doc) -> bool:
+            return names_in_full(name, website, doc.content or "", _page_text(doc.content or ""))
+
+        # Only when its site's home page does not name it is the site its parent's;
+        # on its own site a page need not repeat its name.
+        self._parent_site = bool(docs) and not names_it(docs[0])
+        self._name = name
         if not docs and fallback:
             # Its own site is closed to the agent: other sources open to it, still
             # three pages at most, each naming this organisation.
-            for doc, kind, named in fallback.pages(fetch, name=name, website=website,
-                                                   room=MAX_LIGHT_PULL_FETCHES,
+            # Its own budget: the refused attempt counted as one of the old three.
+            for doc, kind, named in fallback.pages(BoundedFetch(self.fetch, MAX_FALLBACK_PAGES - 1),
+                                                   name=name, website=website,
+                                                   room=MAX_FALLBACK_PAGES,
                                                    text_of=lambda d: _page_text(d.content or "")):
                 docs.append(doc)
                 kinds[doc.url] = kind
@@ -694,8 +807,18 @@ class LightPullReader:
         quotes = [str(q) for q in (answer.get("quotes") or []) if str(q or "").strip()]
         if answer.get("quote"):
             quotes.append(str(answer["quote"]))
-        if not quotes or len(quotes) > 4 or not all(quote_on_page(q, texts[page]) for q in quotes):
+        limit = 8 if key in ENTRY_BOXES else 4
+        if not quotes or len(quotes) > limit or not all(quote_on_page(q, texts[page]) for q in quotes):
             return refuse("the quote given is not on the page it names")
+        if (getattr(self, "_parent_site", False) and result.sources.get(page) == "official"
+                and key not in _ABOUT_ITSELF
+                and not quotes_name(getattr(self, "_name", ""), quotes)):
+            return refuse("the page does not name this organisation, so what it states is "
+                          "its parent's or another organisation's")
+        if key in ENTRY_BOXES:
+            return self._judge_entries(result, key, value, quotes, page, partial,
+                                       read_at=read_at, actor_category=actor_category,
+                                       category_type=category_type, refuse=refuse)
         dropped: list[str] = []
         if key in FACT_PARTS and isinstance(value, str):
             # Plain words where parts were asked: kept as written, if quoted.
@@ -732,6 +855,57 @@ class LightPullReader:
         if key == "location" and isinstance(value, Mapping):
             candidate["value"] = _normal_location(value)
         result.evidence[key] = candidate
+
+    def _judge_entries(self, result: LightRead, key: str, value, quotes: list[str], page: str,
+                       partial: set[str], *, read_at: datetime, actor_category: str | None,
+                       category_type: str, refuse) -> None:
+        """An entry box: each entry is judged on its own; the ones that pass are kept."""
+        kind = result.sources.get(page, "official")
+        confidence = ("high" if kind in ("official", "official_parent") and page not in partial
+                      else "medium")
+        quotes_text = " ".join(quotes)
+        items = entries_of(value)[:MAX_ENTRIES_PER_READ]
+        kept, reasons = [], []
+        for item in items:
+            if key in FACT_PARTS and isinstance(item, Mapping):
+                item, _dropped = supported_parts(key, item, quotes_text)
+                core = missing_core(key, item)
+                if not item:
+                    reasons.append("no part of the answer is in the quotes given")
+                    continue
+                if core:
+                    reasons.append(f"it names no {' or '.join(core)}, so it is not this kind "
+                                   "of fact")
+                    continue
+            elif isinstance(item, str) or len(items) > 1:
+                # Several entries: each must be in the quotes, so a second one cannot
+                # ride on the first one's quote. One entry is judged as before.
+                said = (" ".join(str(v) for k, v in item.items() if k != "date")
+                        if isinstance(item, Mapping) else item)
+                if not part_supported(said, quotes_text):
+                    reasons.append("an entry is not in the quotes given")
+                    continue
+            try:
+                _fact(key, {"collection_state": "found", "value": item, "source_url": page,
+                            "date_read": read_at.isoformat(), "confidence": confidence,
+                            "source_origin": "newly_found"}, base_url=page, date_read=read_at,
+                      actor_category=actor_category or "", category_type=category_type)
+            except (ValueError, TypeError) as exc:
+                reasons.append(f"fails the Light Pull rule: {exc}")
+                continue
+            stale = _not_recent(key, item, read_at)
+            if stale:
+                reasons.append(stale)
+                continue
+            if not any(same_entry(previous, item) for previous in kept):
+                kept.append(item)
+        if not kept:
+            return refuse("; ".join(reasons) or "no entry is in the quotes given")
+        result.evidence[key] = {
+            "collection_state": "found", "value": entry_value(kept, today_year=read_at.year),
+            "source_url": page, "date_read": read_at.isoformat(), "confidence": confidence,
+            "source_origin": "newly_found", "quotes": quotes[:8], "source_type": kind,
+            **({"dropped_entries": reasons} if reasons else {})}
 
     def _search_evidence(self, result: LightRead, wanted: Sequence[str], *, name: str,
                          website: str, partial: set[str], read_at: datetime,
