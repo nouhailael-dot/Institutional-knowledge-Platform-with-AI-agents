@@ -33,6 +33,10 @@ from sqlalchemy import text
 ROOT = Path(__file__).resolve().parents[2]
 MODEL = "claude-haiku-4-5"
 PRICING = {"input_usd_per_million": 1.0, "output_usd_per_million": 5.0}
+# A stronger model when the records hold little text and the type turns on who
+# operates or owns the organization (4 Nov 2026 sample).
+MODELS = {"claude-haiku-4-5": PRICING,
+          "claude-sonnet-5": {"input_usd_per_million": 3.0, "output_usd_per_million": 15.0}}
 PLACEHOLDER = "should be verified from primary sources"
 
 UNTYPED_SQL = """
@@ -131,6 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-usd", type=float, default=2.00)
     parser.add_argument("--limit", type=int)
     parser.add_argument("--allow-shared-database", action="store_true")
+    parser.add_argument("--model", choices=sorted(MODELS), default=MODEL)
     args = parser.parse_args(argv)
     sys.path.insert(0, str(ROOT))
     _guard(args.allow_shared_database)
@@ -140,9 +145,11 @@ def main(argv: list[str] | None = None) -> int:
         from agents.common.cost import CostMeter
         from agents.common.llm import ClaudeToolClient
 
-        client = ClaudeToolClient(MODEL, cost_meter=CostMeter(max_usd=args.max_usd), **PRICING)
+        client = ClaudeToolClient(args.model, cost_meter=CostMeter(max_usd=args.max_usd),
+                                  **MODELS[args.model])
         with open_session() as session:
             plan = build_plan(session, client, max_usd=args.max_usd, limit=args.limit)
+            plan["model"] = args.model
             session.rollback()
         Path(args.plan).write_text(json.dumps(plan, indent=2, ensure_ascii=False), encoding="utf-8")
         print(json.dumps(plan["summary"]))
