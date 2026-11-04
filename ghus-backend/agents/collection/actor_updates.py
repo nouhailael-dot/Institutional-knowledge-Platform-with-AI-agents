@@ -590,7 +590,8 @@ def plan_update(session, *, actor_id: str, topic_code: str | None = None, scope:
         "schema": schema,
         "schema_size": len(schema),
         "cost": cost_estimate(session, limits, runs_dir=runs_dir),
-        "pages": "Up to 3 page requests in total, including unavailable pages. " + access["fallback"],
+        "pages": ("Up to 5 pages of its own website: home, About, the topic page, then news, "
+                  "funding or projects. " + access["fallback"]),
         "can_check": bool(to_read) and depth == "light",
         "hubs": hub_reassessment.assess(session, actor["actor_id"]),
         "access": access,
@@ -624,8 +625,8 @@ def _deep_plan(session, plan: dict, actor: dict, topic: dict, *, fields=()) -> N
         "with nothing recorded first. Run it again for this one.")}
         for f in schema if f not in chosen]
     plan["can_check"] = bool(chosen)
-    plan["pages"] = ("Up to 3 page requests in total, including unavailable pages, read for the "
-                     "selected Deep items. " + plan["access"]["fallback"])
+    plan["pages"] = ("Up to 5 pages of its own website, read for the selected Deep items. "
+                     + plan["access"]["fallback"])
 
 
 # ----------------------------------------------------------------- compare

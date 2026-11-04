@@ -363,6 +363,20 @@ def _evidence_pages(home, site: str, seen: set[str]) -> list[str]:
     return picked
 
 
+def first_address(website: str) -> str:
+    """The first web address in a website field.
+
+    Phase 1 stored some websites as several addresses with labels ("https://www.
+    arizona.edu College of Engineering: https://engineering.arizona.edu ..."),
+    which no reader can open: the first address is the organisation's own.
+    """
+    text = str(website or "").strip()
+    match = re.search(r"https?://[^\s,;|]+", text)
+    if match:
+        return match.group(0).rstrip(".)")
+    return text.split()[0] if text else text
+
+
 def address_variants(website: str) -> list[str]:
     """Other spellings of the same site address: with or without www, on https.
 
@@ -676,6 +690,7 @@ class LightPullReader:
              category_type: str = "", topic_terms: Sequence[str] = (),
              read_at: datetime | None = None, fields: Sequence[str] | None = None) -> LightRead:
         read_at = read_at or datetime.now(UTC)
+        website = first_address(website)
         result = LightRead()
         wanted = list(fields) if fields is not None else [
             *COMMON_READ_FIELDS, *CATEGORY_LIGHT_FIELDS.get(actor_category or "", ())]

@@ -431,3 +431,15 @@ def test_a_news_or_funding_page_is_read_beside_home_about_and_topic():
     assert urls[:3] == ["https://lab.example/", "https://lab.example/about",
                         "https://lab.example/research"]
     assert "https://lab.example/news" in urls and len(urls) <= 5
+
+
+
+def test_a_website_field_holding_several_addresses_is_read_at_its_first_one():
+    from agents.collection.light_pull_reader import first_address
+
+    assert first_address("https://www.arizona.edu College of Engineering: "
+                         "https://engineering.arizona.edu Department: https://has.arizona.edu") \
+        == "https://www.arizona.edu"
+    assert first_address("https://thewatercouncil.com/") == "https://thewatercouncil.com/"
+    assert first_address("thewatercouncil.com") == "thewatercouncil.com"
+    assert first_address("") == ""
