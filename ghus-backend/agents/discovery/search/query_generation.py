@@ -428,7 +428,10 @@ class QueryGenerator:
         database) or with no institution held in the area, the open search
         built from the request is used instead.
         """
-        from agents.discovery.search.discovery_request import request_person_queries
+        from agents.discovery.search.discovery_request import (
+            request_person_queries,
+            requested_kinds,
+        )
         from agents.discovery.search.people_targets import (
             academic_role,
             institution_domains,
@@ -442,7 +445,9 @@ class QueryGenerator:
             session, states=request.states, sector_codes=request.sector_codes,
             institution=request.institution,
             keywords=[*themes, *(names.get(c, c) for c in request.sector_codes)],
-            academic_only=academic_role(request.role),
+            # "Researchers at Colorado universities": universities only, never a
+            # national lab or an agency because the role word is not academic.
+            academic_only=academic_role(request.role) or "university" in requested_kinds(request),
             limit=int(self.config.get("person_target_domains", 8)),
         ) if session is not None else []
         if not targets:

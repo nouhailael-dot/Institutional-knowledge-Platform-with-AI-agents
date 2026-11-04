@@ -239,9 +239,7 @@ def request_actor_queries(
     # kind only; otherwise every kind is, as before.
     asked = requested_kinds(request)
     types = list(asked) if asked else [t for t in actor_types if str(t).strip()]
-    templates = (tuple(f"{{theme}} {asked[0]} {suffix} {{geo}}" for suffix in (
-        "programs", "industry partnership", "funding award", "pilot project"))
-        if asked else _USE_CASE_TEMPLATES)
+    suffixes = ("programs", "industry partnership", "funding award", "pilot project")
     if not themes or not types:
         raise DiscoveryRequestError("a request produced no searchable theme")
 
@@ -269,13 +267,18 @@ def request_actor_queries(
 
     use_case_queries: list[str] = []
     use_case_plan: list[dict[str, object]] = []
-    for index in range(len(themes) * len(templates) * len(geos)):
+    count = len(suffixes) if asked else len(_USE_CASE_TEMPLATES)
+    for index in range(len(themes) * count * len(geos)):
         if len(use_case_queries) >= use_case_budget:
             break
         theme = themes[index % len(themes)]
-        template = templates[(index + rotation_seed) % len(templates)]
         geo = geos[(index + rotation_seed) % len(geos)]
-        query = " ".join(template.format(theme=theme, geo=geo).split())
+        if asked:
+            # The asked kind, said once: "critical minerals research center funding award AZ".
+            query = _kind_query(asked[0], theme, f"{suffixes[(index + rotation_seed) % count]} {geo}")
+        else:
+            template = _USE_CASE_TEMPLATES[(index + rotation_seed) % count]
+            query = " ".join(template.format(theme=theme, geo=geo).split())
         if query.casefold() in seen:
             continue
         seen.add(query.casefold())

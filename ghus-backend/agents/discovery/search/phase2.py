@@ -6,6 +6,7 @@ import hashlib
 import logging
 import os
 import re
+from urllib.parse import urlsplit
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -527,6 +528,59 @@ def _resolve_lead_websites(leads, source, *, limit: int, stats) -> list:
         if website:
             stats["actor_lead_websites_resolved"] = int(
                 stats.get("actor_lead_websites_resolved", 0) or 0) + 1
+            lead = replace(lead, website=website)
+        resolved.append(lead)
+    return resolved
+
+
+_NOT_OFFICIAL_HOST = re.compile(
+    r"(^|\.)(wikipedia|linkedin|facebook|twitter|x|instagram|youtube|crunchbase|bloomberg|"
+    r"zoominfo|dnb|glassdoor|indeed|yelp|mapquest|bizapedia|opencorporates)\.", re.I)
+
+
+def _search_lead_websites(leads, search, source, *, limit: int, known, stats) -> list:
+    """A lead its article does not link to: its official site, found by one search.
+
+    4 Nov 2026: 'Arizona Lithium' opened a research centre in Tempe, but the
+    article had no link, so the lead was dropped as 'no official website is
+    known'. A result counts only when its page names the organisation in full
+    and is not a social, directory, encyclopaedia or news page. A few per run.
+    """
+    from agents.collection.site_access import distinct_terms, identity
+
+    if search is None or limit <= 0:
+        return leads
+    done, resolved = 0, []
+    for lead in leads:
+        if lead.website or done >= limit or _name_key(lead.name) in known:
+            resolved.append(lead)
+            continue
+        done += 1
+        stats["actor_lead_website_searches"] = int(
+            stats.get("actor_lead_website_searches", 0) or 0) + 1
+        try:
+            hits = search(f'"{lead.name}" official website', count=5) or []
+        except Exception:  # noqa: BLE001 - the lead stays without a website
+            hits = []
+        website = None
+        for hit in hits:
+            url = str(getattr(hit, "url", "") or "")
+            host = urlsplit(url).hostname or ""
+            if (not url or _NOT_OFFICIAL_HOST.search(host)
+                    or registrable_domain(url) == registrable_domain(lead.source_url or "")
+                    or re.search(r"/(news|article|story|press|blog)s?/", url, re.I)):
+                continue
+            try:
+                doc = source.fetch(url)
+            except Exception:  # noqa: BLE001 - try the next result
+                continue
+            if identity(doc.content or "", doc.content or "",
+                        distinct_terms(lead.name, url)) == "full":
+                website = homepage(url) or url
+                break
+        if website:
+            stats["actor_lead_websites_found_by_search"] = int(
+                stats.get("actor_lead_websites_found_by_search", 0) or 0) + 1
             lead = replace(lead, website=website)
         resolved.append(lead)
     return resolved
@@ -1115,6 +1169,11 @@ def fetch_score_stage_actors(
         # The article that names an organisation usually links to it: free.
         leads = _resolve_lead_websites(
             leads, source, limit=int(config.get("actor_lead_source_fetches", 10)), stats=stats,
+        )
+        leads = _search_lead_websites(
+            leads, actor_context.get("lead_search"), source,
+            limit=int(config.get("actor_lead_website_searches", 4)),
+            known=existing_names, stats=stats,
         )
         read = 0
         for lead in leads:

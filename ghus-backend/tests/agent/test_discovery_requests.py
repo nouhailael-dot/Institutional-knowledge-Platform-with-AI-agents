@@ -411,6 +411,7 @@ def test_a_request_naming_a_kind_of_organization_searches_for_that_kind_only():
     assert not any(word in q for q in queries
                    for word in ("investor", "startup", "company", "accelerator"))
     assert all("research center research center" not in q for q in queries)
+    assert all(q.count("research center") <= 1 for q in meta["use_case_queries"])
     assert meta["requested_kinds"] == ["research center", "research institute"]
     # A request naming no kind still searches every kind.
     open_request = DiscoveryRequest(
@@ -425,3 +426,44 @@ def test_a_request_naming_a_kind_of_organization_searches_for_that_kind_only():
                                 sector_codes=("ENERGY",), focus_terms=(), states=(),
                                 region_code=None, city=None, max_new_actors=10)
     assert requested_kinds(national) == ("national laboratory",)
+
+
+def test_a_lead_without_a_linked_website_is_found_by_one_search_and_its_own_page():
+    """4 Nov 2026: 'Arizona Lithium' was dropped because its article had no link."""
+    from types import SimpleNamespace
+
+    from agents.discovery.search.phase2 import _search_lead_websites
+    from agents.discovery.sources.base import FetchedDoc
+
+    pages = {
+        "https://en.wikipedia.org/wiki/Arizona_Lithium": "<p>Arizona Lithium is a company.</p>",
+        "https://www.arizonalithium.com/research-center": (
+            "<title>Arizona Lithium</title><p>Arizona Lithium Research Center in Tempe.</p>"),
+    }
+    source = SimpleNamespace(fetch=lambda url: FetchedDoc.from_content(
+        url=url, content=pages[url], content_type="text/html"))
+    calls = []
+
+    def search(query, count=10):
+        calls.append(query)
+        return [SimpleNamespace(url=u) for u in pages]
+
+    lead = SimpleNamespace(name="Arizona Lithium", website=None,
+                           source_url="https://www.gpec.org/news/arizona-lithium")
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class Lead:
+        name: str
+        website: str | None
+        source_url: str
+
+    stats = {}
+    found = _search_lead_websites([Lead(lead.name, None, lead.source_url),
+                                   Lead("Already Mapped Co", None, lead.source_url)],
+                                  search, source, limit=4, known={"already mapped co"}, stats=stats)
+    assert found[0].website == "https://www.arizonalithium.com/"
+    assert found[1].website is None and calls == ['"Arizona Lithium" official website']
+    assert stats["actor_lead_websites_found_by_search"] == 1
+    assert _search_lead_websites([Lead("X", None, "")], None, source, limit=4, known=set(),
+                                 stats={})[0].website is None
