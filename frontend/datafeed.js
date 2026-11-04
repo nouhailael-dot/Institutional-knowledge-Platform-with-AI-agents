@@ -6,7 +6,7 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261104g";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261104h";
 import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261104e";
 
 export const RECORD_TYPES = [

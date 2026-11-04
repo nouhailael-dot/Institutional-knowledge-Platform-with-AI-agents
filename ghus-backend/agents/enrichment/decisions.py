@@ -1096,6 +1096,50 @@ def propose_category_type(
     return {"action": "proposed", "review_item_id": review_id}
 
 
+def fill_category_type(
+    session,
+    *,
+    actor_id: str,
+    actor_category: str,
+    category_type: str,
+    live: bool = False,
+) -> dict[str, object]:
+    """Fill an EMPTY category type with one from the actor's own category list.
+
+    For the records migrated without one (4 Nov 2026: 730 of 743), classified
+    within their fixed category by ``classify_type_for_existing_category``. A
+    type already set - by GHUS or anyone - is never changed, a changed category
+    is left alone, and a catch-all ("Not Applicable") is never written here: a
+    doubtful record stays empty for a person.
+    """
+    from agents.common.actor_classification import (
+        CATCH_ALL_TYPE_CODES,
+        load_category_catalog,
+        needs_category_type,
+    )
+
+    if category_type in CATCH_ALL_TYPE_CODES:
+        raise ValueError("a catch-all type is never filled automatically")
+    if category_type not in load_category_catalog().type_codes(actor_category):
+        raise ValueError(f"{category_type!r} is not a type of {actor_category!r}")
+    actor = session.execute(text(
+        "SELECT actor_category, category_type FROM actor WHERE actor_id=CAST(:actor AS uuid)"),
+        {"actor": actor_id}).mappings().first()
+    if actor is None:
+        raise ValueError("actor not found")
+    if actor["actor_category"] != actor_category:
+        return {"action": "category_changed"}
+    if not needs_category_type(actor["category_type"]):
+        return {"action": "already_typed"}
+    if not live:
+        return {"action": "would_fill", "category_type": category_type}
+    execute_canonical_write(session, text(
+        "UPDATE actor SET category_type=:type, category_needs_review=false, updated_at=now() "
+        "WHERE actor_id=CAST(:actor AS uuid) AND actor_category=:category"
+    ), {"type": category_type, "actor": actor_id, "category": actor_category})
+    return {"action": "filled", "category_type": category_type}
+
+
 def record_category_type_decision(
     session,
     *,

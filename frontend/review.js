@@ -416,10 +416,20 @@ export function groupQueue(candidates, groups = []) {
   return ordered;
 }
 
+// The category note is no longer typed (4 Nov 2026); Not Applicable still carries
+// the one line the classification contract requires, written for the reviewer.
+export const NOT_APPLICABLE_NOTE = "No type in its category's list fits.";
+
 export function editableReviewPayload(candidate, draft) {
-  return Object.fromEntries((candidate?.editable_fields || [])
+  const payload = Object.fromEntries((candidate?.editable_fields || [])
     .filter(field => Object.prototype.hasOwnProperty.call(draft || {}, field))
     .map(field => [field, draft[field]]));
+  if (String(payload.category_type ?? "") === NOT_APPLICABLE
+      && !String(payload.category_note ?? draft?.category_note ?? "").trim()
+      && (candidate?.editable_fields || []).includes("category_note")) {
+    payload.category_note = NOT_APPLICABLE_NOTE;
+  }
+  return payload;
 }
 
 // Review items about one box's value: the decision is between two values.
@@ -997,10 +1007,6 @@ export function validateReviewDraft(candidate, draft) {
     if (type && !category) errors.actor_category = "Choose the Category first.";
     if (type && category && !isValidPair(category, type)) {
       errors.category_type = "This type belongs to a different Category.";
-    }
-    // Not Applicable is a decision, so it carries a reason.
-    if (type === NOT_APPLICABLE && !String(payload.category_note ?? "").trim()) {
-      errors.category_note = "Required when the type is Not Applicable.";
     }
   }
   return errors;
@@ -2698,10 +2704,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${isActor ? html`
             <details class="mpeople review-profile" open>
               <summary>Organization profile</summary>
-              ${cardField(html, selected, "category_note", draft.category_note, edit, !pending || busy,
-                draftErrors.category_note, "Category Note")}
-              ${String(draft.category_type ?? "") === NOT_APPLICABLE && html`
-                <p class="review-hint">${SENTENCES.notApplicableNeedsNote}</p>`}
               ${cardLine(html, "Other Names", otherNames.join(", "))}
               <label class="review-line"><b>${FIELDS.primarySector}</b>
                 <span class="review-value review-value-row">
