@@ -43,6 +43,49 @@ _QUERY_ACTOR_TYPES = (
 )
 
 
+# The kind of organization a request names in its title or sub-topics, and the
+# words a search uses for it (4 Nov 2026: "AI in healthcare research centers"
+# was searched as "investor ...", "startup ...", and returned an investor).
+_REQUESTED_KINDS = (
+    (r"\bnational lab(oratory|oratories|s)?\b", ("national laboratory",)),
+    (r"\bresearch (center|centre|institute|lab)s?\b|\blab(oratory|oratories|s)?\b|\binstitutes?\b",
+     ("research center", "research institute")),
+    (r"\buniversit(y|ies)\b|\bcolleges?\b|\bdepartments?\b|\bacademic\b", ("university",)),
+    (r"\bstart-?ups?\b", ("startup",)),
+    (r"\bcompan(y|ies)\b|\bfirms?\b|\bmanufacturers?\b|\bcorporations?\b|\bindustry\b",
+     ("company",)),
+    (r"\bhospitals?\b|\bhealth systems?\b|\bmedical cent(er|re)s?\b|\bclinics?\b",
+     ("hospital", "medical center")),
+    (r"\baccelerators?\b|\bincubators?\b", ("accelerator", "incubator")),
+    (r"\binvestors?\b|\bventure capital\b|\bvc firms?\b|\bfunds?\b", ("investor",)),
+    (r"\bgovernment\b|\bagenc(y|ies)\b|\bpublic authorit(y|ies)\b", ("government agency",)),
+    (r"\bnon-?profits?\b|\bfoundations?\b", ("nonprofit", "foundation")),
+    (r"\bassociations?\b|\bconsortia\b|\bconsortiums?\b|\bnetworks?\b", ("association",)),
+)
+
+
+def requested_kinds(request) -> tuple[str, ...]:
+    """The search words for the kinds of organization a request names; () for any."""
+    import re
+
+    text = " ".join([str(getattr(request, "title", "") or ""),
+                     *[str(t) for t in getattr(request, "focus_terms", ()) or ()]]).casefold()
+    kinds: list[str] = []
+    for pattern, words in _REQUESTED_KINDS:
+        if re.search(pattern, text):
+            kinds += [w for w in words if w not in kinds]
+            if pattern.startswith(r"\bnational lab"):
+                text = re.sub(pattern, " ", text)   # a national lab is not also a lab
+    return tuple(kinds)
+
+
+def _kind_query(actor_type: str, theme: str, geo: str) -> str:
+    """'research center healthcare AI Massachusetts', never the kind said twice."""
+    said = set(theme.casefold().split())
+    words = actor_type if not set(actor_type.casefold().split()) <= said else ""
+    return " ".join(f"{words} {theme} {geo}".split())
+
+
 class DiscoveryRequestError(ValueError):
     """A request cannot be turned into a scoped discovery run."""
 
@@ -192,7 +235,13 @@ def request_actor_queries(
         raise DiscoveryRequestError("max_queries must be positive")
     themes = request.themes(sectors)
     geos = request.geographies()
-    types = [t for t in actor_types if str(t).strip()]
+    # A request that names the kind of organization it wants is searched for that
+    # kind only; otherwise every kind is, as before.
+    asked = requested_kinds(request)
+    types = list(asked) if asked else [t for t in actor_types if str(t).strip()]
+    templates = (tuple(f"{{theme}} {asked[0]} {suffix} {{geo}}" for suffix in (
+        "programs", "industry partnership", "funding award", "pilot project"))
+        if asked else _USE_CASE_TEMPLATES)
     if not themes or not types:
         raise DiscoveryRequestError("a request produced no searchable theme")
 
@@ -210,7 +259,7 @@ def request_actor_queries(
     for theme, actor_type, geo in grid:
         if len(queries) >= grid_budget:
             break
-        query = " ".join(f"{actor_type} {theme} {geo}".split())
+        query = _kind_query(actor_type, theme, geo)
         if query.casefold() in seen:
             continue
         seen.add(query.casefold())
@@ -220,11 +269,11 @@ def request_actor_queries(
 
     use_case_queries: list[str] = []
     use_case_plan: list[dict[str, object]] = []
-    for index in range(len(themes) * len(_USE_CASE_TEMPLATES) * len(geos)):
+    for index in range(len(themes) * len(templates) * len(geos)):
         if len(use_case_queries) >= use_case_budget:
             break
         theme = themes[index % len(themes)]
-        template = _USE_CASE_TEMPLATES[(index + rotation_seed) % len(_USE_CASE_TEMPLATES)]
+        template = templates[(index + rotation_seed) % len(templates)]
         geo = geos[(index + rotation_seed) % len(geos)]
         query = " ".join(template.format(theme=theme, geo=geo).split())
         if query.casefold() in seen:
@@ -237,6 +286,7 @@ def request_actor_queries(
     return queries, {
         "discovery_request": request.describe(),
         "actor_types": types,
+        "requested_kinds": list(asked),
         "actor_type_enum": [],
         "query_grid_size": len(grid),
         "selected_hubs": [],

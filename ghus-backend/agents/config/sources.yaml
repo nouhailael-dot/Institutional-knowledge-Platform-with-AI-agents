@@ -140,7 +140,10 @@
       "actor_budget_reserve_usd": 0.05,
       # Official-site reads and leads (agents/discovery/search/actor_official.py).
       "actor_max_official_followups": 8,
-      "actor_followup_min_score": 0.60,
+      # The Review floor (4 Nov 2026): a candidate read from someone else's page
+      # scored 0.45 and was never read on its own site, so every box came from
+      # the third-party page. Still capped by actor_max_official_followups.
+      "actor_followup_min_score": 0.45,
       "actor_max_leads_per_run": 20,
       "actor_lead_model": "claude-haiku-4-5",
       "actor_lead_llm_pricing":

@@ -56,3 +56,10 @@ def test_two_records_with_the_same_page_are_flagged_and_several_sectors_none_pro
     assert "same website as: California ISO" in kept[0]["notes"]
     assert kept[0]["sector"] == "Artificial Intelligence; Energy Transition"
     assert "Main sector to choose" in kept[0]["notes"]
+
+
+def test_a_website_field_with_several_addresses_keeps_the_first_and_is_flagged():
+    rows = [_row(website="https://www.arizona.edu College of Engineering: https://engineering.arizona.edu")]
+    kept, _ = build_rows(rows, {}, {}, {})
+    assert kept[0]["website"] == "https://www.arizona.edu"
+    assert "several addresses" in kept[0]["notes"]

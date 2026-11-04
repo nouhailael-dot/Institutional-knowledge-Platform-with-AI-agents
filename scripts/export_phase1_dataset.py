@@ -165,8 +165,18 @@ def fact_text(value) -> str:
     return "" if text_.lower() in {"not found", "not_found", "none", "null", "n/a"} else text_
 
 
+def first_address(value) -> str:
+    """The first web address of a field that holds several ("https://a.edu College: https://b...")."""
+    match = re.search(r"https?://[^\s,;|]+", clean_text(value))
+    return match.group(0).rstrip(".)") if match else clean_text(value)
+
+
+def several_addresses(value) -> bool:
+    return len(re.findall(r"https?://", str(value or ""))) > 1
+
+
 def https(url: str) -> str:
-    url = clean_text(url)
+    url = first_address(url)
     if not url:
         return ""
     if not re.match(r"^https?://", url, re.I):
@@ -267,6 +277,8 @@ def build_rows(rows, sectors, hubs, facts):
         country = normalize_country(r["country"]) or ("United States" if r["state_code"] else "")
         if r["country"] and not normalize_country(r["country"]):
             notes.append(f"Country unclear in source: {clean_text(r['country'])}")
+        if several_addresses(r["website"]):
+            notes.append("Website field held several addresses; the first is used - fix in COMPASS")
         domain, page = site_key(r["website"])
         same = [n for n in names_by_page.get(page, []) if n != clean_text(r["name"])]
         if same:

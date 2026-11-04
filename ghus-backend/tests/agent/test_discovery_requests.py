@@ -390,3 +390,38 @@ def test_a_duplicate_event_page_no_longer_stops_the_batch_saving():
     row = session.rows[0]
     assert row["score_band"] is None and row["triage_verdict"] == "duplicate"
     assert row["duplicate_of"] == "00000000-0000-4000-8000-000000000002"
+
+
+def test_a_request_naming_a_kind_of_organization_searches_for_that_kind_only():
+    """4 Nov 2026: a research-centre request searched 'investor ...' and kept an investor."""
+    from agents.discovery.search.discovery_request import (
+        DiscoveryRequest,
+        request_actor_queries,
+        requested_kinds,
+    )
+
+    request = DiscoveryRequest(
+        subscription_id="r", title="AI in healthcare research centers in Massachusetts",
+        sector_codes=("HEALTH",), focus_terms=("healthcare AI research center",
+                                               "medical AI research lab"),
+        states=("MA",), region_code=None, city=None, max_new_actors=10)
+    assert requested_kinds(request) == ("research center", "research institute")
+    queries, meta = request_actor_queries(request, [{"code": "HEALTH", "name": "Healthcare"}],
+                                          max_queries=12)
+    assert not any(word in q for q in queries
+                   for word in ("investor", "startup", "company", "accelerator"))
+    assert all("research center research center" not in q for q in queries)
+    assert meta["requested_kinds"] == ["research center", "research institute"]
+    # A request naming no kind still searches every kind.
+    open_request = DiscoveryRequest(
+        subscription_id="o", title="Water technology in the Great Lakes", sector_codes=("WATER",),
+        focus_terms=("water technology",), states=("MI",), region_code=None, city=None,
+        max_new_actors=10)
+    assert requested_kinds(open_request) == ()
+    queries, _ = request_actor_queries(open_request, [{"code": "WATER", "name": "Water"}],
+                                       max_queries=16)
+    assert any(q.startswith("investor") for q in queries)
+    national = DiscoveryRequest(subscription_id="n", title="National labs working on batteries",
+                                sector_codes=("ENERGY",), focus_terms=(), states=(),
+                                region_code=None, city=None, max_new_actors=10)
+    assert requested_kinds(national) == ("national laboratory",)
