@@ -44,6 +44,18 @@ from sqlalchemy import text
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _saved(session, write) -> None:
+    """Save a read; a dropped database connection is retried once on a fresh one."""
+    from sqlalchemy.exc import OperationalError
+
+    try:
+        write()
+        session.commit()
+    except OperationalError:
+        session.rollback()
+        write()
+
+
 def _guard(allow_shared: bool) -> None:
     raw = os.environ.get("DATABASE_URL", "")
     parts = urlsplit(raw.replace("postgresql+psycopg", "postgresql"))
@@ -288,6 +300,11 @@ def main(argv: list[str] | None = None) -> int:
                        else list(args.search_run))
             topics = _topic_terms_for_runs(session, run_ids)
             targets = candidate_targets(session, run_ids, force=args.force, limit=args.limit)
+        # Release the connection before minutes of page reading: the shared
+        # database's pooler closes an idle one, and the save then failed with
+        # "server closed the connection" - a paid read lost (4 Nov 2026).
+        targets = [dict(row) for row in targets]
+        session.rollback()
         for index, row in enumerate(targets, 1):
             label = row.get("name") or (row.get("record_preview") or {}).get("name")
             print(f"[{index}/{len(targets)}] {label}", file=sys.stderr, flush=True)
@@ -328,17 +345,20 @@ def main(argv: list[str] | None = None) -> int:
             if not args.live or not read.pages:
                 continue
             if args.actors:
-                for key, fact in read.evidence.items():
-                    if key not in (row["open_keys"] or []) and not args.force:
-                        continue
-                    append_actor_fact(session, ActorFactWrite(
-                        actor_id=row["actor_id"], topic_id=row["topic_id"],
-                        fact_type="light_pull", field_key=key, value=fact["value"], layer=1,
-                        collection_state=fact["collection_state"],
-                        confidence=fact["confidence"], source_url=fact["source_url"],
-                        date_read=read_at, source_origin="newly_found",
-                        created_by="agent:light_pull_reader",
-                    ), live=True)
+                def write_facts(row=row, read=read, read_at=read_at):
+                    for key, fact in read.evidence.items():
+                        if key not in (row["open_keys"] or []) and not args.force:
+                            continue
+                        append_actor_fact(session, ActorFactWrite(
+                            actor_id=row["actor_id"], topic_id=row["topic_id"],
+                            fact_type="light_pull", field_key=key, value=fact["value"], layer=1,
+                            collection_state=fact["collection_state"],
+                            confidence=fact["confidence"], source_url=fact["source_url"],
+                            date_read=read_at, source_origin="newly_found",
+                            created_by="agent:light_pull_reader",
+                        ), live=True)
+
+                _saved(session, write_facts)
             else:
                 from agents.discovery.search.store import attach_light_pull
 
@@ -346,8 +366,9 @@ def main(argv: list[str] | None = None) -> int:
                 if args.missing_only:
                     evidence = keep_supplied(
                         (row["record_preview"] or {}).get("light_pull_evidence") or {}, evidence)
-                attach_light_pull(session, row["candidate_id"], evidence=evidence,
-                                  read=read.as_record(model=model, read_at=read_at))
+                _saved(session, lambda: attach_light_pull(
+                    session, row["candidate_id"], evidence=evidence,
+                    read=read.as_record(model=model, read_at=read_at)))
             session.commit()
     finally:
         session.close()

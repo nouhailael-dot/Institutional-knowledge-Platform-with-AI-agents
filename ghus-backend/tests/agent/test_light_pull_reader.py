@@ -443,3 +443,26 @@ def test_a_website_field_holding_several_addresses_is_read_at_its_first_one():
     assert first_address("https://thewatercouncil.com/") == "https://thewatercouncil.com/"
     assert first_address("thewatercouncil.com") == "thewatercouncil.com"
     assert first_address("") == ""
+
+
+def test_a_save_on_a_dropped_connection_is_retried_once_on_a_fresh_one():
+    from sqlalchemy.exc import OperationalError
+
+    from agents.collection.light_pull_candidates import _saved
+
+    events = []
+
+    class Session:
+        def commit(self):
+            events.append("commit")
+
+        def rollback(self):
+            events.append("rollback")
+
+    def write():
+        events.append("write")
+        if events.count("write") == 1:
+            raise OperationalError("UPDATE", {}, Exception("server closed the connection"))
+
+    _saved(Session(), write)
+    assert events == ["write", "rollback", "write"]
