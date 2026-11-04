@@ -1369,10 +1369,11 @@ function RecordEditor({kind,record,options,onClose}){
             :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea></div>
     </div>
     <div class="attach-row" style=${{marginTop:"12px"}}>
-      <button class="btn" type="button" disabled=${true} title="Saving is not connected yet">Save</button>
+      ${/* No Save until logins exist (4 Nov 2026): edits would be stored under no one's
+           name. GHUS Notes can then go through the backend's record_ghus_notes. */""}
       <button class="example" type="button" onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");
         setAttended(!!record.attended);setStatus(firstStatus());}}>Reset</button>
-      <span class="hint" style=${{margin:0}}>Saving isn't connected yet: edits here are not stored.</span>
+      <span class="hint" style=${{margin:0}}>Editing will be saved once logins are in place.</span>
     </div>
   </div>`;
 }
@@ -1528,6 +1529,38 @@ function eventOrder(e){
   if(!e.start_date) return [1,""];
   return d>=t?[0,e.start_date]:[2,String(99999999-+e.start_date.slice(0,10).replace(/-/g,""))];
 }
+// An event's city, read from its free-text location (4 Nov 2026): events have no
+// city field, and "New York, USA", "UN Headquarters, New York City, NY" and
+// "12 East 41st Street, Manhattan, NY, 10017" are all one city. Street addresses,
+// venues, ZIP codes, states and countries are skipped; null when no city is named
+// ("Various locations, USA", "Online", "Location TBD").
+const EVENT_COUNTRY=/^(usa|us|u\.?s\.?a?\.?|\(u\.?s\.?\)|united states( of america)?)$/i;
+const EVENT_NO_CITY=/^(various|online|virtual|hybrid|multiple|rotating|location tbd|tba|tbd|to be confirmed)/i;
+const EVENT_VENUE=/\b(headquarters|hq|studios?|space|club|hotels?|marriott|hilton|hyatt|pavilion|resort|cent(er|re)|hall|house|school|plaza|building|museum|theat(er|re)|venue|floor|street|avenue|broadway|road|suite|inc|llc)\b/i;
+const EVENT_NYC=/\bnew york city\b|\bnyc\b|\bmanhattan\b|\bbrooklyn\b/i;
+function eventCity(location){
+  // Drop a trailing note ("New York, NY — venue not confirmed"), not a venue's own dash.
+  const t=String(location||"").replace(/\s+[—–]\s+[^,]*\b(confirm\w*|tbd|tba)\b[^,]*$/i,"").trim();
+  if(!t) return null;
+  if(/washington,?\s*d\.?\s*c\b/i.test(t)) return "Washington, D.C.";
+  if(EVENT_NYC.test(t)) return "New York City";
+  const parts=t.split(",").map(x=>x.replace(/\s+\d{5}(-\d{4})?$/,"").trim())
+    .filter(x=>x&&!/^\d{5}(-\d{4})?$/.test(x));
+  if(!parts.length||EVENT_NO_CITY.test(parts[0])) return null;
+  const cityLike=x=>!stateName(x)&&!EVENT_COUNTRY.test(x)&&!/\d/.test(x)&&!EVENT_VENUE.test(x)&&!EVENT_NO_CITY.test(x);
+  const at=parts.findIndex(x=>!!stateName(x));
+  if(at>=0){
+    // "Steelcase, New York, NY": "New York" followed by the state is the city.
+    if(/^new york$/i.test(parts[at])&&parts[at+1]&&stateName(parts[at+1])==="New York") return "New York City";
+    // The city sits right before the state ("Houston, Texas, USA"). "New York, NY"
+    // with a venue or a street before it is New York City.
+    if(at>0&&cityLike(parts[at-1])) return parts[at-1];
+    return /^new york$/i.test(parts[at])?"New York City":null;
+  }
+  // No US state: "Geneva, Switzerland", the city before the country. A lone name
+  // ("Gaylord Palms Resort") may be a venue, so it is not taken as a city.
+  return parts.length>1&&cityLike(parts[parts.length-2])?parts[parts.length-2]:null;
+}
 function Events({focus}){
   const data=useOnce(()=>api("/api/browse/events"));
   const [sel,setSel]=useState(null);
@@ -1561,8 +1594,8 @@ function Events({focus}){
       {key:"from",label:"From",kind:"date",test:(e,v)=>!!e.start_date&&(e.end_date||e.start_date).slice(0,10)>=v},
       {key:"to",label:"To",kind:"date",test:(e,v)=>!!e.start_date&&e.start_date.slice(0,10)<=v},
       {key:"type",label:"Type",options:data.event_types||[],test:(e,v)=>e.event_type===v},
-      {key:"location",label:"City",kind:"text",placeholder:"Houston, New York…",
-        test:(e,v)=>(e.location||"").toLowerCase().includes(v.toLowerCase())},
+      {key:"city",label:"City",options:distinct(events.map(e=>eventCity(e.location))),
+        test:(e,v)=>eventCity(e.location)===v},
       {key:"state",label:"State",options:distinct(events.map(eventState)),test:(e,v)=>eventState(e)===v},
       {key:"region",label:"Region",options:distinct(events.map(eventRegion)),test:(e,v)=>eventRegion(e)===v},
     ]}
@@ -1857,18 +1890,31 @@ function CardStrip({items}){
     <div class="sk">${k}</div><div class="sv">${v}</div></div>`)}</div>`;
 }
 const TYPE_LIKE=/(^|\s)type$|^public\s*\/?\s*(or\s*)?private$/i;
+// The grey strip holds only the basic facts of the 4 Nov design: location, region,
+// category type, institution type and "Unit of". Any other short fact the AI found
+// (Public/Private, another "... type", Collaborates with, Funded by...) goes to
+// Additional information.
+const STRIP_FACT=/^institution type$/i;
+const relLabel=r=>capFirst(String(r.relationship||"").replace(/_/g," "));
+const relValue=r=>html`${r.organization_name} ${r.source_url?extLink(r.source_url,"source"):""}`;
 function OrgCardBody({e,deadWeb}){
   const {rels,listed,extra,publicPrivate}=orgFacts(e);
   const ranked=e.profile_version===2&&isRankedInstitution(e)?rankingRows(e):[];
   const short=listed.filter(d=>TYPE_LIKE.test(d.label)), long=listed.filter(d=>!TYPE_LIKE.test(d.label));
+  const unitOf=rels.filter(r=>/^unit of$/i.test(relLabel(r)));
+  const more=[
+    ...(publicPrivate?[["Public/Private",publicPrivate]]:[]),
+    ...short.filter(d=>!STRIP_FACT.test(d.label)).map(d=>[d.label,d.value]),
+    ...rels.filter(r=>!unitOf.includes(r)).map(r=>[relLabel(r),relValue(r)]),
+    ...extra.map(d=>[d.label,d.value]),
+  ];
   return html`
     <${CardStrip} items=${[
       ["Location",[e.location_city,e.state].filter(Boolean).join(" · ")||"Not found"],
       ["Region",[actorRegion(e),e.country].filter(Boolean).join(" · ")||"Not found"],
       ["Category type",e.category_type&&e.category_type!=="Not classified"?e.category_type:null],
-      ["Public/Private",publicPrivate],
-      ...short.map(d=>[d.label,d.value]),
-      ...rels.map(r=>[capFirst(String(r.relationship||"").replace(/_/g," ")),html`${r.organization_name} ${r.source_url?extLink(r.source_url,"source"):""}`]),
+      ...short.filter(d=>STRIP_FACT.test(d.label)).map(d=>[d.label,d.value]),
+      ...unitOf.map(r=>[relLabel(r),relValue(r)]),
     ]}/>
     ${e.description&&html`<div class="mdesc">${e.description}</div>`}
     <${Facts} items=${[
@@ -1881,10 +1927,10 @@ function OrgCardBody({e,deadWeb}){
       ["Africa / Morocco connections",e.international_connections],
       ["Official website",e.website?extLink(e.website,null,deadWeb):null],
     ]}/>
-    ${extra.length>0&&html`<div class="madd">
+    ${more.length>0&&html`<div class="madd">
       <div class="mhead">Additional information</div>
       <div class="hint" style=${{margin:"0 0 4px"}}>Found while researching this organization, beyond the facts collected for its category.</div>
-      <${Facts} items=${extra.map(d=>[d.label,d.value])}/></div>`}`;
+      <${Facts} items=${more}/></div>`}`;
 }
 function EventCardBody({e}){
   const when=e.next_date?eventDates(e.next_date,e.end_date)+(e.date_status?` (${capFirst(e.date_status)})`:""):"Not found";
@@ -2573,7 +2619,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       : cost?.can_reopen ? "This map was stopped. Use “Reopen this map” above to keep chatting."
       : "This map was stopped.")+fresh;
     if(runStatus==="ready") return "A search plan is ready. Use “Start saved plan” above to run it."+fresh;
-    if(runStatus==="budget_stopped") return "This map reached its budget. Approve $1 more above, then continue."+fresh;
+    if(runStatus==="budget_stopped") return "Approve $1 more above, then continue."+fresh;
     if(runStatus==="interrupted") return "This map was interrupted. Use “Continue unfinished research” above."+fresh;
     return null;
   }
@@ -2720,7 +2766,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
     ${cost&&(!cost.usage_complete||needsMore||cost.can_resume||runStatus==="ready"||cost.can_reopen)&&html`<div class="selnote" aria-live="polite">
       ${!cost.usage_complete&&html`<div>Some costs are still being confirmed, so new searches are paused.</div>`}
-      ${needsMore&&html`<div>${runStatus==="budget_stopped"?"This map has reached its budget.":"This map is close to its budget."}
+      ${needsMore&&html`<div>${runStatus==="budget_stopped"?"":"This map is close to its budget."}
         <button class="example" type="button" disabled=${busy||verifying} onClick=${extendBudget}>Approve $1 more</button></div>`}
       ${(cost.can_resume||runStatus==="ready")&&html`<div>
         <button class="example" type="button" disabled=${busy||verifying||!researchAvailable} onClick=${continueResearch}>
