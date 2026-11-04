@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261104c";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261102d";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261104e";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
@@ -1753,7 +1753,8 @@ export function normalizeMapDraft(payload = {}, original = {}) {
  * record's own, else Build the Map's, else what the agent read from its page.
  */
 const CARD_FIELDS = {
-  event: [["event_type", "Type"], ["next_date", "Date"], ["date_status", "Status", ["event_status"]],
+  event: [["event_type", "Type"], ["next_date", "Start Date"], ["end_date", "End Date"],
+    ["date_status", "Status", ["event_status"]],
     ["event_format", "Format", ["format"]], ["location", "Location"], ["organizer", "Organizer", ["organizer"]],
     ["recurring_pattern", "Frequency"], ["previous_edition", "Previous Edition"],
     ["expected_attendance", "Scale"], ["audience", "Audience"], ["sector", "Sector"],
@@ -1780,7 +1781,7 @@ export function personLink(candidate, draft) {
   return PERSON_LINK_FIELDS.map(([field, , facts]) => profileValue(candidate, draft, field, facts))
     .find(value => /^https?:\/\//.test(String(value || ""))) || null;
 }
-const CARD_DATE_FIELDS = new Set(["next_date", "previous_edition"]);
+const CARD_DATE_FIELDS = new Set(["next_date", "end_date", "previous_edition"]);
 const CARD_CAPITALIZED = new Set(["event_type", "date_status", "event_format", "recurring_pattern", "sector"]);
 
 /**

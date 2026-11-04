@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, usDate} from "./dates.js?v=20261102d";
+import {createDateInput, eventSpan, usDate} from "./dates.js?v=20261104e";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -175,7 +175,8 @@ const CATEGORY_LABELS = {
 /** An event's or person's facts on its request card: only what was found. */
 export function entityResultFacts(row) {
   return [
-    ["Date", row.start_date ? formatDay(row.start_date) : null],
+    // An event runs from its start to its closing day.
+    [row.end_date ? "Dates" : "Date", row.start_date ? eventSpan(row.start_date, row.end_date) : null],
     ["Type", row.event_type],
     ["Role", row.role],
     ["Organization", row.affiliation],

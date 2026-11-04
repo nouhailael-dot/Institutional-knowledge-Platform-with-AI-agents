@@ -217,6 +217,7 @@ def load_request_results(session, search_run_ids, *, limit: int = 50,
         "record_preview->>'match_reason' AS why_matched, "
         # Events and people: when, what kind, who and where they work.
         "record_preview->>'start_date' AS start_date, "
+        "record_preview->>'end_date' AS end_date, "
         "record_preview->>'event_type' AS event_type, "
         "record_preview->>'role' AS role, record_preview->>'affiliation' AS affiliation, "
         "record_preview->'quality'->>'completeness' AS completeness, "

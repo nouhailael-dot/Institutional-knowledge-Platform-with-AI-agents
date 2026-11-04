@@ -700,3 +700,16 @@ test('agent text reads with the platform spelling of organization', async () => 
   assert.equal(orgWords('Organisations named; actor already in database'),
     'Organizations named; organization already in database');
 });
+
+test('an event shows its whole span, start to closing day', async () => {
+  const {eventSpan} = await import('../frontend/dates.js');
+  const {entityResultFacts} = await import('../frontend/discovery.js');
+  assert.equal(eventSpan('2027-03-01', '2027-03-04'), '03/01/2027 – 03/04/2027 (4 days)');
+  assert.equal(eventSpan('2027-03-01', '2027-03-01'), '03/01/2027');
+  assert.equal(eventSpan('2027-03-01', null), '03/01/2027');
+  assert.equal(eventSpan('2027-03-04', '2027-03-01'), '03/04/2027');
+  assert.equal(eventSpan('', '2027-03-01'), '');
+  assert.deepEqual(entityResultFacts({start_date: '2027-01-11', end_date: '2027-01-12'})[0],
+    ['Dates', '01/11/2027 – 01/12/2027 (2 days)']);
+  assert.deepEqual(entityResultFacts({start_date: '2027-01-11'})[0], ['Date', '01/11/2027']);
+});
