@@ -982,6 +982,13 @@ export function validateReviewDraft(candidate, draft) {
     const value = String(payload[field] ?? "").trim();
     if (value && !isoFromUs(value)) errors[field] = "Use MM/DD/YYYY.";
   });
+  // An event closes on or after the day it starts.
+  const start = isoFromUs(String(payload.next_date ?? "").trim()) || String(payload.next_date ?? "");
+  const end = isoFromUs(String(payload.end_date ?? "").trim()) || String(payload.end_date ?? "");
+  if (!errors.end_date && /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end)
+      && end < start) {
+    errors.end_date = "The end date is before the start date.";
+  }
   if (candidate?.entity_type === "actor") {
     const category = String(payload.actor_category ?? "").trim();
     const type = String(payload.category_type ?? "").trim();
@@ -1697,7 +1704,7 @@ export function whyMatchedFact(candidate) {
 const LONG_FIELDS = /description|activities|approach|summary|constraints|focus|research|category_note|thematic/;
 
 // Fields holding a calendar day: shown and typed as MM/DD/YYYY, kept as ISO.
-const DATE_FIELDS = new Set(["next_date"]);
+const DATE_FIELDS = new Set(["next_date", "end_date"]);
 
 function textField(html, candidate, field, value, onChange, disabled, error) {
   if (DATE_FIELDS.has(field)) {

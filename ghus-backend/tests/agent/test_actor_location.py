@@ -128,3 +128,39 @@ def test_run_now_on_the_shared_team_database_reads_own_pages_when_allowed(monkey
     args = runner.build_arg_parser().parse_args(["--live", "--allow-shared-database"])
     assert args.allow_shared_database is True
     assert runner.build_arg_parser().parse_args(["--live"]).allow_shared_database is False
+
+
+def test_a_dropped_database_connection_before_any_spend_is_retried_not_failed(monkeypatch):
+    from types import SimpleNamespace
+
+    import pytest
+    from sqlalchemy.exc import OperationalError
+
+    from agents.collection import subscription_runner as runner
+
+    dropped = OperationalError("SELECT 1", {}, Exception(
+        "consuming input failed: server closed the connection unexpectedly"))
+    calls, waits = [], []
+    session = SimpleNamespace(rollback=lambda: None)
+    request = SimpleNamespace(entity="actor")
+
+    def flaky(_request):
+        calls.append(1)
+        if len(calls) < 3:
+            raise dropped
+        return {"status": "succeeded"}
+
+    monkeypatch.setattr(runner.store, "search_run_since", lambda *a: (None, 0.0))
+    assert runner._discover_with_retry(flaky, request, session, None, sleep=waits.append) == {
+        "status": "succeeded"}
+    assert len(calls) == 3 and waits == [20, 60]
+    # Money already spent: never repeated.
+    calls.clear()
+    monkeypatch.setattr(runner.store, "search_run_since", lambda *a: ("run", 0.12))
+    with pytest.raises(OperationalError):
+        runner._discover_with_retry(flaky, request, session, None, sleep=waits.append)
+    assert len(calls) == 1
+    # Any other error is not retried.
+    with pytest.raises(ValueError):
+        runner._discover_with_retry(lambda r: (_ for _ in ()).throw(ValueError("bad")),
+                                    request, session, None, sleep=waits.append)

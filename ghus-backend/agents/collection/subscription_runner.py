@@ -117,6 +117,48 @@ def _default_discover(session, root: Path, runs_dir: Path) -> Callable:
     return discover
 
 
+# A dropped or timed-out database connection, not a fault in the run itself.
+_CONNECTION_LOST = ("server closed the connection", "connection timeout", "could not connect",
+                    "connection refused", "ssl connection has been closed", "terminating connection",
+                    "consuming input failed", "connection is closed")
+RETRY_WAITS_S = (20, 60)
+
+
+def connection_lost(exc: BaseException) -> bool:
+    text_ = f"{type(exc).__name__}: {exc}".casefold()
+    return "operationalerror" in text_ and any(marker in text_ for marker in _CONNECTION_LOST)
+
+
+def _discover_with_retry(discover, request, session, started, *, sleep=None):
+    """Run discovery; when the database drops the connection before anything was
+    spent, wait and try again (twice) instead of failing the run.
+
+    4 Nov 2026: a run failed in its first second with "server closed the
+    connection unexpectedly" and the page said it failed. A run that already
+    spent money is never repeated: its failure is recorded as before.
+    """
+    import time
+
+    sleep = sleep or time.sleep
+    for attempt, wait in enumerate((*RETRY_WAITS_S, None)):
+        try:
+            return discover(request)
+        except Exception as exc:  # noqa: BLE001 - re-raised unless it is a lost connection
+            if wait is None or not connection_lost(exc):
+                raise
+            try:
+                session.rollback()
+                spent = store.search_run_since(session, started, request.entity)[1]
+            except Exception:  # noqa: BLE001 - the connection is still down: wait anyway
+                spent = 0.0
+            if spent:
+                raise
+            logger.warning("database connection lost (attempt %d); retrying in %ss",
+                           attempt + 1, wait)
+            sleep(wait)
+    raise RuntimeError("unreachable")
+
+
 def outcome_counts(result: dict[str, object]) -> dict[str, int]:
     """What a run found, in the four numbers the run record keeps."""
 
@@ -263,7 +305,7 @@ def _run_one(session, subscription, request, outcome, *, discover, config, topic
     outcome.collection_run_id = run_id
     started = datetime.now(UTC)
     try:
-        result = discover(request)
+        result = _discover_with_retry(discover, request, session, started)
     except Exception as exc:  # one request must not stop the others
         logger.exception("discovery request %s failed", subscription.subscription_id)
         session.rollback()

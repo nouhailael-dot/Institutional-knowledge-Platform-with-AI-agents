@@ -24,6 +24,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 from typing import Any, Callable
@@ -81,6 +83,17 @@ class DiscoveryBridgeError(RuntimeError):
         self.rejected = rejected
 
 
+# How long a started request reads "Running" before its run record appears.
+STARTING_FOR_S = 20 * 60
+
+
+def _epoch(value: Any) -> float:
+    try:
+        return datetime.fromisoformat(str(value).replace(" ", "T")).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
 # agents/collection/subscription_runner._ADVISORY_LOCK: one runner at a time.
 RUNNER_LOCK = 550_001
 RUNNABLE_STATUSES = ("active", "paused")
@@ -136,6 +149,9 @@ class DiscoveryBridge:
         self._run_command = run_command
         self._start_process = start_process
         self._run_state = run_state or self._read_run_state
+        # Requests started by Run now, until their run record appears (4 Nov 2026:
+        # the page said "Scheduled" for the minute or two the runner takes to start).
+        self._started: dict[str, float] = {}
 
     @property
     def local_database(self) -> bool:
@@ -156,7 +172,23 @@ class DiscoveryBridge:
         return self._call(["options"], retries=1)
 
     def list_requests(self) -> dict[str, Any]:
-        return self._call(["list"], retries=1)
+        return self.mark_starting(self._call(["list"], retries=1))
+
+    def mark_starting(self, payload: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
+        """Mark a request started by Run now as starting until its run record appears."""
+        now = time.time() if now is None else now
+        for request in (payload or {}).get("requests") or []:
+            sid = str(request.get("subscription_id") or "")
+            began = self._started.get(sid)
+            if began is None:
+                continue
+            recorded = any(_epoch(run.get("started_at")) >= began - 120
+                           for run in request.get("runs") or [])
+            if recorded or now - began > STARTING_FOR_S:
+                self._started.pop(sid, None)
+                continue
+            request["starting"] = True
+        return payload
 
     def preview(self, draft: dict[str, Any]) -> dict[str, Any]:
         return self._call(["preview", "--json", json.dumps(draft)])
@@ -216,6 +248,7 @@ class DiscoveryBridge:
             raise DiscoveryBridgeError("The GHUS discovery run could not be started.") from exc
         finally:
             log.close()
+        self._started[subscription_id] = time.time()
         return {"started": True, "subscription_id": subscription_id}
 
     def _read_run_state(self, subscription_id: str) -> dict[str, Any] | None:

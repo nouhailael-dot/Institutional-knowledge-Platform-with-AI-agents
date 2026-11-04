@@ -399,3 +399,24 @@ def test_run_now_lets_the_light_pull_read_on_the_shared_database_only(tmp_path, 
                                  start_process=lambda command, **kwargs: started.append(command))
         bridge.run_now("00000000-0000-4000-8000-000000000001")
         assert ("--allow-shared-database" in started[0]) is expected
+
+
+
+def test_a_request_started_by_run_now_reads_running_until_its_run_appears(tmp_path, monkeypatch):
+    monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
+    sid = "00000000-0000-4000-8000-000000000001"
+    bridge = DiscoveryBridge(project_root=_backend(tmp_path), python_executable="py",
+                             database_url="postgresql://local/x_test",
+                             start_process=lambda command, **kwargs: None,
+                             run_state=lambda _id: {"exists": True, "status": "active",
+                                                    "runner_busy": False})
+    bridge.run_now(sid)
+    began = bridge._started[sid]
+    waiting = {"requests": [{"subscription_id": sid, "runs": []}, {"subscription_id": "other"}]}
+    marked = bridge.mark_starting(waiting, now=began + 60)
+    assert marked["requests"][0]["starting"] is True and "starting" not in marked["requests"][1]
+    from datetime import datetime, timezone
+    run_at = datetime.fromtimestamp(began + 90, tz=timezone.utc).isoformat()
+    recorded = {"requests": [{"subscription_id": sid, "runs": [{"started_at": run_at}]}]}
+    assert "starting" not in bridge.mark_starting(recorded, now=began + 100)["requests"][0]
+    assert sid not in bridge._started

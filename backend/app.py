@@ -1668,7 +1668,11 @@ class UpdateRequestDraft(BaseModel):
 
 @app.get("/api/discovery/update-requests")
 def discovery_update_requests():
-    return _discovery_call(discovery_bridge().list_update_requests)
+    bridge = discovery_bridge()
+    payload = _discovery_call(bridge.list_update_requests)
+    # Run now's start, shown as running until the run record appears.
+    mark = getattr(bridge, "mark_starting", None)
+    return mark(payload) if mark else payload
 
 
 @app.post("/api/discovery/update-requests/plan")

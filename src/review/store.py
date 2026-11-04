@@ -79,7 +79,7 @@ EDITABLE_FIELDS = {
         "public_profile_url", "research_area",
     ),
     "event": (
-        "name", "event_type", "description", "location", "website", "next_date",
+        "name", "event_type", "description", "location", "website", "next_date", "end_date",
         "recurring_pattern", "sponsoring_orgs", "thematic_focus",
         "expected_attendance", "access_type",
     ),

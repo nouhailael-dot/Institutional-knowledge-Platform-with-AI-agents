@@ -229,12 +229,15 @@ export function writtenLine(counts = {}) {
 }
 
 export function isRunning(request) {
-  return (request.runs || []).some((run) => run.status === "running" && !run.stalled);
+  // Started by Run now and still starting up (no run record yet): running too.
+  return Boolean(request.starting)
+    || (request.runs || []).some((run) => run.status === "running" && !run.stalled);
 }
 
 /** The run in progress, if any (a run that stopped responding is not "running"). */
 export function runningRun(request) {
-  return (request.runs || []).find((run) => run.status === "running" && !run.stalled) || null;
+  return (request.runs || []).find((run) => run.status === "running" && !run.stalled)
+    || (request.starting ? {status: "running", starting: true} : null);
 }
 
 /** "Running", "Stopped responding", "Period over", or the request's own status. */
@@ -266,6 +269,7 @@ export function durationLabel(seconds) {
 /** "Running for 4 min · $0.21 spent so far" - what a running run has taken. */
 export function runningLine(run) {
   if (!run) return "";
+  if (run.starting) return "Starting up: searching the web in a moment";
   const spent = run.spent_usd === null || run.spent_usd === undefined ? null : Number(run.spent_usd);
   return `Running for ${durationLabel(run.elapsed_seconds)} · `
     + (spent ? `${formatUsd(spent)} spent so far` : "no spend recorded yet");
