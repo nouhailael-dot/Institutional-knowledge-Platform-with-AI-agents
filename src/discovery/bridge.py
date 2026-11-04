@@ -80,6 +80,31 @@ class DiscoveryBridgeError(RuntimeError):
         self.rejected = rejected
 
 
+# agents/collection/subscription_runner._ADVISORY_LOCK: one runner at a time.
+RUNNER_LOCK = 550_001
+RUNNABLE_STATUSES = ("active", "paused")
+
+
+def run_refusal(state: dict[str, Any] | None) -> str | None:
+    """Why "Run now" cannot start, in words for the page; None when it can.
+
+    Without this the button answered "started" and the runner then refused in
+    the background: an ended request, or another run already going.
+    """
+    if not state:
+        return None
+    if not state.get("exists"):
+        return "That request no longer exists."
+    if state.get("status") not in RUNNABLE_STATUSES:
+        ended = f" on {state['end_date']}" if state.get("end_date") else ""
+        return (f"This request has ended{ended}, so it cannot run again. Create a new "
+                "request with the same settings to run it now.")
+    if state.get("runner_busy"):
+        return ("Another request is running right now. Run this one when it has "
+                "finished: a run takes a few minutes.")
+    return None
+
+
 class DiscoveryBridge:
     def __init__(
         self,
@@ -89,6 +114,7 @@ class DiscoveryBridge:
         database_url: str | None = None,
         run_command: Callable[..., Any] = subprocess.run,
         start_process: Callable[..., Any] = subprocess.Popen,
+        run_state: Callable[[str], dict[str, Any] | None] | None = None,
     ):
         self.project_root = Path(
             project_root
@@ -108,6 +134,7 @@ class DiscoveryBridge:
         self.database_url = database_url or os.environ.get("DISCOVERY_REQUESTS_DATABASE_URL")
         self._run_command = run_command
         self._start_process = start_process
+        self._run_state = run_state or self._read_run_state
 
     @property
     def configured(self) -> bool:
@@ -155,6 +182,9 @@ class DiscoveryBridge:
         if not _UUID.match(subscription_id or ""):
             raise DiscoveryBridgeError("unknown request", rejected=True)
         _require_contact()
+        refusal = run_refusal(self._run_state(subscription_id))
+        if refusal:
+            raise DiscoveryBridgeError(refusal, rejected=True)
         env = os.environ.copy()
         env["DATABASE_URL"] = str(self.database_url)
         runs = self.project_root / "agents" / "runs"
@@ -177,6 +207,27 @@ class DiscoveryBridge:
         finally:
             log.close()
         return {"started": True, "subscription_id": subscription_id}
+
+    def _read_run_state(self, subscription_id: str) -> dict[str, Any] | None:
+        """The request's status and whether a run is already going (read-only).
+
+        None when it cannot be read: the runner then decides, as before.
+        """
+        try:
+            from src.db import connect_resilient, psycopg_database_url
+
+            with connect_resilient(psycopg_database_url(str(self.database_url)),
+                                   connect_timeout=10) as conn:
+                row = conn.execute(
+                    "SELECT status, end_date::text FROM actor_update_subscription "
+                    "WHERE actor_update_subscription_id = %s::uuid", (subscription_id,)).fetchone()
+                busy = conn.execute(
+                    "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' "
+                    "AND granted AND objid = %s)", (RUNNER_LOCK,)).fetchone()[0]
+        except Exception:  # noqa: BLE001 - an unreadable state never blocks a run
+            return None
+        return {"exists": row is not None, "status": row[0] if row else None,
+                "end_date": row[1] if row else None, "runner_busy": bool(busy)}
 
     # Actor updates: plan (free), check (one capped read, writes nothing),
     # apply (writes what the check found through the backend's fact writer).

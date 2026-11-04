@@ -134,6 +134,7 @@ def test_run_now_starts_a_live_run_of_that_request_only(tmp_path, monkeypatch):
         project_root=_backend(tmp_path), python_executable="py",
         database_url="postgresql://local/x_test",
         start_process=lambda command, **kwargs: started.append((command, kwargs)),
+        run_state=lambda _id: {"exists": True, "status": "active", "runner_busy": False},
     )
     result = bridge.run_now("00000000-0000-4000-8000-000000000001")
     command, kwargs = started[0]
@@ -356,3 +357,31 @@ def test_the_routes_pass_on_what_the_forms_send():
                                 requested_by="me@um6p.ma").model_dump(exclude_none=True)
     assert len(update["focus"]) == 1000 and update["requested_by"] == "me@um6p.ma"
 
+
+
+@pytest.mark.parametrize("state, words", [
+    ({"exists": True, "status": "expired", "end_date": "2026-11-02", "runner_busy": False},
+     "This request has ended on 2026-11-02"),
+    ({"exists": True, "status": "cancelled", "end_date": None, "runner_busy": False}, "has ended"),
+    ({"exists": False}, "no longer exists"),
+    ({"exists": True, "status": "active", "runner_busy": True}, "Another request is running"),
+])
+def test_run_now_says_why_it_cannot_start_and_starts_nothing(tmp_path, monkeypatch, state, words):
+    monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
+    started = []
+    bridge = DiscoveryBridge(
+        project_root=_backend(tmp_path), python_executable="py",
+        database_url="postgresql://local/x_test",
+        start_process=lambda command, **kwargs: started.append(command),
+        run_state=lambda _id: state,
+    )
+    with pytest.raises(DiscoveryBridgeError, match=words) as refused:
+        bridge.run_now("00000000-0000-4000-8000-000000000001")
+    assert refused.value.rejected and started == []
+
+
+def test_run_now_goes_ahead_when_the_state_cannot_be_read(tmp_path, monkeypatch):
+    from src.discovery.bridge import run_refusal
+
+    assert run_refusal(None) is None
+    assert run_refusal({"exists": True, "status": "paused", "runner_busy": False}) is None
