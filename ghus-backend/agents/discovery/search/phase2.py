@@ -1377,6 +1377,54 @@ def _auto_accept_reasons(candidate, settings, actor_context) -> str:
     )
 
 
+def _event_words(name: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", str(name or "").casefold())
+            if len(w) > 2 and not w.isdigit() and w not in {"the", "and", "for", "conference",
+                                                           "summit", "annual"}}
+
+
+def collapse_same_events(candidates):
+    """One event found on two pages (its own site and a listing) is kept once.
+
+    4 Nov 2026: World Agri-Tech Innovation Summit reached Review twice - from
+    worldagritechusa.com and from a potato-industry listing. Two kept events
+    with the same start date and mostly the same name are one: the copy read on
+    its own site (or the higher score) stays, the other becomes its duplicate.
+    """
+    kept = [c for c in candidates if c.score_band in ("auto_high", "review")]
+
+    def strength(c):
+        record = c.record_preview or {}
+        own = registrable_domain(str(record.get("website") or "")) == registrable_domain(c.url)
+        return (own, c.score_band == "auto_high", float(c.fit_score or 0.0))
+
+    winner_of: dict[str, object] = {}
+    for c in sorted(kept, key=strength, reverse=True):
+        record = c.record_preview or {}
+        start, words = str(record.get("start_date") or ""), _event_words(
+            record.get("title") or record.get("name") or c.title)
+        for w in winner_of.values():
+            other = w.record_preview or {}
+            other_words = _event_words(other.get("title") or other.get("name") or w.title)
+            if (start and start == str(other.get("start_date") or "") and words and other_words
+                    and len(words & other_words) >= 0.7 * min(len(words), len(other_words))):
+                winner_of[c.candidate_id] = w
+                break
+        else:
+            winner_of[c.candidate_id] = c
+    result, merged = [], 0
+    for c in candidates:
+        w = winner_of.get(c.candidate_id)
+        if w is not None and w is not c:
+            merged += 1
+            result.append(replace(c, score_band=None, triage_verdict="duplicate", duplicate_of=w.candidate_id,
+                                  triage_reason=f"The same event as {w.url} (same dates and name); "
+                                                "kept once, from its own site."))
+        else:
+            result.append(c)
+    return result, merged
+
+
 def fetch_score_stage_events(
     *,
     run_id: str,
@@ -1838,6 +1886,8 @@ def fetch_score_stage_events(
         )
 
     stats["cost_stage_followups_usd"] = round(followup_budget.spent_usd, 6)
+    final, merged = collapse_same_events(final)
+    stats["events_collapsed_by_name_and_date"] = merged
     if request is not None:
         # At most the request's number of new events per run, strongest first.
         final, held_back = apply_new_actor_cap(final, request.max_new_actors, noun="events")

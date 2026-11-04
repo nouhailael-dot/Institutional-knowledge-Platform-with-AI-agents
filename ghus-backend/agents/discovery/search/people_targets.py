@@ -73,7 +73,8 @@ def registrable(url_or_host: str) -> str:
 
 def institution_domains(session, *, states: Sequence[str], sector_codes: Sequence[str],
                         institution: str | None = None, keywords: Sequence[str] = (),
-                        academic_only: bool = False, limit: int = 8) -> list[dict]:
+                        academic_only: bool = False, universities_only: bool = False,
+                        limit: int = 8) -> list[dict]:
     """The official sites to search, best first: [{domain, institutions, score}].
 
     An institution named by the request is the only target when the map holds
@@ -115,14 +116,21 @@ def institution_domains(session, *, states: Sequence[str], sector_codes: Sequenc
         if not _DOMAIN.fullmatch(domain):
             continue
         entry = scores.setdefault(domain, {"domain": domain, "institutions": [],
-                                           "in_sector": 0, "academic": False})
+                                           "in_sector": 0, "academic": False,
+                                           "university": False})
         entry["institutions"].append(row["name"])
         about = str(row["about"] or "").lower()
         topical = row["in_sector"] or (words and any(w in about for w in words))
         entry["in_sector"] += 1 if topical else 0
         entry["academic"] |= row["category"] in ("university_academic", "national_laboratory")
+        entry["university"] |= (row["category"] == "university_academic"
+                                and domain.endswith(".edu"))
     entries = list(scores.values())
-    if academic_only and any(e["academic"] for e in entries):
+    if universities_only:
+        # "Researchers at Colorado universities" (4 Nov 2026): a university's own
+        # .edu site only - never a national lab or an agency named among them.
+        entries = [e for e in entries if e["university"]]
+    elif academic_only and any(e["academic"] for e in entries):
         # A professor or researcher is on a university's or a laboratory's site.
         entries = [e for e in entries if e["academic"]]
     # A site with nothing in the requested sector is searched only when no

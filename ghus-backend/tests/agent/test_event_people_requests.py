@@ -738,3 +738,58 @@ def test_every_kept_person_without_a_linkedin_gets_one_search_never_an_excluded_
     assert not wants_linkedin_search(gate("exclude"), with_bio)
     assert not wants_linkedin_search(
         gate("accept"), {"facts": {"linkedin_url": "https://www.linkedin.com/in/x"}})
+
+
+def test_universities_only_keeps_university_sites_never_a_lab_or_agency():
+    from agents.discovery.search.people_targets import institution_domains
+
+    class Rows:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def mappings(self):
+            return self
+
+        def all(self):
+            return self.rows
+
+    rows = [
+        {"name": "University of Colorado Boulder", "site": "https://www.colorado.edu",
+         "category": "university_academic", "about": "hydrogen research", "state": "CO", "in_sector": True},
+        {"name": "National Renewable Energy Laboratory", "site": "https://www.nrel.gov",
+         "category": "national_laboratory", "about": "hydrogen", "state": "CO", "in_sector": True},
+        {"name": "Carbon Initiatives", "site": "https://www.energy.gov",
+         "category": "university_academic", "about": "hydrogen", "state": "CO", "in_sector": True},
+    ]
+    session = type("S", (), {"execute": lambda self, *a, **k: Rows(rows)})()
+    picked = institution_domains(session, states=("CO",), sector_codes=("ENERGY",),
+                                 keywords=["hydrogen"], universities_only=True)
+    assert [t["domain"] for t in picked] == ["colorado.edu"]
+    both = institution_domains(session, states=("CO",), sector_codes=("ENERGY",),
+                               keywords=["hydrogen"], academic_only=True)
+    assert {"colorado.edu", "nrel.gov"} <= {t["domain"] for t in both}
+
+
+def test_one_event_found_on_its_site_and_on_a_listing_reaches_review_once():
+    from agents.discovery.search.models import CandidateRecord
+    from agents.discovery.search.phase2 import collapse_same_events
+
+    def event(cid, url, title, website, band, score):
+        return CandidateRecord(
+            candidate_id=cid, run_id="r", entity_type="event", query="q", provider="p", url=url,
+            title=title, snippet="", domain="", triage_verdict="accepted", triage_reason="",
+            score_band=band, fit_score=score,
+            record_preview={"title": title, "start_date": "2027-03-09", "website": website})
+
+    own = event("a", "https://worldagritechusa.com", "World Agri-Tech Innovation Summit San Francisco",
+                "https://worldagritechusa.com", "auto_high", 1.0)
+    listing = event("b", "https://www.potatopro.com/world-agri-tech-innovation-summit-2027",
+                    "World Agri-Tech Innovation Summit 2027", "https://worldagritechusa.com",
+                    "auto_high", 0.75)
+    other = event("c", "https://animalagtech.com", "Animal AgTech Innovation Summit",
+                  "https://animalagtech.com", "auto_high", 0.95)
+    result, merged = collapse_same_events([listing, own, other])
+    by_id = {c.candidate_id: c for c in result}
+    assert merged == 1
+    assert by_id["b"].score_band is None and by_id["b"].duplicate_of == "a"
+    assert by_id["a"].score_band == "auto_high" and by_id["c"].score_band == "auto_high"

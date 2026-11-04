@@ -445,16 +445,23 @@ class QueryGenerator:
             session, states=request.states, sector_codes=request.sector_codes,
             institution=request.institution,
             keywords=[*themes, *(names.get(c, c) for c in request.sector_codes)],
-            # "Researchers at Colorado universities": universities only, never a
-            # national lab or an agency because the role word is not academic.
-            academic_only=academic_role(request.role) or "university" in requested_kinds(request),
+            academic_only=academic_role(request.role),
+            # "Researchers at Colorado universities": university sites only.
+            universities_only="university" in requested_kinds(request),
             limit=int(self.config.get("person_target_domains", 8)),
         ) if session is not None else []
         if not targets:
             return request_person_queries(request, sectors, max_queries=limit)
+        open_queries: list[str] = []
+        if "university" in requested_kinds(request) and len(targets) < 3:
+            # The map holds few of the area's universities: open faculty searches
+            # across the state reach the others (Mines, Colorado State...).
+            open_queries, _ = request_person_queries(request, sectors,
+                                                     max_queries=max(2, limit // 2))
         queries, where = profile_queries(
             themes, [t["domain"] for t in targets], role=request.role,
             max_queries=min(limit, int(self.config.get("person_request_searches", 6))))
+        queries = [*queries, *[q for q in open_queries if q not in queries]][:limit]
         return queries, {
             "discovery_request": request.describe(),
             "query_domains": where,
