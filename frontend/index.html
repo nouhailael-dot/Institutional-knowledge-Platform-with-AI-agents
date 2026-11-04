@@ -675,6 +675,37 @@
      headers: all capitals. Asked for on 2 Nov 2026. */
   .filters label{text-transform:none;letter-spacing:0;font-size:13px}
   table.grid th{text-transform:uppercase}
+  /* Explore and Map card, 4 Nov 2026 design: sign + name + status + tags, actions
+     on the right, a grey strip of short facts, then description and long facts. */
+  .mcard{padding:28px 32px}
+  .mcard .mh{display:flex;align-items:flex-start;gap:16px;flex-wrap:nowrap;margin-bottom:18px}
+  .mcard .mbadge{flex:none;width:52px;height:52px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    background:var(--accent-soft);color:var(--accent-ink);font-weight:750;font-size:15px;letter-spacing:.02em}
+  .mcard .mhmain{flex:1;min-width:0}
+  .mcard .mn{font-size:22px;font-weight:700;line-height:1.25;color:var(--ink)}
+  .mcard .mstatus{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 0}
+  .mcard .mtags{margin:10px 0 0}
+  .mcard .mtag{background:var(--slate-soft);color:var(--ink);font-weight:500;font-size:13px;border-radius:6px;padding:3px 10px}
+  .mcard .mactions{flex:none;display:flex;gap:8px;align-items:center}
+  .mcard .mactions .example{padding:8px 16px;font-size:14px;color:var(--ink);border-color:var(--line)}
+  .mcard .mactions .example.mprimary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:650}
+  .mcard .mactions .example.mprimary:hover{background:var(--accent-2);color:#fff}
+  .mcard .mactions .example.on{color:var(--green)}
+  .mstrip{display:flex;flex-wrap:wrap;gap:14px 40px;background:var(--surface-2);border-radius:8px;padding:16px 20px;margin:0 0 18px;
+    background:color-mix(in srgb,var(--slate-soft) 60%,var(--surface))}
+  .mstrip .sf{min-width:110px;max-width:220px}
+  .mstrip .sk{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+  .mstrip .sv{font-size:14.5px;color:var(--ink);line-height:1.45;overflow-wrap:anywhere}
+  .mstrip a{color:var(--accent-ink);text-decoration:none}.mstrip a:hover{text-decoration:underline}
+  .mcard .mdesc{color:var(--ink);font-size:16px;line-height:1.65;margin:0 0 20px}
+  .mcard .mfg{gap:20px 48px;margin:0 0 8px}
+  .mcard .mfg .k{font-size:14.5px;font-weight:650;color:var(--slate);margin-bottom:6px}
+  .mcard .mfg .v{font-size:15px;line-height:1.6}
+  .mcard .mwhy-box{margin-top:20px;padding:16px 20px;border-radius:8px;background:var(--accent-soft)}
+  .mcard .mwhy-t{font-size:15px}.mcard .mstar{color:var(--accent);margin-right:6px}
+  .mcard .mpeople{background:none;margin:20px 0 0;padding:0;border:0}
+  .mcard .mpeople>.example{color:var(--accent-ink);border-color:var(--line);padding:8px 16px}
+  @media(max-width:760px){.mcard{padding:18px 16px}.mcard .mh{flex-wrap:wrap}.mcard .mactions{width:100%}}
 </style>
 <link rel="stylesheet" href="/review.css?v=20261103h"/>
 <link rel="stylesheet" href="/discovery.css?v=20261103h"/>
@@ -1790,39 +1821,56 @@ function Facts({items}){
   return html`<div class="mfg">${shown.map(([k,v,wide])=>html`<div class=${"f"+(wide?" wide":"")} key=${k}>
     <div class="k">${k}</div><div class="v">${v}</div></div>`)}</div>`;
 }
+// Short sign in the card's corner (4 Nov 2026 design): the acronym the name gives
+// in brackets ("(FIPR Institute)" → FIPR), else initials of its main words.
+const BADGE_SKIP=/^(of|and|the|for|in|at|on|de|a|an|&)$/i;
+function badgeText(e){
+  const name=String(ename(e)||"").trim();
+  if(e._entity_type==="person"){
+    const w=name.split(/\s+/).filter(Boolean);
+    return ((w[0]||"")[0]||"")+(w.length>1?(w[w.length-1][0]||""):"");
+  }
+  const br=name.match(/\(([^)]+)\)/);
+  if(br){const a=br[1].split(/\s+/)[0].replace(/[^A-Za-z0-9&]/g,"");
+    if(a.length>=2&&a.length<=6&&a===a.toUpperCase()) return a;}
+  return name.replace(/\([^)]*\)/g,"").split(/[\s-]+/).filter(w=>/^[A-Za-z]/.test(w)&&!BADGE_SKIP.test(w))
+    .map(w=>w[0]).join("").slice(0,4).toUpperCase();
+}
 function CardTags({e}){
-  if(e._entity_type!=="actor") return null;
   const sectors=String(e.sector||"").split(/\s*;\s*/).filter(Boolean);
-  if(!e.actor_type&&!sectors.length) return null;
+  const first=e._entity_type==="actor"?e.actor_type:e._entity_type==="event"?capFirst(e.event_type):null;
+  if(!first&&!sectors.length) return null;
   return html`<div class="mtags">
-    ${e.actor_type&&html`<span class="mtag cat">${e.actor_type}</span>`}
+    ${first&&html`<span class="mtag">${first}</span>`}
     ${sectors.map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`;
 }
-function CardMeta({e}){
-  if(e._entity_type==="actor"){
-    const place=[e.location_city,e.state,actorRegion(e),e.country].filter(Boolean).join(" · ");
-    return html`<div class="mmeta">📍 ${place||"Location not found"} <span class="msep">·</span> Hub: not currently assigned</div>`;
-  }
-  if(e._entity_type==="event"){
-    const when=e.next_date?eventDates(e.next_date,e.end_date):"Date not found";
-    const where=[e.location,regionOfState(stateInText(e.location))].filter(Boolean).join(" · ");
-    return html`<div class="mmeta">📅 ${when}${e.date_status?` (${capFirst(e.date_status)})`:""} <span class="msep">·</span> 📍 ${where||"Location not found"}</div>`;
-  }
-  const line=[e.title,e.organization_name,e.organization_location].filter(Boolean).join(" · ");
-  return line?html`<div class="mmeta">${line}</div>`:null;
+// The grey strip of short facts under the header; long facts go below the description.
+function CardStrip({items}){
+  const shown=items.filter(([,v])=>v!=null&&v!=="");
+  if(!shown.length) return null;
+  return html`<div class="mstrip">${shown.map(([k,v])=>html`<div class="sf" key=${k}>
+    <div class="sk">${k}</div><div class="sv">${v}</div></div>`)}</div>`;
 }
+const TYPE_LIKE=/(^|\s)type$|^public\s*\/?\s*(or\s*)?private$/i;
 function OrgCardBody({e,deadWeb}){
   const {rels,listed,extra,publicPrivate}=orgFacts(e);
   const ranked=e.profile_version===2&&isRankedInstitution(e)?rankingRows(e):[];
+  const short=listed.filter(d=>TYPE_LIKE.test(d.label)), long=listed.filter(d=>!TYPE_LIKE.test(d.label));
   return html`
-    <${Facts} items=${[
+    <${CardStrip} items=${[
+      ["Location",[e.location_city,e.state].filter(Boolean).join(" · ")||"Not found"],
+      ["Region",[actorRegion(e),e.country].filter(Boolean).join(" · ")||"Not found"],
       ["Category type",e.category_type&&e.category_type!=="Not classified"?e.category_type:null],
       ["Public/Private",publicPrivate],
+      ...short.map(d=>[d.label,d.value]),
       ...rels.map(r=>[capFirst(String(r.relationship||"").replace(/_/g," ")),html`${r.organization_name} ${r.source_url?extLink(r.source_url,"source"):""}`]),
-      ["Focus",e.primary_technical_focus,true],
-      ["Activity",e.current_activities,true],
-      ["Funding",e.funding_summary,true],
-      ...listed.map(d=>[d.label,d.value]),
+    ]}/>
+    ${e.description&&html`<div class="mdesc">${e.description}</div>`}
+    <${Facts} items=${[
+      ["Activity",e.current_activities],
+      ["Focus",e.primary_technical_focus],
+      ["Funding",e.funding_summary],
+      ...long.map(d=>[d.label,d.value]),
       ["Rankings",ranked.length?html`${ranked.map((r,i)=>html`<a key=${i} class="mpill" href=${r.source_url} target="_blank" rel="noopener noreferrer">${r.system} #${r.rank} (${r.scope==="subject"?r.subject:"Global"})</a>`)}`:null],
       ["Other names",e.other_names],
       ["Africa / Morocco connections",e.international_connections],
@@ -1834,20 +1882,34 @@ function OrgCardBody({e,deadWeb}){
       <${Facts} items=${extra.map(d=>[d.label,d.value])}/></div>`}`;
 }
 function EventCardBody({e}){
-  return html`<${Facts} items=${[
-    ["Type",capFirst(e.event_type)],["Format",capFirst(e.event_format)],["Sector",capFirst(e.sector)],
-    ["Frequency",capFirst(e.recurring_pattern)],["Previous edition",e.previous_edition?eventDates(e.previous_edition):null],
-    ["Organizer",e.organizer],["Topic",e.thematic_focus,true],["Scale",e.expected_attendance],["Audience",e.audience],
-    ["UM6P/OCP",um6pOcp(e)],["Sponsors",e.sponsoring_orgs],["Access",e.access_type],
-    ["Official website",e.website?extLink(e.website):null],
-  ]}/>`;
+  const when=e.next_date?eventDates(e.next_date,e.end_date)+(e.date_status?` (${capFirst(e.date_status)})`:""):"Not found";
+  return html`
+    <${CardStrip} items=${[
+      ["Date",when],["Location",e.location||"Not found"],
+      ["Region",regionOfState(stateInText(e.location))],
+      ["Format",capFirst(e.event_format)],["Frequency",capFirst(e.recurring_pattern)],
+    ]}/>
+    ${e.description&&html`<div class="mdesc">${e.description}</div>`}
+    <${Facts} items=${[
+      ["Topic",e.thematic_focus],["Organizer",e.organizer],
+      ["Previous edition",e.previous_edition?eventDates(e.previous_edition):null],
+      ["Scale",e.expected_attendance],["Audience",e.audience],
+      ["UM6P/OCP",um6pOcp(e)],["Sponsors",e.sponsoring_orgs],["Access",e.access_type],
+      ["Official website",e.website?extLink(e.website):null],
+    ]}/>`;
 }
 function PersonCardBody({e}){
-  return html`<${Facts} items=${[
-    ["Expertise",e.expertise,true],["Relevant work",e.work_evidence,true],
-    ["UM6P/OCP",um6pOcp(e)],["Email",e.email],
-    [personLink(e)&&personLink(e).label==="Profile page"?"Profile":"LinkedIn",personLink(e)?extLink(personLink(e).url,personLink(e).label):null],
-  ]}/>`;
+  const link=personLink(e);
+  return html`
+    <${CardStrip} items=${[
+      ["Role",e.title],["Organization",e.organization_name],["Location",e.organization_location],
+      [link&&link.label==="Profile page"?"Profile":"LinkedIn",link?extLink(link.url,link.label):null],
+    ]}/>
+    ${e.description&&html`<div class="mdesc">${e.description}</div>`}
+    <${Facts} items=${[
+      ["Expertise",e.expertise],["Relevant work",e.work_evidence],
+      ["UM6P/OCP",um6pOcp(e)],["Email",e.email],
+    ]}/>`;
 }
 const STRENGTH={strong:"Strong match",moderate:"Moderate match"};
 function MatchBox({e,lc}){
@@ -1859,7 +1921,7 @@ function MatchBox({e,lc}){
   if(!rows.length&&!sources.length) return null;
   const strength=STRENGTH[String(e.match_strength||"").toLowerCase()];
   return html`<details class="mwhy-box">
-    <summary><span class="mwhy-t">✦ Why COMPASS Identified This ${noun}</span>
+    <summary><span class="mwhy-t"><span class="mstar" aria-hidden="true">✦</span> Why COMPASS Identified This ${noun}</span>
       <span class="mwhy-right">${strength&&html`<span class=${"mstrength "+(String(e.match_strength).toLowerCase())}>✓ ${strength}</span>`}
         ${sources.length>0&&html`<span class="mwhy-n">${sources.length} supporting source${sources.length===1?"":"s"}</span>`}
         <span class="mchev" aria-hidden="true">▾</span></span></summary>
@@ -2003,24 +2065,30 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
   return html`<div class=${"mcard"+(e._below_floor===true?" weak":"")
                             +(e._rank?" pick":"")+(excluded?" nomatch":"")}>
     <div class="mh">
-      ${e._rank&&html`<span class="rank">${e._rank}</span>`}
-      <span class="mn">${ename(e)}</span>
-      ${badge}
-      ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
-      ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
-      ${savedDone?html`<span class=${"chip "+(saved.outcome==="directory"?"green":"amber dot")}>${saved.outcome==="directory"?"✓ In the directory":"In Review Results"}</span>`
-        :ready?html`<span class="chip green">✓ Verified</span>`
-        :parked?html`<span class="chip orange dot">Parked</span>`:html`<span class="chip amber dot">Pending review</span>`}
-      ${!savedDone&&onReviewed&&html`<span style=${{marginLeft:"auto",display:"inline-flex",gap:"6px"}}>
-        <button class=${"example"+(ready?" on":"")} type="button" disabled=${reviewing||reviewDisabled||confirmReject}
-          title=${ready?"Undo: not checked yet":"You checked it and its sources; save it with “Save verified to Compass”"}
-          onClick=${()=>review(ready?"unready":"ready")}>${ready?"✓ Verified":"Verify"}</button>
+      <div class="mbadge" aria-hidden="true">${badgeText(e)}</div>
+      <div class="mhmain">
+        <div class="mn">${ename(e)}</div>
+        <div class="mstatus">
+          ${savedDone?html`<span class=${"chip "+(saved.outcome==="directory"?"green":"amber dot")}>${saved.outcome==="directory"?"✓ In the directory":"In Review Results"}</span>`
+            :ready?html`<span class="chip green">✓ Verified</span>`
+            :parked?html`<span class="chip orange dot">Parked</span>`:html`<span class="chip amber dot">Pending review</span>`}
+          ${e._rank&&html`<span class="rank" title="Rank on this map">${e._rank}</span>`}
+          ${badge}
+          ${deadWeb&&html`<span class="chip violet">⚠ dead link</span>`}
+          ${e._links_ok===false&&!deadWeb&&html`<span class="chip violet">⚠ no working URL</span>`}
+        </div>
+        <${CardTags} e=${e}/>
+      </div>
+      ${!savedDone&&onReviewed&&html`<div class="mactions">
+          <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
+            title="Remove from this map for good" onClick=${()=>setConfirmReject(true)}>Reject</button>
           <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
             title=${parked?"Back to not reviewed":"Set aside to decide later; Ask can still find it"}
             onClick=${()=>review(parked?"unpark":"park")}>${parked?"Unpark":"Park"}</button>
-          <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
-            title="Remove from this map for good" onClick=${()=>setConfirmReject(true)}>Reject</button>
-      </span>`}
+        <button class=${"example "+(ready?"on":"mprimary")} type="button" disabled=${reviewing||reviewDisabled||confirmReject}
+          title=${ready?"Undo: not checked yet":"You checked it and its sources; save it with “Save verified to Compass”"}
+          onClick=${()=>review(ready?"unready":"ready")}>${ready?"✓ Verified":"Verify"}</button>
+      </div>`}
     </div>
     ${saved&&html`<div class=${saved.outcome==="not_saved"?"whynot":"hint"} style=${{margin:"0 0 8px"}}>
       ${saved.outcome==="directory"?`Saved to Compass${byWhom(saved.by)}.`
@@ -2036,14 +2104,11 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       :html`<div class="whynot">✕ Doesn't match your request — ${e._why_not||"no reason was recorded for this map."}</div>`)}
     ${(e._possible_duplicates||[]).length>0&&html`<div class="hint" style=${{margin:"0 0 8px"}}>
       Possible duplicate of ${e._possible_duplicates.join(", ")}. Check before verifying.</div>`}
-    <${CardTags} e=${e}/>
-    <${CardMeta} e=${e}/>
-    ${e.description&&html`<div class="mdesc">${e.description}</div>`}
     ${e.bio&&e._entity_type!=="person"&&html`<div class="mdesc">${e.bio}</div>`}
     ${e._entity_type==="actor"?html`<${OrgCardBody} e=${e} deadWeb=${deadWeb}/>`
       :e._entity_type==="event"?html`<${EventCardBody} e=${e}/>`:html`<${PersonCardBody} e=${e}/>`}
-    ${e._entity_type==="actor"&&html`<${PeopleSearch} key=${jobId+":"+e.name+":"+(e.website||"")} actor=${e} jobId=${jobId} disabled=${disabled}/>`}
     <${MatchBox} e=${e} lc=${lc}/>
+    ${e._entity_type==="actor"&&html`<${PeopleSearch} key=${jobId+":"+e.name+":"+(e.website||"")} actor=${e} jobId=${jobId} disabled=${disabled}/>`}
   </div>`;
 }
 
