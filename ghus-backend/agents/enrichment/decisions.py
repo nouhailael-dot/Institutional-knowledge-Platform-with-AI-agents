@@ -104,6 +104,91 @@ def append_network_locations(
     return [append_entity_edge(session, request, live=live) for request in requests]
 
 
+ENTITY_FACT_TABLES = {"event": ("event_fact", "event_id", "event_fact_id"),
+                      "person": ("person_fact", "person_id", "person_fact_id")}
+
+
+def append_entity_fact(
+    session,
+    *,
+    entity_type: str,
+    entity_id: str,
+    fact_key: str,
+    value,
+    source_url: str,
+    date_read: datetime,
+    confidence: str = "medium",
+    source_origin: str = "newly_found",
+    created_by: str,
+    live: bool = False,
+) -> dict[str, object]:
+    """One sourced fact about an event or a person (migration 600).
+
+    Like append_actor_fact: immutable rows, each with its source, origin,
+    confidence and date read. The same value read again adds nothing; a
+    different one supersedes the current row (the old one stays). A value a
+    GHUS person set is never superseded by an agent.
+    """
+    if entity_type not in ENTITY_FACT_TABLES:
+        raise ValueError("entity_type must be event or person")
+    table, id_column, key_column = ENTITY_FACT_TABLES[entity_type]
+    key = str(fact_key or "").strip()
+    if not key or value in (None, "", [], {}):
+        raise ValueError("a fact needs a key and a value")
+    if confidence not in ("high", "medium", "low"):
+        raise ValueError("invalid confidence")
+    url = str(source_url or "").strip()
+    if not url.startswith(("http://", "https://")):
+        raise ValueError("source_url must be an absolute HTTP(S) URL")
+    current = session.execute(text(
+        f"SELECT {key_column}::text AS fact_id, fact_value, generated_by FROM {table}_current "
+        f"WHERE {id_column}=CAST(:entity AS uuid) AND fact_key=:key"),
+        {"entity": entity_id, "key": key}).mappings().first()
+    if current is not None and current["fact_value"] == value:
+        return {"action": "same_value", "fact_id": current["fact_id"]}
+    if current is not None and str(current["generated_by"] or "").startswith("ghus"):
+        return {"action": "ghus_value_kept", "fact_id": current["fact_id"]}
+    if not live:
+        return {"action": "would_append"}
+    source_id = insert_source(session, source_url=url, fetched_at=date_read,
+                              description=f"Architecture V2 {entity_type} fact {key}",
+                              source_type="agent_collection", trust_tier="candidate")
+    fact_id = str(uuid.uuid4())
+    execute_canonical_write(session, text(
+        f"INSERT INTO {table} ({key_column},{id_column},fact_key,fact_value,collection_state,"
+        "source_id,source_origin,confidence,retrieved_at,generated_by,supersedes_fact_id) VALUES "
+        "(CAST(:id AS uuid),CAST(:entity AS uuid),:key,CAST(:value AS jsonb),'found',"
+        "CAST(:source AS uuid),:origin,:confidence,:read,:by,CAST(:supersedes AS uuid))"
+    ), {"id": fact_id, "entity": entity_id, "key": key,
+        "value": json.dumps(value, sort_keys=True, default=str), "source": source_id,
+        "origin": source_origin, "confidence": confidence, "read": date_read,
+        "by": created_by, "supersedes": current["fact_id"] if current else None})
+    return {"action": "appended" if current is None else "superseded", "fact_id": fact_id}
+
+
+def append_event_claim(session, *, event_id: str, claim_text: str, source_url: str,
+                       date_read: datetime, live: bool = False) -> dict[str, object]:
+    """A publicly stated claim about an event's scale or standing, with its source."""
+    claim = " ".join(str(claim_text or "").split())
+    if not claim:
+        raise ValueError("a claim needs its text")
+    exists = session.execute(text(
+        "SELECT 1 FROM event_claim WHERE event_id=CAST(:event AS uuid) AND claim_text=:claim"),
+        {"event": event_id, "claim": claim}).first()
+    if exists:
+        return {"action": "already_recorded"}
+    if not live:
+        return {"action": "would_append"}
+    source_id = insert_source(session, source_url=source_url, fetched_at=date_read,
+                              description="Architecture V2 event standing claim",
+                              source_type="agent_collection", trust_tier="candidate")
+    execute_canonical_write(session, text(
+        "INSERT INTO event_claim (event_claim_id,event_id,claim_text,source_id) VALUES "
+        "(CAST(:id AS uuid),CAST(:event AS uuid),:claim,CAST(:source AS uuid))"
+    ), {"id": str(uuid.uuid4()), "event": event_id, "claim": claim[:2000], "source": source_id})
+    return {"action": "appended"}
+
+
 def append_actor_fact(
     session,
     write: ActorFactWrite,
