@@ -111,3 +111,20 @@ def test_a_request_reads_what_it_keeps_by_its_own_choice(monkeypatch):
     calls.clear()
     runner._light_pull_after(report, everything=True)        # Run now passes --light-pull
     assert calls == ["light", "light", "legacy", "legacy"]
+
+
+def test_run_now_on_the_shared_team_database_reads_own_pages_when_allowed(monkeypatch):
+    """Authorised 4 Nov 2026: the platform's Run now passes the operator's flag on."""
+    from datetime import date
+
+    from agents.collection import light_pull_candidates, subscription_runner as runner
+
+    calls = []
+    monkeypatch.setattr(light_pull_candidates, "main", lambda argv: calls.append(argv) or 0)
+    report = runner.RunnerReport(live=True, today=date(2026, 11, 4), outcomes=[
+        runner.RequestOutcome("r1", "Water", [], status="succeeded")])
+    runner._light_pull_after(report, everything=True, allow_shared=True)
+    assert calls == [["--request-id", "r1", "--live", "--allow-shared-database"]] * 2
+    args = runner.build_arg_parser().parse_args(["--live", "--allow-shared-database"])
+    assert args.allow_shared_database is True
+    assert runner.build_arg_parser().parse_args(["--live"]).allow_shared_database is False

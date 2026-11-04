@@ -93,9 +93,20 @@ FIELD_CRITERIA: dict[str, str] = {
                        "facility opened, project started, report published, award made), "
                        "with the date the page gives. Undated or generic activity is not "
                        "recent activity.",
-    "funding_signal": "One specific funding fact about THIS organisation: an amount, a named "
-                      "funder, a grant, a round or a budget. Donation buttons and 'supported "
-                      "by partners' are not funding signals.",
+    # Build the Map's funding rules (4 Nov 2026): the award, its funder, purpose, amount
+    # and years, exactly as documented; never an inferred amount or an opportunity.
+    "funding_signal": "The most relevant documented award, grant, investment or budget THIS "
+                      "organisation received, preferring one related to the topic and made "
+                      "this year or still active in it (a five-year grant from three years "
+                      "ago counts; a one-time award that ended in an earlier year does not). "
+                      "Give the funder, what it is for (program), the amount exactly as "
+                      "written with its currency and qualifiers such as 'up to' or "
+                      "'approximately' - or 'amount not disclosed' when the page gives none - "
+                      "and its timeline (award year, and end year when stated). A total "
+                      "consortium award is labelled as the consortium's; this organisation's "
+                      "share is unknown unless stated. Never infer, convert or add up "
+                      "amounts. A funding opportunity, a call for proposals, a donation "
+                      "button or 'supported by partners' is not a funding signal.",
     "international_connection": "A named partner, office, programme or project outside the "
                                 "United States that a page states this organisation has.",
     "um6p_ocp_connection": "Any link a page states with UM6P (Mohammed VI Polytechnic "

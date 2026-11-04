@@ -385,3 +385,17 @@ def test_run_now_goes_ahead_when_the_state_cannot_be_read(tmp_path, monkeypatch)
 
     assert run_refusal(None) is None
     assert run_refusal({"exists": True, "status": "paused", "runner_busy": False}) is None
+
+
+def test_run_now_lets_the_light_pull_read_on_the_shared_database_only(tmp_path, monkeypatch):
+    monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
+    ready = lambda _id: {"exists": True, "status": "active", "runner_busy": False}  # noqa: E731
+    root = _backend(tmp_path)
+    for url, expected in (("postgresql+psycopg://u@pooler.example.com:6543/postgres", True),
+                          ("postgresql+psycopg://ghus_test@127.0.0.1:55432/ghus_v2_x_test", False)):
+        started = []
+        bridge = DiscoveryBridge(project_root=root, python_executable="py",
+                                 database_url=url, run_state=ready,
+                                 start_process=lambda command, **kwargs: started.append(command))
+        bridge.run_now("00000000-0000-4000-8000-000000000001")
+        assert ("--allow-shared-database" in started[0]) is expected

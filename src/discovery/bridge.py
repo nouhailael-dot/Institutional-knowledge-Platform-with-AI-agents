@@ -25,6 +25,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Any, Callable
 
 ACTIONS = ("pause", "resume", "cancel")
@@ -137,6 +138,12 @@ class DiscoveryBridge:
         self._run_state = run_state or self._read_run_state
 
     @property
+    def local_database(self) -> bool:
+        raw = str(self.database_url or "").replace("postgresql+psycopg://", "postgresql://")
+        parts = urlsplit(raw)
+        return parts.hostname in ("127.0.0.1", "localhost", "::1") and parts.path.endswith("_test")
+
+    @property
     def configured(self) -> bool:
         return bool(
             self.database_url
@@ -198,7 +205,10 @@ class DiscoveryBridge:
             self._start_process(
                 [self.python_executable, "-m", "agents.collection.subscription_runner",
                  "--live", "--request-id", subscription_id, "--light-pull",
-                 "--report-out", str(runs / f"{stem}-summary.md")],
+                 "--report-out", str(runs / f"{stem}-summary.md"),
+                 # The team database is shared (29 Oct 2026); reading kept
+                 # organizations' own pages there was authorised on 4 Nov 2026.
+                 *([] if self.local_database else ["--allow-shared-database"])],
                 cwd=self.project_root, env=env, stdout=log, stderr=log,
                 stdin=subprocess.DEVNULL, creationflags=flags,
             )
