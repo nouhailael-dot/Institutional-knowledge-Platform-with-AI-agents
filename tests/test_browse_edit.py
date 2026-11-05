@@ -21,12 +21,13 @@ class BrowseEditTests(unittest.TestCase):
         for column in ("website", "recurring_pattern", "description", "record_status"):
             self.assertIn(column, sql)
 
-    def test_there_is_no_save_until_logins_exist_and_it_says_so(self):
-        # 4 Nov 2026: no Save button at all (it read as broken in the demo).
+    def test_save_stores_nothing_until_logins_exist_and_says_so_when_clicked(self):
+        # 5 Nov 2026: Save is shown, writes nothing, and a click says it isn't stored.
         page = PAGE.read_text(encoding="utf-8")
         form = page[page.index("function RecordEditor("):page.index("/* ------------------------------------------------- The four tabs */")]
-        self.assertNotIn(">Save</button>", form)
-        self.assertIn("Editing will be saved once logins are in place.", form)
+        self.assertIn('onClick=${()=>setSaveNote(true)}>Save</button>', form)
+        self.assertIn("Not stored yet: saving comes with personal logins.", form)
+        self.assertNotIn("fetch(", form)
         for kind in ('kind="actor"', 'kind="event"', 'kind="person"', 'kind="hub"'):
             self.assertIn(kind, page)
 
