@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -113,7 +113,8 @@ def review_admission_bridge():
 
 @lru_cache(maxsize=1)
 def discovery_bridge():
-    return DiscoveryBridge()
+    # The app keeps the last request lists and refreshes them in the background.
+    return DiscoveryBridge(cache_lists=True)
 
 
 @asynccontextmanager
@@ -128,6 +129,14 @@ async def lifespan(app):
             logger.warning("Review persistence: %s", warning)
     except Exception:
         logger.exception("Could not check review-store persistence")
+    # The shared server reads Review's sources once at start (about a minute),
+    # in the background, so the first visit to Review answers at once.
+    if os.environ.get("GHUS_REVIEW_WARM_START", "").strip() == "1":
+        start_review_sync_in_background(force=True)
+        try:
+            discovery_bridge().warm_lists()
+        except Exception:  # noqa: BLE001 - Monitor then reads the lists on first visit
+            logger.exception("Could not start reading the request lists")
     yield
 
 
@@ -1044,6 +1053,12 @@ _review_sync_last = 0.0
 _review_sync_warnings = []
 _review_sync_store_key = None
 REVIEW_SYNC_INTERVAL_SECONDS = 120
+# 5 Nov 2026: reading Review's records from the shared database takes about a
+# minute (hundreds of round trips). Review answers at once from its local copy
+# and reads the database in the background; the page asks again while
+# "syncing" is true. Only the first read for a store in this process (a fresh
+# server, a test) waits, so an empty screen is never shown as the answer.
+_review_sync_thread = None
 
 
 # The headline lives in the UI label; this is the explanation beneath it.
@@ -1066,7 +1081,48 @@ def _demo_banner() -> str | None:
     return DEMO_BANNER if os.environ.get("GHUS_DEMO_MODE", "").strip() == "1" else None
 
 
+def review_sync_running() -> bool:
+    return _review_sync_thread is not None and _review_sync_thread.is_alive()
+
+
+def start_review_sync_in_background(*, force: bool = True) -> bool:
+    """Read Review's sources in a background thread; False if one is running."""
+    global _review_sync_thread
+    if review_sync_running():
+        return False
+
+    def run():
+        try:
+            _sync_review_candidates_now(force=force)
+        except Exception:  # noqa: BLE001 - a failed refresh keeps the last copy
+            logger.exception("Background Review synchronization failed")
+
+    _review_sync_thread = Thread(target=run, name="review-sync", daemon=True)
+    _review_sync_thread.start()
+    return True
+
+
 def _sync_review_candidates(*, force: bool = False):
+    """Warnings from the last read of Review's sources, refreshing when stale.
+
+    The first read for this store in this process runs before answering; after
+    that a stale or forced refresh runs in the background and Review answers at
+    once from its local copy (see review_sync_running()).
+    """
+    target = review_store()
+    store_key = str(target.path.resolve())
+    now = time.monotonic()
+    fresh = (_review_sync_store_key == store_key
+             and now - _review_sync_last < REVIEW_SYNC_INTERVAL_SECONDS)
+    if fresh and not force:
+        return list(_review_sync_warnings)
+    if _review_sync_store_key == store_key or review_sync_running():
+        start_review_sync_in_background(force=force)
+        return list(_review_sync_warnings)
+    return _sync_review_candidates_now(force=force)
+
+
+def _sync_review_candidates_now(*, force: bool = False):
     global _review_sync_last, _review_sync_warnings, _review_sync_store_key
     target = review_store()
     store_key = str(target.path.resolve())
@@ -1318,6 +1374,8 @@ def review_candidates(status: str = Query("pending_review"),
             review_reason=review_reason, region=region,
         )
         result["sync_warnings"] = sync_warnings
+        # The database is being read in the background: the page asks again.
+        result["syncing"] = review_sync_running()
         result["demo_banner"] = _demo_banner()
         result["admission_configured"] = review_admission_bridge().configured
         result["candidates"] = [_list_view(c) for c in result.get("candidates") or []]

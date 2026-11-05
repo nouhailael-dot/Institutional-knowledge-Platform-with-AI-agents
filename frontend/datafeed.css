@@ -156,3 +156,13 @@ span.df-import-link{cursor:default}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 
 .df-example-chip{display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:var(--slate-soft);color:var(--slate);font-size:12px;font-weight:600;vertical-align:middle}
+
+/* Complete information with AI enrichment (5 Nov 2026). */
+.df-ai{margin:12px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.df-ai span{display:grid;gap:2px}
+.df-ai.disabled{opacity:.6}
+
+/* Import History: the note shown when the database could not be read (5 Nov 2026). */
+.df-history-note { margin: 0 0 10px; }
+.df-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit;
+  text-decoration: underline; cursor: pointer; }

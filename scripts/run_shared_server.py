@@ -67,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(ROOT))
     import uvicorn
 
+    # Read Review's records in the background at start (backend.app.lifespan).
+    os.environ.setdefault("GHUS_REVIEW_WARM_START", "1")
     uvicorn.run("backend.app:app", host="127.0.0.1", port=args.port, log_level="info")
     return 0
 

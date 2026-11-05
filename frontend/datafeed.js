@@ -6,7 +6,7 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261104i";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261105b";
 import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261104e";
 
 export const RECORD_TYPES = [
@@ -638,7 +638,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     </div>`;
   }
 
-  function Preview({preview, catalog, importName = "", onBack, onDone, setMessage}) {
+  function Preview({preview, catalog, importName = "", onBack, onDone, setMessage,
+                    aiEnrichment = false, setAiEnrichment = () => {}}) {
     const [filter, setFilter] = useState(preview.counts.needs_correction ? "invalid" : "all");
     const [openRow, setOpenRow] = useState(null);
     const [name, setName] = useState(importName.trim() || defaultImportName(preview));
@@ -659,7 +660,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       try {
         const result = await api(`/api/datafeed/previews/${preview.preview_id}/confirm`, {
           method: "POST", body: JSON.stringify({import_name: name, accept_left_out: accept,
-            attest_source: attestSource, admission, attest_authorized: attestAuthorized})});
+            attest_source: attestSource, admission, attest_authorized: attestAuthorized,
+            ai_enrichment: aiEnrichment})});
         onDone(result);
       } catch (error) {
         setMessage({kind: "error", text: error.message});
@@ -745,11 +747,11 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           <p>The records are stored in the <strong>Ecosystem Directory</strong> through the same checks as
             every directory record, and labelled as an import made on your attestation (the file and the row).
             A record that matches one already in the directory updates it instead of adding a copy.
-            ${recordType === "actor" && html` Missing information is completed by COMPASS from each organization's
-              own pages first: only empty fields, your values are never replaced (about $0.05 per organization,
-              at most $${completionCap(send).toFixed(2)} for this import).`}</p>
+          </p>
           <label class="df-check"><input type="checkbox" checked=${attestAuthorized}
             onChange=${e => setAttestAuthorized(e.target.checked)}/> ${ATTEST_AUTHORIZED}</label>
+          ${html`<${AiEnrichmentCheck} recordType=${recordType}
+            checked=${aiEnrichment} onChange=${setAiEnrichment} cap=${completionCap(send)}/>`}
         </div>
         <div class="discovery-actions">
           <button type="button" class="btn" disabled=${busy || !canSend({preview, name,
@@ -759,6 +761,23 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         ${send === 0 && html`<p class="df-muted">There is nothing new to send.</p>`}
       </section>
     </div>`;
+  }
+
+  /** "Complete information with AI enrichment" (GHUS, 5 Nov 2026): the uploader's
+   *  choice, off until ticked; the Light Pull exists for organizations only. */
+  // Shown for every record type (GHUS, 5 Nov 2026); for people and events the
+  // choice is recorded with the import and the completion itself comes later.
+  function AiEnrichmentCheck({recordType, checked, onChange, cap = null}) {
+    const organizations = recordType === "actor";
+    return html`<label class="df-check df-ai">
+      <input type="checkbox" checked=${checked} onChange=${e => onChange(e.target.checked)}/>
+      <span><strong>Complete information with AI enrichment</strong>
+        <small class="df-muted">COMPASS reads each record's own pages and fills only the empty fields
+          before storing; your values are never replaced${organizations
+            ? html` (about $0.05 per organization${cap === null ? ""
+              : html`, at most $${cap.toFixed(2)} for this import`})` : ""}. Unticked, the records are
+          stored as given.</small></span>
+    </label>`;
   }
 
   function Completion({item, onClose}) {
@@ -853,17 +872,21 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
 
   function History() {
     const [items, setItems] = useState(null);
-    const [error, setError] = useState("");
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState("all");
     const [open, setOpen] = useState(null);
     const [records, setRecords] = useState({});
     const [completing, setCompleting] = useState(null);
+    const [unavailable, setUnavailable] = useState(false);
     async function load() {
+      // The table always shows (with its example import); a failed read is a quiet note.
       try {
-        setItems((await api("/api/datafeed/history")).imports || []);
+        const body = await api("/api/datafeed/history");
+        setItems(body.imports || []);
+        setUnavailable(Boolean(body.unavailable));
       } catch (e) {
-        setError(e.message);
+        setItems(items => items || []);
+        setUnavailable(true);
       }
     }
     useEffect(() => { load(); }, []);
@@ -879,7 +902,6 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         }
       }
     }
-    if (error) return html`<p class="discovery-message error">${error}</p>`;
     if (!items) return html`<p class="df-muted">Loading the import history…</p>`;
     // The signed-in user's imports once accounts exist; every import until then.
     const mine = items;
@@ -897,6 +919,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           ${RECORD_TYPES.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
         </select></label>
     </div>
+    ${unavailable && html`<p class="df-muted df-history-note">Your imports could not be read from the
+      database just now. <button type="button" class="df-link" onClick=${load}>Try again</button></p>`}
     <div class="df-history-table">
       <table>
         <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Status</th></tr></thead>
@@ -933,6 +957,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     const [method, setMethod] = useState("upload");
     // One name for everything submitted together, by file or by hand.
     const [importName, setImportName] = useState("");
+    const [aiEnrichment, setAiEnrichment] = useState(false);
     const [preview, setPreview] = useState(null);
     const [done, setDone] = useState(null);
     const [message, setMessage] = useState(null);
@@ -941,7 +966,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         .catch(e => setMessage({kind: "error", text: e.message}));
     }, []);
     const openReview = () => window.dispatchEvent(new Event("ghus:open-review"));
-    const reset = () => { setPreview(null); setDone(null); setMessage(null); setImportName(""); };
+    const reset = () => { setPreview(null); setDone(null); setMessage(null); setImportName("");
+      setAiEnrichment(false); };
     return html`<div class="discovery-page datafeed-page">
       <h1 class="hero-h">Data Feed</h1>
       <p class="lead">${DATAFEED_LEAD}</p>
@@ -974,7 +1000,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           </section>`
         : preview ? html`<${Preview} preview=${preview} catalog=${catalog} importName=${importName}
             onBack=${() => { setPreview(null); setMessage(null); }}
-            onDone=${result => { setDone(result); setPreview(null); }} setMessage=${setMessage}/>`
+            onDone=${result => { setDone(result); setPreview(null); }} setMessage=${setMessage}
+            aiEnrichment=${aiEnrichment} setAiEnrichment=${setAiEnrichment}/>`
         : html`<section class="discovery-card df-start">
           <div class="discovery-field">
             <label class="discovery-label" for="df-import-name-top">Import Name <span class="df-req">*</span></label>
@@ -999,6 +1026,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
               </select>
             </div>
           </div>
+          ${recordType && html`<${AiEnrichmentCheck} recordType=${recordType}
+            checked=${aiEnrichment} onChange=${setAiEnrichment}/>`}
           ${!recordType ? html`<p class="df-muted df-choose">Choose Organizations, People or Events to
               get its template.</p>`
             : method === "upload"

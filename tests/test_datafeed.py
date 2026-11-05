@@ -325,7 +325,7 @@ class FakeBridge:
                "rows": [{"row_number": r["row_number"], "outcome": "staged"}
                         for r in batch["rows"]]}
         if batch.get("admission") == "directory":
-            if batch["record_type"] == "actor":
+            if batch["record_type"] == "actor" and batch.get("ai_enrichment", True):
                 out["admissions_pending"] = True
             else:
                 out["admissions"] = [{"row_number": r["row_number"], "outcome": "stored"}
@@ -695,6 +695,23 @@ def test_a_directory_import_is_stored_and_organizations_are_completed_first(serv
     assert stored["stored"] == 1 and stored["enriching"] is None and stored["not_stored"] == []
 
 
+def test_ai_enrichment_runs_only_when_the_uploader_ticks_it(service):
+    """GHUS, 5 Nov 2026: "Complete information with AI enrichment" is the uploader's choice."""
+    preview = service.validate_upload("actor", "a.csv", csv_bytes("actor", [ACTOR]))
+    service.bridge.enriched = None
+    done = service.confirm(preview["preview_id"], import_name="K", accept_left_out=False,
+                           uploaded_by="Ana", attest_source=True, attest_authorized=True,
+                           ai_enrichment=False)
+    assert service.bridge.staged[-1]["ai_enrichment"] is False
+    assert done["enriching"] is None and service.bridge.enriched is None
+    ticked = service.validate_upload("actor", "b.csv", csv_bytes("actor", [ACTOR]))
+    done = service.confirm(ticked["preview_id"], import_name="K2", accept_left_out=False,
+                           uploaded_by="Ana", attest_source=True, attest_authorized=True,
+                           ai_enrichment=True)
+    assert service.bridge.staged[-1]["ai_enrichment"] is True
+    assert done["enriching"]["started"] is True
+
+
 def _history_with_review(service):
     """Import History as it was before 3 Nov 2026, Review imports included."""
     from src.datafeed import service as module
@@ -728,3 +745,33 @@ def test_import_history_lists_only_imports_stored_in_the_directory():
 
     service = module.DataFeedService(bridge=None, connect=lambda: Conn())
     assert [i["run_id"] for i in service.history()] == ["new-directory"]
+
+
+def test_import_history_shows_when_the_database_cannot_be_reached(monkeypatch, tmp_path):
+    """5 Nov 2026: a connection timeout made the tab an error page; it now shows the
+    last list read (or none, so the page shows its example import) and says so."""
+    from fastapi.testclient import TestClient
+
+    from backend import datafeed_routes
+    from backend.app import app
+
+    class Service:
+        fail = False
+
+        def history(self):
+            if self.fail:
+                raise TimeoutError("connection timeout expired")
+            return [{"run_id": "r1", "import_name": "Spring list"}]
+
+    service = Service()
+    monkeypatch.setattr(datafeed_routes, "datafeed_service", lambda: service)
+    monkeypatch.setattr(datafeed_routes, "_last_history", None)
+    client = TestClient(app)
+    service.fail = True
+    assert client.get("/api/datafeed/history").json() == {"imports": [], "unavailable": True}
+    service.fail = False
+    assert client.get("/api/datafeed/history").json() == {
+        "imports": [{"run_id": "r1", "import_name": "Spring list"}]}
+    service.fail = True
+    assert client.get("/api/datafeed/history").json() == {
+        "imports": [{"run_id": "r1", "import_name": "Spring list"}], "unavailable": True}

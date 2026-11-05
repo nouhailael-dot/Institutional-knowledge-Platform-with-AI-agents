@@ -373,7 +373,8 @@ class DataFeedService:
     # ------------------------------------------------------------------ confirm
     def confirm(self, preview_id: str, *, import_name: str, accept_left_out: bool,
                 uploaded_by: str | None = None, attest_source: bool = False,
-                admission: str = "directory", attest_authorized: bool = False) -> dict[str, Any]:
+                admission: str = "directory", attest_authorized: bool = False,
+                ai_enrichment: bool = True) -> dict[str, Any]:
         """Send a checked preview, after the uploader's confirmation.
 
         Every import names its uploader and confirms the records come from a
@@ -385,7 +386,9 @@ class DataFeedService:
         "directory" (the default since 3 Nov 2026): every record is stored in the
         directory through the approved admission path, nothing waits in Review.
         Organizations are first completed by the Light Pull from their own pages
-        (background, capped by ``enrichment_cap``), then stored.
+        (background, capped by ``enrichment_cap``), then stored - only when the
+        uploader ticks "Complete information with AI enrichment" (5 Nov 2026);
+        otherwise they are stored at once with what the file gives.
         """
         preview = self.preview(preview_id)
         name = " ".join(str(import_name or "").split())
@@ -428,6 +431,7 @@ class DataFeedService:
                                               else admission if admission in ("verified", "directory")
                                               else "source"]})
         batch["rows_total"] = preview["counts"]["total"]
+        batch["ai_enrichment"] = bool(ai_enrichment)
         try:
             outcome = self.bridge.stage(batch)
         except DataFeedBridgeError as exc:

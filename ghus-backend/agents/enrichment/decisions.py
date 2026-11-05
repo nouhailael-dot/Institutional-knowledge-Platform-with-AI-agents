@@ -426,7 +426,7 @@ def record_verification_decision(
 
 # GHUS notes: "free text, written only by GHUS" (Architecture V2 5.1). Only
 # actors and events have the column; people have none yet.
-GHUS_NOTES_KEYS = {"actor": "actor_id", "event": "event_id"}
+GHUS_NOTES_KEYS = {"actor": "actor_id", "event": "event_id", "person": "person_id"}
 GHUS_NOTES_MAX_LENGTH = 5000
 
 
@@ -439,7 +439,7 @@ def record_ghus_notes(
     decided_by: str,
     live: bool = False,
 ) -> bool:
-    """Set an actor's or event's GHUS notes, written by the GHUS person deciding it.
+    """Set an organization's, event's or person's GHUS notes, written by the GHUS person deciding it.
 
     Migration 530 refuses any change to ``ghus_notes`` from a session that has
     not declared itself human; this declares it for the current transaction
@@ -448,7 +448,7 @@ def record_ghus_notes(
     """
     key = GHUS_NOTES_KEYS.get(entity_type)
     if key is None:
-        raise ValueError("GHUS notes exist only for organizations and events")
+        raise ValueError("GHUS notes exist only for organizations, events and people")
     value = str(notes or "").strip()
     if not value:
         return False

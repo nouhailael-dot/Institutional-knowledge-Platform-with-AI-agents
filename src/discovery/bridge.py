@@ -24,6 +24,9 @@ import os
 import re
 import subprocess
 import sys
+import copy
+import functools
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -119,6 +122,83 @@ def run_refusal(state: dict[str, Any] | None) -> str | None:
     return None
 
 
+# 5 Nov 2026: listing requests reads three tables per request from the shared
+# database (about 25 seconds for 36 requests) and Monitor, the Dashboard and the
+# Review hand-off asked for it every 15 seconds, each starting its own read.
+# The app keeps the last list: served at once while fresh, served and refreshed
+# in the background while recent, read again after any change.
+LIST_FRESH_FOR_S = 10
+LIST_KEEP_FOR_S = 900
+
+
+class _ListCache:
+    """The last answer of one read-only list command, refreshed in the background."""
+
+    def __init__(self, load, *, fresh_for: float | None = None):
+        self._load = load
+        self._fresh_for = fresh_for
+        self._value = None
+        self._at = 0.0
+        self._lock = threading.Lock()
+        self._refreshing = False
+        self._generation = 0
+
+    @property
+    def fresh_for(self) -> float:
+        return LIST_FRESH_FOR_S if self._fresh_for is None else self._fresh_for
+
+    def get(self):
+        age = time.monotonic() - self._at
+        if self._value is not None and age < self.fresh_for:
+            return copy.deepcopy(self._value)
+        if self._value is not None and age < LIST_KEEP_FOR_S:
+            self.refresh_in_background()
+            return copy.deepcopy(self._value)
+        with self._lock:                       # one read at a time; the others wait for it
+            if self._value is not None and time.monotonic() - self._at < self.fresh_for:
+                return copy.deepcopy(self._value)
+            generation = self._generation
+            value = self._load()
+            if generation == self._generation:
+                self._value, self._at = value, time.monotonic()
+            return copy.deepcopy(value)
+
+    def invalidate(self):
+        """After a change: the next read waits for the database, never shows the old list."""
+        self._generation += 1
+        self._value, self._at = None, 0.0
+
+    def refresh_in_background(self):
+        if self._refreshing:
+            return
+        self._refreshing = True
+        generation = self._generation
+
+        def run():
+            try:
+                with self._lock:
+                    value = self._load()
+                    if generation == self._generation:
+                        self._value, self._at = value, time.monotonic()
+            except Exception:  # noqa: BLE001 - the last list stays; the next read retries
+                pass
+            finally:
+                self._refreshing = False
+
+        threading.Thread(target=run, name="discovery-list", daemon=True).start()
+
+
+def _invalidates_lists(method):
+    """A write: once it is done, the cached lists are read fresh."""
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return method(self, *args, **kwargs)
+        finally:
+            self._changed()
+    return wrapper
+
+
 class DiscoveryBridge:
     def __init__(
         self,
@@ -129,6 +209,7 @@ class DiscoveryBridge:
         run_command: Callable[..., Any] = subprocess.run,
         start_process: Callable[..., Any] = subprocess.Popen,
         run_state: Callable[[str], dict[str, Any] | None] | None = None,
+        cache_lists: bool = False,
     ):
         self.project_root = Path(
             project_root
@@ -152,6 +233,14 @@ class DiscoveryBridge:
         # Requests started by Run now, until their run record appears (4 Nov 2026:
         # the page said "Scheduled" for the minute or two the runner takes to start).
         self._started: dict[str, float] = {}
+        # The app caches the two lists (cache_lists=True); tests read them fresh.
+        self._lists = ({"requests": _ListCache(lambda: self._call(["list"], retries=1)),
+                        # Sectors, regions and kinds: they change with a deployment.
+                        "options": _ListCache(lambda: self._call(["options"], retries=1),
+                                              fresh_for=300),
+                        "updates": _ListCache(lambda: self._call(
+                            ["requests"], module="agents.collection.actor_updates", retries=1))}
+                       if cache_lists else None)
 
     @property
     def local_database(self) -> bool:
@@ -169,10 +258,25 @@ class DiscoveryBridge:
 
     # ---------------------------------------------------------------- reads
     def options(self) -> dict[str, Any]:
+        if self._lists is not None:
+            return self._lists["options"].get()
         return self._call(["options"], retries=1)
 
     def list_requests(self) -> dict[str, Any]:
+        if self._lists is not None:
+            return self.mark_starting(self._lists["requests"].get())
         return self.mark_starting(self._call(["list"], retries=1))
+
+    def warm_lists(self) -> None:
+        """Read both lists in the background (the shared server, at start)."""
+        for cache in (self._lists or {}).values():
+            cache.refresh_in_background()
+
+    def _changed(self) -> None:
+        """A request was created, run or changed: the next list is read fresh."""
+        for name in ("requests", "updates"):
+            if self._lists is not None:
+                self._lists[name].invalidate()
 
     def mark_starting(self, payload: dict[str, Any], *, now: float | None = None) -> dict[str, Any]:
         """Mark a request started by Run now as starting until its run record appears."""
@@ -194,14 +298,17 @@ class DiscoveryBridge:
         return self._call(["preview", "--json", json.dumps(draft)])
 
     # --------------------------------------------------------------- writes
+    @_invalidates_lists
     def create(self, draft: dict[str, Any]) -> dict[str, Any]:
         return self._call(["create", "--json", json.dumps(draft), "--live"])
 
+    @_invalidates_lists
     def change(self, subscription_id: str, action: str) -> dict[str, Any]:
         if action not in ACTIONS:
             raise DiscoveryBridgeError(f"unknown action {action!r}", rejected=True)
         return self._call([action, subscription_id, "--live"])
 
+    @_invalidates_lists
     def set_end_date(self, subscription_id: str, end_date: str) -> dict[str, Any]:
         """Extend or shorten a recurring request; the saved schedule stands until this succeeds."""
         if not _UUID.match(subscription_id or ""):
@@ -209,6 +316,7 @@ class DiscoveryBridge:
         return self._call(["end-date", subscription_id, "--json",
                            json.dumps({"end_date": end_date}), "--live"])
 
+    @_invalidates_lists
     def run_now(self, subscription_id: str) -> dict[str, Any]:
         """Start a live run of one request, in the background.
 
@@ -289,6 +397,8 @@ class DiscoveryBridge:
     # They are saved as requests and run by the backend's request runner -
     # the same one as Discovery requests ("Run now" starts it for one request).
     def list_update_requests(self) -> dict[str, Any]:
+        if self._lists is not None:
+            return self._lists["updates"].get()
         return self._call(["requests"], module="agents.collection.actor_updates", retries=1)
 
     def plan_update_request(self, draft: dict[str, Any]) -> dict[str, Any]:
@@ -296,11 +406,13 @@ class DiscoveryBridge:
         return self._call(["request-plan", "--json", json.dumps(draft)],
                           module="agents.collection.actor_updates")
 
+    @_invalidates_lists
     def create_update_request(self, draft: dict[str, Any]) -> dict[str, Any]:
         return self._call(["request-create", "--json", json.dumps(draft), "--live"],
                           module="agents.collection.actor_updates",
                           extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"})
 
+    @_invalidates_lists
     def change_update_request(self, subscription_id: str, action: str) -> dict[str, Any]:
         if action not in ACTIONS:
             raise DiscoveryBridgeError(f"unknown action {action!r}", rejected=True)
@@ -310,6 +422,7 @@ class DiscoveryBridge:
                            "--live"], module="agents.collection.actor_updates",
                           extra_env={"ACTOR_UPDATE_WRITES_ENABLED": "true"})
 
+    @_invalidates_lists
     def apply_update(self, check_id: str) -> dict[str, Any]:
         """A person pressing "Write to the map": the explicit dispatch a write needs."""
         if not _CHECK_ID.match(check_id or ""):

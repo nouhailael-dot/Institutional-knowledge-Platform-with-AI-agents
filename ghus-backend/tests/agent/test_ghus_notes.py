@@ -37,15 +37,14 @@ class Session:
         return type("Result", (), {"rowcount": self.rowcount})()
 
 
-def test_notes_travel_with_an_admitted_actor_or_event():
-    for entity_type in ("actor", "event"):
+def test_notes_travel_with_an_admitted_actor_event_or_person():
+    for entity_type in ("actor", "event", "person"):
         clean = admission._normalise_decision(_decision(entity_type, ghus_notes="  Met them at CES.  "))
         assert clean["ghus_notes"] == "Met them at CES."
     assert admission._normalise_decision(_decision())["ghus_notes"] is None
 
 
 @pytest.mark.parametrize("decision, words", [
-    (_decision("person", ghus_notes="x"), "only for organizations and events"),
     (_decision("actor", "defer", ghus_notes="x"), "admitted record"),
     (_decision("actor", "reject", rejection_reason="Duplicate of an existing record", ghus_notes="x"), "admitted record"),
     (_decision("actor", ghus_notes="x" * 5001), "at most 5000"),
@@ -66,7 +65,7 @@ def test_the_writer_declares_the_session_human_for_this_transaction_only():
     assert params == {"notes": "Back-to-office report: https://onedrive.example/r1", "id": actor}
 
 
-def test_the_writer_writes_nothing_unless_live_and_never_for_people():
+def test_the_writer_writes_nothing_unless_live_and_only_for_known_records():
     session = Session()
     actor = str(uuid.uuid4())
     assert record_ghus_notes(session, entity_type="event", entity_id=actor, notes="x",
@@ -74,8 +73,8 @@ def test_the_writer_writes_nothing_unless_live_and_never_for_people():
     assert record_ghus_notes(session, entity_type="actor", entity_id=actor, notes="  ",
                              decided_by="Ana", live=True) is False
     assert session.statements == []
-    with pytest.raises(ValueError, match="only for organizations and events"):
-        record_ghus_notes(session, entity_type="person", entity_id=actor, notes="x",
+    with pytest.raises(ValueError, match="only for organizations, events and people"):
+        record_ghus_notes(session, entity_type="hub", entity_id=actor, notes="x",
                           decided_by="Ana", live=True)
     with pytest.raises(ValueError, match="GHUS person"):
         record_ghus_notes(session, entity_type="actor", entity_id=actor, notes="x",

@@ -697,6 +697,12 @@ class ReviewApiTests(unittest.TestCase):
             self.client.get("/api/review/candidates")
             self.assertEqual(source.fetch_candidates.call_count, 1)
             self.client.get("/api/review/candidates", params={"refresh": True})
+            # The refresh runs in the background (5 Nov 2026): wait for it.
+            import time as _time
+            for _ in range(200):
+                if not self.backend.review_sync_running():
+                    break
+                _time.sleep(0.02)
             self.assertEqual(source.fetch_candidates.call_count, 2)
 
 

@@ -13,7 +13,8 @@
 //      separate: it holds prose the UI owns, not data it displays.
 
 export const SECTIONS = {
-  hubProposals: "Hub Proposals",
+  hubProposals: "Hub Recommendations",
+  reviewActions: "Review Actions",
   identity: "Identity & Classification",
   location: "Location & Parent",
   sector: "Sector, Topic & Hub",
@@ -90,7 +91,7 @@ export const FIELDS = {
   reviewState: "Review State",
   reviewReason: "Review Reason",
   sourceRun: "Source Run",
-  search: "Search by Name or Domain",
+  search: "Search by Keyword",
   status: "Status",
   legacyActorType: "Legacy Organization Type",
   candidateId: "Candidate ID",
@@ -216,6 +217,8 @@ export const SENTENCES = {
   sectorExisted: (name) => `Sector “${name}” already exists and has been selected.`,
   noHubCreated: "No — a proposal only.",
   hubProposalsExplain: "Detection proposes; GHUS decides. A proposal never creates a hub — it records a cluster that met every threshold, for a person to accept or refuse.",
+  hubProposalsSub: "Assign actors to existing hubs or propose new hubs",
+  reviewActionsSub: "Organizations, people, and events",
   hubProposalsNone: "No open hub proposals. Detection runs produce a proposal only when a cluster meets every threshold.",
   hubProposalsUnavailable: "Hub proposals aren't available on this computer.",
   demoLabel: "Example / test data — not GHUS-verified production data.",
