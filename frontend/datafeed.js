@@ -661,7 +661,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         const result = await api(`/api/datafeed/previews/${preview.preview_id}/confirm`, {
           method: "POST", body: JSON.stringify({import_name: name, accept_left_out: accept,
             attest_source: attestSource, admission, attest_authorized: attestAuthorized,
-            ai_enrichment: recordType === "actor" && aiEnrichment})});
+            ai_enrichment: aiEnrichment})});
         onDone(result);
       } catch (error) {
         setMessage({kind: "error", text: error.message});
@@ -750,7 +750,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           </p>
           <label class="df-check"><input type="checkbox" checked=${attestAuthorized}
             onChange=${e => setAttestAuthorized(e.target.checked)}/> ${ATTEST_AUTHORIZED}</label>
-          ${recordType === "actor" && html`<${AiEnrichmentCheck} recordType=${recordType}
+          ${html`<${AiEnrichmentCheck} recordType=${recordType}
             checked=${aiEnrichment} onChange=${setAiEnrichment} cap=${completionCap(send)}/>`}
         </div>
         <div class="discovery-actions">
@@ -765,17 +765,18 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
 
   /** "Complete information with AI enrichment" (GHUS, 5 Nov 2026): the uploader's
    *  choice, off until ticked; the Light Pull exists for organizations only. */
+  // Shown for every record type (GHUS, 5 Nov 2026); for people and events the
+  // choice is recorded with the import and the completion itself comes later.
   function AiEnrichmentCheck({recordType, checked, onChange, cap = null}) {
     const organizations = recordType === "actor";
-    return html`<label class=${"df-check df-ai" + (organizations ? "" : " disabled")}>
-      <input type="checkbox" checked=${organizations && checked} disabled=${!organizations}
-        onChange=${e => onChange(e.target.checked)}/>
+    return html`<label class="df-check df-ai">
+      <input type="checkbox" checked=${checked} onChange=${e => onChange(e.target.checked)}/>
       <span><strong>Complete information with AI enrichment</strong>
-        <small class="df-muted">${organizations
-          ? html`COMPASS reads each organization's own pages and fills only the empty fields before
-              storing; your values are never replaced (about $0.05 per organization${cap === null ? ""
-              : html`, at most $${cap.toFixed(2)} for this import`}). Unticked, the records are stored as given.`
-          : "Available for organizations: people and events are stored as given."}</small></span>
+        <small class="df-muted">COMPASS reads each record's own pages and fills only the empty fields
+          before storing; your values are never replaced${organizations
+            ? html` (about $0.05 per organization${cap === null ? ""
+              : html`, at most $${cap.toFixed(2)} for this import`})` : ""}. Unticked, the records are
+          stored as given.</small></span>
     </label>`;
   }
 
