@@ -375,3 +375,50 @@ def test_person_ghus_notes_are_written_only_by_ghus(connection):
     assert connection.execute(text("SELECT ghus_notes FROM person WHERE person_id=CAST(:p AS uuid)"),
                               {"p": person}).scalar() == "Met at the 2026 summit."
     session.close()
+
+
+def test_event_and_person_details_show_every_box_as_a_column(connection):
+    """Migration 630 (5 Nov 2026): one row per event and per person, a column per box."""
+    from datetime import UTC, datetime, timedelta
+
+    from agents.enrichment.decisions import append_entity_fact, append_event_claim
+
+    if connection.execute(text("SELECT to_regclass('public.event_details')")).scalar() is None:
+        pytest.skip("migration 630 is not applied to this test database")
+    event = connection.execute(text("SELECT event_id::text FROM event LIMIT 1")).scalar()
+    if event is None:
+        pytest.skip("needs an event")
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    # A person of this test only (rolled back with it) when the database has none.
+    person = connection.execute(text("SELECT person_id::text FROM person LIMIT 1")).scalar()
+    if person is None:
+        person = session.execute(text(
+            "INSERT INTO person (person_id, full_name) VALUES (gen_random_uuid(), 'Test Person') "
+            "RETURNING person_id::text")).scalar()
+    now = datetime.now(UTC)
+
+    def fact(kind, entity, key, value, when=now):
+        append_entity_fact(session, entity_type=kind, entity_id=entity, fact_key=key,
+                           value=value, source_url="https://x.example/about", date_read=when,
+                           confidence="high", created_by="agent:test", live=True)
+
+    fact("event", event, "format", "online")
+    fact("event", event, "format", "hybrid", now + timedelta(minutes=1))
+    fact("event", event, "unlisted_box", "kept anyway")
+    append_event_claim(session, event_id=event, claim_text="The largest test summit",
+                       source_url="https://x.example/about", date_read=now, live=True)
+    fmt, claims, other, sources = connection.execute(text(
+        "SELECT format, standing_claims, other_facts, fact_sources FROM event_details "
+        "WHERE event_id=CAST(:e AS uuid)"), {"e": event}).one()
+    assert fmt == "hybrid" and "The largest test summit" in claims
+    assert other["unlisted_box"] == "kept anyway"
+    assert sources["format"]["source_url"] == "https://x.example/about"
+    assert sources["format"]["confidence"] == "high"
+
+    fact("person", person, "department", "Water Resources")
+    fact("person", person, "email", "someone@example.org")
+    dept, other = connection.execute(text(
+        "SELECT department, other_facts FROM person_details WHERE person_id=CAST(:p AS uuid)"),
+        {"p": person}).one()
+    assert dept == "Water Resources" and "email" not in other   # contact details never shown
+    session.close()
