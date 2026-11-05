@@ -258,6 +258,131 @@ def load_request_exclusions(session, search_run_ids, *, limit: int = 300,
     return [dict(row) for row in rows]
 
 
+def load_runs_for_requests(session, subscription_ids, *, limit: int = 20
+                           ) -> dict[str, list[dict[str, object]]]:
+    """load_request_runs for many requests in one query (5 Nov 2026: one query per
+    request made the Monitor list take ~25 seconds on the shared database)."""
+    ids = [str(i) for i in subscription_ids if i]
+    if not ids:
+        return {}
+    rows = session.execute(text(
+        "SELECT * FROM (SELECT runs.*, row_number() OVER (PARTITION BY sid "
+        " ORDER BY started_at DESC) AS position FROM ("
+        " SELECT sr.actor_update_subscription_id::text AS sid, "
+        " cr.collection_run_id::text AS collection_run_id, cr.status, cr.dry_run, "
+        " cr.started_at, cr.finished_at, cr.found_count, cr.deduplicated_count, "
+        " cr.staged_count, cr.review_item_count, cr.status_reason, cr.spent_usd, "
+        " cr.config_snapshot->>'search_run_id' AS search_run_id, "
+        " cr.config_snapshot->'actor_results' AS actor_results, "
+        " cr.config_snapshot->>'stopped' AS stopped, false AS stalled, "
+        " EXTRACT(EPOCH FROM (COALESCE(cr.finished_at, now()) - cr.started_at))::int "
+        "   AS elapsed_seconds "
+        " FROM actor_update_subscription_run sr "
+        " JOIN collection_run cr ON cr.collection_run_id = sr.collection_run_id "
+        " WHERE sr.actor_update_subscription_id = ANY(CAST(:ids AS uuid[])) "
+        " UNION ALL "
+        " SELECT COALESCE(cr.config_snapshot->>'subscription_id', "
+        "     cr.config_snapshot->'discovery_request'->>'subscription_id'), "
+        " cr.collection_run_id::text, cr.status, cr.dry_run, cr.started_at, "
+        " cr.finished_at, cr.found_count, cr.deduplicated_count, cr.staged_count, "
+        " cr.review_item_count, cr.status_reason, "
+        " COALESCE((SELECT s.cost_usd FROM scrape_run s WHERE s.source_name = 'open_web_search' "
+        "   AND s.status = 'running' AND s.started_at >= cr.started_at "
+        "   ORDER BY s.started_at LIMIT 1), cr.spent_usd, 0) AS spent_usd, "
+        " (SELECT s.run_id::text FROM scrape_run s WHERE s.source_name = 'open_web_search' "
+        "   AND s.started_at >= cr.started_at ORDER BY s.started_at LIMIT 1) AS search_run_id, "
+        " NULL::jsonb, NULL::text, "
+        " (now() - cr.started_at > CAST(:stalled AS interval)) AS stalled, "
+        " EXTRACT(EPOCH FROM (now() - cr.started_at))::int "
+        " FROM collection_run cr "
+        " WHERE cr.status = 'running' "
+        " AND COALESCE(cr.config_snapshot->>'subscription_id', "
+        "     cr.config_snapshot->'discovery_request'->>'subscription_id') = ANY(CAST(:ids AS text[])) "
+        " AND NOT EXISTS (SELECT 1 FROM actor_update_subscription_run l "
+        "                 WHERE l.collection_run_id = cr.collection_run_id)"
+        ") runs) ranked WHERE position <= :limit ORDER BY sid, started_at DESC"
+    ), {"ids": ids, "limit": limit, "stalled": STALLED_AFTER}).mappings()
+    out: dict[str, list[dict[str, object]]] = {i: [] for i in ids}
+    for row in rows:
+        item = dict(row)
+        sid = str(item.pop("sid"))
+        item.pop("position", None)
+        out.setdefault(sid, []).append(item)
+    return out
+
+
+_RESULT_COLUMNS = (
+    "candidate_id::text AS candidate_id, run_id::text AS search_run_id, url, entity_type, "
+    "COALESCE(record_preview->>'name', record_preview->>'title', title) AS name, "
+    "COALESCE(record_preview->>'website', record_preview->>'public_profile_url') AS website, "
+    "record_preview->>'description' AS description, fit_score, score_band, "
+    "COALESCE(record_preview->>'location_city', record_preview->>'city') AS city, "
+    "record_preview->>'state' AS state, "
+    "record_preview->>'country' AS country, record_preview->>'actor_category' AS category, "
+    "record_preview->>'primary_technical_focus' AS focus, "
+    "record_preview->>'current_activities' AS activities, "
+    "record_preview->>'funding_summary' AS funding, "
+    "record_preview->>'match_reason' AS why_matched, "
+    "record_preview->>'start_date' AS start_date, "
+    "record_preview->>'end_date' AS end_date, "
+    "record_preview->>'event_type' AS event_type, "
+    "record_preview->>'role' AS role, record_preview->>'affiliation' AS affiliation, "
+    "record_preview->'quality'->>'completeness' AS completeness, "
+    "(score_breakdown->>'priority_score')::float AS priority, "
+    "(score_band = 'auto_high' AND COALESCE((SELECT r.config->>'actor_auto_accept_status' = "
+    "'verified' AND NOT (r.stats ? 'actor_auto_verify_disabled') FROM scrape_run r "
+    "WHERE r.run_id = search_candidate.run_id), FALSE)) AS verified_by_compass, "
+    "triage_reason, triage_verdict, created_at"
+)
+
+
+def load_results_for_runs(session, search_run_ids) -> dict[str, list[dict[str, object]]]:
+    """Every candidate of these search runs, by run (one query; see load_runs_for_requests)."""
+    ids = sorted({str(i) for i in search_run_ids if i})
+    if not ids:
+        return {}
+    out: dict[str, list[dict[str, object]]] = {}
+    for row in session.execute(text(
+        f"SELECT {_RESULT_COLUMNS} FROM search_candidate "
+        "WHERE run_id = ANY(CAST(:ids AS uuid[]))"
+    ), {"ids": ids}).mappings():
+        out.setdefault(str(row["search_run_id"]), []).append(dict(row))
+    return out
+
+
+def _fit_desc(row) -> tuple:
+    # ORDER BY fit_score DESC NULLS LAST
+    score = row.get("fit_score")
+    return (score is None, -(float(score) if score is not None else 0.0))
+
+
+def results_from(candidates_by_run, search_run_ids, *, entity: str = "actor",
+                 limit: int = 50) -> list[dict[str, object]]:
+    """load_request_results, from rows read by load_results_for_runs."""
+    keys = ("candidate_id", "search_run_id", "url", "name", "website", "description",
+            "fit_score", "score_band", "city", "state", "country", "category", "focus",
+            "activities", "funding", "why_matched", "start_date", "end_date", "event_type",
+            "role", "affiliation", "completeness", "priority", "verified_by_compass",
+            "triage_reason", "created_at")
+    rows = [r for i in dict.fromkeys(str(x) for x in search_run_ids if x)
+            for r in candidates_by_run.get(i, [])
+            if r["entity_type"] == entity and r["score_band"] in ("auto_high", "review")]
+    rows.sort(key=lambda r: (r["score_band"] != "auto_high", *_fit_desc(r)))
+    return [{k: r[k] for k in keys} for r in rows[:limit]]
+
+
+def exclusions_from(candidates_by_run, search_run_ids, *, entity: str = "actor",
+                    limit: int = 300) -> list[dict[str, object]]:
+    """load_request_exclusions, from rows read by load_results_for_runs."""
+    keys = ("url", "name", "triage_verdict", "score_band", "fit_score", "triage_reason")
+    rows = [r for i in dict.fromkeys(str(x) for x in search_run_ids if x)
+            for r in candidates_by_run.get(i, [])
+            if r["entity_type"] == entity
+            and (r["score_band"] or "") not in ("auto_high", "review")]
+    rows.sort(key=_fit_desc)
+    return [{k: r[k] for k in keys} for r in rows[:limit]]
+
+
 def search_run_since(session, started, entity: str = "actor") -> tuple[str | None, float]:
     """The open-web actor search run started at or after ``started``, and its cost.
 

@@ -393,3 +393,6 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 
 /* List boxes (4 Nov 2026): one entry per line. */
 .review-value{white-space:pre-line}
+
+/* The database is being read in the background (5 Nov 2026). */
+.review-syncing{margin:6px 0 0;font-size:13px}

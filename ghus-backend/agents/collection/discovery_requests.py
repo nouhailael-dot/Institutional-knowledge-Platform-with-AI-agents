@@ -228,7 +228,12 @@ def _options(session) -> dict:
 def _list(session) -> dict:
     today = datetime.now(UTC).date()
     requests = []
-    for row in store.load_discovery_requests(session):
+    rows = list(store.load_discovery_requests(session))
+    # Three queries for every request together, not three per request (5 Nov 2026).
+    runs_by_request = store.load_runs_for_requests(session, [r["subscription_id"] for r in rows])
+    candidates = store.load_results_for_runs(session, [
+        run.get("search_run_id") for runs in runs_by_request.values() for run in runs])
+    for row in rows:
         item = dict(row)
         try:
             sub = store.subscription_from_row(row)
@@ -236,11 +241,11 @@ def _list(session) -> dict:
             item["skip_reason"] = sub.skip_reason(today)
         except ValueError as exc:
             item["next_run"], item["skip_reason"] = None, f"invalid: {exc}"
-        item["runs"] = store.load_request_runs(session, str(row["subscription_id"]))
+        item["runs"] = runs_by_request.get(str(row["subscription_id"]), [])
         run_ids = [run.get("search_run_id") for run in item["runs"]]
         entity = str(row.get("discovery_entity") or "actor")
-        item["results"] = store.load_request_results(session, run_ids, entity=entity)
-        item["excluded"] = store.load_request_exclusions(session, run_ids, entity=entity)
+        item["results"] = store.results_from(candidates, run_ids, entity=entity)
+        item["excluded"] = store.exclusions_from(candidates, run_ids, entity=entity)
         requests.append(item)
     return {"requests": requests}
 

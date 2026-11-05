@@ -420,3 +420,42 @@ def test_a_request_started_by_run_now_reads_running_until_its_run_appears(tmp_pa
     recorded = {"requests": [{"subscription_id": sid, "runs": [{"started_at": run_at}]}]}
     assert "starting" not in bridge.mark_starting(recorded, now=began + 100)["requests"][0]
     assert sid not in bridge._started
+
+
+def test_the_app_reads_each_list_once_and_again_after_a_change(tmp_path, monkeypatch):
+    """5 Nov 2026: a list read takes ~25 s; Monitor, the Dashboard and Review asked
+    every 15 s. The app keeps the last list and reads it fresh after any change."""
+    from src.discovery import bridge as module
+
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(stdout=json.dumps({"requests": [{"subscription_id": "a"}],
+                                                  "ok": True}), returncode=0)
+
+    cached = DiscoveryBridge(project_root=_backend(tmp_path), python_executable="py",
+                             database_url="postgresql://local/x_test", run_command=run,
+                             cache_lists=True)
+    first = cached.list_requests()
+    first["requests"][0]["changed_by_caller"] = True
+    second = cached.list_requests()
+    assert len([c for c in calls if "list" in c]) == 1
+    assert "changed_by_caller" not in second["requests"][0]     # each caller gets its own copy
+    cached.change("a", "pause")
+    cached.list_requests()
+    assert len([c for c in calls if "list" in c]) == 2           # read fresh after the change
+    # An old list is served at once and read again in the background.
+    monkeypatch.setattr(module, "LIST_FRESH_FOR_S", 0)
+    cached.list_requests()
+    import time as _time
+    for _ in range(50):
+        if len([c for c in calls if "list" in c]) == 3:
+            break
+        _time.sleep(0.02)
+    assert len([c for c in calls if "list" in c]) == 3
+    # Without the switch (tests, scripts) every read goes to the backend.
+    plain = _bridge(tmp_path / "plain", stdout=json.dumps({"requests": [], "ok": True}),
+                    calls=(seen := []))
+    plain.list_requests(); plain.list_requests()
+    assert len(seen) == 2

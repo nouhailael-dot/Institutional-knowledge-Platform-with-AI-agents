@@ -532,6 +532,95 @@ class PostgresReviewSource:
                 continue
             raised_by_actor.setdefault(str(item["agent_metadata"].get("entity_id")), []).append(item)
 
+        # 5 Nov 2026: five queries per organization made Review wait about 30
+        # seconds; every organization's rows are now read in four queries.
+        self._prefetch = self._profile_rows(db, columns, list(runs_by_actor))
+        try:
+            return self._fold_profiles(db, columns, runs_by_actor, raised_by_actor, topics,
+                                       hub_context, retired)
+        finally:
+            self._prefetch = None
+
+    _prefetch = None
+
+    def _profile_rows(self, db, columns, actor_ids) -> dict[str, Any] | None:
+        """Every fact, legacy fact and link the profiles need, in four queries."""
+        if not actor_ids or "actor_fact_current_pointer" not in columns:
+            return None
+        current: dict[str, list[dict[str, Any]]] = {}
+        for r in db.execute(
+            "SELECT p.actor_id::text AS actor_id, p.topic_id::text AS topic_id, f.fact_key, "
+            "f.fact_type, f.layer, f.collection_state, f.fact_value AS value, f.confidence, "
+            "f.retrieved_at, f.source_origin, s.url AS source_url, "
+            "to_jsonb(f)->>'creator_class' AS set_by "
+            "FROM actor_fact_current_pointer p JOIN actor_fact f ON f.actor_fact_id = p.actor_fact_id "
+            "LEFT JOIN source s ON s.source_id = f.source_id "
+            "WHERE p.actor_id::text = ANY(%s) ORDER BY f.fact_key", (actor_ids,)
+        ).fetchall():
+            current.setdefault(r["actor_id"], []).append(dict(r))
+        history: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        for r in db.execute(
+            "SELECT f.actor_id::text AS actor_id, f.topic_id::text AS topic_id, f.fact_key, "
+            "f.fact_value AS value, f.confidence, f.retrieved_at, "
+            "f.lifecycle_state, (p.actor_fact_id = f.actor_fact_id) AS is_current "
+            "FROM actor_fact f LEFT JOIN actor_fact_current_pointer p ON p.actor_id = f.actor_id "
+            " AND p.topic_id = f.topic_id AND p.fact_key = f.fact_key "
+            "WHERE f.actor_id::text = ANY(%s) AND f.topic_id IS NOT NULL "
+            "ORDER BY f.fact_key, f.created_at", (actor_ids,)
+        ).fetchall():
+            history.setdefault((r["actor_id"], r["topic_id"]), []).append(dict(r))
+        legacy: dict[str, list[dict[str, Any]]] = {}
+        for r in db.execute(
+            "SELECT f.actor_id::text AS actor_id, f.fact_key, f.fact_value AS value, f.confidence, "
+            "f.retrieved_at, f.fact_type, s.url AS source_url FROM actor_fact f "
+            "LEFT JOIN source s ON s.source_id = f.source_id "
+            "WHERE f.actor_id::text = ANY(%s) AND f.fact_type IN ('legacy_profile','legacy_baseline') "
+            "AND f.collection_state = 'found' "
+            "ORDER BY (f.fact_type = 'legacy_profile') DESC, f.retrieved_at DESC NULLS LAST",
+            (actor_ids,)
+        ).fetchall():
+            legacy.setdefault(r["actor_id"], []).append(dict(r))
+        edges: dict[str, list[dict[str, Any]]] = {}
+        if {"subject_type", "subject_id", "object_type", "object_id",
+                "relationship_type"} <= columns.get("entity_edge", set()):
+            rows = db.execute(
+                "SELECT ee.subject_type, ee.subject_id::text AS subject_id, ee.object_type, "
+                "ee.object_id::text AS object_id, ee.relationship_type, s.url AS source_url "
+                "FROM entity_edge ee LEFT JOIN source s ON s.source_id = ee.source_id "
+                "WHERE (ee.subject_type = 'actor' AND ee.subject_id::text = ANY(%s)) "
+                "   OR (ee.object_type = 'actor' AND ee.object_id::text = ANY(%s)) "
+                "ORDER BY ee.created_at", (actor_ids, actor_ids)
+            ).fetchall()
+            wanted = set(actor_ids)
+            counterpart_ids = set()
+            for r in rows:
+                for me, side in ((r["subject_id"], "outgoing"), (r["object_id"], "incoming")):
+                    is_me = (r["subject_type"] if side == "outgoing" else r["object_type"]) == "actor"
+                    if not (is_me and me in wanted):
+                        continue
+                    if side == "incoming" and r["subject_type"] == "actor" \
+                            and r["subject_id"] == me:
+                        continue                   # an edge to itself counts once
+                    other_type = r["object_type"] if side == "outgoing" else r["subject_type"]
+                    other_id = r["object_id"] if side == "outgoing" else r["subject_id"]
+                    edges.setdefault(me, []).append({
+                        "direction": side, "relationship_type": r["relationship_type"],
+                        "counterpart_type": other_type, "counterpart_id": other_id,
+                        "source_url": r["source_url"]})
+                    if other_type == "actor":
+                        counterpart_ids.add(other_id)
+            if counterpart_ids:
+                names = {r["actor_id"]: r["name"] for r in db.execute(
+                    "SELECT actor_id::text AS actor_id, name FROM actor "
+                    "WHERE actor_id::text = ANY(%s)", (sorted(counterpart_ids),)).fetchall()}
+                for rows_of in edges.values():
+                    for edge in rows_of:
+                        if edge["counterpart_type"] == "actor":
+                            edge["counterpart_name"] = names.get(edge["counterpart_id"])
+        return {"current": current, "history": history, "legacy": legacy, "edges": edges}
+
+    def _fold_profiles(self, db, columns, runs_by_actor, raised_by_actor, topics, hub_context,
+                       retired):
         profiles, folded = [], []
         for actor_id, runs in runs_by_actor.items():
             runs.sort(key=lambda pair: pair[0].get("created_at") or 0, reverse=True)
@@ -717,6 +806,11 @@ class PostgresReviewSource:
         """The actor's current boxes for one sector, and every value they held."""
         if not topic_id or "actor_fact_current_pointer" not in columns:
             return [], []
+        if self._prefetch is not None:
+            rows = [r for r in self._prefetch["current"].get(str(actor_id), [])
+                    if r["topic_id"] == str(topic_id)]
+            history = self._prefetch["history"].get((str(actor_id), str(topic_id)), [])
+            return self._topic_facts_out(rows, history)
         rows = db.execute(
             "SELECT f.fact_key, f.fact_type, f.layer, f.collection_state, f.fact_value AS value, "
             "f.confidence, f.retrieved_at, f.source_origin, s.url AS source_url, "
@@ -741,6 +835,17 @@ class PostgresReviewSource:
             "WHERE f.actor_id = CAST(%s AS uuid) AND f.topic_id = CAST(%s AS uuid) "
             "ORDER BY f.fact_key, f.created_at", (actor_id, topic_id)
         ).fetchall()
+        return self._topic_facts_out(rows, history)
+
+    @staticmethod
+    def _topic_facts_out(rows, history):
+        facts = [{
+            "fact_key": r["fact_key"], "fact_type": r["fact_type"], "layer": r["layer"],
+            "collection_state": r["collection_state"], "value": r["value"],
+            "confidence": r["confidence"], "date_read": _iso(r["retrieved_at"]),
+            "source_origin": r["source_origin"], "source_url": r["source_url"],
+            "set_by": r["set_by"], "is_current": True,
+        } for r in rows]
         return facts, [{
             "fact_key": r["fact_key"], "value": r["value"], "confidence": r["confidence"],
             "date_read": _iso(r["retrieved_at"]), "lifecycle_state": r["lifecycle_state"],
@@ -751,6 +856,15 @@ class PostgresReviewSource:
         """The actor's current found facts in its other active sectors, newest first."""
         if "actor_fact_current_pointer" not in columns:
             return []
+        if self._prefetch is not None:
+            mine = [r for r in self._prefetch["current"].get(str(actor_id), [])
+                    if r["topic_id"] != (str(topic_id) if topic_id else None)
+                    and r["collection_state"] == "found"]
+            # As ORDER BY retrieved_at DESC: undated first, then newest first.
+            rows = [r for r in mine if r["retrieved_at"] is None] + sorted(
+                (r for r in mine if r["retrieved_at"] is not None),
+                key=lambda r: r["retrieved_at"], reverse=True)
+            return self._other_sector_out(rows, topics)
         rows = db.execute(
             "SELECT f.fact_key, f.fact_type, f.layer, f.collection_state, f.fact_value AS value, "
             "f.confidence, f.retrieved_at, f.source_origin, s.url AS source_url, "
@@ -761,6 +875,10 @@ class PostgresReviewSource:
             "AND f.collection_state = 'found' ORDER BY f.retrieved_at DESC",
             (actor_id, topic_id)
         ).fetchall()
+        return self._other_sector_out(rows, topics)
+
+    @staticmethod
+    def _other_sector_out(rows, topics):
         out = []
         for r in rows:
             topic = topics.get(r["topic_id"]) or {}
@@ -791,15 +909,19 @@ class PostgresReviewSource:
             if legacy_key not in used:
                 used.add(legacy_key)
                 boxes[box] = legacy_key
-        rows = db.execute(
-            "SELECT f.fact_key, f.fact_value AS value, f.confidence, f.retrieved_at, f.fact_type, "
-            "s.url AS source_url FROM actor_fact f LEFT JOIN source s ON s.source_id = f.source_id "
-            "WHERE f.actor_id = CAST(%s AS uuid) AND f.fact_type IN ('legacy_profile','legacy_baseline') "
-            "AND f.collection_state = 'found' AND f.fact_key = ANY(%s) "
-            # The curated profile summary first, then the baseline; newest first.
-            "ORDER BY (f.fact_type = 'legacy_profile') DESC, f.retrieved_at DESC NULLS LAST",
-            (actor_id, sorted(set(boxes.values())))
-        ).fetchall()
+        if self._prefetch is not None:
+            keys = set(boxes.values())
+            rows = [r for r in self._prefetch["legacy"].get(str(actor_id), []) if r["fact_key"] in keys]
+        else:
+            rows = db.execute(
+                "SELECT f.fact_key, f.fact_value AS value, f.confidence, f.retrieved_at, f.fact_type, "
+                "s.url AS source_url FROM actor_fact f LEFT JOIN source s ON s.source_id = f.source_id "
+                "WHERE f.actor_id = CAST(%s AS uuid) AND f.fact_type IN ('legacy_profile','legacy_baseline') "
+                "AND f.collection_state = 'found' AND f.fact_key = ANY(%s) "
+                # The curated profile summary first, then the baseline; newest first.
+                "ORDER BY (f.fact_type = 'legacy_profile') DESC, f.retrieved_at DESC NULLS LAST",
+                (actor_id, sorted(set(boxes.values())))
+            ).fetchall()
         first: dict[str, Any] = {}
         for row in rows:
             first.setdefault(row["fact_key"], row)
@@ -821,6 +943,8 @@ class PostgresReviewSource:
         if not {"subject_type", "subject_id", "object_type", "object_id",
                 "relationship_type"} <= columns.get("entity_edge", set()):
             return []
+        if self._prefetch is not None:
+            return [dict(e) for e in self._prefetch["edges"].get(str(actor_id), [])]
         rows = db.execute(
             "SELECT CASE WHEN ee.subject_id = CAST(%s AS uuid) THEN 'outgoing' ELSE 'incoming' END "
             " AS direction, ee.relationship_type, "
@@ -873,19 +997,71 @@ class PostgresReviewSource:
             f"WHERE r.job_name IN {UPDATE_JOBS} AND r.status IN ('succeeded','attention') "
             "ORDER BY r.started_at DESC LIMIT %s", (limit,)
         ).fetchall()
-        cards = []
+        planned = []
         for run in runs:
             snapshot = _json_object(run.get("config_snapshot"))
             actor_ids = ([run["actor_id"]] if run.get("actor_id") else
                          [str(a.get("actor_id")) for a in _json_list(snapshot.get("actor_results"))
                           if isinstance(a, dict) and a.get("ok")])
-            for actor_id in actor_ids:
-                card = self._actor_update_card(db, run, snapshot, actor_id)
-                if card is not None:
-                    cards.append(card)
+            planned.extend((run, snapshot, actor_id) for actor_id in actor_ids)
+        # 5 Nov 2026: three queries per card made Review wait about 25 seconds;
+        # every card's rows are now read in three queries in all.
+        pre = self._card_rows(db, planned)
+        cards = []
+        for run, snapshot, actor_id in planned:
+            card = self._actor_update_card(db, run, snapshot, actor_id, pre=pre)
+            if card is not None:
+                cards.append(card)
         return cards
 
-    def _actor_update_card(self, db, run, snapshot, actor_id) -> dict[str, Any] | None:
+    @staticmethod
+    def _card_rows(db, planned) -> dict[str, Any]:
+        """Actors, written facts and corroboration counts for every planned card."""
+        actor_ids = sorted({str(actor_id) for _run, _snap, actor_id in planned if actor_id})
+        request_ids = sorted({str(run["request_id"]) for run, _snap, _a in planned
+                              if run.get("request_id")})
+        if not actor_ids:
+            return {"actors": {}, "written": {}, "corroborated": {}}
+        actors = {r["actor_id"]: r for r in db.execute(
+            "SELECT a.actor_id::text AS actor_id, a.name, a.website, a.description, "
+            "NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
+            "NULLIF(to_jsonb(a)->>'category_type','') AS category_type, "
+            "COALESCE(NULLIF(to_jsonb(a)->>'location_city',''), NULLIF(to_jsonb(a)->>'city','')) "
+            "AS location_city, COALESCE(NULLIF(to_jsonb(a)->>'state_code',''), "
+            "NULLIF(to_jsonb(a)->>'state','')) AS state, "
+            "NULLIF(to_jsonb(a)->>'region_code','') AS region_code, a.country, "
+            "COALESCE(NULLIF(to_jsonb(a)->>'status',''), NULLIF(to_jsonb(a)->>'record_status','')) "
+            "AS record_status FROM actor a WHERE a.actor_id::text = ANY(%s)", (actor_ids,)
+        ).fetchall()}
+        written: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        corroborated: dict[tuple[str, str], int] = {}
+        if request_ids:
+            for row in db.execute(
+                "SELECT f.request_id::text AS request_id, f.actor_id::text AS actor_id, "
+                "f.created_at, f.fact_key, f.collection_state, f.fact_value, f.confidence, "
+                "f.retrieved_at, f.topic_id::text AS topic_id, "
+                "f.lifecycle_state, s.url AS source_url, pf.fact_value AS previous_value, "
+                "(cp.actor_fact_id = f.actor_fact_id) AS is_current "
+                "FROM actor_fact f LEFT JOIN source s ON s.source_id = f.source_id "
+                "LEFT JOIN actor_fact pf ON pf.actor_fact_id = f.supersedes_fact_id "
+                "LEFT JOIN actor_fact_current_pointer cp ON cp.actor_id = f.actor_id "
+                " AND cp.topic_id = f.topic_id AND cp.fact_key = f.fact_key "
+                "WHERE f.request_id::text = ANY(%s) AND f.actor_id::text = ANY(%s) "
+                "ORDER BY f.fact_key", (request_ids, actor_ids)
+            ).fetchall():
+                written.setdefault((row["request_id"], row["actor_id"]), []).append(dict(row))
+            for row in db.execute(
+                "SELECT c.request_id::text AS request_id, f.actor_id::text AS actor_id, "
+                "count(*) AS n FROM fact_corroboration c JOIN actor_fact f "
+                "ON f.actor_fact_id = c.actor_fact_id WHERE c.request_id::text = ANY(%s) "
+                "AND f.actor_id::text = ANY(%s) GROUP BY 1, 2", (request_ids, actor_ids)
+            ).fetchall():
+                corroborated[(row["request_id"], row["actor_id"])] = int(row["n"] or 0)
+        return {"actors": actors, "written": written, "corroborated": corroborated}
+
+    def _actor_update_card(self, db, run, snapshot, actor_id, pre=None) -> dict[str, Any] | None:
+        if pre is not None:
+            return self._actor_update_card_from(run, snapshot, actor_id, pre)
         actor = db.execute(
             "SELECT a.actor_id::text AS actor_id, a.name, a.website, a.description, "
             "NULLIF(to_jsonb(a)->>'actor_category','') AS actor_category, "
@@ -920,6 +1096,21 @@ class PostgresReviewSource:
             "AND f.actor_id = CAST(%s AS uuid)",
             (run["request_id"], actor_id)
         ).fetchone()
+        return self._card(run, snapshot, actor_id, actor, written, int(corroborated["n"] or 0))
+
+    def _actor_update_card_from(self, run, snapshot, actor_id, pre) -> dict[str, Any] | None:
+        """The same card from rows read for every card at once (_card_rows)."""
+        actor = pre["actors"].get(str(actor_id))
+        if actor is None:
+            return None
+        started, finished = run["started_at"], run["finished_at"]
+        written = [w for w in pre["written"].get((str(run["request_id"]), str(actor_id)), [])
+                   if started is None or (w["created_at"] >= started
+                                          and (finished is None or w["created_at"] <= finished))]
+        n = pre["corroborated"].get((str(run["request_id"]), str(actor_id)), 0)
+        return self._card(run, snapshot, actor_id, actor, written, n)
+
+    def _card(self, run, snapshot, actor_id, actor, written, corroborated) -> dict[str, Any]:
         facts = [{
             "fact_key": w["fact_key"], "collection_state": w["collection_state"],
             "value": w["fact_value"], "previous_value": w["previous_value"],
@@ -957,7 +1148,7 @@ class PostgresReviewSource:
                 "entity_id": actor_id, "run_id": run["run_id"], "run_status": run["status"],
                 "record_status": actor["record_status"],
                 "spent_usd": float(run["spent_usd"] or 0), "pages_read": pages,
-                "written": facts, "corroborated": int(corroborated["n"] or 0),
+                "written": facts, "corroborated": corroborated,
                 "scope": snapshot.get("scope") or (snapshot.get("update_request") or {}).get("scope"),
                 "topic_id": topic_id, "topic_code": topic_code,
                 # Per box, what the update found - including what it confirmed

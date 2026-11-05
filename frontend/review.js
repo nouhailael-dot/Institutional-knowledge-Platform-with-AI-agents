@@ -2012,8 +2012,13 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const keys = useRef(new Map());
 
     const loaded = useRef(null);
-    async function load(signal, force = false) {
-      setLoading(true);
+    // While the server reads the database in the background (5 Nov 2026), the
+    // list on screen stays and is quietly read again until the read is done.
+    const syncPoll = useRef(null);
+    useEffect(() => () => clearTimeout(syncPoll.current), []);
+    async function load(signal, force = false, quiet = false) {
+      clearTimeout(syncPoll.current);
+      if (!quiet) setLoading(true);
       setError("");
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
@@ -2024,6 +2029,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       try {
         const body = await request(`/api/review/candidates?${params}`, {signal});
         setData(body);
+        if (body.syncing) {
+          syncPoll.current = setTimeout(() => load(undefined, false, true), 4000);
+        }
         setCategoryIds(ids => ids.filter(id => pendingCategoryReviews(body.candidates)
           .some(row => row.candidate_id === id)));
         loaded.current = body;
@@ -2031,9 +2039,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         setSelectedId(current =>
           body.candidates.some(item => item.candidate_id === current) ? current : null);
       } catch (exception) {
-        if (exception.name !== "AbortError") setError(exception.message);
+        if (exception.name !== "AbortError" && !quiet) setError(exception.message);
       } finally {
-        if (!signal?.aborted) setLoading(false);
+        if (!signal?.aborted && !quiet) setLoading(false);
       }
     }
 
@@ -2503,6 +2511,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       ${writerDown && html`<div class="review-notice" role="alert">
         <strong>${SENTENCES.failClosed}</strong> ${SENTENCES.writerUnavailable}
       </div>`}
+      ${data.syncing && html`<p class="review-syncing muted" role="status">
+        Refreshing from the database… new results appear here by themselves.</p>`}
       ${(data.sync_warnings || []).map((warning, index) => html`
         <div key=${index} class="review-message error" role="alert">
           <strong>Source sync warning:</strong> ${warning}

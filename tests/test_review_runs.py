@@ -849,3 +849,43 @@ def test_analyst_notes_are_refused_where_they_cannot_be_kept(store):
     with pytest.raises(ReviewValidationError, match="organizations and events only"):
         store.admission_request("person-notes", decision_kind="new", reviewer="Ana",
                                 idempotency_key="notes-4", confirmed=True, ghus_notes="x")
+
+
+def test_review_answers_at_once_and_reads_the_database_in_the_background(tmp_path):
+    """5 Nov 2026: reading the shared database took about a minute and Review waited
+    for it. Only the first read of a fresh server waits; later ones run behind."""
+    import threading
+    import time as _time
+    from unittest.mock import patch
+
+    from backend import app as backend
+
+    client, _store, patches = _api_client(tmp_path)
+    gate = threading.Event()
+
+    class SlowSource:
+        retired_keys = {}
+
+        def fetch_candidates(self):
+            gate.wait(5)
+            return [], []
+
+    try:
+        with patch.object(backend, "review_postgres_source", return_value=SlowSource()):
+            gate.set()
+            first = client.get("/api/review/candidates").json()        # waits: first read
+            assert first["syncing"] is False
+            gate.clear()
+            started = _time.monotonic()
+            again = client.get("/api/review/candidates", params={"refresh": True}).json()
+            assert _time.monotonic() - started < 2 and again["syncing"] is True
+            gate.set()
+            for _ in range(100):
+                if not backend.review_sync_running():
+                    break
+                _time.sleep(0.02)
+            assert client.get("/api/review/candidates").json()["syncing"] is False
+    finally:
+        gate.set()
+        for item in patches:
+            item.stop()
