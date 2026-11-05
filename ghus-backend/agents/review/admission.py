@@ -87,6 +87,16 @@ def _clean_required(value: object, name: str, max_length: int = 255) -> str:
     return cleaned
 
 
+def _notes_column_exists(session, entity_type: str) -> bool:
+    """People's GHUS Notes need migration 620 (5 Nov 2026); before it they are
+    left unsaved rather than refusing the whole verification."""
+    if entity_type != "person":
+        return True
+    return bool(session.execute(text(
+        "SELECT 1 FROM information_schema.columns WHERE table_schema='public' "
+        "AND table_name='person' AND column_name='ghus_notes'")).scalar())
+
+
 def _normalise_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
     decision = dict(raw)
     entity_type = _clean_required(decision.get("entity_type"), "entity_type", 20).lower()
@@ -139,8 +149,6 @@ def _normalise_decision(raw: Mapping[str, Any]) -> dict[str, Any]:
         raise AdmissionValidationError("rejection fields are valid only for reject")
     ghus_notes = str(decision.get("ghus_notes") or "").strip() or None
     if ghus_notes is not None:
-        if entity_type == "person":
-            raise AdmissionValidationError("GHUS notes exist only for organizations and events")
         if kind not in {"same_existing", "new"}:
             raise AdmissionValidationError("GHUS notes are saved with an admitted record")
         if len(ghus_notes) > 5000:
@@ -550,7 +558,8 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
                 manage_transaction=False,
             )
             proposed_hub_id = _insert_proposed_hub(session, clean)
-            if clean["ghus_notes"] and result is not None and result.entity_id:
+            if (clean["ghus_notes"] and result is not None and result.entity_id
+                    and _notes_column_exists(session, clean["entity_type"])):
                 # Last in the transaction: the GHUS-only notes, by the reviewer.
                 from agents.enrichment.decisions import record_ghus_notes
 

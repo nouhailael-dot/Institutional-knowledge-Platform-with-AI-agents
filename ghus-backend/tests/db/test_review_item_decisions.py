@@ -297,3 +297,81 @@ def test_event_and_person_facts_are_kept_with_their_source_and_never_overwritten
         "WHERE f.event_id=CAST(:e AS uuid) AND f.fact_key='format'"), {"e": event_id}).scalar()
     assert source == "https://example.org/event/about"
     session.close()
+
+
+def test_actor_details_shows_every_box_as_a_column_and_follows_each_new_reading(connection):
+    """Migration 620 (5 Nov 2026): one row per organization, a column per box."""
+    from datetime import UTC, datetime, timedelta
+
+    from agents.common.facts import ActorFactWrite
+    from agents.enrichment.decisions import append_actor_fact
+
+    if connection.execute(text("SELECT to_regclass('public.actor_details')")).scalar() is None:
+        pytest.skip("migration 620 is not applied to this test database")
+    row = connection.execute(text(
+        "SELECT a.actor_id::text, t.topic_id::text FROM actor a CROSS JOIN topic t "
+        "WHERE NOT EXISTS (SELECT 1 FROM actor_fact_current_pointer p WHERE p.actor_id=a.actor_id "
+        "AND p.fact_key IN ('funding_signal','founding_year_location','unlisted_box')) LIMIT 1")).first()
+    if row is None:
+        pytest.skip("needs an actor and a topic")
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    now = datetime.now(UTC)
+
+    def write(key, value, when, state="found"):
+        return append_actor_fact(session, ActorFactWrite(
+            actor_id=row[0], topic_id=row[1], field_key=key, fact_type="light_pull",
+            layer=1, value=value, collection_state=state, source_url="https://x.example/news",
+            source_origin="newly_found", date_read=when, confidence="high",
+            created_by="agent.test"), live=True)
+
+    def details():
+        return connection.execute(text(
+            "SELECT funding_signal, founding_year_location, other_facts, fact_sources "
+            "FROM actor_details WHERE actor_id=CAST(:a AS uuid)"), {"a": row[0]}).one()
+
+    write("founding_year_location", None, now, state="not_found")
+    assert details()[1] == "not_found"
+    write("funding_signal", {"entries": [{"amount": "$1M", "funder": "DOE"}]}, now)
+    write("funding_signal", {"entries": [{"amount": "$2M", "funder": "NSF"},
+                                         {"amount": "$1M", "funder": "DOE"}]},
+          now + timedelta(minutes=1))
+    write("unlisted_box", "kept anyway", now)
+    funding, founding, other, sources = details()
+    assert funding["entries"][0]["funder"] == "NSF" and founding == "not_found"
+    assert other["unlisted_box"] == "kept anyway"
+    assert sources["funding_signal"]["source_url"] == "https://x.example/news"
+    assert sources["funding_signal"]["confidence"] == "high"
+    # Migration 621: a reading with no topic (as V1 carried over) shows too.
+    if connection.execute(text("SELECT 1 FROM pg_trigger WHERE tgname="
+                               "'actor_details_follows_topicless_fact'")).scalar():
+        carried = connection.execute(text(
+            "SELECT DISTINCT ON (f.actor_id) f.actor_id::text, f.fact_value FROM actor_fact f "
+            "WHERE f.topic_id IS NULL AND f.fact_key='current_activities' "
+            "AND f.collection_state='found' ORDER BY f.actor_id, f.retrieved_at DESC, "
+            "f.created_at DESC LIMIT 1")).first()
+        if carried is not None:
+            assert connection.execute(text(
+                "SELECT current_activities FROM actor_details WHERE actor_id=CAST(:a AS uuid)"),
+                {"a": carried[0]}).scalar() == carried[1]
+    session.close()
+
+
+def test_person_ghus_notes_are_written_only_by_ghus(connection):
+    from agents.enrichment.decisions import record_ghus_notes
+
+    has_column = connection.execute(text(
+        "SELECT 1 FROM information_schema.columns WHERE table_name='person' "
+        "AND column_name='ghus_notes'")).scalar()
+    person = connection.execute(text("SELECT person_id::text FROM person LIMIT 1")).scalar()
+    if not has_column or person is None:
+        pytest.skip("needs migration 620 and a person")
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
+    with pytest.raises(Exception, match="written only by GHUS"):
+        with session.begin_nested():
+            session.execute(text("UPDATE person SET ghus_notes='agent text' "
+                                 "WHERE person_id=CAST(:p AS uuid)"), {"p": person})
+    assert record_ghus_notes(session, entity_type="person", entity_id=person,
+                             notes="Met at the 2026 summit.", decided_by="GHUS test", live=True)
+    assert connection.execute(text("SELECT ghus_notes FROM person WHERE person_id=CAST(:p AS uuid)"),
+                              {"p": person}).scalar() == "Met at the 2026 summit."
+    session.close()
