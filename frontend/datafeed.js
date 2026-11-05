@@ -638,7 +638,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     </div>`;
   }
 
-  function Preview({preview, catalog, importName = "", onBack, onDone, setMessage}) {
+  function Preview({preview, catalog, importName = "", onBack, onDone, setMessage,
+                    aiEnrichment = false, setAiEnrichment = () => {}}) {
     const [filter, setFilter] = useState(preview.counts.needs_correction ? "invalid" : "all");
     const [openRow, setOpenRow] = useState(null);
     const [name, setName] = useState(importName.trim() || defaultImportName(preview));
@@ -647,8 +648,6 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     // Every import is stored in the directory (GHUS decision, 3 Nov 2026).
     const admission = "directory";
     const [attestAuthorized, setAttestAuthorized] = useState(false);
-    // "Complete information with AI enrichment" (5 Nov 2026): off until the uploader ticks it.
-    const [aiEnrichment, setAiEnrichment] = useState(false);
     const [busy, setBusy] = useState(false);
     const recordType = preview.record_type;
     const vocab = catalog.vocabularies;
@@ -751,14 +750,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           </p>
           <label class="df-check"><input type="checkbox" checked=${attestAuthorized}
             onChange=${e => setAttestAuthorized(e.target.checked)}/> ${ATTEST_AUTHORIZED}</label>
-          ${recordType === "actor" && html`<label class="df-check df-ai">
-            <input type="checkbox" checked=${aiEnrichment}
-              onChange=${e => setAiEnrichment(e.target.checked)}/>
-            <span><strong>Complete information with AI enrichment</strong>
-              <small class="df-muted">COMPASS reads each organization's own pages and fills only the empty
-                fields before storing; your values are never replaced (about $0.05 per organization, at most
-                $${completionCap(send).toFixed(2)} for this import). Unticked, the records are stored as given.</small></span>
-          </label>`}
+          ${recordType === "actor" && html`<${AiEnrichmentCheck} recordType=${recordType}
+            checked=${aiEnrichment} onChange=${setAiEnrichment} cap=${completionCap(send)}/>`}
         </div>
         <div class="discovery-actions">
           <button type="button" class="btn" disabled=${busy || !canSend({preview, name,
@@ -768,6 +761,22 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         ${send === 0 && html`<p class="df-muted">There is nothing new to send.</p>`}
       </section>
     </div>`;
+  }
+
+  /** "Complete information with AI enrichment" (GHUS, 5 Nov 2026): the uploader's
+   *  choice, off until ticked; the Light Pull exists for organizations only. */
+  function AiEnrichmentCheck({recordType, checked, onChange, cap = null}) {
+    const organizations = recordType === "actor";
+    return html`<label class=${"df-check df-ai" + (organizations ? "" : " disabled")}>
+      <input type="checkbox" checked=${organizations && checked} disabled=${!organizations}
+        onChange=${e => onChange(e.target.checked)}/>
+      <span><strong>Complete information with AI enrichment</strong>
+        <small class="df-muted">${organizations
+          ? html`COMPASS reads each organization's own pages and fills only the empty fields before
+              storing; your values are never replaced (about $0.05 per organization${cap === null ? ""
+              : html`, at most $${cap.toFixed(2)} for this import`}). Unticked, the records are stored as given.`
+          : "Available for organizations: people and events are stored as given."}</small></span>
+    </label>`;
   }
 
   function Completion({item, onClose}) {
@@ -942,6 +951,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     const [method, setMethod] = useState("upload");
     // One name for everything submitted together, by file or by hand.
     const [importName, setImportName] = useState("");
+    const [aiEnrichment, setAiEnrichment] = useState(false);
     const [preview, setPreview] = useState(null);
     const [done, setDone] = useState(null);
     const [message, setMessage] = useState(null);
@@ -950,7 +960,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         .catch(e => setMessage({kind: "error", text: e.message}));
     }, []);
     const openReview = () => window.dispatchEvent(new Event("ghus:open-review"));
-    const reset = () => { setPreview(null); setDone(null); setMessage(null); setImportName(""); };
+    const reset = () => { setPreview(null); setDone(null); setMessage(null); setImportName("");
+      setAiEnrichment(false); };
     return html`<div class="discovery-page datafeed-page">
       <h1 class="hero-h">Data Feed</h1>
       <p class="lead">${DATAFEED_LEAD}</p>
@@ -983,7 +994,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           </section>`
         : preview ? html`<${Preview} preview=${preview} catalog=${catalog} importName=${importName}
             onBack=${() => { setPreview(null); setMessage(null); }}
-            onDone=${result => { setDone(result); setPreview(null); }} setMessage=${setMessage}/>`
+            onDone=${result => { setDone(result); setPreview(null); }} setMessage=${setMessage}
+            aiEnrichment=${aiEnrichment} setAiEnrichment=${setAiEnrichment}/>`
         : html`<section class="discovery-card df-start">
           <div class="discovery-field">
             <label class="discovery-label" for="df-import-name-top">Import Name <span class="df-req">*</span></label>
@@ -1008,6 +1020,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
               </select>
             </div>
           </div>
+          ${recordType && html`<${AiEnrichmentCheck} recordType=${recordType}
+            checked=${aiEnrichment} onChange=${setAiEnrichment}/>`}
           ${!recordType ? html`<p class="df-muted df-choose">Choose Organizations, People or Events to
               get its template.</p>`
             : method === "upload"

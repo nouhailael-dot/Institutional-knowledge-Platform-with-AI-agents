@@ -158,4 +158,6 @@ span.df-import-link{cursor:default}
 .df-example-chip{display:inline-block;margin-left:6px;padding:2px 9px;border-radius:999px;background:var(--slate-soft);color:var(--slate);font-size:12px;font-weight:600;vertical-align:middle}
 
 /* Complete information with AI enrichment (5 Nov 2026). */
+.df-ai{margin:12px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .df-ai span{display:grid;gap:2px}
+.df-ai.disabled{opacity:.6}
