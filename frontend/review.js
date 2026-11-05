@@ -23,7 +23,7 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261104c";
+} from "./labels.js?v=20261105a";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261104e";
 
 export const REVIEW_STATUS_LABELS = {
@@ -40,6 +40,11 @@ export const REVIEW_COUNT_CAPTIONS = {
   approved: "Your verified records (last 30 days)",
   parked: "All records you've parked",
   rejected_by_reviewer: "Your rejected records (last 30 days)",
+};
+// The two Review views (5 Nov 2026 design): record decisions, and hub recommendations.
+const REVIEW_TAB_ICONS = {
+  queue: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg>`,
+  hubs: `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M10.8 7.2 6.2 15.8M13.2 7.2l4.6 8.6M7.5 18h9"/></svg>`,
 };
 // Pending Review carries the directory's sign for it (Nouhaila's amber dot); the others
 // keep the mockup's check, pause and cross, all in the same circle.
@@ -260,10 +265,13 @@ export function filterReviewCandidates(candidates, filters = {}) {
     if (filters.review_reason && filters.review_reason !== "all" && candidate.review_reason !== filters.review_reason) return false;
     if (filters.actor_category && filters.actor_category !== "all"
         && String(candidate.reviewed_payload?.actor_category || "") !== filters.actor_category) return false;
+    // Search by Keyword: name, topic (the run's name), organization, location, any field.
     return !needle || JSON.stringify([
       candidate.display_name,
       candidate.reviewed_payload?.website,
       candidate.reviewed_payload,
+      candidate.run_label,
+      candidate.source_description,
     ]).toLocaleLowerCase().includes(needle);
   });
 }
@@ -2268,9 +2276,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           rejection_reason: decisionKind === "reject" ? rejectionReason : null,
           rejection_reason_other: decisionKind === "reject" && rejectionReason === "Other"
             ? rejectionOther.trim() : null,
-          // Saved on the record only when it is verified, and only for actors and events.
+          // Saved on the record only when it is verified: organizations, events and people.
           ghus_notes: ["new", "same_existing"].includes(decisionKind)
-            && ["actor", "event"].includes(selected.entity_type) && analystNotes.trim()
+            && ["actor", "event", "person"].includes(selected.entity_type) && analystNotes.trim()
             ? analystNotes.trim() : null,
         };
         const updated = await request(
@@ -2501,11 +2509,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         </div>`)}
       <div class="review-tabs" role="tablist" aria-label="Review views">
         <button role="tab" aria-selected=${view === "queue"}
-          class=${"btn ghost " + (view === "queue" ? "active" : "")}
-          onClick=${() => setView("queue")}>${QUEUE.title}</button>
+          class=${"review-tab " + (view === "queue" ? "active" : "")}
+          onClick=${() => setView("queue")}>
+          <span class="review-tab-icon" dangerouslySetInnerHTML=${{__html: REVIEW_TAB_ICONS.queue}}></span>
+          <span class="review-tab-text"><b>${SECTIONS.reviewActions}</b>
+            <small>${SENTENCES.reviewActionsSub}</small></span></button>
         <button role="tab" aria-selected=${view === "hubs"}
-          class=${"btn ghost " + (view === "hubs" ? "active" : "")}
-          onClick=${() => setView("hubs")}>${SECTIONS.hubProposals}</button>
+          class=${"review-tab " + (view === "hubs" ? "active" : "")}
+          onClick=${() => setView("hubs")}>
+          <span class="review-tab-icon" dangerouslySetInnerHTML=${{__html: REVIEW_TAB_ICONS.hubs}}></span>
+          <span class="review-tab-text"><b>${SECTIONS.hubProposals}</b>
+            <small>${SENTENCES.hubProposalsSub}</small></span></button>
       </div>
 
       ${view === "hubs" && html`<section class="review-updates" aria-label=${SECTIONS.hubProposals}>
@@ -2580,9 +2594,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${categoryOptions().map(option => html`
               <option key=${option.value} value=${option.value}>${option.label}</option>`)}
           </select></label>`}
-        <label><span>${FIELDS.search}</span>
+        <label class="review-search"><span>${FIELDS.search}</span>
           <input type="search" value=${filters.search}
-            onInput=${e => setFilter("search", e.target.value)} placeholder="Name or domain"/></label>
+            onInput=${e => setFilter("search", e.target.value)}
+            placeholder="Search by name, topic, organization, location, etc."/></label>
       </div>`}
       ${error && html`<div class="review-message error" role="alert">${error}</div>`}
       ${feedback && html`<div class="review-message success" role="status">${feedback}</div>`}
@@ -2647,15 +2662,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     <small>${recordRowNote(candidate)}</small>
                   </span>
                   <span class=${"review-status " + (isParkedByReviewer(candidate) ? "parked" : candidate.status)}>${
+                    // Anything still waiting for a decision reads Pending Review (5 Nov 2026).
                     candidate.status !== "pending_review" ? reviewStatusLabel(candidate.status)
-                      : (candidate.agent_metadata?.changes || []).length ? "To decide"
-                      : candidate.agent_metadata?.source_table === "actor_update" ? "To check"
                       : waitingLabel(candidate)}</span>
                 </button></li>`)}
             </ul>`}
         </section>`}
 
-        ${selectedId && html`<button class="btn ghost review-back" onClick=${backToRecords}>
+        ${selectedId && html`<button class="review-act review-back" onClick=${backToRecords}>
           ← Back to Records</button>`}
         ${selectedId && html`<article class="review-detail" aria-live="polite">
           ${!selected && html`<div class="review-empty" role="status">${SENTENCES.queueLoading}</div>`}
@@ -2908,16 +2922,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             </details>`}
 
             <div class="review-card-foot">
-              ${["actor", "event"].includes(selected.entity_type) ? html`<label class="review-analyst-notes">
+              <label class="review-analyst-notes">
                 <b>GHUS Notes</b>
                 <textarea rows="3" maxlength="5000" value=${analystNotes} disabled=${!pending || busy}
                   placeholder=${selected.entity_type === "event"
                     ? "Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
-                    : "Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}
+                    : selected.entity_type === "person"
+                      ? "How GHUS knows them: where you met, past conversations, who introduced them. Links to notes (OneDrive)."
+                      : "Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}
                   onInput=${e => setAnalystNotes(e.target.value)}></textarea>
                 <small class="muted">Kept on the record when you verify it, as written by GHUS; Compass never writes here.</small>
-              </label>`
-              : html`<p class="muted">GHUS Notes are kept for organizations and events; people have no notes field yet.</p>`}
+              </label>
             </div>
             ${!isActor && selected.agent_metadata?._why && html`<div class="why">${selected.agent_metadata._why}</div>`}
             ${isActor && (() => {
@@ -3048,15 +3063,18 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           </section>
 
           <footer class="review-footer">
-            <button class="btn danger" disabled=${!pending || busy || writerDown}
-              onClick=${() => { setDecisionKind("reject"); }}>${twoWayKind(selected)
-                ? TWO_WAY_ANSWERS[twoWayKind(selected)][1] : BUTTONS.reject}</button>
-            <button class="btn ghost" disabled=${!pending || busy || writerDown}
-              onClick=${() => { setDecisionKind("defer"); }}>${BUTTONS.park}</button>
-            ${twoWayKind(selected) !== "update" && html`<button class="btn ghost"
+            ${/* 5 Nov 2026: Save Edits, Reject, Park, then Verify in orange. */ ""}
+            ${twoWayKind(selected) !== "update" && html`<button class="review-act"
               disabled=${!pending || busy || Object.keys(draftErrors).length > 0}
               onClick=${save}>${BUTTONS.saveEdits}</button>`}
-            <button class="btn" onClick=${decide} disabled=${!canSubmitReview({
+            <button class=${"review-act" + (decisionKind === "reject" ? " chosen" : "")}
+              disabled=${!pending || busy || writerDown}
+              onClick=${() => { setDecisionKind("reject"); }}>${twoWayKind(selected)
+                ? TWO_WAY_ANSWERS[twoWayKind(selected)][1] : BUTTONS.reject}</button>
+            <button class=${"review-act" + (decisionKind === "defer" ? " chosen" : "")}
+              disabled=${!pending || busy || writerDown}
+              onClick=${() => { setDecisionKind("defer"); }}>${BUTTONS.park}</button>
+            <button class="review-act primary" onClick=${decide} disabled=${!canSubmitReview({
               candidate: selected, reviewer, rejectionReason, rejectionOther, decisionKind,
               targetId, busy, admissionConfigured: data.admission_configured, draftErrors,
             })}>${twoWayKind(selected) && decisionKind !== "defer"

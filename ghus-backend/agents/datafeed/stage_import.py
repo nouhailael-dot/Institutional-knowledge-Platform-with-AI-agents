@@ -899,8 +899,9 @@ def main(argv: list[str] | None = None) -> int:
                 if result.get("status") == "staged" and batch.get("admission") == "verified":
                     result["admissions"] = admit_verified(session, batch, result)
                 elif result.get("status") == "staged" and batch.get("admission") == "directory":
-                    if batch.get("record_type") == "actor":
-                        # Stored after the Light Pull completes them (--enrich-then-admit).
+                    if batch.get("record_type") == "actor" and batch.get("ai_enrichment", True):
+                        # Stored after the Light Pull completes them (--enrich-then-admit),
+                        # when the uploader asked for AI enrichment (5 Nov 2026).
                         result["admissions_pending"] = True
                     else:
                         result["admissions"] = admit_directory(session, batch, result)

@@ -6,7 +6,7 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261104i";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261105a";
 import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261104e";
 
 export const RECORD_TYPES = [
@@ -647,6 +647,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     // Every import is stored in the directory (GHUS decision, 3 Nov 2026).
     const admission = "directory";
     const [attestAuthorized, setAttestAuthorized] = useState(false);
+    // "Complete information with AI enrichment" (5 Nov 2026): off until the uploader ticks it.
+    const [aiEnrichment, setAiEnrichment] = useState(false);
     const [busy, setBusy] = useState(false);
     const recordType = preview.record_type;
     const vocab = catalog.vocabularies;
@@ -659,7 +661,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       try {
         const result = await api(`/api/datafeed/previews/${preview.preview_id}/confirm`, {
           method: "POST", body: JSON.stringify({import_name: name, accept_left_out: accept,
-            attest_source: attestSource, admission, attest_authorized: attestAuthorized})});
+            attest_source: attestSource, admission, attest_authorized: attestAuthorized,
+            ai_enrichment: recordType === "actor" && aiEnrichment})});
         onDone(result);
       } catch (error) {
         setMessage({kind: "error", text: error.message});
@@ -745,11 +748,17 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           <p>The records are stored in the <strong>Ecosystem Directory</strong> through the same checks as
             every directory record, and labelled as an import made on your attestation (the file and the row).
             A record that matches one already in the directory updates it instead of adding a copy.
-            ${recordType === "actor" && html` Missing information is completed by COMPASS from each organization's
-              own pages first: only empty fields, your values are never replaced (about $0.05 per organization,
-              at most $${completionCap(send).toFixed(2)} for this import).`}</p>
+          </p>
           <label class="df-check"><input type="checkbox" checked=${attestAuthorized}
             onChange=${e => setAttestAuthorized(e.target.checked)}/> ${ATTEST_AUTHORIZED}</label>
+          ${recordType === "actor" && html`<label class="df-check df-ai">
+            <input type="checkbox" checked=${aiEnrichment}
+              onChange=${e => setAiEnrichment(e.target.checked)}/>
+            <span><strong>Complete information with AI enrichment</strong>
+              <small class="df-muted">COMPASS reads each organization's own pages and fills only the empty
+                fields before storing; your values are never replaced (about $0.05 per organization, at most
+                $${completionCap(send).toFixed(2)} for this import). Unticked, the records are stored as given.</small></span>
+          </label>`}
         </div>
         <div class="discovery-actions">
           <button type="button" class="btn" disabled=${busy || !canSend({preview, name,

@@ -325,7 +325,7 @@ class FakeBridge:
                "rows": [{"row_number": r["row_number"], "outcome": "staged"}
                         for r in batch["rows"]]}
         if batch.get("admission") == "directory":
-            if batch["record_type"] == "actor":
+            if batch["record_type"] == "actor" and batch.get("ai_enrichment", True):
                 out["admissions_pending"] = True
             else:
                 out["admissions"] = [{"row_number": r["row_number"], "outcome": "stored"}
@@ -693,6 +693,23 @@ def test_a_directory_import_is_stored_and_organizations_are_completed_first(serv
     stored = service.confirm(people["preview_id"], import_name="P", accept_left_out=False,
                              uploaded_by="Ana", attest_source=True, attest_authorized=True)
     assert stored["stored"] == 1 and stored["enriching"] is None and stored["not_stored"] == []
+
+
+def test_ai_enrichment_runs_only_when_the_uploader_ticks_it(service):
+    """GHUS, 5 Nov 2026: "Complete information with AI enrichment" is the uploader's choice."""
+    preview = service.validate_upload("actor", "a.csv", csv_bytes("actor", [ACTOR]))
+    service.bridge.enriched = None
+    done = service.confirm(preview["preview_id"], import_name="K", accept_left_out=False,
+                           uploaded_by="Ana", attest_source=True, attest_authorized=True,
+                           ai_enrichment=False)
+    assert service.bridge.staged[-1]["ai_enrichment"] is False
+    assert done["enriching"] is None and service.bridge.enriched is None
+    ticked = service.validate_upload("actor", "b.csv", csv_bytes("actor", [ACTOR]))
+    done = service.confirm(ticked["preview_id"], import_name="K2", accept_left_out=False,
+                           uploaded_by="Ana", attest_source=True, attest_authorized=True,
+                           ai_enrichment=True)
+    assert service.bridge.staged[-1]["ai_enrichment"] is True
+    assert done["enriching"]["started"] is True
 
 
 def _history_with_review(service):

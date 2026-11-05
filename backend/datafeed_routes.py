@@ -47,6 +47,8 @@ class Confirmation(BaseModel):
     attest_source: bool = False
     admission: str = "directory"
     attest_authorized: bool = False
+    # "Complete information with AI enrichment" (5 Nov 2026): the uploader's choice.
+    ai_enrichment: bool = False
 
 
 class Completion(BaseModel):
@@ -90,7 +92,7 @@ def confirm(preview_id: str, body: Confirmation):
     return _call(datafeed_service().confirm, preview_id, import_name=body.import_name,
                  accept_left_out=body.accept_left_out, uploaded_by=current_user(),
                  attest_source=body.attest_source, admission=body.admission,
-                 attest_authorized=body.attest_authorized)
+                 attest_authorized=body.attest_authorized, ai_enrichment=body.ai_enrichment)
 
 
 @router.get("/history")
