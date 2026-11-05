@@ -161,3 +161,8 @@ span.df-import-link{cursor:default}
 .df-ai{margin:12px 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
 .df-ai span{display:grid;gap:2px}
 .df-ai.disabled{opacity:.6}
+
+/* Import History: the note shown when the database could not be read (5 Nov 2026). */
+.df-history-note { margin: 0 0 10px; }
+.df-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit;
+  text-decoration: underline; cursor: pointer; }

@@ -872,17 +872,21 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
 
   function History() {
     const [items, setItems] = useState(null);
-    const [error, setError] = useState("");
     const [search, setSearch] = useState("");
     const [category, setCategory] = useState("all");
     const [open, setOpen] = useState(null);
     const [records, setRecords] = useState({});
     const [completing, setCompleting] = useState(null);
+    const [unavailable, setUnavailable] = useState(false);
     async function load() {
+      // The table always shows (with its example import); a failed read is a quiet note.
       try {
-        setItems((await api("/api/datafeed/history")).imports || []);
+        const body = await api("/api/datafeed/history");
+        setItems(body.imports || []);
+        setUnavailable(Boolean(body.unavailable));
       } catch (e) {
-        setError(e.message);
+        setItems(items => items || []);
+        setUnavailable(true);
       }
     }
     useEffect(() => { load(); }, []);
@@ -898,7 +902,6 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
         }
       }
     }
-    if (error) return html`<p class="discovery-message error">${error}</p>`;
     if (!items) return html`<p class="df-muted">Loading the import history…</p>`;
     // The signed-in user's imports once accounts exist; every import until then.
     const mine = items;
@@ -916,6 +919,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           ${RECORD_TYPES.map(t => html`<option key=${t.id} value=${t.id}>${t.label}</option>`)}
         </select></label>
     </div>
+    ${unavailable && html`<p class="df-muted df-history-note">Your imports could not be read from the
+      database just now. <button type="button" class="df-link" onClick=${load}>Try again</button></p>`}
     <div class="df-history-table">
       <table>
         <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Status</th></tr></thead>

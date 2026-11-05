@@ -8,6 +8,7 @@ both are a person's explicit dispatch, carried out by the GHUS backend.
 
 from __future__ import annotations
 
+import logging
 from functools import lru_cache
 from typing import Any
 
@@ -20,6 +21,9 @@ from src.datafeed.service import XLSX, DataFeedError, DataFeedService
 from src.identity import current_user
 
 router = APIRouter(prefix="/api/datafeed", tags=["datafeed"])
+logger = logging.getLogger(__name__)
+# The last Import History read from the database, shown when it cannot be reached.
+_last_history: list[dict[str, Any]] | None = None
 
 
 @lru_cache(maxsize=1)
@@ -97,7 +101,22 @@ def confirm(preview_id: str, body: Confirmation):
 
 @router.get("/history")
 def history():
-    return {"imports": _call(datafeed_service().history)}
+    """Import History; never an error page when the database is slow to answer.
+
+    5 Nov 2026: a connection timeout to the shared database turned the whole
+    tab into "Something went wrong". Now the last list read is shown (or none,
+    so the page shows its example import) with ``unavailable`` set.
+    """
+    global _last_history
+    try:
+        imports = _call(datafeed_service().history)
+    except HTTPException:
+        raise
+    except Exception:  # noqa: BLE001 - database unreachable: show what we have
+        logger.warning("Import History could not be read from the database", exc_info=True)
+        return {"imports": list(_last_history or []), "unavailable": True}
+    _last_history = imports
+    return {"imports": imports}
 
 
 @router.get("/example-import.xlsx")

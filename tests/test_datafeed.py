@@ -745,3 +745,33 @@ def test_import_history_lists_only_imports_stored_in_the_directory():
 
     service = module.DataFeedService(bridge=None, connect=lambda: Conn())
     assert [i["run_id"] for i in service.history()] == ["new-directory"]
+
+
+def test_import_history_shows_when_the_database_cannot_be_reached(monkeypatch, tmp_path):
+    """5 Nov 2026: a connection timeout made the tab an error page; it now shows the
+    last list read (or none, so the page shows its example import) and says so."""
+    from fastapi.testclient import TestClient
+
+    from backend import datafeed_routes
+    from backend.app import app
+
+    class Service:
+        fail = False
+
+        def history(self):
+            if self.fail:
+                raise TimeoutError("connection timeout expired")
+            return [{"run_id": "r1", "import_name": "Spring list"}]
+
+    service = Service()
+    monkeypatch.setattr(datafeed_routes, "datafeed_service", lambda: service)
+    monkeypatch.setattr(datafeed_routes, "_last_history", None)
+    client = TestClient(app)
+    service.fail = True
+    assert client.get("/api/datafeed/history").json() == {"imports": [], "unavailable": True}
+    service.fail = False
+    assert client.get("/api/datafeed/history").json() == {
+        "imports": [{"run_id": "r1", "import_name": "Spring list"}]}
+    service.fail = True
+    assert client.get("/api/datafeed/history").json() == {
+        "imports": [{"run_id": "r1", "import_name": "Spring list"}], "unavailable": True}
