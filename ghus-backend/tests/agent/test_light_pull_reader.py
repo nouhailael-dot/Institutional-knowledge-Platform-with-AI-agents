@@ -53,7 +53,10 @@ class Model:
 
     def extract_with_tool(self, **kwargs):
         self.calls += 1
-        self.schema = kwargs["input_schema"]
+        # The first call's schema: what the first read asked (a follow-up asks
+        # only the boxes still missing, 6 Nov 2026).
+        self.schemas = [*getattr(self, "schemas", []), kwargs["input_schema"]]
+        self.schema = self.schemas[0]
         return self.answers
 
 
@@ -106,7 +109,14 @@ def test_every_box_is_answered_and_only_checked_quotes_count():
     wanted = {*COMMON_READ_FIELDS, *CATEGORY_LIGHT_FIELDS["association_network"]}
     assert set(read.evidence) == wanted                      # every box has an answer
     assert set(model.schema["required"]) == wanted           # and every box was asked
-    assert model.calls == 1
+    # One follow-up on its own site, for the essential boxes still missing only.
+    assert model.calls == 2
+    assert sorted(model.schemas[1]["required"]) == ["association_type", "member_types",
+                                                    "why_matched"]
+    assert read.followups[0]["step"] == "own_site"
+    assert read.completeness["essential"] == ["location", "why_matched", "association_type",
+                                              "member_types"]
+    assert read.completeness["found"] == ["location"]
     states = {k: v["collection_state"] for k, v in read.evidence.items()}
     assert "not_yet_collected" not in states.values()
     assert states["recent_activity"] == states["funding_signal"] == "found"
@@ -117,7 +127,9 @@ def test_every_box_is_answered_and_only_checked_quotes_count():
     assert "not on the page" in read.rejected["international_connection"]
     # Not stated: recorded as not found on the pages that were read.
     assert states["um6p_ocp_connection"] == "not_found"
-    assert read.pages == ["https://thewatercouncil.com/", ABOUT_URL, TOPIC_URL]
+    # The first three pages, then the one more read for the missing boxes.
+    assert read.pages[:3] == ["https://thewatercouncil.com/", ABOUT_URL, TOPIC_URL]
+    assert read.pages[3:] == read.followups[0]["pages"]
 
 
 def test_an_answer_breaking_a_light_pull_rule_is_refused():
@@ -357,7 +369,8 @@ def test_an_entry_box_keeps_every_quoted_entry_and_refuses_one_riding_on_another
         name="The Water Council", website="https://thewatercouncil.com",
         actor_category="association_network", read_at=NOW, fields=["funding_signal"])
     value = read.evidence["funding_signal"]["value"]
-    assert value == {"entries": [{"amount": "$2 million", "funder": "Fund for Lake Michigan"}]}
+    assert value == {"entries": [{"amount": "$2 million", "funder": "Fund for Lake Michigan",
+                                  "status": "undated"}]}
     assert read.evidence["funding_signal"]["dropped_entries"]
 
 

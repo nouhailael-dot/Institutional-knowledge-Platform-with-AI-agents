@@ -89,6 +89,77 @@ def event_followup_urls(record: dict, page_url: str, html: str, *, limit: int = 
     return list(dict.fromkeys(urls))[:limit]
 
 
+_NEXT_LINK = re.compile(r"\b(next|upcoming|future|save the date|register|registration|"
+                        r"call for (papers|abstracts|proposals))\b", re.I)
+_YEAR_IN = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
+
+
+def next_edition_urls(record: dict, page_url: str, html: str, *, run_year: int,
+                      limit: int = 2) -> list[str]:
+    """Where the next edition of a recurring event is announced (6 Nov 2026).
+
+    A page about a past edition ("2025 Water Summit, recap") usually links the
+    next one: a link naming a year from this year on, or saying next, upcoming,
+    save the date or register. Its own website comes first when it is another page.
+    """
+    past_years = {int(y) for y in _YEAR_IN.findall(str(record.get("start_date") or ""))}
+    # A link is about THIS event only if it shares a word of its name (seen on
+    # awwa.org: "Water 2050" and another conference were not the next WIC).
+    name_words = _series_words(record.get("title") or record.get("name"))
+    scored: list[tuple[int, str]] = []
+    website = str(record.get("website") or "").strip()
+    if website.startswith("http") and source_kind(website) == "web" \
+            and not _same_page(website, page_url):
+        scored.append((5, website.split("#")[0]))
+    host = _host(page_url)
+    soup = BeautifulSoup(html or "", "html.parser")
+    for anchor in soup.find_all("a", href=True):
+        label = " ".join(anchor.get_text(" ", strip=True).split())
+        href = urljoin(page_url, str(anchor["href"])).split("#")[0]
+        if not href.startswith("http") or _host(href) != host or _same_page(href, page_url):
+            continue
+        words = f"{label} {urlsplit(href).path}"
+        shared = name_words & _series_words(words.replace("-", " ").replace("/", " "))
+        if name_words and not (len(shared) >= 2 or shared - _GENERIC_EVENT_WORDS):
+            continue
+        years = {int(y) for y in _YEAR_IN.findall(words)}
+        score = 0
+        if years and run_year <= max(years) <= run_year + 2 and not (years <= past_years):
+            score += 4
+        if _NEXT_LINK.search(words):
+            score += 2
+        if score:
+            scored.append((score, href))
+    ordered = [url for _score, url in sorted(scored, key=lambda pair: -pair[0])]
+    return list(dict.fromkeys(ordered))[:limit]
+
+
+# Topic words many events share: one alone does not make a link this event's.
+_GENERIC_EVENT_WORDS = {"water", "energy", "innovation", "technology", "national",
+                        "international", "global", "american", "world", "research", "climate",
+                        "clean", "green", "future", "health", "agriculture", "mining", "power",
+                        "infrastructure", "sustainability", "association", "society"}
+
+_SERIES_STOP = {"the", "and", "annual", "edition", "conference", "summit", "symposium",
+                "forum", "expo", "exposition", "event", "events", "meeting", "workshop"}
+
+
+def _series_words(value) -> set[str]:
+    """The distinctive words of an event name: no years, no "conference"."""
+    return {w for w in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+            if len(w) > 2 and not w.isdigit() and w not in _SERIES_STOP}
+
+
+def same_series(title: str, other: str) -> bool:
+    """Two editions of one event: most of the same name, years aside."""
+    def words(value):
+        return {w for w in re.findall(r"[a-z0-9]+", str(value or "").casefold())
+                if len(w) > 2 and not w.isdigit()
+                and w not in {"the", "and", "annual", "edition", "th", "nd", "rd"}}
+    a, b = words(title), words(other)
+    return bool(a and b) and len(a & b) >= 0.6 * min(len(a), len(b))
+
+
 _OWN_SITE = re.compile(r"^(personal |lab |group |research )?(web ?site|home ?page|web page|"
                        r"lab(oratory)?|research group|group (web)?site|personal page)$", re.I)
 
@@ -186,6 +257,61 @@ def pending_review_events(session) -> list[dict]:
     except Exception:  # noqa: BLE001 - an older database: nothing known to be pending
         logger.warning("could not read pending event reviews", exc_info=True)
         return []
+
+
+def pending_review_actors(session, *, exclude_run_id: str | None = None) -> list[dict]:
+    """Organisations found by an earlier run and still waiting for a person.
+
+    6 Nov 2026: a recurring request found and paid for the same organisation run
+    after run while the first find was still in Review.
+    """
+    if session is None:
+        return []
+    try:
+        with session.begin_nested():
+            rows = session.execute(text(
+                "SELECT url, record_preview->>'website' AS website, "
+                "COALESCE(record_preview->>'name', title) AS name FROM search_candidate "
+                "WHERE entity_type = 'actor' AND review_status::text = 'pending' "
+                "AND score_band IN ('auto_high', 'review') "
+                "AND (CAST(:run AS text) IS NULL OR run_id::text <> CAST(:run AS text))"
+            ), {"run": exclude_run_id}).mappings().all()
+        return [dict(r) for r in rows]
+    except Exception:  # noqa: BLE001 - an older database: nothing known to be pending
+        logger.warning("could not read pending actor reviews", exc_info=True)
+        return []
+
+
+def actor_key(name: object) -> str:
+    words = re.findall(r"[a-z0-9]+", str(name or "").casefold())
+    return " ".join(w for w in words if w not in {"the", "inc", "llc", "ltd", "corp", "co"})
+
+
+_UNIT_SEGMENT = re.compile(r"(^|/)(centers?|centres?|institutes?|labs?|departments?|schools?|"
+                           r"programs?|initiatives?)(/|$)", re.I)
+
+
+def waiting_actor(url: str, name: str | None, pending: list[dict]) -> dict | None:
+    """The waiting find this page or name is, if any.
+
+    The same site counts only at the same place on it: a pending university
+    (its home page) does not hold back one of its centres (/centers/water).
+    """
+    parts = urlsplit(url or "")
+    host = (parts.hostname or "").casefold().removeprefix("www.")
+    path = (parts.path or "").strip("/").casefold()
+    key = actor_key(name) if name else ""
+    for row in pending:
+        if key and key == actor_key(row.get("name")):
+            return row
+        site = urlsplit(str(row.get("website") or row.get("url") or ""))
+        if (site.hostname or "").casefold().removeprefix("www.") != host or not host:
+            continue
+        held = (site.path or "").strip("/").casefold()
+        if (held and (path == held or path.startswith(held + "/"))) or (
+                not held and not _UNIT_SEGMENT.search(path)):
+            return row
+    return None
 
 
 def pending_review_people(session) -> set[str]:

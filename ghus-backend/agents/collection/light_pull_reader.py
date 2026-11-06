@@ -102,18 +102,25 @@ FIELD_CRITERIA: dict[str, str] = {
                        "generic activity is not recent activity.",
     # Build the Map's funding rules (4 Nov 2026): the award, its funder, purpose, amount
     # and years, exactly as documented; never an inferred amount or an opportunity.
+    # 6 Nov 2026: past funding is reported too - an older grant is documented
+    # funding, labelled historical from its dates by the code, never "not found".
     "funding_signal": "Every documented award, grant, investment or budget THIS "
-                      "organisation received (up to five, those related to the topic "
-                      "first), each made this year or still active in it (a five-year grant from three years "
-                      "ago counts; a one-time award that ended in an earlier year does not). "
+                      "organisation received, current or past (up to five: ongoing and most "
+                      "recent first, those related to the topic first among them). "
                       "Give the funder, what it is for (program), the amount exactly as "
                       "written with its currency and qualifiers such as 'up to' or "
                       "'approximately' - or 'amount not disclosed' when the page gives none - "
-                      "and its timeline (award year, and end year when stated). A total "
+                      "and in date its timeline as the page states it: the award year and "
+                      "the end year when stated ('2022-2026', 'awarded 2019'), or 'ongoing' "
+                      "when the page says so; leave date empty when the page gives no date. "
+                      "A total "
                       "consortium award is labelled as the consortium's; this organisation's "
                       "share is unknown unless stated. Never infer, convert or add up "
                       "amounts. A funding opportunity, a call for proposals, a donation "
-                      "button or 'supported by partners' is not a funding signal.",
+                      "button or 'supported by partners' is not a funding signal. It must "
+                      "be funding this organisation RECEIVED: grants it gives to others, "
+                      "funding programmes it runs or advocates for, and funding announced "
+                      "for other organisations are not its funding.",
     "international_connection": "A named partner, office, programme or project outside the "
                                 "United States that a page states this organisation has.",
     "um6p_ocp_connection": "Any link a page states with UM6P (Mohammed VI Polytechnic "
@@ -246,6 +253,10 @@ class LightRead:
     texts: dict[str, str] = field(default_factory=dict)
     # Its recorded address no longer exists and this is its current site (4 Nov 2026).
     moved_to: str | None = None
+    # 6 Nov 2026: the targeted follow-ups made for boxes the first read left
+    # unstated, and how many of the category's essential boxes are filled.
+    followups: list[dict] = field(default_factory=list)
+    completeness: dict = field(default_factory=dict)
 
     def as_record(self, *, model: str, read_at: datetime) -> dict:
         return {
@@ -258,6 +269,8 @@ class LightRead:
             "rejected_answers": dict(self.rejected),
             "error": self.error,
             "moved_to": self.moved_to,
+            "followups": list(self.followups),
+            "completeness": dict(self.completeness),
         }
 
 
@@ -603,6 +616,12 @@ def _not_recent(key: str, value: object, read_at: datetime) -> str | None:
     if max(years) < read_at.year - RECENT_YEARS:
         return (f"dated {max(years)}: more than {RECENT_YEARS} years before the read, "
                 "so not recent activity")
+    month_named = next((_MONTHS[word] for word in re.findall(r"[a-z]+", date.casefold())
+                        if word in _MONTHS), None)
+    if min(years) > read_at.year or (len(set(years)) == 1 and years[0] == read_at.year
+                                     and month_named and month_named > read_at.month):
+        # 6 Nov 2026: a webinar dated January 2027 was read as recent activity.
+        return f"dated {date.strip()}: after the read, so upcoming, not recent activity"
     month = next((_MONTHS[word] for word in re.findall(r"[a-z]+", date.casefold())
                   if word in _MONTHS), None)
     if month and len(set(years)) == 1:
@@ -645,6 +664,97 @@ EVIDENCE_SEARCHES: dict[str, str] = {
     "funding_signal": '{name} grant OR award OR funding OR funded OR raised',
     "recent_activity": '{name} {year} OR {last_year} announces OR launched OR opened OR new',
 }
+# The headquarters, when no page read states it: one search, pages naming it in full.
+EVIDENCE_SEARCHES["location"] = '{name} headquarters OR "located in" OR "based in"'
+
+# Boxes a record is not useful without (GHUS, 6 Nov 2026): where it is, why it
+# fits, and what makes it this kind of organisation. When the first read leaves
+# one unstated, the reader looks further before the box stays not stated: first
+# on the organisation's own site (the pages most likely to state the missing
+# boxes, one call for all of them), then by the evidence searches above. It
+# stops when the boxes are filled, the pages run out, or the budget is reached.
+ESSENTIAL_COMMON = ("location", "why_matched")
+ESSENTIAL_BOXES: dict[str, tuple[str, ...]] = {
+    "university_academic": ("topic_unit_and_work", "relevant_centers_programs"),
+    "research_center": ("parent_and_center_type", "topic_research_focus",
+                        "active_recent_projects"),
+    "national_laboratory": ("sponsoring_agency", "topic_program_area"),
+    "applied_facility": ("facility_type_operator", "testing_demonstration_scope"),
+    "hospital_clinical": ("clinical_research_focus", "hospital_type_scale"),
+    "company": ("ownership_and_size", "topic_business_segment_product"),
+    "startup": ("technology_and_problem", "founding_year_location"),
+    "innovation_platform": ("platform_type_operator", "platform_offerings"),
+    "investor": ("investor_type_headquarters", "sector_stage_focus"),
+    "government": ("jurisdiction_parent_agency", "topic_mandate_program"),
+    "foundation_nonprofit": ("mission_sector_focus", "relevant_program"),
+    "association_network": ("association_type", "member_types"),
+}
+# Looked for too when missing, though a record can be useful without them.
+SOUGHT_WHEN_MISSING = ("funding_signal", "recent_activity")
+# Own-site pages likely to state a box, by link path or label.
+_BOX_PAGE_HINTS: dict[str, tuple[str, ...]] = {
+    "location": _CONTACT_HINTS,
+    "funding_signal": ("funding", "grants", "awards", "sponsors", "supporters", "annual-report",
+                       "press", "news"),
+    "recent_activity": ("news", "press", "announcements", "stories", "media", "updates"),
+    "parent_and_center_type": ("about", "history", "who-we-are", "overview", "mission"),
+    "ownership_and_size": ("about", "company", "leadership", "history", "careers"),
+    "founding_year_location": ("about", "history", "story", "company", "team"),
+    "jurisdiction_parent_agency": ("about", "organization", "divisions", "leadership"),
+    "investor_type_headquarters": ("about", "firm", "team", "contact"),
+    "sponsoring_agency": ("about", "history", "sponsors", "governance"),
+    "active_recent_projects": ("projects", "research", "initiatives", "programs"),
+    "relevant_centers_programs": ("centers", "institutes", "research", "programs"),
+    "member_types": ("members", "membership", "join"),
+    "platform_offerings": ("programs", "services", "offerings", "apply", "benefits"),
+}
+_GENERIC_BOX_HINTS = ("about", "research", "projects", "programs", "overview", "what-we-do")
+FOLLOWUP_PAGES = 2            # extra own-site pages, read once for every missing box
+# A follow-up is made only while this much of the run's budget is left, so the
+# organisations still to read keep theirs.
+FOLLOWUP_MIN_LEFT_USD = 0.20
+
+
+def essential_boxes(actor_category: str | None) -> tuple[str, ...]:
+    return (*ESSENTIAL_COMMON, *ESSENTIAL_BOXES.get(actor_category or "", ()))
+
+
+def completeness_of(evidence: Mapping[str, Mapping], actor_category: str | None,
+                    wanted: Sequence[str]) -> dict:
+    """How many of the category's essential boxes this read filled."""
+    essential = [k for k in essential_boxes(actor_category) if k in wanted]
+    found = [k for k in essential if (evidence.get(k) or {}).get("collection_state") == "found"]
+    return {"essential": essential, "found": found,
+            "missing": [k for k in essential if k not in found],
+            "share": round(len(found) / len(essential), 2) if essential else None}
+
+
+def followup_targets(home, site: str, seen: set[str], missing: Sequence[str], *,
+                     limit: int = FOLLOWUP_PAGES) -> list[str]:
+    """Same-site links most likely to state the missing boxes, best first."""
+    hints: list[str] = []
+    for key in missing:
+        hints += [h for h in _BOX_PAGE_HINTS.get(key, _GENERIC_BOX_HINTS) if h not in hints]
+    scored: list[tuple[int, str]] = []
+    for href, label in _HREF.findall(getattr(home, "content", "") or ""):
+        target = urljoin(home.url, href.strip()).split("#", 1)[0]
+        if (registrable_domain(target) != site or target.rstrip("/") in seen
+                or re.search(r"\.(pdf|jpg|png|zip|docx?)$|^mailto:|/(login|cart|donate)",
+                             target, re.I)):
+            continue
+        words = f"{urlsplit(target).path} {re.sub(r'<[^>]+>', ' ', label)}".casefold()
+        score = sum(len(hints) - i for i, h in enumerate(hints) if h in words)
+        if score:
+            scored.append((score, target))
+    picked: list[str] = []
+    for _score, target in sorted(scored, key=lambda pair: -pair[0]):
+        if target.rstrip("/") not in {p.rstrip("/") for p in picked}:
+            picked.append(target)
+        if len(picked) >= limit:
+            break
+    return picked
+
+
 MAX_EVIDENCE_PAGES = 2   # read per searched box
 # Page requests per searched box, its own allowance (4 Nov 2026: two results not
 # naming the company used the whole run's allowance before a news story about
@@ -820,13 +930,96 @@ class LightPullReader:
             answer = answers.get(key) if isinstance(answers.get(key), Mapping) else {}
             self._judge(result, key, answer, texts, partial, first=first, read_at=read_at,
                         actor_category=actor_category, category_type=category_type)
+        home = docs[0] if kinds.get(docs[0].url) == "official" else None
+        self._follow_up_own_site(result, wanted, home, name=name, partial=partial,
+                                 topic_terms=topic_terms, read_at=read_at,
+                                 actor_category=actor_category, category_type=category_type)
         self._search_evidence(result, wanted, name=name, website=website, partial=partial,
                               read_at=read_at, actor_category=actor_category,
                               category_type=category_type)
+        result.completeness = completeness_of(result.evidence, actor_category, wanted)
         cost_meter = getattr(self.client, "cost_meter", None)
         if cost_meter is not None:
             result.cost_usd = float(cost_meter.spent_usd) - spent
         return result
+
+    def _can_spend(self) -> bool:
+        """Whether the run's budget leaves room for a follow-up."""
+        meter = getattr(self.client, "cost_meter", None)
+        cap = getattr(meter, "max_usd", None)
+        if meter is None or cap is None:
+            return True
+        return float(cap) - float(meter.spent_usd) >= FOLLOWUP_MIN_LEFT_USD
+
+    def _missing(self, result: LightRead, wanted: Sequence[str],
+                 actor_category: str | None) -> list[str]:
+        sought = [*essential_boxes(actor_category), *SOUGHT_WHEN_MISSING]
+        return [k for k in dict.fromkeys(sought) if k in wanted
+                and (result.evidence.get(k) or {}).get("collection_state") != "found"]
+
+    def _follow_up_own_site(self, result: LightRead, wanted: Sequence[str], home, *,
+                            name: str, partial: set[str], topic_terms: Sequence[str],
+                            read_at: datetime, actor_category: str | None,
+                            category_type: str) -> None:
+        """Read up to FOLLOWUP_PAGES more of its own pages for the boxes still missing.
+
+        The pages are the ones whose links best match the missing boxes (its
+        contact page for a location, its news or grants page for funding, its
+        projects page for projects); the model is asked those boxes only, in
+        one call, and every answer is judged exactly as the first read's.
+        """
+        missing = self._missing(result, wanted, actor_category)
+        if not missing or home is None:
+            return
+        if not self._can_spend():
+            result.followups.append({"step": "own_site", "boxes": missing, "pages": [],
+                                     "found": [], "stopped": "budget"})
+            return
+        site = registrable_domain(home.url)
+        seen = {u.rstrip("/") for u in result.pages} | {home.url.rstrip("/")}
+        targets = followup_targets(home, site, seen, missing)
+        fetch = BoundedFetch(self.fetch, FOLLOWUP_PAGES + 1)
+        docs = []
+        for target in targets:
+            try:
+                docs.append(fetch(target))
+            except Exception as exc:  # noqa: BLE001 - one page fewer
+                logger.info("follow-up page unavailable for %s: %s", name, exc)
+        documents = [d for d in light_documents(docs, read_at=read_at) if d.text.strip()
+                     and d.url not in result.texts]
+        if not documents:
+            result.followups.append({"step": "own_site", "boxes": missing, "pages": [],
+                                     "found": [], "stopped": "no further page"})
+            return
+        for d in documents:
+            result.pages.append(d.url)
+            result.sources[d.url] = "official"
+            result.texts[d.url] = d.text
+        urls = [d.url for d in documents]
+        user = json.dumps({
+            "organisation": name, "category": actor_category, "topic": list(topic_terms),
+            "pages": [{"url": d.url, "source": SOURCE_TYPES["official"], "text": d.text}
+                      for d in documents],
+        }, ensure_ascii=False)
+        answers = self.client.extract_with_tool(
+            system=self.system, user=user, tool_name=self.tool_name,
+            tool_description=self.tool_description,
+            input_schema=_answer_schema(missing, urls, self.criteria),
+            max_tokens=min(self.max_tokens, 400 + 250 * len(missing)),
+        ) or {}
+        found = []
+        for key in missing:
+            answer = answers.get(key) if isinstance(answers.get(key), Mapping) else {}
+            before = result.rejected.pop(key, None)
+            self._judge(result, key, answer, {u: result.texts[u] for u in urls}, partial,
+                        first=result.pages[0], read_at=read_at,
+                        actor_category=actor_category, category_type=category_type)
+            if (result.evidence.get(key) or {}).get("collection_state") == "found":
+                found.append(key)
+            elif before and key not in result.rejected:
+                result.rejected[key] = before
+        result.followups.append({"step": "own_site", "boxes": missing, "pages": urls,
+                                 "found": found})
 
     def _current_site(self, name: str, website: str, fallback) -> list | None:
         """The organisation's current site when its recorded address is dead.
@@ -986,12 +1179,27 @@ class LightPullReader:
             if stale:
                 reasons.append(stale)
                 continue
+            if key == "funding_signal" and isinstance(item, Mapping):
+                funder = str(item.get("funder") or "")
+                own = str(getattr(self, "_name", "") or "")
+                if funder and own and (names_in_full(own, "", "", funder)
+                                       or names_in_full(funder, "", "", own)):
+                    # 6 Nov 2026: "FirstLight Power" as the funder of FirstLight's
+                    # own grant programme - funding it gives, not funding it received.
+                    reasons.append("it names the organisation itself as the funder: funding "
+                                   "it gives, not funding it received")
+                    continue
+                if not str(item.get("date") or "").strip():
+                    dated = re.search(r"/((?:19|20)\d{2})/(\d{1,2})/", page)
+                    if dated:
+                        item = {**item, "reported": f"{dated.group(1)}-{int(dated.group(2)):02d}"}
             if not any(same_entry(previous, item) for previous in kept):
                 kept.append(item)
         if not kept:
             return refuse("; ".join(reasons) or "no entry is in the quotes given")
         result.evidence[key] = {
-            "collection_state": "found", "value": entry_value(kept, today_year=read_at.year),
+            "collection_state": "found",
+            "value": entry_value(kept, today_year=read_at.year, key=key),
             "source_url": page, "date_read": read_at.isoformat(), "confidence": confidence,
             "source_origin": "newly_found", "quotes": quotes[:8], "source_type": kind,
             **({"dropped_entries": reasons} if reasons else {})}
@@ -1019,6 +1227,10 @@ class LightPullReader:
         own = host_of(website)
 
         for key in missing:
+            if not self._can_spend():
+                result.followups.append({"step": "search", "boxes": [key], "pages": [],
+                                         "found": [], "stopped": "budget"})
+                break
             query = self.evidence_searches[key].format(
                 name=f'"{name}"', year=read_at.year, last_year=read_at.year - 1)
             try:
@@ -1077,4 +1289,7 @@ class LightPullReader:
             if key not in result.rejected and before and \
                     result.evidence[key]["collection_state"] != "found":
                 result.rejected[key] = before
+            result.followups.append({
+                "step": "search", "boxes": [key], "pages": urls,
+                "found": [key] if result.evidence[key]["collection_state"] == "found" else []})
         result.attempts = list(fallback.attempts)

@@ -83,6 +83,8 @@ from agents.discovery.search.followup import (
     FollowupBudget,
     event_followup_urls,
     merge_event_reads,
+    next_edition_urls,
+    same_series,
     pending_review_events,
     pending_review_people,
     person_followup_urls,
@@ -959,6 +961,10 @@ def fetch_score_stage_actors(
                 record_sector_codes=matched_sectors,
                 currency=currency,
                 priority=score.priority,
+                identity_score=getattr(score, "identity", None) if str(
+                    config.get("actor_score_model", "relevance")) != "combined" else None,
+                topic_score=getattr(score, "topic", None) if str(
+                    config.get("actor_score_model", "relevance")) != "combined" else None,
             )
             quality_reasons[candidate.candidate_id] = quality.reasons
             quality_gates[candidate.candidate_id] = quality.gates_failed
@@ -1062,9 +1068,22 @@ def fetch_score_stage_actors(
         return cost_meter.spent_usd - since >= float(config.get(share_key, default)) * pipeline_budget
 
     queue = [*plan.candidates, *plan.backfill_candidates]
+    from agents.discovery.search.followup import pending_review_actors, waiting_actor
+
+    waiting_actors = pending_review_actors(session, exclude_run_id=run_id)
     for index, candidate in enumerate(queue):
         if loaded_pages >= analysis_page_budget:
             break
+        waiting = waiting_actor(candidate.url, None, waiting_actors)
+        if waiting is not None:
+            # Already found by an earlier run and waiting in Review: not read or
+            # paid for again (6 Nov 2026).
+            by_id[candidate.candidate_id] = replace(
+                candidate, triage_verdict="duplicate", score_band="duplicate",
+                triage_reason=f"already waiting in Review as {waiting.get('name')}; not read again")
+            stats["actor_pending_review_skips"] = int(
+                stats.get("actor_pending_review_skips", 0) or 0) + 1
+            continue
         if share_used(stage_start, "actor_direct_budget_share", 0.45):
             for skipped in queue[index:]:
                 not_read(skipped, (
@@ -1292,6 +1311,18 @@ def fetch_score_stage_actors(
             <= float(ceiling),
         )
 
+    # The same organisation read on another page than its waiting find (by name).
+    for position, candidate in enumerate(final):
+        if candidate.score_band not in ("auto_high", "review"):
+            continue
+        waiting = waiting_actor("", (candidate.record_preview or {}).get("name"),
+                                waiting_actors)
+        if waiting is not None:
+            final[position] = replace(
+                candidate, triage_verdict="duplicate", score_band="duplicate",
+                triage_reason=f"already waiting in Review as {waiting.get('name')}")
+            stats["actor_pending_review_skips"] = int(
+                stats.get("actor_pending_review_skips", 0) or 0) + 1
     final_by_id = {candidate.candidate_id: candidate for candidate in final}
     auto_high = [candidate for candidate in final if candidate.score_band == "auto_high"]
     # Decision 2026-10-14: accepted actors are created Verified (labelled as the
@@ -1406,8 +1437,13 @@ def collapse_same_events(candidates):
         for w in winner_of.values():
             other = w.record_preview or {}
             other_words = _event_words(other.get("title") or other.get("name") or w.title)
-            if (start and start == str(other.get("start_date") or "") and words and other_words
-                    and len(words & other_words) >= 0.7 * min(len(words), len(other_words))):
+            other_start = str(other.get("start_date") or "")
+            share = (len(words & other_words) / min(len(words), len(other_words))
+                     if words and other_words else 0.0)
+            # 6 Nov 2026: also one edition read with dates a day apart, or with the
+            # day missing on one page - same year, nearly the same name.
+            same_edition = (start and start[:4] == other_start[:4] and share >= 0.85)
+            if (start and start == other_start and share >= 0.7) or same_edition:
                 winner_of[c.candidate_id] = w
                 break
         else:
@@ -1679,6 +1715,23 @@ def fetch_score_stage_events(
                 stats["same_event_skips"] = int(stats.get("same_event_skips", 0) or 0) + 1
                 continue
             read_this_run.append(reading)
+            if _event_record_is_past(analysis.record, current_date):
+                # 6 Nov 2026: a page about a past edition of a recurring event -
+                # the next edition is read on its own page, never mixed with this
+                # one (its dates, place and speakers are its own).
+                nxt = _event_next_edition(
+                    analysis.record, candidate.url, doc, budget=followup_budget,
+                    source=source, run_log=run_log, raw_store=raw_store, run_id=run_id,
+                    rubric_extractor=rubric_extractor, sector_codes=sector_codes,
+                    hub_names=hub_names, run_date=current_date, stats=stats,
+                    cost_meter=cost_meter)
+                if nxt is not None:
+                    past_url = candidate.url
+                    doc, raw_document_id, analysis = nxt
+                    final_domain = normalized_domain(doc.url) or final_domain
+                    participant_actors, participant_people = [], []
+                    analysis = replace(analysis, record={
+                        **analysis.record, "edition_found_from": past_url})
             score = score_event_rubric(analysis.rubric, config=config)
             qualification = qualify_event(
                 {
@@ -2061,6 +2114,52 @@ def _event_followup(record, page_url, doc, *, budget, source, run_log, raw_store
                           raw_store=raw_store, run_id=run_id, analyse=analyse, stats=stats,
                           cost_meter=cost_meter)
     return None if read is None else (read[0], read[2])
+
+
+def _event_next_edition(record, page_url, doc, *, budget, source, run_log, raw_store,
+                        run_id, rubric_extractor, sector_codes, hub_names, run_date, stats,
+                        cost_meter):
+    """(doc, raw_document_id, analysis) of the next edition, or None.
+
+    Taken only when that page names the same event (most of its name) and a
+    start date from the run date on; otherwise the past edition stands as read.
+    """
+    title = str(record.get("title") or record.get("name") or "")
+    urls = next_edition_urls(record, page_url, doc.content or "", run_year=run_date.year)
+    if not title or not urls or not budget.take():
+        return None
+    stats["next_edition_followups"] = int(stats.get("next_edition_followups", 0) or 0) + 1
+
+    def analyse(page):
+        cache_path = (raw_store.base_dir / "event_analysis"
+                      / f"{page.content_hash}.{EVENT_ANALYSIS_VERSION}.json")
+        text_path = _text_cache_path(raw_store, "event_analysis", page, EVENT_ANALYSIS_VERSION)
+        for path in (cache_path, text_path):
+            cached = read_event_analysis_cache(path, sector_codes=sector_codes,
+                                               run_date=run_date)
+            if cached is not None:
+                return cached
+        if not isinstance(rubric_extractor, EventRubricExtractor):
+            raise RuntimeError("follow-up needs the event rubric extractor")
+        analysis = rubric_extractor.extract(page, sector_codes=sector_codes,
+                                            hub_names=hub_names, run_date=run_date)
+        write_event_analysis_cache(cache_path, analysis)
+        write_event_analysis_cache(text_path, analysis)
+        return analysis
+
+    read = _followup_read(urls, budget=budget, kind="event", source=source, run_log=run_log,
+                          raw_store=raw_store, run_id=run_id, analyse=analyse, stats=stats,
+                          cost_meter=cost_meter)
+    if read is None:
+        return None
+    new = read[2].record or {}
+    if (not same_series(title, str(new.get("title") or new.get("name") or ""))
+            or _event_record_is_past(new, run_date)
+            or not str(new.get("start_date") or new.get("next_date") or "").strip()):
+        stats["next_edition_not_found"] = int(stats.get("next_edition_not_found", 0) or 0) + 1
+        return None
+    stats["next_edition_found"] = int(stats.get("next_edition_found", 0) or 0) + 1
+    return read
 
 
 def wants_linkedin_search(gate, record) -> bool:

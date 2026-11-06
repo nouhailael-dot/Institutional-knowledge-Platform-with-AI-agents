@@ -373,9 +373,10 @@ def test_a_new_grant_is_added_beside_the_recorded_one_never_replacing_it():
     box = _outcome(before, _read({"amount": "$2M", "funder": "Texas Energy Fund", "date": "2026"}))
     # Added even from weaker or older evidence: it contradicts nothing.
     assert (box["outcome"], box["group"]) == ("additional", "additional")
+    # Each grant is labelled from its own dates (6 Nov 2026).
     assert box["proposed"]["value"] == {"entries": [
-        {"amount": "$2M", "funder": "Texas Energy Fund", "date": "2026"},
-        {"amount": "$1M", "funder": "DOE", "date": "2025"}]}
+            {"amount": "$2M", "funder": "Texas Energy Fund", "date": "2026", "status": "active"},
+            {"amount": "$1M", "funder": "DOE", "date": "2025", "status": "recent_award"}]}
     assert "1 new entry added beside the 1 recorded" in box["what_changed"]
     # The same grant read again only confirms it.
     again = _outcome(_recorded({"entries": [{"amount": "$1M", "funder": "DOE", "date": "2025"}]}),
@@ -383,7 +384,8 @@ def test_a_new_grant_is_added_beside_the_recorded_one_never_replacing_it():
     assert again["outcome"] == "corroborated"
     # A first value is stored as its list.
     first = _outcome(None, _read({"amount": "$2M", "funder": "Texas Energy Fund"}))
-    assert first["_write_value"] == {"entries": [{"amount": "$2M", "funder": "Texas Energy Fund"}]}
+    assert first["_write_value"] == {"entries": [{"amount": "$2M", "funder": "Texas Energy Fund",
+                                                  "status": "undated"}]}
     # GHUS's own value is still never changed by the agent.
     assert _outcome(_recorded({"amount": "$1M"}, by="ghus_human"),
                     _read({"amount": "$2M", "funder": "X"}))["outcome"] == "protected"

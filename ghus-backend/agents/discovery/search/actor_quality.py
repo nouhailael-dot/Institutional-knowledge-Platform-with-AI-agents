@@ -54,6 +54,23 @@ DEFAULT_AUTO_HIGH = 0.80
 DEFAULT_MIN_EVIDENCE_ITEMS = 5
 DEFAULT_MIN_DESCRIPTION_CHARS = 60
 DEFAULT_ACCEPT_MIN_PRIORITY = 0.70
+# 6 Nov 2026: accepting without a person also needs a reliable identity (its own
+# page, an operating entity, and its website or place stated) and evidenced
+# topic work - each judged on its own, not hidden inside one relevance number.
+DEFAULT_MIN_IDENTITY_SCORE = 0.83
+DEFAULT_MIN_TOPIC_SCORE = 0.5
+
+# A page on a unit's own sub-site or path (energy.mit.edu, /centers/water) whose
+# record names only the parent institution: the unit and its parent are mixed up.
+_UNIT_PATH = re.compile(r"/(centers?|centres?|institutes?|labs?|laborator(y|ies)|departments?|"
+                        r"schools?|colleges?|programs?|initiatives?|research-centers?)(/|$)",
+                        re.IGNORECASE)
+_INSTITUTION_ONLY = re.compile(
+    r"^(the\s+)?((state\s+)?university\s+of\s+[\w .,&'-]+|[\w .,&'-]+\s+(state\s+)?university"
+    r"|[\w .,&'-]+\s+college|[\w .,&'-]+\s+institute\s+of\s+technology)$",
+    re.IGNORECASE)
+_UNIT_WORDS = re.compile(r"\b(center|centre|institute|lab|laboratory|department|school|program|"
+                         r"programme|initiative|office|division|consortium|hub)\b", re.IGNORECASE)
 
 # A page that is a list, a calendar entry or an article is ABOUT organisations;
 # it is not one. These are matched against the extracted name and the URL path.
@@ -104,6 +121,8 @@ class QualityConfig:
     # verified 32 (30%) unseen, against 5 under the approved policy. With this
     # floor at 0.70: 7. Set 0 to verify on relevance alone.
     accept_min_priority: float = DEFAULT_ACCEPT_MIN_PRIORITY
+    min_identity_score: float = DEFAULT_MIN_IDENTITY_SCORE
+    min_topic_score: float = DEFAULT_MIN_TOPIC_SCORE
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.auto_low < self.auto_high <= 1.0:
@@ -160,7 +179,39 @@ def quality_config(config: Mapping[str, object] | None) -> QualityConfig:
         accept_min_priority=float(
             section.get("accept_min_priority", DEFAULT_ACCEPT_MIN_PRIORITY)
         ),
+        min_identity_score=float(
+            section.get("min_identity_score", DEFAULT_MIN_IDENTITY_SCORE)
+        ),
+        min_topic_score=float(section.get("min_topic_score", DEFAULT_MIN_TOPIC_SCORE)),
     )
+
+
+def unit_named_as_parent(page_url: str, record: Mapping[str, object] | None) -> bool:
+    """A unit's page (its own sub-site or a unit path) whose record names only the
+    parent institution - "Massachusetts Institute of Technology" read from
+    energy.mit.edu - so the unit and its parent are mixed up."""
+    name = " ".join(str((record or {}).get("name") or "").split())
+    unit_words = re.sub(r"institute\s+of\s+technology", " ", name, flags=re.IGNORECASE)
+    if not name or _UNIT_WORDS.search(unit_words) or not _INSTITUTION_ONLY.match(name):
+        return False
+    parts = urlsplit(page_url or "")
+    host = (parts.hostname or "").casefold().removeprefix("www.")
+    domain = registrable_domain(page_url) or ""
+    on_subsite = bool(domain) and host not in ("", domain)
+    return on_subsite or bool(_UNIT_PATH.search(parts.path or ""))
+
+
+# What a record needs before it is accepted without a person: where it is, and
+# what kind of organisation it is (with the website and description checked above).
+def missing_record_basics(record: Mapping[str, object] | None) -> list[str]:
+    record = record or {}
+    missing = []
+    if not any(str(record.get(k) or "").strip() for k in ("state", "state_code", "location_city")):
+        missing.append("location")
+    if not any(str(record.get(k) or "").strip() for k in ("actor_type", "actor_type_raw",
+                                                           "actor_category")):
+        missing.append("kind of organisation")
+    return missing
 
 
 def registrable_domain(url_or_host: str | None) -> str | None:
@@ -244,6 +295,8 @@ def assess_actor(
     record_sector_codes: Sequence[str] = (),
     currency=None,
     priority: float | None = None,
+    identity_score: float | None = None,
+    topic_score: float | None = None,
 ) -> QualityVerdict:
     """Decide accept / review / reject for one candidate, with the reasons.
 
@@ -347,6 +400,26 @@ def assess_actor(
     if currency is not None and not currency.rejects:
         holds.append(currency.code)
         reasons.append(currency.reason)
+    basics = missing_record_basics(record)
+    if basics:
+        # Too little to be useful unseen: a person decides, after the Light Pull
+        # has looked further for it.
+        holds.append("incomplete_record")
+        reasons.append("The record does not state its " + " or ".join(basics)
+                       + "; it is not accepted without a person.")
+    if unit_named_as_parent(page_url, record):
+        holds.append("unit_or_parent_unclear")
+        reasons.append(f"The page belongs to a unit of '{name}', but the record names the "
+                       "institution itself: a person decides which organisation this is.")
+    if identity_score is not None and identity_score < config.min_identity_score:
+        holds.append("identity_unreliable")
+        reasons.append(f"Identity reliability {identity_score:.2f} is below "
+                       f"{config.min_identity_score:.2f} (own page, operating organisation, "
+                       "website and place stated).")
+    if topic_score is not None and topic_score < config.min_topic_score:
+        holds.append("weak_topic_evidence")
+        reasons.append(f"Topic relevance {topic_score:.2f} is below {config.min_topic_score:.2f}: "
+                       "the requested sector and concrete work on it are not both evidenced.")
 
     if scope is not None and scope.focus_terms and not mentions_focus(
             scope.focus_terms, record, rubric):

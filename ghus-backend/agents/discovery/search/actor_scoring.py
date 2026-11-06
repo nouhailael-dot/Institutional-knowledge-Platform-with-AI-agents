@@ -238,6 +238,12 @@ class ActorScore:
     existing_actor_count: int | None
     distinctiveness: float
     priority: float = 0.0
+    # 6 Nov 2026: the two halves of relevance, kept apart from engagement.
+    # identity - can we trust which organisation this is (its own page, an
+    # operating entity, its website and place stated); topic - does it work on
+    # the request (sector evidenced, and research, programmes or use cases).
+    identity: float = 0.0
+    topic: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -414,6 +420,14 @@ class ActorRubricExtractor:
                         "Respect every canonical maxLength in the record schema. Constrained "
                         "fields are short labels, not sentences; primary_lifecycle_role and "
                         "actor_type_raw must be only a few words."
+                    ),
+                    "unit_rule": (
+                        "When the page belongs to a department, school, centre, institute, lab "
+                        "or programme of a larger institution, the record is that unit: its "
+                        "name as the page gives it, and only facts the page states about the "
+                        "unit. Never give the parent institution's name as the record's name, "
+                        "and never report the parent's size, funding or location as the "
+                        "unit's unless the page says they are the unit's."
                     ),
                     "canonical_string_max_lengths": ACTOR_STRING_MAX_LENGTHS,
                 },
@@ -765,6 +779,12 @@ def score_actor_rubric(
     }
     relevance = weighted_score(relevance_values, weights=actor_relevance_weights(config))
     priority = weighted_score(priority_values, weights=actor_priority_weights(config))
+    identity = round((relevance_values["own_organisational_page"]
+                      + relevance_values["real_operating_entity"]
+                      + relevance_values["identity_stated"]) / 3, 6)
+    topic = round((relevance_values["sector_coverage"]
+                   + max(relevance_values["research_development_or_programmes"],
+                         float(use_case_share > 0))) / 2, 6)
     return ActorScore(
         total=relevance.total,
         contributions={
@@ -772,10 +792,14 @@ def score_actor_rubric(
             **{f"priority.{k}": v for k, v in priority.contributions.items()},
             "relevance_score": relevance.total,
             "priority_score": priority.total,
+            "identity_score": identity,
+            "topic_score": topic,
         },
         existing_actor_count=existing_actor_count,
         distinctiveness=round(distinctiveness, 6),
         priority=priority.total,
+        identity=identity,
+        topic=topic,
     )
 
 

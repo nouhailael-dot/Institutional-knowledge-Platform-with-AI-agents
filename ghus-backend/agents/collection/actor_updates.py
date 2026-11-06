@@ -730,7 +730,7 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
     if outcome == "new" and field in ENTRY_BOXES:
         # The first value of an entry box is stored as its list from the start.
         from agents.common.fact_parts import entries_of, entry_value
-        write_value = entry_value(entries_of(evidence.get("value")))
+        write_value = entry_value(entries_of(evidence.get("value")), key=field)
     if proposed and write_value is not None:
         # What the box would hold: the new facts, and the recorded facts this
         # reading did not restate - never a poorer value than the record's.

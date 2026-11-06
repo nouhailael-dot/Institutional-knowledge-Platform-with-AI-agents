@@ -90,7 +90,17 @@ def route_actor(
     if not name:
         raise ValueError("actor record has no name")
 
-    exact = _exact_actor_matches(record, mapped_candidates or [])
+    mapped_candidates = list(mapped_candidates or [])
+    exact = _exact_actor_matches(record, mapped_candidates)
+    if len(exact) == 1 and exact[0]["_match_rule"] == "same_site_other_unit":
+        # 6 Nov 2026: one site, two organisations (a university and its centre
+        # at /centers/water): never absorbed into each other; a person decides.
+        actor_id = _actor_candidate_id(exact[0])
+        return RouteDecision(
+            zone="review", score=0.9, target_entity_id=actor_id, candidate_ids=[actor_id],
+            metadata={"review_kind": "possible_duplicate", "match_rule": "same_site_other_unit",
+                      "matched_name": str(exact[0].get("name") or ""),
+                      "route_policy": "v2_exact_only"})
     if len(exact) == 1:
         candidate = exact[0]
         actor_id = _actor_candidate_id(candidate)
@@ -119,6 +129,18 @@ def route_actor(
                 "route_policy": "v2_exact_only",
             },
         )
+
+    acronyms = _acronym_matches(record, mapped_candidates)
+    if acronyms:
+        # "NREL" and "National Renewable Energy Laboratory": the same organisation
+        # most likely, but an acronym is never enough to merge (6 Nov 2026).
+        candidate_ids = sorted({_actor_candidate_id(c) for c in acronyms})
+        return RouteDecision(
+            zone="review", score=0.9, target_entity_id=candidate_ids[0],
+            candidate_ids=candidate_ids,
+            metadata={"review_kind": "possible_duplicate", "match_rule": "acronym",
+                      "matched_name": str(acronyms[0].get("name") or ""),
+                      "route_policy": "v2_exact_only"})
 
     candidates = resolver._candidates(name)
     thresholds = Thresholds(high=float(resolver.HIGH), low=float(resolver.LOW))
@@ -195,13 +217,20 @@ def _exact_actor_matches(
 ) -> list[dict[str, object]]:
     record_names = _actor_identity_names(record)
     record_domain = _actor_domain(record)
+    record_path = _actor_path(record)
     matches: list[dict[str, object]] = []
     for candidate in candidates:
         rule = ""
         candidate_domain = _actor_domain(candidate)
+        same_name = bool(record_names.intersection(_actor_identity_names(candidate)))
         if record_domain and candidate_domain and record_domain == candidate_domain:
-            rule = "website_domain"
-        elif record_names.intersection(_actor_identity_names(candidate)):
+            # The same site under two different paths, with two different names, is
+            # two organisations of one institution - a unit and its parent.
+            other_unit = (not same_name and record_path != _actor_path(candidate)
+                          and any(_UNIT_PATH.search(p) for p in (record_path,
+                                                                  _actor_path(candidate))))
+            rule = "same_site_other_unit" if other_unit else "website_domain"
+        elif same_name:
             rule = "name_or_alternate_name"
         if rule:
             matches.append({**candidate, "_match_rule": rule})
@@ -226,6 +255,64 @@ def _actor_identity_names(record: dict[str, object]) -> set[str]:
         for value in raw_names
         if value is not None and str(value).strip()
     }
+
+
+def _actor_path(record: dict[str, object]) -> str:
+    """The website's path ("centers/water"), empty for a site's home page."""
+    value = str(record.get("website") or "").strip()
+    if not value:
+        return ""
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    path = (parsed.path or "").strip("/").casefold()
+    return re.sub(r"(^|/)(index|home|default)(\.\w+)?$", "", path).strip("/")
+
+
+# A path that names a unit of the site's institution (not an "about" page of it).
+_UNIT_PATH = re.compile(r"(^|/)(centers?|centres?|institutes?|labs?|laborator(y|ies)|"
+                        r"departments?|schools?|colleges?|programs?|initiatives?)(/|$)", re.I)
+
+_ACRONYM_STOP = frozenset({"of", "the", "and", "for", "at", "in", "on", "&", "a", "an"})
+
+
+def acronym_of(name: str) -> str:
+    """The initials of a multi-word name: "National Renewable Energy Laboratory" -> NREL."""
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'\-]*", str(name or ""))
+             if w.casefold() not in _ACRONYM_STOP]
+    return "".join(w[0] for w in words).upper() if len(words) >= 2 else ""
+
+
+def is_acronym_pair(a: str, b: str) -> bool:
+    """One name is the other's acronym (2-8 capitals, written as such), or the other
+    states it in brackets: "USGS" and "U.S. Geological Survey (USGS)"."""
+    for short, long in ((a, b), (b, a)):
+        letters = re.sub(r"[^A-Za-z]", "", str(short or ""))
+        if not (2 <= len(letters) <= 8 and letters.isupper() and " " not in str(short).strip()):
+            continue
+        stated = re.findall(r"\(([A-Z][A-Za-z&.]{1,9})\)", str(long or ""))
+        bare = re.sub(r"\([^)]*\)", " ", str(long or ""))
+        if letters == acronym_of(bare) or letters in {re.sub(r"[^A-Za-z]", "", s)
+                                                       for s in stated}:
+            return True
+    return False
+
+
+def _acronym_matches(record: dict[str, object], candidates) -> list[dict[str, object]]:
+    names = [str(record.get("name") or "")]
+    alternates = record.get("alternate_names") or record.get("alt_names") or []
+    names += [str(a) for a in alternates] if isinstance(alternates, list) else []
+    found = []
+    for candidate in candidates:
+        other = [str(candidate.get("name") or "")]
+        alt = candidate.get("alternate_names") or []
+        if isinstance(alt, str):
+            try:
+                alt = json.loads(alt)
+            except json.JSONDecodeError:
+                alt = [alt]
+        other += [str(a) for a in alt] if isinstance(alt, list) else []
+        if any(is_acronym_pair(n, o) for n in names if n for o in other if o):
+            found.append(candidate)
+    return found
 
 
 def _actor_domain(record: dict[str, object]) -> str:
@@ -602,10 +689,16 @@ def route_event(
     fuzzy_matches: list[tuple[float, dict[str, object]]] = []
     for candidate in blocked:
         candidate_date = _date_part(candidate.get("start_date") or candidate.get("next_date"))
-        if not record_date or not candidate_date or record_date != candidate_date:
+        if not record_date or not candidate_date:
             continue
         candidate_title = str(candidate.get("name") or candidate.get("title") or "")
         similarity = _title_similarity(record_title, candidate_title)
+        if record_date != candidate_date:
+            # 6 Nov 2026: one edition with its dates read a day or a week apart is
+            # still the same edition (same year, nearly the same name): a person
+            # decides. Another year is another edition.
+            if record_date[:4] != candidate_date[:4] or similarity < 0.9:
+                continue
         if similarity >= fuzzy_threshold:
             logger.info(
                 "event fuzzy review match staged_title=%r candidate_title=%r similarity=%.4f threshold=%.4f",

@@ -669,6 +669,7 @@ def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, t
             record={
                 **_canonical_record("High Actor"),
                 "website": "https://high.example",
+                "state": "TX",
                 "description": (
                     "High Actor is a water-technology company operating three pilot "
                     "desalination plants in Texas. It runs field trials with municipal "

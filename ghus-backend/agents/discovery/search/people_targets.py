@@ -302,6 +302,108 @@ def directory_leads(html: str, page_url: str, themes: Sequence[str], *,
     return [lead for _, _, lead in leads[:limit]]
 
 
+# Conference and event speaker lists (6 Nov 2026): leads, never profiles. A
+# speaker is looked up on the institution the list names, and only an official
+# profile page there is read and judged.
+_SPEAKER_PATH = re.compile(r"(^|/)(speakers?|presenters?|panelists?|keynotes?|"
+                           r"featured-speakers|program-committee)(/|$)", re.I)
+_AFFILIATION = re.compile(
+    r"((?:[A-Z][\w&.'-]*\s+){0,5}(?:University|Institute|Laboratory|Lab|College|Center|"
+    r"Centre|Agency|Department|Foundation|Corporation|Company|Inc\.?|Authority|Commission|"
+    r"Hospital|School)(?:\s+(?:of|for|at)\s+(?:[A-Z][\w&.'-]*\s*){1,5})?)")
+
+
+_NOT_A_SPEAKER = {"register", "now", "today", "agenda", "speakers", "speaker", "more", "learn",
+                  "view", "session", "sessions", "keynote", "panel", "welcome", "sponsors",
+                  "tickets", "schedule", "program", "venue", "contact", "join", "us", "day"}
+_CARD_TAGS = ["h2", "h3", "h4", "h5", "strong", "b", "a"]
+
+
+def speaker_page(url: str) -> bool:
+    """A conference or event page listing its speakers."""
+    return bool(_SPEAKER_PATH.search(urlsplit(str(url or "")).path or ""))
+
+
+def speaker_leads(html: str, page_url: str, themes: Sequence[str], *,
+                  limit: int = 4) -> list[dict]:
+    """Speakers a list names with their institution: [{name, affiliation, context}].
+
+    Only a card that names a person AND an institution is a lead; a card that
+    mentions the topic comes first. No model is called.
+    """
+    soup = BeautifulSoup(html or "", "html.parser")
+    words = {w for t in themes for w in re.findall(r"[a-z]{4,}", t.lower())}
+    seen: set[str] = set()
+    leads: list[tuple[int, int, dict]] = []
+    def name_of(tag) -> str:
+        text = " ".join(tag.get_text(" ", strip=True).split())
+        if not _looks_like_name(text) or {w.casefold().strip(",.") for w in text.split()} \
+                & _NOT_A_SPEAKER:
+            return ""
+        return text
+
+    for order, tag in enumerate(soup.find_all(_CARD_TAGS)):
+        name = name_of(tag)
+        if not name or name.casefold() in seen:
+            continue
+        block = tag
+        for _ in range(3):           # the speaker's own card - never a neighbour's
+            parent = block.parent
+            if parent is None or len(parent.get_text(" ", strip=True)) > 400:
+                break
+            others = {name_of(t) for t in parent.find_all(_CARD_TAGS)} - {"", name}
+            if others:
+                break
+            block = parent
+        context = " ".join(block.get_text(" ", strip=True).split())[:400]
+        rest = context.split(name, 1)[1] if name in context else ""
+        match = _AFFILIATION.search(rest)
+        if not match:
+            continue
+        affiliation = " ".join(match.group(1).split()).strip(" ,.")
+        if len(affiliation.split()) < 2:
+            continue
+        seen.add(name.casefold())
+        hits = sum(w in context.lower() for w in words)
+        leads.append((hits, order, {"name": name, "affiliation": affiliation,
+                                    "context": context, "listed_on": page_url}))
+    leads.sort(key=lambda item: (-item[0], item[1]))
+    return [lead for _, _, lead in leads[:limit]]
+
+
+# Profile aggregators and social sites: never a person's official profile.
+_NOT_OFFICIAL = re.compile(r"(^|\.)(linkedin|sciprofiles|researchgate|academia|orcid|"
+                           r"scholar\.google|semanticscholar|zoominfo|rocketreach|crunchbase|"
+                           r"facebook|twitter|x|instagram|youtube|wikipedia|muckrack|"
+                           r"signalhire|contactout|theorg)\.", re.I)
+
+
+def official_profile_hit(results: Iterable, name: str) -> object | None:
+    """The search result that is this person's profile on an institution's own site.
+
+    Never an aggregator, social or news page. A page whose address carries the
+    person's name ("/chem/en/jana.pisk") comes first; then a page that looks
+    like one person's profile and names them.
+    """
+    parts = [p.casefold() for p in name_parts(name) if len(p) > 1]
+    surname = parts[-1] if parts else ""
+    best = None
+    for hit in results or ():
+        url = str(getattr(hit, "url", "") or "")
+        split = urlsplit(url)
+        host = (split.hostname or "").casefold().removeprefix("www.")
+        text = f"{getattr(hit, 'title', '') or ''} {getattr(hit, 'snippet', '') or ''}".casefold()
+        if (not surname or not host or _NOT_OFFICIAL.search(host + ".")
+                or _STORY_HOSTS.match(host) or _NOT_PROFILE.search(split.path or "")):
+            continue
+        path = (split.path or "").casefold()
+        if surname in path and (len(parts) < 2 or parts[0] in path or parts[0][:1] in path):
+            return hit
+        if best is None and profile_page_kind(url) == "profile" and surname in text:
+            best = hit
+    return best
+
+
 _ORG_STOP = {"the", "of", "and", "at", "for", "in", "inc", "llc", "ltd", "co", "university"}
 
 

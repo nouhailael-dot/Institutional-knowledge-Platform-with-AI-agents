@@ -324,12 +324,18 @@ def run_search_triage(
             cost_meter.enforce()
             search_results.extend(results)
         stats["search_results"] = len(search_results)
+        # What was searched, so the next run of the same request searches anew.
+        stats["queries_executed"] = list(queries)
+        for key in ("queries_skipped_as_repeats", "queries_repeated"):
+            if key in (bundle.metadata or {}):
+                stats[key] = bundle.metadata[key]
         stats["cost_stage_search_usd"] = round(cost_meter.spent_usd - stage_start, 6)
         deduplicated_results = _deduplicate_search_results(search_results)
         stats["search_results_unique"] = len(deduplicated_results)
         stats["search_results_deduplicated"] = len(search_results) - len(deduplicated_results)
 
         directories: list[SearchResult] = []
+        speaker_lists: list[SearchResult] = []
         pending_results = _deterministic_triage(
             run_id=run_id,
             entity_type=entity_type,
@@ -341,7 +347,13 @@ def run_search_triage(
             candidate_rows=candidate_rows,
             stats=stats,
             directories=directories,
+            speaker_lists=speaker_lists,
         )
+        if entity_type == "person" and speaker_lists:
+            pending_results.extend(_people_from_speaker_lists(
+                speaker_lists, pending_results, config=config, root=root,
+                request=discovery_request, fetch_source=fetch_source,
+                search_provider=search_provider, cost_meter=cost_meter, stats=stats))
         if entity_type == "person" and directories:
             pending_results.extend(_people_from_directories(
                 directories, pending_results, config=config, root=root,
@@ -774,6 +786,66 @@ def _rollback_session(session) -> None:
         logger.exception("Could not roll back the session before recording run failure")
 
 
+def _people_from_speaker_lists(pages, pending, *, config, root, request, fetch_source,
+                               search_provider, cost_meter, stats) -> list[SearchResult]:
+    """Official profiles of the speakers a conference page names (6 Nov 2026).
+
+    At most ``person_speaker_pages`` lists (default 2) are opened, no model call;
+    each lead (a name with its institution) gets one search, at most
+    ``person_speaker_searches`` (default 6) in all, and only a result that is one
+    person's profile page naming them is kept - to be read and judged like any
+    other profile. The list itself is never the source of a person's facts.
+    """
+    from agents.discovery.search.people_targets import official_profile_hit, speaker_leads
+    from agents.discovery.search.phase2 import OpenWebEventSource
+
+    source = fetch_source or OpenWebEventSource(config)
+    themes = list(request.themes(load_seeded_sectors(root))) if request is not None else []
+    known = {r.url for r in pending}
+    budget = int(config.get("person_speaker_searches", 6))
+    found: list[SearchResult] = []
+    for page in pages[: int(config.get("person_speaker_pages", 2))]:
+        if budget <= 0:
+            break
+        try:
+            doc = source.fetch(page.url)
+        except Exception as exc:  # noqa: BLE001 - one list never stops the run
+            logger.info("speaker list %s not read: %s", page.url, exc)
+            continue
+        stats["person_speaker_lists_read"] = int(stats.get("person_speaker_lists_read", 0) or 0) + 1
+        for lead in speaker_leads(doc.content, doc.url, themes,
+                                  limit=int(config.get("person_leads_per_speaker_list", 4))):
+            if budget <= 0:
+                break
+            budget -= 1
+            query = f'"{lead["name"]}" "{lead["affiliation"]}"'
+            stats["person_speaker_searches"] = int(stats.get("person_speaker_searches", 0) or 0) + 1
+            try:
+                hits = search_provider.search(query, count=5)
+                cost_meter.enforce()
+            except CostLimitExceeded:
+                raise
+            except Exception as exc:  # noqa: BLE001 - this speaker stays a lead
+                logger.info("speaker search %r failed: %s", query, exc)
+                continue
+            hit = official_profile_hit(hits, lead["name"])
+            if hit is None or hit.url in known:
+                continue
+            if result_outside_us(hit.url, getattr(hit, "title", "") or "",
+                                 getattr(hit, "snippet", "") or ""):
+                # United States only, as for every other result.
+                stats["person_speaker_outside_us"] = int(
+                    stats.get("person_speaker_outside_us", 0) or 0) + 1
+                continue
+            known.add(hit.url)
+            found.append(SearchResult(url=hit.url, title=getattr(hit, "title", "") or lead["name"],
+                                      snippet=getattr(hit, "snippet", "") or lead["context"],
+                                      provider="speaker_lead",
+                                      query=f"speaker listed on {page.url}"))
+    stats["person_speaker_leads"] = len(found)
+    return found
+
+
 def _people_from_directories(directories, pending, *, config, root, request, fetch_source,
                              stats) -> list[SearchResult]:
     """Profile pages of the people a directory lists on the topic - no model call.
@@ -824,6 +896,7 @@ def _deterministic_triage(
     candidate_rows: list[CandidateRecord],
     stats: dict[str, object],
     directories: list[SearchResult] | None = None,
+    speaker_lists: list[SearchResult] | None = None,
 ) -> list[SearchResult]:
     pending: list[SearchResult] = []
     configured_domains = known_source_domains(full_config)
@@ -862,8 +935,18 @@ def _deterministic_triage(
                 and bool(config.get("person_profile_pages_only", True)):
             # A complete profile is on the person's own profile page; a people
             # directory is a list of leads to follow (people_targets.py).
+            from agents.discovery.search.people_targets import speaker_page
+
             kind = profile_page_kind(result.url)
-            if kind == "directory":
+            if speaker_page(result.url):
+                # 6 Nov 2026: a speaker list is a lead - each speaker is looked up
+                # on their own institution's site, and only that profile is read.
+                if speaker_lists is not None:
+                    speaker_lists.append(result)
+                rejected = SimpleNamespace(domain=domain, reason=(
+                    "A speaker list, not one person's profile: its speakers are looked up "
+                    "on their own institutions' sites instead."))
+            elif kind == "directory":
                 if directories is not None:
                     directories.append(result)
                 rejected = SimpleNamespace(domain=domain, reason=(

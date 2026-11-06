@@ -1555,3 +1555,15 @@ test('the organization card no longer shows a Category Note field', () => {
   const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /"category_note", draft\.category_note/);
 });
+
+test('each grant says whether it is active, recent or historical', () => {
+  const text = formatFactValue({entries: [
+    {amount: '$3M', funder: 'DOE', date: '2024-2028', status: 'active'},
+    {amount: '$1M', funder: 'NSF', date: '2016', status: 'historical'},
+  ]});
+  const [first, second] = text.split('\n');
+  assert.match(first, /^• \[Active\] /);
+  assert.match(first, /\$3M/);
+  assert.match(second, /^• \[Historical\] /);
+  assert.doesNotMatch(text, /Status:/);
+});

@@ -142,6 +142,7 @@ RECORD = {
     "description": "Northeast Storage Lab is a research centre in Boston. It tests grid-scale "
                    "battery systems with regional utilities.",
     "state": "Massachusetts",
+    "actor_type": "research_center",
 }
 
 

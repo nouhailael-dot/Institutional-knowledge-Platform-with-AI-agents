@@ -304,7 +304,8 @@ def test_a_dead_address_is_replaced_by_its_current_official_site(blocked):
     new = "https://graham.umich.edu/water"
     pages = {
         new: ("<title>University of Michigan Water Center | Graham</title>"
-              "<p>The University of Michigan Water Center funds Great Lakes research.</p>"),
+              "<p>The University of Michigan Water Center receives support from the Erb "
+              "Family Foundation for Great Lakes research.</p>"),
         "https://www.freep.com/story/news/water-center": (
             "<p>The University of Michigan Water Center announced grants.</p>"),
     }
@@ -324,10 +325,13 @@ def test_a_dead_address_is_replaced_by_its_current_official_site(blocked):
                 SimpleNamespace(url=new)]
 
     model = Model({"funding_signal": {"stated": True, "page": new,
-                                      "value": [{"funder": "University of Michigan Water Center",
+                                      # Funding it received (6 Nov 2026: funding it gives
+                                      # to others is not its funding).
+                                      "value": [{"funder": "Erb Family Foundation",
                                                  "program": "Great Lakes research"}],
-                                      "quotes": ["The University of Michigan Water Center funds "
-                                                 "Great Lakes research."]}})
+                                      "quotes": ["The University of Michigan Water Center "
+                                                 "receives support from the Erb Family "
+                                                 "Foundation for Great Lakes research."]}})
     read = LightPullReader(model, fetch, fallback=Fallback(blocked=store, search=search)).read(
         name=name, website="https://watercenter.umich.edu", actor_category="research_center",
         read_at=NOW, fields=["funding_signal"])

@@ -1221,13 +1221,23 @@ export function formatFactValue(value) {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
+// A funding entry's status, set by the agent from the grant's own dates (6 Nov 2026).
+export const FUNDING_STATUS_WORDS = {
+  active: "Active", recent_award: "Awarded recently (end not stated)",
+  recently_completed: "Recently completed", historical: "Historical",
+  undated: "Date not stated",
+};
+
 /** "• 03/14/2026 — Opened a pilot · • Amount: $2M · Funder: NSF": each entry on its line. */
 export function formatEntries(entries) {
   const lines = (entries || []).map(entry => {
     if (!entry) return "";
     if (typeof entry !== "object") return String(entry).trim();
-    if (entry.date && entry.description) return `${usDate(entry.date)} — ${entry.description}`;
-    return formatFactValue(entry).split("\n").join(" · ");
+    const {status, ...rest} = entry;
+    const tag = FUNDING_STATUS_WORDS[status] ? `[${FUNDING_STATUS_WORDS[status]}] ` : "";
+    if (rest.date && rest.description) return `${tag}${usDate(rest.date)} — ${rest.description}`;
+    const line = formatFactValue(rest).split("\n").join(" · ");
+    return line && line !== "No value recorded" ? tag + line : "";
   }).filter(line => line && line !== "No value recorded");
   return lines.length ? lines.map(line => `• ${line}`).join("\n") : "No value recorded";
 }

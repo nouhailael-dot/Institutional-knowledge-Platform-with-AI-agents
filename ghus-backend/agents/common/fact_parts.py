@@ -129,6 +129,7 @@ ENTRY_BOXES = frozenset({
     "international_connection",
 })
 ENTRIES = "entries"
+STATUS = "status"
 MAX_ENTRIES = 10
 MAX_ENTRIES_PER_READ = 5
 ENTRY_YEARS = 2
@@ -243,7 +244,9 @@ def _decode(value):
 
 def _text(value) -> str:
     if isinstance(value, Mapping):
-        return " ".join(_text(v) for k, v in value.items() if k != CARRIED_OVER)
+        # STATUS is computed from the entry's own dates, never read: not compared.
+        return " ".join(_text(v) for k, v in value.items()
+                        if k not in (CARRIED_OVER, STATUS, "reported"))
     if isinstance(value, (list, tuple)):
         return " ".join(_text(v) for v in value)
     return "" if value is None else str(value)
@@ -294,11 +297,85 @@ def _entry_year(entry) -> int | None:
     return max(years) if years else None
 
 
-def entry_value(entries, *, today_year: int | None = None) -> dict:
-    """The stored value of an entry box: newest first, at most MAX_ENTRIES, none stale."""
+# Funding (GHUS, 6 Nov 2026): documented funding is never "not found" because it
+# is old. Each grant keeps its amount, funder, purpose and dates, and is labelled
+# from its own dates: active, recently awarded, recently completed or historical.
+RECENT_FUNDING_YEARS = 3
+FUNDING_STATUS_ORDER = ("active", "recent_award", "recently_completed", "historical", "undated")
+FUNDING_STATUS_LABELS = {
+    "active": "Active", "recent_award": "Awarded recently (end not stated)",
+    "recently_completed": "Recently completed", "historical": "Historical",
+    "undated": "Date not stated",
+}
+_ONGOING = re.compile(r"\b(ongoing|present|current(ly)?|to date)\b", re.I)
+_YEAR4 = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
+REPORTED = "reported"     # the announcing page's own date, when the grant states none
+
+
+def _years_in(text: str) -> list[int]:
+    """Four-digit years, and fiscal years written "FY25" / "FY 2025"."""
+    years = {int(y) for y in _YEAR4.findall(text)}
+    years |= {2000 + int(y) for y in re.findall(r"\bFY\s?'?(\d{2})\b", text, re.I)}
+    return sorted(years)
+
+
+_RANGE = re.compile(r"\b(through|until|thru|to|ends?|ending)\b|\d\s*[-\u2013\u2014]\s*\d", re.I)
+
+
+def funding_status(entry, *, today_year: int | None = None) -> str:
+    """A funding entry's status from the dates it states (never guessed).
+
+    A range ("2022-2026", "through 2027") is active while its end year has not
+    passed, recently completed for RECENT_FUNDING_YEARS after, then historical.
+    A single year is an award: active in its own year, "awarded recently (end not
+    stated)" for RECENT_FUNDING_YEARS, then historical. "Ongoing" is active.
+    """
     from datetime import date
 
     year = today_year or date.today().year
+    text = str(entry.get("date") or "") if isinstance(entry, Mapping) else ""
+    years = _years_in(text)
+    if not years and not _ONGOING.search(text) and isinstance(entry, Mapping):
+        # No date of its own: the date of the page that announced it, when its
+        # address carries one (".../2026/07/30/doe-awards-..."), read as the award year.
+        text = str(entry.get(REPORTED) or "")
+        years = _years_in(text)
+    if not years:
+        return "active" if _ONGOING.search(text) else "undated"
+    ranged = len(years) > 1 or bool(_RANGE.search(text))
+    last = years[-1]
+    if _ONGOING.search(text) or last >= year:
+        return "active"
+    if year - last <= RECENT_FUNDING_YEARS:
+        return "recently_completed" if ranged else "recent_award"
+    return "historical"
+
+
+def _funding_value(entries, year: int) -> dict:
+    labelled = []
+    for entry in entries:
+        if isinstance(entry, Mapping):
+            entry = {**{k: v for k, v in entry.items() if k != STATUS},
+                     STATUS: funding_status(entry, today_year=year)}
+        labelled.append(entry)
+
+    def rank(entry):
+        status = entry.get(STATUS) if isinstance(entry, Mapping) else "undated"
+        return (FUNDING_STATUS_ORDER.index(status), -(_entry_year(entry) or 0))
+
+    return {ENTRIES: sorted(labelled, key=rank)[:MAX_ENTRIES]}
+
+
+def entry_value(entries, *, today_year: int | None = None, key: str | None = None) -> dict:
+    """The stored value of an entry box: newest first, at most MAX_ENTRIES, none stale.
+
+    Funding keeps every documented grant, old ones included, each with its status.
+    """
+    from datetime import date
+
+    year = today_year or date.today().year
+    if key == "funding_signal":
+        return _funding_value(entries, year)
     ordered = sorted(entries, key=lambda e: _entry_year(e) or year, reverse=True)
     kept = [e for e in ordered if (_entry_year(e) or year) >= year - ENTRY_YEARS]
     # Never an empty box from a found value: when every entry is old, the newest stays.
@@ -310,7 +387,7 @@ def same_entry(before, after) -> bool:
     return same_text(before, after) or covers(before, after) or covers(after, before)
 
 
-def compare_entries(before, after) -> dict:
+def compare_entries(before, after, key: str | None = None) -> dict:
     """An entry box: each new entry is confirmed (already recorded) or added.
 
     Never "changed": a different grant or activity is another one, recorded
@@ -320,11 +397,11 @@ def compare_entries(before, after) -> dict:
     added = [e for e in new if not any(same_entry(o, e) for o in old)]
     added = [e for i, e in enumerate(added) if not any(same_entry(p, e) for p in added[:i])]
     if not added:
-        return {"outcome": "corroborated", "parts": [], "merged": entry_value(old)}
+        return {"outcome": "corroborated", "parts": [], "merged": entry_value(old, key=key)}
     return {"outcome": "additional",
             "parts": [{"part": ENTRIES, "previous": len(old), "new": added,
                        "outcome": "additional"}],
-            "merged": entry_value([*added, *old])}
+            "merged": entry_value([*added, *old], key=key)}
 
 
 def compare_values(key: str, before, after) -> dict:
@@ -338,7 +415,7 @@ def compare_values(key: str, before, after) -> dict:
     """
     before, after = _decode(before), _decode(after)
     if key in ENTRY_BOXES:
-        return compare_entries(before, after)
+        return compare_entries(before, after, key)
     if key == "why_matched" and isinstance(before, Mapping) and isinstance(after, Mapping):
         # The agent's own explanation: a new wording of it is not new
         # information. Only a different strength of match is a change.
@@ -354,6 +431,11 @@ def compare_values(key: str, before, after) -> dict:
         shared = old_words & new_words
         if old_words and new_words and len(shared) >= 0.5 * min(len(old_words), len(new_words)):
             return {"outcome": "corroborated", "parts": [], "merged": before}
+    if (key in DESCRIPTIVE and isinstance(before, str) and isinstance(after, str)
+            and covers(before, after, share=0.6)):
+        # 6 Nov 2026: a shorter description saying nothing the recorded one does
+        # not already say never replaces it.
+        return {"outcome": "corroborated", "parts": [], "merged": before}
     if isinstance(before, Mapping) and isinstance(after, Mapping):
         return _compare_parts(key, dict(before), dict(after))
     if isinstance(before, list) and isinstance(after, list):
@@ -392,8 +474,19 @@ def _compare_parts(key: str, before: dict, after: dict) -> dict:
                 listed = _compare_lists(old, new)
                 outcome = "confirmed" if listed["outcome"] == "corroborated" else "additional"
                 merged[name] = listed["merged"]
+            elif (_same_part(old, new) and not isinstance(new, (int, float))
+                  and covers(new, old) and len(_words(_text(new))) > len(_words(_text(old)))):
+                # The same fact, stated more fully: the fuller wording is kept.
+                outcome, merged[name] = "additional", new
             elif _same_part(old, new):
                 outcome, merged[name] = "confirmed", old
+            elif not isinstance(old, (int, float)) and covers(old, new):
+                # The recorded part already says it, and more ("U.S. Department of
+                # Energy, Office of Science" read again as "Department of Energy"):
+                # kept, never made poorer (6 Nov 2026).
+                outcome, merged[name] = "confirmed", old
+            elif not isinstance(new, (int, float)) and covers(new, old):
+                outcome, merged[name] = "additional", new
             else:
                 outcome, merged[name] = "changed", new
             parts.append({"part": name, "previous": old, "new": new, "outcome": outcome})
