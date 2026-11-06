@@ -417,8 +417,9 @@ def test_event_and_person_details_show_every_box_as_a_column(connection):
 
     fact("person", person, "department", "Water Resources")
     fact("person", person, "email", "someone@example.org")
-    dept, other = connection.execute(text(
-        "SELECT department, other_facts FROM person_details WHERE person_id=CAST(:p AS uuid)"),
-        {"p": person}).one()
-    assert dept == "Water Resources" and "email" not in other   # contact details never shown
+    dept, email, other = connection.execute(text(
+        "SELECT department, email, other_facts FROM person_details "
+        "WHERE person_id=CAST(:p AS uuid)"), {"p": person}).one()
+    assert dept == "Water Resources" and email == "someone@example.org"
+    assert "email" not in other
     session.close()

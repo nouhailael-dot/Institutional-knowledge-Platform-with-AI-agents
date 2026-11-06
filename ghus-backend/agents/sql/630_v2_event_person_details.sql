@@ -15,8 +15,9 @@
 -- with no column of its own goes to other_facts, so nothing is dropped;
 -- fact_sources gives, per box, the page, date read and confidence. An event's
 -- stated scale or standing (event_claim) shows in standing_claims, newest
--- first. A person's contact details are never shown here: an "email" reading
--- is left out (people are collected with professional details only).
+-- first. A person's email shows in its own column when one was read
+-- (Explore and Map collects it only when a request explicitly asks;
+-- GHUS decision 2026-11-06).
 --
 -- Columns from the agents' own box lists: Review's EVENT_FACT_BOXES and
 -- PERSON_FACT_BOXES (frontend/review.js), page_facts.py, promote.py's extra
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS person_details (
     other_affiliations jsonb,
     um6p_ocp_connection jsonb,
     -- Fields Explore and Map's people cards carry beside them
+    email jsonb,
     organization_location jsonb,
     affiliation_evidence_year jsonb,
     work_evidence jsonb,
@@ -103,9 +105,6 @@ BEGIN
         v_table := 'event_details'; v_id := 'event_id'; v_fact_id := 'event_fact_id';
     ELSIF p_kind = 'person' THEN
         v_table := 'person_details'; v_id := 'person_id'; v_fact_id := 'person_fact_id';
-        IF p_key = 'email' THEN
-            RETURN;  -- contact details are never shown
-        END IF;
     ELSE
         RAISE EXCEPTION 'unknown record kind %', p_kind;
     END IF;
