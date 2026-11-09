@@ -992,14 +992,20 @@ class ReviewStore:
                 if not folds:
                     continue
                 target = _external_candidate_id(str(candidate["source_key"]).strip())
-                db.executemany(
-                    "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
-                    "AND candidate_id<>? AND status='pending_review'",
-                    [(target, _external_candidate_id(key), target) for key in folds],
+                fresh = 0
+                for key in folds:
+                    fresh += db.execute(
+                        "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
+                        "AND candidate_id<>? AND status='pending_review' AND folded_into IS NOT ?",
+                        (target, _external_candidate_id(key), target, target),
+                    ).rowcount
+                # The profile itself is listed - unless it was set aside and
+                # nothing new has been folded into it since (set_aside).
+                db.execute(
+                    "UPDATE review_candidate SET folded_into=NULL WHERE candidate_id=? "
+                    "AND (? OR folded_into IS NULL OR folded_into NOT LIKE ?)",
+                    (target, fresh > 0, self.SET_ASIDE_PREFIX + "%"),
                 )
-                # The profile itself is always listed.
-                db.execute("UPDATE review_candidate SET folded_into=NULL WHERE candidate_id=?",
-                           (target,))
             for key, reason in (retired or {}).items():
                 db.execute(
                     "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "

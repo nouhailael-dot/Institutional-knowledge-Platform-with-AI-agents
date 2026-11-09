@@ -565,6 +565,27 @@ def dashboard_directory_activity(days: int = Query(30, ge=1, le=366)):
         raise HTTPException(503, "The Directory activity could not be read right now.")
 
 
+@app.get("/api/dashboard/start")
+def dashboard_start():
+    """When the Dashboard starts counting (GHUS_DASHBOARD_SINCE, an ISO date or time).
+
+    The hosted team trial (10 Nov 2026) starts its Dashboard clean: spending,
+    counts and recent items only from that moment. Earlier work stays in the
+    database and on its own pages. Not set: no start, everything counts.
+    """
+    from datetime import datetime, timezone
+    raw = os.environ.get("GHUS_DASHBOARD_SINCE", "").strip()
+    if not raw:
+        return {"since": None}
+    try:
+        when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        logger.warning("GHUS_DASHBOARD_SINCE is not an ISO date or time; the Dashboard counts everything")
+        return {"since": None}
+    when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+    return {"since": when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")}
+
+
 @app.get("/api/dashboard/spending")
 def dashboard_spending():
     """Every month's request spending and the maps run on this computer. For the admin."""

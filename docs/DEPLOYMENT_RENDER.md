@@ -52,7 +52,13 @@ a URL.
    | `ANTHROPIC_API_KEY` | Same as in your local `.env`. |
    | `VOYAGE_API_KEY` | Same as in your local `.env`. |
    | `GHUS_AGENT_CONTACT_EMAIL` | The address websites see the agents identify with (a team mailbox if you have one). |
-   | `GHUS_ACCESS_USERS` | One login per tester: `amina:long-random-pass,ismail:another-pass`. Commas between people, the first colon between the name and the password. |
+   | `GHUS_ACCESS_USERS` | One login per tester: `amina@example.org:long-random-pass-1,ismail@example.org:long-random-pass-2`. Commas between people, the first colon between the name and the password. An email works as the name, and its case does not matter when signing in. **Every password needs 16 characters or more**, or the service refuses to start (the log names the account, never the password). |
+
+   Add one more variable yourself (Environment → Add Environment Variable):
+
+   | Key | Value |
+   |---|---|
+   | `GHUS_DASHBOARD_SINCE` | The trial's first day, e.g. `2026-11-10` (midnight UTC) or `2026-11-10T09:00:00+01:00`. The Dashboard's spending, counts and recent items start there, at $0 and empty. Earlier work stays in the database and on Monitor and Update. Leave it out to count everything. |
 
 4. **Check Auto-Deploy is Off:** the service → Settings → Build & Deploy →
    Auto-Deploy = **Off**. Then a push never changes the hosted app by itself.
@@ -82,20 +88,45 @@ that file, or every candidate you rejected locally comes back as new work.
    .venv/Scripts/python.exe -m scripts.verify_review_store_backup "C:\Users\Ismail\GHUS-data\review-shared-upload.sqlite3"
    ```
 
-3. **Upload it to the disk.**
+3. **Start the trial with an empty Review queue** (on the copy, before the
+   upload). Everything still pending is set aside: kept, undecided, with its
+   history, but no longer listed. Each tester's Review then shows only what
+   new searches produce. Preview first, then apply:
+
+   ```bash
+   .venv/Scripts/python.exe -m scripts.set_aside_before_trial --db "C:\Users\Ismail\GHUS-data\review-shared-upload.sqlite3"
+   ```
+
+   ```bash
+   .venv/Scripts/python.exe -m scripts.set_aside_before_trial --db "C:\Users\Ismail\GHUS-data\review-shared-upload.sqlite3" --live
+   ```
+
+   To list them all again later (on the host, in the service's Shell):
+   `python -m scripts.set_aside_before_trial --restore --live`.
+4. **Upload it to the disk** as `review-shared.sqlite3.incoming`, never over
+   the open store.
    - Add your SSH public key in Render: Account Settings → SSH Public Keys.
    - Copy the service's SSH address from its **Connect → SSH** tab.
    - Then upload with `scp`:
 
    ```bash
-   scp "C:\Users\Ismail\GHUS-data\review-shared-upload.sqlite3" <service-ssh-address>:/var/data/review-store/review-shared.sqlite3
+   scp "C:\Users\Ismail\GHUS-data\review-shared-upload.sqlite3" <service-ssh-address>:/var/data/review-store/review-shared.sqlite3.incoming
    ```
 
    Also upload the Data Feed originals folder (`C:\Users\Ismail\GHUS-data\datafeed-originals`)
    with `scp -r` to `/var/data/datafeed-originals` if Import History should
    show past uploads.
-4. **Restart the service** (Manual Deploy → Restart service), so it opens the
-   uploaded store.
+5. **Restart the service** (Manual Deploy → Restart service). Before the app
+   opens anything, the launcher checks the upload is an intact Review store,
+   keeps the store it replaces in `/var/data/review-store/replaced/<time>/`,
+   and puts the upload in its place. The log says
+   `review store  : the uploaded store is now the Review store`. A broken
+   upload is renamed `.incoming.rejected` and not used.
+
+   Pending items that reach Supabase after the copy (a run finishing while you
+   upload) would still be listed. If any are, run the set-aside once more in
+   the service's Shell before inviting the team:
+   `python -m scripts.set_aside_before_trial --live`.
 
 **From then on the hosted store is the one true Review record.** Two stores
 over the same database disagree silently: a decision made in one is unknown to
@@ -121,16 +152,34 @@ Release when Monitor shows no run going.
 - `https://<url>/api/health` answers `{"ok": true}` without a login.
 - `https://<url>/` asks for a login; a wrong password is refused.
 - The Render log shows no `Review persistence:` warning (the store is on the disk).
-- Review lists the same pending items as before, and an item rejected before
-  the move is not back in the queue.
+- Review lists no item from before the trial (they are set aside), an item
+  rejected before the move is not back in the queue, and the Dashboard shows
+  $0.00 and empty panels until the team's first run.
 - Explore, Ask and Monitor open; Monitor lists the requests.
 - Once, after the first deploy, approve one candidate you would approve anyway.
   This proves the admission path, including the entity-resolution model.
 
-## 7. Limits of this trial set-up
+## 7. Login protection
+
+- Passwords: 16 characters or more, compared in constant time; an unknown name
+  takes as long to refuse as a known one.
+- Wrong passwords: 5 different wrong passwords for one name, or 20 from one
+  address, within 15 minutes lock that name or address for the rest of the
+  15 minutes (HTTP 429), even with the right password. A browser repeating
+  one stale password counts once. A restart clears the count.
+- Changes (POST, PUT, PATCH, DELETE) are refused when the browser says they
+  came from another site, so another page cannot submit a form or upload as a
+  signed-in tester. Other sites cannot frame the pages.
+- **No sign-out:** the browser keeps the login until it is closed. On a shared
+  computer, close the browser after use. To remove someone, delete their entry
+  from `GHUS_ACCESS_USERS` and save; the service restarts.
+
+## 8. Limits of this trial set-up
 
 - **Actions are not attributed to a person.** The login only says who may enter.
   Decisions are still recorded as "Not recorded (no sign-in yet)" (src/identity.py).
+  Review is one queue for the team, and the Dashboard's spending is the
+  team's, not each tester's.
 - **One instance.** Review's store is a SQLite file on one disk, so the service
   cannot scale out. That is fine for a team of testers.
 - **A deploy or crash stops a running agent run.** Start it again with "Run now".

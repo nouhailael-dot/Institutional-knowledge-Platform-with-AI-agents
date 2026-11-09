@@ -14,6 +14,7 @@ import {
   recentRequests,
   requestRows,
   requestState,
+  sinceStart,
   summaryCounts,
 } from '../frontend/dashboard.js';
 
@@ -136,4 +137,28 @@ test('the Directory activity panel never asks for a typed name', async () => {
   assert.doesNotMatch(src, /ghus\.review\.reviewer/);
   const {NOT_SIGNED_IN_ACTIVITY} = await import('../frontend/dashboard.js');
   assert.match(NOT_SIGNED_IN_ACTIVITY, /takes your name from your account/);
+});
+
+test('the hosted trial starts the Dashboard clean: nothing before its start counts', () => {
+  const start = '2026-11-10T00:00:00Z';
+  const now = new Date('2026-11-12T12:00:00Z');
+  const data = {
+    requests: [
+      {subscription_id: 'old', created_at: '2026-11-03T09:00:00Z', runs: [run({started_at: '2026-11-03T10:00:00Z', spent_usd: '4'})]},
+      {subscription_id: 'both', created_at: '2026-11-03T09:00:00Z', runs: [
+        run({started_at: '2026-11-11T10:00:00Z', spent_usd: '0.30'}), run({started_at: '2026-11-04T10:00:00Z', spent_usd: '2'})]},
+      {subscription_id: 'new', created_at: '2026-11-11T09:00:00Z', runs: []},
+    ],
+    updates: [{subscription_id: 'u', created_at: '2026-11-02T09:00:00Z', runs: [run({started_at: '2026-11-05T10:00:00Z', status: 'failed'})]}],
+    oneTime: [{started_at: '2026-11-09T23:00:00Z', spent_usd: 1}, {started_at: '2026-11-10T08:00:00Z', spent_usd: 0.2}],
+    maps: [{created: epoch('2026-11-08T10:00:00Z'), spent_usd: 3}, {created: epoch('2026-11-11T10:00:00Z'), spent_usd: 0.1}],
+  };
+  const shown = sinceStart(data, start);
+  assert.deepEqual(shown.requests.map(r => r.subscription_id), ['both', 'new']);
+  assert.equal(shown.requests[0].runs.length, 1);
+  assert.deepEqual(shown.updates, []);           // its failed run was before: no "Needing Attention"
+  assert.equal(monthSpending(shown, now), 0.6);
+  assert.equal(monthSpending(sinceStart(data, null), now), 11.1);   // no start: unchanged
+  assert.equal(monthRangeLabel(now, start), 'November 10–12, 2026');
+  assert.equal(monthRangeLabel(new Date('2026-12-02T12:00:00Z'), start), 'December 1–2, 2026');
 });

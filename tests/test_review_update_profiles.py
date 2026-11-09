@@ -321,3 +321,40 @@ def test_the_old_item_rules_pick_only_old_work():
     assert group_of(row("datafeed:r", "Data Feed import: Admission E2E actors")) == "test_import"
     assert group_of(row("datafeed:r", "Data Feed import: Verified example")) is None
     assert group_of(row("actor-update:r", "Actor update: General update")) is None
+
+
+def test_a_set_aside_profile_stays_off_the_page_until_a_new_update_arrives(store):
+    # 10 Nov 2026, hosted trial: Review starts empty; a profile is re-served on
+    # every sync, so it must not come back by itself - but a new run must show.
+    old_run = "postgres:actor_update:r1:a"
+    profile = _profile("r1", folds=[old_run])
+    store.sync_external_candidates([_card(old_run, "r1"), profile])
+    profile_id = _external_candidate_id(profile["source_key"])
+    assert store.set_aside([profile_id], reason="before_trial") == 1
+    assert _listed(store) == []
+    store.sync_external_candidates([_card(old_run, "r1"), profile])   # the same, served again
+    assert _listed(store) == []
+    newer_run = "postgres:actor_update:r1:b"                          # something new for it
+    store.sync_external_candidates([_card(old_run, "r1"), _card(newer_run, "r1"),
+                                    _profile("r1", folds=[old_run, newer_run])])
+    assert _listed(store) == [profile["source_key"]]
+
+
+def test_the_trial_start_sets_aside_everything_pending_before_it(store, capsys):
+    from scripts import set_aside_before_trial as trial
+
+    early, late = "postgres:review_item:early", "postgres:review_item:late"
+    store.sync_external_candidates([_card(early, "r0", kind="review_item", created=1_000.0),
+                                    _card(late, "r1", kind="review_item", created=3_000.0)])
+    db = str(store.path)
+    assert trial.main(["--db", db, "--before", "1970-01-01T00:33:20"]) == 0   # 2,000 s: dry run
+    assert "pending and listed now: 1" in capsys.readouterr().out
+    assert set(_listed(store)) == {early, late}
+    assert trial.main(["--db", db, "--before", "1970-01-01T00:33:20", "--live"]) == 0
+    assert _listed(store) == [late]
+    assert trial.main(["--db", db, "--live"]) == 0                             # default: now
+    assert _listed(store) == []
+    assert trial.main(["--db", db, "--restore", "--live"]) == 0
+    assert set(_listed(store)) == {early, late}
+    assert trial.default_db({"GHUS_DATA_DIR": "/var/data"}).replace("\\", "/") \
+        == "/var/data/review-store/review-shared.sqlite3"

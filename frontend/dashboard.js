@@ -48,11 +48,37 @@ export function shortDate(value) {
   return t ? new Date(t).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "";
 }
 
-/** "November 1–2, 2026": the 1st of this month to today. */
-export function monthRangeLabel(now = new Date()) {
+/**
+ * "November 1–2, 2026": the 1st of this month to today. With a start in this
+ * month (the hosted trial's first day), from that day: "November 10–12, 2026".
+ */
+export function monthRangeLabel(now = new Date(), start = null) {
   const month = now.toLocaleDateString("en-US", {month: "long"});
   const day = now.getDate();
-  return `${month} 1${day > 1 ? `–${day}` : ""}, ${now.getFullYear()}`;
+  const begun = start ? new Date(time(start)) : null;
+  const first = begun && inMonth(start, now) ? begun.getDate() : 1;
+  return `${month} ${first}${day > first ? `–${day}` : ""}, ${now.getFullYear()}`;
+}
+
+/**
+ * Only what happened from ``start`` on (GET /api/dashboard/start: the hosted
+ * team trial's first moment, 10 Nov 2026). Runs before it are dropped from each
+ * request, and a request with no run since, made before it, is left out, so
+ * the spending, the counts and the panels all begin at $0 and empty. Earlier
+ * work stays in the database and on Monitor and Update. No start: unchanged.
+ */
+export function sinceStart({requests = [], updates = [], oneTime = [], maps = []} = {}, start = null) {
+  const from = time(start);
+  if (!from) return {requests, updates, oneTime, maps};
+  const later = value => time(value) >= from;
+  const trim = r => ({...r, runs: (r.runs || []).filter(run => later(run.started_at))});
+  const current = r => r.runs.length > 0 || later(r.created_at);
+  return {
+    requests: requests.map(trim).filter(current),
+    updates: updates.map(trim).filter(current),
+    oneTime: oneTime.filter(u => later(u.started_at)),
+    maps: maps.filter(m => later(m.created)),
+  };
 }
 
 function inMonth(value, now) {
@@ -258,6 +284,11 @@ export function createDashboardPage({html, useState, useEffect}) {
     const [days, setDays] = useState(30);
     const [activity, setActivity] = useState({loaded: false, rows: [], error: null, signedIn: true});
     const [seen, setSeen] = useState(() => readJson(REQUEST_SEEN_KEY, {}));
+    // undefined until read; null when the Dashboard counts everything.
+    const [start, setStart] = useState(undefined);
+    useEffect(() => {
+      get("/api/dashboard/start").then(r => setStart(r.since || null)).catch(() => setStart(null));
+    }, []);
 
     function load() {
       const email = "";  // the signed-in user's, once accounts exist: everything until then
@@ -286,10 +317,13 @@ export function createDashboardPage({html, useState, useEffect}) {
           signedIn: true}));
     }, [days]);
 
-    const requestsReady = data.requests !== null && data.updates !== null;
-    const rows = requestRows({requests: data.requests || [], updates: data.updates || []},
+    const requestsReady = data.requests !== null && data.updates !== null && start !== undefined;
+    const shown = sinceStart({requests: data.requests || [], updates: data.updates || [],
+      oneTime: data.oneTime || [], maps: data.maps || []}, start);
+    const mapsReady = data.maps !== null && start !== undefined;
+    const rows = requestRows({requests: shown.requests, updates: shown.updates},
       seen, readText(SEEN_KEY) || null);
-    const counts = summaryCounts({maps: data.maps || [], rows});
+    const counts = summaryCounts({maps: shown.maps, rows});
     useEffect(() => {
       window.dispatchEvent(new CustomEvent(DASHBOARD_UNSEEN, {detail: {count: counts.newUpdates}}));
     }, [counts.newUpdates]);
@@ -302,11 +336,10 @@ export function createDashboardPage({html, useState, useEffect}) {
     }
 
     const now = new Date();
-    const allReady = requestsReady && data.maps !== null;
-    const spent = monthSpending({requests: data.requests || [], updates: data.updates || [],
-      oneTime: data.oneTime || [], maps: data.maps || []}, now);
+    const allReady = requestsReady && mapsReady;
+    const spent = monthSpending(shown, now);
     const failed = Object.keys(problems).filter(name => problems[name]);
-    const maps = recentMaps(data.maps || [], days, now);
+    const maps = recentMaps(shown.maps, days, now);
     const requests = recentRequests(rows, days, now);
     const records = directoryRows(activity.rows);
     return html`<div class="dashboard-page">
@@ -315,14 +348,14 @@ export function createDashboardPage({html, useState, useEffect}) {
       ${failed.length > 0 && html`<p class="discovery-message error">Could not read: ${failed.join(", ")}.</p>`}
 
       <div class="dash-summaries">
-        <${Summary} icon=${ICONS.clipboard} count=${data.maps === null ? null : counts.mapsPending} noun="map" label="Pending Review"/>
+        <${Summary} icon=${ICONS.clipboard} count=${mapsReady ? counts.mapsPending : null} noun="map" label="Pending Review"/>
         <${Summary} icon=${ICONS.layers} count=${requestsReady ? counts.newUpdates : null} noun="request" label="New Updates"/>
         <${Summary} icon=${ICONS.alert} count=${requestsReady ? counts.attention : null} noun="request" label="Needing Attention"/>
       </div>
 
       <div class="dash-spending">
         <span class="dash-spending-icon">${ICONS.coins}</span>
-        <div class="dash-spending-label"><strong>My Spending This Month</strong><span>${monthRangeLabel(now)}</span></div>
+        <div class="dash-spending-label"><strong>My Spending This Month</strong><span>${monthRangeLabel(now, start)}</span></div>
         <strong class="dash-spending-amount">${allReady ? formatUsd(spent) || "$0.00" : "…"}</strong>
       </div>
 
@@ -336,7 +369,7 @@ export function createDashboardPage({html, useState, useEffect}) {
 
       <div class="dash-panels">
         <${Panel} symbol=${ICONS.map} title="Recent Maps" lead="My latest mapping requests (Explore and Map)"
-          empty=${data.maps === null ? "Loading…" : `No maps in the last ${days} days on this computer.`}
+          empty=${!mapsReady ? "Loading…" : `No maps in the last ${days} days on this computer.`}
           rows=${maps.map(m => html`<${Entry} key=${m.id} symbol=${MAP_ICONS[m.category]} name=${m.name}
             meta=${`${m.category} · ${shortDate(m.date)}`} state=${m.state}
             onOpen=${() => navigate({tab: "map", map_id: m.id})}/>`)}

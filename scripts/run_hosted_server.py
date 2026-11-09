@@ -16,15 +16,23 @@ where things live differs:
   required (``GHUS_ACCESS_USERS``; see backend.access).
 
 It refuses to start when the disk is not mounted, so a missing disk never
-quietly puts Review decisions somewhere a redeploy wipes. Nothing is printed
-that holds a secret.
+quietly puts Review decisions somewhere a redeploy wipes, and when a login's
+password is shorter than 16 characters. Nothing is printed that holds a secret.
+
+Moving a Review store in (10 Nov 2026): upload it next to the store as
+``review-shared.sqlite3.incoming`` and restart the service. Before the app
+opens anything, the launcher checks the upload is an intact Review store, keeps
+the store it replaces under ``review-store/replaced/``, and puts the upload in
+its place. A store is never overwritten while the app has it open.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +65,35 @@ def _on_disk(link: Path, target: Path) -> None:
     link.symlink_to(target, target_is_directory=True)
 
 
+def take_incoming_store(store: Path) -> str | None:
+    """Put an uploaded ``<store>.incoming`` in place of the store; say what happened."""
+    incoming = store.with_name(store.name + ".incoming")
+    if not incoming.is_file():
+        return None
+    db = None
+    try:
+        db = sqlite3.connect(f"file:{incoming}?mode=ro", uri=True)
+        intact = db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    except sqlite3.DatabaseError:
+        intact, tables = False, set()
+    finally:
+        if db is not None:
+            db.close()
+    if not intact or not {"review_candidate", "review_decision"} <= tables:
+        rejected = incoming.with_name(incoming.name + ".rejected")
+        incoming.replace(rejected)
+        return f"the uploaded store is not an intact Review store; kept as {rejected.name}, not used"
+    kept = store.parent / "replaced" / time.strftime("%Y%m%d-%H%M%S")
+    kept.mkdir(parents=True, exist_ok=True)
+    for part in (store, store.with_name(store.name + "-wal"), store.with_name(store.name + "-shm"),
+                 store.with_name(store.name + "-journal")):
+        if part.exists():
+            part.replace(kept / part.name)
+    incoming.replace(store)
+    return f"the uploaded store is now the Review store; the one it replaced is in {kept}"
+
+
 def prepare(environ: dict[str, str] | None = None) -> dict[str, str]:
     """Check the host and return the settings the app runs with."""
     env = os.environ if environ is None else environ
@@ -77,10 +114,20 @@ def prepare(environ: dict[str, str] | None = None) -> dict[str, str]:
         raise SystemExit("DATABASE_URL is not set in the host's environment.")
     if not (env.get("GHUS_ACCESS_USERS") or "").strip():
         raise SystemExit("GHUS_ACCESS_USERS is not set: the hosted app never runs without a login.")
+    from backend.access import MIN_PASSWORD_LENGTH, accounts, weak_accounts
+
+    known = accounts(env.get("GHUS_ACCESS_USERS"))
+    if not known:
+        raise SystemExit("GHUS_ACCESS_USERS has no valid name:password entry.")
+    if weak := weak_accounts(known):
+        raise SystemExit(f"Password shorter than {MIN_PASSWORD_LENGTH} characters for: "
+                         f"{', '.join(weak)}. Refusing to start.")
     driver_url, plain_url = _driver_urls(url)
 
     store = data / "review-store" / "review-shared.sqlite3"
     store.parent.mkdir(parents=True, exist_ok=True)
+    if moved := take_incoming_store(store):
+        print(f"review store  : {moved}")
     (data / "map-runs").mkdir(parents=True, exist_ok=True)
     return {
         "REVIEW_SOURCE_DATABASE_URL": plain_url,
