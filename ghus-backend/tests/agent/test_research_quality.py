@@ -267,9 +267,11 @@ def test_funding_the_organisation_gives_is_not_funding_it_received():
             "Program. FirstLight Power received a $2 million grant from the State of "
             "Connecticut in 2025.</p>")
     answers = {"funding_signal": {"stated": True, "page": page, "value": [
-        {"amount": "$59,500", "funder": "FirstLight Power",
+        # Even marked received, the organisation as its own funder is refused.
+        {"amount": "$59,500", "funder": "FirstLight Power", "role": "received",
          "program": "FirstLight Sustains Grant Program"},
-        {"amount": "$2 million", "funder": "State of Connecticut", "date": "2025"}],
+        {"amount": "$2 million", "funder": "State of Connecticut", "date": "2025",
+         "role": "received"}],
         "quotes": ["FirstLight Power awarded $59,500 through the FirstLight Sustains Grant Program",
                    "FirstLight Power received a $2 million grant from the State of Connecticut in 2025"]}}
     read = _one_page_reader(page, html, answers).read(
@@ -291,3 +293,195 @@ def test_activity_dated_after_the_read_is_upcoming_not_recent():
         read_at=NOW, fields=["recent_activity"])
     assert read.evidence["recent_activity"]["collection_state"] == "not_found"
     assert "upcoming" in read.rejected["recent_activity"]
+
+
+
+def test_only_funding_the_organisation_received_is_kept():
+    page = "https://ceg.example/"
+    html = ("<p>Clean Energy Group received $3.6 million from the Barr Foundation in 2025. "
+            "The state announced more than $40 million for critical facilities. Clean Energy "
+            "Group awards small grants to community groups. Clean Energy Group administers "
+            "the Resilient Power Fund for the Kresge Foundation. Apply now for a $10,000 "
+            "planning grant.</p>")
+    entries = [
+        {"amount": "$3.6 million", "funder": "Barr Foundation", "date": "2025", "role": "received"},
+        {"amount": "more than $40 million", "funder": "the state", "role": "announced"},
+        {"program": "small grants to community groups", "role": "distributed"},
+        {"program": "Resilient Power Fund", "funder": "Kresge Foundation", "role": "administered"},
+        {"amount": "$10,000", "program": "planning grant", "role": "offered"},
+    ]
+    answers = {"funding_signal": {"stated": True, "page": page, "value": entries, "quotes": [
+        "Clean Energy Group received $3.6 million from the Barr Foundation in 2025",
+        "The state announced more than $40 million for critical facilities",
+        "Clean Energy Group awards small grants to community groups",
+        "Clean Energy Group administers the Resilient Power Fund for the Kresge Foundation",
+        "Apply now for a $10,000 planning grant"]}}
+    read = _one_page_reader(page, html, answers).read(
+        name="Clean Energy Group", website=page, actor_category="foundation_nonprofit",
+        read_at=NOW, fields=["funding_signal"])
+    box = read.evidence["funding_signal"]
+    assert [e["funder"] for e in box["value"]["entries"]] == ["Barr Foundation"]
+    reasons = " | ".join(box["dropped_entries"])
+    for words in ("reports for others", "gives to others", "runs for a funder",
+                  "open to applicants"):
+        assert words in reasons
+    # A grant with no role (or a plain sentence) is never kept either.
+    unstated = {"funding_signal": {**answers["funding_signal"], "value": [
+        {"amount": "$3.6 million", "funder": "Barr Foundation", "date": "2025"},
+        "Clean Energy Group received $3.6 million from the Barr Foundation in 2025"]}}
+    read = _one_page_reader(page, html, unstated).read(
+        name="Clean Energy Group", website=page, actor_category="foundation_nonprofit",
+        read_at=NOW, fields=["funding_signal"])
+    assert read.evidence["funding_signal"]["collection_state"] == "not_found"
+    assert "role is not stated" in read.rejected["funding_signal"]
+
+
+
+# ------------------------------------------------------------------ consistency, events
+
+def test_identical_pages_get_the_same_answer_once(tmp_path):
+    page = "https://lab.example/"
+    html = "<p>The Lab is based in Tucson, Arizona.</p>"
+    calls = []
+
+    class Client:
+        cost_meter = None
+        model = "m"
+
+        def extract_with_tool(self, **kwargs):
+            calls.append(1)
+            return {"location": {"stated": True, "page": page,
+                                 "value": {"city": "Tucson", "state": "Arizona"},
+                                 "quotes": ["The Lab is based in Tucson, Arizona."]}}
+
+    def fetch(url):
+        if url != page:
+            raise RuntimeError("not found")
+        return FetchedDoc.from_content(url=url, content=html, content_type="text/html")
+
+    reads = [LightPullReader(Client(), fetch, answer_cache=tmp_path).read(
+        name="The Lab", website=page, actor_category=None, read_at=NOW, fields=["location"])
+        for _ in range(2)]
+    assert len(calls) == 1                                   # the second read asked nothing
+    assert reads[0].evidence["location"]["value"] == reads[1].evidence["location"]["value"]
+
+
+def test_the_client_sends_no_sampling_setting_the_api_refuses():
+    """The installed SDK (anthropic 1.0) refuses temperature: stability comes from
+    the answer cache instead (6 Nov 2026: every triage call failed with it)."""
+    import inspect
+
+    from agents.common.llm import build_messages_create_kwargs
+
+    kwargs = build_messages_create_kwargs(model="m", system="s", user="u", tool_name="t",
+                                          tool_description="d",
+                                          input_schema={"type": "object"})
+    assert "temperature" not in kwargs
+
+
+def test_a_long_event_label_is_cut_to_fit_and_its_full_wording_kept():
+    from agents.discovery.extractors.event import EVENT_STRING_MAX_LENGTHS, fit_event_label_lengths
+
+    long = "Annual, held each spring in a different host city across North America since 2009"
+    record, full = fit_event_label_lengths({"recurring_pattern": long, "title": "WIC"})
+    assert len(record["recurring_pattern"]) <= EVENT_STRING_MAX_LENGTHS["recurring_pattern"]
+    assert long.startswith(record["recurring_pattern"]) and full == {"recurring_pattern": long}
+    assert record["title"] == "WIC"
+
+
+
+def test_on_its_parents_site_a_units_location_must_name_the_unit():
+    home = "https://watereuse.example/"
+    unit = "https://watereuse.example/sections/arizona/"
+    pages = {home: "<p>WateReuse Association, 1199 N Fairfax St, Alexandria, VA 22314</p>",
+             unit: "<p>WateReuse Arizona brings together water professionals in Arizona. "
+                   "Contact: WateReuse Association, Alexandria, VA.</p>"}
+
+    class Client:
+        cost_meter = None
+
+        def extract_with_tool(self, **kwargs):
+            return {"location": {"stated": True, "page": home,
+                                 "value": {"city": "Alexandria", "state": "VA"},
+                                 "quotes": ["WateReuse Association, 1199 N Fairfax St, Alexandria, VA 22314"]}}
+
+    def fetch(url):
+        if url not in pages:
+            raise RuntimeError("not found")
+        return FetchedDoc.from_content(url=url, content=pages[url], content_type="text/html")
+
+    read = LightPullReader(Client(), fetch).read(
+        name="WateReuse Arizona", website=unit, actor_category="association_network",
+        read_at=NOW, fields=["location"])
+    assert read.evidence["location"]["collection_state"] == "not_found"
+    assert "parent" in read.rejected["location"]
+
+
+
+def test_a_units_own_page_is_read_and_a_quote_cannot_ride_on_another():
+    home = "https://watereuse.example/"
+    unit = "https://watereuse.example/sections/arizona/"
+    pages = {home: "<p>WateReuse Association, 610 Madison Street, Alexandria, VA 22314. "
+                   "Lisa Culbert, Executive Administrator, WateReuse Arizona.</p>",
+             unit: "<p>WateReuse Arizona brings together water professionals across Arizona.</p>"}
+    read_urls = []
+
+    class Client:
+        cost_meter = None
+
+        def extract_with_tool(self, **kwargs):
+            return {"location": {"stated": True, "page": home,
+                                 "value": {"city": "Alexandria", "state": "VA"},
+                                 "quotes": ["WateReuse Association, 610 Madison Street, Alexandria, VA 22314",
+                                            "Lisa Culbert, Executive Administrator, WateReuse Arizona"]}}
+
+    def fetch(url):
+        read_urls.append(url)
+        if url not in pages:
+            raise RuntimeError("not found")
+        return FetchedDoc.from_content(url=url, content=pages[url], content_type="text/html")
+
+    read = LightPullReader(Client(), fetch).read(
+        name="WateReuse Arizona", website=unit, actor_category="association_network",
+        read_at=NOW, fields=["location"])
+    assert unit in read.pages                      # its own page is read
+    assert read.evidence["location"]["collection_state"] == "not_found"
+    assert "names its parent" in read.rejected["location"]
+
+
+
+def test_a_name_others_share_needs_a_second_sign_on_a_searched_page():
+    from agents.collection.light_pull_reader import collision_prone, corroborated
+
+    assert collision_prone("Water For Tomorrow Project")
+    assert not collision_prone("Imagine H2O")
+    eu = "<p>The Water For Tomorrow Project, funded by INTERREG France (Channel) England.</p>"
+    assert not corroborated("https://waterfortomorrow.org", eu, eu, ["Phoenix", "AZ"])
+    assert corroborated("https://waterfortomorrow.org",
+                        '<a href="https://waterfortomorrow.org">site</a>', "", [])
+    assert corroborated("https://waterfortomorrow.org", "", "A Phoenix nonprofit", ["Phoenix"])
+
+
+def test_a_deep_page_of_its_own_site_is_not_its_parents_site():
+    site = "https://www.imagine.example/"
+    page = "https://www.imagine.example/accelerator/"
+    pages = {site: "<title>Imagine H2O</title><p>Imagine H2O is based in San Francisco, CA.</p>",
+             page: "<p>The accelerator for water startups.</p>"}
+
+    class Client:
+        cost_meter = None
+
+        def extract_with_tool(self, **kwargs):
+            return {"location": {"stated": True, "page": site,
+                                 "value": {"city": "San Francisco", "state": "CA"},
+                                 "quotes": ["Imagine H2O is based in San Francisco, CA."]}}
+
+    def fetch(url):
+        if url not in pages:
+            raise RuntimeError("not found")
+        return FetchedDoc.from_content(url=url, content=pages[url], content_type="text/html")
+
+    read = LightPullReader(Client(), fetch).read(
+        name="Imagine H2O", website=page, actor_category="innovation_platform", read_at=NOW,
+        fields=["location"])
+    assert read.evidence["location"]["value"]["city"] == "San Francisco"

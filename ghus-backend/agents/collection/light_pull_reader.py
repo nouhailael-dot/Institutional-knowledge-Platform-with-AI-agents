@@ -36,6 +36,7 @@ import unicodedata
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 from agents.collection.light_pull import (
@@ -117,10 +118,11 @@ FIELD_CRITERIA: dict[str, str] = {
                       "consortium award is labelled as the consortium's; this organisation's "
                       "share is unknown unless stated. Never infer, convert or add up "
                       "amounts. A funding opportunity, a call for proposals, a donation "
-                      "button or 'supported by partners' is not a funding signal. It must "
-                      "be funding this organisation RECEIVED: grants it gives to others, "
-                      "funding programmes it runs or advocates for, and funding announced "
-                      "for other organisations are not its funding.",
+                      "button or 'supported by partners' is not a funding signal. Give each "
+                      "entry's role; only funding this organisation RECEIVED counts - the "
+                      "quotes must show it as the recipient. Grants it gives to others, "
+                      "programmes it administers or advocates for, funding announced for "
+                      "other organisations and opportunities it offers are not its funding.",
     "international_connection": "A named partner, office, programme or project outside the "
                                 "United States that a page states this organisation has.",
     "um6p_ocp_connection": "Any link a page states with UM6P (Mohammed VI Polytechnic "
@@ -304,6 +306,14 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
     home = fetch(homepage(website) or website)
     docs = [home]
     site = registrable_domain(home.url)
+    # 6 Nov 2026: a unit whose website is a page of its parent's site
+    # (watereuse.org/sections/watereuse-arizona) had only its parent's pages
+    # read. Its own page is read right after the site's home page.
+    if urlsplit(website).path.strip("/") and website.rstrip("/") != home.url.rstrip("/"):
+        try:
+            docs.append(fetch(website))
+        except Exception as exc:  # noqa: BLE001 - the parent's pages still count
+            logger.info("unit page unavailable for %s: %s", website, exc)
     about = about_link(home)
     if about:
         try:
@@ -414,6 +424,34 @@ def address_variants(website: str) -> list[str]:
 
 _GENERIC_NAME_WORDS = frozenset({"the", "and", "for", "inc", "llc", "center", "centre",
                                  "institute", "university", "group", "company"})
+# Words many organisations' names share. A name made only of them ("Water For
+# Tomorrow Project") is also another organisation's: 6 Nov 2026, a searched page
+# about an EU programme of the same name gave an Arizona nonprofit its funding.
+_COMMON_NAME_WORDS = frozenset({
+    "water", "energy", "power", "tomorrow", "future", "project", "projects", "council",
+    "foundation", "network", "alliance", "association", "initiative", "program",
+    "programme", "fund", "solutions", "resources", "technology", "technologies",
+    "services", "partners", "partnership", "coalition", "society", "research", "global",
+    "national", "international", "american", "clean", "green", "sustainable",
+    "environmental", "community", "development", "innovation", "hub", "lab", "labs",
+    "systems", "action", "trust", "agency", "authority", "board", "office", "district"})
+
+
+def collision_prone(name: str) -> bool:
+    """A name made only of common words, likely shared by another organisation."""
+    words = {w for w in re.findall(r"[a-z0-9]+", str(name or "").casefold())
+             if len(w) > 3 and w not in _GENERIC_NAME_WORDS}
+    return not words or words <= _COMMON_NAME_WORDS
+
+
+def corroborated(website: str, html: str, text: str, place: Sequence[str]) -> bool:
+    """A second sign a page is about THIS organisation: it links its website, or
+    names the city or state its own pages give."""
+    domain = registrable_domain(website or "")
+    if domain and domain.casefold() in (html or "").casefold():
+        return True
+    lowered = (text or "").casefold()
+    return any(p and len(p) > 2 and p.casefold() in lowered for p in place)
 
 
 def quotes_name(name: str, quotes: Sequence[str]) -> bool:
@@ -464,6 +502,26 @@ def light_documents(docs, *, read_at: datetime) -> tuple[LightDocument, ...]:
         LightDocument(url=d.url, text=_page_text(d.content or ""), date_read=read_at)
         for d in docs
     )
+
+
+def without_repeats(documents: Sequence[LightDocument],
+                    seen: set[str] | None = None) -> tuple[LightDocument, ...]:
+    """Each page's text without the lines an earlier page of the same read already
+    gave: its menus, footer and banners (6 Nov 2026: 16% of the text sent was
+    such repeats). The model sees each line once; a quote is judged against the
+    page it was shown on, so an answer still names the page that states it."""
+    seen = set() if seen is None else seen
+    out = []
+    for doc in documents:
+        kept = []
+        for line in doc.text.split("\n"):
+            key = " ".join(line.split()).casefold()
+            if key and key in seen:
+                continue
+            seen.add(key)
+            kept.append(line)
+        out.append(LightDocument(url=doc.url, text="\n".join(kept), date_read=doc.date_read))
+    return tuple(out)
 
 
 # ------------------------------------------------------------------ extraction
@@ -525,7 +583,33 @@ _VALUE_SHAPES: dict[str, dict] = {
 }
 
 
+# Funding attribution (GHUS, 6 Nov 2026): every funding entry says how this
+# organisation stands to the money, and only funding it RECEIVED is kept. A
+# programme it distributes, administers, announces for others or offers to
+# applicants is not its funding (FirstLight's own grant programme, a state
+# programme a nonprofit reported on, a scholarship an association runs).
+FUNDING_ROLES = ("received", "distributed", "administered", "announced", "offered")
+_ROLE_WORDS = {
+    "distributed": "funding it gives to others",
+    "administered": "a programme it runs for a funder",
+    "announced": "funding it reports for others",
+    "offered": "an opportunity open to applicants",
+}
+
+
 def _value_shape(key: str) -> dict:
+    if key == "funding_signal":
+        shape = dict(part_schema(key))
+        shape["properties"] = {**shape["properties"], "role": {
+            "type": "string", "enum": list(FUNDING_ROLES),
+            "description": "How THIS organisation stands to this money, as the quotes show: "
+                           "received (it is the recipient - awarded to it, raised by it, "
+                           "granted to it), distributed (it gives or awards it to others), "
+                           "administered (it runs the programme for a funder), announced "
+                           "(it reports funding that went to others) or offered (an "
+                           "opportunity open to applicants)."}}
+        shape["required"] = ["role"]
+        return shape
     return _VALUE_SHAPES.get(key) or part_schema(key) or {"type": "string"}
 
 
@@ -549,7 +633,12 @@ def _answer_schema(fields: Sequence[str], urls: Sequence[str],
                           if key in ENTRY_BOXES else
                           {**_value_shape(key),
                            "description": "the answer, from the page only; omit if not stated"}),
-                "page": {"type": "string", "enum": list(urls)},
+                # The URL as given; a page that was not read is refused when the
+                # answer is judged. Not an enum of this read's URLs, so the tool
+                # is the same for every organisation of a category and its prompt
+                # is cached (6 Nov 2026).
+                "page": {"type": "string",
+                         "description": "the url of the page that states it, exactly as given"},
                 "quotes": {"type": "array", "maxItems": 8 if key in ENTRY_BOXES else 4,
                            "items": {"type": "string"},
                            "description": "the sentences that state it, each up to 30 words "
@@ -811,11 +900,38 @@ class LightPullReader:
 
     evidence_searches: Mapping[str, str] = EVIDENCE_SEARCHES
 
-    def __init__(self, client, fetch, *, max_tokens: int = 3000, fallback=None):
+    def __init__(self, client, fetch, *, max_tokens: int = 3000, fallback=None,
+                 answer_cache: Path | None = None):
         self.client = client
         self.fetch = fetch
         self.max_tokens = max_tokens
         self.fallback = fallback
+        # 6 Nov 2026: the same question over the same page texts is answered once
+        # and the answer reused, so repeated reads of identical sources give the
+        # same facts (and cost nothing). Off unless a folder is given.
+        self.answer_cache = answer_cache
+
+    def _ask(self, **kwargs) -> dict:
+        """The model's answer, from the cache when this exact question was asked."""
+        if self.answer_cache is None:
+            return self.client.extract_with_tool(**kwargs) or {}
+        import hashlib
+
+        key = hashlib.sha256(json.dumps(
+            {"model": str(getattr(self.client, "model", "")), **kwargs},
+            sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        path = Path(self.answer_cache) / f"{key}.json"
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        answer = self.client.extract_with_tool(**kwargs) or {}
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(answer, sort_keys=True), encoding="utf-8")
+        except OSError:  # a cache that cannot be written is only a missed saving
+            logger.info("light pull answer not cached: %s", path)
+        return answer
 
     def read(self, *, name: str, website: str, actor_category: str | None,
              category_type: str = "", topic_terms: Sequence[str] = (),
@@ -884,9 +1000,23 @@ class LightPullReader:
             return names_in_full(name, website, doc.content or "", _page_text(doc.content or ""))
 
         # Only when its site's home page does not name it is the site its parent's;
-        # on its own site a page need not repeat its name.
-        self._parent_site = bool(docs) and not names_it(docs[0])
+        # on its own site a page need not repeat its name. A website that is a page
+        # of a larger site (/sections/watereuse-arizona) is on its parent's site
+        # even when that home page mentions it (6 Nov 2026: a contact line there).
+        # Discovery often records a deep page of an organisation's own site as its
+        # website (imagineh2o.org/accelerator): that is its own site when the
+        # site's title names it ("Imagine H2O"); the WateReuse Association's
+        # title does not name WateReuse Arizona.
+        unit_path = urlsplit(website or "").path.strip("/").casefold()
+        on_sub_page = bool(unit_path) and not re.fullmatch(
+            r"(en|en-us|us|home|index\.html?|default\.aspx?|main)", unit_path)
+        site_title = re.search(r"<title[^>]*>(.*?)</title>", (docs[0].content or "") if docs else "",
+                               re.S | re.I)
+        titled = bool(site_title) and quotes_name(name, [site_title.group(1)])
+        self._parent_site = bool(docs) and ((on_sub_page and not titled)
+                                            or not names_it(docs[0]))
         self._name = name
+        self._unit_page = website if on_sub_page else ""
         if not docs and fallback:
             # Its own site is closed to the agent: other sources open to it, still
             # three pages at most, each naming this organisation.
@@ -895,6 +1025,15 @@ class LightPullReader:
                                                    name=name, website=website,
                                                    room=MAX_FALLBACK_PAGES,
                                                    text_of=lambda d: _page_text(d.content or "")):
+                if (kind == "third_party" and collision_prone(name)
+                        and not corroborated(website, doc.content or "",
+                                             _page_text(doc.content or ""), [])):
+                    # A name others share, on someone else's page that neither links
+                    # its website: perhaps another organisation (6 Nov 2026).
+                    fallback.note(doc.url, "not_about_it",
+                                  "Its name is shared by other organisations and this page "
+                                  "does not link its website, so it was not used.")
+                    continue
                 docs.append(doc)
                 kinds[doc.url] = kind
                 if named == "partial":
@@ -905,7 +1044,7 @@ class LightPullReader:
             if fallback and result.attempts:
                 result.error += " No other source open to the agent names it."
             return result
-        documents = light_documents(docs, read_at=read_at)
+        documents = without_repeats(light_documents(docs, read_at=read_at))
         result.pages = [d.url for d in documents]
         result.sources = {d.url: kinds.get(d.url, "official") for d in documents}
         texts = {d.url: d.text for d in documents}
@@ -919,12 +1058,15 @@ class LightPullReader:
             "pages": [{"url": d.url, "source": SOURCE_TYPES[result.sources[d.url]], "text": d.text}
                       for d in documents],
         }, ensure_ascii=False)
-        answers = self.client.extract_with_tool(
+        answers = self._ask(
             system=self.system + (_OTHER_SOURCES if others else ""), user=user,
             tool_name=self.tool_name, tool_description=self.tool_description,
             input_schema=_answer_schema(wanted, result.pages, self.criteria),
             max_tokens=self.max_tokens,
-        ) or {}
+            # The instructions and boxes are the same for every organisation of a
+            # category: billed at a tenth when read again within minutes.
+            cache_prefix=True,
+        )
         first = result.pages[0]
         for key in wanted:
             answer = answers.get(key) if isinstance(answers.get(key), Mapping) else {}
@@ -985,8 +1127,13 @@ class LightPullReader:
                 docs.append(fetch(target))
             except Exception as exc:  # noqa: BLE001 - one page fewer
                 logger.info("follow-up page unavailable for %s: %s", name, exc)
-        documents = [d for d in light_documents(docs, read_at=read_at) if d.text.strip()
-                     and d.url not in result.texts]
+        # The lines the first read already gave (menus, footer) are not sent again:
+        # those pages did not answer these boxes.
+        seen = {" ".join(line.split()).casefold() for text in result.texts.values()
+                for line in text.split("\n")}
+        documents = [d for d in without_repeats(
+            [d for d in light_documents(docs, read_at=read_at) if d.url not in result.texts],
+            seen) if d.text.strip()]
         if not documents:
             result.followups.append({"step": "own_site", "boxes": missing, "pages": [],
                                      "found": [], "stopped": "no further page"})
@@ -1001,12 +1148,12 @@ class LightPullReader:
             "pages": [{"url": d.url, "source": SOURCE_TYPES["official"], "text": d.text}
                       for d in documents],
         }, ensure_ascii=False)
-        answers = self.client.extract_with_tool(
+        answers = self._ask(
             system=self.system, user=user, tool_name=self.tool_name,
             tool_description=self.tool_description,
             input_schema=_answer_schema(missing, urls, self.criteria),
             max_tokens=min(self.max_tokens, 400 + 250 * len(missing)),
-        ) or {}
+        )
         found = []
         for key in missing:
             answer = answers.get(key) if isinstance(answers.get(key), Mapping) else {}
@@ -1090,13 +1237,50 @@ class LightPullReader:
         if answer.get("quote"):
             quotes.append(str(answer["quote"]))
         limit = 8 if key in ENTRY_BOXES else 4
+        if quotes and not all(quote_on_page(q, texts[page]) for q in quotes):
+            # A line two pages share is shown once, on the first (without_repeats):
+            # an answer naming the second is credited to the one page that does
+            # state every quote, word for word (6 Nov 2026: press-release
+            # headlines also listed on the newsletter page).
+            holders = [u for u, t in texts.items()
+                       if u != page and all(quote_on_page(q, t) for q in quotes)]
+            if len(holders) == 1:
+                page = holders[0]
         if not quotes or len(quotes) > limit or not all(quote_on_page(q, texts[page]) for q in quotes):
             return refuse("the quote given is not on the page it names")
+        # On its parent's site only "why it matched" may go unnamed: a location
+        # there is the parent's (6 Nov 2026: WateReuse Arizona, read on
+        # watereuse.org, got the national association's Alexandria, VA address).
+        # Its own page on that site (its recorded website) speaks for it without
+        # repeating its full name (7 Nov 2026: Scottsdale Water Resources' own page
+        # on scottsdaleaz.gov). A location there still needs a quote naming it.
+        own_page = page.rstrip("/") == str(getattr(self, "_unit_page", "") or "").rstrip("/")
         if (getattr(self, "_parent_site", False) and result.sources.get(page) == "official"
-                and key not in _ABOUT_ITSELF
+                and key != "why_matched" and not own_page
                 and not quotes_name(getattr(self, "_name", ""), quotes)):
             return refuse("the page does not name this organisation, so what it states is "
                           "its parent's or another organisation's")
+        if (getattr(self, "_parent_site", False) and key == "location"
+                and isinstance(value, Mapping)):
+            # The quote that gives the place must itself name this organisation: a
+            # second quote naming it elsewhere (a contact's title) does not make
+            # the parent's address its own.
+            place = [str(value.get(k) or "").casefold() for k in ("city", "state") if value.get(k)]
+            stating = [q for q in quotes if any(p and p in q.casefold() for p in place)]
+            if stating and not quotes_name(getattr(self, "_name", ""), stating):
+                return refuse("the quote that gives this place names its parent, not this "
+                              "organisation")
+        if key == "location" and isinstance(value, Mapping) and (value.get("state")
+                                                                 or value.get("city")):
+            # Where it IS, not where it works (6 Nov 2026: "solutions for Arizona"
+            # placed a Tampa company in Arizona): an address, a based phrase, a
+            # contact line or its name must give the place.
+            from agents.common.location_evidence import quote_places_it
+
+            if not quote_places_it(getattr(self, "_name", ""), quotes,
+                                   state=value.get("state"), city=value.get("city")):
+                return refuse("the quote says where it works, not where it is based: no "
+                              "address, 'based in' or office names this place")
         if key in ENTRY_BOXES:
             return self._judge_entries(result, key, value, quotes, page, partial,
                                        read_at=read_at, actor_category=actor_category,
@@ -1149,6 +1333,13 @@ class LightPullReader:
         items = entries_of(value)[:MAX_ENTRIES_PER_READ]
         kept, reasons = [], []
         for item in items:
+            if key == "funding_signal":
+                role = (str(item.get("role") or "").strip().casefold()
+                        if isinstance(item, Mapping) else "")
+                if role != "received":
+                    reasons.append(
+                        f"not funding it received: {_ROLE_WORDS.get(role, 'its role is not stated')}")
+                    continue
             if key in FACT_PARTS and isinstance(item, Mapping):
                 item, _dropped = supported_parts(key, item, quotes_text)
                 core = missing_core(key, item)
@@ -1188,6 +1379,17 @@ class LightPullReader:
                     # own grant programme - funding it gives, not funding it received.
                     reasons.append("it names the organisation itself as the funder: funding "
                                    "it gives, not funding it received")
+                    continue
+                # The model's "received" is a claim; the quote that gives this
+                # entry must show it (agents/common/funding_evidence.py). On its
+                # parent's or anyone else's page that quote must also name it.
+                from agents.common.funding_evidence import receipt_finding
+
+                unconfirmed = receipt_finding(
+                    item, quotes, name=str(getattr(self, "_name", "") or ""),
+                    own_site=kind == "official" and not getattr(self, "_parent_site", False))
+                if unconfirmed:
+                    reasons.append(f"not confirmed as funding it received: {unconfirmed}")
                     continue
                 if not str(item.get("date") or "").strip():
                     dated = re.search(r"/((?:19|20)\d{2})/(\d{1,2})/", page)
@@ -1258,6 +1460,19 @@ class LightPullReader:
                                   "This page does not name the organisation itself, so it "
                                   "was not used.")
                     continue
+                if collision_prone(name):
+                    loc = (result.evidence.get("location") or {})
+                    place = ([str(v) for k, v in (loc.get("value") or {}).items()
+                              if k in ("city", "state") and v]
+                             if loc.get("collection_state") == "found"
+                             and isinstance(loc.get("value"), Mapping) else [])
+                    if not corroborated(website, doc.content or "",
+                                        _page_text(doc.content or ""), place):
+                        fallback.note(doc.url, "not_about_it",
+                                      "Its name is shared by other organisations and this page "
+                                      "neither links its website nor names its city or state, "
+                                      "so it was not used.")
+                        continue
                 docs.append(doc)
             documents = [d for d in light_documents(docs, read_at=read_at) if d.text.strip()]
             if not documents:
@@ -1275,12 +1490,12 @@ class LightPullReader:
                            "text": d.text} for d in documents],
             }, ensure_ascii=False)
             urls = [d.url for d in documents]
-            answers = self.client.extract_with_tool(
+            answers = self._ask(
                 system=self.system + _OTHER_SOURCES, user=user,
                 tool_name=self.tool_name, tool_description=self.tool_description,
                 input_schema=_answer_schema([key], urls, self.criteria),
                 max_tokens=1200,
-            ) or {}
+            )
             answer = answers.get(key) if isinstance(answers.get(key), Mapping) else {}
             before = result.rejected.pop(key, None)
             self._judge(result, key, answer, {u: result.texts[u] for u in urls}, partial,

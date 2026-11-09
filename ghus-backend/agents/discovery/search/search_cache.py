@@ -1,4 +1,5 @@
-"""Paid web searches, reused for a short time - events and people only.
+"""Paid web searches, reused for a short time - organisations, events and people,
+and the Light Pull's own searches (6 Nov 2026).
 
 Measured 2026-10-23: a retried event request paid again for the same twelve
 searches ($0.27), and 146 of 505 event queries were exact repeats of an earlier
@@ -13,7 +14,8 @@ Why this cannot change what a run finds:
   * nothing else is cached here: every page is still fetched (or recognised as
     unchanged) and judged by the same gates.
 
-The actor pipeline does not use this (Actor Discovery is unchanged).
+Organisation searches were added on 6 Nov 2026, when a retried Arizona request
+paid again for all sixteen of its searches ($0.35 of a $0.94 run).
 """
 
 from __future__ import annotations

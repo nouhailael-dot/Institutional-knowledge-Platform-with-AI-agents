@@ -104,6 +104,13 @@ def official_bundle(source, url: str) -> FetchedDoc:
         except Exception as exc:  # noqa: BLE001 - the homepage alone still counts
             logger.info("about page unavailable for %s: %s", url, exc)
     parts.append(f"[Home page: {home.url}]\n{_visible_html_text(home.content)}")
+    # Its address is usually in the footer, which the visible text omits; the
+    # location check (agents/common/location_evidence.py) reads it from here.
+    from agents.common.location_evidence import footer_text
+
+    footer = footer_text(home.content or "", limit=600)
+    if footer:
+        parts.append(f"[Footer: {home.url}]\n{footer}")
     years = sorted(set(_YEARS.findall(raw)))
     if years:
         # A site's latest year is usually in its footer, which the visible

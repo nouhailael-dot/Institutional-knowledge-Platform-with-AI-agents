@@ -345,8 +345,28 @@ def assess_actor(
         state = normalize_state(raw_state) or str(raw_state).strip().upper()
         allowed = scope.allowed_states
         if allowed and state and state not in allowed:
-            rejects.append("outside_requested_region")
-            reasons.append(f"Located in {state}, outside the requested area.")
+            check = record.get("location_check") if isinstance(
+                record.get("location_check"), Mapping) else {}
+            # 7 Nov 2026: where its head office is does not decide whether it works
+            # in the requested area. When its page shows it there - an office, or
+            # the state named on its own page - a person decides; only an
+            # organisation whose page never places it there is rejected.
+            there = [o for o in (check.get("operates_in") or [])
+                     if isinstance(o, Mapping) and o.get("state") in allowed]
+            if there:
+                office = next((o for o in there if o.get("kind") == "office"), None)
+                seen = office or there[0]
+                holds.append("operates_in_area_based_elsewhere")
+                reasons.append(
+                    f"Located in {state}, outside the requested area, but its page "
+                    + (f"gives an office in {seen.get('state')}" if office
+                       else f"describes work in {seen.get('state')}")
+                    + f": \"{str(seen.get('text') or '')[:140]}\". A person decides whether "
+                      "it operates there.")
+            else:
+                rejects.append("outside_requested_region")
+                reasons.append(f"Located in {state}, outside the requested area."
+                               + (f" {check.get('reason')}" if check.get("changed") else ""))
 
     if currency is not None and currency.rejects:
         rejects.append(currency.code)
@@ -400,6 +420,19 @@ def assess_actor(
     if currency is not None and not currency.rejects:
         holds.append(currency.code)
         reasons.append(currency.reason)
+    check = record.get("location_check") if isinstance(record.get("location_check"),
+                                                        Mapping) else {}
+    head = check.get("headquarters") if isinstance(check.get("headquarters"), Mapping) else None
+    if head and check.get("kept_state") and head.get("state") != check.get("kept_state"):
+        # Said, not held: the place kept is where it works; its head office is elsewhere.
+        reasons.append(f"Its page puts its head office in {head.get('state')}: "
+                       f"\"{str(head.get('text') or '')[:120]}\"; the location kept is "
+                       f"{check.get('kept_state')}.")
+    if check.get("basis") == "unconfirmed":
+        # The page names a state but never ties it to the organisation
+        # (agents/common/location_evidence.py): a person decides where it is.
+        holds.append("location_unconfirmed")
+        reasons.append(str(check.get("reason") or "Its location is not stated on the page."))
     basics = missing_record_basics(record)
     if basics:
         # Too little to be useful unseen: a person decides, after the Light Pull

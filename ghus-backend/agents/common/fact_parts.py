@@ -319,7 +319,7 @@ def _years_in(text: str) -> list[int]:
     return sorted(years)
 
 
-_RANGE = re.compile(r"\b(through|until|thru|to|ends?|ending)\b|\d\s*[-\u2013\u2014]\s*\d", re.I)
+_RANGE = re.compile(r"\b(through|until|thru|to|ends?|ended|ending|completed)\b|\d\s*[-\u2013\u2014]\s*\d", re.I)
 
 
 def funding_status(entry, *, today_year: int | None = None) -> str:

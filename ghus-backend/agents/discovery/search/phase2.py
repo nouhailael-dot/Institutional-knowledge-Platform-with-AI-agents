@@ -684,6 +684,41 @@ def _actor_audit_row(run_id, url, status, exc) -> dict[str, object]:
     }
 
 
+def checked_location(analysis: ActorPageAnalysis, doc, *, official_name: str | None = None):
+    """The record with only the location its page ties to it.
+
+    6 Nov 2026: a page written for Arizona customers gave a Tampa company the
+    state Arizona. The state the reader gave is kept when the page states it
+    (an address, "based in", its name); replaced when the organisation's own
+    address or words place it elsewhere; and withheld - left for a person and
+    the Light Pull - when the page only talks about that state.
+    """
+    from agents.common.geography import STATE_NAMES
+    from agents.common.location_evidence import check_location, footer_text
+    from agents.discovery.search.actor_scoring import _visible_html_text
+
+    record = dict(analysis.record or {})
+    content = doc.content or ""
+    if "html" in str(getattr(doc, "content_type", "") or "").casefold() or content.lstrip()[:1] == "<":
+        text, footer = _visible_html_text(content), footer_text(content)
+    else:
+        text, footer = content, ""
+    website = str(record.get("website") or "")
+    own_site = official_name is not None or (
+        bool(website) and registrable_domain(website) == registrable_domain(doc.url))
+    check = check_location(
+        name=str(record.get("name") or official_name or ""),
+        claimed_state=record.get("state") or record.get("state_code"),
+        claimed_city=record.get("location_city"), text=text, footer=footer,
+        own_site=own_site)
+    if check.changed or (check.state and not (record.get("state") or record.get("state_code"))):
+        record["state"] = STATE_NAMES.get(check.state) if check.state else None
+        record.pop("state_code", None)
+        record["location_city"] = check.city
+    record["location_check"] = check.as_record()
+    return replace(analysis, record=record)
+
+
 def _with_found_for_topic(
     record: dict[str, object] | None,
     actor_context: dict[str, object],
@@ -919,6 +954,11 @@ def fetch_score_stage_actors(
                 ) + 1
             else:
                 stats["skipped_unchanged"] += 1
+            # Where it is, decided by the page's own words, not the page's topic
+            # (agents/common/location_evidence.py). Free, and the same every time.
+            analysis = checked_location(analysis, doc, official_name=official_name)
+            basis = f"actor_location_{analysis.record['location_check']['basis']}"
+            stats[basis] = int(stats.get(basis, 0) or 0) + 1
             analyses[candidate.candidate_id] = analysis
             matched_sectors = rubric_sector_codes(analysis.rubric)
             matched_hubs = rubric_hub_matches(analysis.rubric)

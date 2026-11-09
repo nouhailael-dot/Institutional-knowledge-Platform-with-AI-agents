@@ -87,7 +87,8 @@ def test_every_box_is_answered_and_only_checked_quotes_count():
                                       "description": "Launched BREW 2.0, a global accelerator."},
                             "quote": "In March 2026 it launched BREW 2.0, a global accelerator"},
         "funding_signal": {"stated": True, "page": ABOUT_URL,
-                           "value": "$2 million grant from the Fund for Lake Michigan.",
+                           "value": {"amount": "$2 million", "funder": "Fund for Lake Michigan",
+                                     "role": "received"},
                            "quote": "received a $2 million grant from the Fund for Lake Michigan"},
         # Invented: the quote is on no page.
         "international_connection": {"stated": True, "page": ABOUT_URL,
@@ -234,17 +235,21 @@ def test_the_website_publishing_content_is_not_recent_activity():
     assert "website's content" in read.rejected["recent_activity"]
 
 
-@pytest.mark.parametrize(("stated", "stored"), [
+@pytest.mark.parametrize(("stated", "stored", "where"), [
     ({"city": "Milwaukee", "state": "Wisconsin", "country": None},
-     {"city": "Milwaukee", "state": "WI", "country": "US"}),
-    ({"city": "Milwaukee", "state": "WI"}, {"city": "Milwaukee", "state": "WI", "country": "US"}),
+     {"city": "Milwaukee", "state": "WI", "country": "US"}, "Milwaukee, Wisconsin"),
+    ({"city": "Milwaukee", "state": "WI"}, {"city": "Milwaukee", "state": "WI", "country": "US"},
+     "Milwaukee, Wisconsin"),
     # Not a US state: kept as the page says it, never placed in the US.
     ({"city": "Toronto", "state": "Ontario", "country": "Canada"},
-     {"city": "Toronto", "state": "Ontario", "country": "Canada"}),
+     {"city": "Toronto", "state": "Ontario", "country": "Canada"}, "Toronto, Ontario"),
 ])
-def test_a_location_is_stored_in_one_shape(stated, stored):
+def test_a_location_is_stored_in_one_shape(stated, stored, where, monkeypatch):
+    # The quote must give the place it is stored as (6 Nov 2026: a quote naming
+    # another place does not carry a location).
+    monkeypatch.setitem(PAGES, ABOUT_URL, ABOUT.replace("Milwaukee, Wisconsin", where))
     model = Model({"location": {"stated": True, "page": ABOUT_URL, "value": stated,
-                                "quote": "nonprofit in Milwaukee, Wisconsin"}})
+                                "quote": f"nonprofit in {where}"}})
     read = LightPullReader(model, _fetch).read(
         name="The Water Council", website="https://thewatercouncil.com/",
         actor_category="association_network", read_at=NOW, fields=["location"])
@@ -315,12 +320,16 @@ FUNDER = "https://fundforlakemichigan.org/grants-2026"
 
 
 def test_funding_its_own_pages_do_not_state_is_searched_for_and_checked(tmp_path, monkeypatch):
+    # "The Water Council" is a name others share: the funder's page links its site
+    # (6 Nov 2026: a same-named organisation's page is not used without such a sign).
     monkeypatch.setitem(PAGES, FUNDER, "<p>The Fund awarded The Water Council a $500,000 grant "
-                                       "in 2026 for its BREW accelerator.</p>")
+                                       "in 2026 for its BREW accelerator. "
+                                       '<a href="https://thewatercouncil.com">The Water Council</a></p>')
     monkeypatch.setitem(PAGES, "https://www.linkedin.com/company/x", "<p>The Water Council</p>")
     searches: list[str] = []
     model = _TwoReads({"funding_signal": {
-        "stated": True, "page": FUNDER, "value": "$500,000 grant, 2026",
+        "stated": True, "page": FUNDER,
+        "value": {"amount": "$500,000", "date": "2026", "role": "received"},
         "quote": "The Fund awarded The Water Council a $500,000 grant in 2026"}})
     read = LightPullReader(model, _fetch, fallback=_searching_fallback(
         tmp_path, ["https://www.linkedin.com/company/x", FUNDER], searches)).read(
@@ -350,7 +359,8 @@ def test_a_search_result_that_does_not_name_it_is_never_read_for_it(tmp_path, mo
 def test_no_search_when_its_own_pages_state_it(tmp_path):
     searches: list[str] = []
     model = Model({"funding_signal": {
-        "stated": True, "page": ABOUT_URL, "value": "$2 million grant from the Fund for Lake Michigan.",
+        "stated": True, "page": ABOUT_URL,
+        "value": {"amount": "$2 million", "funder": "Fund for Lake Michigan", "role": "received"},
         "quote": "received a $2 million grant from the Fund for Lake Michigan"}})
     read = LightPullReader(model, _fetch, fallback=_searching_fallback(tmp_path, [FUNDER], searches)).read(
         name="The Water Council", website="https://thewatercouncil.com", actor_category=None,
@@ -362,8 +372,9 @@ def test_no_search_when_its_own_pages_state_it(tmp_path):
 def test_an_entry_box_keeps_every_quoted_entry_and_refuses_one_riding_on_another_quote():
     model = Model({"funding_signal": {
         "stated": True, "page": ABOUT_URL,
-        "value": [{"amount": "$2 million", "funder": "Fund for Lake Michigan"},
-                  {"amount": "$5 million", "funder": "National Science Foundation"}],
+        "value": [{"amount": "$2 million", "funder": "Fund for Lake Michigan", "role": "received"},
+                  {"amount": "$5 million", "funder": "National Science Foundation",
+                   "role": "received"}],
         "quotes": ["It received a $2 million grant from the Fund for Lake Michigan."]}})
     read = LightPullReader(model, _fetch).read(
         name="The Water Council", website="https://thewatercouncil.com",

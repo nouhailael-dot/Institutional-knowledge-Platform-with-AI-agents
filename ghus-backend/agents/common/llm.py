@@ -128,6 +128,7 @@ class ClaudeToolClient:
         input_schema: dict[str, Any],
         max_tokens: int = 2048,
         cached_user: str | None = None,
+        cache_prefix: bool = False,
     ) -> dict[str, Any]:
         kwargs = build_messages_create_kwargs(
             model=self.model,
@@ -138,6 +139,7 @@ class ClaudeToolClient:
             input_schema=input_schema,
             max_tokens=max_tokens,
             cached_user=cached_user,
+            cache_prefix=cache_prefix,
         )
         response = self._get_client().messages.create(**kwargs)
         self._record_usage(response)
@@ -217,6 +219,7 @@ def build_messages_create_kwargs(
     input_schema: dict[str, Any],
     max_tokens: int = 2048,
     cached_user: str | None = None,
+    cache_prefix: bool = False,
 ) -> dict[str, Any]:
     """Build the Anthropic Messages.create request for tool-schema extraction.
 
@@ -233,6 +236,18 @@ def build_messages_create_kwargs(
         "input_schema": input_schema,
     }
 
+    if cached_user is None and cache_prefix:
+        # Only the system prompt and the tool are shared between calls (the Light
+        # Pull: the same boxes for every organisation of a category, 6 Nov 2026).
+        tool["cache_control"] = cache_marker
+        return {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": [{"type": "text", "text": system, "cache_control": cache_marker}],
+            "messages": [{"role": "user", "content": user}],
+            "tools": [tool],
+            "tool_choice": {"type": "tool", "name": tool_name},
+        }
     if cached_user is None:
         return {
             "model": model,

@@ -328,7 +328,8 @@ def test_a_dead_address_is_replaced_by_its_current_official_site(blocked):
                                       # Funding it received (6 Nov 2026: funding it gives
                                       # to others is not its funding).
                                       "value": [{"funder": "Erb Family Foundation",
-                                                 "program": "Great Lakes research"}],
+                                                 "program": "Great Lakes research",
+                                                 "role": "received"}],
                                       "quotes": ["The University of Michigan Water Center "
                                                  "receives support from the Erb Family "
                                                  "Foundation for Great Lakes research."]}})

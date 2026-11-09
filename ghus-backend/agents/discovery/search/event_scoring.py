@@ -13,6 +13,7 @@ from agents.discovery.extractors.event import (
     EVENT_FIELDS,
     EVENT_STRING_MAX_LENGTHS,
     event_record_schema,
+    fit_event_label_lengths,
     validate_event_record_lengths,
 )
 from agents.discovery.search.models import CandidateRecord
@@ -351,6 +352,7 @@ def validate_event_analysis(
             f"event record returned unknown EVENT_TOOL_SCHEMA fields: {sorted(unknown_record_fields)}"
         )
     normalized_record = {field: record.get(field) for field in EVENT_FIELDS}
+    normalized_record, full_wording = fit_event_label_lengths(normalized_record)
     validate_event_record_lengths(normalized_record)
     raw_codes = normalized_record.get("sector_codes")
     if raw_codes is None:
@@ -381,6 +383,9 @@ def validate_event_analysis(
         ),
     )
     facts = payload.get("facts") if isinstance(payload.get("facts"), dict) else {}
+    if full_wording:
+        # The page's full wording of a label cut to fit its column, kept as a fact.
+        facts = {**facts, **{f"{name}_as_written": text for name, text in full_wording.items()}}
     return EventPageAnalysis(rubric=normalized_rubric, record=normalized_record, facts=facts)
 
 

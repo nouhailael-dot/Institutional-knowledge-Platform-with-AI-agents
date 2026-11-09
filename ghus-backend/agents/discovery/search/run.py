@@ -209,9 +209,11 @@ def run_search_triage(
     stats = _empty_stats()
     # Real searches only: a test's stub client must never fill the shared cache.
     if (built_provider and search_client is None and not offline
-            and entity_type in {"event", "person"}):
+            and entity_type in {"actor", "event", "person"}):
         # Repeated searches within a few days are answered from disk, not paid
-        # for again (agents/discovery/search/search_cache.py). Actors unchanged.
+        # for again (agents/discovery/search/search_cache.py). Organisations too
+        # since 6 Nov 2026: a retried or repeated request paid again for every
+        # search ($0.022 each, a third of a request run's cost).
         from agents.common.raw_storage import RawContentStore
         from agents.discovery.search.search_cache import CachedSearchProvider
 
