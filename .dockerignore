@@ -1,0 +1,28 @@
+# Never in the image: secrets, local state, local environments.
+.env
+.env.*
+!.env.example
+.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+.git
+.review
+.review-requests
+.demo
+.map_runs
+.pytest_cache
+**/.pytest_cache
+graphify-out
+**/graphify-out
+
+# Agent runs, caches and read pages: on the disk at run time, not in the image.
+ghus-backend/agents/runs
+ghus-backend/agents/raw_documents
+ghus-backend/notebooks
+
+# Office documents in the repository root and docs: the app does not serve them.
+/*.xlsx
+docs/*.pptx
+docs/*.xlsx
+docs/evidence

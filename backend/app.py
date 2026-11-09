@@ -55,6 +55,7 @@ from src.map_agent.run_store import RunStore, RunContext, MapStopped
 from src.map_agent.search_backend import availability as research_availability
 from src.retrieve import retrieve
 from src.discovery.bridge import DiscoveryBridge, DiscoveryBridgeError
+from backend.access import require_login
 from backend.datafeed_routes import router as datafeed_router
 from src.plain_errors import GENERIC as PLAIN_GENERIC
 from src.plain_errors import REASON_KEYS, explain, explain_payload, is_technical
@@ -211,6 +212,11 @@ async def plain_reasons(request, call_next):
     headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
     return Response(content=body, status_code=response.status_code, headers=headers,
                     media_type="application/json")
+
+
+# Registered last, so it runs first: the hosted app asks for a login before
+# anything else answers (backend/access.py; off locally unless configured).
+app.middleware("http")(require_login)
 
 
 FRONTEND = ROOT / "frontend"

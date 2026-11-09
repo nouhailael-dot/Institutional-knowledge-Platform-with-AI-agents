@@ -1,0 +1,40 @@
+# GHUS Compass on Render: 10-day private team trial (GHUS, 9 Nov 2026).
+# See docs/DEPLOYMENT_RENDER.md for the exact steps. Nothing deploys on a push:
+# a release is a manual "Deploy latest commit" in the Render dashboard.
+services:
+  - type: web
+    name: ghus-compass
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # 2 GB RAM: the web app plus an agent run or a Review admission (which loads
+    # the entity-resolution model) at the same time. 512 MB is not enough.
+    plan: standard
+    # Next to the Supabase project (AWS us-east-1).
+    region: virginia
+    branch: main
+    autoDeploy: false
+    healthCheckPath: /api/health
+    numInstances: 1
+    # Durable state: the Review store (the only record of a rejected
+    # candidate), uploaded Data Feed files, Build the Map jobs, agent caches.
+    disk:
+      name: ghus-data
+      mountPath: /var/data
+      sizeGB: 2
+    envVars:
+      # Secrets: entered in the dashboard, never in the repository.
+      - key: DATABASE_URL          # Supabase Session pooler URI (port 5432)
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: GHUS_ACCESS_USERS     # name:password,name:password
+        sync: false
+      - key: GHUS_AGENT_CONTACT_EMAIL
+        sync: false
+      # Plain settings, as on the local shared server.
+      - key: MAP_RESEARCH_ENABLED
+        value: "1"
+      - key: GHUS_DATA_DIR
+        value: /var/data
