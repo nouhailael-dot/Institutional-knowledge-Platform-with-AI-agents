@@ -53,23 +53,64 @@ export function isoFromUs(text) {
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
+export const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+  "August", "September", "October", "November", "December"];
+export const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+const isoOf = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+
+/**
+ * One month as weeks of seven ISO days, Sunday first (the US calendar); days
+ * of the neighbouring months are null.
+ */
+export function monthGrid(year, month) {
+  const first = new Date(year, month, 1).getDay();
+  const days = new Date(year, month + 1, 0).getDate();
+  const cells = [...Array(first).fill(null),
+    ...Array.from({length: days}, (_, i) => isoOf(year, month, i + 1))];
+  while (cells.length % 7) cells.push(null);
+  return Array.from({length: cells.length / 7}, (_, w) => cells.slice(w * 7, w * 7 + 7));
+}
+
+/** {year, month} one month before or after. */
+export function shiftMonth({year, month}, by) {
+  const d = new Date(year, month + by, 1);
+  return {year: d.getFullYear(), month: d.getMonth()};
+}
+
+let calendarIds = 0;
+
 /**
  * A date field shown and typed as MM/DD/YYYY, with a calendar button.
  *
- * A browser's own date field takes its format from the computer's language
- * settings, so it cannot promise MM/DD/YYYY. This one can: it holds what the
- * person types, reports an ISO day (or "") through ``onChange`` once the text
- * is a whole valid date within ``min``/``max``, and opens the browser's
- * calendar from the button.
+ * A browser's own date field and calendar take their language and format from
+ * the computer's settings (French on a French Windows), so they cannot promise
+ * an English, MM/DD/YYYY calendar. This one can: it holds what the person
+ * types, reports an ISO day (or "") through ``onChange`` once the text is a
+ * whole valid date within ``min``/``max``, and its button opens COMPASS's own
+ * English calendar (10 Nov 2026), Sunday first, days outside min/max disabled.
  */
 export function createDateInput({html, useState, useEffect}) {
   return function DateInput({value = "", onChange, min, max, id, ariaLabel, disabled, className,
     placeholder = "MM/DD/YYYY"}) {
     const [text, setText] = useState(() => usDate(value));
+    const [open, setOpen] = useState(false);
+    const [shown, setShown] = useState(null);
+    const [up, setUp] = useState(false);
+    const [cal] = useState(() => `cal-${++calendarIds}`);
     // A value set from outside (a reset, a hand-off) replaces what is shown.
     useEffect(() => {
       if (isoFromUs(text) !== (value || "")) setText(usDate(value));
     }, [value]);
+    // A click elsewhere or Escape closes the calendar.
+    useEffect(() => {
+      if (!open) return undefined;
+      const away = (e) => { if (!e.target.closest?.(`[data-cal="${cal}"]`)) setOpen(false); };
+      const key = (e) => { if (e.key === "Escape") setOpen(false); };
+      document.addEventListener("mousedown", away);
+      document.addEventListener("keydown", key);
+      return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", key); };
+    }, [open]);
     const iso = isoFromUs(text);
     const outside = Boolean(iso) && ((min && iso < min) || (max && iso > max));
     const invalid = text.trim() !== "" && (!iso || outside);
@@ -81,22 +122,55 @@ export function createDateInput({html, useState, useEffect}) {
       else if (day && !(min && day < min) && !(max && day > max)) onChange(day);
     }
 
-    function openCalendar(event) {
-      const picker = event.currentTarget.nextElementSibling;
-      try { picker.showPicker(); } catch { picker.focus(); picker.click(); }
+    function toggle(event) {
+      if (open) { setOpen(false); return; }
+      const start = parse(value || iso) || parse(min) || new Date();
+      setShown({year: start.getFullYear(), month: start.getMonth()});
+      // Open upward when the window has no room below for the month.
+      const box = event?.currentTarget?.getBoundingClientRect?.();
+      setUp(Boolean(box) && box.bottom + 310 > window.innerHeight && box.top > 310);
+      setOpen(true);
     }
 
-    return html`<span class=${"date-input" + (invalid ? " invalid" : "") + (className ? ` ${className}` : "")}>
+    function pick(day) {
+      setText(usDate(day));
+      onChange(day);
+      setOpen(false);
+    }
+
+    const now = new Date();
+    const today = isoOf(now.getFullYear(), now.getMonth(), now.getDate());
+    const allowed = (day) => !(min && day < min) && !(max && day > max);
+
+    return html`<span class=${"date-input" + (invalid ? " invalid" : "") + (className ? ` ${className}` : "")}
+      data-cal=${cal}>
       <input type="text" inputMode="numeric" placeholder=${placeholder} maxLength="10" autoComplete="off"
         id=${id} aria-label=${ariaLabel} value=${text} disabled=${disabled} aria-invalid=${invalid}
         title=${invalid ? (outside ? "Outside the allowed dates" : "Use MM/DD/YYYY") : undefined}
         onInput=${(e) => typed(e.target.value)}
         onBlur=${() => { if (!invalid) setText(usDate(value)); }}/>
       <button type="button" class="date-input-pick" aria-label="Open calendar" title="Open calendar"
-        disabled=${disabled} onClick=${openCalendar}><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
-      <input type="date" class="date-input-native" tabIndex="-1" aria-hidden="true"
-        value=${value || ""} min=${min} max=${max}
-        onChange=${(e) => { setText(usDate(e.target.value)); onChange(e.target.value); }}/>
+        aria-expanded=${open} disabled=${disabled} onClick=${toggle}><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+      ${open && shown && html`<div class=${"date-cal" + (up ? " up" : "")} role="dialog" aria-label="Choose a date">
+        <div class="date-cal-head">
+          <button type="button" aria-label="Previous month" onClick=${() => setShown(shiftMonth(shown, -1))}>‹</button>
+          <strong>${MONTHS[shown.month]} ${shown.year}</strong>
+          <button type="button" aria-label="Next month" onClick=${() => setShown(shiftMonth(shown, 1))}>›</button>
+        </div>
+        <table class="date-cal-grid" role="grid">
+          <thead><tr>${WEEKDAYS.map(d => html`<th key=${d} scope="col">${d}</th>`)}</tr></thead>
+          <tbody>${monthGrid(shown.year, shown.month).map((week, w) => html`<tr key=${w}>
+            ${week.map((day, i) => html`<td key=${i}>${day && html`<button type="button"
+              class=${"date-cal-day" + (day === value ? " selected" : "") + (day === today ? " today" : "")}
+              aria-label=${usDate(day)} aria-pressed=${day === value} disabled=${!allowed(day)}
+              onClick=${() => pick(day)}>${Number(day.slice(8))}</button>`}</td>`)}
+          </tr>`)}</tbody>
+        </table>
+        <div class="date-cal-foot">
+          <button type="button" disabled=${!allowed(today)} onClick=${() => pick(today)}>Today</button>
+          ${value && html`<button type="button" onClick=${() => { setText(""); onChange(""); setOpen(false); }}>Clear</button>`}
+        </div>
+      </div>`}
     </span>`;
   };
 }

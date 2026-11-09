@@ -179,8 +179,11 @@ def same_origin(request) -> bool:
         # Not sent by a browser page (a script, curl). Browsers send Origin on
         # every cross-site POST, so a forged form always carries one.
         return True
-    host = (request.headers.get("host") or "").lower()
-    return bool(host) and urlsplit(origin.lower()).netloc == host
+    # The host the browser asked for: Host, or the one the hosting proxy
+    # forwards (a forged cross-site form can set neither).
+    hosts = {(request.headers.get(name) or "").split(",")[0].strip().lower()
+             for name in ("host", "x-forwarded-host")} - {""}
+    return urlsplit(origin.lower()).netloc in hosts
 
 
 def _secured(response):

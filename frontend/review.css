@@ -383,10 +383,6 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 .review-status.pending_review{background:var(--amber-soft);color:var(--amber)}
 
 /* The example hub proposal (3 Nov 2026): marked, dashed, and its buttons inert. */
-.review-hub-example{border-style:dashed}
-.review-example-tag{margin:0 0 8px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.review-hub-steps{margin:8px 0 12px;padding-left:20px;display:grid;gap:4px;font-size:13.5px;color:var(--ink)}
-.review-hub-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
 
 /* Why COMPASS identified it (4 Nov 2026): the GHUS fit as short lists. */
 .review-fit-list{margin:0;padding-left:18px;display:grid;gap:4px}

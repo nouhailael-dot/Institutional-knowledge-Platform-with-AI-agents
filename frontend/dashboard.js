@@ -10,8 +10,8 @@
 // Directory activity by the name typed in Review Results, and maps are the ones
 // made on this computer.
 
-import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261104g";
-import {usDate} from "./dates.js?v=20261104e";
+import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261110b";
+import {usDate} from "./dates.js?v=20261110b";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";
 export {NAVIGATE};

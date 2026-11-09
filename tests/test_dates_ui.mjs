@@ -43,3 +43,20 @@ test('every calendar on the platform is the MM/DD/YYYY date field', () => {
   assert.match(out, /value=04\/02\/2027/);
   assert.match(out, /Open calendar/);
 });
+
+test("the calendar is COMPASS's own, in English, Sunday first, never the browser's", async () => {
+  const {MONTHS, WEEKDAYS, monthGrid, shiftMonth} = await import('../frontend/dates.js');
+  assert.equal(MONTHS[10], 'November');
+  assert.deepEqual(WEEKDAYS, ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']);
+  const nov = monthGrid(2026, 10);                 // 1 Nov 2026 is a Sunday
+  assert.equal(nov[0][0], '2026-11-01');
+  assert.equal(nov.flat().filter(Boolean).length, 30);
+  assert.ok(nov.every(week => week.length === 7));
+  const feb = monthGrid(2027, 1);                  // 1 Feb 2027 is a Monday
+  assert.equal(feb[0][0], null);
+  assert.equal(feb[0][1], '2027-02-01');
+  assert.deepEqual(shiftMonth({year: 2026, month: 11}, 1), {year: 2027, month: 0});
+  assert.deepEqual(shiftMonth({year: 2027, month: 0}, -1), {year: 2026, month: 11});
+  const source = fs.readFileSync(new URL('../frontend/dates.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /type="date"|showPicker/);
+});

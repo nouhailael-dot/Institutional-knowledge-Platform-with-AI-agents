@@ -123,6 +123,10 @@ def test_a_change_sent_from_another_site_is_refused(hosted):
         refused = hosted.post("/api/change", headers={**login, "Origin": origin})
         assert refused.status_code == 403, origin
         assert "changed" not in refused.text
+    # Behind the host's proxy, the forwarded host is the site's own.
+    proxied = {**login, "Origin": "https://ghus-compass.onrender.com",
+               "X-Forwarded-Host": "ghus-compass.onrender.com"}
+    assert hosted.post("/api/change", headers=proxied).status_code == 200
     # Reading is not affected.
     assert hosted.get("/api/data", headers={**login, "Origin": "https://evil.example"}).status_code == 200
 

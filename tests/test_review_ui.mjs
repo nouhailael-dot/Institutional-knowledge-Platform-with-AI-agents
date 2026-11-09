@@ -1513,15 +1513,15 @@ test('an organization card has no Mapped Topic line (3 Nov 2026)', () => {
   assert.doesNotMatch(src, /"Mapped Topic"/);
 });
 
-test('Hub Proposals shows one example proposal, marked, with inert buttons', async () => {
-  const {EXAMPLE_HUB_PROPOSAL, thresholdLabel, hubProposalPlace} = await import('../frontend/review.js');
-  assert.equal(EXAMPLE_HUB_PROPOSAL.example, true);
-  assert.ok(EXAMPLE_HUB_PROPOSAL.members.every(m => m.name.startsWith('Example ')));
-  assert.equal(thresholdLabel(EXAMPLE_HUB_PROPOSAL.family_count, EXAMPLE_HUB_PROPOSAL.families_required), '5 of 4 required');
-  assert.equal(hubProposalPlace(EXAMPLE_HUB_PROPOSAL), 'Wichita, Kansas, United States · sector WATER');
+test('Hub Recommendations shows only real proposals, no example (10 Nov 2026)', async () => {
+  const {thresholdLabel, hubProposalPlace} = await import('../frontend/review.js');
+  const proposal = {primary_city: 'Wichita', state: 'Kansas', country: 'United States',
+    dimension: 'sector', dimension_key: 'WATER', family_count: 5, families_required: 4};
+  assert.equal(thresholdLabel(proposal.family_count, proposal.families_required), '5 of 4 required');
+  assert.equal(hubProposalPlace(proposal), 'Wichita, Kansas, United States · sector WATER');
   const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
-  assert.match(src, /\[\.\.\.hubDemo\.proposals, EXAMPLE_HUB_PROPOSAL\]/);
-  assert.match(src, /<button class="btn" disabled title="Example: creates the hub/);
+  assert.match(src, /\$\{hubDemo\.proposals\.map\(proposal =>/);
+  assert.doesNotMatch(src, /EXAMPLE_HUB_PROPOSAL|proposal\.example|not real data/);
 });
 
 test('agent reasons in Review use the platform spelling of organization', async () => {

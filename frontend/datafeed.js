@@ -6,8 +6,8 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261106b";
-import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261104e";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261110d";
+import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261110b";
 
 export const RECORD_TYPES = [
   {id: "actor", label: "Organizations", short: "Organizations", noun: "organization"},
@@ -879,7 +879,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     const [completing, setCompleting] = useState(null);
     const [unavailable, setUnavailable] = useState(false);
     async function load() {
-      // The table always shows (with its example import); a failed read is a quiet note.
+      // The table always shows; a failed read is a quiet note.
       try {
         const body = await api("/api/datafeed/history");
         setItems(body.imports || []);
@@ -906,9 +906,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     // The signed-in user's imports once accounts exist; every import until then.
     const mine = items;
     const shown = filterImports(mine, search, category);
-    // The example finished import, listed after the real ones while it matches the filters.
-    const exampleRow = {...EXAMPLE_IMPORT, run_id: "example"};
-    const rows = [...shown, ...filterImports([exampleRow], search, category)];
+    // Real imports only (10 Nov 2026, team trial): the example import is no longer listed.
+    const rows = shown;
     return html`<div class="df-history-tools">
       <label class="df-search"><span class="sr-only">Search imports by name</span>
         <input type="search" value=${search} placeholder="Search imports by name…"
@@ -925,7 +924,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       <table>
         <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Status</th></tr></thead>
         <tbody>
-          ${rows.length === 0 && html`<tr><td colspan="5" class="df-muted">No import matches this search.</td></tr>`}
+          ${rows.length === 0 && html`<tr><td colspan="5" class="df-muted">${mine.length
+            ? "No import matches this search." : "No imports yet. Your imports will appear here."}</td></tr>`}
           ${rows.map(item => {
             const result = importResult(item);
             return html`<${Fragment} key=${item.run_id}>

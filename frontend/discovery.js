@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, eventSpan, usDate} from "./dates.js?v=20261104e";
+import {createDateInput, eventSpan, usDate} from "./dates.js?v=20261110b";
 
 export const CADENCE_LABELS = {
   once: "Once",
