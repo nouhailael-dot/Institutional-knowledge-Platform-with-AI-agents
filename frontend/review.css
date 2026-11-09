@@ -396,3 +396,8 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 
 /* The database is being read in the background (5 Nov 2026). */
 .review-syncing{margin:6px 0 0;font-size:13px}
+
+/* Essential-field completeness (6 Nov 2026): what was found, not a verification. */
+.review-completeness { margin: 4px 0 10px; padding: 8px 10px; border-radius: 8px;
+  background: var(--surface-2, #f4f2ee); font-size: 0.92em; line-height: 1.45; }
+.review-completeness small { display: block; color: var(--muted, #6b6f76); margin-top: 2px; }

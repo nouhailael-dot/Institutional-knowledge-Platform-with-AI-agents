@@ -1567,3 +1567,26 @@ test('each grant says whether it is active, recent or historical', () => {
   assert.match(second, /^• \[Historical\] /);
   assert.doesNotMatch(text, /Status:/);
 });
+
+test('Review counts the essential fields found with a source, without calling it verified', async () => {
+  const {essentialCompleteness} = await import('../frontend/review.js');
+  const candidate = {
+    entity_type: 'actor',
+    reviewed_payload: {actor_category: 'research_center'},
+    agent_metadata: {facts: [
+      {fact_key: 'location', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+       value: {city: 'Tucson', state: 'AZ'}, source_url: 'https://lab.example/contact'},
+      {fact_key: 'why_matched', fact_type: 'light_pull', layer: 1, collection_state: 'not_found',
+       value: null},
+      {fact_key: 'parent_and_center_type', fact_type: 'light_pull', layer: 1,
+       collection_state: 'found', value: {parent_organization: 'University of Arizona'},
+       source_url: 'https://lab.example/about'},
+    ]},
+  };
+  const out = essentialCompleteness(candidate);
+  assert.equal(out.total, 5);
+  assert.equal(out.supported.length, 2);
+  assert.equal(out.missing.length, 3);
+  const src = fs.readFileSync(new URL('../frontend/labels.js', import.meta.url), 'utf8');
+  assert.match(src, /Complete is not verified/);
+});

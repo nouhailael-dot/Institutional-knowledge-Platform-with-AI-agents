@@ -1391,6 +1391,53 @@ const LIGHT_ROWS_SHOWN_AS_CONTROLS = new Set([
 const SHOWN_ELSEWHERE = new Set(["why_matched", "international_connection", "um6p_ocp_connection",
   "funding_signal"]);
 
+// The boxes a record is not useful without, by category - the same list the
+// agent follows up on (ghus-backend light_pull_reader.ESSENTIAL_BOXES).
+export const ESSENTIAL_FIELDS = {
+  common: ["location", "why_matched"],
+  university_academic: ["topic_unit_and_work", "relevant_centers_programs"],
+  research_center: ["parent_and_center_type", "topic_research_focus", "active_recent_projects"],
+  national_laboratory: ["sponsoring_agency", "topic_program_area"],
+  applied_facility: ["facility_type_operator", "testing_demonstration_scope"],
+  hospital_clinical: ["clinical_research_focus", "hospital_type_scale"],
+  company: ["ownership_and_size", "topic_business_segment_product"],
+  startup: ["technology_and_problem", "founding_year_location"],
+  innovation_platform: ["platform_type_operator", "platform_offerings"],
+  investor: ["investor_type_headquarters", "sector_stage_focus"],
+  government: ["jurisdiction_parent_agency", "topic_mandate_program"],
+  foundation_nonprofit: ["mission_sector_focus", "relevant_program"],
+  association_network: ["association_type", "member_types"],
+};
+
+/**
+ * How many of the category's essential fields have a value read from a source
+ * (6 Nov 2026). It says what is there, not that it is right: completeness is
+ * not verification.
+ */
+export function essentialCompleteness(candidate, category) {
+  const resolved = String(category ?? candidate?.reviewed_payload?.actor_category ?? "");
+  const keys = [...ESSENTIAL_FIELDS.common, ...(ESSENTIAL_FIELDS[resolved] || [])];
+  const rows = new Map(lightFactRows({
+    ...candidate,
+    reviewed_payload: {...(candidate?.reviewed_payload || {}), actor_category: resolved},
+  }).map(row => [row.key, row]));
+  // A box with its own place on the card (Why It Matched) is read from its fact.
+  const facts = new Map(lightPullFacts(candidate).filter(fact => fact?.fact_key)
+    .map(fact => [String(fact.fact_key), fact]));
+  const supported = [];
+  const missing = [];
+  for (const key of keys) {
+    const row = rows.get(key);
+    const fact = facts.get(key);
+    const value = row ? row.value : fact?.value;
+    const found = row
+      ? !row.state && value !== null && value !== undefined && value !== ""
+      : fact?.collection_state === "found" && value !== null && value !== undefined;
+    (found ? supported : missing).push(row ? row.label : reviewFieldLabel(key));
+  }
+  return {supported, missing, total: supported.length + missing.length};
+}
+
 export function lightPullBoxes(candidate, category) {
   const resolved = String(
     category ?? candidate?.reviewed_payload?.actor_category ?? "",
@@ -2460,6 +2507,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const lightBoxes = selected && isActor
       ? lightPullBoxes(selected, draft.actor_category)
       : {common: [], specific: []};
+    const completeness = selected && isActor
+      ? essentialCompleteness(selected, draft.actor_category) : null;
     const summary = isActor
       ? actorReviewSummary(draft, selected?.original_payload || selected?.reviewed_payload)
       : null;
@@ -2738,6 +2787,11 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${isActor ? html`
             <details class="mpeople review-profile" open>
               <summary>Organization profile</summary>
+              ${completeness && completeness.total > 0 && html`<div class="review-completeness">
+                <b>Essential fields:</b> ${`${completeness.supported.length} of ${completeness.total} found with a source`}${
+                  completeness.missing.length ? html` · <span class="review-missing">${
+                  `Missing: ${completeness.missing.join(", ")}`}</span>` : ""}
+                <small>${SENTENCES.completenessNotVerification}</small></div>`}
               ${cardLine(html, "Other Names", otherNames.join(", "))}
               <label class="review-line"><b>${FIELDS.primarySector}</b>
                 <span class="review-value review-value-row">
