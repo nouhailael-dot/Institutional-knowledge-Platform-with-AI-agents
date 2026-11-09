@@ -166,7 +166,7 @@ def _env(tmp_path, **extra):
 
 
 def test_launcher_refuses_a_short_password(tmp_path):
-    with pytest.raises(SystemExit, match="shorter than 16 characters for: bob") as refused:
+    with pytest.raises(SystemExit, match="shorter than 12 characters for: bob") as refused:
         run_hosted_server.prepare(_env(tmp_path, GHUS_ACCESS_USERS="amina:long-enough-password-1,bob:short"))
     assert "long-enough" not in str(refused.value)                 # names only, never a password
 

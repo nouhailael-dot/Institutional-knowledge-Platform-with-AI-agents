@@ -52,7 +52,7 @@ a URL.
    | `ANTHROPIC_API_KEY` | Same as in your local `.env`. |
    | `VOYAGE_API_KEY` | Same as in your local `.env`. |
    | `GHUS_AGENT_CONTACT_EMAIL` | The address websites see the agents identify with (a team mailbox if you have one). |
-   | `GHUS_ACCESS_USERS` | One login per tester: `amina@example.org:long-random-pass-1,ismail@example.org:long-random-pass-2`. Commas between people, the first colon between the name and the password. An email works as the name, and its case does not matter when signing in. **Every password needs 16 characters or more**, or the service refuses to start (the log names the account, never the password). |
+   | `GHUS_ACCESS_USERS` | One login per tester: `amina@example.org:long-random-pass-1,ismail@example.org:long-random-pass-2`. Commas between people, the first colon between the name and the password. An email works as the name, and its case does not matter when signing in. **Every password needs 12 characters or more**, or the service refuses to start (the log names the account, never the password). |
 
    Add one more variable yourself (Environment → Add Environment Variable):
 
@@ -161,7 +161,7 @@ Release when Monitor shows no run going.
 
 ## 7. Login protection
 
-- Passwords: 16 characters or more, compared in constant time; an unknown name
+- Passwords: 12 characters or more, compared in constant time; an unknown name
   takes as long to refuse as a known one.
 - Wrong passwords: 5 different wrong passwords for one name, or 20 from one
   address, within 15 minutes lock that name or address for the rest of the

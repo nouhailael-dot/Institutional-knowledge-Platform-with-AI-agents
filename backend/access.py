@@ -47,7 +47,7 @@ from starlette.responses import PlainTextResponse
 
 OPEN_PATHS = frozenset({"/api/health"})
 REALM = 'Basic realm="GHUS Compass", charset="UTF-8"'
-MIN_PASSWORD_LENGTH = 16
+MIN_PASSWORD_LENGTH = 12
 UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 WINDOW_SECONDS = 15 * 60

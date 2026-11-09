@@ -17,7 +17,7 @@ where things live differs:
 
 It refuses to start when the disk is not mounted, so a missing disk never
 quietly puts Review decisions somewhere a redeploy wipes, and when a login's
-password is shorter than 16 characters. Nothing is printed that holds a secret.
+password is shorter than 12 characters. Nothing is printed that holds a secret.
 
 Moving a Review store in (10 Nov 2026): upload it next to the store as
 ``review-shared.sqlite3.incoming`` and restart the service. Before the app
