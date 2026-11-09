@@ -1243,6 +1243,8 @@ function SourcesHistory({kind,r,profile,bare}){
   </div>`;
 }
 
+// Directory Edit stays hidden until its Save writes through the backend (10 Nov 2026).
+const EDIT_SAVES=false;
 function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],children,options,layout,tags,meta}){
   const [editing,setEditing]=useState(false);
   const [deleting,setDeleting]=useState(false);
@@ -1256,8 +1258,11 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <button class="backlink" onClick=${onBack}>← Back to results</button>
       <span style=${{display:"inline-flex",gap:"8px"}}>
-        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
-        ${!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
+        ${/* 10 Nov 2026, team trial: no button that cannot finish. Edit returns once
+           saving goes through the backend's approved writer; Delete is offered
+           only where it works (organizations). */ ""}
+        ${EDIT_SAVES&&!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
+        ${kind==="actor"&&!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
           onClick=${()=>setDeleting(true)}>Delete</button>`}
       </span>
     </div>
@@ -2842,8 +2847,8 @@ function Browse(){
   const V={actors:Actors,hubs:Hubs,events:Events,people:People}[k];
   return html`<div>
     <h1 class="hero-h">Ecosystem Directory</h1>
-    <p class="start-lead">Find verified organizations, hubs, people, and events. View and edit profiles,
-      add GHUS Notes, and record team engagement.</p>
+    <p class="start-lead">Find verified organizations, hubs, people, and events, and open their
+      profiles.</p>
     <div class="subnav">
       ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${label}</button>`)}

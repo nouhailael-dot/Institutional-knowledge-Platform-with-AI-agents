@@ -60,3 +60,10 @@ test("the calendar is COMPASS's own, in English, Sunday first, never the browser
   const source = fs.readFileSync(new URL('../frontend/dates.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /type="date"|showPicker/);
 });
+
+test('the Directory offers no button that cannot finish (10 Nov 2026)', () => {
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /const EDIT_SAVES=false;/);
+  assert.match(page, /\$\{EDIT_SAVES&&!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=\$\{\(\)=>setEditing\(true\)\}>Edit<\/button>`\}/);
+  assert.match(page, /\$\{kind==="actor"&&!editing&&!deleting&&!removed&&html`<button class="example danger"/);
+});

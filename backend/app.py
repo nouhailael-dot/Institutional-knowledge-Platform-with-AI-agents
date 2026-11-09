@@ -91,7 +91,12 @@ def _local_review_demo_enabled() -> bool:
 
 @lru_cache(maxsize=1)
 def review_store():
-    return ReviewStore(enable_test_canonical=_local_review_demo_enabled())
+    from src.trial import trial_start
+    store = ReviewStore(enable_test_canonical=_local_review_demo_enabled())
+    # The hosted trial's clean start: each sync sets aside what came before it.
+    start = trial_start()
+    store.trial_cutoff = start.timestamp() if start else None
+    return store
 
 
 def review_source_store():
@@ -534,8 +539,12 @@ def map_session():
 
 @app.get("/api/maps")
 def maps_recent():
+    from src.trial import trial_start
     enabled, reason = research_availability()
     maps = map_store().recent()
+    # The hosted trial lists only the maps made since it started (src.trial).
+    if (start := trial_start()) is not None:
+        maps = [m for m in maps if float(m.get("created") or 0) >= start.timestamp()]
     # Records each map sent to Review Results that nobody has decided yet (Dashboard).
     try:
         pending = review_store().pending_by_run([m["id"] for m in maps])
@@ -567,23 +576,13 @@ def dashboard_directory_activity(days: int = Query(30, ge=1, le=366)):
 
 @app.get("/api/dashboard/start")
 def dashboard_start():
-    """When the Dashboard starts counting (GHUS_DASHBOARD_SINCE, an ISO date or time).
+    """When the Dashboard starts counting: the hosted trial's start (src.trial).
 
-    The hosted team trial (10 Nov 2026) starts its Dashboard clean: spending,
-    counts and recent items only from that moment. Earlier work stays in the
-    database and on its own pages. Not set: no start, everything counts.
+    Spending, counts and recent items only from that moment; earlier work stays
+    in the database and on its own pages. Not set: no start, everything counts.
     """
-    from datetime import datetime, timezone
-    raw = os.environ.get("GHUS_DASHBOARD_SINCE", "").strip()
-    if not raw:
-        return {"since": None}
-    try:
-        when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        logger.warning("GHUS_DASHBOARD_SINCE is not an ISO date or time; the Dashboard counts everything")
-        return {"since": None}
-    when = when if when.tzinfo else when.replace(tzinfo=timezone.utc)
-    return {"since": when.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")}
+    from src.trial import iso, trial_start
+    return {"since": iso(trial_start())}
 
 
 @app.get("/api/dashboard/spending")

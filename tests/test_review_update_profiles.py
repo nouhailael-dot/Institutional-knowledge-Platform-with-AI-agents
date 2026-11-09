@@ -358,3 +358,29 @@ def test_the_trial_start_sets_aside_everything_pending_before_it(store, capsys):
     assert set(_listed(store)) == {early, late}
     assert trial.default_db({"GHUS_DATA_DIR": "/var/data"}).replace("\\", "/") \
         == "/var/data/review-store/review-shared.sqlite3"
+
+
+def test_the_trial_start_hides_older_items_after_every_sync(store):
+    # 10 Nov 2026: a fresh hosted store syncs every pending item; those raised
+    # before GHUS_TRIAL_START are set aside, newer ones stay listed.
+    from src.trial import SET_ASIDE_REASON
+
+    old, new = "postgres:review_item:old", "postgres:review_item:new"
+    store.sync_external_candidates([_card(old, "r0", kind="review_item", created=1_000.0),
+                                    _card(new, "r1", kind="review_item", created=3_000.0)])
+    assert store.set_aside_before(2_000.0, reason=SET_ASIDE_REASON) == 1
+    assert _listed(store) == [new]
+    store.sync_external_candidates([_card(old, "r0", kind="review_item", created=1_000.0)])
+    assert store.set_aside_before(2_000.0, reason=SET_ASIDE_REASON) == 0     # already aside
+    assert _listed(store) == [new]
+    assert store.restore_set_aside(SET_ASIDE_REASON) == 1
+
+
+def test_a_sync_sets_aside_older_items_in_its_own_transaction(store):
+    # No window in which a fresh store lists everything (10 Nov 2026).
+    old, new = "postgres:review_item:old2", "postgres:review_item:new2"
+    store.trial_cutoff = 2_000.0
+    store.sync_external_candidates([_card(old, "r0", kind="review_item", created=1_000.0),
+                                    _card(new, "r1", kind="review_item", created=3_000.0)])
+    assert _listed(store) == [new]
+    assert store.get(_external_candidate_id(old))["folded_into"] == "set_aside:before_trial_2026-11"

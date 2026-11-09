@@ -636,6 +636,9 @@ class ReviewStore:
         self.path = Path(path or os.environ.get("REVIEW_STORE_DB") or root / ".review" / "review.sqlite3")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.enable_test_canonical = enable_test_canonical
+        # Epoch seconds of the hosted trial's start (src.trial), set by the app;
+        # each sync then sets aside what was raised before it.
+        self.trial_cutoff: float | None = None
         self._initialize()
 
     def persistence_warnings(self) -> list[str]:
@@ -871,7 +874,9 @@ class ReviewStore:
                 result = _loads(run["result"], {})
                 for entity_type, source_index, payload in _normalized_entities(result):
                     candidate_id = _candidate_id(run["id"], entity_type, source_index)
-                    now = _now()
+                    # When the map made it, not when this store first saw it: a
+                    # trial start (src.trial) must not take an old map for new.
+                    now = float(run["created"] or 0) or _now()
                     cursor = db.execute(
                         "INSERT OR IGNORE INTO review_candidate "
                         "(candidate_id,source_run_id,source_index,source_description,entity_type,"
@@ -891,6 +896,7 @@ class ReviewStore:
                             (_json(_evidence(payload)), _json(_metadata(payload, result)),
                              _duplicate_state(payload), candidate_id),
                         )
+            self._set_aside_before_trial(db)
         return inserted
 
     def sync_external_candidates(self, candidates: list[dict[str, Any]],
@@ -1012,7 +1018,20 @@ class ReviewStore:
                     "AND status='pending_review' AND folded_into IS NULL",
                     (str(reason or "retired"), _external_candidate_id(str(key))),
                 )
+            self._set_aside_before_trial(db)
         return inserted
+
+    def _set_aside_before_trial(self, db) -> int:
+        """In the sync's own transaction: no list ever shows an item from before
+        the trial start (src.trial), not even during a fresh store's first sync."""
+        if getattr(self, "trial_cutoff", None) is None:
+            return 0
+        from src.trial import SET_ASIDE_REASON
+        return db.execute(
+            "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+            "AND folded_into IS NULL AND created_at < ?",
+            (self.SET_ASIDE_PREFIX + SET_ASIDE_REASON, float(self.trial_cutoff)),
+        ).rowcount
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> dict[str, Any]:
@@ -1784,6 +1803,21 @@ class ReviewStore:
                     (label, str(candidate_id)),
                 ).rowcount
         return changed
+
+    def set_aside_before(self, cutoff: float, *, reason: str) -> int:
+        """Set aside every listed pending item raised before ``cutoff`` (epoch seconds).
+
+        The hosted trial's clean start (src.trial): run after each sync, so an
+        old item reaching a fresh store never shows. Decided items are never
+        touched; ``restore_set_aside(reason)`` lists them again.
+        """
+        label = self.SET_ASIDE_PREFIX + _clean_text(reason, required=True, max_length=80)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return db.execute(
+                "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                "AND folded_into IS NULL AND created_at < ?", (label, float(cutoff)),
+            ).rowcount
 
     def restore_set_aside(self, reason: str) -> int:
         """List again every item set aside under ``reason``."""

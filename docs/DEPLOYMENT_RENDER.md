@@ -58,19 +58,25 @@ a URL.
 
    | Key | Value |
    |---|---|
-   | `GHUS_DASHBOARD_SINCE` | The trial's first day, e.g. `2026-11-10` (midnight UTC) or `2026-11-10T09:00:00+01:00`. The Dashboard's spending, counts and recent items start there, at $0 and empty. Earlier work stays in the database and on Monitor and Update. Leave it out to count everything. |
+   | `GHUS_TRIAL_START` | The moment the trial starts, e.g. `2026-11-09T19:00:00Z` (UTC), or a date alone (`2026-11-10` = midnight UTC). From then on every tester starts clean: Review lists only what was raised after it (older pending items are set aside on each sync: kept, undecided, reversible), the Dashboard's spending, counts and recent items start at $0 and empty, and Explore and Map lists only maps made after it. Earlier work stays in the database. The older name `GHUS_DASHBOARD_SINCE` still works. |
 
 4. **Check Auto-Deploy is Off:** the service → Settings → Build & Deploy →
    Auto-Deploy = **Off**. Then a push never changes the hosted app by itself.
 5. **First deploy.** The first build takes about 8–12 minutes (PyTorch and the
    model). The log ends with `listening on : 0.0.0.0:10000` and
    `Application startup complete`.
-6. **Move the Review store to the disk.** This step must come before anyone
-   reviews on the hosted app; see section 4.
+6. **Moving the local Review store is optional** with `GHUS_TRIAL_START`
+   set: everything from before the trial is set aside anyway. Move it (section
+   4) only to keep its history (decisions and set-asides) on the host.
 7. **Open the URL** (`https://ghus-compass.onrender.com`, or the name Render
    gives it), sign in, and run the checks in section 6.
 
-## 4. Moving Review decisions to the host (once)
+## 4. Moving Review decisions to the host (once, optional)
+
+With `GHUS_TRIAL_START` set, the hosted Review starts empty without this.
+To list the pre-trial items again later, remove `GHUS_TRIAL_START` and run
+`python -m scripts.set_aside_before_trial --restore --live` in the service's
+Shell.
 
 The local shared server keeps Review decisions in
 `C:\Users\Ismail\GHUS-data\review-store\review-shared.sqlite3`. The host needs

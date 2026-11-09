@@ -272,3 +272,34 @@ def test_the_dashboard_start_comes_from_the_host(monkeypatch):
     assert client.get("/api/dashboard/start").json() == {"since": "2026-11-10T08:30:00Z"}
     monkeypatch.setenv("GHUS_DASHBOARD_SINCE", "next week")
     assert client.get("/api/dashboard/start").json() == {"since": None}
+
+
+def test_one_trial_start_setting_and_its_older_name():
+    from src.trial import trial_start
+
+    assert trial_start({}) is None
+    assert trial_start({"GHUS_TRIAL_START": "2026-11-10"}).isoformat() == "2026-11-10T00:00:00+00:00"
+    assert trial_start({"GHUS_DASHBOARD_SINCE": "2026-11-10T09:30:00+01:00"}).isoformat() \
+        == "2026-11-10T08:30:00+00:00"
+    assert trial_start({"GHUS_TRIAL_START": "2026-11-11",
+                        "GHUS_DASHBOARD_SINCE": "2026-11-10"}).day == 11
+    assert trial_start({"GHUS_TRIAL_START": "tomorrow"}) is None
+
+
+def test_explore_and_map_lists_only_maps_made_since_the_trial_start(monkeypatch):
+    import backend.app as app_module
+
+    class Maps:
+        def recent(self):
+            return [{"id": "old", "created": 1_793_000_000.0}, {"id": "new", "created": 1_794_500_000.0}]
+
+    monkeypatch.delenv("GHUS_REQUIRE_LOGIN", raising=False)
+    monkeypatch.delenv("GHUS_ACCESS_USERS", raising=False)
+    monkeypatch.setattr(app_module, "map_store", lambda: Maps())
+    client = TestClient(app_module.app)
+    monkeypatch.delenv("GHUS_TRIAL_START", raising=False)
+    monkeypatch.delenv("GHUS_DASHBOARD_SINCE", raising=False)
+    assert [m["id"] for m in client.get("/api/maps").json()["maps"]] == ["old", "new"]
+    monkeypatch.setenv("GHUS_TRIAL_START", "2026-11-10")      # 1_794_268_800
+    assert [m["id"] for m in client.get("/api/maps").json()["maps"]] == ["new"]
+    assert client.get("/api/dashboard/start").json() == {"since": "2026-11-10T00:00:00Z"}
