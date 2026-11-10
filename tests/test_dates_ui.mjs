@@ -61,9 +61,16 @@ test("the calendar is COMPASS's own, in English, Sunday first, never the browser
   assert.doesNotMatch(source, /type="date"|showPicker/);
 });
 
-test('the Directory offers no button that cannot finish (10 Nov 2026)', () => {
+test('Directory Edit saves through the backend writer; Delete stays for organizations (10 Nov 2026)', () => {
   const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
-  assert.match(page, /const EDIT_SAVES=false;/);
-  assert.match(page, /\$\{EDIT_SAVES&&!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=\$\{\(\)=>setEditing\(true\)\}>Edit<\/button>`\}/);
+  assert.doesNotMatch(page, /EDIT_SAVES/);
+  assert.doesNotMatch(page, /Saving isn't connected yet/);
+  assert.match(page, /\$\{!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=\$\{\(\)=>\{setSaved\(null\);setEditing\(true\);\}\}>Edit<\/button>`\}/);
+  assert.match(page, /fetch\(`\/api\/browse\/\$\{EDIT_PATHS\[kind\]\}\/\$\{record\.id\}\/edit`/);
+  assert.match(page, /const EDIT_PATHS=\{actor:"actors",event:"events",person:"people",hub:"hubs"\};/);
   assert.match(page, /\$\{kind==="actor"&&!editing&&!deleting&&!removed&&html`<button class="example danger"/);
+  // Only changed boxes are sent; read-only boxes never are.
+  assert.match(page, /editable\.filter\(\(\[k\]\)=>draft\[k\]!==start\[k\]\)/);
+  // Every tab keeps the saved values on screen and reads its list again.
+  assert.equal((page.match(/onSaved=\$\{v=>\{setSel\(x=>\(\{\.\.\.x,\.\.\.v\}\)\);setVersion\(n=>n\+1\);\}\}/g) || []).length, 4);
 });

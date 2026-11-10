@@ -473,6 +473,45 @@ def directory_restore(actor_id: str, payload: DirectoryDecision):
     return _directory_decision("restore_to_directory", actor_id, payload)
 
 
+class DirectoryEdit(BaseModel):
+    changes: dict = {}
+    ghus_notes: str | None = None
+
+
+_DIRECTORY_EDIT_KINDS = {"actors": "actor", "events": "event", "people": "person", "hubs": "hub"}
+
+
+@app.post("/api/browse/{kind}/{record_id}/edit")
+def directory_edit(kind: str, record_id: str, payload: DirectoryEdit):
+    """Save an edit made in the Ecosystem Directory (10 Nov 2026).
+
+    The platform never writes the record itself: the backend's approved writer
+    (decisions.record_directory_edit, through the admission process) checks
+    every field and writes them in one transaction, with the person's name.
+    """
+    entity_type = _DIRECTORY_EDIT_KINDS.get(kind)
+    if entity_type is None:
+        raise HTTPException(status_code=404, detail="Unknown record type.")
+    if not payload.changes and payload.ghus_notes is None:
+        raise HTTPException(status_code=400, detail="Nothing to save: no field was changed.")
+    bridge = review_admission_bridge()
+    if not bridge.configured:
+        raise HTTPException(status_code=503, detail=(
+            "Saving isn't set up on this computer: Review's decision writer is not configured."))
+    try:
+        outcome = bridge.apply({
+            "decision_kind": "edit_directory_record", "entity_type": entity_type,
+            "entity_id": record_id, "changes": payload.changes,
+            "ghus_notes": payload.ghus_notes, "reviewer": current_user(),
+            "idempotency_key": f"directory:edit:{record_id}:{time.time_ns()}"})
+    except AdmissionBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # The lists are read again; an organization's name also shows on hubs and people.
+    for cached in (_actors, _hubs, _events, _people):
+        cached.cache_clear()
+    return outcome
+
+
 @app.get("/api/browse/actors/{actor_id}/profile")
 def browse_actor_profile(actor_id: str):
     return JSONResponse(jsonable_encoder(browse.load_actor_profile(actor_id)))

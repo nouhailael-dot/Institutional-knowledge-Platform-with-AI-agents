@@ -1243,10 +1243,10 @@ function SourcesHistory({kind,r,profile,bare}){
   </div>`;
 }
 
-// Directory Edit stays hidden until its Save writes through the backend (10 Nov 2026).
-const EDIT_SAVES=false;
-function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],children,options,layout,tags,meta}){
+function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[],children,options,layout,tags,meta}){
   const [editing,setEditing]=useState(false);
+  const [saved,setSaved]=useState(null);
+  useEffect(()=>{setSaved(null);setEditing(false);},[r.id]);
   const [deleting,setDeleting]=useState(false);
   const [profile,setProfile]=useState(null);
   const removed=statusOf(r)==="Deleted";
@@ -1258,23 +1258,26 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <button class="backlink" onClick=${onBack}>← Back to results</button>
       <span style=${{display:"inline-flex",gap:"8px"}}>
-        ${/* 10 Nov 2026, team trial: no button that cannot finish. Edit returns once
-           saving goes through the backend's approved writer; Delete is offered
-           only where it works (organizations). */ ""}
-        ${EDIT_SAVES&&!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
+        ${/* Delete is offered only where it works: organizations (10 Nov 2026). */ ""}
+        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>{setSaved(null);setEditing(true);}}>Edit</button>`}
         ${kind==="actor"&&!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
           onClick=${()=>setDeleting(true)}>Delete</button>`}
       </span>
     </div>
     ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
       onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
+    ${saved&&html`<div class="selnote" role="status">${saved}</div>`}
     <h2>${r.name}</h2>
     ${layout==="card"&&tags}
     ${layout==="card"&&meta&&html`<div class="mmeta" style=${{margin:"4px 0 8px"}}>${meta}</div>`}
     ${layout!=="card"&&subtitle&&html`<div class="loc">${subtitle}</div>`}
     <div class="badges"><${RecordBadges} r=${r}/></div>
     ${editing
-      ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}/>`
+      ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}
+          onSaved=${(values,outcome)=>{setEditing(false);
+            setSaved(outcome&&outcome.status==="unchanged"?"Nothing changed: the record already had these values."
+              :"Saved. The record is updated in the Ecosystem Directory.");
+            onSaved&&onSaved(values);}}/>`
       : layout==="card"
       ? html`<div class="pf-card">${body}${children}
           <details class="mwhy-box pf-origin">
@@ -1295,12 +1298,15 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
   </div>`;
 }
 
-/* ------------------------------------------------- Edit — save not wired yet
+/* ------------------------------------------------- Edit
    Every field the database holds, one column, in groups (asked for on 27 Oct
-   2026). Saving needs the backend's approved writers (facts, verification
-   history, notes), so it stays off and says so; nothing typed here is stored. */
-const RECORD_STATUSES=["verified","pending review","parked","rejected"];
+   2026). Save (10 Nov 2026) sends only the changed fields to the backend's
+   approved writer (decisions.record_directory_edit, through Review's admission
+   process): it checks each one and writes them together, with the person's
+   name; an organization's change is also kept in its fact history. Read-only
+   boxes come from elsewhere: links, sectors, and the status (Review, Delete). */
 const FREQUENCIES=["One-time","Annual","Every two years","Twice a year","Quarterly","Monthly","Irregular","Not found"];
+const EDIT_PATHS={actor:"actors",event:"events",person:"people",hub:"hubs"};
 // [field, label, type, options-key]. Types: text, long, date, select, readonly.
 const EDIT_GROUPS={
   actor:[
@@ -1326,47 +1332,70 @@ const EDIT_GROUPS={
       ["funding_summary","Funding","long"],["constraints_summary","Constraints","long"]]],
   ],
   event:[
-    ["Identity",[["name","Name"],["event_type","Type"],["organizer","Organizer"],["website","Website"]]],
+    ["Identity",[["name","Name"],["event_type","Type"],["organizer","Organizer","readonly"],["website","Website"]]],
     ["When and where",[["start_date","Start date","date"],["end_date","End date","date"],
       ["recurring_pattern","Frequency","select","frequencies"],["location","Location"],["access_type","Access"]]],
     ["What it covers",[["description","Description","long"],["thematic_focus","Topic","long"],
       ["expected_attendance","Scale"],["sponsoring_orgs","Sponsors","long"]]],
   ],
   person:[
-    ["Identity",[["name","Name"],["title","Title"],["organizations","Organization"],
-      ["profile_url","Public profile"],["orcid","ORCID"]]],
-    ["Expertise",[["topics","Sector","readonly"],["research_areas","Research areas","long"]]],
+    ["Identity",[["name","Name"],["title","Title"],["organizations","Organization","readonly"],
+      ["profile_url","Public profile","readonly"],["orcid","ORCID"]]],
+    ["Expertise",[["topics","Sector","readonly"],["research_areas","Research areas","readonly"]]],
   ],
 };
+// GHUS Notes are kept for organizations and events (people have no notes box yet).
+const HAS_NOTES={actor:true,event:true};
 const asText=v=>Array.isArray(v)?v.join(", "):(v??"");
-function RecordEditor({kind,record,options,onClose}){
+const editValue=(type,v)=>type==="date"?String(v||"").slice(0,10):String(asText(v));
+const plainSaveError=m=>{const t=String(m||"").replace(/^.*?(AdmissionValidationError|ValueError):\s*/,"")
+  .replace(/^GHUS rejected the decision; no local final decision was recorded\.\s*/,"");
+  return t&&t[0].toUpperCase()+t.slice(1);};
+function RecordEditor({kind,record,options,onClose,onSaved}){
   const fields=EDIT_GROUPS[kind].flatMap(([,fs])=>fs);
+  const editable=fields.filter(([,,t])=>t!=="readonly");
   const choices={...options,frequencies:FREQUENCIES};
-  const initial=()=>Object.fromEntries(fields.map(([k])=>[k,String(asText(record[k]))]));
-  const firstStatus=()=>statusOf(record).toLowerCase();
+  const initial=()=>Object.fromEntries(fields.map(([k,,t])=>[k,editValue(t,record[k])]));
   const [draft,setDraft]=useState(initial);
-  const [status,setStatus]=useState(firstStatus);
   const [notes,setNotes]=useState(record.ghus_notes||"");
-  const [attended,setAttended]=useState(!!record.attended);
-  const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState(null);
+  const set=(k,v)=>{setErr(null);setDraft(d=>({...d,[k]:v}));};
+  const start=initial();
+  const changes=Object.fromEntries(editable.filter(([k])=>draft[k]!==start[k]).map(([k])=>[k,draft[k]]));
+  const notesChanged=!!HAS_NOTES[kind]&&notes.trim()!==String(record.ghus_notes||"").trim();
+  const count=Object.keys(changes).length+(notesChanged?1:0);
+  async function save(){
+    if(!count||saving) return;
+    setSaving(true); setErr(null);
+    try{
+      const res=await fetch(`/api/browse/${EDIT_PATHS[kind]}/${record.id}/edit`,{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({changes,ghus_notes:notesChanged?notes:null})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(plainSaveError((d.detail&&d.detail.message)||d.detail)||"Could not save.");
+      onSaved&&onSaved({...changes,...(notesChanged?{ghus_notes:notes.trim()}:{})},d);
+    }catch(e){ setErr(String(e.message||e)); setSaving(false); }
+  }
   const input=([k,label,type,opts])=>{
     if(type==="readonly") return html`<div class="edit-ro">${draft[k]||html`<span class="dash">—</span>`}</div>`;
-    if(type==="long") return html`<textarea class="field edit-long" aria-label=${label}
+    if(type==="long") return html`<textarea class="field edit-long" aria-label=${label} disabled=${saving}
       rows=${Math.min(10,Math.max(2,Math.ceil((draft[k]||"").length/90)))}
       value=${draft[k]} onInput=${e=>set(k,e.target.value)}></textarea>`;
-    if(type==="date") return html`<${DateInput} ariaLabel=${label} value=${(draft[k]||"").slice(0,10)} onChange=${v=>set(k,v)}/>`;
+    if(type==="date") return html`<${DateInput} ariaLabel=${label} value=${draft[k]} onChange=${v=>set(k,v||"")}/>`;
     if(type==="select"){
       const list=choices[opts]||[];
-      return html`<select class="field" aria-label=${label} value=${draft[k]} onChange=${e=>set(k,e.target.value)}>
+      return html`<select class="field" aria-label=${label} value=${draft[k]} disabled=${saving} onChange=${e=>set(k,e.target.value)}>
         ${!list.includes(draft[k])&&html`<option value=${draft[k]}>${draft[k]||"Not recorded"}</option>`}
         ${list.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`;
     }
-    return html`<input class="field" type="text" aria-label=${label} value=${draft[k]} onInput=${e=>set(k,e.target.value)}/>`;
+    return html`<input class="field" type="text" aria-label=${label} value=${draft[k]} disabled=${saving}
+      onInput=${e=>set(k,e.target.value)}/>`;
   };
   return html`<div class="card pad fade edit-form">
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <strong>Edit ${kind==="actor"?"organization":kind}</strong>
-      <button class="example" type="button" onClick=${onClose}>Close</button>
+      <button class="example" type="button" disabled=${saving} onClick=${onClose}>Close</button>
     </div>
     ${EDIT_GROUPS[kind].map(([group,fs])=>html`<div class="edit-group" key=${group}>
       <div class="edit-h">${group}${fs.every(([,,t])=>t==="readonly")?html` <span class="hint" style=${{margin:0}}>read only</span>`:""}</div>
@@ -1374,26 +1403,21 @@ function RecordEditor({kind,record,options,onClose}){
     </div>`)}
     <div class="edit-group">
       <div class="edit-h">Review</div>
-      <div class="edit-field"><label>Status</label>
-        <select class="field" value=${status} onChange=${e=>setStatus(e.target.value)}>
-          ${RECORD_STATUSES.map(v=>html`<option key=${v} value=${v}>${v[0].toUpperCase()+v.slice(1)}</option>`)}
-        </select></div>
+      <div class="edit-field"><label>Status</label><div class="edit-ro">${statusOf(record)}
+        <span class="hint" style=${{margin:"0 0 0 8px"}}>changed in Review Results, or with Delete</span></div></div>
       <div class="edit-field"><label>Source</label><div class="edit-ro">${record.origin||html`<span class="dash">—</span>`}</div></div>
       <div class="edit-field"><label>Owner</label><div class="edit-ro">${ownerOf(record)}</div></div>
-      ${kind==="event"&&html`<div class="edit-field"><label>Attended</label>
-        <label class="check"><input type="checkbox" checked=${attended} onChange=${e=>setAttended(e.target.checked)}/>
-          GHUS attended this event</label></div>`}
-      <div class="edit-field"><label>GHUS Notes</label>
-        <textarea class="field edit-long" rows="4" value=${notes} onInput=${e=>setNotes(e.target.value)}
+      ${HAS_NOTES[kind]&&html`<div class="edit-field"><label>GHUS Notes</label>
+        <textarea class="field edit-long" rows="4" value=${notes} disabled=${saving} onInput=${e=>{setErr(null);setNotes(e.target.value);}}
           placeholder=${kind==="event"
             ?"Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
-            :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea></div>
+            :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea></div>`}
     </div>
+    ${err&&html`<div class="whynot" role="alert">${err}</div>`}
     <div class="attach-row" style=${{marginTop:"12px"}}>
-      <button class="btn" type="button" disabled=${true} title="Saving is not connected yet">Save</button>
-      <button class="example" type="button" onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");
-        setAttended(!!record.attended);setStatus(firstStatus());}}>Reset</button>
-      <span class="hint" style=${{margin:0}}>Saving isn't connected yet: edits here are not stored.</span>
+      <button class="btn" type="button" disabled=${!count||saving} onClick=${save}>${saving?html`<span class="spin"></span> Saving…`:"Save"}</button>
+      <button class="example" type="button" disabled=${saving||!count} onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");setErr(null);}}>Reset</button>
+      <span class="hint" style=${{margin:0}}>${count?`${count} change${count>1?"s":""} not saved yet. Saving updates the record for everyone.`:"Change a box, then Save. Saving updates the record for everyone."}</span>
     </div>
   </div>`;
 }
@@ -1429,6 +1453,7 @@ function Actors({focus}){
   const longText=v=>isEmpty(v)?null:html`<${RichText} text=${v} limit=${320}/>`;
   const us=!!sel&&(!sel.country||sel.country===US);
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
+    onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     layout="card"
     tags=${html`<div class="mtags">${typeOf(sel)&&html`<span class="mtag cat">${typeOf(sel)}</span>`}
       ${(sel.sectors||[]).map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`}
@@ -1488,7 +1513,8 @@ function Actors({focus}){
 }
 
 function Hubs(){
-  const data=useOnce(()=>api("/api/browse/hubs"));
+  const [version,setVersion]=useState(0);
+  const data=useOnce(()=>api("/api/browse/hubs"),[version]);
   const actorsData=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
@@ -1499,7 +1525,7 @@ function Hubs(){
   const hubRegion=h=>regionOfState(hubState(h));
   if(sel){
     const related=(actorsData?.actors||[]).filter(a=>(a.hubs||[]).includes(sel.name));
-    return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)}
+    return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
       subtitle=${[sectorOf(sel),[sel.primary_city,sel.state].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
       glance=${[["Sector",sectorOf(sel)],["Organizations",String(sel.actor_count??related.length)],
         ["Center",[sel.primary_city,sel.state,sel.country].filter(Boolean).join(", ")],
@@ -1550,7 +1576,8 @@ function eventOrder(e){
   return d>=t?[0,e.start_date]:[2,String(99999999-+e.start_date.slice(0,10).replace(/-/g,""))];
 }
 function Events({focus}){
-  const data=useOnce(()=>api("/api/browse/events"));
+  const [version,setVersion]=useState(0);
+  const data=useOnce(()=>api("/api/browse/events"),[version]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.events,setSel);
   if(!data) return html`<${Loading}/>`;
@@ -1561,7 +1588,7 @@ function Events({focus}){
   const dated=events.filter(e=>e.start_date).length;
   const eventState=e=>stateInText(e.location);
   const eventRegion=e=>regionOfState(eventState(e));
-  if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)}
+  if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     subtitle=${[capFirst(sel.event_type),sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
     glance=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],["When",when(sel)==="No date"?null:when(sel)],
       ["Location",sel.location],["Frequency",sel.recurring_pattern],["Website",link(sel.website)]]}
@@ -1602,13 +1629,14 @@ function Events({focus}){
 }
 
 function People({focus}){
-  const data=useOnce(()=>api("/api/browse/people"));
+  const [version,setVersion]=useState(0);
+  const data=useOnce(()=>api("/api/browse/people"),[version]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.people,setSel);
   if(!data) return html`<${Loading}/>`;
   if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {people,options}=data;
-  if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)}
+  if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
     glance=${[["Title",sel.title],["Organization",sel.organizations.join(", ")],["State",sel.states.join(", ")]]}
     sections=${[
@@ -2847,8 +2875,8 @@ function Browse(){
   const V={actors:Actors,hubs:Hubs,events:Events,people:People}[k];
   return html`<div>
     <h1 class="hero-h">Ecosystem Directory</h1>
-    <p class="start-lead">Find verified organizations, hubs, people, and events, and open their
-      profiles.</p>
+    <p class="start-lead">Find verified organizations, hubs, people, and events. View and edit
+      profiles, and add GHUS Notes.</p>
     <div class="subnav">
       ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${label}</button>`)}

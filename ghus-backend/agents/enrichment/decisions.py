@@ -469,6 +469,233 @@ def record_ghus_notes(
     return True
 
 
+# --- Directory Edit (10 Nov 2026) ---------------------------------------------
+# A GHUS person corrects a record from the Ecosystem Directory. Form field ->
+# column, per record type; nothing outside these lists is ever written.
+DIRECTORY_EDIT_TABLES = {"actor": ("actor", "actor_id"), "event": ("event", "event_id"),
+                         "person": ("person", "person_id"), "hub": ("hub", "hub_id")}
+DIRECTORY_EDIT_COLUMNS = {
+    "actor": {"name": "name", "alt_names": "alternate_names", "actor_type": "actor_category",
+              "category_type": "category_type", "website": "website", "city": "location_city",
+              "state": "state_code", "country_raw": "country", "region": "region_code",
+              "description": "description"},
+    "event": {k: k for k in ("name", "event_type", "website", "start_date", "end_date",
+                             "recurring_pattern", "location", "access_type", "description",
+                             "thematic_focus", "expected_attendance", "sponsoring_orgs")},
+    "person": {"name": "full_name", "title": "title", "orcid": "orcid"},
+    "hub": {k: k for k in ("name", "official_websites", "primary_city", "state", "country",
+                           "description", "strategic_value_summary", "core_topic_strengths",
+                           "programs_and_labs_narrative", "talent_narrative",
+                           "research_infrastructure_narrative", "industry_integration_narrative",
+                           "international_engagement_narrative", "funding_summary",
+                           "constraints_summary")},
+}
+# An organization's descriptive fields live in actor_fact (Architecture V2), not
+# in columns: an edit appends a GHUS fact, which the Directory reads first.
+DIRECTORY_EDIT_ACTOR_FACTS = ("primary_technical_focus", "technical_approach",
+                              "current_activities", "technology_ip_notes", "key_constraints",
+                              "funding_summary", "primary_lifecycle_role")
+DIRECTORY_EDIT_FACT_TYPE = "ghus_edit"
+_DIRECTORY_SHORT = {"name", "full_name", "title", "orcid", "website", "location_city", "country",
+                    "category_type", "event_type", "recurring_pattern", "location",
+                    "access_type", "expected_attendance", "primary_city", "state",
+                    "primary_lifecycle_role"}
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _directory_columns(session, table: str) -> set[str]:
+    return {row[0] for row in session.execute(text(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name=:t"), {"t": table}).all()}
+
+
+def _website_domain(url: str | None) -> str | None:
+    from urllib.parse import urlparse
+
+    if not url:
+        return None
+    host = urlparse(url if "//" in url else f"https://{url}").hostname or ""
+    host = host.lower().removeprefix("www.")
+    return host or None
+
+
+def _directory_value(session, entity_type: str, column: str, raw) -> object:
+    """The value to store for one edited field; ValueError explains a refusal."""
+    value = raw if isinstance(raw, list) else " ".join(str(raw or "").split()) \
+        if column in _DIRECTORY_SHORT else str(raw or "").strip()
+    if column in ("name", "full_name") and not value:
+        raise ValueError("the name cannot be empty")
+    if column == "alternate_names":
+        items = raw if isinstance(raw, list) else str(raw or "").split(",")
+        names = [" ".join(str(n).split()) for n in items]
+        return [n[:300] for n in dict.fromkeys(n for n in names if n)] or None
+    if not value:
+        return None
+    limit = 300 if column in _DIRECTORY_SHORT else 5000
+    if len(value) > limit:
+        raise ValueError(f"{column} is at most {limit} characters")
+    if column in ("start_date", "end_date", "next_date"):
+        if not _ISO_DATE.match(value):
+            raise ValueError(f"{column} must be a date (YYYY-MM-DD)")
+        datetime.strptime(value, "%Y-%m-%d")
+    if entity_type == "actor" and column == "actor_category":
+        code = session.execute(text(
+            "SELECT category_code FROM actor_category_definition WHERE category_code=:v "
+            "OR display_name=:v OR replace(display_name,'Corporate Actor',"
+            "'Corporate Organization')=:v"), {"v": value}).scalar()
+        if code is None:
+            raise ValueError(f"unknown organization category: {value}")
+        return code
+    if entity_type == "actor" and column == "state_code":
+        code = session.execute(text(
+            "SELECT state_code FROM region_state WHERE state_code=:v OR state_name=:v"),
+            {"v": value}).scalar()
+        if code is None:
+            raise ValueError(f"unknown US state: {value}")
+        return code
+    if entity_type == "actor" and column == "region_code":
+        code = session.execute(text(
+            "SELECT region_code FROM region_definition WHERE region_code=:v OR display_name=:v"),
+            {"v": value}).scalar()
+        if code is None:
+            raise ValueError(f"unknown region: {value}")
+        return code
+    return value
+
+
+def _same(a, b) -> bool:
+    norm = lambda v: None if v in (None, "", []) else (
+        [str(x) for x in v] if isinstance(v, (list, tuple)) else str(v))
+    return norm(a) == norm(b)
+
+
+def record_directory_edit(
+    session,
+    *,
+    entity_type: str,
+    entity_id: str,
+    changes: dict,
+    decided_by: str,
+    ghus_notes: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Apply a GHUS person's corrections to one Directory record (10 Nov 2026).
+
+    Only the fields in DIRECTORY_EDIT_COLUMNS / DIRECTORY_EDIT_ACTOR_FACTS can
+    change, and only to a valid value (a known category, state or region; a real
+    date; a non-empty name). Unchanged fields are skipped. For an organization
+    every changed field is also appended to actor_fact as a GHUS fact
+    (fact_type 'ghus_edit', creator_class 'ghus_human'), so the history keeps
+    who changed what, when and to which value; the descriptive fields live only
+    there. Agents never overwrite a GHUS value (gap-fill only, and
+    append_actor_fact turns their newer value into a pending update).
+    The caller owns the transaction. Returns the changed fields.
+    """
+    if entity_type not in DIRECTORY_EDIT_TABLES:
+        raise ValueError("unsupported record type")
+    if not str(decided_by or "").strip():
+        raise ValueError("decided_by is required")
+    table, key = DIRECTORY_EDIT_TABLES[entity_type]
+    entity_id = str(uuid.UUID(str(entity_id)))
+    allowed = DIRECTORY_EDIT_COLUMNS[entity_type]
+    facts = DIRECTORY_EDIT_ACTOR_FACTS if entity_type == "actor" else ()
+    unknown = sorted(set(changes or {}) - set(allowed) - set(facts))
+    if unknown:
+        raise ValueError(f"these fields cannot be edited here: {', '.join(unknown)}")
+    present = _directory_columns(session, table)
+    current = session.execute(
+        text(f"SELECT * FROM {table} WHERE {key}=CAST(:id AS uuid) FOR UPDATE"),
+        {"id": entity_id}).mappings().first()
+    if current is None:
+        raise ValueError(f"that {entity_type} is not in the database")
+    if current.get("merged_into_actor_id"):
+        raise ValueError("that record was merged into another organization; edit that one instead")
+
+    columns: dict[str, object] = {}
+    for field, raw in (changes or {}).items():
+        if field in facts:
+            continue
+        column = allowed[field]
+        if column == "start_date" and column not in present and "next_date" in present:
+            column = "next_date"
+        if column not in present:
+            continue      # a column this database does not have yet: nothing to write
+        value = _directory_value(session, entity_type, column, raw)
+        if not _same(value, current.get(column)):
+            columns[column] = value
+    if "website" in columns and "website_domain" in present:
+        columns["website_domain"] = _website_domain(columns["website"])
+
+    fact_values: dict[str, object] = {}
+    if facts:
+        shown = session.execute(text(
+            "SELECT DISTINCT ON (fact_key) fact_key, fact_value #>> '{}' AS v FROM actor_fact "
+            "WHERE actor_id=CAST(:id AS uuid) AND topic_id IS NULL AND fact_key = ANY(:keys) "
+            "AND fact_type IN ('legacy_baseline', :edit) "
+            "ORDER BY fact_key, (fact_type = :edit) DESC, created_at DESC"),
+            {"id": entity_id, "keys": list(facts), "edit": DIRECTORY_EDIT_FACT_TYPE},
+        ).mappings().all()
+        before = {r["fact_key"]: r["v"] for r in shown}
+        for field in facts:
+            if field in (changes or {}):
+                value = _directory_value(session, entity_type, field, changes[field])
+                if not _same(value, before.get(field)):
+                    fact_values[field] = value
+
+    notes_changed, notes_value = False, None
+    if ghus_notes is not None and "ghus_notes" in present:
+        notes_value = str(ghus_notes).strip() or None
+        if notes_value and len(notes_value) > GHUS_NOTES_MAX_LENGTH:
+            raise ValueError(f"GHUS notes are at most {GHUS_NOTES_MAX_LENGTH} characters")
+        notes_changed = not _same(notes_value, current.get("ghus_notes"))
+
+    changed = (sorted(set(columns) - {"website_domain"}) + sorted(fact_values)
+               + (["ghus_notes"] if notes_changed else []))
+    if not changed or not live:
+        return {"changed": changed, "written": False}
+
+    if columns:
+        sets = [f"{c} = :c_{c}" for c in columns]
+        if "updated_at" in present:
+            sets.append("updated_at = now()")
+        params = {f"c_{c}": v for c, v in columns.items()}
+        params["id"] = entity_id
+        execute_canonical_write(session, text(
+            f"UPDATE {table} SET {', '.join(sets)} WHERE {key}=CAST(:id AS uuid)"), params)
+    if notes_changed:
+        # Migration 530: only a session that declares itself human may change notes.
+        session.execute(text("SET LOCAL ghus.actor_is_human = 'on'"))
+        execute_canonical_write(session, text(
+            f"UPDATE {table} SET ghus_notes = :n WHERE {key}=CAST(:id AS uuid)"),
+            {"n": notes_value, "id": entity_id})
+    if entity_type == "actor":
+        history = {**{c: v for c, v in columns.items() if c != "website_domain"}, **fact_values}
+        if history:
+            source_id = insert_source(
+                session, source_url=None, fetched_at=datetime.now(UTC),
+                description=f"Ecosystem Directory edit by {decided_by}",
+                source_type="ghus_manual", trust_tier="ghus")
+            # creator_class / lifecycle_state arrived with the V2 fact ledger;
+            # an older database records the edit without them.
+            ledger = {"creator_class", "lifecycle_state"} <= _directory_columns(session, "actor_fact")
+            extra_cols = ",creator_class,lifecycle_state" if ledger else ""
+            extra_vals = ",'ghus_human','accepted'" if ledger else ""
+            for fact_key, value in history.items():
+                execute_canonical_write(session, text(
+                    "INSERT INTO actor_fact (actor_fact_id,actor_id,topic_id,fact_type,fact_key,"
+                    "fact_value,collection_state,layer,source_id,source_origin,confidence,"
+                    f"retrieved_at,generated_by{extra_cols}) VALUES ("
+                    "CAST(:id AS uuid),CAST(:actor AS uuid),NULL,:type,:key,CAST(:value AS jsonb),"
+                    ":state,2,CAST(:source AS uuid),'ghus_manual','high',now(),:by"
+                    f"{extra_vals})"),
+                    {"id": str(uuid.uuid4()), "actor": entity_id, "type": DIRECTORY_EDIT_FACT_TYPE,
+                     "key": fact_key,
+                     "value": None if value is None else json.dumps(value, default=str),
+                     "state": "not_found" if value is None else "found",
+                     "source": source_id, "by": decided_by})
+    return {"changed": changed, "written": True}
+
+
 SECTOR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
 
 

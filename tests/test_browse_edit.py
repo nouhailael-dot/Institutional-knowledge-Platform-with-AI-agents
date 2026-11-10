@@ -21,10 +21,12 @@ class BrowseEditTests(unittest.TestCase):
         for column in ("website", "recurring_pattern", "description", "record_status"):
             self.assertIn(column, sql)
 
-    def test_save_is_off_and_says_so_until_the_backend_writers_exist(self):
+    def test_save_goes_through_the_backend_writer(self):
+        # 10 Nov 2026: Save sends the changed fields to /api/browse/<type>/<id>/edit,
+        # which hands them to the backend's approved writer.
         page = PAGE.read_text(encoding="utf-8")
-        self.assertIn('disabled=${true} title="Saving is not connected yet"', page)
-        self.assertIn("Saving isn't connected yet: edits here are not stored.", page)
+        self.assertNotIn("Saving isn't connected yet", page)
+        self.assertIn("/edit`,{method:\"POST\"", page)
         for kind in ('kind="actor"', 'kind="event"', 'kind="person"', 'kind="hub"'):
             self.assertIn(kind, page)
 

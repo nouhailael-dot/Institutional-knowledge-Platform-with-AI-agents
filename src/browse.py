@@ -234,7 +234,28 @@ def load_actors() -> list[dict]:
                 "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
                 "owner": OWNER_NOT_RECORDED,
             })
+        # A GHUS edit of a descriptive field (Directory Edit, 10 Nov 2026) is
+        # read before the imported value: the newest 'ghus_edit' fact wins.
+        cur.execute("""
+            SELECT DISTINCT ON (actor_id, fact_key) actor_id::text, fact_key,
+                   fact_value #>> '{}' AS value
+              FROM actor_fact
+             WHERE fact_type = 'ghus_edit' AND topic_id IS NULL AND fact_key = ANY(%s)
+             ORDER BY actor_id, fact_key, created_at DESC
+        """, (list(GHUS_EDIT_FACT_KEYS),))
+        edits: dict[str, dict] = {}
+        for actor_id, key, value in cur.fetchall():
+            edits.setdefault(actor_id, {})[key] = value
+    for item in out:
+        item.update(edits.get(item["id"], {}))
     return out
+
+
+# The descriptive fields an organization keeps in actor_fact; mirrors the
+# backend's decisions.DIRECTORY_EDIT_ACTOR_FACTS.
+GHUS_EDIT_FACT_KEYS = ("primary_technical_focus", "technical_approach", "current_activities",
+                       "technology_ip_notes", "key_constraints", "funding_summary",
+                       "primary_lifecycle_role")
 
 
 # What a Directory removal records (backend agents/review/admission.py); the

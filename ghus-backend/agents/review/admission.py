@@ -830,6 +830,42 @@ def apply_directory_decision(session, decision: Mapping[str, Any]) -> dict[str, 
             "name": row["name"], "current_status": "rejected" if removing else "verified"}
 
 
+def apply_directory_edit(session, decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Save a GHUS person's edit of one Ecosystem Directory record (10 Nov 2026).
+
+    Delegates to ``decisions.record_directory_edit``, the approved writer, in
+    one transaction: every field is validated first, then written together.
+    """
+    from agents.enrichment.decisions import record_directory_edit
+
+    entity_type = str(decision.get("entity_type") or "")
+    reviewer = _clean_required(decision.get("reviewer"), "reviewer", 120)
+    raw_id = _clean_required(decision.get("entity_id"), "entity_id", 80)
+    try:
+        entity_id = str(uuid.UUID(raw_id))
+    except ValueError as exc:
+        raise AdmissionValidationError("entity_id must be a UUID") from exc
+    changes = decision.get("changes") or {}
+    if not isinstance(changes, Mapping):
+        raise AdmissionValidationError("changes must be an object of field: value")
+    notes = decision.get("ghus_notes")
+    transaction = session.begin()
+    try:
+        outcome = record_directory_edit(
+            session, entity_type=entity_type, entity_id=entity_id, changes=dict(changes),
+            decided_by=reviewer, ghus_notes=None if notes is None else str(notes), live=True)
+    except ValueError as exc:
+        transaction.rollback()
+        raise AdmissionValidationError(str(exc)) from exc
+    except Exception:
+        transaction.rollback()
+        raise
+    transaction.commit()
+    return {"decision_kind": "edit_directory_record", "entity_type": entity_type,
+            "entity_id": entity_id, "status": "applied" if outcome["written"] else "unchanged",
+            "changed": outcome["changed"]}
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply one reviewed GHUS discovery decision")
     parser.add_argument("--decision", required=True, type=Path)
@@ -848,6 +884,8 @@ def _main(argv: list[str] | None = None) -> int:
             outcome = apply_review_item_decision(session, raw)
         elif raw.get("decision_kind") in DIRECTORY_DECISION_KINDS:
             outcome = apply_directory_decision(session, raw)
+        elif raw.get("decision_kind") == "edit_directory_record":
+            outcome = apply_directory_edit(session, raw)
         else:
             outcome = apply_review_decision(session, raw)
     json.dump(outcome, sys.stdout, sort_keys=True, default=str)
