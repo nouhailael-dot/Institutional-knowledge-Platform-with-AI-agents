@@ -451,6 +451,7 @@ def load_people() -> list[dict]:
         SELECT p.person_id, p.full_name, p.title, p.orcid, p.linkedin_url,
                COALESCE(NULLIF(p.record_status, ''), p.verification_status) AS status,
                p.source_origin,
+               NULLIF(to_jsonb(p)->>'ghus_notes', '') AS ghus_notes,
                (SELECT string_agg(DISTINCT a.name, '{_HUB_SEP}')
                   FROM actor_person ap JOIN actor_read a ON a.actor_id = ap.actor_id
                  WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
@@ -492,6 +493,7 @@ def load_people() -> list[dict]:
                 "research_areas": split(r["research_areas"]),
                 "profile_url": r["profile_url"] or r["linkedin_url"],
                 "orcid": r["orcid"],
+                "ghus_notes": r["ghus_notes"],
                 "origin": origin_label(r["source_origin"]),
                 "owner": OWNER_NOT_RECORDED,
             })

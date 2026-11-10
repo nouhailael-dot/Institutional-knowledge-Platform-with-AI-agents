@@ -176,3 +176,26 @@ def test_a_dry_run_writes_nothing(conn):
     assert out == {"changed": ["name"], "written": False}
     assert _one(conn, "SELECT name FROM actor WHERE actor_id=CAST(:id AS uuid)", id=actor["id"])["name"] \
         == actor["name"]
+
+
+@needs_db
+def test_people_get_ghus_notes_where_the_database_has_them(conn):
+    # Migration 625 (on Supabase since November 2026): person.ghus_notes, with the
+    # same guard as organizations and events - only the GHUS writer may change it.
+    has_column = _one(conn, "SELECT count(*) AS n FROM information_schema.columns "
+                            "WHERE table_name='person' AND column_name='ghus_notes'")["n"]
+    if not has_column:
+        pytest.skip("this test database has no person.ghus_notes (migration 625)")
+    person = str(_one(conn, "SELECT gen_random_uuid() AS id")["id"])
+    conn.execute(text("INSERT INTO person (person_id, full_name) VALUES (CAST(:id AS uuid), 'Ana Example')"),
+                 {"id": person})
+    out = record_directory_edit(conn, entity_type="person", entity_id=person, decided_by="Ana",
+                                changes={}, ghus_notes="Met at the Phoenix water forum.", live=True)
+    assert out == {"changed": ["ghus_notes"], "written": True}
+    assert _one(conn, "SELECT ghus_notes FROM person WHERE person_id=CAST(:id AS uuid)",
+                id=person)["ghus_notes"] == "Met at the Phoenix water forum."
+    # Cleared from the form: the notes are removed.
+    record_directory_edit(conn, entity_type="person", entity_id=person, decided_by="Ana",
+                          changes={}, ghus_notes="", live=True)
+    assert _one(conn, "SELECT ghus_notes FROM person WHERE person_id=CAST(:id AS uuid)",
+                id=person)["ghus_notes"] is None

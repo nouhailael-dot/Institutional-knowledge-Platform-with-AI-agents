@@ -1344,8 +1344,8 @@ const EDIT_GROUPS={
     ["Expertise",[["topics","Sector","readonly"],["research_areas","Research areas","readonly"]]],
   ],
 };
-// GHUS Notes are kept for organizations and events (people have no notes box yet).
-const HAS_NOTES={actor:true,event:true};
+// GHUS Notes: organizations and events (migration 530), people (migration 625).
+const HAS_NOTES={actor:true,event:true,person:true};
 const asText=v=>Array.isArray(v)?v.join(", "):(v??"");
 const editValue=(type,v)=>type==="date"?String(v||"").slice(0,10):String(asText(v));
 const plainSaveError=m=>{const t=String(m||"").replace(/^.*?(AdmissionValidationError|ValueError):\s*/,"")
@@ -1411,6 +1411,8 @@ function RecordEditor({kind,record,options,onClose,onSaved}){
         <textarea class="field edit-long" rows="4" value=${notes} disabled=${saving} onInput=${e=>{setErr(null);setNotes(e.target.value);}}
           placeholder=${kind==="event"
             ?"Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
+            :kind==="person"
+            ?"Where GHUS met them, past conversations, who introduced them. Links to reports (OneDrive)."
             :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea></div>`}
     </div>
     ${err&&html`<div class="whynot" role="alert">${err}</div>`}
@@ -1642,7 +1644,9 @@ function People({focus}){
     sections=${[
       html`<${Section} key="role" title="Role" rows=${[["Title",sel.title],["Organization",sel.organizations.join(", ")]]}/>`,
       html`<${Section} key="exp" title="Expertise" rows=${[["Sector",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")]]}/>`,
-      html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`]}/>`;
+      html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`,
+      html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
+        :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
   return html`<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
     onOpen=${setSel}
     empty="No people in the database yet. People found in Build the Map appear here once they are verified into the database."

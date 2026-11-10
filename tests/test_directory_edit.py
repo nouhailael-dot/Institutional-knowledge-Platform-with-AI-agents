@@ -67,6 +67,14 @@ class DirectoryEditTests(unittest.TestCase):
             save(changes={}, ghus_notes=None)
         self.assertEqual(raised.exception.status_code, 400)
 
+    def test_people_s_notes_are_read_for_the_directory(self):
+        # Migration 625 put person.ghus_notes on Supabase; read through to_jsonb so
+        # a database without it still loads.
+        from src import browse
+        source = inspect.getsource(browse.load_people)
+        self.assertIn("NULLIF(to_jsonb(p)->>'ghus_notes', '') AS ghus_notes", source)
+        self.assertIn('"ghus_notes": r["ghus_notes"]', source)
+
     def test_the_route_never_writes_the_database_itself(self):
         source = inspect.getsource(app.directory_edit)
         self.assertIn("bridge.apply", source)

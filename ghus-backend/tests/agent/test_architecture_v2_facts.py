@@ -68,12 +68,21 @@ def test_fact_writer_is_dry_run_by_default():
     assert append_actor_fact(RefuseSession(), _fact()) == "would_append"
 
 
+def _isolated_sessions():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    return sessionmaker(bind=create_engine(os.environ["V2_TEST_DATABASE_URL"]))
+
+
 @pytest.mark.skipif(
     not os.environ.get("V2_TEST_DATABASE_URL"),
     reason="V2_TEST_DATABASE_URL is required for isolated fact-ledger enforcement",
 )
 def test_isolated_fact_rows_are_append_only_and_preserve_explicit_states():
-    from src.db.session import SessionLocal
+    # Only the isolated test database, never DATABASE_URL (which may be the
+    # shared team database): the skip condition and the connection agree.
+    SessionLocal = _isolated_sessions()
 
     with SessionLocal() as session:
         actor_id = session.execute(text(

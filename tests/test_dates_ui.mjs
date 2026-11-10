@@ -74,3 +74,11 @@ test('Directory Edit saves through the backend writer; Delete stays for organiza
   // Every tab keeps the saved values on screen and reads its list again.
   assert.equal((page.match(/onSaved=\$\{v=>\{setSel\(x=>\(\{\.\.\.x,\.\.\.v\}\)\);setVersion\(n=>n\+1\);\}\}/g) || []).length, 4);
 });
+
+test('people have a GHUS Notes box in Edit and on their profile (migration 625)', () => {
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /const HAS_NOTES=\{actor:true,event:true,person:true\};/);
+  assert.match(page, /kind==="person"\s*\?"Where GHUS met them/);
+  const person = page.slice(page.indexOf('kind="person" r='), page.indexOf('kind="person" r=') + 1600);
+  assert.match(person, /title="GHUS Notes">\$\{sel\.ghus_notes\?/);
+});
