@@ -717,7 +717,7 @@ export function partChanges(previous, current) {
 const UPDATE_WORDS = {
   new: "New", changed: "Updated", additional: "More detail", confirmed: "Confirmed",
   no_change: "No change",
-  not_found: "Not found on its pages", conflict: "Change to review",
+  not_found: "Not Found on Its Pages", conflict: "Change to review",
   protected: "GHUS value kept", not_yet_collected: "Not read",
 };
 
@@ -865,7 +865,7 @@ const RUN_STATUS_WORDS = {succeeded: "Completed", attention: "Completed with lim
 function countsLine(counts = {}) {
   const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
     ["confirmed", "confirmed"],
-    ["conflict", "to review"], ["protected", "GHUS kept"], ["not_found", "not found"]];
+    ["conflict", "to review"], ["protected", "GHUS kept"], ["not_found", "Not Found"]];
   return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`).join(" · ")
     || "nothing new";
 }

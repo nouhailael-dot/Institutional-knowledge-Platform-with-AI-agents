@@ -454,7 +454,7 @@ test('a page read from another source says which', async () => {
 
 test('run now writes, says what it wrote, and opens Review - no findings table', async () => {
   const {writtenLine, openInReview, OPEN_IN_REVIEW} = await import('../frontend/discovery.js');
-  assert.equal(writtenLine({new: 4, not_found: 7}), '4 new · 7 not found');
+  assert.equal(writtenLine({new: 4, not_found: 7}), '4 new · 7 Not Found');
   assert.equal(writtenLine({changed: 1, additional: 1, conflict: 1}), '1 updated · 1 more detail · 1 to review');
   assert.equal(writtenLine({}), 'nothing new');
   const seen = [];

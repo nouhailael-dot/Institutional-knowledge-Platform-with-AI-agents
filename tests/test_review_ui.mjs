@@ -1178,7 +1178,7 @@ test('older update results render in the boxes, from what they wrote, with their
   assert.equal(rows.mission_sector_focus.state, 'Not Yet Collected');
   const [run] = updateRunRows(legacy);
   assert.equal(run.title, 'Clean Energy Group');
-  assert.equal(run.summary, '1 updated · 3 confirmed · 1 not found');
+  assert.equal(run.summary, '1 updated · 3 confirmed · 1 Not Found');
   assert.deepEqual(run.pages, ['https://www.cleanegroup.org/']);
 });
 

@@ -748,11 +748,11 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261112f";
-import {createDiscoveryPage} from "./discovery.js?v=20261112d";
+import {createReviewPage} from "./review.js?v=20261112g";
+import {createDiscoveryPage} from "./discovery.js?v=20261112e";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261110e";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261112c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261112d";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -1168,7 +1168,7 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
    name, a one-line summary and badges; a main column of titled sections, where an
    empty field reads "Not found" (an empty field is itself an answer); a side
    column with the key facts and the sources and history. */
-const NOT_FOUND=html`<span class="dash">Not found</span>`;
+const NOT_FOUND=html`<span class="dash">Not Found</span>`;
 const isEmpty=v=>v==null||v===""||(Array.isArray(v)&&!v.length);
 // Long text keeps its paragraphs and bullet points; a long one opens with Show more.
 function RichText({text,limit=420}){

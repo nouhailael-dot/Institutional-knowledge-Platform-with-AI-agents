@@ -223,7 +223,7 @@ export function openInReview(actor) {
 export function writtenLine(counts = {}) {
   const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
     ["corroborated", "confirmed"], ["conflict", "to review"], ["protected", "GHUS value kept"],
-    ["not_found", "not found"]];
+    ["not_found", "Not Found"]];
   return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`)
     .join(" · ") || "nothing new";
 }
@@ -916,7 +916,7 @@ export function actorResultLine(result) {
   if (!result.ok) return `${result.name}: not updated — ${result.error || "no reason recorded"}`;
   const counts = result.counts || {};
   const parts = [["new", "new"], ["changed", "changed"], ["additional", "more detail"], ["corroborated", "confirmed"],
-    ["not_found", "not found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
+    ["not_found", "Not Found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
   if (result.review_items) parts.push(`${result.review_items} to Review Results`);
   if (!parts.length) parts.push("nothing new");
   return `${result.name}: ${parts.join(" · ")} · ${formatUsd(result.spent_usd)}`;
@@ -931,7 +931,7 @@ export const OUTCOME_LABELS = {
   conflict: "Conflict",
   protected: "GHUS value kept",
   unchanged: "No change",
-  not_found: "Not found",
+  not_found: "Not Found",
   not_yet_collected: "Not yet collected",
 };
 
