@@ -564,3 +564,27 @@ def test_a_person_whose_organization_is_not_in_the_directory_is_stored_and_flagg
         "AND f.fact_key = 'affiliation_not_in_directory' ORDER BY f.created_at DESC LIMIT 1"),
         {"p": person}).scalar()
     assert shown == org
+
+
+@needs_db
+def test_a_person_held_in_review_whose_organization_is_not_in_the_directory_can_be_verified(session):
+    """13 Nov 2026: Verify on such a person in Review failed with 'exited with code 1'."""
+    from agents.review.admission import apply_review_decision
+
+    org = "Organization Not In Directory Review Test 9c1e"
+    row = {"row_number": 2, "payload": {
+        "name": "Omar Test Bennani", "role": "Research Analyst", "affiliation": org,
+        "linkedin_url": "https://www.linkedin.com/in/omar-test-bennani-9c1e",
+        "source_url": "https://www.linkedin.com/in/omar-test-bennani-9c1e"},
+        "original": {}, "match": {"kind": "new"}}
+    staged = feed.stage_batch(session, batch("person", rows=[row], method="upload",
+                                             file_name="team.xlsx", file_sha256="ab" * 32))
+    session.commit()
+    done = apply_review_decision(session, {
+        "entity_type": "person", "decision_kind": "new",
+        "source_ref": {"table": "person_review_queue", "id": staged["rows"][0]["source_id"]},
+        "reviewer": "zahra@ghus.example", "idempotency_key": "omar-review-test",
+        "edited_payload": {},
+    })
+    assert done["status"] == "approved"
+    assert done["organization_missing"] == org
