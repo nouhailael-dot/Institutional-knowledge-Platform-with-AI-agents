@@ -297,6 +297,24 @@ class RunStore:
                        "by_stage": stages, "calls": calls}
         return out
 
+    def undecided(self, run_ids) -> dict:
+        """Cards each map still waits on: not verified, parked, rejected or saved."""
+        if not run_ids:
+            return {}
+        marks = ",".join("?" * len(run_ids))
+        counts = {}
+        with self.connect() as db:
+            rows = db.execute(f"SELECT id, result FROM runs WHERE id IN ({marks})", list(run_ids))
+            for run_id, raw in rows.fetchall():
+                result = json.loads(raw) if raw else {}
+                cards = [card for group in ((result or {}).get("entities") or {}).values()
+                         if isinstance(group, list) for card in group if isinstance(card, dict)]
+                waiting = sum(1 for card in cards if not card.get("_review")
+                              and (card.get("_db_save") or {}).get("outcome") not in ("directory", "review"))
+                if waiting:
+                    counts[run_id] = waiting
+        return counts
+
     def recent(self):
         with self.connect() as db:
             return [dict(r) for r in db.execute(

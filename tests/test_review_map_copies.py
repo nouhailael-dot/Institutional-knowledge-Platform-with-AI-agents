@@ -87,3 +87,33 @@ def test_a_maps_saved_cards_count_as_its_pending_review(tmp_path):
     prefix = "Data Feed import: " + name
     assert store.pending_by_description({"map-1": prefix, "map-2": "Data Feed import: other"}) \
         == {"map-1": 2}
+
+
+def test_review_never_lists_a_maps_saved_records(tmp_path):
+    """GHUS, 12 Nov 2026: a map is reviewed on its own page; Review Results is for
+    new requests and organization updates only."""
+    store = ReviewStore(tmp_path / "review.sqlite3")
+    name = map_save.import_name("Find me all African Diaspora events")
+    with store.connect() as db:
+        for cid, description in (("map", f"Data Feed import: {name} · manual entry"),
+                                 ("sheet", "Data Feed import: Phase 1 sheet · file.xlsx"),
+                                 ("request", "Monitoring request: Water reuse in Texas")):
+            db.execute(
+                "INSERT INTO review_candidate (candidate_id,source_run_id,source_index,"
+                "source_description,entity_type,display_name,original_payload,reviewed_payload,"
+                "evidence,agent_metadata,duplicate_state,status,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (cid, f"run-{cid}", "1", description, "event", cid, "{}", "{}", "[]", "{}",
+                 "new", "pending_review", 1.0))
+    assert store.retire_map_copies() == 1
+    assert {c["candidate_id"] for c in _listed(store)} == {"sheet", "request"}
+
+
+def test_the_dashboard_counts_cards_still_undecided_on_the_map(tmp_path):
+    runs = RunStore(tmp_path / "runs.sqlite3")
+    run_id = _map(runs)
+    result = runs.get(run_id)["result"]
+    cards = [c for group in result["entities"].values() for c in group]
+    cards[0]["_review"] = "ready"
+    runs.update(run_id, result=result)
+    assert runs.undecided([run_id]) == {run_id: len(cards) - 1}

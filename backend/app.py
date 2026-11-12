@@ -586,13 +586,9 @@ def maps_recent():
         maps = [m for m in maps if float(m.get("created") or 0) >= start.timestamp()]
     # Records each map sent to Review Results that nobody has decided yet (Dashboard).
     try:
-        store = review_store()
-        pending = store.pending_by_run([m["id"] for m in maps])
-        # Saved cards arrive as a Data Feed import named after the map.
-        saved = store.pending_by_description({
-            m["id"]: "Data Feed import: " + map_save.import_name(m.get("description") or "untitled map")
-            for m in maps})
-        pending = {key: pending.get(key, 0) + saved.get(key, 0) for key in {*pending, *saved}}
+        # Cards still undecided on the map itself: maps are reviewed on their own
+        # page (GHUS, 12 Nov 2026), never in Review Results.
+        pending = map_store().undecided([m["id"] for m in maps])
     except Exception:
         logger.warning("Could not count maps' pending Review records", exc_info=True)
         pending = {}
@@ -1236,10 +1232,6 @@ def _sync_review_candidates_now(*, force: bool = False):
             if target.enable_test_canonical:
                 # Tests and the demo build Review from map results directly.
                 target.sync_run_store(local)
-            else:
-                # A map's cards reach Review only through "Save verified to
-                # Compass" (the Data Feed); direct copies cannot be decided.
-                target.retire_map_copies(local)
         except Exception as exc:
             raise HTTPException(
                 status_code=503,
@@ -1264,6 +1256,10 @@ def _sync_review_candidates_now(*, force: bool = False):
                 warnings.extend(source_warnings)
                 target.set_sync_state("postgresql", success=not source_warnings,
                                       error="; ".join(source_warnings) or None)
+            if not target.enable_test_canonical:
+                # A map is reviewed on its own page, never in Review Results
+                # (GHUS, 12 Nov 2026): its copies and saved records are folded away.
+                target.retire_map_copies(local)
         except PostgresReviewSourceError as exc:
             logger.warning("PostgreSQL review source unavailable: %s", exc)
             warnings.append(str(exc))

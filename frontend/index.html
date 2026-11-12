@@ -2235,9 +2235,9 @@ function CarriedRows({rows,onChange,onDismiss}){
 }
 
 /* Save verified to Compass (28 Oct 2026). The ready cards go to the database
-   through the Data Feed and the backend's admission: a new organization with a
-   category type is added Verified under the reviewer's name; the rest wait in
-   Review Results. A check that writes nothing runs first and on every change. */
+   through the Data Feed and the backend's admission: every verified card is
+   stored in the directory (12 Nov 2026: a map is reviewed on its own page, never
+   in Review Results). A check that writes nothing runs first and on every change. */
 const KIND_LABEL={actor:"Organization",event:"Event",person:"Person"};
 // " by Name" once accounts record who acted; nothing while it reads "Not recorded".
 const byWhom=by=>by&&!String(by).startsWith("Not recorded")?` by ${by}`:"";
@@ -2290,8 +2290,9 @@ function SavePanel({jobId,items,onSaved,onClose}){
       <strong>Save verified to Compass</strong>
       <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
     </div>
-    <p class="hint">New organizations are added to the Ecosystem Directory as Verified.
-      Events, people, and anything that may already be there go to Review Results.</p>
+    <p class="hint">Verified organizations, events and people are added to the Ecosystem
+      Directory; one that matches a record already there updates it. A map is reviewed here,
+      on its own page, never in Review Results.</p>
     <table class="grid save-list"><thead><tr><th>Result</th><th>Sector</th><th>What happens</th></tr></thead>
       <tbody>${items.map((e,i)=>{const c=(checked||[])[i];return html`<tr key=${keyOf(e)}>
         <td><div class="name-link">${ename(e)}</div><span class="hint" style=${{margin:0}}>${KIND_LABEL[e._entity_type||"actor"]}</span></td>

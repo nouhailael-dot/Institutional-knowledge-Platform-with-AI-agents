@@ -1040,23 +1040,35 @@ class ReviewStore:
 
     MAP_COPY = "map_copy"
 
-    def retire_map_copies(self, run_store) -> int:
-        """Take a map's own copies of its cards off the Review page (12 Nov 2026).
+    MAP_IMPORT_PREFIX = "Data Feed import: Explore and Map: "
+
+    def retire_map_copies(self, run_store=None) -> int:
+        """Take every map's records off the Review page (12 Nov 2026).
+
+        GHUS: a map is reviewed on its own page; Review Results is for new
+        requests and organization updates only. Both a map's direct copies and
+        the records a map saved through the Data Feed are folded away (kept,
+        not listed); decided ones are never touched.
+
 
         A copy made straight from a map has no record in the database behind
         it, so Review can neither verify nor reject it ("no authoritative
         PostgreSQL source reference"), and edits made on it are lost. A map's
         cards reach Review only through "Save verified to Compass" (the Data
-        Feed), as records that can be decided. Pending copies are folded away
-        (kept, not listed); decided ones are never touched.
+        Feed), as records that can be decided.
         """
-        with run_store.connect() as source:
-            run_ids = [row[0] for row in source.execute("SELECT id FROM runs").fetchall()]
-        if not run_ids:
-            return 0
+        run_ids = []
+        if run_store is not None:
+            with run_store.connect() as source:
+                run_ids = [row[0] for row in source.execute("SELECT id FROM runs").fetchall()]
         changed = 0
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            changed += db.execute(
+                "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                "AND folded_into IS NULL AND source_description LIKE ? ESCAPE '!'",
+                (self.MAP_COPY, self.MAP_IMPORT_PREFIX.replace("!", "!!").replace("%", "!%")
+                 .replace("_", "!_") + "%")).rowcount
             for start in range(0, len(run_ids), 500):
                 chunk = run_ids[start:start + 500]
                 changed += db.execute(

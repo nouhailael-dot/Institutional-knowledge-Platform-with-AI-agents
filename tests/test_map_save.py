@@ -27,6 +27,10 @@ class FakeService:
         record_type = preview_id[2:]
         rows = [r for t, recs in self.sent if t == record_type for r in recs]
         return {"rows": [{"row_number": n, "outcome": "staged"} for n in range(1, len(rows) + 1)],
+                # The directory admission's refusals: a possible duplicate is not added twice.
+                "not_stored": [{"row_number": n, "outcome": "possible_duplicate",
+                                "reason": "It may already be in the directory."}
+                               for n, r in enumerate(rows, 1) if r["name"] in self.held],
                 "held_for_review": [{"row_number": n, "reason": "It may already be on the map."}
                                     for n, r in enumerate(rows, 1) if r["name"] in self.held]}
 
@@ -81,18 +85,23 @@ class SaveTests(unittest.TestCase):
     def test_the_check_writes_nothing_and_says_what_would_happen(self):
         service = FakeService(statuses={"Mosaic Company": "existing"})
         out = save.check(service, self.picks())
-        self.assertEqual([r["outcome"] for r in out], [DIRECTORY, REVIEW, REVIEW, REVIEW])
-        self.assertIn("category type", out[2]["reason"])
-        self.assertIn("Events and people", out[3]["reason"])
+        # 12 Nov 2026 (GHUS): a map is reviewed on its own page; nothing it saves
+        # goes to Review Results. A match updates the directory's record.
+        self.assertEqual([r["outcome"] for r in out], [DIRECTORY, DIRECTORY, DIRECTORY, DIRECTORY])
+        self.assertIn("already in the directory", out[1]["reason"])
+        self.assertNotIn("Review", " ".join(r["reason"] for r in out))
         self.assertEqual(service.confirmed, [])
 
-    def test_saving_admits_new_organizations_verified_and_sends_the_rest_to_review(self):
-        service = FakeService(statuses={"Mosaic Company": "existing"}, held={"Mosaic Company", "New Lab"})
+    def test_saving_stores_every_record_in_the_directory_and_none_in_review(self):
+        service = FakeService(statuses={"Mosaic Company": "existing"}, held={"New Lab"})
         out = save.save(service, self.picks(), uploader="Nouhaila El Hail", map_name="phosphate in Florida")
-        self.assertEqual([r["outcome"] for r in out], [DIRECTORY, REVIEW, REVIEW, REVIEW])
+        # A possible duplicate is not added twice; its card says why. Nothing goes to Review.
+        self.assertEqual([r["outcome"] for r in out], [DIRECTORY, DIRECTORY, NOT_SAVED, DIRECTORY])
+        self.assertIn("may already be in the directory", out[2]["reason"])
         actor_call = next(kw for pid, kw in service.confirmed if pid == "p-actor")
         event_call = next(kw for pid, kw in service.confirmed if pid == "p-event")
-        self.assertEqual((actor_call["admission"], event_call["admission"]), ("verified", "review"))
+        self.assertEqual((actor_call["admission"], event_call["admission"]), ("directory", "directory"))
+        self.assertIs(event_call["ai_enrichment"], False)
         self.assertEqual(actor_call["uploaded_by"], "Nouhaila El Hail")
         self.assertEqual(actor_call["import_name"], "Explore and Map: phosphate in Florida")
 

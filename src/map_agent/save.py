@@ -4,9 +4,12 @@ Asked for on 28 Oct 2026. The platform never writes canonical records itself
 (AGENTS.md rule 1): each verified card becomes a Data Feed record (method
 "map") and the backend's own staging and admission do the rest -
 
-  organization, new, with a category type -> admitted Verified at once
-  organization matching one on the map, or without a type -> Review Results
-  event or person                          -> Review Results (backend policy)
+  every organization, event and person -> stored in the directory
+
+12 Nov 2026 (GHUS): a map is reviewed on its own page, never in Review Results,
+which is for new requests and organization updates only. A record matching one
+already in the directory updates it; a possible duplicate, or one the writer
+refuses, is not added and its card says why.
 
 A value the map holds in a form the Data Feed does not accept (a partial date,
 an event type outside the list) is left empty, never guessed (rule 7); if the
@@ -163,9 +166,12 @@ def _check_outcome(row) -> tuple[str, str]:
     if row["status"] == "invalid":
         return NOT_SAVED, "Needs: " + "; ".join(e.split(": ", 1)[-1] for e in row["errors"])[:400]
     if row["status"] == "waiting":
-        return REVIEW, "Already waiting in Review Results."
-    if row["status"] in ("existing", "possible"):
-        return REVIEW, "May already be in the directory; a reviewer decides in Review Results."
+        return NOT_SAVED, "It is already waiting to be added from another import."
+    if row["status"] == "existing":
+        return DIRECTORY, "Matches a record already in the directory, which it updates."
+    if row["status"] == "possible":
+        return DIRECTORY, ("May match a record already in the directory; if it is not clearly "
+                           "the same, it is not added twice and this card says so.")
     return DIRECTORY, ""
 
 
@@ -181,11 +187,6 @@ def check(service, picks: list[tuple[str, dict, str]]) -> list[dict]:
                                           method="map")
         for (index, entity, _), row in zip(group, preview["rows"]):
             outcome, reason = _check_outcome(row)
-            if kind != "actor" and outcome == DIRECTORY:
-                outcome, reason = REVIEW, ("Events and people are added by a reviewer "
-                                           "in Review Results.")
-            elif kind == "actor" and outcome == DIRECTORY and not row["payload"].get("category_type"):
-                outcome, reason = REVIEW, "No category type; a reviewer chooses one in Review Results."
             out.append({"index": index, "kind": kind, "outcome": outcome, "reason": reason,
                         "preview_id": preview["preview_id"], "row_number": row["row_number"]})
     return sorted(out, key=lambda r: r["index"])
@@ -205,21 +206,26 @@ def save(service, picks: list[tuple[str, dict, str]], *, uploader: str, map_name
         rows = [r for r in checked if r["kind"] == kind and r["outcome"] != NOT_SAVED]
         if not rows:
             continue
+        # Stored in the directory by the approved admission path (the Data
+        # Feed's "directory" admission, GHUS decision of 3 Nov 2026): the person
+        # verified it on the map and confirms the source. No AI enrichment: the
+        # map already researched it.
         answer = service.confirm(rows[0]["preview_id"], import_name=name, accept_left_out=True,
                                  uploaded_by=uploader, attest_source=True,
-                                 admission="verified" if kind == "actor" else "review",
-                                 attest_authorized=True)
-        held = {h.get("row_number"): h for h in answer.get("held_for_review") or []}
+                                 admission="directory", attest_authorized=True,
+                                 ai_enrichment=False)
         staged = {r.get("row_number"): r.get("outcome") for r in answer.get("rows") or []}
+        refused = {a.get("row_number"): a for a in answer.get("not_stored") or []}
         for r in rows:
             result = results[r["index"]]
-            if staged.get(r["row_number"]) not in ("staged", "already_awaiting_review"):
+            if staged.get(r["row_number"]) == "already_awaiting_review":
+                result.update(outcome=NOT_SAVED,
+                              reason="It is already waiting to be added from another import.")
+            elif staged.get(r["row_number"]) != "staged":
                 result.update(outcome=NOT_SAVED, reason="The database did not accept it.")
-            elif kind == "actor" and r["row_number"] in held:
-                result.update(outcome=REVIEW, reason=held[r["row_number"]].get("reason") or "")
-            elif kind == "actor" and staged.get(r["row_number"]) == "staged" \
-                    and r["outcome"] == DIRECTORY:
-                result.update(outcome=DIRECTORY, reason="")
+            elif r["row_number"] in refused:
+                result.update(outcome=NOT_SAVED, reason=refused[r["row_number"]].get("reason")
+                              or "The directory did not accept it.")
             else:
-                result.update(outcome=REVIEW, reason=r["reason"] or "Waiting in Review Results.")
+                result.update(outcome=DIRECTORY, reason="")
     return [results[i] for i in sorted(results)]
