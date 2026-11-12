@@ -588,3 +588,61 @@ def test_a_person_held_in_review_whose_organization_is_not_in_the_directory_can_
     })
     assert done["status"] == "approved"
     assert done["organization_missing"] == org
+
+
+@needs_db
+def test_people_and_events_a_ghus_person_verifies_are_verified_not_parked(session):
+    """GHUS, 13 Nov 2026: four people verified in Review showed 'Parked' in the
+    Directory. A record a GHUS person decided on is Verified; one an agent found is
+    still parked until someone checks it. The one-time correction fixes the
+    records created before, and only those."""
+    from agents.discovery.promote import _insert_person, insert_source
+    from agents.enrichment.decisions import mark_reviewed_records_verified
+    from agents.review.admission import apply_review_decision
+
+    def status(table, column, entity_id):
+        return session.execute(text(f"SELECT record_status FROM {table} WHERE {column} = "
+                                    "CAST(:id AS uuid)"), {"id": entity_id}).scalar()
+
+    tag = uuid.uuid4().hex[:8]
+    person_row = {"row_number": 2, "payload": {
+        "name": f"Leila Zq{tag} Verified", "role": "Program Manager", "affiliation": f"Unlisted Institute Zq{tag}",
+        "linkedin_url": f"https://www.linkedin.com/in/leila-zq-{tag}",
+        "source_url": f"https://www.linkedin.com/in/leila-zq-{tag}"},
+        "original": {}, "match": {"kind": "new"}}
+    event_row = {"row_number": 2, "payload": {
+        "name": f"Qzx Verified Gathering {tag}", "event_type": "conference",
+        "website": f"https://qzx-gathering-{tag}.org", "sector_codes": ["AI"]},
+        "original": {}, "match": {"kind": "new"}}
+    made = {}
+    for kind, row, table in (("person", person_row, "person_review_queue"),
+                             ("event", event_row, "event_review_queue")):
+        staged = feed.stage_batch(session, batch(kind, rows=[row], method="manual",
+                                                 file_name=None, file_sha256=None))
+        session.commit()
+        done = apply_review_decision(session, {
+            "entity_type": kind, "decision_kind": "new",
+            "source_ref": {"table": table, "id": staged["rows"][0]["source_id"]},
+            "reviewer": "zahra@ghus.example", "idempotency_key": f"verified-{kind}-{tag}",
+            "edited_payload": {}})
+        made[kind] = done["canonical_entity_id"]
+    assert status("person", "person_id", made["person"]) == "verified"
+    assert status("event", "event_id", made["event"]) == "verified"
+
+    # Records verified before the fix were left parked; an agent's own finding stays parked.
+    session.execute(text("UPDATE person SET record_status = 'parked' WHERE person_id = CAST(:id AS uuid)"),
+                    {"id": made["person"]})
+    session.execute(text("UPDATE event SET record_status = 'parked' WHERE event_id = CAST(:id AS uuid)"),
+                    {"id": made["event"]})
+    source = insert_source(session, source_url="https://agent-found-4d2a.org",
+                           fetched_at="2026-11-13T10:00:00+00:00", description="agent test")
+    found_by_agent = _insert_person(session, {"name": "Agent Found 4d2a", "role": "Analyst"}, source,
+                                    confidence=0.9)
+    dry = mark_reviewed_records_verified(session)
+    assert made["person"] in dry["person_ids"] and made["event"] in dry["event_ids"]
+    assert found_by_agent not in dry["person_ids"]
+    assert status("person", "person_id", made["person"]) == "parked"      # a dry run writes nothing
+    mark_reviewed_records_verified(session, live=True)
+    assert status("person", "person_id", made["person"]) == "verified"
+    assert status("event", "event_id", made["event"]) == "verified"
+    assert status("person", "person_id", found_by_agent) == "parked"

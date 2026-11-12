@@ -161,6 +161,10 @@ class PromotionResult:
 # both create the same organization or event. Creation takes this lock and looks
 # one last time for one made by another run in the last hours.
 CREATE_LOCK = 550_002
+# The record a GHUS person decided on (agents.review.admission, used by Review and
+# the Data Feed). A person or event it creates is Verified, not parked (13 Nov 2026):
+# "parked" means found by an agent and not yet checked by anyone.
+HUMAN_DECISION_PROMPT = "human-review-admission-v1"
 # The fact a person keeps when their organization is not in the directory yet.
 PENDING_AFFILIATION_FACT = "affiliation_not_in_directory"
 RECENT_HOURS = 6
@@ -311,7 +315,8 @@ def promote(
                 fetched_at=staged.extracted_at,
                 description="agent discovery event create",
             )
-            event_id = _insert_event(session, staged.normalized_payload, source_id)
+            event_id = _insert_event(session, staged.normalized_payload, source_id,
+                                     reviewed=staged.prompt_version == HUMAN_DECISION_PROMPT)
             _append_event_topics(session, event_id=event_id, staged=staged, source_id=source_id)
             if _table_columns(session, "event_fact"):
                 _append_record_facts(session, entity_type="event", entity_id=event_id, staged=staged)
@@ -410,7 +415,8 @@ def _capitalized(field_name: str, value):
     return value
 
 
-def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
+def _insert_event(session, payload: dict[str, object], source_id: str, *,
+                  reviewed: bool = False) -> str:
     name = payload.get("name") or payload.get("title")
     if not name:
         raise ValueError("cannot create event without name")
@@ -428,7 +434,7 @@ def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
         if day and (not columns or field_name in columns):
             cols[field_name] = day
     if "record_status" in columns:
-        cols["record_status"] = "parked"
+        cols["record_status"] = "verified" if reviewed else "parked"
     if "source_origin" in columns:
         cols["source_origin"] = _record_origin(payload)
     if "date_status" in columns:
@@ -1937,6 +1943,7 @@ def _promote_person(
                 staged.normalized_payload,
                 source_id,
                 confidence=float(route.score),
+                reviewed=staged.prompt_version == HUMAN_DECISION_PROMPT,
             )
             role = str(staged.normalized_payload["role"]).strip()
             if actor_id:
@@ -2158,6 +2165,7 @@ def _insert_person(
     source_id: str,
     *,
     confidence: float,
+    reviewed: bool = False,
 ) -> str:
     person_id = str(uuid.uuid4())
     cols: dict[str, object] = {
@@ -2168,9 +2176,17 @@ def _insert_person(
         "verification_status": "needs_review",
         "confidence": confidence,
     }
-    # Architecture V2: a discovered person is parked until GHUS reviews them.
+    # Architecture V2: a discovered person is parked until GHUS reviews them; one a
+    # GHUS person verified is Verified. The database derives record_status from
+    # verification_status on insert, so a verified person is written by record_status.
     columns = _table_columns(session, "person")
-    if "record_status" in columns:
+    if reviewed:
+        if "record_status" in columns:
+            cols.pop("verification_status")
+            cols["record_status"] = "verified"
+        else:
+            cols["verification_status"] = "verified"
+    elif "record_status" in columns:
         cols["record_status"] = "parked"
     if "source_origin" in columns:
         cols["source_origin"] = _record_origin(payload)

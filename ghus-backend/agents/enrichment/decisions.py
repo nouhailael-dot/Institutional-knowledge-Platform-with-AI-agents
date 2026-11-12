@@ -2205,3 +2205,60 @@ def _has_column(session, table: str, column: str) -> bool:
 def _assert_identifier(value: str) -> None:
     if not _IDENTIFIER_RE.match(value):
         raise ValueError(f"unsafe SQL identifier: {value!r}")
+
+
+# ------------------------------------------------- verified by a GHUS person (13 Nov 2026)
+_REVIEWED_TABLES = {"person": ("person", "person_id"), "event": ("event", "event_id")}
+
+
+def mark_reviewed_records_verified(session, *, live: bool = False) -> dict[str, object]:
+    """People and events a GHUS person verified, still shown Parked: made Verified.
+
+    Until 13 Nov 2026 the writer created every person and event as "parked" -
+    the state of a record an agent found and nobody has checked - even when a
+    GHUS person had just verified it in Review or stored it from the Data
+    Feed. Only records created by such a decision (review_admission_decision,
+    decision_kind 'new', approved) and still parked are changed; a record a
+    person later rejected or removed is left as it is. Dry run unless ``live``.
+    """
+    found: dict[str, list[str]] = {}
+    for entity_type, (table, id_column) in _REVIEWED_TABLES.items():
+        found[entity_type] = [str(r[0]) for r in session.execute(text(
+            f"SELECT t.{id_column} FROM {table} t WHERE t.record_status = 'parked' "
+            "AND EXISTS (SELECT 1 FROM review_admission_decision d "
+            "WHERE d.entity_type = :entity AND d.decision_kind = 'new' "
+            "AND d.outcome->>'status' = 'approved' "
+            f"AND d.outcome->>'canonical_entity_id' = t.{id_column}::text)"),
+            {"entity": entity_type}).all()]
+    if live:
+        for entity_type, ids in found.items():
+            table, id_column = _REVIEWED_TABLES[entity_type]
+            if ids:
+                execute_canonical_write(session, text(
+                    f"UPDATE {table} SET record_status = 'verified' "
+                    f"WHERE {id_column} = ANY(CAST(:ids AS uuid[])) AND record_status = 'parked'"),
+                    {"ids": ids})
+    return {"live": live, **{f"{k}_ids": v for k, v in found.items()},
+            **{k: len(v) for k, v in found.items()}}
+
+
+def _verified_backfill_main(argv: list[str] | None = None) -> int:
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="People and events a GHUS person verified, still shown Parked: made Verified.")
+    parser.add_argument("--live", action="store_true", help="write; absent means a dry run")
+    args = parser.parse_args(argv)
+    from agents.collection.discovery_requests import open_session
+
+    with open_session() as session:
+        with session.begin():
+            outcome = mark_reviewed_records_verified(session, live=args.live)
+    json.dump(outcome, sys.stdout, default=str)
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(_verified_backfill_main())
