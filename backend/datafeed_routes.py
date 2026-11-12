@@ -143,6 +143,18 @@ def original_file(run_id: str):
         "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 
 
+@router.post("/imports/{run_id}/withdraw")
+def withdraw(run_id: str):
+    """Take back an import so the same file can be uploaded again (13 Nov 2026)."""
+    outcome = _call(datafeed_service().withdraw, run_id, by=current_user())
+    # Its records were rejected in the database; the Review page's own copy is
+    # told here, since its sync never drops a record that leaves the source.
+    from backend.app import review_store
+
+    outcome["left_review"] = review_store().retire_run(f"datafeed:{run_id}")
+    return outcome
+
+
 @router.post("/imports/{run_id}/estimate")
 def completion_estimate(run_id: str):
     return _call(datafeed_service().completion_estimate, run_id)

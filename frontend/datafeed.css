@@ -172,3 +172,8 @@ span.df-import-link{cursor:default}
 .df-missing p{margin:0 0 8px}
 .df-missing ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .df-missing li{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+
+/* Withdraw this import (13 Nov 2026): the question, asked in place. */
+.df-withdraw { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--line, #ddd);
+  border-radius: 8px; background: var(--surface, #fff); }
+.df-withdraw p { margin: 0 0 8px; }

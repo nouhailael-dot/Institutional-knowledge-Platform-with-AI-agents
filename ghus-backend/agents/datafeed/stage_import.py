@@ -71,6 +71,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 CONTRACT = "ghus-datafeed-batch/1"
 SOURCE_NAME = "ghus_data_feed"
+# An import taken back to be sent again (13 Nov 2026): every record it left waiting
+# is rejected with this reason. A withdrawn import is not "already imported", and
+# Import History no longer lists it (src/datafeed/service.py reads the same text).
+WITHDRAWN_REASON = "Withdrawn from Import History to be imported again"
 RECORD_TYPES = ("actor", "event", "person")
 ADMISSIONS = ("review", "verified", "directory")
 # "map": a result of the platform's Explore and Map that a GHUS reviewer checked
@@ -398,10 +402,82 @@ def _evidence(value: Any, source_url: str, method: str, submitted_at: str) -> di
 
 # ------------------------------------------------------------------ database
 def existing_batch(session, key: str) -> str | None:
-    return session.execute(text(
+    runs = session.execute(text(
         "SELECT run_id::text FROM scrape_run WHERE source_name = :source "
-        "AND config->'datafeed'->>'batch_key' = :key ORDER BY started_at LIMIT 1"
-    ), {"source": SOURCE_NAME, "key": key}).scalar()
+        "AND config->'datafeed'->>'batch_key' = :key ORDER BY started_at"
+    ), {"source": SOURCE_NAME, "key": key}).scalars().all()
+    return next((run for run in runs if not is_withdrawn(session, run)), None)
+
+
+# Every record a Data Feed import staged, with the table Review decides it in.
+_RUN_ITEMS = """
+    SELECT c.candidate_id AS id, 'search_candidate' AS t, COALESCE(c.review_status::text, 'pending') AS status
+    FROM search_candidate c WHERE c.run_id = CAST(:run AS uuid)
+    UNION ALL
+    SELECT q.event_review_id, 'event_review_queue', q.status FROM event_review_queue q
+    JOIN staged_record s ON s.staged_record_id = q.staged_record_id WHERE s.run_id = CAST(:run AS uuid)
+    UNION ALL
+    SELECT q.person_review_id, 'person_review_queue', q.status FROM person_review_queue q
+    JOIN staged_record s ON s.staged_record_id = q.staged_record_id WHERE s.run_id = CAST(:run AS uuid)
+"""
+
+
+def is_withdrawn(session, run_id: str) -> bool:
+    """Every record of the import was withdrawn (none stored, none still waiting)."""
+    return bool(session.execute(text(
+        f"WITH items AS ({_RUN_ITEMS}) SELECT count(*) > 0 AND bool_and(EXISTS ("
+        "SELECT 1 FROM review_admission_decision d WHERE d.source_row_id = i.id "
+        "AND d.source_table = i.t AND d.decision_kind = 'reject' "
+        "AND d.rejection_reason_other = :why)) FROM items i"),
+        {"run": run_id, "why": WITHDRAWN_REASON}).scalar())
+
+
+def withdraw_import(session, run_id: str, *, by: str, live: bool = False) -> dict[str, Any]:
+    """Take back an import so the same file can be sent again (13 Nov 2026).
+
+    Each record still waiting in Review is rejected through
+    agents.review.admission.apply_review_decision (its own transaction) with
+    WITHDRAWN_REASON; the decision stays in review_admission_decision. Records
+    already stored in the directory are never touched, and an import with any
+    is not withdrawn: it stays in Import History.
+    """
+    from agents.review.admission import apply_review_decision
+
+    who = _clean(by)
+    if not who:
+        raise DataFeedRefused("a withdrawal names who withdrew the import")
+    found = session.execute(text(
+        "SELECT config->'datafeed'->>'import_name' FROM scrape_run "
+        "WHERE run_id = CAST(:run AS uuid) AND source_name = :source"),
+        {"run": run_id, "source": SOURCE_NAME}).first()
+    if found is None:
+        raise DataFeedRefused("unknown Data Feed import")
+    items = session.execute(text(_RUN_ITEMS), {"run": run_id}).mappings().all()
+    session.rollback()
+    waiting = [i for i in items if i["status"] == "pending"]
+    stored = [i for i in items if i["status"] == "approved"]
+    out = {"run_id": run_id, "import_name": found[0], "records": len(items),
+           "waiting": len(waiting), "stored": len(stored), "live": live, "withdrawn": 0}
+    if stored:
+        raise DataFeedRefused(f"{len(stored)} record(s) of this import are already in the "
+                              "directory; an import with stored records is not withdrawn")
+    if not live:
+        return out
+    for item in waiting:
+        apply_review_decision(session, {
+            "entity_type": {"search_candidate": "actor", "event_review_queue": "event",
+                            "person_review_queue": "person"}[item["t"]],
+            "decision_kind": "reject",
+            "source_ref": {"table": item["t"], "id": str(item["id"])},
+            "reviewer": who, "edited_payload": {},
+            "idempotency_key": f"datafeed-withdraw:{run_id}:{item['id']}",
+            "rejection_reason": "Other", "rejection_reason_other": WITHDRAWN_REASON,
+            "notes": f"Data Feed import '{found[0]}' withdrawn by {who} to be imported again.",
+        })
+        out["withdrawn"] += 1
+    out["is_withdrawn"] = is_withdrawn(session, run_id)
+    session.rollback()
+    return out
 
 
 def pending_keys(session, record_type: str, keys: list[str]) -> dict[str, str]:
@@ -873,6 +949,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="stage; absent means check only")
     parser.add_argument("--enrich-then-admit", metavar="RUN_ID",
                         help="complete a staged organization import's empty boxes, then store it")
+    parser.add_argument("--withdraw", metavar="RUN_ID",
+                        help="take back an import so the same file can be sent again "
+                             "(with --by; a check unless --live)")
+    parser.add_argument("--by", help="who withdraws the import")
     parser.add_argument("--max-usd", type=float, default=1.0)
     parser.add_argument("--allow-shared-database", action="store_true")
     args = parser.parse_args(argv)
@@ -884,6 +964,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     from agents.collection.discovery_requests import open_session
 
+    if args.withdraw:
+        try:
+            with open_session() as session:
+                print(json.dumps(withdraw_import(session, args.withdraw, by=args.by or "",
+                                                 live=args.live), default=str))
+        except DataFeedRefused as exc:
+            print(json.dumps({"status": "refused", "error": str(exc)}))
+            return 2
+        return 0
     if args.enrich_then_admit:
         try:
             print(json.dumps(enrich_then_admit(args.enrich_then_admit, max_usd=args.max_usd,

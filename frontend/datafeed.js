@@ -337,6 +337,15 @@ export function missingOrganizationsLine(names = []) {
     + "look it up with a request so it can be added and linked.";
 }
 
+/** The question asked before an import is withdrawn (13 Nov 2026). */
+export function withdrawLine(item = {}) {
+  const n = item.counts?.pending || 0;
+  return `Withdraw “${item.import_name}”? Its ${n === 1 ? "record" : `${n} records`} waiting in Review `
+    + `Results ${n === 1 ? "is" : "are"} taken off the Review page and this import leaves Import History. `
+    + "Nothing was stored in the Directory from it, and the same file can then be uploaded again. "
+    + "The withdrawal is kept in the history of decisions.";
+}
+
 /** What happened when the records were sent. */
 export function doneLine(done = {}) {
   if (done.status === "already_imported") {
@@ -857,8 +866,32 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     </div>`;
   }
 
+  /** "Withdraw this import" (13 Nov 2026): its waiting records leave Review, it leaves
+   *  this list, and the same file can be uploaded again. Asked once, then done. */
+  function Withdraw({item, onDone}) {
+    const [state, setState] = useState({asking: false, busy: false, error: ""});
+    async function go() {
+      setState({asking: true, busy: true, error: ""});
+      try {
+        await api(`/api/datafeed/imports/${item.run_id}/withdraw`, {method: "POST"});
+        onDone();
+      } catch (e) {
+        setState({asking: true, busy: false, error: e.message});
+      }
+    }
+    if (!state.asking) return html`<button class="btn ghost" onClick=${() => setState({...state, asking: true})}>
+      Withdraw this import</button>`;
+    return html`<div class="df-withdraw" role="alertdialog" aria-label="Withdraw this import">
+      <p>${withdrawLine(item)}</p>
+      ${state.error && html`<p class="discovery-message error">${state.error}</p>`}
+      <div class="discovery-actions">
+        <button class="btn" disabled=${state.busy} onClick=${go}>${state.busy ? "Withdrawing…" : "Withdraw"}</button>
+        <button class="btn ghost" disabled=${state.busy} onClick=${() => setState({asking: false, busy: false, error: ""})}>Cancel</button>
+      </div></div>`;
+  }
+
   /** One import's details, opened from its row: records, file, counts and actions. */
-  function ImportDetails({item, records, completing, setCompleting}) {
+  function ImportDetails({item, records, completing, setCompleting, onWithdrawn}) {
     return html`<div class="df-import-details">
       <p class="df-muted">${historyMeta(item)}</p>
       <p class="df-import-facts"><strong>${recordCount(item)}</strong>
@@ -876,6 +909,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           ${item.counts.pending} incomplete: open in Review Results</button>`}
         ${item.record_type === "actor" && item.counts.pending > 0 && html`<button class="btn ghost"
           onClick=${() => setCompleting(completing === item.run_id ? null : item.run_id)}>Complete missing information with AI</button>`}
+        ${item.can_withdraw && html`<${Withdraw} item=${item} onDone=${onWithdrawn}/>`}
       </div>
       ${completing === item.run_id && html`<${Completion} item=${item} onClose=${() => setCompleting(null)}/>`}
       <div class="df-records">
@@ -961,7 +995,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
               ${open === item.run_id && html`<tr class="df-import-row"><td colspan="5">
                 ${item.example ? html`<${ExampleDetails} item=${item}/>`
                   : html`<${ImportDetails} item=${item} records=${records[item.run_id]}
-                    completing=${completing} setCompleting=${setCompleting}/>`}</td></tr>`}
+                    completing=${completing} setCompleting=${setCompleting}
+                    onWithdrawn=${() => { setOpen(null); load(); }}/>`}</td></tr>`}
             <//>`;
           })}
         </tbody>

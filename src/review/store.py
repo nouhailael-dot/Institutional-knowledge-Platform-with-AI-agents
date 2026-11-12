@@ -1082,6 +1082,24 @@ class ReviewStore:
                     [self.MAP_COPY, *chunk]).rowcount
         return changed
 
+    WITHDRAWN_IMPORT = "withdrawn_import"
+
+    def retire_run(self, source_run_id: str, reason: str = WITHDRAWN_IMPORT) -> int:
+        """Take a run's waiting records off the Review page (13 Nov 2026).
+
+        A Data Feed import withdrawn on the Data Feed page: its records were
+        rejected in the database, which the sync never removes from this copy
+        (a pending row that leaves the source stays pending here). Folded, kept,
+        not listed; decided rows are never touched.
+        """
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return db.execute(
+                "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                "AND folded_into IS NULL AND source_run_id=?",
+                (reason, str(source_run_id)),
+            ).rowcount
+
     def _set_aside_before_trial(self, db) -> int:
         """In the sync's own transaction: no list ever shows an item from before
         the trial start (src.trial), not even during a fresh store's first sync."""

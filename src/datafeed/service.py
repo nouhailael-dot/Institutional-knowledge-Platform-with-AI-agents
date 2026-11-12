@@ -488,7 +488,7 @@ class DataFeedService:
         if self.connect is None:
             return []
         with self.connect() as conn:
-            rows = conn.execute(HISTORY_SQL, (limit,)).fetchall()
+            rows = conn.execute(HISTORY_SQL, (limit, WITHDRAWN_REASON)).fetchall()
         out = []
         for r in rows:
             meta, stats = r[3] or {}, r[4] or {}
@@ -496,6 +496,9 @@ class DataFeedService:
             # 3 Nov 2026). Earlier imports sent to Review are hidden, not deleted:
             # their records stay in Review until decided.
             if meta.get("admission") not in HISTORY_ADMISSIONS:
+                continue
+            # Withdrawn to be imported again (13 Nov 2026): the new import is the one listed.
+            if len(r) > 12 and r[11] and r[12] == r[11]:
                 continue
             counts = {"pending": r[5], "approved_new": r[6], "matched_existing": r[7],
                       "rejected": r[8], "deferred": r[9]}
@@ -516,6 +519,9 @@ class DataFeedService:
                 "light_pull_read": r[10],
                 "has_file": self.original_file(r[0]) is not None,
                 "organizations_missing": self.missing_organizations(str(r[0])),
+                # Nothing of it is in the directory yet: it can be taken back and sent again.
+                "can_withdraw": bool(counts["pending"]) and not (
+                    counts["approved_new"] or counts["matched_existing"]),
             })
         return out
 
@@ -557,6 +563,17 @@ class DataFeedService:
         return {"started": True, "pid": pid, "organisations": len(estimate["organisations"]),
                 "max_usd": max_usd}
 
+    def withdraw(self, run_id: str, *, by: str) -> dict[str, Any]:
+        """Withdraw an import whose records all still wait in Review (13 Nov 2026)."""
+        if not _UUID.match(run_id or ""):
+            raise DataFeedError("Unknown import.")
+        if not str(by or "").strip():
+            raise DataFeedError("Sign in to withdraw an import.")
+        try:
+            return self.bridge.withdraw(run_id, str(by).strip())
+        except DataFeedBridgeError as exc:
+            raise DataFeedError(str(exc)) from exc
+
     def _actor_import(self, run_id: str) -> None:
         if not _UUID.match(run_id or "") or self.connect is None:
             raise DataFeedError("Unknown import.")
@@ -578,6 +595,9 @@ class DataFeedService:
 
 # Per import: what Review has done with its records. Read only.
 HISTORY_ADMISSIONS = ("directory",)
+# The reason the backend's withdraw step records (agents/datafeed/stage_import.py
+# WITHDRAWN_REASON): an import whose records were all withdrawn is not listed.
+WITHDRAWN_REASON = "Withdrawn from Import History to be imported again"
 
 HISTORY_SQL = """
 WITH runs AS (
@@ -596,8 +616,8 @@ items AS (
     FROM person_review_queue q JOIN staged_record s ON s.staged_record_id = q.staged_record_id
     JOIN runs ON runs.run_id = s.run_id),
 decided AS (
-    SELECT i.*, d.decision_kind FROM items i
-    LEFT JOIN LATERAL (SELECT decision_kind FROM review_admission_decision d
+    SELECT i.*, d.decision_kind, d.rejection_reason_other FROM items i
+    LEFT JOIN LATERAL (SELECT decision_kind, rejection_reason_other FROM review_admission_decision d
                        WHERE d.source_row_id = i.id AND d.source_table = i.t
                        ORDER BY decided_at DESC LIMIT 1) d ON true)
 SELECT r.run_id::text, r.entity_type, r.started_at, r.meta, r.stats,
@@ -606,7 +626,9 @@ SELECT r.run_id::text, r.entity_type, r.started_at, r.meta, r.stats,
        count(*) FILTER (WHERE d.status = 'approved' AND d.decision_kind = 'same_existing'),
        count(*) FILTER (WHERE d.status = 'rejected'),
        count(*) FILTER (WHERE d.status = 'deferred'),
-       count(*) FILTER (WHERE d.read)
+       count(*) FILTER (WHERE d.read),
+       count(d.id),
+       count(*) FILTER (WHERE d.status = 'rejected' AND d.rejection_reason_other = %s)
 FROM runs r LEFT JOIN decided d ON d.run_id = r.run_id
 GROUP BY 1, 2, 3, 4, 5 ORDER BY r.started_at DESC
 """

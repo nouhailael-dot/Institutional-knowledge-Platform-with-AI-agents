@@ -332,3 +332,11 @@ test('organizations not in the Directory are flagged with a way to look them up 
   assert.match(page, /addEventListener\("ghus:find-organization"/);
   assert.match(page, /cadence:"once"/);
 });
+
+test('withdrawing an import says what happens before it is done (13 Nov 2026)', async () => {
+  const {withdrawLine} = await import('../frontend/datafeed.js');
+  const line = withdrawLine({import_name: 'UM6P GHUS Team Information', counts: {pending: 7}});
+  assert.match(line, /^Withdraw “UM6P GHUS Team Information”\? Its 7 records waiting in Review Results are taken off/);
+  assert.match(line, /the same file can then be uploaded again/);
+  assert.match(withdrawLine({import_name: 'X', counts: {pending: 1}}), /Its record waiting in Review Results is taken off/);
+});
