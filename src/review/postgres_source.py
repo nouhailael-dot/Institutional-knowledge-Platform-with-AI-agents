@@ -1931,6 +1931,8 @@ class PostgresReviewSource:
         meta["data_feed"] = {k: feed.get(k) for k in (
             "import_name", "file_name", "row_number", "method", "uploaded_by", "submitted_at",
             "template_version", "warnings", "original_values")}
+        if str(payload.get("ghus_notes") or "").strip() and not meta.get("ghus_notes"):
+            meta["ghus_notes"] = str(payload["ghus_notes"]).strip()
         if match.get("entity_id") and not meta.get("top_matches"):
             meta["top_matches"] = [{"entity_id": match["entity_id"], "name": match.get("name"),
                                     "score": match.get("score"), "reason": match.get("reason")}]

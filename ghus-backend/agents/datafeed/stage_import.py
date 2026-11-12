@@ -734,6 +734,7 @@ def admit_verified(session, batch: Mapping[str, Any], result: Mapping[str, Any])
                 "reviewer": uploader, "edited_payload": {},
                 "idempotency_key": f"datafeed-import:{result['batch_key']}:{row.get('row_number')}",
                 "notes": "Data Feed import admitted as Verified on the uploader's attestation.",
+                "ghus_notes": _clean(payload.get("ghus_notes")) or None,
             }, import_verification={"by": uploader,
                                     "reason": import_reason(batch, row.get("row_number"))})
             outcomes.append({**item, "outcome": "approved_verified",
@@ -763,6 +764,8 @@ def directory_decision(batch: Mapping[str, Any], batch_key: str, row: Mapping[st
         "reviewer": uploader, "edited_payload": {},
         "idempotency_key": f"datafeed-directory:{batch_key}:{row.get('row_number')}",
         "notes": "Data Feed import stored in the directory (GHUS decision, 3 Nov 2026).",
+        # The spreadsheet's GHUS Notes column (12 Nov 2026) goes on the record.
+        "ghus_notes": _clean((sent.get("payload") or {}).get("ghus_notes")) or None,
     }
     if same:
         decision["target_id"] = str(match["entity_id"])

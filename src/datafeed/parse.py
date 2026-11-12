@@ -240,7 +240,7 @@ def check_headers(parsed: ParsedFile, record_type: str) -> list[str]:
             other = contract.TYPE_LABELS.get(parsed.template.get("record_type"), "another type")
             problems.append(f"This is the {other} template. Choose {other} above, or "
                             f"use the {contract.TYPE_LABELS[record_type]} template.")
-        if parsed.template.get("template_version") != contract.TEMPLATE_VERSION:
+        if parsed.template.get("template_version") not in contract.ACCEPTED_TEMPLATE_VERSIONS:
             problems.append(f"This file was made from template version "
                             f"{parsed.template.get('template_version')}; the current version "
                             f"is {contract.TEMPLATE_VERSION}. Download the current template.")

@@ -775,3 +775,20 @@ def test_import_history_shows_when_the_database_cannot_be_reached(monkeypatch, t
     service.fail = True
     assert client.get("/api/datafeed/history").json() == {
         "imports": [{"run_id": "r1", "import_name": "Spring list"}], "unavailable": True}
+
+
+def test_the_templates_carry_the_directory_columns_and_ghus_notes():
+    """GHUS feedback, 11 Nov 2026: each Data Feed sheet has the columns the
+    Ecosystem Directory shows, and GHUS Notes has a column to go into."""
+    from src.datafeed import contract
+
+    keys = {t: {f.key for f in contract.fields(t)} for t in contract.RECORD_TYPES}
+    for record_type in contract.RECORD_TYPES:
+        assert "ghus_notes" in keys[record_type]
+    assert {"primary_technical_focus", "technical_approach", "current_activities",
+            "technology_ip_notes", "key_constraints", "funding_summary",
+            "primary_lifecycle_role"} <= keys["actor"]
+    assert {"access_type", "sponsoring_orgs"} <= keys["event"]
+    assert "orcid" in keys["person"]
+    # A file from the 2 Nov template still reads.
+    assert "2026-11-02.1" in contract.ACCEPTED_TEMPLATE_VERSIONS

@@ -2091,6 +2091,10 @@ def _insert_person(
         cols["record_status"] = "parked"
     if "source_origin" in columns:
         cols["source_origin"] = _record_origin(payload)
+    # The Data Feed's ORCID column (12 Nov 2026), as the Directory shows it.
+    orcid = str(payload.get("orcid") or "").strip()
+    if orcid and "orcid" in columns:
+        cols["orcid"] = orcid[:40]
     if columns and "verification_status" not in columns:
         cols.pop("verification_status")
     profile_url = str(payload.get("public_profile_url") or "").strip()

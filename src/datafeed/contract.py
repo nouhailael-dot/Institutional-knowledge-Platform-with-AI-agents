@@ -18,7 +18,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TEMPLATE_VERSION = "2026-11-02.1"
+TEMPLATE_VERSION = "2026-11-12.1"
+# 12 Nov 2026: the columns the Ecosystem Directory shows and GHUS Notes were
+# added; a file from the 2 Nov template has a subset of them and still reads.
+ACCEPTED_TEMPLATE_VERSIONS = (TEMPLATE_VERSION, "2026-11-02.1")
 RECORD_TYPES = ("actor", "person", "event")
 TYPE_LABELS = {"actor": "Organizations", "person": "People", "event": "Events"}
 # Templates made before 2026-11-01 keep their old sheet, column and label names.
@@ -127,6 +130,29 @@ ACTOR_FIELDS: tuple[Field, ...] = (
     Field("international_connection", "International connection", "long_text",
           "A documented programme, office or partner outside the United States.", "",
           max_length=1000, target="actor_fact (Light Pull): international_connection"),
+    Field("primary_technical_focus", "Primary technical focus", "long_text",
+          "What it works on, technically.", "", max_length=1000,
+          target="actor.primary_technical_focus"),
+    Field("technical_approach", "Technical approach", "long_text",
+          "How it does that work.", "", max_length=1000, target="actor.technical_approach"),
+    Field("current_activities", "Current activities", "long_text",
+          "What it is doing now.", "", max_length=1000, target="actor.current_activities"),
+    Field("technology_ip_notes", "Technology and IP", "long_text",
+          "Technology, patents or licences it holds, as stated.", "", max_length=1000,
+          target="actor.technology_ip_notes"),
+    Field("key_constraints", "Key constraints", "long_text",
+          "What limits or conditions its work.", "", max_length=1000,
+          target="actor.key_constraints"),
+    Field("funding_summary", "Funding", "long_text",
+          "Its funding, as stated by a source.", "", max_length=1000,
+          target="actor.funding_summary"),
+    Field("primary_lifecycle_role", "Lifecycle role", "text",
+          "Where it sits from research to market (e.g. Research, Validation, Scale-up).", "",
+          max_length=30, target="actor.primary_lifecycle_role"),
+    Field("ghus_notes", "GHUS Notes", "long_text",
+          "GHUS's own notes: meetings, contacts, who attended, links to reports. Kept on the "
+          "record in the Ecosystem Directory once it is added.",
+          "", max_length=5000, target="actor.ghus_notes (GHUS Notes)"),
     Field("um6p_ocp_connection", "UM6P/OCP connection", "long_text",
           "A documented link with UM6P, OCP Group or INNOVX, with its source.", "",
           max_length=1000, target="actor_fact (Light Pull): um6p_ocp_connection"),
@@ -256,6 +282,12 @@ PERSON_FIELDS: tuple[Field, ...] = (
           "Up to three sentences of professional biography. Never private details.",
           "Hydrologist working on groundwater recharge in arid regions.", max_length=800,
           target="Review profile fact", hint="Never private details."),
+    Field("orcid", "ORCID", "text", "Their ORCID iD, if they have one.", "",
+          max_length=40, target="person.orcid"),
+    Field("ghus_notes", "GHUS Notes", "long_text",
+          "GHUS's own notes: meetings, contacts, who attended, links to reports. Kept on the "
+          "record in the Ecosystem Directory once it is added.",
+          "", max_length=5000, target="person.ghus_notes (GHUS Notes)"),
     Field("expertise", "Expertise", "list", "Research areas or specialisms, separated by ';'.",
           "groundwater; aquifer recharge", max_length=500,
           target="person_discovery_profile.research_area"),
@@ -321,6 +353,16 @@ EVENT_FIELDS: tuple[Field, ...] = (
     Field("expected_attendance", "Expected attendance", "text",
           "Attendance as the organizer states it.", "About 400", max_length=120,
           target="event.expected_attendance"),
+    Field("access_type", "Access", "text",
+          "How to attend: open registration, invitation only, paid, free.", "Open registration",
+          max_length=120, target="event.access_type"),
+    Field("sponsoring_orgs", "Sponsors", "text", "Its sponsors, as stated, separated by ';'.",
+          "", max_length=1000, target="event.sponsoring_orgs"),
+    Field("ghus_notes", "GHUS Notes", "long_text",
+          "GHUS's own notes: meetings, contacts, who attended, links to reports. Kept on the "
+          "record in the Ecosystem Directory once it is added.",
+          "", max_length=5000, target="event.ghus_notes (GHUS Notes)"),
+
     Field("source_url", "Source URL", "url",
           "Where this can be checked. An Official event URL or a Source URL is required.",
           "https://greatplainswatersummit.org/agenda", max_length=1000, target="source.url",
