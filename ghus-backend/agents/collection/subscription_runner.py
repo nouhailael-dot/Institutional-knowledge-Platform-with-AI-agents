@@ -83,6 +83,9 @@ class RunnerReport:
         return "succeeded"
 
 
+
+RUN_NOW_OVERRIDES = ("not_due", "not_started")
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -213,7 +216,10 @@ def run_due_requests(
         if not subscriptions:
             report.invalid[request_id] = "no active or paused request with this id"
     due, report.skipped = due_subscriptions(subscriptions, today=today)
-    if request_id is not None and report.skipped.get(request_id) == "not_due":
+    # Run now is a person's explicit dispatch: it runs a request that is not due
+    # yet or whose period has not started (12 Nov 2026: a request starting in
+    # 2027 showed Running and nothing ran). Paused and ended requests never run.
+    if request_id is not None and report.skipped.get(request_id) in RUN_NOW_OVERRIDES:
         due = tuple(subscriptions)
         report.skipped.pop(request_id)
     report.expired = [sid for sid, why in report.skipped.items() if why == "expired"]

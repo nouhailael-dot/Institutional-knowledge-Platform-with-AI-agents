@@ -384,7 +384,10 @@ def test_run_now_goes_ahead_when_the_state_cannot_be_read(tmp_path, monkeypatch)
     from src.discovery.bridge import run_refusal
 
     assert run_refusal(None) is None
-    assert run_refusal({"exists": True, "status": "paused", "runner_busy": False}) is None
+    assert run_refusal({"exists": True, "status": "active", "runner_busy": False}) is None
+    # 12 Nov 2026: the runner never runs a paused request, so Run now says so
+    # instead of showing Running while nothing happens.
+    assert "paused" in run_refusal({"exists": True, "status": "paused", "runner_busy": False})
 
 
 def test_run_now_lets_the_light_pull_read_on_the_shared_database_only(tmp_path, monkeypatch):

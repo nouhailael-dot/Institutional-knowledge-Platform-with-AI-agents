@@ -116,6 +116,9 @@ def run_refusal(state: dict[str, Any] | None) -> str | None:
         ended = f" on {state['end_date']}" if state.get("end_date") else ""
         return (f"This request has ended{ended}, so it cannot run again. Create a new "
                 "request with the same settings to run it now.")
+    if state.get("status") == "paused":
+        # The runner never runs a paused request; say so instead of "Running".
+        return "This request is paused. Resume it first, then run it."
     if state.get("runner_busy"):
         return ("Another request is running right now. Run this one when it has "
                 "finished: a run takes a few minutes.")
