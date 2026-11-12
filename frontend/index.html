@@ -749,10 +749,10 @@ import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261112c";
-import {createDiscoveryPage} from "./discovery.js?v=20261112a";
+import {createDiscoveryPage} from "./discovery.js?v=20261112b";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261110e";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261110b";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261112a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -2912,7 +2912,8 @@ const COMPASS_MARK=html`<svg class="compass-mark" width="44" height="44" viewBox
   <path d="M29.5 14.5 24.6 24.6 14.5 29.5 19.4 19.4z" fill="var(--accent)"/>
   <path d="M19.4 19.4 24.6 24.6 14.5 29.5z" fill="currentColor" opacity=".9"/></svg>`;
 function App(){
-  const [tab,setTab]=useState("ask");
+  // Compass opens on the Dashboard (GHUS, 11 Nov 2026).
+  const [tab,setTab]=useState("dashboard");
   // Discovery's Run now opens the actor's profile in Review (discovery.js openInReview).
   useEffect(()=>{const go=()=>setTab("review");window.addEventListener("ghus:open-review",go);
     return ()=>window.removeEventListener("ghus:open-review",go);},[]);

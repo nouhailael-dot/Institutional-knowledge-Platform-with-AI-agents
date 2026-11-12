@@ -601,6 +601,17 @@ def maps_recent():
     return {"maps": maps, "research_available": enabled, "research_disabled_reason": reason}
 
 
+@app.get("/api/me")
+def who_am_i():
+    """The signed-in person, and whether results can be emailed to them (12 Nov 2026)."""
+    who = current_user()
+    mail = bool(os.environ.get("GHUS_SMTP_HOST", "").strip()
+                and (os.environ.get("GHUS_NOTIFY_FROM") or os.environ.get("GHUS_SMTP_USER") or "").strip())
+    email = current_user_email()
+    return {"signed_in": who != NO_SIGN_IN_YET, "name": None if who == NO_SIGN_IN_YET else who,
+            "email": email, "email_notifications": bool(mail and email)}
+
+
 @app.get("/api/dashboard/directory-activity")
 def dashboard_directory_activity(days: int = Query(30, ge=1, le=366)):
     """The signed-in user's latest Directory contributions (Review decisions), newest first.

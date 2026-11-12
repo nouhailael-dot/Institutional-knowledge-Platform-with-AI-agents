@@ -303,3 +303,45 @@ def test_explore_and_map_lists_only_maps_made_since_the_trial_start(monkeypatch)
     monkeypatch.setenv("GHUS_TRIAL_START", "2026-11-10")      # 1_794_268_800
     assert [m["id"] for m in client.get("/api/maps").json()["maps"]] == ["new"]
     assert client.get("/api/dashboard/start").json() == {"since": "2026-11-10T00:00:00Z"}
+
+
+# ------------------------------------------------- who is acting (12 Nov 2026)
+
+def test_the_sign_in_names_who_acted_and_where_results_are_emailed(monkeypatch):
+    from src import identity
+
+    monkeypatch.setenv("GHUS_REQUIRE_LOGIN", "1")
+    monkeypatch.setenv("GHUS_ACCESS_USERS",
+                       "zahra@ghus.example:a-long-enough-pass, david:another-long-pass")
+    app = FastAPI()
+    app.middleware("http")(access.require_login)
+
+    @app.get("/api/who")
+    def who():
+        return {"name": identity.current_user(), "email": identity.current_user_email()}
+
+    client = TestClient(app)
+    assert client.get("/api/who", headers=_basic("Zahra@ghus.example", "a-long-enough-pass")).json() \
+        == {"name": "zahra@ghus.example", "email": "zahra@ghus.example"}
+    assert client.get("/api/who", headers=_basic("david", "another-long-pass")).json() \
+        == {"name": "david", "email": None}
+    # Outside a request nobody is acting.
+    assert identity.current_user() == identity.NO_SIGN_IN_YET
+
+
+def test_the_email_line_is_promised_only_when_mail_is_set_up(monkeypatch):
+    from backend.app import app
+    from src import identity
+
+    monkeypatch.delenv("GHUS_SMTP_HOST", raising=False)
+    token = identity.acting_as("zahra@ghus.example")
+    try:
+        from backend.app import who_am_i
+        assert who_am_i()["email_notifications"] is False
+        monkeypatch.setenv("GHUS_SMTP_HOST", "smtp.example.org")
+        monkeypatch.setenv("GHUS_NOTIFY_FROM", "compass@ghus.example")
+        assert who_am_i() == {"signed_in": True, "name": "zahra@ghus.example",
+                              "email": "zahra@ghus.example", "email_notifications": True}
+    finally:
+        identity.done(token)
+    assert app is not None

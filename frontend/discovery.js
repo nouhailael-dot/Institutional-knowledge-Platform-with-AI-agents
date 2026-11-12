@@ -1341,6 +1341,14 @@ export function handoffForm(handoff, today) {
 export const EMAIL_NOTE = "You’ll receive an email notification when your results are ready to "
   + "review in Review Results.";
 
+let signedInCache = null;
+/** GET /api/me once per page: who is signed in and whether results are emailed. */
+export function whoAmI() {
+  if (signedInCache) return Promise.resolve(signedInCache);
+  return fetch("/api/me").then(r => (r.ok ? r.json() : {})).catch(() => ({}))
+    .then(body => (signedInCache = body));
+}
+
 export function createDiscoveryPage({html, useState, useEffect, useRef = () => ({current: null})}) {
   // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
   const DateInput = createDateInput({html, useState, useEffect});
@@ -1363,8 +1371,17 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
   }
 
   /** Frequency · Start Date · Duration, in one row; Duration only for a recurring request. */
-  /** Where the results are emailed: typed once here, kept in this browser (no sign-in yet). */
+  /**
+   * "You'll receive an email..." - said only when it is true (12 Nov 2026): a
+   * mail server is set up and the person signed in with an email address.
+   */
   function EmailNote() {
+    const [me, setMe] = useState(signedInCache);
+    useEffect(() => {
+      if (me) return;
+      whoAmI().then(setMe);
+    }, []);
+    if (!me?.email_notifications) return null;
     return html`<p class="discovery-email-note"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       <span>${EMAIL_NOTE}</span></p>`;
   }

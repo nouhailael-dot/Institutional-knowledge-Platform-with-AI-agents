@@ -10,7 +10,7 @@
 // Directory activity by the name typed in Review Results, and maps are the ones
 // made on this computer.
 
-import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261112a";
+import {NAVIGATE, formatUsd, isRunning, requestStatus, visibleRequests} from "./discovery.js?v=20261112b";
 import {usDate} from "./dates.js?v=20261110b";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";
@@ -72,7 +72,9 @@ export function sinceStart({requests = [], updates = [], oneTime = [], maps = []
   if (!from) return {requests, updates, oneTime, maps};
   const later = value => time(value) >= from;
   const trim = r => ({...r, runs: (r.runs || []).filter(run => later(run.started_at))});
-  const current = r => r.runs.length > 0 || later(r.created_at);
+  // A request running now is shown, even one made before the start (12 Nov 2026:
+  // a Run now that had no run record yet was missing from the Dashboard).
+  const current = r => r.runs.length > 0 || later(r.created_at) || isRunning(r);
   return {
     requests: requests.map(trim).filter(current),
     updates: updates.map(trim).filter(current),
@@ -123,6 +125,8 @@ export function recentMaps(maps = [], days = 30, now = new Date()) {
 }
 
 function lastActivity(request) {
+  // Run now, still starting (no run record yet): its activity is now.
+  if (request.starting && !(request.runs || []).length) return new Date().toISOString();
   return (request.runs || [])[0]?.started_at || request.created_at;
 }
 
@@ -223,10 +227,6 @@ export function whenText(value) {
 
 const icon = (html, d, size = 22) => html`<svg width=${size} height=${size} viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-
-/** Until sign-in exists COMPASS cannot tell whose activity this is (3 Nov 2026: no typed names). */
-export const NOT_SIGNED_IN_ACTIVITY =
-  "Your verifications, additions and updates appear here once sign-in is on: COMPASS takes your name from your account.";
 
 export function createDashboardPage({html, useState, useEffect}) {
   const ICONS = {
@@ -337,7 +337,9 @@ export function createDashboardPage({html, useState, useEffect}) {
 
     const now = new Date();
     const allReady = requestsReady && mapsReady;
-    const spent = monthSpending(shown, now);
+    // The whole month, from the 1st to today, whatever the trial start (GHUS, 11 Nov).
+    const spent = monthSpending({requests: data.requests || [], updates: data.updates || [],
+      oneTime: data.oneTime || [], maps: data.maps || []}, now);
     const failed = Object.keys(problems).filter(name => problems[name]);
     const maps = recentMaps(shown.maps, days, now);
     const requests = recentRequests(rows, days, now);
@@ -355,7 +357,7 @@ export function createDashboardPage({html, useState, useEffect}) {
 
       <div class="dash-spending">
         <span class="dash-spending-icon">${ICONS.coins}</span>
-        <div class="dash-spending-label"><strong>My Spending This Month</strong><span>${monthRangeLabel(now, start)}</span></div>
+        <div class="dash-spending-label"><strong>My Spending This Month</strong><span>${monthRangeLabel(now)}</span></div>
         <strong class="dash-spending-amount">${allReady ? formatUsd(spent) || "$0.00" : "…"}</strong>
       </div>
 
@@ -384,7 +386,7 @@ export function createDashboardPage({html, useState, useEffect}) {
 
         <${Panel} symbol=${ICONS.building} title="Recent Directory Activity"
           lead="My latest contributions to the Ecosystem Directory"
-          empty=${!activity.signedIn ? NOT_SIGNED_IN_ACTIVITY
+          empty=${!activity.signedIn ? `Nothing in the last ${days} days.`
             : activity.error || (activity.loaded ? `Nothing in the last ${days} days.` : "Loading…")}
           rows=${records.map((r, i) => html`<${Entry} key=${`${r.id}:${i}`} symbol=${RECORD_ICONS[r.kind] || ICONS.building}
             name=${r.name} meta=${`${r.category} · ${r.action}`}

@@ -135,8 +135,28 @@ test('the Directory activity panel never asks for a typed name', async () => {
   const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /Type your name/);
   assert.doesNotMatch(src, /ghus\.review\.reviewer/);
-  const {NOT_SIGNED_IN_ACTIVITY} = await import('../frontend/dashboard.js');
-  assert.match(NOT_SIGNED_IN_ACTIVITY, /takes your name from your account/);
+  // 11 Nov 2026 (GHUS): like the other panels - activity, or nothing in the period.
+  assert.doesNotMatch(src, /once sign-in is on/);
+  assert.match(src, /!activity\.signedIn \? `Nothing in the last \$\{days\} days\.`/);
+});
+
+test('a request running now is on the Dashboard, even one made before the trial', async () => {
+  const {sinceStart, requestRows, recentRequests} = await import('../frontend/dashboard.js');
+  const start = '2026-11-10T00:00:00Z';
+  const old = {subscription_id: 'un', title: 'UN events updates', created_at: '2026-10-20T00:00:00Z',
+    status: 'active', starting: true, runs: []};
+  const shown = sinceStart({requests: [old]}, start);
+  assert.equal(shown.requests.length, 1);
+  const rows = requestRows({requests: shown.requests});
+  assert.equal(recentRequests(rows, 7).length, 1);
+});
+
+test('spending counts the whole month from the 1st, and Compass opens on the Dashboard', () => {
+  const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
+  assert.match(src, /<span>\$\{monthRangeLabel\(now\)\}<\/span>/);
+  assert.match(src, /const spent = monthSpending\(\{requests: data\.requests/);
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /const \[tab,setTab\]=useState\("dashboard"\)/);
 });
 
 test('the hosted trial starts the Dashboard clean: nothing before its start counts', () => {

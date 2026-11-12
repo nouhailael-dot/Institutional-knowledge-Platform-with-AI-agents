@@ -220,4 +220,11 @@ async def require_login(request, call_next):
         return _secured(PlainTextResponse(
             "This change was sent from another site and was refused.", status_code=403))
     request.state.access_user = name
-    return _secured(await call_next(request))
+    # Decisions, requests and uploads are recorded under this sign-in (src.identity).
+    from src.identity import acting_as, done
+
+    token = acting_as(name)
+    try:
+        return _secured(await call_next(request))
+    finally:
+        done(token)

@@ -634,6 +634,9 @@ test('the Monitor page leads with New Request, Requests, Organization Updates an
   // The results email is the account's: a notice, never an address to type.
   const {EMAIL_NOTE} = await import('../frontend/discovery.js');
   assert.equal(EMAIL_NOTE, 'You’ll receive an email notification when your results are ready to review in Review Results.');
+  // 12 Nov 2026: said only when a mail server is set up and the sign-in is an email.
+  const src = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(!me\?\.email_notifications\) return null;/);
   assert.doesNotMatch(page, /type="email"|ghus\.monitor\.email/);
   const {MONITOR_TITLE, REVIEW_NOTE} = await import('../frontend/discovery.js');
   assert.equal(MONITOR_TITLE, 'What would you like to monitor?');
