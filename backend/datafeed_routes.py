@@ -138,7 +138,7 @@ def original_file(run_id: str):
     path = datafeed_service().original_file(run_id)
     if path is None:
         raise HTTPException(status_code=404, detail="The original file is not kept on this computer.")
-    name = path.name.split("__", 1)[1].replace('"', "")
+    name = path.name.split("__", 1)[1].replace('"', "")  # "<run or sha-fingerprint>__<name>"
     return Response(content=path.read_bytes(), media_type="application/octet-stream", headers={
         "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store"})
 

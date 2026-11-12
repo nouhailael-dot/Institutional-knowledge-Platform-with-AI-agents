@@ -968,3 +968,22 @@ def test_only_an_import_with_nothing_stored_can_be_withdrawn(tmp_path):
         service.withdraw("not-a-run", by="Zahra")
     with pytest.raises(DataFeedError, match="Sign in"):
         service.withdraw("5b0c2f9e-7c1a-4d2b-9e3f-2a1b0c9d8e7f", by="")
+
+
+def test_an_uploaded_file_is_kept_even_when_sending_it_fails(tmp_path):
+    """GHUS, 13 Nov 2026: 'UM6P GHUS Team Information' offered no Excel to download.
+    Its sending failed part-way, and the file was kept only after a full success.
+    It is now kept before sending, under its fingerprint, and found from the import."""
+    service = _offline_service(tmp_path)
+    sha = "ab" * 32
+    run = "11111111-2222-4333-8444-555555555555"
+    preview = {"preview_id": "c" * 32, "file": {"name": "GHUS_People_Template (2).xlsx", "sha256": sha}}
+    service._upload_path("c" * 32).write_bytes(b"cells")
+    service._keep_upload(preview)                       # before the records are sent
+    assert service.original_file(run) is None           # no database to say which file
+    kept = service.original_file(run, sha)              # Import History knows the fingerprint
+    assert kept.read_bytes() == b"cells"
+    assert kept.name.split("__", 1)[1] == "GHUS_People_Template _2_.xlsx"   # safe characters only
+    service._keep_upload(preview)                       # kept once
+    assert len(list(service.originals_dir.glob(f"sha-{sha}__*"))) == 1
+    assert service.original_file(run, "not-a-fingerprint") is None

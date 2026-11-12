@@ -30,6 +30,7 @@ PREVIEW_TTL = 24 * 3600
 BATCH_CONTRACT = "ghus-datafeed-batch/1"
 _PREVIEW_ID = re.compile(r"^[0-9a-f]{32}$")
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 MAX_MANUAL_ROWS = 50
 # What the uploader confirms, recorded word for word with the import.
 ATTESTATIONS = {
@@ -350,6 +351,28 @@ class DataFeedService:
             self.originals_dir.mkdir(parents=True, exist_ok=True)
             (self.originals_dir / f"{run_id}__{safe}.xlsx").write_bytes(data)
 
+    def _keep_upload(self, preview: dict[str, Any]) -> None:
+        """The uploaded file, kept on the disk before its records are sent (13 Nov 2026).
+
+        It was kept only once the import had fully succeeded, so an import whose
+        sending failed part-way (its records staged, the answer lost) kept no
+        file, and Import History could not offer it. Kept under the file's
+        SHA-256, which the import records, so it is found whatever happens next.
+        """
+        upload = self._upload_path(preview["preview_id"])
+        sha = str((preview.get("file") or {}).get("sha256") or "")
+        if not upload.is_file() or not _SHA256.match(sha) or self._file_by_sha(sha):
+            return
+        safe = re.sub(r"[^\w.\- ]", "_", Path((preview.get("file") or {}).get("name")
+                                                 or "import").name)
+        self.originals_dir.mkdir(parents=True, exist_ok=True)
+        (self.originals_dir / f"sha-{sha}__{safe}").write_bytes(upload.read_bytes())
+
+    def _file_by_sha(self, sha: str | None) -> Path | None:
+        if not _SHA256.match(str(sha or "")) or not self.originals_dir.is_dir():
+            return None
+        return next(iter(sorted(self.originals_dir.glob(f"sha-{sha}__*"))), None)
+
     def _keep_missing_organizations(self, run_id: object, names: list[str]) -> None:
         """13 Nov 2026 (GHUS): organizations a file names that are not in the
         directory, kept with its import so Import History tells the whole team."""
@@ -367,10 +390,23 @@ class DataFeedService:
             return []
         return [str(n) for n in names if str(n).strip()] if isinstance(names, list) else []
 
-    def original_file(self, run_id: str) -> Path | None:
+    def original_file(self, run_id: str, sha256: str | None = None) -> Path | None:
         if not _UUID.match(run_id or "") or not self.originals_dir.is_dir():
             return None
-        return next(iter(sorted(self.originals_dir.glob(f"{run_id}__*"))), None)
+        kept = next(iter(sorted(self.originals_dir.glob(f"{run_id}__*"))), None)
+        if kept is not None:
+            return kept
+        if sha256 is None and self.connect is not None:
+            try:
+                with self.connect() as conn:
+                    row = conn.execute(
+                        "SELECT config->'datafeed'->>'file_sha256' FROM scrape_run "
+                        "WHERE run_id = %s::uuid AND source_name = 'ghus_data_feed'",
+                        (run_id,)).fetchone()
+                sha256 = row[0] if row else None
+            except Exception:  # noqa: BLE001 - the database unreachable: no file offered
+                sha256 = None
+        return self._file_by_sha(sha256)
 
     def _store(self, preview: dict[str, Any]) -> None:
         self.preview_dir.mkdir(parents=True, exist_ok=True)
@@ -449,6 +485,7 @@ class DataFeedService:
                                               else "source"]})
         batch["rows_total"] = preview["counts"]["total"]
         batch["ai_enrichment"] = bool(ai_enrichment)
+        self._keep_upload(preview)
         try:
             outcome = self.bridge.stage(batch)
         except DataFeedBridgeError as exc:
@@ -517,7 +554,7 @@ class DataFeedService:
                 "status": ("Awaiting Review" if pending and not decided
                            else "Partly reviewed" if pending else "Reviewed"),
                 "light_pull_read": r[10],
-                "has_file": self.original_file(r[0]) is not None,
+                "has_file": self.original_file(r[0], meta.get("file_sha256") or "") is not None,
                 "organizations_missing": self.missing_organizations(str(r[0])),
                 # Nothing of it is in the directory yet: it can be taken back and sent again.
                 "can_withdraw": bool(counts["pending"]) and not (
