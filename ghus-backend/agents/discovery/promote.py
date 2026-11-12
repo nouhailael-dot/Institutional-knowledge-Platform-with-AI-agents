@@ -341,6 +341,19 @@ def _dry_run_result(result: PromotionResult, route: RouteDecision) -> PromotionR
     return result
 
 
+# 12 Nov 2026 (GHUS): every data value starts with a capital letter -
+# "Conference", not "conference". Short list values only; free text, names and
+# links are kept exactly as found.
+_CAPITALIZED_VALUES = frozenset({"event_type", "recurring_pattern", "access_type", "event_format",
+                                 "audience", "sector", "expected_attendance"})
+
+
+def _capitalized(field_name: str, value):
+    if field_name in _CAPITALIZED_VALUES and isinstance(value, str) and value[:1].islower():
+        return value[0].upper() + value[1:]
+    return value
+
+
 def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
     name = payload.get("name") or payload.get("title")
     if not name:
@@ -350,7 +363,7 @@ def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
     for field_name in EVENT_CREATE_FIELDS:
         value = payload.get(field_name)
         if _has_value(value):
-            cols[field_name] = value
+            cols[field_name] = _capitalized(field_name, value)
     # Architecture V2: a newly discovered event is parked until GHUS reviews it.
     columns = _table_columns(session, "event")
     # The event's own dates, when stated. next_date alone lost every end date.
@@ -507,7 +520,7 @@ def _append_record_facts(session, *, entity_type: str, entity_id: str, staged: S
                     written += 1
             continue
         append_entity_fact(session, entity_type=entity_type, entity_id=entity_id, fact_key=key,
-                           value=value, source_url=url, date_read=moment,
+                           value=_capitalized(key, value), source_url=url, date_read=moment,
                            created_by="agent:promote", live=True)
         written += 1
     return written

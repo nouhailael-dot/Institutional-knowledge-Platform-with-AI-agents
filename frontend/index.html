@@ -748,8 +748,8 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261112b";
-import {createDiscoveryPage} from "./discovery.js?v=20261110b";
+import {createReviewPage} from "./review.js?v=20261112c";
+import {createDiscoveryPage} from "./discovery.js?v=20261112a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261110e";
 import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261110b";
@@ -1305,7 +1305,7 @@ function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[]
    process): it checks each one and writes them together, with the person's
    name; an organization's change is also kept in its fact history. Read-only
    boxes come from elsewhere: links, sectors, and the status (Review, Delete). */
-const FREQUENCIES=["One-time","Annual","Every two years","Twice a year","Quarterly","Monthly","Irregular","Not found"];
+const FREQUENCIES=["One-time","Annual","Every two years","Twice a year","Quarterly","Monthly","Irregular","Not Found"];
 const EDIT_PATHS={actor:"actors",event:"events",person:"people",hub:"hubs"};
 // [field, label, type, options-key]. Types: text, long, date, select, readonly.
 const EDIT_GROUPS={
@@ -1459,7 +1459,7 @@ function Actors({focus}){
     layout="card"
     tags=${html`<div class="mtags">${typeOf(sel)&&html`<span class="mtag cat">${typeOf(sel)}</span>`}
       ${(sel.sectors||[]).map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`}
-    meta=${html`📍 ${[sel.city,us&&sel.state,us&&sel.region,sel.country].filter(Boolean).join(" · ")||"Location not found"}${us&&html` <span class="msep">·</span> Hub: ${!sel.hubs.length?"not in a hub":sel.hubs.length===1?sel.hubs[0]:`${sel.hubs[0]} +${sel.hubs.length-1} more`}`}`}
+    meta=${html`📍 ${[sel.city,us&&sel.state,us&&sel.region,sel.country].filter(Boolean).join(" · ")||"Location Not Found"}${us&&html` <span class="msep">·</span> Hub: ${!sel.hubs.length?"not in a hub":sel.hubs.length===1?sel.hubs[0]:`${sel.hubs[0]} +${sel.hubs.length-1} more`}`}`}
     sections=${profile=>[
       html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
       html`<${Section} key="facts" title="Key Facts"><${Facts} items=${[
@@ -1481,7 +1481,7 @@ function Actors({focus}){
       html`<${Section} key="people" title=${`People${peopleAt(sel)?` (${peopleAt(sel).length})`:""}`}>
         ${!peopleAt(sel)?html`<span class="dash">Loading…</span>`
           :!peopleAt(sel).length?html`<span class="dash">No people in the directory work here yet.</span>`
-          :html`<${Facts} items=${peopleAt(sel).map(x=>[x.name,x.title||html`<span class="dash">Title not found</span>`])}/>`}
+          :html`<${Facts} items=${peopleAt(sel).map(x=>[x.name,x.title||html`<span class="dash">Title Not Found</span>`])}/>`}
       </${Section}>`,
       html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
         :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
@@ -1691,10 +1691,12 @@ const MFIELDS={
          ["sponsoring_orgs","Sponsors"],["access_type","Access"]],
 };
 // Short list values read better capitalized ("conference" -> "Conference").
-const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector"]);
+// 12 Nov 2026 (GHUS): every data value starts with a capital letter.
+const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector",
+  "audience","access_type","expected_attendance","thematic_focus","actor_type","category_type"]);
 const capFirst=v=>typeof v==="string"&&v?v.charAt(0).toUpperCase()+v.slice(1):v;
 // An edition's dates as src/map_agent/event_dates.py dates_text writes them:
-// "11/16/2026", "11/16/2026 – 11/19/2026", "02/2026", "2026 (exact date not found)".
+// "11/16/2026", "11/16/2026 – 11/19/2026", "02/2026", "2026 (Exact Date Not Found)".
 const eventDates=(start,end)=>{
   const s=String(start||"").trim(), e=String(end||"").trim();
   if(/^\d{4}-\d{2}-\d{2}/.test(s)){
@@ -1703,13 +1705,13 @@ const eventDates=(start,end)=>{
   }
   const month=s.match(/^(\d{4})-(\d{2})$/);
   if(month) return `${month[2]}/${month[1]}`;
-  if(/^\d{4}$/.test(s)) return `${s} (exact date not found)`;
+  if(/^\d{4}$/.test(s)) return `${s} (Exact Date Not Found)`;
   return s;
 };
 // Architecture V2 §5.5 states; records from before the check show nothing.
 const um6pOcp=e=>e.um6p_ocp_status==="found"
   ? "Found — "+(e.um6p_ocp_detail||"details not recorded")
-  : e.um6p_ocp_status||null;
+  : e.um6p_ocp_status?"Not Found":null;
 const ename=(e)=>e.full_name||e.name||"—";
 
 /* one result card: fields, sources (struck through when dead), judge verdict */
@@ -1916,8 +1918,8 @@ function OrgCardBody({e,deadWeb}){
   const short=listed.filter(d=>TYPE_LIKE.test(d.label)), long=listed.filter(d=>!TYPE_LIKE.test(d.label));
   return html`
     <${CardStrip} items=${[
-      ["Location",[e.location_city,e.state].filter(Boolean).join(" · ")||"Not found"],
-      ["Region",[actorRegion(e),e.country].filter(Boolean).join(" · ")||"Not found"],
+      ["Location",[e.location_city,e.state].filter(Boolean).join(" · ")||"Not Found"],
+      ["Region",[actorRegion(e),e.country].filter(Boolean).join(" · ")||"Not Found"],
       ["Category type",e.category_type&&e.category_type!=="Not classified"?e.category_type:null],
       ["Public/Private",publicPrivate],
       ...short.map(d=>[d.label,d.value]),
@@ -1940,10 +1942,10 @@ function OrgCardBody({e,deadWeb}){
       <${Facts} items=${extra.map(d=>[d.label,d.value])}/></div>`}`;
 }
 function EventCardBody({e}){
-  const when=e.next_date?eventDates(e.next_date,e.end_date)+(e.date_status?` (${capFirst(e.date_status)})`:""):"Not found";
+  const when=e.next_date?eventDates(e.next_date,e.end_date)+(e.date_status?` (${capFirst(e.date_status)})`:""):"Not Found";
   return html`
     <${CardStrip} items=${[
-      ["Date",when],["Location",e.location||"Not found"],
+      ["Date",when],["Location",e.location||"Not Found"],
       ["Region",regionOfState(stateInText(e.location))],
       ["Format",capFirst(e.event_format)],["Frequency",capFirst(e.recurring_pattern)],
     ]}/>

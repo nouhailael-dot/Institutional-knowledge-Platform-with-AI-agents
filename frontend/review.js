@@ -1864,6 +1864,24 @@ export function profilePrefill(candidate, draft = {}) {
   return filled;
 }
 
+// 12 Nov 2026 (GHUS): every data value starts with a capital letter -
+// "Conference", not "conference". Text values only; codes and links never.
+const CAPITALIZE = {
+  event: ["event_type", "event_format", "recurring_pattern", "access_type", "audience", "sector",
+    "expected_attendance", "thematic_focus", "date_status"],
+  person: ["role", "research_area", "department"],
+};
+export function capitalizeData(entityType, payload = {}) {
+  const out = {...payload};
+  for (const field of CAPITALIZE[entityType] || []) {
+    const value = out[field];
+    if (typeof value === "string" && /^[a-z]/.test(value) && !/^https?:/.test(value)) {
+      out[field] = value.charAt(0).toUpperCase() + value.slice(1);
+    }
+  }
+  return out;
+}
+
 /** The reviewer's edits: a box still holding its starting value is not one. */
 export function changedOnly(payload, prefill = {}) {
   return Object.fromEntries(Object.entries(payload || {})
@@ -2107,6 +2125,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [deep, setDeep] = useState(null);
     const keys = useRef(new Map());
     const prefilled = useRef({});
+    const prefilledFacts = useRef({});
 
     const loaded = useRef(null);
     // While the server reads the database in the background (5 Nov 2026), the
@@ -2183,9 +2202,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       let active = true;
       request(`/api/review/candidates/${selectedId}`).then(candidate => {
         if (!active) return;
-        const base = normalizeMapDraft(candidate.reviewed_payload, candidate.original_payload);
-        const prefill = profilePrefill(candidate, base);
+        const base = capitalizeData(candidate.entity_type,
+          normalizeMapDraft(candidate.reviewed_payload, candidate.original_payload));
+        // A capitalised value is sent as the record's value, not listed as an edit.
+        const prefill = {...capitalizeData(candidate.entity_type, candidate.reviewed_payload || {}),
+          ...profilePrefill(candidate, base)};
+        for (const [field, value] of Object.entries(prefill)) {
+          if ((candidate.reviewed_payload || {})[field] === value) delete prefill[field];
+        }
         prefilled.current = prefill;
+        // Capitalised values are sent (the record keeps them); untouched page readings are not.
+        prefilledFacts.current = profilePrefill(candidate, base);
         // The starting values are the record's, not edits: the confirmation
         // lists only what the reviewer changed.
         setSelected({...candidate, reviewed_payload: {...candidate.reviewed_payload, ...prefill}});
@@ -2384,7 +2411,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           confirmed: true,
           notes: notes.trim() || null,
           edited_payload: ["reject", "defer"].includes(decisionKind)
-            ? null : changedOnly(editableReviewPayload(selected, draft), prefilled.current),
+            ? null : changedOnly(editableReviewPayload(selected, draft), prefilledFacts.current),
           target_id: targetId.trim() || null,
           hub_ids: hubIds,
           proposed_hub: proposeHub && proposedHub.name.trim()

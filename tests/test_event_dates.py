@@ -52,7 +52,7 @@ class DateStatusTests(unittest.TestCase):
         self.assertEqual(dates_text("2026-11-16", "2026-11-19"), "11/16/2026 – 11/19/2026")
         self.assertEqual(dates_text("2026-11-16", "2026-11-16"), "11/16/2026")
         self.assertEqual(dates_text("2026-02"), "02/2026")
-        self.assertEqual(dates_text("2026"), "2026 (exact date not found)")
+        self.assertEqual(dates_text("2026"), "2026 (Exact Date Not Found)")
         self.assertEqual(dates_text("Spring 2027"), "Spring 2027")
 
     def test_dates_a_few_days_apart_are_one_edition(self):

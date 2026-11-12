@@ -88,7 +88,7 @@ def _us(day):
 
 def dates_text(start, end=None):
     """The edition's dates the way the platform shows them: "11/16/2026",
-    "11/16/2026 – 11/19/2026", "02/2026", "2026 (exact date not found)".
+    "11/16/2026 – 11/19/2026", "02/2026", "2026 (Exact Date Not Found)".
     Anything else is shown as given."""
     text = str(start or "").strip()
     span = event_span(start, end)
@@ -103,5 +103,5 @@ def dates_text(start, end=None):
     if _MONTH.match(text):
         return first.strftime("%m/%Y")
     if re.fullmatch(r"\d{4}", text):
-        return f"{text} (exact date not found)"
+        return f"{text} (Exact Date Not Found)"
     return text

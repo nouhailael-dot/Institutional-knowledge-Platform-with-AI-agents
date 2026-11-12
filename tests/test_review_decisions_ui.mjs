@@ -65,3 +65,14 @@ test('an untouched box is not sent as a reviewer edit', () => {
   assert.deepEqual(changedOnly({name: 'X', audience: 'Founders and investors'}, prefill), {name: 'X'});
   assert.deepEqual(changedOnly({audience: 'Students'}, prefill), {audience: 'Students'});
 });
+
+// ------------------------------------------------ capital letters (12 Nov 2026)
+import {capitalizeData} from '../frontend/review.js';
+
+test('every event value starts with a capital letter; codes and links never change', () => {
+  assert.deepEqual(capitalizeData('event', {event_type: 'conference', audience: 'founders',
+    website: 'https://x.org', name: 'eMerge Americas'}),
+  {event_type: 'Conference', audience: 'Founders', website: 'https://x.org', name: 'eMerge Americas'});
+  // Organization categories are catalog codes: never touched.
+  assert.deepEqual(capitalizeData('actor', {actor_category: 'company'}), {actor_category: 'company'});
+});

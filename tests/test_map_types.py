@@ -151,7 +151,7 @@ class EventFieldTests(unittest.TestCase):
         invented = {"um6p_ocp_status": "found", "um6p_ocp_detail": "UM6P partner",
                     "um6p_ocp_source": "https://elsewhere.example"}
         _um6p_ocp_check(invented, {url: {}})
-        self.assertEqual(invented["um6p_ocp_status"], "not found in what's been read")
+        self.assertEqual(invented["um6p_ocp_status"], "not_found")
         self.assertNotIn("um6p_ocp_detail", invented)
 
 

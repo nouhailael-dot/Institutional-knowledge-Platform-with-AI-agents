@@ -8,7 +8,7 @@ _UM6P_OCP = ("A documented connection to a UM6P/OCP entity: OCP Group or its uni
              "ventures. A name with only 'UM6' (not 'UM6P') does not count. Check only "
              "the supplied sources.")
 _UM6P_OCP_FIELDS = {
-    "um6p_ocp_status": {"type": "string", "enum": ["found", "not found in what's been read"],
+    "um6p_ocp_status": {"type": "string", "enum": ["found", "not_found"],
                         "description": _UM6P_OCP},
     "um6p_ocp_detail": {"type": "string",
                         "description": "When found: which UM6P/OCP entity and the kind of connection."},

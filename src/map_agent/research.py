@@ -472,7 +472,7 @@ def _um6p_ocp_check(entity, available):
     except (ValueError, TypeError):
         sourced = False
     if not (found and sourced):
-        entity["um6p_ocp_status"] = "not found in what's been read"
+        entity["um6p_ocp_status"] = "not_found"
         entity.pop("um6p_ocp_detail", None)
         entity.pop("um6p_ocp_source", None)
 

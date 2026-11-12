@@ -296,7 +296,7 @@ const RUN_STATUS = {succeeded: "Completed", attention: "Completed with limits", 
 /** "4 updated · 2 confirmed · 2 not found": what a one-actor update found. */
 export function updateCountsLine(counts = {}) {
   const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
-    ["confirmed", "confirmed"], ["conflicts", "to review"], ["no_change", "unchanged"], ["missing", "not found"]];
+    ["confirmed", "confirmed"], ["conflicts", "to review"], ["no_change", "unchanged"], ["missing", "Not Found"]];
   return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`)
     .join(" · ") || "Nothing new";
 }

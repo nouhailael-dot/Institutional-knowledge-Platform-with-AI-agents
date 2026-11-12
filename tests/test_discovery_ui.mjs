@@ -440,7 +440,7 @@ test('update runs are one list: name, actors, when, status and what each found',
   assert.equal(topic.result, '13 new or updated · 0 to Review Results');
   assert.equal(topic.statusLabel, 'Finished');
   assert.equal(single.schedule, 'One-time update · Energy Transition');
-  assert.equal(single.result, '4 updated · 2 confirmed · 2 not found');
+  assert.equal(single.result, '4 updated · 2 confirmed · 2 Not Found');
   assert.equal(updateCountsLine({}), 'Nothing new');
 });
 
