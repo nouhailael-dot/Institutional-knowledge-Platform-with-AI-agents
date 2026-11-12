@@ -317,8 +317,8 @@ def check_event(payload: Mapping[str, Any]) -> list[str]:
     try:
         start = _day(payload.get("start_date"), "Start date")
         end = _day(payload.get("end_date"), "End date")
-        if not start:
-            problems.append("Start date is required.")
+        # 12 Nov 2026: an event whose exact date is not known yet is still
+        # recorded (its date is Not Found), never refused.
         if start and end and end < start:
             problems.append("End date is before the start date.")
     except DataFeedRefused as exc:

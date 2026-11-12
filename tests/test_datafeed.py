@@ -792,3 +792,15 @@ def test_the_templates_carry_the_directory_columns_and_ghus_notes():
     assert "orcid" in keys["person"]
     # A file from the 2 Nov template still reads.
     assert "2026-11-02.1" in contract.ACCEPTED_TEMPLATE_VERSIONS
+
+
+def test_an_event_without_an_exact_date_is_not_refused():
+    """12 Nov 2026: Beyond Africa (Explore and Map found only '2026') was never
+    saved, because an event's start date was required. A date not known yet is
+    Not Found on the record, not a reason to refuse it."""
+    from src.datafeed import contract
+
+    start = next(f for f in contract.fields("event") if f.key == "start_date")
+    assert start.required is False
+    from src.map_agent.save import _us_day
+    assert _us_day("2026") == ""   # a year alone is never turned into a day

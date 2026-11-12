@@ -155,7 +155,8 @@ def test_event_checks():
     assert feed.check_event(ok) == []
     assert any("before the start" in p for p in feed.check_event({**ok, "end_date": "2027-04-01"}))
     assert any("not a date" in p for p in feed.check_event({**ok, "start_date": "04/02/2027"}))
-    assert any("Start date is required" in p for p in feed.check_event({**ok, "start_date": ""}))
+    # An exact date not known yet is no reason to refuse an event (12 Nov 2026).
+    assert not any("Start date" in p for p in feed.check_event({**ok, "start_date": ""}))
 
 
 # ------------------------------------------------------------------ staging (database)

@@ -317,8 +317,11 @@ EVENT_FIELDS: tuple[Field, ...] = (
           "Who organizes it, as stated. Leave empty when no host is confirmed.",
           "Kansas Water Office", target="event.sponsoring_orgs",
           hint="Leave empty when no host is confirmed."),
-    Field("start_date", "Start date", "date", "First day (MM/DD/YYYY).", "04/02/2027",
-          required=True, max_length=None, target="event.start_date"),
+    # 12 Nov 2026: not required. An event whose exact date is not yet known
+    # (Explore and Map found only "2026") was refused and never reached Review.
+    Field("start_date", "Start date", "date", "First day (MM/DD/YYYY); empty when not yet known.",
+          "04/02/2027", max_length=None, target="event.start_date",
+          hint="Leave empty when the exact date is not known yet."),
     Field("end_date", "End date", "date", "Last day (MM/DD/YYYY); empty for one day.",
           "04/03/2027", max_length=None, target="event.end_date",
           hint="Empty for a one-day event."),
