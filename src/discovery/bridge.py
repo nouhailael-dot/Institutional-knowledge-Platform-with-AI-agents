@@ -91,16 +91,65 @@ STARTING_FOR_S = 20 * 60
 # Run now when the host already runs as many as it may (12 Nov 2026): the
 # request waits its turn; the queue is checked this often.
 QUEUE_POLL_S = 15
-# Several people's requests run side by side, one per person (12 Nov 2026).
-# Each run is a process of its own on the host: this caps them.
-DEFAULT_PARALLEL_RUNS = 3
+# 12 Nov 2026 (GHUS): everyone may run requests at the same time, and each
+# person up to two at once. No team-wide number: a run waits only when the host
+# has no memory left for another (each run is a process of its own, about
+# 160 MB at start and more while it reads pages).
+DEFAULT_RUNS_PER_PERSON = 2
+DEFAULT_RUN_MEMORY_MB = 400
 
 
-def parallel_runs() -> int:
+def _env_int(name: str, default: int | None) -> int | None:
+    raw = str(os.environ.get(name) or "").strip()
+    if not raw:
+        return default
     try:
-        return max(1, int(os.environ.get("GHUS_MAX_PARALLEL_RUNS") or DEFAULT_PARALLEL_RUNS))
+        return max(1, int(raw))
     except ValueError:
-        return DEFAULT_PARALLEL_RUNS
+        return default
+
+
+def runs_per_person() -> int:
+    return _env_int("GHUS_RUNS_PER_PERSON", DEFAULT_RUNS_PER_PERSON)
+
+
+def parallel_runs() -> int | None:
+    """A team-wide cap only when the host sets one (GHUS_MAX_PARALLEL_RUNS); none by default."""
+    return _env_int("GHUS_MAX_PARALLEL_RUNS", None)
+
+
+def run_memory_mb() -> int:
+    return _env_int("GHUS_RUN_MEMORY_MB", DEFAULT_RUN_MEMORY_MB)
+
+
+def _read_int(path: str) -> int | None:
+    try:
+        raw = Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return int(raw) if raw.isdigit() else None
+
+
+def memory_headroom_mb() -> int | None:
+    """Memory still free for this service, in MB; None when it cannot be told (not Linux).
+
+    The container's own limit first (cgroup v2, then v1), else the machine's
+    available memory. A container reads the machine's memory in /proc, not its
+    own limit, so the cgroup comes first.
+    """
+    for limit_file, used_file in (("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+                                  ("/sys/fs/cgroup/memory/memory.limit_in_bytes",
+                                   "/sys/fs/cgroup/memory/memory.usage_in_bytes")):
+        limit, used = _read_int(limit_file), _read_int(used_file)
+        if limit and used is not None and limit < 1 << 60:
+            return max(0, (limit - used) // (1024 * 1024))
+    try:
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
 
 
 def _epoch(value: Any) -> float:
@@ -254,8 +303,9 @@ class DiscoveryBridge:
         self._queue_lock = threading.Lock()
         self._queue_thread: threading.Thread | None = None
         self._last_launch = 0.0
-        # Who started each run, and its process: one run at a time per person.
+        # Who started each run, and its process: up to two at once per person.
         self._owner: dict[str, str] = {}
+        self._memory = memory_headroom_mb
         self._launched: dict[str, tuple[float, Any]] = {}
         # The app caches the two lists (cache_lists=True); tests read them fresh.
         self._lists = ({"requests": _ListCache(lambda: self._call(["list"], retries=1)),
@@ -368,15 +418,16 @@ class DiscoveryBridge:
             if (state and state.get("request_busy")) or self._is_active(subscription_id):
                 raise DiscoveryBridgeError("This request is already running or waiting to run.",
                                            rejected=True)
-            mine = next((sid for sid, owner in self._owner.items()
-                         if owner == who and self._is_active(sid)), None)
-            if mine is not None:
-                # 12 Nov 2026: one run at a time per person; others run side by side.
+            mine = [sid for sid, owner in self._owner.items()
+                    if owner == who and self._is_active(sid)]
+            if len(mine) >= runs_per_person():
+                # Up to two at once per person (GHUS_RUNS_PER_PERSON); everyone side by side.
+                limit = runs_per_person()
                 raise DiscoveryBridgeError(
-                    "You already have a request running. Run this one when it has finished.",
-                    rejected=True)
+                    f"You already have {limit} request{'s' if limit > 1 else ''} running. "
+                    "Run this one when one has finished.", rejected=True)
             self._owner[subscription_id] = who
-            if self._queue or self._running_count(state) >= parallel_runs():
+            if self._queue or not self._room(state):
                 self._queue.append(subscription_id)
                 self._ensure_queue_watcher()
                 return {"started": False, "queued": True,
@@ -398,6 +449,14 @@ class DiscoveryBridge:
             return poll() is None
         return now - began < STARTING_FOR_S
 
+    def _room(self, state: dict[str, Any] | None, now: float | None = None) -> bool:
+        """Whether another run may start now: memory left, and under any host cap."""
+        cap = parallel_runs()
+        if cap is not None and self._running_count(state, now) >= cap:
+            return False
+        headroom = self._memory()
+        return headroom is None or headroom >= run_memory_mb()
+
     def _running_count(self, state: dict[str, Any] | None, now: float | None = None) -> int:
         """Runs going now: the larger of what the database and this server know."""
         now = time.time() if now is None else now
@@ -417,7 +476,7 @@ class DiscoveryBridge:
         self._queue_thread.start()
 
     def advance_queue(self, now: float | None = None) -> bool:
-        """Start the next queued request when there is room. True while any still wait."""
+        """Start the next queued request when the host has room. True while any still wait."""
         now = time.time() if now is None else now
         with self._queue_lock:
             if not self._queue:
@@ -425,7 +484,7 @@ class DiscoveryBridge:
             head = self._queue[0]
         state = self._run_state(head)
         with self._queue_lock:
-            if self._running_count(state, now) >= parallel_runs():
+            if not self._room(state, now):
                 return True
         with self._queue_lock:
             if not self._queue or self._queue[0] != head:

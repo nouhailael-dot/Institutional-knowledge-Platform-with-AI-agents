@@ -549,7 +549,9 @@ def browse_people():
 # stateless — the frontend posts back the entities it already holds.
 #
 # Maps and usage persist locally, independently of the production actor DB.
-_MAP_POOL = ThreadPoolExecutor(max_workers=2)   # a map is expensive; don't fan out
+# Maps research side by side for everyone (GHUS, 12 Nov 2026): a map waits on
+# the AI service, not on this server, so many fit; more wait their turn.
+_MAP_POOL = ThreadPoolExecutor(max_workers=max(1, int(os.environ.get("GHUS_MAP_WORKERS") or 8)))
 
 
 def map_record(job_id):
