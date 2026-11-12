@@ -499,3 +499,16 @@ def test_the_page_spelling_of_a_reason_is_accepted(store):
         idempotency_key="spelling", confirmed=True,
         rejection_reason="Not an organization / event / person page")
     assert plan["rejection_reason"] == "Not an organisation / event / person page"
+
+
+def test_save_edits_keeps_every_event_box(store):
+    """GHUS feedback, 11 Nov: Save Edits did nothing and edits were lost. Every
+    box of an event card is saved, including the newly editable ones."""
+    candidate = _database_candidate(store)
+    saved = store.update(candidate["candidate_id"], {
+        "end_date": "2026-11-21", "audience": "Founders and investors", "event_format": "In person",
+        "sector": "Entrepreneurship", "organizer": "Beyond Africa"})
+    payload = saved["reviewed_payload"]
+    assert payload["audience"] == "Founders and investors"
+    assert payload["end_date"] == "2026-11-21" and payload["organizer"] == "Beyond Africa"
+    assert store.get(candidate["candidate_id"])["reviewed_payload"]["sector"] == "Entrepreneurship"

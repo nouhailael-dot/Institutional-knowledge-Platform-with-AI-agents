@@ -451,3 +451,61 @@ def test_a_possible_duplicate_is_never_added_twice(monkeypatch):
                                           "source_table": "person_review_queue", "source_id": "q1"}]}
     out = feed.admit_directory(type("S", (), {"rollback": lambda self: None})(), b, result)
     assert out[0]["outcome"] == "possible_duplicate" and "not added twice" in out[0]["reason"]
+
+
+@needs_db
+def test_a_map_event_without_an_exact_date_is_staged_and_verified_with_edits_and_notes(session):
+    """GHUS feedback, 11 Nov 2026, end to end on the test database: Beyond Africa
+    (date '2026' only) is saved from a map, then verified in Review with an end
+    date, audience and GHUS Notes. Each part was refused or lost before."""
+    from agents.review.admission import apply_review_decision
+
+    row = {"row_number": 2, "payload": {
+        "name": "BeyondAfrica Conference Test", "event_type": "conference",
+        "website": "https://beyondafrica-test.org", "sector_codes": ["AI"],
+        "event_format": "in_person", "ghus_notes": "Zahra attended in Austin."},
+        "original": {}, "match": {"kind": "new"}}
+    staged = feed.stage_batch(session, batch("event", rows=[row], method="map",
+                                             file_name=None, file_sha256=None))
+    assert staged["rows"][0]["outcome"] == "staged"
+    session.commit()  # staging and the later decision are separate transactions
+    done = apply_review_decision(session, {
+        "entity_type": "event", "decision_kind": "new",
+        "source_ref": {"table": "event_review_queue", "id": staged["rows"][0]["source_id"]},
+        "reviewer": "zahra@ghus.example", "idempotency_key": "beyond-africa-test",
+        "edited_payload": {"end_date": "2026-11-21", "audience": "Founders and investors",
+                           "event_format": "In person"},
+        "ghus_notes": "Zahra attended in Austin.",
+    })
+    event_id = done["canonical_entity_id"]
+    event = session.execute(text("SELECT start_date, end_date, ghus_notes, event_type FROM event "
+                                 "WHERE event_id = CAST(:id AS uuid)"), {"id": event_id}).one()
+    assert event.start_date is None and str(event.end_date) == "2026-11-21"
+    assert event.ghus_notes == "Zahra attended in Austin."
+    assert event.event_type == "Conference"
+    facts = dict(session.execute(text(
+        "SELECT fact_key, fact_value::text FROM event_fact WHERE event_id = CAST(:id AS uuid)"),
+        {"id": event_id}).all())
+    assert "Founders and investors" in facts.get("audience", "")
+
+
+@needs_db
+def test_rejecting_with_no_reason_is_accepted_by_the_database(session):
+    """Reject is Reject, then Yes (12 Nov 2026): recorded as Other: No reason given,
+    which the database's fixed list accepts."""
+    from agents.review.admission import apply_review_decision
+
+    row = {"row_number": 2, "payload": {
+        "name": "AfroTech Conference Test", "event_type": "conference",
+        "website": "https://afrotech-test.org", "sector_codes": ["AI"]},
+        "original": {}, "match": {"kind": "new"}}
+    staged = feed.stage_batch(session, batch("event", rows=[row], method="map",
+                                             file_name=None, file_sha256=None))
+    session.commit()
+    done = apply_review_decision(session, {
+        "entity_type": "event", "decision_kind": "reject",
+        "source_ref": {"table": "event_review_queue", "id": staged["rows"][0]["source_id"]},
+        "reviewer": "zahra@ghus.example", "idempotency_key": "afrotech-reject-test",
+        "edited_payload": {}, "rejection_reason": "Other", "rejection_reason_other": "No reason given",
+    })
+    assert done["status"] in ("rejected", "rejected_by_reviewer")
