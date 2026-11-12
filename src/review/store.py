@@ -1021,6 +1021,33 @@ class ReviewStore:
             self._set_aside_before_trial(db)
         return inserted
 
+    MAP_COPY = "map_copy"
+
+    def retire_map_copies(self, run_store) -> int:
+        """Take a map's own copies of its cards off the Review page (12 Nov 2026).
+
+        A copy made straight from a map has no record in the database behind
+        it, so Review can neither verify nor reject it ("no authoritative
+        PostgreSQL source reference"), and edits made on it are lost. A map's
+        cards reach Review only through "Save verified to Compass" (the Data
+        Feed), as records that can be decided. Pending copies are folded away
+        (kept, not listed); decided ones are never touched.
+        """
+        with run_store.connect() as source:
+            run_ids = [row[0] for row in source.execute("SELECT id FROM runs").fetchall()]
+        if not run_ids:
+            return 0
+        changed = 0
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for start in range(0, len(run_ids), 500):
+                chunk = run_ids[start:start + 500]
+                changed += db.execute(
+                    "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                    f"AND folded_into IS NULL AND source_run_id IN ({','.join('?' * len(chunk))})",
+                    [self.MAP_COPY, *chunk]).rowcount
+        return changed
+
     def _set_aside_before_trial(self, db) -> int:
         """In the sync's own transaction: no list ever shows an item from before
         the trial start (src.trial), not even during a fresh store's first sync."""
@@ -1781,6 +1808,20 @@ class ReviewStore:
                 f"SELECT source_run_id, COUNT(*) FROM review_candidate WHERE status='pending_review' "
                 f"AND folded_into IS NULL AND source_run_id IN ({marks}) GROUP BY source_run_id",
                 list(run_ids))}
+
+    def pending_by_description(self, prefixes: dict[str, str]) -> dict[str, int]:
+        """Listed pending records per key, matched by the start of their run label."""
+        if not prefixes:
+            return {}
+        counts: dict[str, int] = {}
+        with self.connect() as db:
+            for key, prefix in prefixes.items():
+                like = prefix.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+                counts[key] = int(db.execute(
+                    "SELECT COUNT(*) FROM review_candidate WHERE status='pending_review' "
+                    "AND folded_into IS NULL AND source_description LIKE ? ESCAPE '!'",
+                    (like,)).fetchone()[0])
+        return {key: count for key, count in counts.items() if count}
 
     SET_ASIDE_PREFIX = "set_aside:"
 

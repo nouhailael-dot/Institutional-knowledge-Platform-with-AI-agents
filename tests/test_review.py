@@ -531,7 +531,9 @@ class ReviewApiTests(unittest.TestCase):
 
     def test_unconfigured_admission_and_internal_errors_are_sanitized(self):
         disabled = ReviewStore(self.store.path.parent / "disabled.sqlite3")
-        with patch.object(self.backend, "review_store", return_value=disabled):
+        # A store without test admission no longer copies map cards itself.
+        disabled.sync_run_store(self.runs)
+        with patch.object(self.backend, "review_store", return_value=disabled),                 patch.object(disabled, "retire_map_copies", return_value=0):
             actor = self.list(entity_type="actor")["candidates"][0]
             response = self.client.post(
                 f"/api/review/candidates/{actor['candidate_id']}/approve",

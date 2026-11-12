@@ -191,11 +191,16 @@ def check(service, picks: list[tuple[str, dict, str]]) -> list[dict]:
     return sorted(out, key=lambda r: r["index"])
 
 
+def import_name(map_name: str) -> str:
+    """The Data Feed import a map's saved cards arrive under (Review shows it)."""
+    return _clean(f"Explore and Map: {map_name}")[:120]
+
+
 def save(service, picks: list[tuple[str, dict, str]], *, uploader: str, map_name: str) -> list[dict]:
     """Send verified cards to the database through the Data Feed; one result per card."""
     checked = check(service, picks)
     results = {r["index"]: {**r} for r in checked}
-    name = _clean(f"Explore and Map: {map_name}")[:120]
+    name = import_name(map_name)
     for kind in KINDS:
         rows = [r for r in checked if r["kind"] == kind and r["outcome"] != NOT_SAVED]
         if not rows:

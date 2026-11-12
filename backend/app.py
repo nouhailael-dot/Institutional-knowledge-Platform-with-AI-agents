@@ -586,7 +586,13 @@ def maps_recent():
         maps = [m for m in maps if float(m.get("created") or 0) >= start.timestamp()]
     # Records each map sent to Review Results that nobody has decided yet (Dashboard).
     try:
-        pending = review_store().pending_by_run([m["id"] for m in maps])
+        store = review_store()
+        pending = store.pending_by_run([m["id"] for m in maps])
+        # Saved cards arrive as a Data Feed import named after the map.
+        saved = store.pending_by_description({
+            m["id"]: "Data Feed import: " + map_save.import_name(m.get("description") or "untitled map")
+            for m in maps})
+        pending = {key: pending.get(key, 0) + saved.get(key, 0) for key in {*pending, *saved}}
     except Exception:
         logger.warning("Could not count maps' pending Review records", exc_info=True)
         pending = {}
@@ -1203,7 +1209,13 @@ def _sync_review_candidates_now(*, force: bool = False):
         warnings = []
         try:
             local = map_store()
-            target.sync_run_store(local)
+            if target.enable_test_canonical:
+                # Tests and the demo build Review from map results directly.
+                target.sync_run_store(local)
+            else:
+                # A map's cards reach Review only through "Save verified to
+                # Compass" (the Data Feed); direct copies cannot be decided.
+                target.retire_map_copies(local)
         except Exception as exc:
             raise HTTPException(
                 status_code=503,
