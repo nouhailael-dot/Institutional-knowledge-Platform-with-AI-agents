@@ -305,7 +305,7 @@ def test_update_request_routes_validate_and_run_now_starts_the_runner(monkeypatc
             self.calls.append((action, subscription_id))
             return {"status": "paused"}
 
-        def run_now(self, subscription_id):
+        def run_now(self, subscription_id, user=None):
             self.calls.append(("run", subscription_id))
             return {"started": True}
 
@@ -465,45 +465,72 @@ def test_the_app_reads_each_list_once_and_again_after_a_change(tmp_path, monkeyp
 
 # ----------------------------------------- several people press Run now (12 Nov 2026)
 
-def _queue_bridge(tmp_path, monkeypatch, state):
+class _Process:
+    """A started run: alive until it is finished."""
+    def __init__(self):
+        self.done = False
+    def poll(self):
+        return 0 if self.done else None
+
+
+def _queue_bridge(tmp_path, monkeypatch, state, parallel=3):
     monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
+    monkeypatch.setenv("GHUS_MAX_PARALLEL_RUNS", str(parallel))
     monkeypatch.setattr("src.discovery.bridge.DiscoveryBridge._ensure_queue_watcher", lambda self: None)
-    started = []
-    bridge = DiscoveryBridge(
-        project_root=_backend(tmp_path), python_executable="py",
-        database_url="postgresql://local/x_test",
-        start_process=lambda command, **kwargs: started.append(command[command.index("--request-id") + 1]),
-        run_state=lambda _id: state,
-    )
+    started = {}
+    def start(command, **kwargs):
+        process = _Process()
+        started[command[command.index("--request-id") + 1]] = process
+        return process
+    bridge = DiscoveryBridge(project_root=_backend(tmp_path), python_executable="py",
+                             database_url="postgresql://local/x_test", start_process=start,
+                             run_state=lambda _id: state)
     return bridge, started
 
 
-def test_run_now_while_another_run_goes_waits_its_turn_then_starts(tmp_path, monkeypatch):
-    """One run goes at a time; a second Run now is queued, not refused, and starts
-    by itself when the first has finished."""
-    state = {"exists": True, "status": "active", "runner_busy": True}
-    bridge, started = _queue_bridge(tmp_path, monkeypatch, state)
-    a, b = "00000000-0000-4000-8000-00000000000a", "00000000-0000-4000-8000-00000000000b"
-    assert bridge.run_now(a) == {"started": False, "queued": True, "position": 1, "subscription_id": a}
-    assert bridge.run_now(b)["position"] == 2
-    assert bridge.run_now(a)["position"] == 1          # pressed twice: still one place
-    listed = bridge.mark_starting({"requests": [{"subscription_id": a, "runs": []},
-                                                {"subscription_id": b, "runs": []}]})
-    assert [r.get("queued") for r in listed["requests"]] == [1, 2]
+def _id(n):
+    return f"00000000-0000-4000-8000-{n:012d}"
 
-    assert bridge.advance_queue() is True and started == []     # still busy
-    state["runner_busy"] = False
-    assert bridge.advance_queue() is True and started == [a]    # first come, first run
-    # The next waits until the started one has had time to take the runner.
-    assert bridge.advance_queue() is True and started == [a]
-    import time as _time
-    assert bridge.advance_queue(now=_time.time() + 121) is False and started == [a, b]
+
+def test_three_people_run_at_the_same_time_and_a_fourth_waits_its_turn(tmp_path, monkeypatch):
+    state = {"exists": True, "status": "active", "runner_busy": False}
+    bridge, started = _queue_bridge(tmp_path, monkeypatch, state)
+    for n, who in enumerate(("zahra", "david", "tariq"), 1):
+        assert bridge.run_now(_id(n), user=who)["started"] is True
+    queued = bridge.run_now(_id(4), user="ismail")
+    assert queued == {"started": False, "queued": True, "position": 1, "subscription_id": _id(4)}
+    listed = bridge.mark_starting({"requests": [{"subscription_id": _id(4), "runs": []}]})
+    assert listed["requests"][0]["queued"] == 1
+    assert bridge.advance_queue() is True and _id(4) not in started    # still three going
+    started[_id(2)].done = True                                         # David's run ends
+    assert bridge.advance_queue() is False and _id(4) in started
+
+
+def test_one_person_runs_one_request_at_a_time(tmp_path, monkeypatch):
+    state = {"exists": True, "status": "active", "runner_busy": False}
+    bridge, started = _queue_bridge(tmp_path, monkeypatch, state)
+    assert bridge.run_now(_id(1), user="zahra")["started"] is True
+    with pytest.raises(DiscoveryBridgeError, match="You already have a request running"):
+        bridge.run_now(_id(2), user="zahra")
+    with pytest.raises(DiscoveryBridgeError, match="already running"):
+        bridge.run_now(_id(1), user="david")                            # the same request
+    started[_id(1)].done = True
+    assert bridge.run_now(_id(2), user="zahra")["started"] is True      # hers ended: she may
+
+
+def test_a_request_running_from_elsewhere_is_not_started_again(tmp_path, monkeypatch):
+    state = {"exists": True, "status": "active", "runner_busy": False, "request_busy": True}
+    bridge, started = _queue_bridge(tmp_path, monkeypatch, state)
+    with pytest.raises(DiscoveryBridgeError, match="already running"):
+        bridge.run_now(_id(1), user="zahra")
+    assert started == {}
 
 
 def test_a_queued_request_that_ended_meanwhile_does_not_run(tmp_path, monkeypatch):
-    state = {"exists": True, "status": "active", "runner_busy": True}
-    bridge, started = _queue_bridge(tmp_path, monkeypatch, state)
-    sid = "00000000-0000-4000-8000-00000000000c"
-    bridge.run_now(sid)
-    state.update(runner_busy=False, status="paused")
-    assert bridge.advance_queue() is False and started == []
+    state = {"exists": True, "status": "active", "runner_busy": False}
+    bridge, started = _queue_bridge(tmp_path, monkeypatch, state, parallel=1)
+    bridge.run_now(_id(1), user="zahra")
+    assert bridge.run_now(_id(2), user="david")["queued"] is True
+    started[_id(1)].done = True
+    state["status"] = "paused"
+    assert bridge.advance_queue() is False and _id(2) not in started

@@ -762,8 +762,8 @@ test('the events request form has no Event Type choice (GHUS, 12 Nov 2026)', () 
 
 test('Run now while another run goes says Queued and starts by itself (12 Nov 2026)', async () => {
   const {runNowMessage, requestStatus, STATUS_LABELS} = await import('../frontend/discovery.js');
-  assert.match(runNowMessage('UN events', {queued: true, position: 1}), /queued: another request is running\. It starts by itself/);
-  assert.match(runNowMessage('UN events', {queued: true, position: 3}), /and 2 more wait before it/);
+  assert.match(runNowMessage('UN events', {queued: true, position: 1}), /queued: Compass is already running as many requests as it can\. It starts by itself/);
+  assert.match(runNowMessage('UN events', {queued: true, position: 3}), /, and 2 more wait before it/);
   assert.match(runNowMessage('UN events', {started: true}), /is running/);
   assert.equal(requestStatus({status: 'active', queued: 1, runs: []}), 'queued');
   assert.equal(STATUS_LABELS.queued, 'Queued');

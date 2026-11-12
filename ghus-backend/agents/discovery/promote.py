@@ -153,6 +153,50 @@ class PromotionResult:
     step_trace: list[str] = field(default_factory=list)
 
 
+# 12 Nov 2026: several requests may run at once, one per person. Each run checks
+# its finds against the records it loaded when it started, so two runs could
+# both create the same organization or event. Creation takes this lock and looks
+# one last time for one made by another run in the last hours.
+CREATE_LOCK = 550_002
+RECENT_HOURS = 6
+
+
+def created_meanwhile(session, entity_type: str, payload: dict[str, object]) -> str | None:
+    """The id of the same record created by a parallel run, or None (takes the lock).
+
+    The same statements run in a dry run (which rolls back), so a dry run and a
+    live run execute the same SQL. Only PostgreSQL has these locks.
+    """
+    bind = getattr(session, "bind", None) or getattr(session, "get_bind", lambda: None)()
+    if getattr(getattr(bind, "dialect", None), "name", None) != "postgresql":
+        return None
+    session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": CREATE_LOCK})
+    name = str(payload.get("name") or payload.get("title") or "").strip()
+    if not name:
+        return None
+    since = f"now() - interval '{int(RECENT_HOURS)} hours'"
+    if entity_type == "actor":
+        website = str(payload.get("website") or "").strip().lower()
+        domain = (urlparse(website if "://" in website else f"https://{website}").hostname or "") \
+            if website else ""
+        domain = domain.removeprefix("www.")
+        row = session.execute(text(
+            "SELECT actor_id::text FROM actor WHERE merged_into_actor_id IS NULL "
+            f"AND created_at > {since} AND (lower(name) = lower(:name) "
+            "OR (:domain <> '' AND lower(coalesce(website_domain, '')) = :domain)) LIMIT 1"),
+            {"name": name, "domain": domain}).first()
+        return row[0] if row else None
+    if entity_type == "event":
+        day = _iso_day(payload.get("start_date") or payload.get("next_date"))
+        row = session.execute(text(
+            f"SELECT event_id::text FROM event WHERE created_at > {since} "
+            "AND lower(name) = lower(:name) "
+            "AND start_date IS NOT DISTINCT FROM CAST(:day AS date) LIMIT 1"),
+            {"name": name, "day": day}).first()
+        return row[0] if row else None
+    return None
+
+
 def guard_actor_absorb_route(staged: StagedRecord, route: RouteDecision) -> RouteDecision:
     if staged.entity_type != "actor" or route.zone != "absorb":
         return route
@@ -248,6 +292,13 @@ def promote(
 
     transaction = session.begin() if manage_transaction else None
     try:
+        if route.zone == "create":
+            existing = created_meanwhile(session, "event", staged.normalized_payload)
+            if existing:
+                if transaction is not None:
+                    transaction.rollback()
+                return PromotionResult(action="created_by_another_run", entity_type="event",
+                                       zone="create", entity_id=existing, dry_run=not live)
         if route.zone == "create":
             source_id = insert_source(
                 session,
@@ -821,6 +872,14 @@ def map_new_actor(
 
     transaction = session.begin() if manage_transaction else None
     try:
+        if route.zone == "create":
+            existing = created_meanwhile(session, "actor", staged.normalized_payload)
+            if existing:
+                if transaction is not None:
+                    transaction.rollback()
+                return PromotionResult(action="created_by_another_run", entity_type="actor",
+                                       zone="create", entity_id=existing, dry_run=not live,
+                                       step_trace=trace)
         source_id = insert_source(
             session,
             source_url=staged.source_url,

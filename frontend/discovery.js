@@ -247,8 +247,8 @@ export function runningRun(request) {
 export function runNowMessage(title, answer) {
   if (answer?.queued) {
     const ahead = Number(answer.position || 1) - 1;
-    return `“${title}” is queued: another request is running${ahead > 0
-      ? ` and ${ahead} more ${ahead === 1 ? "waits" : "wait"} before it` : ""}. It starts by itself when its turn comes.`;
+    return `“${title}” is queued: Compass is already running as many requests as it can${ahead > 0
+      ? `, and ${ahead} more ${ahead === 1 ? "waits" : "wait"} before it` : ""}. It starts by itself when its turn comes.`;
   }
   return `“${title}” is running. This takes a few minutes; the page updates by itself.`;
 }

@@ -1708,7 +1708,9 @@ def discovery_run_now(subscription_id: str):
         UUID(subscription_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown request") from exc
-    return _discovery_call(discovery_bridge().run_now, subscription_id)
+    # One run at a time per person (12 Nov 2026): who pressed it is the sign-in.
+    return _discovery_call(lambda sid: discovery_bridge().run_now(sid, user=current_user()),
+                           subscription_id)
 
 
 class EndDateChange(BaseModel):
@@ -1860,7 +1862,8 @@ def discovery_update_request_change(subscription_id: str, action: str):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown request") from exc
     if action == "run":
-        return _discovery_call(discovery_bridge().run_now, subscription_id)
+        return _discovery_call(lambda sid: discovery_bridge().run_now(sid, user=current_user()),
+                               subscription_id)
     if action not in ("pause", "resume", "cancel"):
         raise HTTPException(status_code=404, detail="unknown action")
     return _discovery_call(discovery_bridge().change_update_request, subscription_id, action)

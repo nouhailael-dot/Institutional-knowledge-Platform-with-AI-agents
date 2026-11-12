@@ -267,10 +267,20 @@ def run_due_requests(
     if not live:
         return report
 
-    locked = session.execute(text("SELECT pg_try_advisory_lock(:k)"),
-                             {"k": _ADVISORY_LOCK}).scalar()
+    # 12 Nov 2026: Run now locks only its own request, so several people's
+    # requests run side by side and one request never runs twice at once. The
+    # scheduled run (no request) keeps the one lock for all.
+    if request_id is not None:
+        lock_sql, unlock_sql = ("SELECT pg_try_advisory_lock(:k, hashtext(:rid))",
+                                "SELECT pg_advisory_unlock(:k, hashtext(:rid))")
+        lock_args = {"k": _ADVISORY_LOCK, "rid": str(request_id)}
+    else:
+        lock_sql, unlock_sql = ("SELECT pg_try_advisory_lock(:k)", "SELECT pg_advisory_unlock(:k)")
+        lock_args = {"k": _ADVISORY_LOCK}
+    locked = session.execute(text(lock_sql), lock_args).scalar()
     if not locked:
-        raise RuntimeError("another discovery-request runner is already running")
+        raise RuntimeError("this request is already running" if request_id is not None
+                           else "another discovery-request runner is already running")
     try:
         store.expire_finished(session, subscriptions, today=today)
         session.commit()
@@ -292,7 +302,7 @@ def run_due_requests(
         # A failed statement leaves the transaction aborted; clear it first so
         # the unlock runs and the original error is the one that surfaces.
         session.rollback()
-        session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": _ADVISORY_LOCK})
+        session.execute(text(unlock_sql), lock_args)
         session.commit()
     return report
 

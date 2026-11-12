@@ -509,3 +509,23 @@ def test_rejecting_with_no_reason_is_accepted_by_the_database(session):
         "edited_payload": {}, "rejection_reason": "Other", "rejection_reason_other": "No reason given",
     })
     assert done["status"] in ("rejected", "rejected_by_reviewer")
+
+
+@needs_db
+def test_an_event_created_by_a_parallel_run_is_not_created_twice(session):
+    """12 Nov 2026: runs go side by side (one per person); creation takes a lock
+    and looks one last time for the same record made by another run."""
+    from agents.discovery.promote import _insert_event, created_meanwhile, insert_source
+
+    source = insert_source(session, source_url="https://parallel-test.org",
+                           fetched_at="2026-11-12T10:00:00+00:00", description="parallel test")
+    payload = {"name": "Parallel Run Summit Test", "start_date": "2027-03-04", "website": "https://parallel-test.org"}
+    assert created_meanwhile(session, "event", payload) is None
+    made = _insert_event(session, dict(payload), source)
+    assert created_meanwhile(session, "event", {**payload, "name": "parallel run summit test"}) == made
+    # Another edition (another date) is another event.
+    assert created_meanwhile(session, "event", {**payload, "start_date": "2028-03-04"}) is None
+    # Only recent records count: an old one is left to the normal duplicate check.
+    session.execute(text("UPDATE event SET created_at = now() - interval '2 days' "
+                         "WHERE event_id = CAST(:id AS uuid)"), {"id": made})
+    assert created_meanwhile(session, "event", payload) is None
