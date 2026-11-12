@@ -753,3 +753,9 @@ test('each run in Request Details says how long it took (GHUS, 11 Nov 2026)', ()
   const src = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
   assert.match(src, /"Took " \) \+ durationLabel\(run\.elapsed_seconds\)|"Took "\) \+ durationLabel\(run\.elapsed_seconds\)/);
 });
+
+test('the events request form has no Event Type choice (GHUS, 12 Nov 2026)', () => {
+  const src = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /<\$\{Field\} label="Event Type"/);
+  assert.doesNotMatch(src, /All Event Types/);
+});

@@ -1894,13 +1894,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             ${statesForRegion(options, regionShown).map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
           </select>
         <//>
-        <${Field} label="Event Type" error=${shown.types}>
-          <select value=${form.eventTypes[0] || ""} onChange=${(e) => set({eventTypes: e.target.value ? [e.target.value] : []})}>
-            <option value="">All Event Types</option>
-            ${(options.event_types || Object.keys(EVENT_TYPE_LABELS)).map((type) => html`
-              <option key=${type} value=${type}>${EVENT_TYPE_LABELS[type] || type}</option>`)}
-          </select>
-        <//>
+        ${/* 12 Nov 2026 (GHUS): no Event Type choice; a request finds every kind of event. */ ""}
       </div>
       ${areaContradicts(form.brief, draft) && html`<p class="discovery-message warn" role="status">
         Your description says the United States, but this request searches only
