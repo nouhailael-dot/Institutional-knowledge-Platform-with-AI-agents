@@ -402,3 +402,6 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 .review-blocked{flex-basis:100%;margin:0 0 6px;color:#9a3412;font-size:13px}
 .review-match-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
 .review-check{display:flex;align-items:center;gap:8px;font-size:14px}
+
+/* 12 Nov 2026: a record reads like the Directory; Edit opens its boxes. */
+.review-edit-bar{display:flex;justify-content:flex-end;margin:-4px 0 8px}

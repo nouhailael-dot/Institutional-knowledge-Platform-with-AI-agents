@@ -2147,6 +2147,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [deep, setDeep] = useState(null);
     const keys = useRef(new Map());
     const prefilled = useRef({});
+    // A record reads like the Directory; Edit opens its boxes (GHUS, 11 Nov 2026).
+    const [editing, setEditing] = useState(false);
+    useEffect(() => { setEditing(false); }, [selected?.candidate_id]);
     const prefilledFacts = useRef({});
 
     const loaded = useRef(null);
@@ -2644,7 +2647,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const mapDetails = fromMap ? (mapProfile.category_details || []).filter(d => d && d.label) : [];
     const mapSector = fromMap ? mapProfile.sector : "";
     const sources = (selected?.evidence || []).filter(item => item && item.url);
-    const editableHere = (selected?.editable_fields || []).filter(field =>
+    const cardView = selected && (editing ? selected : {...selected, editable_fields: []});
+    const editableHere = (cardView?.editable_fields || []).filter(field =>
       !DERIVED_FIELDS.has(field) && !AUDIT_ONLY_FIELDS.has(field)
       && !["actor_category", "category_type", "category_note", "name", "website", "description",
            "location_city", "state", "country", "primary_sector", "primary_technical_focus",
@@ -2840,6 +2844,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <span key=${index} class=${"review-status " + badge.tone}
                   title=${badge.hint || ""}>${badge.label}</span>`)}
             </div>
+            ${pending && twoWayKind(selected) !== "update" && html`<div class="review-edit-bar">
+              <button class=${"review-act" + (editing ? " chosen" : "")} disabled=${busy}
+                onClick=${() => setEditing(!editing)}>${editing ? "Done Editing" : "Edit"}</button></div>`}
             <p class="review-card-sub">
               ${selected.entity_type === "person"
                 ? (personLink(selected, draft) && html`<a href=${personLink(selected, draft)} target="_blank"
@@ -2860,17 +2867,19 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 ${about ? about.text : html`<span class="review-missing">${MISSING.notFound}</span>`}
                 ${about && html`<small>${about.kind}${about.source && html` · <a href=${about.source}
                   target="_blank" rel="noreferrer">Source</a>`}</small>`}</div>`;
-            })() : html`<textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")}
+            })() : !editing ? html`<div class="review-desc read">${present(draft.description)
+                ? draft.description : html`<span class="review-missing">${MISSING.notFound}</span>`}</div>`
+              : html`<textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")}
               rows=${Math.max(3, textRows(draft.description))}
               aria-label=${reviewFieldLabel("description")} placeholder="Description"
-              value=${draft.description ?? ""} disabled=${!pending || busy}
+              value=${draft.description ?? ""} disabled=${!editing || !pending || busy}
               onInput=${e => edit("description", e.target.value)}></textarea>`}
             ${draftErrors.description && html`<small class="field-error">${draftErrors.description}</small>`}
-            ${cardField(html, selected, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
+            ${cardField(html, cardView, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
             ${selected.entity_type === "person"
-              ? PERSON_LINK_FIELDS.map(row => profileRow(html, selected, draft, row,
+              ? PERSON_LINK_FIELDS.map(row => profileRow(html, cardView, draft, row,
                 {edit, disabled: !pending || busy, errors: draftErrors, always: true}))
-              : cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
+              : cardField(html, cardView, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
 
             ${isActor ? html`
             <details class="mpeople review-profile" open>
@@ -2883,7 +2892,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               ${cardLine(html, "Other Names", otherNames.join(", "))}
               <label class="review-line"><b>${FIELDS.primarySector}</b>
                 <span class="review-value review-value-row">
-                <select class="review-inline" value=${draft.primary_sector ?? ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${draft.primary_sector ?? ""} disabled=${!editing || !pending || busy}
                   data-sectors=${sectorState.version}
                   onChange=${e => e.target.value === NEW_SECTOR
                     ? startNewSector(selected.agent_metadata?.unmatched_sector_suggestion)
@@ -2944,7 +2953,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <div class="review-facts-row">
               <label class=${"review-stack" + (draftErrors.actor_category ? " invalid" : "")}>
                 <span>${FIELDS.actorCategory}</span>
-                <select class="review-inline" value=${draft.actor_category ?? ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${draft.actor_category ?? ""} disabled=${!editing || !pending || busy}
                   onChange=${e => editCategory(e.target.value)}>
                   <option value="">Choose a category</option>
                   ${categoryOptions().map(option => html`
@@ -2955,7 +2964,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <label class=${"review-stack" + (draftErrors.category_type ? " invalid" : "")}>
                 <span>${FIELDS.categoryType}</span>
                 <select class="review-inline" value=${draft.category_type ?? ""}
-                  disabled=${!pending || busy || !draft.actor_category}
+                  disabled=${!editing || !pending || busy || !draft.actor_category}
                   onChange=${e => edit("category_type", e.target.value)}>
                   <option value="">${summary?.pending_classification ? MISSING.pending : "Choose a type"}</option>
                   ${typeOptions(draft.actor_category).map(option => html`
@@ -2967,7 +2976,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   <small class="review-hint">${typeLabel(draft.actor_category, RETIRED_CATCH_ALL)}</small>`}
               </label>
               <label class="review-stack"><span>${FIELDS.country}</span>
-                <select class="review-inline" value=${normalizeCountry(draft.country) || ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${normalizeCountry(draft.country) || ""} disabled=${!editing || !pending || busy}
                   onChange=${e => editCountry(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
                   ${countryOptions().map(option => html`
@@ -2977,12 +2986,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 </select></label>
               <label class=${"review-stack" + (draftErrors.location_city ? " invalid" : "")}><span>City</span>
                 <input class="review-inline" value=${draft.location_city ?? ""} placeholder=${MISSING.notFound}
-                  disabled=${!pending || busy || !(selected.editable_fields || []).includes("location_city")}
+                  disabled=${!editing || !pending || busy || !(selected.editable_fields || []).includes("location_city")}
                   onInput=${e => edit("location_city", e.target.value)}/>
                 ${draftErrors.location_city && html`<small class="field-error">${draftErrors.location_city}</small>`}
               </label>
               <label class="review-stack"><span>${FIELDS.state}</span>
-                <select class="review-inline" value=${draft.state ?? ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${draft.state ?? ""} disabled=${!editing || !pending || busy}
                   onChange=${e => editState(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
                   ${stateOptions().map(option => html`
@@ -3001,7 +3010,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               return row && (row.value || row.update || row.pending)
                 && lightLine(html, {...row, label: "Location read from its pages"});
             })()}
-            ${cardField(html, selected, "primary_technical_focus", draft.primary_technical_focus, edit,
+            ${cardField(html, cardView, "primary_technical_focus", draft.primary_technical_focus, edit,
               !pending || busy, draftErrors.primary_technical_focus, "Focus")}
             ${(() => {
               // Funding the Light Pull found shows in the Funding box itself when the
@@ -3010,12 +3019,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               const read = lightBoxes.common.find(row => row.key === "funding_signal" && !row.state && row.value);
               const found = read ? formatFactValue(read.value) : "";
               const own = draft.funding_summary;
-              return html`${cardField(html, selected, "funding_summary",
+              return html`${cardField(html, cardView, "funding_summary",
                 own === undefined || own === null || own === "" ? found : own, edit,
                 !pending || busy, draftErrors.funding_summary, "Funding")}
                 ${read && own && lightLine(html, {...read, label: "Funding found on its pages"})}`;
             })()}
-            ${cardField(html, selected, "current_activities", draft.current_activities, edit,
+            ${cardField(html, cardView, "current_activities", draft.current_activities, edit,
               !pending || busy, draftErrors.current_activities, "Current Programs")}
 
             <div class="review-hubs">
@@ -3037,7 +3046,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ` : html`
             <details class="mpeople review-profile" open>
               <summary>${selected.entity_type === "event" ? "Event profile" : "Person profile"}</summary>
-              ${(CARD_FIELDS[selected.entity_type] || []).map(row => profileRow(html, selected, draft, row,
+              ${(CARD_FIELDS[selected.entity_type] || []).map(row => profileRow(html, cardView, draft, row,
                 {edit, disabled: !pending || busy, errors: draftErrors}))}
             </details>`}
 
@@ -3179,7 +3188,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             </dl>
             ${editableHere.length > 0 && html`<div class="review-field-grid">
               ${editableHere.map(field =>
-                textField(html, selected, field, draft[field], edit, !pending || busy, draftErrors[field]))}
+                textField(html, cardView, field, draft[field], edit, !pending || busy, draftErrors[field]))}
             </div>`}
             <details><summary>${FIELDS.rawCandidate}</summary>
               <pre>${JSON.stringify(selected.agent_metadata, null, 2)}</pre></details>
@@ -3209,7 +3218,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${pending && blockedReason(draftErrors) && html`<p class="review-blocked" role="status">
               To save or verify, fix: ${blockedReason(draftErrors)}</p>`}
             ${/* 12 Nov 2026: Save Edits, Reject, Park, then Verify in orange; each asks once. */ ""}
-            ${twoWayKind(selected) !== "update" && html`<button class="review-act"
+            ${editing && twoWayKind(selected) !== "update" && html`<button class="review-act"
               disabled=${!pending || busy || Object.keys(draftErrors).length > 0}
               onClick=${save}>${BUTTONS.saveEdits}</button>`}
             <button class="review-act"

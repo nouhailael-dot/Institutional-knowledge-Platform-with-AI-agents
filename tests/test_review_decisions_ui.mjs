@@ -101,3 +101,12 @@ test('the events City filter is a list that starts on All (GHUS, 11 Nov 2026)', 
   // Agent "not found" values read Not Found on map cards.
   assert.match(page, /\/\^not\[ _\]found\$\/i\.test\(v\.trim\(\)\)\?"Not Found"/);
 });
+
+test('a record reads like the Directory until Edit opens its boxes (GHUS, 11 Nov 2026)', () => {
+  assert.match(component, /const \[editing, setEditing\] = useState\(false\)/);
+  assert.match(component, /const cardView = selected && \(editing \? selected : \{\.\.\.selected, editable_fields: \[\]\}\)/);
+  assert.match(component, /\$\{editing \? "Done Editing" : "Edit"\}/);
+  // Save Edits shows while editing; GHUS Notes, Reject, Park and Verify work either way.
+  assert.match(component, /\$\{editing && twoWayKind\(selected\) !== "update" && html`<button class="review-act"/);
+  assert.match(component, /value=\$\{analystNotes\} disabled=\$\{!pending \|\| busy\}/);
+});
