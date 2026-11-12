@@ -18,6 +18,19 @@ PRICES = {
 }
 
 
+def refused_status(exc) -> int | None:
+    """The HTTP status when the API answered with an error response, else None.
+
+    An error response (4xx/5xx) means the request was refused, so nothing was
+    generated or billed. A timeout or a dropped connection has no response and
+    stays uncertain.
+    """
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and 400 <= status <= 599 and getattr(exc, "response", None) is not None:
+        return status
+    return None
+
+
 def usage_cost(model, usage):
     rate = PRICES[model]
     if not isinstance(usage, dict) or any(usage.get(k) is None for k in ("input_tokens", "output_tokens")):
@@ -105,8 +118,15 @@ def paid_message(client, run, stage, operation_key=None, **kwargs):
     try:
         response = safe_client.messages.create(**kwargs)
     except Exception as exc:
-        # Even HTTP/transport errors can be ambiguous. Keep reserved funds and
-        # require billing reconciliation instead of issuing an automatic retry.
+        status = refused_status(exc)
+        if status is not None:
+            # 12 Nov 2026: the API answered with an error (rate limited,
+            # overloaded, invalid request): nothing was generated or charged.
+            # Recording it as uncertain locked the map for good.
+            run.store.settle(call_id, 0, {}, None, f"{type(exc).__name__} (HTTP {status}): not charged")
+            raise
+        # A timeout or a dropped connection is truly ambiguous. Keep reserved
+        # funds and require billing reconciliation instead of a retry.
         run.store.settle(call_id, None, None, None, type(exc).__name__)
         raise
     raw_usage = getattr(response, "usage", None)

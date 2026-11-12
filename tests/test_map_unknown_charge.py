@@ -63,3 +63,16 @@ def test_the_map_page_offers_the_way_out_and_says_why_research_is_unfinished():
     assert '"/api/map/"+id+"/settle-charges"' in page
     assert "Count it at its maximum and go on" in page
     assert "Research is unfinished: some planned searches did not run." in page
+
+
+def test_an_api_error_reply_is_not_an_uncertain_charge():
+    """A rate-limit or overloaded reply is a refusal: not charged, so the map is
+    not locked. A timeout (no reply) stays uncertain."""
+    from types import SimpleNamespace
+
+    from src.map_agent.costs import refused_status
+
+    assert refused_status(SimpleNamespace(status_code=429, response=object())) == 429
+    assert refused_status(SimpleNamespace(status_code=529, response=object())) == 529
+    assert refused_status(TimeoutError("read timed out")) is None
+    assert refused_status(SimpleNamespace(status_code=None, response=None)) is None
