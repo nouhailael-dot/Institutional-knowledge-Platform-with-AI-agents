@@ -351,6 +351,9 @@ ACTOR_UPDATE_PREFIX = "actor-update:"
 # Records GHUS supplied through the Data Feed (a spreadsheet or the form).
 DATAFEED_PREFIX = "datafeed:"
 DATAFEED_LABEL = "Data Feed import"
+# Where an import came from, as postgres_source adds it after the import's name:
+# " · team.xlsx" or " · manual entry". Review titles show the name only.
+_DATAFEED_WHERE = re.compile(r"\s·\s(?:manual entry|[^·]+\.(?:xlsx|xlsm|xls|csv))$", re.IGNORECASE)
 # Review items about one box's value (raised by the Phase 11 fact writer).
 FACT_REVIEW_KINDS = ("fact_conflict", "pending_update")
 MAP_CHECKS_KEY = "map-checks"
@@ -440,8 +443,10 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
         if "dry_run" in raw or "dry run" in raw.casefold():
             parts.append("test run")
     elif run_id.startswith(DATAFEED_PREFIX):
-        # "Data Feed import · Kansas water actors · actors.xlsx · Oct 26, 2026"
-        parts = [DATAFEED_LABEL, raw.removeprefix(f"{DATAFEED_LABEL}:").strip()]
+        # "Data Feed import · Kansas water actors · Oct 26, 2026": the name the
+        # person gave the import, never the spreadsheet's file name (13 Nov 2026).
+        name = raw.removeprefix(f"{DATAFEED_LABEL}:").strip()
+        parts = [DATAFEED_LABEL, _DATAFEED_WHERE.sub("", name).strip() or name]
     elif run_id.startswith(ACTOR_UPDATE_PREFIX):
         # "Actor update · CPower Energy · Oct 19, 2026": what an update wrote,
         # and anything it raised for a person (conflicts, links, hubs).

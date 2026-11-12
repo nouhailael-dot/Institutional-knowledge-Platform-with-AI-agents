@@ -901,3 +901,14 @@ def test_a_maps_saved_cards_are_a_new_requests_findings_proposed_by_explore_and_
     assert run_type_of("datafeed:1", "event", "Data Feed import: Phase 1 · file.xlsx") == "data_feed"
     assert derive_review_reason({"data_feed": {"method": "map"}}) == "map_agent"
     assert derive_review_reason({"data_feed": {"method": "upload"}}) == "data_feed"
+
+
+def test_a_data_feed_run_is_titled_with_the_name_given_not_the_file():
+    """GHUS, 13 Nov 2026: Review shows the name written on the Data Feed page."""
+    from src.review.store import run_name
+
+    assert run_name("Data Feed import: UM6P GHUS Team Information · GHUS_People_Template (2).xlsx",
+                    "datafeed:1") == "UM6P GHUS Team Information"
+    assert run_name("Data Feed import: Kansas water actors · manual entry", "datafeed:2") \
+        == "Kansas water actors"
+    assert run_name("Data Feed import: Phase 1 · Texas", "datafeed:3") == "Phase 1 · Texas"
