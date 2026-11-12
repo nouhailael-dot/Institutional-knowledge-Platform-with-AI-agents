@@ -461,6 +461,42 @@ export function briefTerms(text, limit = 8) {
   return [...new Set(terms)].slice(0, limit);
 }
 
+// The words of a request that say how to search, not what to look for.
+const REQUEST_WORDS = new RegExp([
+  "^(please\\s+)?(can you\\s+)?(find|search|look|list|show|give|get|map|identify|track|monitor)" +
+    "(\\s+(me|us|for|up))*(\\s+(all|any|every|the|some))*\\s+",
+  "\\b(related|relevant|happening|taking place|upcoming|occurring|held|organized|organised)\\b",
+  "\\b(in|across|within|throughout)\\s+(the\\s+)?(united states|u\\.s\\.a?\\.?|usa|us|america|country|nation)\\b",
+  "\\b(in|over|during|for)\\s+the\\s+(next|coming|last|past)\\s+\\d*\\s*(days?|weeks?|months?|years?)\\b",
+  "\\b(this|next)\\s+(week|month|year|quarter)\\b",
+  "\\b(focused|focusing|centered|centred)\\s+on\\b",
+  "\\b(all|any|every)\\s+(sectors?|industries|topics|fields)\\b",
+  "\\b(events?|conferences?|organizations?|organisations?|people|persons?|experts?)\\b",
+].join("|"), "gi");
+
+/**
+ * Search terms from a one-line request (12 Nov 2026). "Find me all African
+ * Diaspora related events happening in the United States in the next 6 months
+ * - focused on all sectors, entrepreneurship" searched for that whole sentence,
+ * which a page almost never contains word for word, so the run found nothing.
+ * The request's own words are kept; only how-to-search words are dropped.
+ */
+export function termsFromSentence(text, limit = 8) {
+  const line = String(text || "").split(/\n/)[0];
+  const parts = line.split(/\s+[-–—]\s+|[,;:•]|\s+and\s+|\s+or\s+/i);
+  const terms = parts
+    .map((part) => part.replace(REQUEST_WORDS, " ").replace(/\s+/g, " ")
+      .replace(/^(of|on|for|in|about|with|the|a|an)\s+/i, "").replace(/\s+(of|on|for|in|the)$/i, "").trim())
+    .filter((part) => /[a-z]{3,}/i.test(part));
+  return [...new Set(terms)].slice(0, limit);
+}
+
+/** The description says the whole country, but the request names a smaller area. */
+export function areaContradicts(brief, draft) {
+  const nationwide = /\b(united states|u\.s\.a?\.?|usa|nationwide|across the (us|country))\b/i.test(String(brief || ""));
+  return nationwide && draft?.areaKind && draft.areaKind !== "us";
+}
+
 /**
  * The word stems the agent will look for, exactly as actor_quality._stems
  * builds them: alphabetic words of four letters or more, cut to four.
@@ -1119,9 +1155,10 @@ export function resolveEventDraft(form, options = {}) {
   if (!brief) return form;
   const found = briefMatches(brief, options);
   const terms = briefTerms(brief, options.max_focus_terms || 8);
+  const fromLine = termsFromSentence(brief, options.max_focus_terms || 8);
   const resolved = {...form, title: briefTitle(brief),
     sector: form.sector || found.sector || ANY_SECTOR,
-    focusTerms: terms.length ? terms : [briefTitle(brief)]};
+    focusTerms: terms.length ? terms : fromLine.length ? fromLine : [briefTitle(brief)]};
   if (!form.areaTouched) {
     resolved.areaKind = found.state ? "state" : found.region ? "region" : "us";
     resolved.region = found.region || "";
@@ -1865,6 +1902,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           </select>
         <//>
       </div>
+      ${areaContradicts(form.brief, draft) && html`<p class="discovery-message warn" role="status">
+        Your description says the United States, but this request searches only
+        ${draft.areaKind === "state" ? "one state" : "one region"}. Choose All Regions to search the whole country.</p>`}
+      ${draft.focusTerms.length > 0 && html`<p class="discovery-hint">Searches for: ${draft.focusTerms.join(" · ")}</p>`}
       <div class="discovery-daterange">
         <span class="discovery-label">Event Date Range</span>
         <div class="discovery-daterange-row">
@@ -2067,6 +2108,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             <span class=${"requests-pill " + (run.status === "running" && run.stalled ? "stalled" : run.status)}>${
               run.status === "running" && run.stalled ? "Stopped responding" : RUN_STATUS[run.status] || run.status}</span>
             <span>${runFindings(run)} ${runFindings(run) === 1 ? "finding" : "findings"}</span>
+            <span class="requests-took" title="How long the run took">${run.elapsed_seconds != null
+              ? (run.status === "running" ? "Running for " : "Took ") + durationLabel(run.elapsed_seconds) : ""}</span>
             ${find && run.status !== "running" && reviewRunKey(run)
               ? html`<button class="link" onClick=${() => openRunInReview(run, entity)}>Show Results</button>` : html`<span></span>`}
           </li>`)}</ul>

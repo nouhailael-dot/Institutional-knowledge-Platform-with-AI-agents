@@ -730,3 +730,26 @@ test('a starting request has a running run that says it is starting up', async (
   assert.equal(runningLine(run), 'Starting up: searching the web in a moment');
   assert.equal(runningRun({runs: []}), null);
 });
+
+// -------------------------------- one-line event requests (12 Nov 2026)
+test('a one-line events request searches for its key words, not the whole sentence', async () => {
+  const {termsFromSentence, areaContradicts, resolveEventDraft, blankEntityForm} =
+    await import('../frontend/discovery.js');
+  const sentence = 'Find me all African Diaspora related events happening in the United States '
+    + 'in the next 6 months - focused on all sectors, entrepreneurship';
+  assert.deepEqual(termsFromSentence(sentence), ['African Diaspora', 'entrepreneurship']);
+  const draft = resolveEventDraft({...blankEntityForm('2026-11-12', 'event'), brief: sentence}, {});
+  assert.deepEqual(draft.focusTerms, ['African Diaspora', 'entrepreneurship']);
+  // Several lines: the lines after the first are the terms, as before.
+  const listed = resolveEventDraft({...blankEntityForm('2026-11-12', 'event'),
+    brief: 'Diaspora events\nAfroTech\nBlack founders'}, {});
+  assert.deepEqual(listed.focusTerms, ['AfroTech', 'Black founders']);
+  // The whole country in words, one region in the form: said before saving.
+  assert.equal(areaContradicts(sentence, {areaKind: 'region'}), true);
+  assert.equal(areaContradicts(sentence, {areaKind: 'us'}), false);
+});
+
+test('each run in Request Details says how long it took (GHUS, 11 Nov 2026)', () => {
+  const src = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.match(src, /"Took " \) \+ durationLabel\(run\.elapsed_seconds\)|"Took "\) \+ durationLabel\(run\.elapsed_seconds\)/);
+});
