@@ -60,3 +60,6 @@
   .dash-spending-label{border-right:0}
   .dash-spending-amount{margin-left:0}
 }
+
+/* 12 Nov 2026: waiting its turn behind another run. */
+.dash-pill.queued{background:#eef2ff;color:#3730a3;border-color:#c7d2fe}

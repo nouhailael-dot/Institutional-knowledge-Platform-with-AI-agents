@@ -10,7 +10,7 @@
 // Directory activity by the name typed in Review Results, and maps are the ones
 // made on this computer.
 
-import {NAVIGATE, formatUsd, isRunning, requestStatus, visibleRequests} from "./discovery.js?v=20261112e";
+import {NAVIGATE, formatUsd, isRunning, requestStatus, visibleRequests} from "./discovery.js?v=20261112f";
 import {usDate} from "./dates.js?v=20261110b";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";
@@ -22,7 +22,7 @@ const PANEL_SIZE = 5;
 const DAY = 86400000;
 
 export const STATE_LABELS = {
-  completed: "Completed", pending_review: "Pending Review", in_progress: "In Progress",
+  completed: "Completed", pending_review: "Pending Review", in_progress: "In Progress", queued: "Queued",
   stopped: "Stopped", new_update: "New Update", scheduled: "Scheduled", paused: "Paused",
   attention: "Needs Attention", cancelled: "Cancelled",
 };
@@ -155,6 +155,7 @@ export function needsAttention(request) {
 export function requestState(request, kind, since = 0) {
   const status = requestStatus(request);
   if (status === "running") return "in_progress";
+  if (status === "queued") return "queued";
   if (needsAttention(request)) return "attention";
   if (hasNewUpdate(request, kind, since)) return "new_update";
   if (status === "active" && request.next_run) return "scheduled";

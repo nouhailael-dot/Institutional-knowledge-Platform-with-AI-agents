@@ -111,6 +111,8 @@ export const STATUS_LABELS = {
   // Active and waiting for its next run; "Running" is said only while a run is.
   active: "Scheduled",
   running: "Running",
+  // Run now while another run goes: it starts by itself when that one ends (12 Nov 2026).
+  queued: "Queued",
   stalled: "Stopped responding",
   paused: "Paused",
   expired: "Finished",
@@ -241,8 +243,19 @@ export function runningRun(request) {
 }
 
 /** "Running", "Stopped responding", "Period over", or the request's own status. */
+/** What Run now did: started, or queued behind another run (12 Nov 2026). */
+export function runNowMessage(title, answer) {
+  if (answer?.queued) {
+    const ahead = Number(answer.position || 1) - 1;
+    return `“${title}” is queued: another request is running${ahead > 0
+      ? ` and ${ahead} more ${ahead === 1 ? "waits" : "wait"} before it` : ""}. It starts by itself when its turn comes.`;
+  }
+  return `“${title}” is running. This takes a few minutes; the page updates by itself.`;
+}
+
 export function requestStatus(request) {
   if (isRunning(request)) return "running";
+  if (request.queued) return "queued";
   if ((request.runs || []).some((run) => run.status === "running" && run.stalled)) return "stalled";
   // Still active, but nothing more is scheduled: it runs only when asked.
   if (request.status === "active" && !request.next_run && request.skip_reason === "expired") {
@@ -2249,9 +2262,9 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       if (!window.confirm(`Run “${request.title}” now? It searches the web live and adds what passes the quality checks.`)) return;
       setBusy(true); setMessage(null);
       try {
-        await api(`/api/discovery/requests/${request.subscription_id}/run`, {method: "POST"});
-        setMessage({kind: "success", text: `“${request.title}” is running. This takes a few minutes; the page updates by itself.`});
-        setWatchUntil(Date.now() + 20 * 60 * 1000);
+        const answer = await api(`/api/discovery/requests/${request.subscription_id}/run`, {method: "POST"});
+        setMessage({kind: "success", text: runNowMessage(request.title, answer)});
+        setWatchUntil(Date.now() + (answer?.queued ? 60 : 20) * 60 * 1000);
         setTimeout(load, 4000);
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setBusy(false);
@@ -2273,8 +2286,11 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         + "sources; findings go to Review Results.")) return;
       setBusy(true); setMessage(null);
       try {
-        await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
-        if (action === "run") setWatchUntil(Date.now() + 20 * 60 * 1000);
+        const answer = await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
+        if (action === "run") {
+          setWatchUntil(Date.now() + (answer?.queued ? 60 : 20) * 60 * 1000);
+          setMessage({kind: "success", text: runNowMessage(request.title, answer)});
+        }
         await load();
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setBusy(false);

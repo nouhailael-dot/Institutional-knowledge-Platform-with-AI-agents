@@ -88,6 +88,11 @@ class DiscoveryBridgeError(RuntimeError):
 
 # How long a started request reads "Running" before its run record appears.
 STARTING_FOR_S = 20 * 60
+# Run now while another run is going (12 Nov 2026): the request waits its turn.
+# A started runner takes a moment to take the one-runner lock, so the next one
+# never starts within this grace; the queue is checked this often.
+LAUNCH_GRACE_S = 120
+QUEUE_POLL_S = 15
 
 
 def _epoch(value: Any) -> float:
@@ -236,6 +241,11 @@ class DiscoveryBridge:
         # Requests started by Run now, until their run record appears (4 Nov 2026:
         # the page said "Scheduled" for the minute or two the runner takes to start).
         self._started: dict[str, float] = {}
+        # Run now pressed while another run was going: first come, first run.
+        self._queue: list[str] = []
+        self._queue_lock = threading.Lock()
+        self._queue_thread: threading.Thread | None = None
+        self._last_launch = 0.0
         # The app caches the two lists (cache_lists=True); tests read them fresh.
         self._lists = ({"requests": _ListCache(lambda: self._call(["list"], retries=1)),
                         # Sectors, regions and kinds: they change with a deployment.
@@ -295,6 +305,12 @@ class DiscoveryBridge:
                 self._started.pop(sid, None)
                 continue
             request["starting"] = True
+        with self._queue_lock:
+            waiting = list(self._queue)
+        for request in (payload or {}).get("requests") or []:
+            sid = str(request.get("subscription_id") or "")
+            if sid in waiting:
+                request["queued"] = waiting.index(sid) + 1
         return payload
 
     def preview(self, draft: dict[str, Any]) -> dict[str, Any]:
@@ -332,9 +348,65 @@ class DiscoveryBridge:
         if not _UUID.match(subscription_id or ""):
             raise DiscoveryBridgeError("unknown request", rejected=True)
         _require_contact()
-        refusal = run_refusal(self._run_state(subscription_id))
+        state = self._run_state(subscription_id)
+        refusal = run_refusal({**state, "runner_busy": False} if state else state)
         if refusal:
             raise DiscoveryBridgeError(refusal, rejected=True)
+        # 12 Nov 2026: several people may press Run now at once, and one run
+        # goes at a time. Instead of refusing, the request waits its turn.
+        with self._queue_lock:
+            busy = bool(state and state.get("runner_busy")) or bool(self._queue) \
+                or time.time() - self._last_launch < LAUNCH_GRACE_S
+            if busy:
+                if subscription_id not in self._queue:
+                    self._queue.append(subscription_id)
+                position = self._queue.index(subscription_id) + 1
+                self._ensure_queue_watcher()
+                return {"started": False, "queued": True, "position": position,
+                        "subscription_id": subscription_id}
+        return self._launch(subscription_id)
+
+    def _ensure_queue_watcher(self) -> None:
+        """One background thread starts each queued request when its turn comes."""
+        if self._queue_thread is not None and self._queue_thread.is_alive():
+            return
+        def watch():
+            while True:
+                time.sleep(QUEUE_POLL_S)
+                if not self.advance_queue():
+                    return
+        self._queue_thread = threading.Thread(target=watch, name="run-now-queue", daemon=True)
+        self._queue_thread.start()
+
+    def advance_queue(self, now: float | None = None) -> bool:
+        """Start the next queued request if no run is going. True while any still wait."""
+        now = time.time() if now is None else now
+        with self._queue_lock:
+            if not self._queue:
+                return False
+            if now - self._last_launch < LAUNCH_GRACE_S:
+                return True
+            head = self._queue[0]
+        state = self._run_state(head)
+        if state and state.get("runner_busy"):
+            return True
+        with self._queue_lock:
+            if not self._queue or self._queue[0] != head:
+                return bool(self._queue)
+            self._queue.pop(0)
+        # Ended or paused while it waited: it does not run.
+        if not run_refusal({**state, "runner_busy": False} if state else state):
+            try:
+                self._launch(head)
+            except DiscoveryBridgeError:
+                pass
+        if self._lists is not None:
+            self._lists["requests"].invalidate()
+            self._lists["updates"].invalidate()
+        with self._queue_lock:
+            return bool(self._queue)
+
+    def _launch(self, subscription_id: str) -> dict[str, Any]:
         env = os.environ.copy()
         env["DATABASE_URL"] = str(self.database_url)
         runs = self.project_root / "agents" / "runs"
@@ -359,7 +431,7 @@ class DiscoveryBridge:
             raise DiscoveryBridgeError("The GHUS discovery run could not be started.") from exc
         finally:
             log.close()
-        self._started[subscription_id] = time.time()
+        self._started[subscription_id] = self._last_launch = time.time()
         return {"started": True, "subscription_id": subscription_id}
 
     def _read_run_state(self, subscription_id: str) -> dict[str, Any] | None:

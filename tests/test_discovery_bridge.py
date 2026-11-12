@@ -364,7 +364,6 @@ def test_the_routes_pass_on_what_the_forms_send():
      "This request has ended on 2026-11-02"),
     ({"exists": True, "status": "cancelled", "end_date": None, "runner_busy": False}, "has ended"),
     ({"exists": False}, "no longer exists"),
-    ({"exists": True, "status": "active", "runner_busy": True}, "Another request is running"),
 ])
 def test_run_now_says_why_it_cannot_start_and_starts_nothing(tmp_path, monkeypatch, state, words):
     monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
@@ -462,3 +461,49 @@ def test_the_app_reads_each_list_once_and_again_after_a_change(tmp_path, monkeyp
                     calls=(seen := []))
     plain.list_requests(); plain.list_requests()
     assert len(seen) == 2
+
+
+# ----------------------------------------- several people press Run now (12 Nov 2026)
+
+def _queue_bridge(tmp_path, monkeypatch, state):
+    monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
+    monkeypatch.setattr("src.discovery.bridge.DiscoveryBridge._ensure_queue_watcher", lambda self: None)
+    started = []
+    bridge = DiscoveryBridge(
+        project_root=_backend(tmp_path), python_executable="py",
+        database_url="postgresql://local/x_test",
+        start_process=lambda command, **kwargs: started.append(command[command.index("--request-id") + 1]),
+        run_state=lambda _id: state,
+    )
+    return bridge, started
+
+
+def test_run_now_while_another_run_goes_waits_its_turn_then_starts(tmp_path, monkeypatch):
+    """One run goes at a time; a second Run now is queued, not refused, and starts
+    by itself when the first has finished."""
+    state = {"exists": True, "status": "active", "runner_busy": True}
+    bridge, started = _queue_bridge(tmp_path, monkeypatch, state)
+    a, b = "00000000-0000-4000-8000-00000000000a", "00000000-0000-4000-8000-00000000000b"
+    assert bridge.run_now(a) == {"started": False, "queued": True, "position": 1, "subscription_id": a}
+    assert bridge.run_now(b)["position"] == 2
+    assert bridge.run_now(a)["position"] == 1          # pressed twice: still one place
+    listed = bridge.mark_starting({"requests": [{"subscription_id": a, "runs": []},
+                                                {"subscription_id": b, "runs": []}]})
+    assert [r.get("queued") for r in listed["requests"]] == [1, 2]
+
+    assert bridge.advance_queue() is True and started == []     # still busy
+    state["runner_busy"] = False
+    assert bridge.advance_queue() is True and started == [a]    # first come, first run
+    # The next waits until the started one has had time to take the runner.
+    assert bridge.advance_queue() is True and started == [a]
+    import time as _time
+    assert bridge.advance_queue(now=_time.time() + 121) is False and started == [a, b]
+
+
+def test_a_queued_request_that_ended_meanwhile_does_not_run(tmp_path, monkeypatch):
+    state = {"exists": True, "status": "active", "runner_busy": True}
+    bridge, started = _queue_bridge(tmp_path, monkeypatch, state)
+    sid = "00000000-0000-4000-8000-00000000000c"
+    bridge.run_now(sid)
+    state.update(runner_busy=False, status="paused")
+    assert bridge.advance_queue() is False and started == []

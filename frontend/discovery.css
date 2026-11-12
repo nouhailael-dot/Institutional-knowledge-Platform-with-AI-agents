@@ -374,3 +374,7 @@
 
 /* 12 Nov 2026: what an events request will search for, shown before it is saved. */
 .discovery-hint{margin:0 0 14px;color:var(--muted,#6b7280);font-size:13px}
+
+/* 12 Nov 2026: waiting its turn behind another run. */
+.requests-pill.queued{background:#eef2ff;color:#3730a3}
+.requests-pill.queued::before{background:#6366f1}
