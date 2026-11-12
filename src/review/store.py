@@ -60,6 +60,9 @@ REJECTION_REASONS = (
     "Insufficient evidence on the page",
     "Other",
 )
+NO_REASON_GIVEN = "No reason given"
+# The page says "organization"; the database's fixed list says "organisation".
+REASON_SPELLINGS = {"Not an organization / event / person page": "Not an organisation / event / person page"}
 REVIEWABLE_RUN_STATUSES = (
     "done", "interrupted", "cancelled", "cost_unknown", "budget_stopped", "error",
 )
@@ -1667,6 +1670,11 @@ class ReviewStore:
         if decision_kind == "same_existing" and not str(target_id or "").strip():
             raise ReviewValidationError("Select the existing record for a same-existing decision.")
         if decision_kind == "reject":
+            # 12 Nov 2026: rejecting needs no reason. The database keeps one of
+            # its fixed reasons, so none given is recorded as Other: no reason.
+            rejection_reason = REASON_SPELLINGS.get(rejection_reason, rejection_reason)
+            if not str(rejection_reason or "").strip():
+                rejection_reason, rejection_reason_other = "Other", NO_REASON_GIVEN
             if rejection_reason not in REJECTION_REASONS:
                 raise ReviewValidationError("Select one of the fixed rejection reasons.")
             if rejection_reason == "Other" and not str(rejection_reason_other or "").strip():
@@ -1685,7 +1693,9 @@ class ReviewStore:
                 "decision_kind": "verify_actor",
                 "review_item_id": str(metadata.get("review_item_id") or ""),
                 "verified": decision_kind != "reject",
-                "rejection_reason": rejection_reason if decision_kind == "reject" else None,
+                "rejection_reason": (None if decision_kind != "reject" else rejection_reason
+                                     if rejection_reason != "Other"
+                                     else f"Other: {_clean_text(rejection_reason_other, max_length=4000)}"),
                 "reviewer": reviewer,
                 "notes": notes,
                 "ghus_notes": ghus_notes,

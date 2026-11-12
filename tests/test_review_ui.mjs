@@ -435,7 +435,7 @@ test('only API-provided editable fields enter a decision payload', () => {
   assert.deepEqual(payload, {name: 'Reviewed Lab', description: 'Reviewed'});
 });
 
-test('decisions enforce a reviewer, a target and a fixed rejection reason', () => {
+test('decisions enforce a reviewer and a target; rejecting needs no reason', () => {
   const candidate = {status: 'pending_review'};
   for (const entity of ['actor', 'event', 'person']) {
     assert.deepEqual(decisionOptions(entity).map(x => x.value),
@@ -449,7 +449,8 @@ test('decisions enforce a reviewer, a target and a fixed rejection reason', () =
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'same_existing', targetId: '', admissionConfigured: true}), false);
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'same_existing', targetId: 'id', admissionConfigured: true}), true);
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'reject', rejectionReason: 'Outside target geography', admissionConfigured: true}), true);
-  assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'reject', rejectionReason: 'Other', rejectionOther: '', admissionConfigured: true}), false);
+  // 12 Nov 2026 (GHUS feedback): Reject asks "are you sure?" and nothing else.
+  assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'reject', admissionConfigured: true}), true);
   assert.equal(canSubmitReview({candidate: {status: 'approved'}, reviewer: 'R', decisionKind: 'defer', admissionConfigured: true}), false);
   // A draft error blocks the decision too.
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'new', admissionConfigured: true, draftErrors: {name: 'Required.'}}), false);
@@ -469,7 +470,10 @@ test('the confirmation lists every pending edit, before and after', () => {
   );
   assert.match(component, /function confirmText\(kind\)/);
   assert.match(component, /SENTENCES\.verifyConsequences/);
-  assert.match(component, /SENTENCES\.noDeletion/);
+  // Reject and Park ask once, in plain words; no reason, no second step.
+  assert.match(component, /Reject "\$\{selected\.display_name\}"\?/);
+  assert.match(component, /Park "\$\{selected\.display_name\}"\?/);
+  assert.doesNotMatch(component, /Confirm Reject|BUTTONS\.confirm\} \$\{BUTTONS\.reject/);
 });
 
 test('inline length validation and explicit duplicate differences', () => {
@@ -530,7 +534,7 @@ test('decisions, the sticky footer and the queue are reachable and keyboard-oper
 test('every action is disabled while the canonical writer is unavailable', () => {
   // Off only when the server says so; while loading it is unknown, not "off".
   assert.match(component, /const writerDown = data.admission_configured === false/);
-  assert.match(component, /disabled=\$\{!pending \|\| busy \|\| writerDown\}/);
+  assert.match(component, /disabled=\$\{!pending \|\| busy \|\| writerDown/);
   assert.match(component, /SENTENCES\.writerUnavailable/);
 });
 
