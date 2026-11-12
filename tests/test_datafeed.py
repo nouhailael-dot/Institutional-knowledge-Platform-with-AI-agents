@@ -150,7 +150,7 @@ def test_macros_external_links_and_compression_bombs_are_refused():
 
 
 def test_formulas_are_never_evaluated_and_are_reported_on_their_row():
-    data = filled_xlsx("actor", [{**ACTOR, "Official name": '=HYPERLINK("http://x","y")'}])
+    data = filled_xlsx("actor", [{**ACTOR, "Official name": '=SUM(A1:A3)'}])
     parsed = parse.parse_upload("a.xlsx", data, "actor")
     row = parsed.rows[0]
     result = validate.RowChecker("actor", VOCAB).check(row["row_number"], row["values"])
@@ -208,7 +208,7 @@ def test_category_and_type_must_belong_together():
 
 
 def test_required_fields_types_and_lists():
-    result = check("actor", {"Website": "www.no-scheme.org", "Organization Category": "Bakery",
+    result = check("actor", {"Website": "not a web page", "Organization Category": "Bakery",
                              "Sector": "Space"})
     errors = " ".join(result["errors"])
     assert "Official name is required" in errors
@@ -804,3 +804,59 @@ def test_an_event_without_an_exact_date_is_not_refused():
     assert start.required is False
     from src.map_agent.save import _us_day
     assert _us_day("2026") == ""   # a year alone is never turned into a day
+
+
+
+# ------------------------------------------------ links in the sheets (13 Nov 2026)
+
+def test_a_web_address_without_https_is_accepted():
+    for typed in ("beyondafrica.org", "www.afrotech.com", "afrotech.com/2026/agenda"):
+        result = check("actor", {**ACTOR, "Website": typed})
+        assert not any("Website" in e for e in result["errors"]), typed
+        assert result["payload"]["website"] == "https://" + typed
+
+
+def test_a_link_inserted_on_a_cell_is_read_as_its_address():
+    """Excel's Insert Link: the cell shows words, the link opens the page."""
+    wb = load_workbook(io.BytesIO(filled_xlsx("actor", [{**ACTOR, "Website": "Their website",
+                                                         "GHUS Notes": "Met at the summit"}])))
+    ws = wb[contract.SHEET_NAMES["actor"]]
+    columns = {contract.header_key(c.value): c.column for c in ws[1]}
+    ws.cell(row=2, column=columns[contract.header_key("Website")]).hyperlink = "https://prairiewaterlab-test.org"
+    ws.cell(row=2, column=columns[contract.header_key("GHUS Notes")]).hyperlink = "https://example.org/report"
+    out = io.BytesIO(); wb.save(out)
+    parsed = parse.parse_upload("a.xlsx", out.getvalue(), "actor")
+    row = parsed.rows[0]
+    result = validate.RowChecker("actor", VOCAB).check(row["row_number"], row["values"])
+    assert result["payload"]["website"] == "https://prairiewaterlab-test.org"
+    assert result["payload"]["ghus_notes"] == "Met at the summit (https://example.org/report)"
+    assert not any("formula" in e for e in result["errors"])
+
+
+def test_a_hyperlink_formula_is_read_never_run():
+    assert parse.hyperlink_formula('=HYPERLINK("https://afrotech.com","AfroTech")') ==         ("https://afrotech.com", "AfroTech")
+    assert parse.hyperlink_formula('=HYPERLINK(A1,"x")') is None           # not a plain address
+    assert parse.hyperlink_formula('=HYPERLINK("javascript:alert(1)")') is None
+    result = check("actor", {**ACTOR, "Website": '=HYPERLINK("https://prairiewaterlab-test.org","Site")'})
+    assert result["payload"]["website"] == "https://prairiewaterlab-test.org"
+    assert not any("formula" in e for e in result["errors"])
+    still = check("actor", {**ACTOR, "Description": "=SUM(A1:A3)"})
+    assert any("starts like a formula" in e for e in still["errors"])
+
+
+def test_the_directory_columns_and_ghus_notes_reach_the_record():
+    """13 Nov 2026: the columns added on 12 Nov were in the sheets but never saved."""
+    actor = check("actor", {**ACTOR, "GHUS Notes": "Met at the summit", "Funding": "NSF grant",
+                            "Primary technical focus": "Soil sensors", "Lifecycle role": "Validation"})
+    assert {k: actor["payload"].get(k) for k in
+            ("ghus_notes", "funding_summary", "primary_technical_focus", "primary_lifecycle_role")} == \
+        {"ghus_notes": "Met at the summit", "funding_summary": "NSF grant",
+         "primary_technical_focus": "Soil sensors", "primary_lifecycle_role": "Validation"}
+    event = check("event", {"Event name": "X Summit", "Official event URL": "https://x-summit.org",
+                            "Organizer": "X Org", "Access": "Free", "Sponsors": "A; B", "GHUS Notes": "n"})
+    assert (event["payload"]["access_type"], event["payload"]["sponsoring_orgs"],
+            event["payload"]["organizer"], event["payload"]["ghus_notes"]) == ("Free", "A; B", "X Org", "n")
+    person = check("person", {"First name": "Ana", "Last name": "Ruiz", "Professional title": "Professor",
+                              "Organization": "University of Arizona", "ORCID": "0000-0002-1825-0097",
+                              "Public LinkedIn URL": "https://www.linkedin.com/in/ana", "GHUS Notes": "n"})
+    assert (person["payload"]["orcid"], person["payload"]["ghus_notes"]) == ("0000-0002-1825-0097", "n")

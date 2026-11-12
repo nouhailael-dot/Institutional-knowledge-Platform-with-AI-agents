@@ -19,6 +19,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import re
 import zipfile
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
@@ -53,6 +54,23 @@ class ParsedFile:
     template: dict[str, str] = field(default_factory=dict)   # workbook identity, if any
     notes: list[str] = field(default_factory=list)
     blank_rows: int = 0
+
+
+_HYPERLINK = re.compile(
+    r'^=\s*HYPERLINK\(\s*"(https?://[^"\s]+)"\s*(?:[,;]\s*"([^"]*)"\s*)?\)\s*$', re.IGNORECASE)
+
+
+def hyperlink_formula(value: str) -> tuple[str, str] | None:
+    """(address, shown text) of a =HYPERLINK("https://...","text") cell, else None.
+
+    13 Nov 2026 (GHUS): links in the sheets were refused as formulas. The
+    formula is never run: its text is read, and only a plain http(s) address
+    in quotes is accepted, so nothing else a formula could do gets through.
+    """
+    found = _HYPERLINK.match(str(value or "").strip())
+    if not found:
+        return None
+    return found.group(1), (found.group(2) or "").strip()
 
 
 def formula_like(value: str) -> bool:
@@ -116,7 +134,8 @@ def _xlsx_rows(data: bytes, record_type: str) -> tuple[list[list[Any]], dict[str
     check_container(data)
     notes: list[str] = []
     try:
-        wb = load_workbook(io.BytesIO(data), read_only=True, data_only=False,
+        # Not read-only: a cell's inserted link (its hyperlink) is read too.
+        wb = load_workbook(io.BytesIO(data), read_only=False, data_only=False,
                            keep_links=False)
     except Exception as exc:
         raise UploadRefused("The workbook could not be read. Save it again as .xlsx.") from exc
@@ -151,6 +170,13 @@ def _xlsx_rows(data: bytes, record_type: str) -> tuple[list[list[Any]], dict[str
                 value = cell.value
                 if getattr(cell, "data_type", None) == "f" and not str(value).startswith("="):
                     value = f"={value}"
+                # A link inserted on a cell (it shows "Website", it opens a page):
+                # carried as a link the row check reads, never as a formula to run.
+                target = str(getattr(getattr(cell, "hyperlink", None), "target", "") or "").strip()
+                if target.lower().startswith(("http://", "https://")) and \
+                        getattr(cell, "data_type", None) != "f":
+                    shown = _cell_text(value).replace('"', "'")
+                    value = f'=HYPERLINK("{target}","{shown}")' if shown != target else target
                 values.append(value)
             rows.append(values)
             if len(rows) > MAX_ROWS + 1 + 200:      # header + rows + tolerated trailing blanks
