@@ -449,9 +449,13 @@ _EVENT_COLUMN_FACTS = frozenset({"description", "themes"})
 _PERSON_COLUMN_FACTS = frozenset({"bio", "linkedin_url", "description"})
 # Fields the Data Feed and Explore and Map carry beside the facts block.
 _EVENT_EXTRA_FIELDS = ("event_format", "audience", "previous_edition", "match_explanation",
-                       "um6p_ocp_involvement", "organizer")
+                       "um6p_ocp_involvement", "organizer", "sector")
 _PERSON_EXTRA_FIELDS = ("department", "relevant_work", "work_location", "other_affiliations",
                         "um6p_ocp_connection")
+# What a GHUS reviewer may correct in Review beyond the record's own columns
+# (12 Nov 2026: "all boxes here should be editable"); each is kept as a fact.
+EVENT_REVIEW_FACT_FIELDS = tuple(f for f in _EVENT_EXTRA_FIELDS if f != "match_explanation")
+PERSON_REVIEW_FACT_FIELDS = _PERSON_EXTRA_FIELDS
 
 
 def _fact_moment(value, fallback) -> datetime:

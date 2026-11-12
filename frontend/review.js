@@ -1830,6 +1830,46 @@ const CARD_FIELDS = {
     ["research_area", "Expertise", ["expertise"]], ["work_evidence", "Relevant Work", ["relevant_work"]],
     ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_connection"]], ["orcid", "ORCID"]],
 };
+/**
+ * The field a card row is edited as (12 Nov 2026: "all boxes here should be
+ * editable"). A row shown under the map's own name is saved under the field
+ * the backend keeps; Status and Why It Matched stay read-only (worked out, not
+ * entered).
+ */
+export const EDIT_AS = {
+  event: {_um6p_ocp: "um6p_ocp_involvement"},
+  person: {organization_location: "work_location", affiliation_note: "department",
+    work_evidence: "relevant_work", _um6p_ocp: "um6p_ocp_connection"},
+};
+function editField(candidate, field) {
+  return EDIT_AS[candidate?.entity_type]?.[field] || field;
+}
+
+/**
+ * The value each editable card box starts with when the record has none of its
+ * own: what the card already shows (the map's or the page's reading). Kept apart
+ * so an untouched box is not sent as a reviewer's edit.
+ */
+export function profilePrefill(candidate, draft = {}) {
+  const editable = new Set(candidate?.editable_fields || []);
+  const filled = {};
+  for (const [field, , factKeys] of CARD_FIELDS[candidate?.entity_type] || []) {
+    const target = editField(candidate, field);
+    if (!editable.has(target) || DATE_FIELDS.has(target)) continue;
+    const current = draft[target];
+    if (current !== undefined && current !== null && String(current).trim() !== "") continue;
+    const value = profileValue(candidate, draft, field, factKeys);
+    if (value !== null && value !== undefined && String(value).trim() !== "") filled[target] = String(value);
+  }
+  return filled;
+}
+
+/** The reviewer's edits: a box still holding its starting value is not one. */
+export function changedOnly(payload, prefill = {}) {
+  return Object.fromEntries(Object.entries(payload || {})
+    .filter(([field, value]) => !(field in prefill) || prefill[field] !== value));
+}
+
 // A person has no website of their own: these two take its place, under Name.
 export const PERSON_LINK_FIELDS = [["public_profile_url", "Public Profile"],
   ["linkedin_url", "LinkedIn", ["linkedin_url"]]];
@@ -1859,7 +1899,7 @@ export function profileValue(candidate, draft, field, factKeys = []) {
     && !(Array.isArray(value) && !value.length);
   if (field === "_um6p_ocp" && original.um6p_ocp_status) {
     return original.um6p_ocp_status === "found"
-      ? `Found — ${original.um6p_ocp_detail || "details not recorded"}` : original.um6p_ocp_status;
+      ? `Found — ${original.um6p_ocp_detail || "details not recorded"}` : null;
   }
   for (const value of [draft?.[field], original[field]]) {
     if (has(value)) {
@@ -1887,8 +1927,9 @@ export function showsCategoryFilter(filters = {}) {
 
 /** One row of an event's or person's card (CARD_FIELDS); `always` shows Not Found when empty. */
 function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors, always = false}) {
-  if ((candidate?.editable_fields || []).includes(field)) {
-    return cardField(html, candidate, field, draft[field], edit, disabled, errors[field], label);
+  const target = editField(candidate, field);
+  if ((candidate?.editable_fields || []).includes(target)) {
+    return cardField(html, candidate, target, draft[target], edit, disabled, errors[target], label);
   }
   const value = profileValue(candidate, draft, field, factKeys);
   if (!value) return always ? cardLine(html, label, "") : null;
@@ -2065,6 +2106,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     // The Deep Pull offered after a verification: its plan (free), then its run.
     const [deep, setDeep] = useState(null);
     const keys = useRef(new Map());
+    const prefilled = useRef({});
 
     const loaded = useRef(null);
     // While the server reads the database in the background (5 Nov 2026), the
@@ -2141,8 +2183,13 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       let active = true;
       request(`/api/review/candidates/${selectedId}`).then(candidate => {
         if (!active) return;
-        setSelected(candidate);
-        setDraft(normalizeMapDraft(candidate.reviewed_payload, candidate.original_payload));
+        const base = normalizeMapDraft(candidate.reviewed_payload, candidate.original_payload);
+        const prefill = profilePrefill(candidate, base);
+        prefilled.current = prefill;
+        // The starting values are the record's, not edits: the confirmation
+        // lists only what the reviewer changed.
+        setSelected({...candidate, reviewed_payload: {...candidate.reviewed_payload, ...prefill}});
+        setDraft({...base, ...prefill});
         setItemCity(candidate.reviewed_payload?.location_city || "");
         setItemState(candidate.reviewed_payload?.state_code || candidate.reviewed_payload?.state || "");
         setKeepUnlocated(false);
@@ -2272,7 +2319,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         const saved = await request(`/api/review/candidates/${selected.candidate_id}`, {
           method: "PATCH",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({fields: editableReviewPayload(selected, draft)}),
+          body: JSON.stringify({fields: changedOnly(editableReviewPayload(selected, draft), prefilled.current)}),
         });
         setSelected(saved);
         setData(current => ({...current, candidates: current.candidates.map(row =>
@@ -2337,7 +2384,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           confirmed: true,
           notes: notes.trim() || null,
           edited_payload: ["reject", "defer"].includes(decisionKind)
-            ? null : editableReviewPayload(selected, draft),
+            ? null : changedOnly(editableReviewPayload(selected, draft), prefilled.current),
           target_id: targetId.trim() || null,
           hub_ids: hubIds,
           proposed_hub: proposeHub && proposedHub.name.trim()

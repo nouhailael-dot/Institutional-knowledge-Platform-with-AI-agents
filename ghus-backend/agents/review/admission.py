@@ -36,6 +36,8 @@ from agents.discovery.normalize import is_institution_affiliation
 from agents.discovery.promote import (
     ACTOR_CREATE_FIELDS,
     EVENT_CREATE_FIELDS,
+    EVENT_REVIEW_FACT_FIELDS,
+    PERSON_REVIEW_FACT_FIELDS,
     IMPORT_VERIFICATION_PAYLOAD_KEY,
     promote,
 )
@@ -182,7 +184,9 @@ def _field_contract(entity_type: str) -> tuple[set[str], dict[str, tuple[int | N
         allowed = {"name", *ACTOR_CREATE_FIELDS, *V2_ACTOR_EDIT_FIELDS}
     elif entity_type == "event":
         model, aliases = Event, {"title": "name", "start_date": "next_date"}
-        allowed = {"name", "title", "start_date", *EVENT_CREATE_FIELDS}
+        # end_date is a box in Review; refusing it failed every dated event.
+        allowed = {"name", "title", "start_date", "end_date", *EVENT_CREATE_FIELDS,
+                   *EVENT_REVIEW_FACT_FIELDS}
     else:
         model = Person
         aliases = {
@@ -192,7 +196,7 @@ def _field_contract(entity_type: str) -> tuple[set[str], dict[str, tuple[int | N
         }
         allowed = {
             "name", "role", "affiliation", "affiliation_raw",
-            "public_profile_url", "research_area",
+            "public_profile_url", "research_area", *PERSON_REVIEW_FACT_FIELDS,
         }
     contract: dict[str, tuple[int | None, list[str]]] = {}
     for field in allowed:

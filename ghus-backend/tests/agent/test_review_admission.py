@@ -197,3 +197,17 @@ def test_the_reviewers_v2_classification_and_sector_are_accepted_and_checked():
             "actor", {"actor_category": "government", "category_type": "not_applicable"})
     with pytest.raises(admission.AdmissionValidationError, match="not a sector code"):
         admission.validate_edited_payload("actor", {"primary_sector": "water tech!"})
+
+
+def test_every_box_review_shows_for_an_event_or_a_person_can_be_corrected():
+    """GHUS feedback, 11 Nov 2026: Sector, Audience and the other boxes were not
+    editable, and an event's End Date was refused at verification."""
+    from agents.review.admission import validate_edited_payload
+
+    validate_edited_payload("event", {
+        "name": "Beyond Africa Conference", "end_date": "2026-11-21", "event_format": "In person",
+        "audience": "Founders and investors", "organizer": "Beyond Africa", "sector": "Entrepreneurship",
+        "previous_edition": "2025", "um6p_ocp_involvement": "Not Found"})
+    validate_edited_payload("person", {
+        "name": "A Person", "work_location": "Houston, TX", "department": "Engineering",
+        "relevant_work": "Water reuse pilots", "um6p_ocp_connection": "Not Found"})

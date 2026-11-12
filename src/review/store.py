@@ -80,11 +80,16 @@ EDITABLE_FIELDS = {
     "person": (
         "name", "affiliation", "affiliation_raw", "role",
         "public_profile_url", "research_area",
+        # 12 Nov 2026: every box of the card is editable; each is kept as a fact.
+        "work_location", "department", "relevant_work", "um6p_ocp_connection",
     ),
     "event": (
         "name", "event_type", "description", "location", "website", "next_date", "end_date",
         "recurring_pattern", "sponsoring_orgs", "thematic_focus",
         "expected_attendance", "access_type",
+        # 12 Nov 2026: every box of the card is editable; each is kept as a fact.
+        "event_format", "organizer", "previous_edition", "audience", "sector",
+        "um6p_ocp_involvement",
     ),
 }
 
