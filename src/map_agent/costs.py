@@ -7,6 +7,7 @@ Only the controlled one-search Claude adapter may use a server tool.
 """
 import math
 import json
+import time
 from types import SimpleNamespace
 
 from src.map_agent.run_store import BudgetStopped
@@ -29,6 +30,44 @@ def refused_status(exc) -> int | None:
     if isinstance(status, int) and 400 <= status <= 599 and getattr(exc, "response", None) is not None:
         return status
     return None
+
+
+# The answers that are certainly free: the service refused the request before
+# doing any work (rate limited, overloaded, a server error reply).
+RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504, 529})
+RETRY_WAITS_S = (2, 5, 10, 20, 40)   # about a minute and a half in all
+MAX_RETRY_WAIT_S = 60
+
+
+def _retry_after(exc) -> float | None:
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    try:
+        value = float(headers.get("retry-after"))
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def with_refusal_retries(call, run=None, *, sleep=time.sleep):
+    """Run ``call``; when the service answers busy or rate limited, wait and try again.
+
+    12 Nov 2026: a map and a Monitor request running together share the team's
+    API limits, and the first "too many requests" failed the map. Only answers
+    that are certainly free are retried (RETRYABLE_STATUSES), waiting as long as
+    the service asks (capped). A timeout or a dropped connection is never
+    retried: its cost is unknown and a retry could pay twice. Stop is honoured
+    between attempts.
+    """
+    for attempt, wait in enumerate((*RETRY_WAITS_S, None)):
+        try:
+            return call()
+        except Exception as exc:
+            if wait is None or refused_status(exc) not in RETRYABLE_STATUSES:
+                raise
+            asked = _retry_after(exc)
+            sleep(min(MAX_RETRY_WAIT_S, asked if asked is not None else wait))
+            if run is not None:
+                run.check()
 
 
 def usage_cost(model, usage):
@@ -95,7 +134,7 @@ def paid_message(client, run, stage, operation_key=None, **kwargs):
         # are reserved separately below.
         request_tokens = len(json.dumps(count_payload, ensure_ascii=False).encode("utf-8")) + 2048
     else:
-        counted = safe_client.messages.count_tokens(**count_payload)
+        counted = with_refusal_retries(lambda: safe_client.messages.count_tokens(**count_payload), run)
         request_tokens = counted.input_tokens
     # Token counting is free. Its estimates can vary from message usage; keep
     # headroom, reserve worst-case cache writes, and max output in advance.
@@ -116,7 +155,7 @@ def paid_message(client, run, stage, operation_key=None, **kwargs):
         run.store.settle(call_id, 0, {}, {"content": [], "stop_reason": "cancelled"}, "Cancelled before dispatch")
         raise
     try:
-        response = safe_client.messages.create(**kwargs)
+        response = with_refusal_retries(lambda: safe_client.messages.create(**kwargs), run)
     except Exception as exc:
         status = refused_status(exc)
         if status is not None:

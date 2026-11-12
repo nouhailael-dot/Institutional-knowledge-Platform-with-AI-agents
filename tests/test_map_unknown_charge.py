@@ -76,3 +76,39 @@ def test_an_api_error_reply_is_not_an_uncertain_charge():
     assert refused_status(SimpleNamespace(status_code=529, response=object())) == 529
     assert refused_status(TimeoutError("read timed out")) is None
     assert refused_status(SimpleNamespace(status_code=None, response=None)) is None
+
+
+def test_a_busy_or_rate_limited_answer_is_retried_and_a_timeout_never_is():
+    """12 Nov 2026: a map and a Monitor request share the team's API limits; the
+    map now waits and retries a free refusal instead of failing."""
+    from types import SimpleNamespace
+
+    from src.map_agent.costs import with_refusal_retries
+
+    busy = type("Busy", (Exception,), {})
+    def refusal(status, retry_after=None):
+        exc = busy("busy")
+        exc.status_code = status
+        exc.response = SimpleNamespace(headers={"retry-after": retry_after} if retry_after else {})
+        return exc
+
+    waits, answers = [], [refusal(429, "3"), refusal(529), "done"]
+    def call():
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+    assert with_refusal_retries(call, sleep=waits.append) == "done"
+    assert waits == [3.0, 5]          # the service's own wait first, then the schedule
+
+    timeouts = []
+    def timeout():
+        timeouts.append(1)
+        raise TimeoutError("read timed out")
+    with pytest.raises(TimeoutError):
+        with_refusal_retries(timeout, sleep=lambda s: None)
+    assert timeouts == [1]            # never retried: it may have been charged
+
+    always_busy = lambda: (_ for _ in ()).throw(refusal(429))
+    with pytest.raises(busy):
+        with_refusal_retries(always_busy, sleep=lambda s: None)
