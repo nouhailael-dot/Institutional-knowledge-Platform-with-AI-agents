@@ -151,6 +151,9 @@ class PromotionResult:
     fields_absorbed: list[str] = field(default_factory=list)
     review_id: str | None = None
     step_trace: list[str] = field(default_factory=list)
+    # A person stored before their organization is in the directory (13 Nov 2026):
+    # the organization's name, for the team to look up.
+    organization_missing: str | None = None
 
 
 # 12 Nov 2026: several requests may run at once, one per person. Each run checks
@@ -158,6 +161,8 @@ class PromotionResult:
 # both create the same organization or event. Creation takes this lock and looks
 # one last time for one made by another run in the last hours.
 CREATE_LOCK = 550_002
+# The fact a person keeps when their organization is not in the directory yet.
+PENDING_AFFILIATION_FACT = "affiliation_not_in_directory"
 RECENT_HOURS = 6
 
 
@@ -1911,7 +1916,16 @@ def _promote_person(
             )
             actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
             created_affiliation_stub = metadata.get("create_affiliation_stub") is True
-            if created_affiliation_stub:
+            missing_organization = None
+            if created_affiliation_stub and "status" in _actor_columns(session):
+                # 13 Nov 2026 (GHUS): an organization that is not in the directory
+                # no longer stops its people. Architecture V2 cannot create it
+                # without a category (nothing is invented), so the person is stored
+                # with the organization's name kept beside them, unlinked, and the
+                # team is told to look the organization up.
+                missing_organization = str(metadata["affiliation_stub_name"]).strip()
+                actor_id = ""
+            elif created_affiliation_stub:
                 actor_id = _insert_actor(
                     session,
                     {"name": str(metadata["affiliation_stub_name"]).strip()},
@@ -1925,20 +1939,29 @@ def _promote_person(
                 confidence=float(route.score),
             )
             role = str(staged.normalized_payload["role"]).strip()
-            _insert_person_affiliation(
-                session,
-                person_id=person_id,
-                actor_id=actor_id,
-                role=role,
-            )
-            _insert_person_discovery_profile(
-                session,
-                staged=staged,
-                person_id=person_id,
-                actor_id=actor_id,
-                source_id=source_id,
-                needs_actor_enrichment=created_affiliation_stub,
-            )
+            if actor_id:
+                _insert_person_affiliation(
+                    session,
+                    person_id=person_id,
+                    actor_id=actor_id,
+                    role=role,
+                )
+                _insert_person_discovery_profile(
+                    session,
+                    staged=staged,
+                    person_id=person_id,
+                    actor_id=actor_id,
+                    source_id=source_id,
+                    needs_actor_enrichment=created_affiliation_stub,
+                )
+            elif missing_organization and _table_columns(session, "person_fact"):
+                from agents.enrichment.decisions import append_entity_fact
+
+                append_entity_fact(session, entity_type="person", entity_id=person_id,
+                                   fact_key=PENDING_AFFILIATION_FACT, value=missing_organization,
+                                   source_url=staged.source_url,
+                                   date_read=_fact_moment(None, staged.extracted_at),
+                                   created_by="agent:promote", live=True)
             if _table_columns(session, "person_fact"):
                 _append_record_facts(session, entity_type="person", entity_id=person_id,
                                      staged=staged)
@@ -1949,6 +1972,7 @@ def _promote_person(
                 zone="create",
                 entity_id=person_id,
                 dry_run=False,
+                organization_missing=missing_organization,
             )
         elif route.zone == "review":
             source_id = insert_source(

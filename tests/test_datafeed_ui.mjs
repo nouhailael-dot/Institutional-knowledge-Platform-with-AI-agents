@@ -319,3 +319,16 @@ test('Import History: search, Category, and a Result that says what Review did',
     assert.ok(src.includes(words), words);
   }
 });
+
+test('organizations not in the Directory are flagged with a way to look them up (13 Nov 2026)', async () => {
+  const {missingOrganizationsLine, FIND_ORGANIZATION} = await import('../frontend/datafeed.js');
+  assert.equal(missingOrganizationsLine([]), '');
+  assert.match(missingOrganizationsLine(['UM6P GHUS']), /^1 organization named in these records is not in the Ecosystem Directory yet/);
+  assert.match(missingOrganizationsLine(['A', 'B']), /^2 organizations .* are not/);
+  assert.equal(FIND_ORGANIZATION, 'ghus:find-organization');
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.equal((src.match(/Find it with a request/g) || []).length, 2);   // after storing, and in Import History
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /addEventListener\("ghus:find-organization"/);
+  assert.match(page, /cadence:"once"/);
+});

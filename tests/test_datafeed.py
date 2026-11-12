@@ -860,3 +860,18 @@ def test_the_directory_columns_and_ghus_notes_reach_the_record():
                               "Organization": "University of Arizona", "ORCID": "0000-0002-1825-0097",
                               "Public LinkedIn URL": "https://www.linkedin.com/in/ana", "GHUS Notes": "n"})
     assert (person["payload"]["orcid"], person["payload"]["ghus_notes"]) == ("0000-0002-1825-0097", "n")
+
+
+# ------------------------- organizations not in the Directory yet (13 Nov 2026)
+
+def test_missing_organizations_are_kept_with_the_import_for_the_team(tmp_path):
+    from src.datafeed.service import DataFeedService
+
+    service = DataFeedService(preview_dir=tmp_path / "previews")
+    service.originals_dir = tmp_path / "originals"
+    run = "11111111-2222-4333-8444-555555555555"
+    service._keep_missing_organizations(run, ["University Mohammed 6 Polytechnic GHUS"])
+    assert service.missing_organizations(run) == ["University Mohammed 6 Polytechnic GHUS"]
+    assert service.missing_organizations("22222222-2222-4333-8444-555555555555") == []
+    service._keep_missing_organizations("not-a-run", ["X"])      # never a bad file name
+    assert not (tmp_path / "originals" / "not-a-run.organizations-missing.json").exists()

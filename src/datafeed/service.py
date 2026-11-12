@@ -350,6 +350,23 @@ class DataFeedService:
             self.originals_dir.mkdir(parents=True, exist_ok=True)
             (self.originals_dir / f"{run_id}__{safe}.xlsx").write_bytes(data)
 
+    def _keep_missing_organizations(self, run_id: object, names: list[str]) -> None:
+        """13 Nov 2026 (GHUS): organizations a file names that are not in the
+        directory, kept with its import so Import History tells the whole team."""
+        if not names or not _UUID.match(str(run_id or "")):
+            return
+        self.originals_dir.mkdir(parents=True, exist_ok=True)
+        (self.originals_dir / f"{run_id}.organizations-missing.json").write_text(
+            json.dumps(names, ensure_ascii=False), encoding="utf-8")
+
+    def missing_organizations(self, run_id: str) -> list[str]:
+        path = self.originals_dir / f"{run_id}.organizations-missing.json"
+        try:
+            names = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return [str(n) for n in names if str(n).strip()] if isinstance(names, list) else []
+
     def original_file(self, run_id: str) -> Path | None:
         if not _UUID.match(run_id or "") or not self.originals_dir.is_dir():
             return None
@@ -449,7 +466,11 @@ class DataFeedService:
                 enriching = {"started": True, "max_usd": cap}
             except DataFeedBridgeError as exc:
                 enriching = {"started": False, "error": str(exc)}
+        missing = sorted({str(a["organization_missing"]).strip() for a in admitted
+                          if str(a.get("organization_missing") or "").strip()})
+        self._keep_missing_organizations(outcome.get("run_id"), missing)
         return {"status": outcome.get("status"), "run_id": outcome.get("run_id"),
+                "organizations_missing": missing,
                 "stored": sum(a.get("outcome") in ("stored", "matched_existing") for a in admitted),
                 "not_stored": [a for a in admitted
                                if a.get("outcome") in ("not_stored", "possible_duplicate")],
@@ -494,6 +515,7 @@ class DataFeedService:
                            else "Partly reviewed" if pending else "Reviewed"),
                 "light_pull_read": r[10],
                 "has_file": self.original_file(r[0]) is not None,
+                "organizations_missing": self.missing_organizations(str(r[0])),
             })
         return out
 

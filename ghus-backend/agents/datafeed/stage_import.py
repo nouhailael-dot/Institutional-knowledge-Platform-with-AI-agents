@@ -796,7 +796,9 @@ def admit_directory(session, batch: Mapping[str, Any], result: Mapping[str, Any]
             outcomes.append({**item, "outcome": "matched_existing"
                              if decision["decision_kind"] == "same_existing" else "stored",
                              "entity_id": done.get("canonical_entity_id"),
-                             "promotion_action": done.get("promotion_action")})
+                             "promotion_action": done.get("promotion_action"),
+                             # Its organization is not in the directory yet: the team looks it up.
+                             "organization_missing": done.get("organization_missing")})
         except Exception as exc:  # noqa: BLE001 - one record must not stop the others
             session.rollback()
             if "existing or ambiguous match" in str(exc):

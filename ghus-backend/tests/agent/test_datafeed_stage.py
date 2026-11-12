@@ -529,3 +529,38 @@ def test_an_event_created_by_a_parallel_run_is_not_created_twice(session):
     session.execute(text("UPDATE event SET created_at = now() - interval '2 days' "
                          "WHERE event_id = CAST(:id AS uuid)"), {"id": made})
     assert created_meanwhile(session, "event", payload) is None
+
+
+@needs_db
+def test_a_person_whose_organization_is_not_in_the_directory_is_stored_and_flagged(session):
+    """GHUS, 13 Nov 2026: a person is no longer refused because their organization
+    is not in the directory. The person is stored, unlinked, with the
+    organization's name kept; the outcome names it for the team to look up."""
+    org = "Organization Not In Directory Test 7f3a"
+    row = {"row_number": 2, "payload": {
+        "name": "Ana Test Ruiz", "role": "Director", "affiliation": org,
+        "linkedin_url": "https://www.linkedin.com/in/ana-test-ruiz-7f3a",
+        "source_url": "https://www.linkedin.com/in/ana-test-ruiz-7f3a"},
+        "original": {}, "match": {"kind": "new"}}
+    imported = batch("person", rows=[row], method="manual", file_name=None, file_sha256=None,
+                     admission="directory", attestation={"source": True, "authorized": True})
+    staged = feed.stage_batch(session, imported)
+    session.commit()
+    outcomes = feed.admit_directory(session, imported, staged)
+    assert [o["outcome"] for o in outcomes] == ["stored"], outcomes
+    assert outcomes[0]["organization_missing"] == org
+    person = outcomes[0]["entity_id"]
+    links = session.execute(text("SELECT count(*) FROM actor_person WHERE person_id = CAST(:p AS uuid)"),
+                            {"p": person}).scalar()
+    assert links == 0                                   # nothing invented, nothing linked
+    kept = session.execute(text(
+        "SELECT fact_value::text FROM person_fact WHERE person_id = CAST(:p AS uuid) "
+        "AND fact_key = 'affiliation_not_in_directory'"), {"p": person}).scalar()
+    assert org in kept
+    assert session.execute(text("SELECT count(*) FROM actor WHERE name = :n"), {"n": org}).scalar() == 0
+    # The Directory shows it from that fact (src/browse.py load_people, same expression).
+    shown = session.execute(text(
+        "SELECT f.fact_value #>> '{}' FROM person_fact f WHERE f.person_id = CAST(:p AS uuid) "
+        "AND f.fact_key = 'affiliation_not_in_directory' ORDER BY f.created_at DESC LIMIT 1"),
+        {"p": person}).scalar()
+    assert shown == org

@@ -322,6 +322,21 @@ export function canSend({preview, name, attestSource, admission = "directory", a
     && (!counts.needs_correction || accept));
 }
 
+/** Ask the Monitor and Update page to open a request that looks this organization up. */
+export const FIND_ORGANIZATION = "ghus:find-organization";
+export function findOrganization(name) {
+  window.dispatchEvent(new CustomEvent(FIND_ORGANIZATION, {detail: {name}}));
+}
+
+/** "1 organization they name is not in the Directory yet" (13 Nov 2026). */
+export function missingOrganizationsLine(names = []) {
+  const n = names.length;
+  if (!n) return "";
+  return `${n === 1 ? "1 organization" : `${n} organizations`} named in these records ${n === 1 ? "is" : "are"} `
+    + "not in the Ecosystem Directory yet. The records were stored with the organization's name; "
+    + "look it up with a request so it can be added and linked.";
+}
+
 /** What happened when the records were sent. */
 export function doneLine(done = {}) {
   if (done.status === "already_imported") {
@@ -851,6 +866,11 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           ? `Original file: ${item.file_name || "download"}` : `Excel sheet: ${item.import_name}.xlsx`}</a>`
           : item.method === "upload" ? " · Original file not kept" : " · Entered by hand"}</p>
       <p class="df-muted">${historyLine(item)}</p>
+      ${(item.organizations_missing || []).length > 0 && html`<div class="df-missing" role="status">
+        <p>${missingOrganizationsLine(item.organizations_missing)}</p>
+        <ul>${item.organizations_missing.map(name => html`<li key=${name}><strong>${name}</strong>
+          <button class="btn ghost" onClick=${() => findOrganization(name)}>Find it with a request</button></li>`)}</ul>
+      </div>`}
       <div class="discovery-actions">
         ${item.counts.pending > 0 && html`<button class="btn ghost" onClick=${() => openImportInReview(item.run_id)}>
           ${item.counts.pending} incomplete: open in Review Results</button>`}
@@ -987,6 +1007,11 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
                 : "Stored in the Ecosystem Directory") : "Sent to Review Results"}</h3>
             <p>${doneLine(done)}</p>
             ${done.completion && html`<p>${done.completion}</p>`}
+            ${(done.organizations_missing || []).length > 0 && html`<div class="df-missing" role="status">
+              <p>${missingOrganizationsLine(done.organizations_missing)}</p>
+              <ul>${done.organizations_missing.map(name => html`<li key=${name}><strong>${name}</strong>
+                <button class="btn ghost" onClick=${() => findOrganization(name)}>Find it with a request</button></li>`)}</ul>
+            </div>`}
             ${[...(done.held_for_review || []), ...(done.not_stored || [])].length > 0 && html`<ul class="df-notes">
               ${[...(done.held_for_review || []), ...(done.not_stored || [])].map(h => html`<li key=${h.row_number}>
                 Row ${h.row_number}: ${h.reason}</li>`)}</ul>`}

@@ -1376,8 +1376,8 @@ function blankForm() {
  * cannot change them.
  */
 export function handoffForm(handoff, today) {
-  const form = {...blankForm(), brief: handoff.brief || "", cadence: "monthly", startDate: today,
-    duration: "3m"};
+  const form = {...blankForm(), brief: handoff.brief || "", cadence: handoff.cadence || "monthly",
+    startDate: today, duration: handoff.cadence === "once" ? "" : "3m"};
   if (handoff.edited) return form;
   form.sector = handoff.sector_code || "";
   form.areaTouched = true;
@@ -2219,10 +2219,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       if (!handoff) return;
       setForm(handoffForm(handoff, today));
       setView("new"); setTouched(false);
-      if (status.configured) setMessage({kind: "running", text: "Proposed from your map. Check the "
+      if (status.configured) setMessage({kind: "running", text: handoff.note || ("Proposed from your map. Check the "
         + "description, sector and area before creating the request. "
         + "Monitoring doesn't know this map's results, so its first run may send some of the same "
-        + "organizations to Review Results again."});
+        + "organizations to Review Results again.")});
       onHandoffUsed();
     }, [handoff]);
 

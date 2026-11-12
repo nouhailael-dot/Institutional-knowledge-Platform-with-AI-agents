@@ -587,6 +587,8 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
             "proposed_hub_id": proposed_hub_id,
             "ghus_notes_saved": ghus_notes_saved,
             "idempotent_replay": False,
+            # Stored before its organization is in the directory (13 Nov 2026).
+            "organization_missing": getattr(result, "organization_missing", None),
         }
         decision_id = str(uuid.uuid4())
         session.execute(

@@ -166,3 +166,9 @@ span.df-import-link{cursor:default}
 .df-history-note { margin: 0 0 10px; }
 .df-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit;
   text-decoration: underline; cursor: pointer; }
+
+/* 13 Nov 2026: organizations a file names that are not in the Directory yet. */
+.df-missing{margin:12px 0;padding:12px 14px;border:1px solid #fde68a;background:#fffbeb;border-radius:8px;color:#92400e}
+.df-missing p{margin:0 0 8px}
+.df-missing ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.df-missing li{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}

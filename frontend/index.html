@@ -730,7 +730,7 @@
 </style>
 <link rel="stylesheet" href="/review.css?v=20261112b"/>
 <link rel="stylesheet" href="/discovery.css?v=20261112b"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261105c"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261113a"/>
 <link rel="stylesheet" href="/dashboard.css?v=20261112a"/>
 <script type="importmap">
 { "imports": {
@@ -749,10 +749,10 @@ import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261112g";
-import {createDiscoveryPage} from "./discovery.js?v=20261112h";
+import {createDiscoveryPage} from "./discovery.js?v=20261113a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
-import {createDataFeedPage} from "./datafeed.js?v=20261110e";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261112g";
+import {createDataFeedPage} from "./datafeed.js?v=20261113a";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261113a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -2954,6 +2954,14 @@ function App(){
   const [carried,setCarried]=useState(null);
   // A Discovery request proposed from a map, waiting for the Discovery page to open it.
   const [discoveryHandoff,setDiscoveryHandoff]=useState(null);
+  // Data Feed: an organization named in a file is not in the Directory yet
+  // (13 Nov 2026). Open a one-time request that looks it up, ready to check.
+  useEffect(()=>{const go=(e)=>{const name=String(e.detail?.name||"").trim(); if(!name) return;
+    setDiscoveryHandoff({brief:`Find ${name}
+${name}`, cadence:"once", edited:true,
+      note:`${name} is named in a Data Feed import but is not in the Ecosystem Directory yet. Choose its sector, check the request, then create it and press Run now.`});
+    setTab("discovery");};
+    window.addEventListener("ghus:find-organization",go); return ()=>window.removeEventListener("ghus:find-organization",go);},[]);
   // Keep every page mounted when switching tabs. BuildMap owns the active job
   // poll and its result state, so unmounting it makes a running map appear to
   // stop even though the backend worker continues.

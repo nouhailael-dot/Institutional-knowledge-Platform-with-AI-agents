@@ -470,6 +470,7 @@ def load_people() -> list[dict]:
                (SELECT d.public_profile_url FROM person_discovery_profile d
                  WHERE d.person_id = p.person_id AND d.public_profile_url IS NOT NULL
                  ORDER BY d.fetched_at DESC NULLS LAST LIMIT 1) AS profile_url
+               {{pending}}
         FROM person p
         WHERE COALESCE(p.record_status, '') <> 'rejected'
           AND COALESCE(p.verification_status, '') <> 'rejected'
@@ -478,16 +479,26 @@ def load_people() -> list[dict]:
     split = lambda value: value.split(_HUB_SEP) if value else []
     out = []
     with get_readonly_connection() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        # 13 Nov 2026: a person stored before their organization is in the
+        # directory keeps its name as a fact; shown, marked, until it is linked.
+        cur.execute("SELECT to_regclass('public.person_fact') IS NOT NULL")
+        has_facts = bool(cur.fetchone()[0])
+        cur.execute(sql.replace("{pending}", (
+            ", (SELECT f.fact_value #>> '{}' FROM person_fact f WHERE f.person_id = p.person_id "
+            "AND f.fact_key = 'affiliation_not_in_directory' ORDER BY f.created_at DESC LIMIT 1) "
+            "AS pending_organization") if has_facts else ", NULL AS pending_organization"))
         cols = [c.name for c in cur.description]
         for row in cur.fetchall():
             r = dict(zip(cols, row))
+            pending = str(r.get("pending_organization") or "").strip()
+            organizations = split(r["organizations"]) or (
+                [f"{pending} (not in the Directory yet)"] if pending else [])
             out.append({
                 "id": str(r["person_id"]),
                 "name": r["full_name"],
                 "title": r["title"],
                 "status": r["status"],
-                "organizations": split(r["organizations"]),
+                "organizations": organizations,
                 "states": split(r["states"]),
                 "topics": split(r["topics"]),
                 "research_areas": split(r["research_areas"]),
