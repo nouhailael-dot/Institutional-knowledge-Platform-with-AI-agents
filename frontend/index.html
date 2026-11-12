@@ -2453,6 +2453,22 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     }catch(e){if(version===generation.current&&id===activeJob.current)setErr(e.message);}
   }
 
+  // A step cut off before its cost was recorded blocked the map for good
+  // (GHUS, 11 Nov 2026). Counting it at its maximum keeps the budget safe.
+  async function settleCharges(){
+    if(!activeJob.current||busy) return;
+    const most=(cost?.reserved_usd||0).toFixed(2);
+    if(!window.confirm(`A step was cut off before its cost was recorded. Count it at the most it could have cost ($${most}) and go on?`)) return;
+    const id=activeJob.current, version=generation.current;
+    try{
+      const r=await post("/api/map/"+id+"/settle-charges",{approve:true});
+      const d=await r.json();
+      if(version!==generation.current||id!==activeJob.current) return;
+      if(!r.ok) throw new Error(d.detail||"Could not count the charge.");
+      setCost(d.cost); setRunStatus(d.status); setErr(null); refreshRecent();
+    }catch(e){if(version===generation.current&&id===activeJob.current)setErr(e.message);}
+  }
+
   async function continueResearch(){
     if(!activeJob.current||busy||verifying||!researchAvailable||(!cost?.can_resume&&runStatus!=="ready")) return;
     const id=activeJob.current, version=generation.current;
@@ -2630,6 +2646,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     if(runStatus==="ready") return "A search plan is ready. Use “Start saved plan” above to run it."+fresh;
     if(runStatus==="budget_stopped") return "This map reached its budget. Approve $1 more above, then continue."+fresh;
     if(runStatus==="interrupted") return "This map was interrupted. Use “Continue unfinished research” above."+fresh;
+    if(runStatus==="cost_unknown"||cost?.usage_complete===false) return "This map paused to protect the budget. Use “Count it at its maximum and go on” above."+fresh;
     return null;
   }
 
@@ -2774,7 +2791,10 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     </div>
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
     ${cost&&(!cost.usage_complete||needsMore||cost.can_resume||runStatus==="ready"||cost.can_reopen)&&html`<div class="selnote" aria-live="polite">
-      ${!cost.usage_complete&&html`<div>Some costs are still being confirmed, so new searches are paused.</div>`}
+      ${!cost.usage_complete&&html`<div>${busy
+        ? "Some costs are still being confirmed, so new searches are paused."
+        : "A step was cut off before its cost was recorded (usually a restart of the server), so this map paused to protect the budget."}
+        ${!busy&&html` <button class="example" type="button" onClick=${settleCharges}>Count it at its maximum and go on</button>`}</div>`}
       ${needsMore&&html`<div>${runStatus==="budget_stopped"?"This map has reached its budget.":"This map is close to its budget."}
         <button class="example" type="button" disabled=${busy||verifying} onClick=${extendBudget}>Approve $1 more</button></div>`}
       ${(cost.can_resume||runStatus==="ready")&&html`<div>
@@ -2837,7 +2857,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
             n("review")&&`${n("review")} sent to Review Results`,n("not_saved")&&`${n("not_saved")} not saved`]
             .filter(Boolean).join(" · "));}}/>`}
       ${saveSummary&&html`<div class="selnote" role="status" style=${{marginTop:"14px"}}>${saveSummary}</div>`}
-      ${res.partial&&!busy&&html`<div class="selnote" style=${{marginTop:"14px"}}>Research is unfinished.</div>`}
+      ${res.partial&&!busy&&html`<div class="selnote" style=${{marginTop:"14px"}}>Research is unfinished: some planned searches did not run.${cost?.can_resume?" Use “Continue unfinished research” above to finish them.":""}</div>`}
       ${(res.failures||[]).length>0&&html`<div class="selnote" style=${{color:"var(--violet)"}}>
         Some searches failed, so this map may be incomplete.</div>`}
       ${total>0&&(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>

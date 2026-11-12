@@ -1032,6 +1032,19 @@ def map_budget_extension(job_id: str, payload: BudgetExtensionRequest):
     return public_map(job_id)
 
 
+@app.post("/api/map/{job_id}/settle-charges")
+def map_settle_charges(job_id: str, payload: BudgetExtensionRequest):
+    """Count unconfirmed charges at their maximum so a blocked map can go on (12 Nov 2026)."""
+    map_record(job_id)
+    if payload.approve is not True:
+        raise HTTPException(status_code=400, detail="Explicit approval is required to count the charge.")
+    try:
+        map_store().settle_unknown(job_id)
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return public_map(job_id)
+
+
 @app.post("/api/map/{job_id}/resume")
 def map_resume(job_id: str, payload: BudgetExtensionRequest):
     require_research()
