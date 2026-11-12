@@ -390,6 +390,28 @@ export function deepResultLine(checked = {}, applied = null) {
 }
 
 /** A record row's second line: what it is and why it waits. */
+/**
+ * What every record of a run has in common - its kind and where it came from,
+ * e.g. "Event · Proposed by Explore and Map" - said once in the run's header,
+ * not under each name (GHUS, 11 Nov 2026). Returns the shared words and each
+ * record's own remaining note.
+ */
+export function sharedRecordNotes(records = []) {
+  const parts = records.map(candidate => ({
+    id: candidate.candidate_id,
+    note: recordRowNote(candidate),
+    movable: [RECORD_KIND_LABELS[candidate?.entity_type], originLabel(candidate),
+      candidate?.review_reason ? reviewReasonLabel(candidate.review_reason) : ""].filter(Boolean),
+  }));
+  const common = parts.length
+    ? parts[0].movable.filter(word => parts.every(row => row.movable.includes(word)
+      && row.note.split(" · ").includes(word)))
+    : [];
+  const own = Object.fromEntries(parts.map(row => [row.id,
+    row.note.split(" · ").filter(word => !common.includes(word)).join(" · ")]));
+  return {common, own};
+}
+
 export function recordRowNote(candidate) {
   const meta = candidate?.agent_metadata || {};
   if (meta.review_kind === "actor_profile") {
@@ -2782,7 +2804,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           ${activeRun && html`
             <header class="review-records-head">
               <div>
-                <span class="review-run-type">${runTypeName(activeRun.run_type)}</span>
+                <span class="review-run-type">${[runTypeName(activeRun.run_type),
+                  ...sharedRecordNotes(records).common].filter(Boolean).join(" · ")}</span>
                 <h2>${activeRun.run_name || activeRun.label}</h2>
                 <p class="review-subhead">${runMeta(activeRun, filters.status)}</p>
               </div>
@@ -2792,7 +2815,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <button class="review-record" onClick=${() => openRecord(candidate.candidate_id)}>
                   <span class="review-row-main">
                     <strong>${candidate.display_name}</strong>
-                    <small>${recordRowNote(candidate)}</small>
+                    ${(() => { const own = sharedRecordNotes(records).own[candidate.candidate_id];
+                      return own && html`<small>${own}</small>`; })()}
                   </span>
                   <span class=${"review-status " + (isParkedByReviewer(candidate) ? "parked" : candidate.status)}>${
                     // Anything still waiting for a decision reads Pending Review (5 Nov 2026).

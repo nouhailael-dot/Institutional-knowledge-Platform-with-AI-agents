@@ -76,3 +76,28 @@ test('every event value starts with a capital letter; codes and links never chan
   // Organization categories are catalog codes: never touched.
   assert.deepEqual(capitalizeData('actor', {actor_category: 'company'}), {actor_category: 'company'});
 });
+
+// ------------------------- what a run's records share goes in its header (12 Nov 2026)
+import {sharedRecordNotes} from '../frontend/review.js';
+
+test('a run whose records are all events from a map says so once, in its header', () => {
+  const map = {agent_metadata: {source_table: 'map_agent'}, review_reason: 'map_agent'};
+  const records = [{candidate_id: 'a', entity_type: 'event', ...map},
+    {candidate_id: 'b', entity_type: 'event', ...map}];
+  const {common, own} = sharedRecordNotes(records);
+  assert.deepEqual(common, ['Event', 'Proposed by Explore and Map']);
+  assert.equal(own.a, '');
+  // Mixed kinds keep the kind on each row.
+  const mixed = sharedRecordNotes([{candidate_id: 'a', entity_type: 'event', agent_metadata: {}},
+    {candidate_id: 'b', entity_type: 'person', agent_metadata: {}}]);
+  assert.deepEqual(mixed.common, []);
+  assert.match(mixed.own.b, /Person/);
+});
+
+test('the events City filter is a list that starts on All (GHUS, 11 Nov 2026)', () => {
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /placeholder:"Houston, New York…"/);
+  assert.match(page, /\{key:"location",label:"City",options:vals=>distinct\(/);
+  // Agent "not found" values read Not Found on map cards.
+  assert.match(page, /\/\^not\[ _\]found\$\/i\.test\(v\.trim\(\)\)\?"Not Found"/);
+});

@@ -748,7 +748,7 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261112c";
+import {createReviewPage} from "./review.js?v=20261112d";
 import {createDiscoveryPage} from "./discovery.js?v=20261112c";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261110e";
@@ -1073,6 +1073,8 @@ function RecordBadges({r}){
 const today=()=>new Date().toISOString().slice(0,10);
 const shortType=t=>String(t||"").split("/")[0].trim();
 const plusMore=xs=>!xs||!xs.length?"":xs[0]+(xs.length>1?" +"+(xs.length-1):"");
+// An event's city: the first part of its location ("Pflugerville, TX (Greater Austin area)").
+const eventCity=e=>String(e.location||"").split(/[,(]/)[0].trim()||null;
 const distinct=xs=>[...new Set(xs.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b)));
 
 function downloadCsv(name,columns,rows){
@@ -1611,8 +1613,9 @@ function Events({focus}){
       {key:"from",label:"From",kind:"date",test:(e,v)=>!!e.start_date&&(e.end_date||e.start_date).slice(0,10)>=v},
       {key:"to",label:"To",kind:"date",test:(e,v)=>!!e.start_date&&e.start_date.slice(0,10)<=v},
       {key:"type",label:"Type",options:data.event_types||[],test:(e,v)=>e.event_type===v},
-      {key:"location",label:"City",kind:"text",placeholder:"Houston, New York…",
-        test:(e,v)=>(e.location||"").toLowerCase().includes(v.toLowerCase())},
+      // A list starting on All, like every other filter (GHUS, 11 Nov 2026).
+      {key:"location",label:"City",options:vals=>distinct(events.filter(e=>!vals.state||eventState(e)===vals.state).map(eventCity)),
+        test:(e,v)=>eventCity(e)===v},
       {key:"state",label:"State",options:distinct(events.map(eventState)),test:(e,v)=>eventState(e)===v},
       {key:"region",label:"Region",options:distinct(events.map(eventRegion)),test:(e,v)=>eventRegion(e)===v},
     ]}
@@ -1694,7 +1697,8 @@ const MFIELDS={
 // 12 Nov 2026 (GHUS): every data value starts with a capital letter.
 const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector",
   "audience","access_type","expected_attendance","thematic_focus","actor_type","category_type"]);
-const capFirst=v=>typeof v==="string"&&v?v.charAt(0).toUpperCase()+v.slice(1):v;
+// "not found" from an agent reads Not Found (GHUS, 11 Nov 2026).
+const capFirst=v=>typeof v==="string"&&v?(/^not[ _]found$/i.test(v.trim())?"Not Found":v.charAt(0).toUpperCase()+v.slice(1)):v;
 // An edition's dates as src/map_agent/event_dates.py dates_text writes them:
 // "11/16/2026", "11/16/2026 – 11/19/2026", "02/2026", "2026 (Exact Date Not Found)".
 const eventDates=(start,end)=>{
