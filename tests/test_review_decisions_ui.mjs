@@ -110,3 +110,12 @@ test('a record reads like the Directory until Edit opens its boxes (GHUS, 11 Nov
   assert.match(component, /\$\{editing && twoWayKind\(selected\) !== "update" && html`<button class="review-act"/);
   assert.match(component, /value=\$\{analystNotes\} disabled=\$\{!pending \|\| busy\}/);
 });
+
+test('a map run reads NEW REQUEST · EVENTS · PROPOSED BY EXPLORE AND MAP, and nothing under the names', async () => {
+  const {runHeader} = await import('../frontend/review.js');
+  const saved = {entity_type: 'event', review_reason: 'map_agent',
+    agent_metadata: {source_table: 'event_review_queue', data_feed: {method: 'map'}}};
+  const records = [{candidate_id: 'a', ...saved}, {candidate_id: 'b', ...saved}];
+  assert.equal(runHeader('discovery_events', records), 'New Request · Events · Proposed by Explore and Map');
+  assert.deepEqual(sharedRecordNotes(records).own, {a: '', b: ''});
+});

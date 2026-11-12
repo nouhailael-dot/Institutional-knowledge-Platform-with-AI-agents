@@ -376,7 +376,10 @@ RUN_TYPES = ("discovery_actors", "discovery_events", "discovery_people", "actor_
              "data_feed")
 
 
-def run_type_of(source_run_id: Any, entity_types: Any) -> str:
+MAP_IMPORT_MARK = "Explore and Map: "
+
+
+def run_type_of(source_run_id: Any, entity_types: Any, description: Any = None) -> str:
     """Which kind of run this is, from what is recorded - never guessed.
 
     An actor update run is keyed "actor-update:<run>"; a discovery run by the
@@ -386,7 +389,9 @@ def run_type_of(source_run_id: Any, entity_types: Any) -> str:
     run_id = str(source_run_id or "")
     if run_id.startswith(ACTOR_UPDATE_PREFIX):
         return "actor_updates"
-    if run_id.startswith(DATAFEED_PREFIX):
+    # A map's saved cards arrive through the Data Feed, but they are a new
+    # request's findings (12 Nov 2026): grouped as one, by kind of record.
+    if run_id.startswith(DATAFEED_PREFIX) and MAP_IMPORT_MARK not in str(description or ""):
         return "data_feed"
     if run_id.startswith(MAP_CHECKS_PREFIX):
         return "map_checks"
@@ -489,8 +494,12 @@ _GATE_REASONS = (
 
 def derive_review_reason(metadata: dict[str, Any], entity_type: Any = None) -> str | None:
     if "data_feed" in metadata:
-        # Supplied by GHUS through the Data Feed: no agent scored it.
-        return "possible_duplicate" if metadata.get("top_matches") else "data_feed"
+        # Supplied by GHUS through the Data Feed: no agent scored it. A map's
+        # saved cards say where they came from: Proposed by Explore and Map.
+        if metadata.get("top_matches"):
+            return "possible_duplicate"
+        feed = metadata.get("data_feed") or {}
+        return "map_agent" if feed.get("method") == "map" else "data_feed"
     kind = str(metadata.get("review_kind") or "").strip()
     if kind:
         return _KIND_REASONS.get(kind, kind)
@@ -1286,7 +1295,7 @@ class ReviewStore:
                 "latest": float(row["latest"] or 0),
                 "is_backlog": False,
                 "source_run_ids": [row["source_run_id"]],
-                "run_type": run_type_of(row["source_run_id"], row["entity_types"]),
+                "run_type": run_type_of(row["source_run_id"], row["entity_types"], row["description"]),
                 "run_name": run_name(row["description"], row["source_run_id"]),
                 "run_date": _short_day(row["earliest"]) or None,
                 "status_counts": status_counts.get(str(row["source_run_id"]), {}),

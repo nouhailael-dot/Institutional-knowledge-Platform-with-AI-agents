@@ -343,6 +343,8 @@ export function recordsOfRun(candidates = [], runKey) {
  */
 export function originLabel(candidate) {
   const meta = candidate?.agent_metadata || {};
+  // A map's saved cards: "Proposed by Explore and Map" says it already.
+  if (meta.data_feed?.method === "map") return null;
   if (meta.data_feed) return "Imported";
   if (["search_candidate", "event_review_queue", "person_review_queue"].includes(meta.source_table)) {
     return "AI-Mapped";
@@ -407,9 +409,20 @@ export function sharedRecordNotes(records = []) {
     ? parts[0].movable.filter(word => parts.every(row => row.movable.includes(word)
       && row.note.split(" · ").includes(word)))
     : [];
-  const own = Object.fromEntries(parts.map(row => [row.id,
+  return {common, own: ownNotes(parts, common)};
+}
+
+/** The header's words after the run type, without repeating the kind it names. */
+export function runHeader(runType, records = []) {
+  const named = runTypeName(runType);
+  const extra = sharedRecordNotes(records).common
+    .filter(word => !named.toLowerCase().includes(word.toLowerCase()));
+  return [named, ...extra].join(" · ");
+}
+
+function ownNotes(parts, common) {
+  return Object.fromEntries(parts.map(row => [row.id,
     row.note.split(" · ").filter(word => !common.includes(word)).join(" · ")]));
-  return {common, own};
 }
 
 export function recordRowNote(candidate) {
@@ -2808,8 +2821,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           ${activeRun && html`
             <header class="review-records-head">
               <div>
-                <span class="review-run-type">${[runTypeName(activeRun.run_type),
-                  ...sharedRecordNotes(records).common].filter(Boolean).join(" · ")}</span>
+                <span class="review-run-type">${runHeader(activeRun.run_type, records)}</span>
                 <h2>${activeRun.run_name || activeRun.label}</h2>
                 <p class="review-subhead">${runMeta(activeRun, filters.status)}</p>
               </div>

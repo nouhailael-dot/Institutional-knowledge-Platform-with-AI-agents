@@ -889,3 +889,15 @@ def test_review_answers_at_once_and_reads_the_database_in_the_background(tmp_pat
         gate.set()
         for item in patches:
             item.stop()
+
+
+def test_a_maps_saved_cards_are_a_new_requests_findings_proposed_by_explore_and_map():
+    """GHUS feedback, 11 Nov: a map's records arrive through the Data Feed but are
+    grouped and labelled as the map's own new request."""
+    from src.review.store import derive_review_reason, run_type_of
+
+    label = "Data Feed import: Explore and Map: Find me all African Diaspora events · manual entry"
+    assert run_type_of("datafeed:1", "event", label) == "discovery_events"
+    assert run_type_of("datafeed:1", "event", "Data Feed import: Phase 1 · file.xlsx") == "data_feed"
+    assert derive_review_reason({"data_feed": {"method": "map"}}) == "map_agent"
+    assert derive_review_reason({"data_feed": {"method": "upload"}}) == "data_feed"
