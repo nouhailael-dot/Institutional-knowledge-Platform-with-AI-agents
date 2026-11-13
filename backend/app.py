@@ -228,23 +228,54 @@ FRONTEND = ROOT / "frontend"
 
 
 # --- read-only data loads, cached in-process (the whole live set is <1000 rows).
-# lru_cache keeps Browse snappy; restart the server to pick up source-data edits.
-@lru_cache(maxsize=1)
+# 13 Nov 2026: each list is kept for DIRECTORY_FRESH_SECONDS, then read again.
+# It was kept until the server restarted, so a record verified in Review, stored
+# from the Data Feed or deleted in the database stayed invisible (or visible)
+# in the Ecosystem Directory until the next deploy.
+DIRECTORY_FRESH_SECONDS = float(os.environ.get("GHUS_DIRECTORY_FRESH_SECONDS") or 30)
+
+
+def _fresh_for(seconds: float):
+    """Like lru_cache(maxsize=1) on a function without arguments, for ``seconds``."""
+    def wrap(load):
+        state: dict[str, Any] = {}
+        lock = Lock()
+
+        def cached():
+            with lock:
+                if "value" in state and time.monotonic() - state["at"] < seconds:
+                    return state["value"]
+            value = load()
+            with lock:
+                state.update(value=value, at=time.monotonic())
+            return value
+
+        def cache_clear():
+            with lock:
+                state.clear()
+
+        cached.cache_clear = cache_clear
+        cached.__wrapped__ = load
+        return cached
+    return wrap
+
+
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _actors():
     return browse.load_actors()
 
 
-@lru_cache(maxsize=1)
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _hubs():
     return browse.load_hubs()
 
 
-@lru_cache(maxsize=1)
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _events():
     return browse.load_events()
 
 
-@lru_cache(maxsize=1)
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _people():
     return browse.load_people()
 
