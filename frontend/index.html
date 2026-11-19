@@ -351,7 +351,7 @@
   button,a,input,select,textarea{touch-action:manipulation}
   button{transition:background .16s,border-color .16s,box-shadow .16s}
   :focus-visible{outline:3px solid #d7410b70;outline-offset:3px}
-  .sidebar{position:fixed;inset:0 auto 0 0;width:236px;background:var(--surface);border-right:1px solid var(--line);padding:30px 20px;display:flex;flex-direction:column;z-index:25}
+  .sidebar{position:fixed;inset:0 auto 0 0;width:236px;background:var(--surface);border-right:1px solid var(--line);padding:30px 20px;display:flex;flex-direction:column;z-index:25;overflow-y:auto}
   .workspace-brand{padding:0 12px 30px}.brand-name{font-size:29px;font-weight:800;letter-spacing:3px;color:var(--accent)}
   .brand-caption{font-size:10px;letter-spacing:1.5px;font-weight:650;color:var(--muted);margin-top:3px}
   .nav-label,.eyebrow{font-size:10px;letter-spacing:1.7px;text-transform:uppercase;font-weight:700;color:var(--muted)}
@@ -387,6 +387,56 @@
   .nav-symbol{width:21px;height:21px;display:grid;place-items:center;font-size:20px;line-height:1}
   .sidebar-foot{margin-top:auto;border-top:1px solid var(--line);padding:20px 12px 0;font-size:12px;color:var(--muted)}
   .sidebar-foot strong{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+  .session-name{background:none;border:0;padding:0;font:inherit;text-align:left;cursor:pointer;color:inherit}
+  .workspace-header{display:flex;align-items:center;justify-content:space-between}
+  .notify-wrap{position:relative}
+  .notify-bell{position:relative;background:none;border:1px solid transparent;border-radius:8px;padding:6px;color:var(--muted);cursor:pointer}
+  .notify-bell:hover{background:var(--surface-2);color:var(--ink)}
+  .notify-count{position:absolute;top:-2px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+  .notify-panel{position:absolute;right:0;top:40px;width:min(360px,calc(100vw - 32px));max-height:70vh;overflow-y:auto;z-index:40;padding:12px}
+  .notify-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .notify-item{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 4px;cursor:pointer;color:var(--ink);font:inherit}
+  .notify-item.unread .notify-title{font-weight:650}
+  .notify-item.unread::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px}
+  .notify-title,.notify-body,.notify-when{display:block}
+  .notify-body{color:var(--muted);font-size:13px;margin-top:2px}.notify-when{color:var(--faint);font-size:12px;margin-top:2px}
+  .dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:14px}
+  .dash-card-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .dash-list{list-style:none;margin:8px 0 0;padding:0}.dash-list li{padding:6px 0;border-top:1px solid var(--line);font-size:14px}
+  .dash-list li.unread{font-weight:600}
+  /* Pending Deletion (Phase 6): a compact Dashboard card and its own page */
+  .pd-count{display:inline-block;min-width:20px;margin-left:6px;padding:0 7px;border-radius:999px;font-size:12px;
+    line-height:20px;text-align:center;background:var(--surface-2,#f1f3f5);color:var(--muted,#667085)}
+  .pd-count.has{background:#fdecea;color:#b3261e}
+  .pd-line{margin:6px 0 0;font-size:13px}
+  .pd-list li{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}
+  .pd-list .pd-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
+  .pd-days{margin-left:auto;font-size:12px;color:var(--muted,#667085);white-space:nowrap}
+  .pd-days.urgent{color:#b3261e;font-weight:600}
+  .pd-filters{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+  .pd-filters label{display:flex;flex-direction:column;gap:2px}
+  .pd-table-wrap{overflow-x:auto;padding:0}
+  .pd-table{width:100%;border-collapse:collapse;font-size:14px}
+  .pd-table th,.pd-table td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid var(--line)}
+  .pd-table thead th{border-top:0;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted,#667085)}
+  .pd-table td.pd-action{text-align:right;white-space:nowrap}
+  .pd-confirm{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  @media (max-width:720px){
+    .pd-table thead{display:none}
+    .pd-table tr{display:block;border-top:1px solid var(--line);padding:8px 0}
+    .pd-table td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 12px}
+    .pd-table td::before{content:attr(data-label);color:var(--muted,#667085);font-size:12px}
+    .pd-table td.pd-action{justify-content:flex-end}
+  }
+  .link-like{background:none;border:0;padding:0;font:inherit;color:var(--accent-ink);cursor:pointer;text-align:left}
+  .pref-chips{display:flex;flex-wrap:wrap;gap:6px 14px}
+  .saved-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin-top:10px;font-size:13px}
+  .saved-filters label{display:flex;flex-direction:column;gap:4px}
+  .record-trail{display:flex;flex-wrap:wrap;gap:4px 18px;margin:-4px 0 8px;font-size:13px}
+  .usage-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:14px}
+  .usage-stat{display:flex;flex-direction:column;gap:4px}.usage-stat strong{font-size:22px}
+  .session-name:hover strong{text-decoration:underline}
   .compass-brand{display:flex;align-items:center;gap:12px;padding:18px 12px 20px;margin-bottom:10px;border-top:1px solid var(--line)}
   .compass-mark{flex:0 0 44px;color:var(--ink)}
   .compass-name{font-size:19px;font-weight:700;letter-spacing:1.5px;color:var(--ink)}
@@ -460,6 +510,8 @@
   .example.danger{color:#b3261e;border-color:#e6b8b3}
   .delete-panel{margin-top:14px;border-color:#e6b8b3}
   .delete-warning{color:#b3261e;font-weight:600}
+  .delete-panel .field-label{display:block;font-size:13px;font-weight:600;margin:0 0 4px}
+  .delete-reason{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--line,#d0d5dd);border-radius:8px;margin-bottom:10px;resize:vertical}
   .pf-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(240px,1fr);gap:18px;margin-top:6px}
   .pf-main{display:flex;flex-direction:column;gap:12px;min-width:0}
   .pf-section{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--surface)}
@@ -513,7 +565,7 @@
   .attach-row select{max-width:100%;padding:8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--ink)}
   .chip{font-size:11px}.bubble.user{background:var(--accent-soft);color:var(--ink)}
   @media(max-width:1100px){.sidebar{width:200px;padding:26px 14px}.workspace-main{margin-left:200px}.wrap{padding:30px 24px 60px}.workspace-header{padding:0 24px}.prompt-grid{gap:10px}.prompt-card{padding:16px 28px 16px 16px}}
-  @media(max-width:760px){.sidebar{position:static;width:auto;padding:14px 18px;border-right:0;border-bottom:1px solid var(--line)}.workspace-brand{padding:0 0 14px;display:flex;align-items:center;gap:14px}.brand-name{font-size:23px}.brand-caption{font-size:9px}.nav-label,.sidebar-foot{display:none}.workspace-nav{display:flex;gap:6px}.nav-item{flex:1;justify-content:center;padding:10px 6px;font-size:12px;gap:7px}.nav-symbol{font-size:16px}.workspace-main{margin-left:0}.workspace-header{height:50px;padding:0 18px}.workspace-tag{display:none}.wrap{padding:24px 18px 40px}.hero-h{font-size:27px}.welcome{padding-top:10px}.prompt-grid{grid-template-columns:1fr}.prompt-card{min-height:0;padding:14px 35px 14px 16px}.prompt-card small{margin-bottom:5px}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}table.grid{display:block;overflow-x:auto;white-space:nowrap}.metrics,.kv{grid-template-columns:1fr}.ask-form{flex-wrap:wrap}.input-shell{min-width:0;flex-basis:100%}.attach-row{max-width:100%;overflow-wrap:anywhere}.attach-row label{max-width:100%}.pad{padding:16px}}
+  @media(max-width:760px){.sidebar{position:static;width:auto;padding:14px 18px;border-right:0;border-bottom:1px solid var(--line)}.workspace-brand{padding:0 0 14px;display:flex;align-items:center;gap:14px}.brand-name{font-size:23px}.brand-caption{font-size:9px}.nav-label{display:none}.sidebar-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 4px 0}.sidebar-foot strong{display:inline;margin:0}.sidebar-foot button{margin-top:0!important;margin-left:auto}.workspace-nav{display:flex;gap:6px}.nav-item{flex:1;justify-content:center;padding:10px 6px;font-size:12px;gap:7px}.nav-symbol{font-size:16px}.workspace-main{margin-left:0}.workspace-header{height:50px;padding:0 18px}.workspace-tag{display:none}.wrap{padding:24px 18px 40px}.hero-h{font-size:27px}.welcome{padding-top:10px}.prompt-grid{grid-template-columns:1fr}.prompt-card{min-height:0;padding:14px 35px 14px 16px}.prompt-card small{margin-bottom:5px}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}table.grid{display:block;overflow-x:auto;white-space:nowrap}.metrics,.kv{grid-template-columns:1fr}.ask-form{flex-wrap:wrap}.input-shell{min-width:0;flex-basis:100%}.attach-row{max-width:100%;overflow-wrap:anywhere}.attach-row label{max-width:100%}.pad{padding:16px}}
   @media(max-width:760px){.composer{position:static}.ask-form>.btn{min-height:44px;width:100%}.nav-item{white-space:nowrap;font-size:11px;gap:5px}}
   .hub-suggestion{margin:14px 0;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;border-left:3px solid var(--teal)}
   .hub-suggestion-title{display:flex;align-items:center;flex-wrap:wrap;gap:9px;font-size:12px;font-weight:600;margin-bottom:5px}
@@ -743,6 +795,19 @@
 </head>
 <body>
 <div id="root"></div>
+<script>
+// Individual accounts (GHUS_AUTH_MODE=supabase): when a session ends, any call
+// that answers 401 sends the person to the sign-in page, then back here. The
+// shared login (HTTP Basic) answers 401 with WWW-Authenticate instead, and the
+// browser handles that itself, so this does nothing there.
+(()=>{const send=window.fetch.bind(window);let leaving=false;
+  window.fetch=async(...args)=>{const response=await send(...args);
+    const url=String(args[0]&&args[0].url||args[0]||"");
+    if(response.status===401&&!leaving&&!response.headers.get("www-authenticate")
+       &&!url.includes("/api/auth/login")){
+      leaving=true;location.assign("/login?next="+encodeURIComponent(location.pathname+location.search));}
+    return response;};})();
+</script>
 <script type="module">
 import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
@@ -752,12 +817,14 @@ import {createReviewPage} from "./review.js?v=20261112g";
 import {createDiscoveryPage} from "./discovery.js?v=20261113a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261113b";
+import {createAccountPages} from "./accounts.js?v=20261118a";
 import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261113a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect,useRef});
 const DataFeed=createDataFeedPage({html,useState,useEffect,Fragment:React.Fragment});
+const {ProfilePage,UsersPage,MyWorkPage,DashboardPage,NotificationBell,AuditPage,UsagePage,CostsPage,PendingDeletionPage}=createAccountPages({html,useState,useEffect});
 // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
 const DateInput=createDateInput({html,useState,useEffect});
 const Dashboard=createDashboardPage({html,useState,useEffect});
@@ -990,6 +1057,24 @@ const api = (p)=>fetch(p).then(async r=>{
   const body=await r.json().catch(()=>({}));
   return r.ok?body:{__error:body.detail||`The server answered ${r.status}.`};
 }).catch(()=>({__error:"The server could not be reached."}));
+/* Who is signed in, and Sign out (individual accounts only: without them
+   /api/auth/me does not exist and nothing is shown). */
+function SessionFoot({account,onProfile}){
+  const [leaving,setLeaving]=useState(false);
+  if(!account) return null;
+  async function signOut(){
+    setLeaving(true);
+    try{ await fetch("/api/auth/logout",{method:"POST"}); }catch(e){}
+    location.assign("/login");
+  }
+  return html`<div class="sidebar-foot">
+    <button class="session-name" type="button" title="My profile" onClick=${onProfile}>
+      <strong>${account.full_name}</strong></button>
+    <span>${account.role_label||"No role"}</span>
+    <button class="example" type="button" style=${{display:"block",marginTop:"10px"}} disabled=${leaving}
+      onClick=${signOut}>${leaving?"Signing out…":"Sign out"}</button>
+  </div>`;
+}
 function LoadError({message}){
   return html`<div class="empty load-error" role="alert"><b>This list could not be loaded.</b>
     <span>${message}</span><button class="btn ghost" onClick=${()=>location.reload()}>Try again</button></div>`;
@@ -1018,6 +1103,11 @@ function useOnce(fn,dep){ const[d,setD]=useState(null);
    badge, a count with Export, and a detail page whose Edit form shows every field
    in one column, in groups. Owner reads "Not recorded" until logins exist. */
 const OWNER_NONE="Not recorded";
+// The signed-in account (individual accounts only), set by App once loaded.
+let CURRENT_ACCOUNT=null;
+// Their preferences (individual accounts): Directory default view, saved filters.
+let CURRENT_PREFS=null;
+const currentAccount=()=>CURRENT_ACCOUNT;
 const ownerOf=r=>r.owner||OWNER_NONE;
 // Pending review = still waiting for a decision; Parked = a person clicked Park.
 function statusOf(r){
@@ -1032,33 +1122,55 @@ function statusOf(r){
 // every other tag is a colored dot and the word.
 const STATUS_CHIP={"Verified":"green","Pending Review":"amber","Parked":"orange","Rejected":"slate","Deleted":"red"};
 
-/* Delete in the Ecosystem Directory (30 Oct 2026): one confirmation, no reason
-   to type, no restore. The backend still records the GHUS decision (with a fixed
-   reason) and the directory hides the record. Organizations only for now. */
+/* Delete in the Ecosystem Directory.
+   With individual accounts (Phase 6, GHUS policy of 17 Nov 2026) every record
+   type can be deleted: it disappears from the platform at once, waits 30 days
+   under Pending Deletion (Dashboard; Admins and Editors can restore it there), then
+   the scheduled cleanup removes it permanently. Who deleted it comes from the
+   sign-in. Without accounts the earlier path stays: organizations only, removed
+   from the directory (30 Oct 2026). */
 const DELETE_REASON="Deleted from the Ecosystem Directory";
+const KIND_PATH={actor:"actors",event:"events",person:"people",hub:"hubs"};
+const KIND_WORD={actor:"organization",event:"event",person:"person",hub:"hub"};
+const RETENTION_DAYS=30;
 function DeletePanel({kind,r,onDone,onClose}){
-  const works=kind==="actor";
+  const retained=!!currentAccount();
+  const works=retained||kind==="actor";
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
+  const [reason,setReason]=useState("");
+  const until=new Date(Date.now()+RETENTION_DAYS*864e5).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
   async function send(){
     if(busy||!works) return;
     setBusy(true); setErr(null);
     try{
-      const res=await fetch(`/api/browse/actors/${r.id}/remove`,{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:DELETE_REASON,confirm:true})});
+      const res=retained
+        ? await fetch(`/api/browse/${KIND_PATH[kind]}/${encodeURIComponent(r.id)}/delete`,{method:"POST",
+            headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason.trim(),confirm:true})})
+        : await fetch(`/api/browse/actors/${r.id}/remove`,{method:"POST",
+            headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:DELETE_REASON,confirm:true})});
       const d=await res.json();
       if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not delete that.");
-      onDone(`${r.name} was deleted from the directory.`);
+      onDone(retained
+        ? `${r.name} was deleted. It can be restored from Pending Deletion on the Dashboard until ${until}; after that it is removed permanently.`
+        : `${r.name} was deleted from the directory.`);
     }catch(e){ setErr(String(e.message||e)); setBusy(false); }
   }
   return html`<div class="card pad fade delete-panel" role="alertdialog" aria-label=${`Delete ${r.name}`}>
-    <p class="delete-warning" style=${{marginTop:0}}>Are you sure you want to delete ${r.name}?</p>
-    <p class="hint" style=${{margin:"0 0 10px"}}>Clicking Yes removes it from the Ecosystem Directory for everyone.</p>
-    ${!works&&html`<p class="hint">Deleting ${kind==="event"?"events":kind==="hub"?"hubs":"people"} connects once the
-      backend has the same path; organizations can be deleted now.</p>`}
+    <p class="delete-warning" style=${{marginTop:0}}>Delete the ${KIND_WORD[kind]||"record"} “${r.name}”?</p>
+    ${retained
+      ? html`<p class="hint" style=${{margin:"0 0 10px"}}>It disappears at once from the Directory, Explore and Map,
+          search, Ask and the agents. For ${RETENTION_DAYS} days (until ${until}) it is listed under Pending Deletion
+          on the Dashboard, where an Admin or Editor can restore it with everything it had. After that it is removed permanently.</p>
+        <label class="field-label" for="delete-reason">Reason (optional)</label>
+        <textarea id="delete-reason" class="delete-reason" rows="2" maxlength="500" value=${reason}
+          placeholder="Why is it being deleted?" onInput=${e=>setReason(e.target.value)}></textarea>`
+      : html`<p class="hint" style=${{margin:"0 0 10px"}}>Clicking Yes removes it from the Ecosystem Directory for everyone.</p>`}
+    ${!works&&html`<p class="hint">Deleting ${kind==="event"?"events":kind==="hub"?"hubs":"people"} needs individual
+      accounts; organizations can be deleted now.</p>`}
     ${err&&html`<div class="whynot" role="alert">${err}</div>`}
     <div class="attach-row">
-      <button class="btn danger" type="button" disabled=${busy||!works} onClick=${send}>${busy?"Deleting…":"Yes, I'm sure"}</button>
+      <button class="btn danger" type="button" disabled=${busy||!works} onClick=${send}>${busy?"Deleting…":"Yes, delete it"}</button>
       <button class="example" type="button" disabled=${busy} onClick=${onClose}>No, keep</button>
     </div>
   </div>`;
@@ -1099,6 +1211,26 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
   const [vals,setVals]=useState({});
   const [mine,setMine]=useState(false);
   const set=(k,v)=>setVals(x=>({...x,[k]:v}));
+  // Personal preferences (individual accounts): the view the Directory opens on, once,
+  // and this tab's saved filters. Only what this person sees changes.
+  const prefTab={organizations:"actors",hubs:"hubs",people:"people",events:"events"}[exportName]||exportName;
+  const prefView=CURRENT_PREFS?.directory?.default_view;
+  const appliedView=useRef(false);
+  useEffect(()=>{if(!appliedView.current&&prefView&&currentAccount()){appliedView.current=true;
+    if(prefView==="mine") setMine(true);}},[prefView]);
+  const savedFilters=(CURRENT_PREFS?.directory?.saved_filters||[]).filter(f=>f.tab===prefTab);
+  const [saveName,setSaveName]=useState("");
+  const [saveNote,setSaveNote]=useState("");
+  async function saveFilters(){
+    const name=saveName.trim(); if(!name) return;
+    const values=Object.fromEntries(Object.entries(vals).filter(([,v])=>v));
+    const others=(CURRENT_PREFS?.directory?.saved_filters||[]).filter(f=>!(f.tab===prefTab&&f.name.toLowerCase()===name.toLowerCase()));
+    const r=await fetch("/api/account/preferences",{method:"PUT",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({preferences:{directory:{saved_filters:[...others,{name,tab:prefTab,values,...(q.trim()?{search:q.trim()}:{})}]}}})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){window.dispatchEvent(new CustomEvent("compass:preferences",{detail:d.preferences}));setSaveName("");setSaveNote(`Saved as '${name}'.`);}
+    else setSaveNote(typeof d.detail==="string"?d.detail:"Could not save.");
+  }
   const nonUS=!!vals.country&&vals.country!==US;
   const common=[
     {key:"_status",label:"Status",options:distinct(rows.map(statusOf)).filter(v=>v!=="Deleted"),test:(r,v)=>statusOf(r)===v},
@@ -1109,8 +1241,12 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
   filters=filters.filter(usable); more=more.filter(usable); columns=columns.filter(usable);
   const all=[...filters,...common,...more];
   const needle=q.trim().toLowerCase();
+  // My Records: the records this person originally brought in (their owner is
+  // them). The shared records are the same; nothing is copied per person.
+  const me=currentAccount();
   const matches=rows.filter(r=>
     statusOf(r)!=="Deleted" &&
+    (!mine||(me&&r.owner_user_id===me.user_id)) &&
     (!needle||search.text(r).toLowerCase().includes(needle)) &&
     all.every(f=>!vals[f.key]||f.test(r,vals[f.key])));
   const control=f=>html`<div key=${f.key}><label>${f.label}</label>
@@ -1128,12 +1264,24 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
       <div class="dir-top">
         <div class="seg" role="group" aria-label="Whose records">
           <button type="button" class=${mine?"":"on"} onClick=${()=>setMine(false)}>All Records</button>
-          <button type="button" class=${mine?"on":""} disabled title="Available once logins exist"
+          <button type="button" class=${mine?"on":""} disabled=${!me}
+            title=${me?"Records you brought into Compass":"Available with individual accounts"}
             onClick=${()=>{setMine(true);set("_owner","");}}>My Records</button>
         </div>
         <input class="field" placeholder=${search.placeholder} aria-label="Search"
           value=${q} onInput=${e=>setQ(e.target.value)}/>
       </div>
+      ${currentAccount()&&html`<div class="saved-filters">
+        ${savedFilters.length>0&&html`<label>Saved filters
+          <select class="field" value="" onChange=${e=>{const f=savedFilters.find(x=>x.name===e.target.value);
+            if(f){setVals({...f.values});setQ(f.search||"");setSaveNote("");}}}>
+            <option value="">Choose…</option>
+            ${savedFilters.map(f=>html`<option key=${f.name} value=${f.name}>${f.name}</option>`)}</select></label>`}
+        ${(Object.values(vals).some(Boolean)||q.trim())&&html`<label>Save these filters as
+          <input class="field" value=${saveName} maxlength="60" placeholder="A name" onInput=${e=>setSaveName(e.target.value)}/></label>
+          <button class="example" type="button" disabled=${!saveName.trim()} onClick=${saveFilters}>Save</button>`}
+        ${saveNote&&html`<span class="hint" role="status">${saveNote}</span>`}
+      </div>`}
       <div class="filters">${[...filters,...common].map(control)}</div>
       <div class="dir-row">
         ${more.length>0&&html`<details class="more-filters"><summary>More filters</summary>
@@ -1245,6 +1393,19 @@ function SourcesHistory({kind,r,profile,bare}){
   </div>`;
 }
 
+function RecordTrail({kind,id}){
+  const [t,setT]=useState(null);
+  useEffect(()=>{let live=true;if(!currentAccount()) return;
+    fetch(`/api/account/record-trail?entity_type=${kind}&entity_id=${encodeURIComponent(id)}`)
+      .then(r=>r.ok?r.json():null).then(d=>live&&setT(d)).catch(()=>{});return()=>{live=false;};},[kind,id]);
+  if(!t) return null;
+  const who=(x,fallback)=>x?`${x.name}, ${new Date(x.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:fallback;
+  return html`<div class="record-trail hint">
+    <span><b>Brought in by</b> ${who(t.owner,"Not recorded")}</span>
+    <span><b>Verified by</b> ${who(t.reviewed_by,"Not recorded")}</span>
+    <span><b>Last edited by</b> ${who(t.last_edited_by,"Not edited since accounts")}</span></div>`;
+}
+
 function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[],children,options,layout,tags,meta}){
   const [editing,setEditing]=useState(false);
   const [saved,setSaved]=useState(null);
@@ -1260,9 +1421,10 @@ function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[]
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <button class="backlink" onClick=${onBack}>← Back to results</button>
       <span style=${{display:"inline-flex",gap:"8px"}}>
-        ${/* Delete is offered only where it works: organizations (10 Nov 2026). */ ""}
-        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>{setSaved(null);setEditing(true);}}>Edit</button>`}
-        ${kind==="actor"&&!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
+        ${/* Delete: every record type with accounts (Phase 6); organizations only without. */ ""}
+        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" data-needs="records.edit" onClick=${()=>{setSaved(null);setEditing(true);}}>Edit</button>`}
+        ${(currentAccount()||kind==="actor")&&!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
+          data-needs=${currentAccount()?"records.delete_permanent":"records.remove"}
           onClick=${()=>setDeleting(true)}>Delete</button>`}
       </span>
     </div>
@@ -1270,6 +1432,7 @@ function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[]
       onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
     ${saved&&html`<div class="selnote" role="status">${saved}</div>`}
     <h2>${r.name}</h2>
+    <${RecordTrail} kind=${kind} id=${r.id}/>
     ${layout==="card"&&tags}
     ${layout==="card"&&meta&&html`<div class="mmeta" style=${{margin:"4px 0 8px"}}>${meta}</div>`}
     ${layout!=="card"&&subtitle&&html`<div class="loc">${subtitle}</div>`}
@@ -1518,6 +1681,8 @@ function Actors({focus}){
 
 function Hubs(){
   const [version,setVersion]=useState(0);
+  const [notice,setNotice]=useState(null);
+  const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
   const data=useOnce(()=>api("/api/browse/hubs"),[version]);
   const actorsData=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
@@ -1529,7 +1694,7 @@ function Hubs(){
   const hubRegion=h=>regionOfState(hubState(h));
   if(sel){
     const related=(actorsData?.actors||[]).filter(a=>(a.hubs||[]).includes(sel.name));
-    return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
+    return html`<${RecordPage} kind="hub" r=${{...sel,id:sel.id||sel.hub_id}} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
       subtitle=${[sectorOf(sel),[sel.primary_city,sel.state].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
       glance=${[["Sector",sectorOf(sel)],["Organizations",String(sel.actor_count??related.length)],
         ["Center",[sel.primary_city,sel.state,sel.country].filter(Boolean).join(", ")],
@@ -1553,7 +1718,7 @@ function Hubs(){
       </${Section}>
     </${RecordPage}>`;
   }
-  return html`<${Directory} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
     onOpen=${setSel} empty="No hubs in the database yet."
     search=${{placeholder:"Search name, city, description…",
       text:h=>[h.name,h.primary_city,h.state,h.description,sectorOf(h)].join(" ")}}
@@ -1581,6 +1746,8 @@ function eventOrder(e){
 }
 function Events({focus}){
   const [version,setVersion]=useState(0);
+  const [notice,setNotice]=useState(null);
+  const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
   const data=useOnce(()=>api("/api/browse/events"),[version]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.events,setSel);
@@ -1592,7 +1759,7 @@ function Events({focus}){
   const dated=events.filter(e=>e.start_date).length;
   const eventState=e=>stateInText(e.location);
   const eventRegion=e=>regionOfState(eventState(e));
-  if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
+  if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     subtitle=${[capFirst(sel.event_type),sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
     glance=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],["When",when(sel)==="No date"?null:when(sel)],
       ["Location",sel.location],["Frequency",sel.recurring_pattern],["Website",link(sel.website)]]}
@@ -1604,7 +1771,7 @@ function Events({focus}){
       html`<${Section} key="who" title="Who" rows=${[["Organizer",sel.organizer],["Sponsors",sel.sponsoring_orgs],["Scale",sel.expected_attendance]]}/>`,
       html`<${Section} key="ghus" title="GHUS engagement" rows=${[["Attended",html`<span class="dash">Not recorded yet</span>`],
         ["Notes",sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`:html`<span class="dash">No notes yet. Add them with Edit.</span>`]]}/>`]}/>`;
-  return html`<${Directory} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
     onOpen=${setSel} empty="No events in the database yet."
     note=${`Upcoming events first, then those without a date, then past ones. ${dated} of ${events.length} events have a date.`}
     search=${{placeholder:"Search name, description, topic…",
@@ -1635,13 +1802,15 @@ function Events({focus}){
 
 function People({focus}){
   const [version,setVersion]=useState(0);
+  const [notice,setNotice]=useState(null);
+  const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
   const data=useOnce(()=>api("/api/browse/people"),[version]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.people,setSel);
   if(!data) return html`<${Loading}/>`;
   if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {people,options}=data;
-  if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
+  if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
     glance=${[["Title",sel.title],["Organization",sel.organizations.join(", ")],["State",sel.states.join(", ")]]}
     sections=${[
@@ -1650,7 +1819,7 @@ function People({focus}){
       html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`,
       html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
         :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
-  return html`<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
     onOpen=${setSel}
     empty="No people in the database yet. People found in Build the Map appear here once they are verified into the database."
     search=${{placeholder:"Search name, title, employer, expertise…",
@@ -1811,7 +1980,7 @@ function PeopleSearch({actor,jobId,disabled}){
     try{const r=await fetch(`/api/map/${id}/stop`,{method:"POST"});if(!r.ok)throw Error("Could not stop the search.");const d=await r.json();setTasks(old=>old.map(t=>t.id===id?d:t));}catch(e){setError(e.message);}
   }
   return html`<div class="mpeople">
-    <button class="example" type="button" onClick=${()=>setOpen(!open)} aria-expanded=${open}>${open?"Hide people research":"Find relevant people"}</button>
+    <button class="example" type="button" data-needs="maps.create" onClick=${()=>setOpen(!open)} aria-expanded=${open}>${open?"Hide people research":"Find relevant people"}</button>
     ${open&&html`<div>
       <label style=${{display:"block",marginTop:"12px"}}>What kind of people are you looking for?
         <textarea value=${criteria} maxLength="2000" rows="3" disabled=${sending||running} onChange=${e=>{setCriteria(e.target.value);key.current=null;}}
@@ -2143,7 +2312,7 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
         </div>
         <${CardTags} e=${e}/>
       </div>
-      ${!savedDone&&onReviewed&&html`<div class="mactions">
+      ${!savedDone&&onReviewed&&html`<div class="mactions" data-needs="review.decide">
           <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
             title="Remove from this map for good" onClick=${()=>setConfirmReject(true)}>Reject</button>
           <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
@@ -2770,7 +2939,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
     ${carried&&html`<${CarriedRows} rows=${carried} onChange=${onCarriedChange}
       onDismiss=${()=>{onCarriedChange(null); setDesc("");}}/>`}
-    <form class="start-card" onSubmit=${e=>{e.preventDefault();send();}}>
+    <form class="start-card" data-needs="maps.create" onSubmit=${e=>{e.preventDefault();send();}}>
       ${savedMaps("start-select")}
       <textarea ref=${boxRef} class="field start-box" rows="4" readOnly=${!!(carried&&!carried.raw)}
         placeholder="Describe the organizations, people, or events you want to map. Include your objective, sector or topic, and geographic focus."
@@ -2791,7 +2960,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       <div class="map-tools">
         ${cost&&html`<span class="hint" style=${{margin:0}} aria-live="polite">Cost so far: $${cost.estimated_usd.toFixed(2)}</span>`}
         ${savedMaps("map-select")}
-        <button class="example" type="button" disabled=${busy||verifying} onClick=${reset}>+ New map</button>
+        <button class="example" type="button" data-needs="maps.create" disabled=${busy||verifying} onClick=${reset}>+ New map</button>
       </div>
     </div>
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
@@ -2846,7 +3015,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
         : html`
           <div class="mbar">
             <span class="chip slate">${total} found in this map</span>
-            <button class="btn" type="button" disabled=${busy||!readyItems.length||!["done","error"].includes(runStatus)}
+            <button class="btn" type="button" data-needs="review.decide" disabled=${busy||!readyItems.length||!["done","error"].includes(runStatus)}
               onClick=${()=>{setSaveSummary(null);setSaving(true);}}>Save verified to Compass (${readyItems.length})</button>
             <button class="example" type="button" disabled=${!!exporting}
               onClick=${()=>download("xlsx")}>
@@ -2865,7 +3034,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       ${res.partial&&!busy&&html`<div class="selnote" style=${{marginTop:"14px"}}>Research is unfinished: some planned searches did not run.${cost?.can_resume?" Use “Continue unfinished research” above to finish them.":""}</div>`}
       ${(res.failures||[]).length>0&&html`<div class="selnote" style=${{color:"var(--violet)"}}>
         Some searches failed, so this map may be incomplete.</div>`}
-      ${total>0&&(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" style=${{marginTop:"22px"}}>
+      ${total>0&&(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" data-needs="requests.create" style=${{marginTop:"22px"}}>
         <strong>Keep finding organizations like these</strong>
         <div>Monitor and Update can keep searching for more of them, every month for as long
           as you choose. This opens the request there, filled in from what you asked,
@@ -2931,7 +3100,30 @@ const NAV_ICONS={
   discovery:svg(html`<path d="M4 19.5l5-6 4 3 7-9"/><path d="M15 7.5h5v5"/>`),
   datafeed:svg(html`<path d="M12 15.5V4M7.5 8.5 12 4l4.5 4.5M4.5 15.5v4h15v-4"/>`),
   review:svg(html`<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M10 12.5h5M10 16h5"/>`),
+  mywork:svg(html`<path d="M5 4.5h14v16H5z"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4"/>`),
+  usage:svg(html`<path d="M4 19.5h16"/><path d="M7 16V11M12 16V6M17 16v-3"/>`),
+  costs:svg(html`<circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.2c-.5-.9-1.5-1.4-2.6-1.4-1.6 0-2.7.9-2.7 2.1 0 2.9 5.6 1.6 5.6 4.3 0 1.3-1.2 2.2-2.9 2.2-1.2 0-2.3-.6-2.8-1.6M12 6.3v1.5M12 16.7v1.5"/>`),
+  audit:svg(html`<path d="M12 3.5 4.5 6.5v5c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9v-5z"/><path d="M9 12l2 2 4-4"/>`),
+  users:svg(html`<circle cx="9" cy="8" r="3.5"/><path d="M3 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5"/><path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.6.8 2.7 2.5 3 5.2"/>`),
 };
+// Pages outside the main menu: My profile (from the sidebar name). Users joins the
+// menu for people who can manage users.
+const EXTRA_PAGES={profile:"My profile",users:"Users",mywork:"My work",audit:"Audit History",usage:"My usage",costs:"Usage and Costs",
+  deletions:"Pending Deletion"};
+// What each menu entry needs (individual accounts). The server refuses the rest anyway.
+const NAV_NEEDS={dashboard:"dashboard.view",ask:"ask.use",map:"maps.view",browse:"records.view",
+  discovery:"requests.view",datafeed:"datafeed.import",review:"review.view",mywork:"dashboard.view",
+  users:"users.manage",audit:"audit.view_all",usage:"usage.view_own",costs:"usage.view_all",
+  deletions:"records.delete_permanent"};
+// Hide every control marked data-needs="<permission>" the person does not hold.
+function applyPermissions(account){
+  let style=document.getElementById("compass-permissions");
+  if(!style){style=document.createElement("style");style.id="compass-permissions";document.head.appendChild(style);}
+  const held=new Set(account?account.permissions:[]);
+  const all=[...new Set(Object.values(NAV_NEEDS).concat(["records.edit","records.remove","records.delete_permanent","review.decide",
+    "maps.create","requests.create","notes.write"]))];
+  style.textContent=account?all.filter(p=>!held.has(p)).map(p=>`[data-needs~="${p}"]{display:none!important}`).join("\n"):"";
+}
 const COMPASS_MARK=html`<svg class="compass-mark" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
   <circle cx="22" cy="22" r="20" fill="none" stroke="currentColor" stroke-width="2.2"/>
   <path d="M29.5 14.5 24.6 24.6 14.5 29.5 19.4 19.4z" fill="var(--accent)"/>
@@ -2939,6 +3131,27 @@ const COMPASS_MARK=html`<svg class="compass-mark" width="44" height="44" viewBox
 function App(){
   // Compass opens on the Dashboard (GHUS, 11 Nov 2026).
   const [tab,setTab]=useState("dashboard");
+  // The signed-in account (individual accounts only; null with the shared login).
+  const [account,setAccount]=useState(null);
+  const [checked,setChecked]=useState(false);
+  const loadAccount=()=>fetch("/api/auth/me").then(r=>r.ok?r.json():null)
+    .then(d=>setAccount(d?d.account:null)).catch(()=>{}).finally(()=>setChecked(true));
+  // Preferences (individual accounts): the Directory's default view and saved filters.
+  useEffect(()=>{if(!account) return;
+    fetch("/api/account/preferences").then(r=>r.ok?r.json():null).then(d=>{if(d){CURRENT_PREFS=d.preferences;setPrefsVersion(v=>v+1);}}).catch(()=>{});
+    const on=e=>{CURRENT_PREFS=e.detail;setPrefsVersion(v=>v+1);};
+    window.addEventListener("compass:preferences",on);return()=>window.removeEventListener("compass:preferences",on);},[account]);
+  const [,setPrefsVersion]=useState(0);
+  useEffect(()=>{applyPermissions(account);},[account]);
+  const allowed=id=>!account||account.permissions.includes(NAV_NEEDS[id]);
+  useEffect(()=>{loadAccount();},[]);
+  CURRENT_ACCOUNT=account;
+  const canManage=!!account&&account.permissions.includes("users.manage");
+  const nav=[...NAV.filter(([id])=>allowed(id)),
+    ...(account?[["mywork","My work"],["usage","My usage"],["users","Users"],["costs","Usage and Costs"],
+      ["audit","Audit History"]].filter(([id])=>allowed(id)):[])];
+  // A page the person may not open falls back to the first one they may.
+  useEffect(()=>{if(checked&&!allowed(tab)&&!["profile"].includes(tab)&&nav.length) setTab(nav[0][0]);},[checked,account,tab]);
   // Discovery's Run now opens the actor's profile in Review (discovery.js openInReview).
   useEffect(()=>{const go=()=>setTab("review");window.addEventListener("ghus:open-review",go);
     return ()=>window.removeEventListener("ghus:open-review",go);},[]);
@@ -2971,24 +3184,37 @@ ${name}`, cadence:"once", edited:true,
     <div class="compass-brand">${COMPASS_MARK}<div><div class="compass-name">COMPASS</div>
       <div class="compass-tag">Ecosystem Intelligence</div></div></div>
     <nav class="workspace-nav" aria-label="Main navigation">
-      ${NAV.map(([id,label])=>html`
+      ${nav.map(([id,label])=>html`
         <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${NAV_ICONS[id]}</span>${label}${id==="dashboard"&&unseen>0&&html`<span class="nav-badge" aria-label=${`${unseen} new completed runs`}>${unseen}</span>`}</button>`)}
     </nav>
+    <${SessionFoot} account=${account} onProfile=${()=>setTab("profile")}/>
   </aside>
   <div class="workspace-main">
-  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${Object.fromEntries(NAV)[tab]}</strong></div></header>
+  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${Object.fromEntries(NAV)[tab]||EXTRA_PAGES[tab]}</strong></div>
+    ${account&&html`<${NotificationBell} onNavigate=${setTab}/>`}</header>
   <main class="wrap">
-    <div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard"><${Dashboard}/><//></div>
-    <div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
-      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>
-    <div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>
-    <div style=${{display:tab==="discovery"?"block":"none"}}><${PageBoundary} name="Monitor and Update"><${Discovery}
-      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/><//></div>
-    <div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>
-    <div style=${{display:tab==="review"?"block":"none"}}><${PageBoundary} name="Review Results"><${Review}/><//></div>
-    <div style=${{display:tab==="map"?"block":"none"}}><${PageBoundary} name="Explore and Map"><${BuildMap}
+    ${/* Pages mount once the account is known, and only those the person may open
+       (individual accounts); with the shared login every page mounts as before. */ ""}
+    ${checked&&html`
+    ${allowed("dashboard")&&html`<div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard">${account
+      ?html`<${DashboardPage} key=${tab==="dashboard"?"shown":"hidden"} onNavigate=${setTab}/>`:html`<${Dashboard}/>`}<//></div>`}
+    ${allowed("ask")&&html`<div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
+      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>`}
+    ${allowed("browse")&&html`<div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>`}
+    ${allowed("discovery")&&html`<div style=${{display:tab==="discovery"?"block":"none"}}><${PageBoundary} name="Monitor and Update"><${Discovery}
+      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/><//></div>`}
+    ${allowed("datafeed")&&html`<div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>`}
+    ${allowed("review")&&html`<div style=${{display:tab==="review"?"block":"none"}}><${PageBoundary} name="Review Results"><${Review}/><//></div>`}
+    ${account&&tab==="profile"&&html`<div><${PageBoundary} name="My profile"><${ProfilePage} onAccount=${loadAccount}/><//></div>`}
+    ${account&&allowed("mywork")&&tab==="mywork"&&html`<div><${PageBoundary} name="My work"><${MyWorkPage}/><//></div>`}
+    ${account&&allowed("users")&&tab==="users"&&html`<div><${PageBoundary} name="Users"><${UsersPage} account=${account}/><//></div>`}
+    ${account&&allowed("usage")&&tab==="usage"&&html`<div><${PageBoundary} name="My usage"><${UsagePage}/><//></div>`}
+    ${account&&allowed("costs")&&tab==="costs"&&html`<div><${PageBoundary} name="Usage and Costs"><${CostsPage}/><//></div>`}
+    ${account&&allowed("audit")&&tab==="audit"&&html`<div><${PageBoundary} name="Audit History"><${AuditPage}/><//></div>`}
+    ${account&&allowed("deletions")&&tab==="deletions"&&html`<div><${PageBoundary} name="Pending Deletion"><${PendingDeletionPage} onNavigate=${setTab}/><//></div>`}
+    ${allowed("map")&&html`<div style=${{display:tab==="map"?"block":"none"}}><${PageBoundary} name="Explore and Map"><${BuildMap}
       carried=${carried} onCarriedChange=${setCarried}
-      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/><//></div>
+      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/><//></div>`}`}
   </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);

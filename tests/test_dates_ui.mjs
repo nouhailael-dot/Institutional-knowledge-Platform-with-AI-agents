@@ -61,14 +61,18 @@ test("the calendar is COMPASS's own, in English, Sunday first, never the browser
   assert.doesNotMatch(source, /type="date"|showPicker/);
 });
 
-test('Directory Edit saves through the backend writer; Delete stays for organizations (10 Nov 2026)', () => {
+test('Directory Edit saves through the backend writer; Delete: every type with accounts, organizations without (Phase 6)', () => {
   const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
   assert.doesNotMatch(page, /EDIT_SAVES/);
   assert.doesNotMatch(page, /Saving isn't connected yet/);
-  assert.match(page, /\$\{!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=\$\{\(\)=>\{setSaved\(null\);setEditing\(true\);\}\}>Edit<\/button>`\}/);
+  // Shown to everyone who may edit (data-needs hides it from the others, 12 Nov 2026).
+  assert.match(page, /\$\{!editing&&!deleting&&!removed&&html`<button class="example" type="button" data-needs="records\.edit" onClick=\$\{\(\)=>\{setSaved\(null\);setEditing\(true\);\}\}>Edit<\/button>`\}/);
+  // With accounts every record type can be deleted (records.delete_permanent, 30 days to restore);
+  // with the shared login, organizations only, as before (records.remove).
+  assert.match(page, /data-needs=\$\{currentAccount\(\)\?"records\.delete_permanent":"records\.remove"\}/);
   assert.match(page, /fetch\(`\/api\/browse\/\$\{EDIT_PATHS\[kind\]\}\/\$\{record\.id\}\/edit`/);
   assert.match(page, /const EDIT_PATHS=\{actor:"actors",event:"events",person:"people",hub:"hubs"\};/);
-  assert.match(page, /\$\{kind==="actor"&&!editing&&!deleting&&!removed&&html`<button class="example danger"/);
+  assert.match(page, /\$\{\(currentAccount\(\)\|\|kind==="actor"\)&&!editing&&!deleting&&!removed&&html`<button class="example danger"/);
   // Only changed boxes are sent; read-only boxes never are.
   assert.match(page, /editable\.filter\(\(\[k\]\)=>draft\[k\]!==start\[k\]\)/);
   // Every tab keeps the saved values on screen and reads its list again.

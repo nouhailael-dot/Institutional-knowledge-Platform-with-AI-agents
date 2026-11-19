@@ -129,7 +129,25 @@ def example_import():
 
 @router.get("/imports/{run_id}")
 def import_records(run_id: str):
-    return {"records": _call(datafeed_service().import_records, run_id)}
+    records = _call(datafeed_service().import_records, run_id)
+    _sync_import_owner(run_id)
+    return {"records": records}
+
+
+def _sync_import_owner(run_id: str) -> None:
+    """Records this import's background completion stored later get the importer as
+    owner (accounts Phase 4). Nothing without accounts, or for an import with no owner."""
+    from src.identity import current_account
+
+    if current_account() is None:
+        return
+    try:
+        from backend.accounts_routes import accounts_store
+        from src.accounts.notifier import sync_import_ownership
+
+        sync_import_ownership(accounts_store(), datafeed_service().created_entities, run_id=run_id)
+    except Exception:
+        logger.warning("Ownership sync failed for import %s", run_id, exc_info=True)
 
 
 @router.get("/imports/{run_id}/file")
@@ -162,5 +180,8 @@ def completion_estimate(run_id: str):
 
 @router.post("/imports/{run_id}/complete")
 def complete(run_id: str, body: Completion):
-    return _call(datafeed_service().start_completion, run_id, max_usd=body.max_usd,
-                 confirmed=body.confirmed)
+    answer = _call(datafeed_service().start_completion, run_id, max_usd=body.max_usd,
+                   confirmed=body.confirmed)
+    from src.accounts import activity
+    activity.record_usage("datafeed_completion", run_id, detail={"max_usd": body.max_usd})
+    return answer

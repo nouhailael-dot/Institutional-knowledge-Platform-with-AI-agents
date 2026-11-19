@@ -424,6 +424,25 @@ class DataFeedService:
         return json.loads(path.read_text(encoding="utf-8"))
 
     # ------------------------------------------------------------------ confirm
+    @staticmethod
+    def _claim_ownership(preview: dict, run_id, admitted: list[dict]) -> None:
+        """The signed-in uploader owns the import and every record it *created*
+        (accounts Phase 3). A record matched to an existing one keeps its owner.
+        Records stored later by the background completion are traced through the
+        import (its run id); nothing is claimed for them here."""
+        from src.accounts import activity
+
+        origin = "mapped" if preview.get("method") == "map" else "imported"
+        if run_id:
+            # The record type travels with the import's ownership, so records the
+            # background completion stores later can be given the same owner.
+            activity.claim("import", run_id, origin, source_ref=f"type:{preview.get('record_type')}")
+        kind = preview.get("record_type")
+        for item in admitted:
+            if item.get("outcome") in ("stored", "approved_verified") and item.get("entity_id") \
+                    and kind in ("actor", "person", "event"):
+                activity.claim(kind, item["entity_id"], origin, source_ref=f"datafeed:{run_id}")
+
     def confirm(self, preview_id: str, *, import_name: str, accept_left_out: bool,
                 uploaded_by: str | None = None, attest_source: bool = False,
                 admission: str = "directory", attest_authorized: bool = False,
@@ -494,6 +513,7 @@ class DataFeedService:
         self._path(preview_id).unlink(missing_ok=True)
         rows = outcome.get("rows") or []
         admitted = outcome.get("admissions") or []
+        self._claim_ownership(preview, outcome.get("run_id"), admitted)
         enriching = None
         if outcome.get("admissions_pending") and outcome.get("run_id"):
             cap = enrichment_cap(outcome.get("staged", 0))
@@ -574,6 +594,16 @@ class DataFeedService:
         return [{"row_number": r[0], "name": r[1], "status": labels.get(
             r[3] if r[2] == "approved" and r[3] else r[2], r[2]), "entity_id": r[4],
             "light_pull_read": bool(r[5])} for r in rows]
+
+    def created_entities(self, run_id: str) -> list[str]:
+        """Records this import created (not those matched to existing records), as
+        recorded by Review's decisions, including those its background completion
+        stored after the upload."""
+        if not _UUID.match(run_id or "") or self.connect is None:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(RECORDS_SQL, {"run": run_id}).fetchall()
+        return [str(r[4]) for r in rows if r[3] in ("new", "imported_verified") and r[4]]
 
     # ------------------------------------------------------------------ completion
     def completion_estimate(self, run_id: str) -> dict[str, Any]:

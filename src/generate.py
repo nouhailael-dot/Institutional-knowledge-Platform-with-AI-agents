@@ -207,8 +207,9 @@ def answer_question(question: str, entities: list[dict]) -> str:
     return "".join(b.text for b in resp.content if b.type == "text")
 
 
-def stream_answer(question: str, entities: list[dict]):
-    """Streaming: yield answer text chunks as they arrive (used by the UI)."""
+def stream_answer(question: str, entities: list[dict], on_usage=None):
+    """Streaming: yield answer text chunks as they arrive (used by the UI).
+    ``on_usage(model, usage)`` receives the answer's token usage once it ends."""
     with _get_client().messages.stream(
         model=MODEL,
         max_tokens=MAX_TOKENS,
@@ -217,6 +218,11 @@ def stream_answer(question: str, entities: list[dict]):
     ) as stream:
         for text in stream.text_stream:
             yield text
+        if on_usage is not None:
+            try:
+                on_usage(MODEL, stream.get_final_message().usage)
+            except Exception:  # noqa: BLE001 - recording usage never breaks an answer
+                pass
 
 
 if __name__ == "__main__":
