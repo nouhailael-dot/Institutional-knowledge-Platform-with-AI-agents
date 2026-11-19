@@ -32,6 +32,8 @@ env/
 # A .venv that is a link, not a folder, and any variant of the env file
 .venv
 .env.*
+# Any file of keys named like supabase-auth-test.env (never committed).
+*.env
 !.env.example
 
 # Request files the Review admission bridge writes before calling the backend
