@@ -696,6 +696,302 @@ def record_directory_edit(
     return {"changed": changed, "written": True}
 
 
+# --- Record deletion with 30-day retention (GHUS policy, 17 Nov 2026; migration 710) ---------
+# Delete: the record is hidden at once (a pending compass.deleted_record row) and kept,
+# restorable, for 30 days. Purge, after that: its canonical data and dependents are
+# removed under the explicit policy below, inside the one transaction the database
+# guards let through (compass.purge_door_open()).
+RETENTION_DAYS = 30
+DELETABLE = {"actor": ("actor", "actor_id", "name"), "person": ("person", "person_id", "full_name"),
+             "event": ("event", "event_id", "name"), "hub": ("hub", "hub_id", "name")}
+
+# What purging does to each table that points at the record: "delete" the record's
+# own rows, "detach" (empty the link, keep the row: ledgers, other records, review
+# history), or "block" (the purge stops and says why). A link not listed here also
+# blocks: a new table is never handled by guesswork.
+PURGE_POLICY = {
+    "actor": [
+        ("actor", "merged_into_actor_id", "block"),             # duplicates merged into it
+        ("actor_fact_current_pointer", "actor_id", "delete"),
+        ("actor_fact", "actor_id", "delete"),
+        ("actor_details", "actor_id", "delete"),                 # 620/621: one row per organization
+        ("actor_capability_fact", "actor_id", "delete"),
+        ("actor_category_migration_audit", "actor_id", "delete"),
+        ("actor_evaluation", "actor_id", "delete"),
+        ("actor_location", "actor_id", "delete"),
+        ("review_queue", "actor_id_a", "delete"),
+        ("review_queue", "actor_id_b", "delete"),
+        ("actor_merge_log", "loser_actor_id", "delete"),
+        ("actor_merge_log", "winner_actor_id", "delete"),
+        ("actor_person", "actor_id", "delete"),
+        ("actor_profile", "actor_id", "delete"),
+        ("actor_ranking", "actor_id", "delete"),
+        ("actor_ranking", "context_actor_id", "delete"),
+        ("actor_relevance", "actor_id", "delete"),
+        ("actor_sector", "actor_id", "delete"),
+        ("actor_strategic_connection_check", "actor_id", "delete"),
+        ("actor_topic", "actor_id", "delete"),
+        ("actor_verification_event", "actor_id", "delete"),
+        ("hub_actor", "actor_id", "delete"),
+        ("hub_assignment_evidence", "actor_id", "delete"),
+        ("legacy_migration_record", "actor_id", "delete"),
+        ("organization_hierarchy", "parent_actor_id", "delete"),
+        ("organization_hierarchy", "child_actor_id", "delete"),
+        ("partnership_profile", "actor_id", "delete"),
+        ("person_discovery_profile", "actor_id", "delete"),
+        ("proposed_hub_member", "family_root_actor_id", "delete"),
+        ("proposed_hub_member", "actor_id", "delete"),
+        ("collection_request", "actor_id", "detach"),            # runs and their costs stay
+        ("event", "host_actor_id", "detach"),                    # the event stays, without host
+    ],
+    "event": [
+        ("event_fact", "event_id", "delete"), ("event_details", "event_id", "delete"),   # 600, 630
+        ("event_claim", "event_id", "delete"), ("event_scoring", "event_id", "delete"),
+        ("event_sector", "event_id", "delete"), ("event_topic", "event_id", "delete"),
+        ("event_review_queue", "candidate_event_id", "detach"),
+    ],
+    "hub": [
+        ("hub_actor", "hub_id", "delete"), ("hub_assignment_evidence", "hub_id", "delete"),
+        ("hub_center_review", "hub_id", "delete"), ("hub_funding", "hub_id", "delete"),
+        ("hub_sector", "hub_id", "delete"), ("hub_sector_strength", "hub_id", "delete"),
+        ("proposed_hub", "final_hub_id", "detach"),
+    ],
+    "person": [
+        ("person_fact", "person_id", "delete"), ("person_details", "person_id", "delete"),  # 600, 630
+        ("actor_person", "person_id", "delete"), ("contact_collection_authorization", "person_id", "delete"),
+        ("person_change_log", "person_id", "delete"), ("person_discovery_profile", "person_id", "delete"),
+        ("person_topic", "person_id", "delete"), ("person_verification_event", "person_id", "delete"),
+        ("person_review_queue", "candidate_person_id", "detach"),
+    ],
+}
+# Links that are the same rows as a listed one (a composite key over the same column).
+PURGE_SAME_ROWS = {("hub_actor", "hub_id,topic_id")}
+# Rows that point at rows being deleted: (parent table, its key) -> [(table, column, action)].
+PURGE_CHILDREN = {
+    ("actor_fact", "actor_fact_id"): [
+        ("actor_fact_current_pointer", "actor_fact_id", "delete"),
+        ("canonical_write_audit", "actor_fact_id", "delete"),
+        ("fact_corroboration", "actor_fact_id", "delete"),
+        ("fact_resolution", "actor_fact_id", "delete"),
+        ("fact_resolution", "related_actor_fact_id", "delete"),
+    ],
+    ("actor_merge_log", "merge_id"): [("review_queue", "merge_id", "detach")],
+}
+
+
+class DeletionError(ValueError):
+    """A deletion, restore or purge that cannot be done; the message is safe to show."""
+
+
+def _exists(session, table: str) -> bool:
+    return bool(session.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+
+
+def _pending(session, entity_type: str, entity_id: str):
+    return session.execute(text(
+        "SELECT deletion_id::text, deleted_at, purge_after FROM compass.deleted_record "
+        "WHERE entity_type = :t AND entity_id = CAST(:id AS uuid) AND restored_at IS NULL AND purged_at IS NULL"
+    ), {"t": entity_type, "id": entity_id}).mappings().first()
+
+
+def pending_deletion(session, entity_type: str, entity_id: str) -> dict | None:
+    """The pending deletion of a record (None when it is not deleted), for the
+    writers that must not revive or recreate it."""
+    if not bool(session.execute(text("SELECT to_regclass('compass.deleted_record') IS NOT NULL")).scalar()):
+        return None
+    row = _pending(session, entity_type, entity_id)
+    return dict(row) if row else None
+
+
+def delete_record(session, *, entity_type: str, entity_id: str, deleted_by: str, reason: str | None = None,
+                  live: bool = False) -> dict:
+    """Hide a record at once and keep it, restorable, for RETENTION_DAYS. Nothing is
+    physically deleted and no verification decision changes. The caller owns the
+    transaction."""
+    if entity_type not in DELETABLE:
+        raise DeletionError("Only organizations, people, events and hubs can be deleted.")
+    table, key, name_column = DELETABLE[entity_type]
+    entity_id = str(uuid.UUID(str(entity_id)))
+    clean_reason = " ".join(str(reason or "").split())[:500] or None
+    row = session.execute(text(
+        f"SELECT to_jsonb(t) AS snapshot, t.{name_column} AS name FROM {table} t "
+        f"WHERE t.{key} = CAST(:id AS uuid) FOR UPDATE"), {"id": entity_id}).mappings().first()
+    if row is None:
+        raise DeletionError(f"That {entity_type} is not in the database.")
+    if entity_type == "actor" and (row["snapshot"] or {}).get("merged_into_actor_id"):
+        raise DeletionError("That record was merged into another organization; delete that one instead.")
+    pending = _pending(session, entity_type, entity_id)
+    if pending:
+        raise DeletionError(f"Already deleted on {pending['deleted_at']:%b %d, %Y}; it can be restored "
+                            "from Pending Deletion (on the Dashboard).")
+    links = {}
+    for link_table, column, _ in PURGE_POLICY[entity_type]:
+        if _exists(session, link_table):
+            count = session.execute(text(
+                f"SELECT count(*) FROM {link_table} WHERE {column} = CAST(:id AS uuid)"), {"id": entity_id}).scalar()
+            if count:
+                links[f"{link_table}.{column}"] = int(count)
+    if not live:
+        return {"written": False, "name": row["name"], "links": links}
+    created = session.execute(text("""
+        INSERT INTO compass.deleted_record (entity_type, entity_id, name, snapshot, reason, deleted_by, purge_after)
+        VALUES (:t, CAST(:id AS uuid), :name, CAST(:snap AS jsonb), :reason, CAST(:by AS uuid),
+                now() + make_interval(days => :days))
+        RETURNING deletion_id::text, deleted_at, purge_after
+    """), {"t": entity_type, "id": entity_id, "name": row["name"] or "(no name)",
+           "snap": json.dumps({"row": row["snapshot"], "links": links}, default=str), "reason": clean_reason,
+           "by": deleted_by, "days": RETENTION_DAYS}).mappings().first()
+    return {"written": True, "deletion_id": created["deletion_id"], "name": row["name"],
+            "deleted_at": created["deleted_at"], "purge_after": created["purge_after"], "links": links}
+
+
+def restore_record(session, *, deletion_id: str, restored_by: str, live: bool = False) -> dict:
+    """Bring a deleted record back before its deadline: it reappears with the status,
+    ownership, links and history it had (none of them were changed)."""
+    deletion_id = str(uuid.UUID(str(deletion_id)))
+    row = session.execute(text(
+        "SELECT deletion_id::text, entity_type, entity_id::text, name, purge_after, restored_at, purged_at, "
+        "purge_after <= now() AS expired FROM compass.deleted_record WHERE deletion_id = CAST(:id AS uuid) "
+        "FOR UPDATE"), {"id": deletion_id}).mappings().first()
+    if row is None:
+        raise DeletionError("Unknown deletion.")
+    if row["purged_at"] is not None:
+        raise DeletionError("That record was permanently deleted; it can no longer be restored.")
+    if row["restored_at"] is not None:
+        raise DeletionError("That record was already restored.")
+    if row["expired"]:
+        raise DeletionError(f"The 30 days ended on {row['purge_after']:%b %d, %Y}; it can no longer be restored.")
+    if not live:
+        return {"written": False, **{k: row[k] for k in ("entity_type", "entity_id", "name")}}
+    session.execute(text(
+        "UPDATE compass.deleted_record SET restored_at = now(), restored_by = CAST(:by AS uuid) "
+        "WHERE deletion_id = CAST(:id AS uuid)"), {"id": deletion_id, "by": restored_by})
+    return {"written": True, "deletion_id": deletion_id,
+            **{k: row[k] for k in ("entity_type", "entity_id", "name")}}
+
+
+def _unplanned_links(session, entity_type: str) -> list[str]:
+    """Foreign keys into the record or its deleted rows that the policy does not cover."""
+    table = DELETABLE[entity_type][0]
+    covered = {(t, c) for t, c, _ in PURGE_POLICY[entity_type]} | PURGE_SAME_ROWS
+    children = {(parent, (t, c)) for (parent, _), rows in PURGE_CHILDREN.items() for t, c, _ in rows}
+    deleted_tables = {t for t, _, a in PURGE_POLICY[entity_type] if a == "delete"}
+    found = session.execute(text("""
+        SELECT ref.relname, src.relname,
+               (SELECT string_agg(a.attname, ',' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY k(n, ord)
+                  JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.n)
+          FROM pg_constraint c JOIN pg_class src ON src.oid = c.conrelid JOIN pg_class ref ON ref.oid = c.confrelid
+          JOIN pg_namespace n ON n.oid = ref.relnamespace
+         WHERE c.contype = 'f' AND n.nspname = 'public' AND ref.relname = ANY(:tables)
+    """), {"tables": [table, *deleted_tables]}).all()
+    missing = []
+    for ref, src, cols in found:
+        if ref == table and (src, cols) not in covered:
+            missing.append(f"{src}.{cols}")
+        elif ref != table and src != ref and (ref, (src, cols)) not in children and (src, cols) not in covered:
+            missing.append(f"{src}.{cols} → {ref}")
+    return sorted(set(missing))
+
+
+def _purge_rows(session, deletion_id: str, entity_type: str, entity_id: str) -> dict[str, int]:
+    """Remove the record and its own rows under PURGE_POLICY; rows changed per table."""
+    table, key, _ = DELETABLE[entity_type]
+    session.execute(text("SELECT set_config('ghus.permanent_delete', :id, true)"), {"id": deletion_id})
+    report: dict[str, int] = {}
+
+    def run(statement: str, label: str) -> None:
+        done = session.execute(text(statement), {"id": entity_id}).rowcount
+        if done:
+            report[label] = report.get(label, 0) + int(done)
+
+    for link_table, column, action in PURGE_POLICY[entity_type]:
+        if action == "block" or not _exists(session, link_table):
+            continue
+        where = f"{column} = CAST(:id AS uuid)"
+        if action == "detach":
+            run(f"UPDATE {link_table} SET {column} = NULL WHERE {where}", f"{link_table}.{column} (detached)")
+            continue
+        for (parent, parent_key), rows in PURGE_CHILDREN.items():
+            if parent != link_table:
+                continue
+            for child, child_column, child_action in rows:
+                if not _exists(session, child):
+                    continue
+                child_where = f"{child_column} IN (SELECT {parent_key} FROM {link_table} WHERE {where})"
+                if child_action == "detach":
+                    run(f"UPDATE {child} SET {child_column} = NULL WHERE {child_where}",
+                        f"{child}.{child_column} (detached)")
+                else:
+                    run(f"DELETE FROM {child} WHERE {child_where}", f"{child}.{child_column}")
+        run(f"DELETE FROM {link_table} WHERE {where}", f"{link_table}.{column}")
+    run(f"DELETE FROM {table} WHERE {key} = CAST(:id AS uuid)", table)
+    session.execute(text("SELECT set_config('ghus.permanent_delete', '', true)"))   # door closed again
+    return report
+
+
+def purge_record(session, *, deletion_id: str, live: bool = False) -> dict:
+    """Permanently remove a deleted record whose 30 days are over. Idempotent: an already
+    purged, restored or not-yet-due deletion is reported and left alone. The caller owns
+    the transaction (one per deletion)."""
+    deletion_id = str(uuid.UUID(str(deletion_id)))
+    row = session.execute(text(
+        "SELECT deletion_id::text, entity_type, entity_id::text, name, snapshot, purge_after, restored_at, "
+        "purged_at, purge_after <= now() AS due FROM compass.deleted_record "
+        "WHERE deletion_id = CAST(:id AS uuid) FOR UPDATE"), {"id": deletion_id}).mappings().first()
+    if row is None:
+        raise DeletionError("Unknown deletion.")
+    base = {"deletion_id": deletion_id, "entity_type": row["entity_type"], "entity_id": row["entity_id"]}
+    if row["purged_at"] is not None:
+        return {**base, "outcome": "already_purged"}
+    if row["restored_at"] is not None:
+        return {**base, "outcome": "restored"}
+    if not row["due"]:
+        return {**base, "outcome": "not_due", "purge_after": row["purge_after"]}
+    entity_type, entity_id = row["entity_type"], row["entity_id"]
+    table, key, _ = DELETABLE[entity_type]
+    unplanned = _unplanned_links(session, entity_type)
+    if unplanned:
+        return {**base, "outcome": "blocked",
+                "reason": "Links the deletion policy does not cover yet: " + ", ".join(unplanned)}
+    blockers = {}
+    for link_table, column, action in PURGE_POLICY[entity_type]:
+        if action == "block" and _exists(session, link_table):
+            count = session.execute(text(
+                f"SELECT count(*) FROM {link_table} WHERE {column} = CAST(:id AS uuid)"), {"id": entity_id}).scalar()
+            if count:
+                blockers[f"{link_table}.{column}"] = int(count)
+    if blockers:
+        return {**base, "outcome": "blocked",
+                "reason": "Other records were merged into it: " + ", ".join(f"{k} ({v})" for k, v in blockers.items())}
+
+    # A dry run performs the very same purge inside a savepoint and rolls it back: its
+    # report is exact (rows reached two ways are counted once) and nothing persists.
+    savepoint = None if live else session.begin_nested()
+    try:
+        report = _purge_rows(session, deletion_id, entity_type, entity_id)
+    finally:
+        if savepoint is not None:
+            savepoint.rollback()
+    if not live:
+        return {**base, "outcome": "would_purge", "rows": report}
+
+    # The minimum kept: what the record was, when and why it went. A person's personal
+    # data is not kept.
+    snap = row["snapshot"] or {}
+    kept = {"entity_type": entity_type, "entity_id": entity_id, "removed_rows": report}
+    if entity_type == "person":
+        name = "Deleted person"
+    else:
+        name = row["name"]
+        original = snap.get("row") or {}
+        kept.update({k: original.get(k) for k in ("website_domain", "website", "country") if original.get(k)})
+    session.execute(text(
+        "UPDATE compass.deleted_record SET purged_at = now(), purge_report = CAST(:report AS jsonb), "
+        "snapshot = CAST(:kept AS jsonb), name = :name WHERE deletion_id = CAST(:id AS uuid)"),
+        {"report": json.dumps(report), "kept": json.dumps(kept, default=str), "name": name, "id": deletion_id})
+    return {**base, "outcome": "purged", "rows": report}
+
+
 SECTOR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
 
 

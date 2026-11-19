@@ -549,6 +549,14 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
         result = None
         proposed_hub_id = None
         ghus_notes_saved = False
+        # A record awaiting permanent deletion is never revived or added to (710).
+        if clean["decision_kind"] == "same_existing" and clean.get("target_id"):
+            from agents.enrichment.decisions import pending_deletion
+            pending = pending_deletion(session, clean["entity_type"], str(clean["target_id"]))
+            if pending:
+                raise AdmissionValidationError(
+                    f"That record was deleted on {pending['deleted_at']:%b %d, %Y}. Restore it from Pending "
+                    "Deletion (on the Dashboard) instead of matching to it.")
         if clean["decision_kind"] in {"same_existing", "new"}:
             staged = _staged(source, clean["entity_type"], clean["edited_payload"])
             staged.normalized_payload.pop(IMPORT_VERIFICATION_PAYLOAD_KEY, None)
@@ -873,6 +881,42 @@ def apply_directory_edit(session, decision: Mapping[str, Any]) -> dict[str, Any]
             "changed": outcome["changed"]}
 
 
+RECORD_DELETION_KINDS = {"delete_record", "restore_record"}
+
+
+def apply_record_deletion(session, decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Delete a record (hidden at once, restorable for 30 days) or restore it (GHUS policy,
+    17 Nov 2026; migration 710). Who acts is the signed-in account's id, sent by the
+    platform from the session; the writer is decisions.delete_record / restore_record."""
+    from agents.enrichment.decisions import DeletionError, delete_record, restore_record
+
+    kind = str(decision.get("decision_kind") or "")
+    if kind not in RECORD_DELETION_KINDS:
+        raise AdmissionValidationError("unsupported deletion decision")
+    try:
+        user_id = str(uuid.UUID(_clean_required(decision.get("user_id"), "user_id", 80)))
+    except ValueError as exc:
+        raise AdmissionValidationError("user_id must be the signed-in account's id") from exc
+    transaction = session.begin()
+    try:
+        if kind == "delete_record":
+            outcome = delete_record(session, entity_type=str(decision.get("entity_type") or ""),
+                                    entity_id=_clean_required(decision.get("entity_id"), "entity_id", 80),
+                                    deleted_by=user_id, reason=decision.get("reason"), live=True)
+        else:
+            outcome = restore_record(session, deletion_id=_clean_required(decision.get("deletion_id"),
+                                                                          "deletion_id", 80),
+                                     restored_by=user_id, live=True)
+    except (DeletionError, ValueError) as exc:
+        transaction.rollback()
+        raise AdmissionValidationError(str(exc)) from exc
+    except Exception:
+        transaction.rollback()
+        raise
+    transaction.commit()
+    return {"decision_kind": kind, "status": "applied", **outcome}
+
+
 def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Apply one reviewed GHUS discovery decision")
     parser.add_argument("--decision", required=True, type=Path)
@@ -893,6 +937,8 @@ def _main(argv: list[str] | None = None) -> int:
             outcome = apply_directory_decision(session, raw)
         elif raw.get("decision_kind") == "edit_directory_record":
             outcome = apply_directory_edit(session, raw)
+        elif raw.get("decision_kind") in RECORD_DELETION_KINDS:
+            outcome = apply_record_deletion(session, raw)
         else:
             outcome = apply_review_decision(session, raw)
     json.dump(outcome, sys.stdout, sort_keys=True, default=str)

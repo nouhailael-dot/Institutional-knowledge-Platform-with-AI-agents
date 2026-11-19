@@ -18,6 +18,9 @@ class ScalarResult:
     def scalar_one_or_none(self):
         return self.value
 
+    def scalar(self):          # "is migration 710 applied?" -> no: nothing is pending deletion
+        return self.value
+
 
 class Transaction:
     def __init__(self):

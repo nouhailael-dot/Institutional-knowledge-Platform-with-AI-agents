@@ -1426,6 +1426,12 @@ def choose_actors(session, prepared: dict, *, config: dict | None = None,
         pool = group_actors(session, sector=prepared["sector"], category=options["category"],
                             state=prepared["state"])
         matched = len(pool)
+    # A record awaiting permanent deletion is no longer updated (migration 710).
+    from agents.common.deletions import pending_deletion_ids
+    deleted = pending_deletion_ids(session, "actor")
+    if deleted:
+        pool = [a for a in pool if str(a.get("actor_id")) not in deleted]
+        matched = len(pool)
     chosen_topic = topic_by_code(session, options["topic"]) if options["topic"] else None
     ready, waiting = [], []
     for actor in pool:
