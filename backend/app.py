@@ -214,9 +214,12 @@ async def plain_reasons(request, call_next):
             body = json.dumps(explain_payload(json.loads(body))).encode("utf-8")
         except ValueError:
             pass
-    headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
-    return Response(content=body, status_code=response.status_code, headers=headers,
-                    media_type="application/json")
+    rebuilt = Response(content=body, status_code=response.status_code, media_type="application/json")
+    # Every header as it came, repeated ones included: a sign-in sets three cookies, and a
+    # dict of headers kept only the last one (accounts could not stay signed in).
+    rebuilt.raw_headers.extend((k, v) for k, v in response.headers.raw
+                               if k.lower() not in (b"content-length", b"content-type"))
+    return rebuilt
 
 
 # Registered last, so it runs first: the hosted app asks for a login before
