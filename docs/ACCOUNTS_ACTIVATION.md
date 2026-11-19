@@ -23,7 +23,9 @@ separately authorized.
 - The accounts branch merged into `main` (after review; it is synchronized with `main`
   as of `c12993a`, 18 Nov 2026).
 - Real Supabase Auth validated on a separate test project:
-  `python -m tests.supabase_auth_live_check` (see section 10). **Not done yet.**
+  `python -m tests.supabase_auth_live_check` (see section 10). **Done 19 Nov 2026: 25/25**
+  (it found and fixed two problems: tokens signed with the project's asymmetric keys were
+  refused, and a copied REST address broke the project URL).
 - Schema-owner approval of migrations 700 and 710: package and evidence in
   `ghus-backend/migrations/proposed/accounts_700_710/README.md`.
 - The name and email of the first administrator.
@@ -41,7 +43,7 @@ separately authorized.
 | Security → Email OTP expiration | 86400 seconds (24 h) for the link; Compass's own invitation expiry (`GHUS_INVITATION_DAYS`, default 7) is checked separately |
 | Rate limits | Keep the defaults; Compass adds its own limits |
 | Password requirements | Minimum length 12 (Compass refuses shorter ones too) |
-| JWT keys | Either works: with the legacy JWT secret set in `SUPABASE_JWT_SECRET` tokens are verified locally (HS256); a project on asymmetric signing keys leaves that variable empty and Compass asks Supabase Auth to confirm each token (cached 60 s) |
+| JWT keys | Nothing to change. Set `SUPABASE_JWT_SECRET` to the legacy JWT secret if the project shows one: HS256 tokens are then verified locally. Tokens signed with the project's asymmetric keys (the default on newer projects, even when a legacy secret exists) are confirmed by Supabase Auth automatically (cached 60 s) |
 
 The templates contain no secrets. They link to Compass's `/accept` and `/reset`
 pages with a single-use code that the server exchanges; never use
@@ -67,10 +69,10 @@ not read these tables, so this step changes nothing for users either.
 
 | Key | Value | Secret |
 |---|---|---|
-| `SUPABASE_URL` | `https://<project>.supabase.co` | no |
-| `SUPABASE_ANON_KEY` | Project Settings → API → anon key | yes |
-| `SUPABASE_SERVICE_ROLE_KEY` | service_role key (server only; never in the browser) | yes |
-| `SUPABASE_JWT_SECRET` | Project Settings → API → JWT secret (legacy); empty on asymmetric keys | yes |
+| `SUPABASE_URL` | `https://<project>.supabase.co` (a copied `.../rest/v1/` address is accepted and reduced to this) | no |
+| `SUPABASE_ANON_KEY` | Project Settings → API Keys → **Legacy API Keys** → `anon` (`eyJ...`) | yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | Same tab → `service_role` (server only; never in the browser) | yes |
+| `SUPABASE_JWT_SECRET` | Project Settings → JWT Keys → Legacy JWT Secret (leave empty if there is none) | yes |
 | `GHUS_SESSION_KEY` | 48+ random characters (`python -c "import secrets;print(secrets.token_urlsafe(48))"`); keep it stable — changing it signs everyone out | yes |
 | `GHUS_PUBLIC_URL` | `https://ghus-compass.onrender.com` | no |
 | `GHUS_PURGE_MODE` | `off` | no |
@@ -150,6 +152,9 @@ set GHUS_AUTH_TEST_SERVICE_ROLE_KEY=...    (test project only)
 set GHUS_AUTH_TEST_JWT_SECRET=...          (optional)
 python -m tests.supabase_auth_live_check --database ghus_accounts_test --confirm-test-project <project-ref>
 ```
+
+If this computer cannot reach `*.supabase.co` (some networks block it; Render is not
+affected), connect through a VPN first.
 
 It refuses the production project and any non-local accounts database; it creates
 synthetic users through the Admin API (no email is sent) and removes them at the end.

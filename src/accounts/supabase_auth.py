@@ -24,10 +24,11 @@ import os
 import time
 from dataclasses import dataclass, field
 from threading import Lock
+from urllib.parse import urlsplit
 
 import httpx
 
-from src.accounts.tokens import InvalidToken, verify_access_token
+from src.accounts.tokens import InvalidToken, token_algorithm, unverified_claims, verify_access_token
 
 
 class AuthError(Exception):
@@ -54,6 +55,16 @@ class Session:
     email: str
 
 
+def project_url(value: str) -> str:
+    """The project's base address. A copied REST or Auth address
+    (https://<ref>.supabase.co/rest/v1/) is reduced to https://<ref>.supabase.co."""
+    value = (value or "").strip().strip('"').strip("'")
+    parts = urlsplit(value)
+    if parts.scheme and parts.hostname and parts.hostname.endswith(".supabase.co"):
+        return f"{parts.scheme}://{parts.hostname}"
+    return value.rstrip("/")
+
+
 @dataclass(frozen=True)
 class AuthSettings:
     url: str
@@ -65,7 +76,7 @@ class AuthSettings:
     @classmethod
     def from_env(cls, environ=None) -> "AuthSettings":
         env = os.environ if environ is None else environ
-        return cls(url=(env.get("SUPABASE_URL") or "").rstrip("/"),
+        return cls(url=project_url(env.get("SUPABASE_URL") or ""),
                    anon_key=env.get("SUPABASE_ANON_KEY") or "",
                    service_role_key=env.get("SUPABASE_SERVICE_ROLE_KEY") or "",
                    jwt_secret=env.get("SUPABASE_JWT_SECRET") or "")
@@ -205,7 +216,10 @@ class SupabaseAuth:
     # -- verifying an access token -----------------------------------------------
     def verify(self, access_token: str) -> dict:
         """The token's claims (``sub`` is the user id); InvalidToken when not valid."""
-        if self.settings.jwt_secret:
+        # A legacy JWT secret verifies HS256 tokens here. Tokens signed with the project's
+        # asymmetric keys (ES256/RS256, the default on newer projects, even when a legacy
+        # secret still exists) are confirmed by Supabase Auth itself (cached briefly).
+        if self.settings.jwt_secret and token_algorithm(access_token) == "HS256":
             return verify_access_token(access_token, self.settings.jwt_secret, now=self._clock())
         key = hashlib.sha256(access_token.encode("utf-8")).hexdigest()
         now = self._clock()
@@ -220,6 +234,9 @@ class SupabaseAuth:
             raise AuthUnavailable()
         user = response.json()
         claims = {"sub": str(user["id"]), "email": str(user.get("email") or "").lower()}
+        # Confirmed by Supabase Auth: when it was issued (so ended sessions stay ended).
+        issued = unverified_claims(access_token)
+        claims.update({k: issued[k] for k in ("iat", "exp", "session_id") if k in issued})
         with self._lock:
             if len(self._seen) > 2000:
                 self._seen.clear()

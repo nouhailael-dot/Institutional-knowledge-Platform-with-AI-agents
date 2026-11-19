@@ -32,6 +32,29 @@ def _b64encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
 
+def _segment(token: str, index: int) -> dict:
+    parts = (token or "").split(".")
+    if len(parts) != 3:
+        return {}
+    try:
+        value = json.loads(_b64decode(parts[index]))
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def token_algorithm(token: str) -> str:
+    """The signing algorithm a token names (HS256 for a legacy JWT secret; ES256 or
+    RS256 for a project on asymmetric signing keys). Not verified."""
+    return str(_segment(token, 0).get("alg") or "")
+
+
+def unverified_claims(token: str) -> dict:
+    """A token's claims WITHOUT checking its signature: only for a token Supabase
+    Auth has just confirmed, to read when it was issued."""
+    return _segment(token, 1)
+
+
 def verify_access_token(token: str, secret: str, *, audience: str = "authenticated",
                         leeway: int = 30, now: float | None = None) -> dict:
     """The verified claims of a Supabase Auth access token; InvalidToken otherwise."""

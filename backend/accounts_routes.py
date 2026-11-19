@@ -196,7 +196,10 @@ def _session_from(request: Request):
         claims = auth.verify(access)
     except InvalidToken:
         renewed = auth.refresh(refresh)            # AuthError when the session is over
-        claims = auth.verify(renewed.access_token)
+        try:
+            claims = auth.verify(renewed.access_token)
+        except InvalidToken as exc:                # never a 500: the person signs in again
+            raise AuthError("Your session has ended. Sign in again.") from exc
     account = accounts_store().account(claims["sub"])
     issued = claims.get("iat")
     if (account is not None and account.sessions_valid_after is not None

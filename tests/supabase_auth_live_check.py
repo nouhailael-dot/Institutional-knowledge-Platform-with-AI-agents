@@ -52,7 +52,9 @@ def main(argv=None) -> int:
     parser.add_argument("--database", required=True, help="local *_test accounts database (reset)")
     parser.add_argument("--confirm-test-project", required=True)
     args = parser.parse_args(argv)
-    url = os.environ.get("GHUS_AUTH_TEST_URL", "").rstrip("/")
+    sys.path.insert(0, str(ROOT))
+    from src.accounts.supabase_auth import project_url
+    url = project_url(os.environ.get("GHUS_AUTH_TEST_URL", ""))
     ref = _ref(url)
     if not ref or ref != args.confirm_test_project:
         parser.error("GHUS_AUTH_TEST_URL must be https://<ref>.supabase.co with <ref> = --confirm-test-project")

@@ -22,7 +22,8 @@ TEMPLATES = {"invite.html": "/accept?token_hash={{ .TokenHash }}&type=invite",
 def checks(environ=None) -> list[tuple[bool, str]]:
     env = os.environ if environ is None else environ
     out: list[tuple[bool, str]] = []
-    url = env.get("SUPABASE_URL", "")
+    from src.accounts.supabase_auth import project_url
+    url = project_url(env.get("SUPABASE_URL", ""))
     out.append((url.startswith("https://") and url.endswith(".supabase.co"),
                 "SUPABASE_URL is the project's https://<project>.supabase.co address"))
     for key in ("SUPABASE_ANON_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
@@ -55,7 +56,8 @@ def main() -> int:
     except Exception as exc:
         print(f"NO  accounts tables not reachable ({type(exc).__name__}); is migration 700 applied?")
         results.append((False, "tables"))
-    url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    from src.accounts.supabase_auth import project_url
+    url = project_url(os.environ.get("SUPABASE_URL", ""))
     if url:
         try:
             import httpx

@@ -197,8 +197,13 @@ dedicated Pending Deletion page (name, type, deleted by, date, reason, days left
   definitions 710 saves). 710 now refuses to run on any drift. The purge policy gained
   `actor_details`, `person_fact`, `event_fact` (production) and `event_details`,
   `person_details` (630). Package: `ghus-backend/migrations/proposed/accounts_700_710/`.
-- **Real Supabase Auth:** harness `tests/supabase_auth_live_check.py` ready; needs a
-  separate Supabase test project (blocker).
+- **Real Supabase Auth (19 Nov):** `tests/supabase_auth_live_check.py` against a separate
+  Supabase test project: 25/25 (invitations, password setup, single-use links, sign-in,
+  renewal, sign-out, reset, role change, deactivation blocked in Supabase, several users at
+  once, authorization, cookie flags). It found two problems, fixed with tests
+  (`tests/test_accounts_tokens.py`): newer projects sign tokens with asymmetric keys even
+  when a legacy secret exists, and Compass refused them (every session after sign-in, and
+  a 500 on renewal); a copied REST address (`/rest/v1/`) broke the project URL.
 - **Integration:** `tests/accounts_integration_check.py` runs the real app in accounts
   mode with the real backend writers on a migrated production copy.
 - Runbook: `docs/ACCOUNTS_ACTIVATION.md` (rewritten: order, Render, migrations, bootstrap,
