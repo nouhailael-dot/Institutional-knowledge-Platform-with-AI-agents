@@ -1,0 +1,11 @@
+<!-- Supabase Auth → Emails → Templates → "Invite user". Subject: "Your invitation to GHUS Compass"
+     The link carries a single-use code (TokenHash) to Compass's own page, which
+     exchanges it on the server. Do not use {{ .ConfirmationURL }}: it puts a
+     session token in the address. No secret belongs in this template. -->
+<h2>You are invited to GHUS Compass</h2>
+<p>Hello {{ .Data.full_name }},</p>
+<p>You were invited to GHUS Compass, the UM6P Global Hubs ecosystem intelligence platform.
+   Choose your password to finish setting up your account:</p>
+<p><a href="{{ .SiteURL }}/accept?token_hash={{ .TokenHash }}&type=invite">Accept the invitation</a></p>
+<p>The link works once. If it has expired, ask a Compass administrator for a new invitation.</p>
+<p>If you did not expect this email, you can ignore it.</p>

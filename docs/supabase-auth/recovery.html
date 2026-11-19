@@ -1,0 +1,7 @@
+<!-- Supabase Auth → Emails → Templates → "Reset password". Subject: "Reset your GHUS Compass password"
+     Single-use code to Compass's own page (see invite.html). No secret here. -->
+<h2>Reset your GHUS Compass password</h2>
+<p>Someone asked to reset the password of the Compass account for {{ .Email }}.</p>
+<p><a href="{{ .SiteURL }}/reset?token_hash={{ .TokenHash }}&type=recovery">Choose a new password</a></p>
+<p>The link works once and expires soon. Choosing a new password signs out your other devices.</p>
+<p>If you did not ask for this, ignore this email: your password stays the same.</p>
