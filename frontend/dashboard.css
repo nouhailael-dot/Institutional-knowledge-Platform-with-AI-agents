@@ -63,3 +63,6 @@
 
 /* 12 Nov 2026: waiting its turn behind another run. */
 .dash-pill.queued{background:#eef2ff;color:#3730a3;border-color:#c7d2fe}
+
+/* 20 Nov 2026: Pending Deletion spans the whole row under the three panels. */
+.dash-panel.dash-wide{grid-column:1/-1}

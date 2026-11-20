@@ -182,3 +182,15 @@ test('the hosted trial starts the Dashboard clean: nothing before its start coun
   assert.equal(monthRangeLabel(now, start), 'November 10–12, 2026');
   assert.equal(monthRangeLabel(new Date('2026-12-02T12:00:00Z'), start), 'December 1–2, 2026');
 });
+
+test('one Dashboard for everyone: the original design, adapted to the role', () => {
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /<\$\{Dashboard\}\s+permissions=\$\{account\?account\.permissions:null\}\/>/);
+  assert.doesNotMatch(page, /<\$\{DashboardPage\}/);
+  const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
+  // The shared login sees everything; a Viewer (no requests.view) never asks for requests.
+  assert.match(src, /const can = p => !permissions \|\| permissions\.includes\(p\);/);
+  assert.match(src, /if \(!seesRequests\) return;/);
+  assert.match(src, /\$\{seesRequests && html`<\$\{Panel\} symbol=\$\{ICONS\.refresh\} title="Recent Requests"/);
+  assert.match(src, /\$\{seesRequests && html`<div class="dash-spending">/);
+});

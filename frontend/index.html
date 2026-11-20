@@ -783,7 +783,7 @@
 <link rel="stylesheet" href="/review.css?v=20261112b"/>
 <link rel="stylesheet" href="/discovery.css?v=20261112b"/>
 <link rel="stylesheet" href="/datafeed.css?v=20261113b"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261112a"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261120a"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -817,14 +817,14 @@ import {createReviewPage} from "./review.js?v=20261112g";
 import {createDiscoveryPage} from "./discovery.js?v=20261113a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261113b";
-import {createAccountPages} from "./accounts.js?v=20261118a";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261113a";
+import {createAccountPages} from "./accounts.js?v=20261120a";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261120a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect,useRef});
 const DataFeed=createDataFeedPage({html,useState,useEffect,Fragment:React.Fragment});
-const {ProfilePage,UsersPage,MyWorkPage,DashboardPage,NotificationBell,AuditPage,UsagePage,CostsPage,PendingDeletionPage}=createAccountPages({html,useState,useEffect});
+const {ProfilePage,UsersPage,MyWorkPage,NotificationBell,AuditPage,UsagePage,CostsPage,PendingDeletionPage}=createAccountPages({html,useState,useEffect});
 // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
 const DateInput=createDateInput({html,useState,useEffect});
 const Dashboard=createDashboardPage({html,useState,useEffect});
@@ -3196,8 +3196,8 @@ ${name}`, cadence:"once", edited:true,
     ${/* Pages mount once the account is known, and only those the person may open
        (individual accounts); with the shared login every page mounts as before. */ ""}
     ${checked&&html`
-    ${allowed("dashboard")&&html`<div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard">${account
-      ?html`<${DashboardPage} key=${tab==="dashboard"?"shown":"hidden"} onNavigate=${setTab}/>`:html`<${Dashboard}/>`}<//></div>`}
+    ${allowed("dashboard")&&html`<div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard"><${Dashboard}
+      permissions=${account?account.permissions:null}/><//></div>`}
     ${allowed("ask")&&html`<div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
       onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>`}
     ${allowed("browse")&&html`<div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>`}

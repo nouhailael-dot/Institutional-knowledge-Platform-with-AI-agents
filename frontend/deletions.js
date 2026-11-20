@@ -50,7 +50,7 @@ export function filterDeleted(rows = [], {entity_type = "all", search = ""} = {}
     && (!q || [r.name, r.reason, r.deleted_by].join(" ").toLowerCase().includes(q)));
 }
 
-async function readDeleted() {
+export async function readDeleted() {
   const res = await fetch("/api/review/deleted");
   const d = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(d.detail || "Could not read the records pending deletion.");

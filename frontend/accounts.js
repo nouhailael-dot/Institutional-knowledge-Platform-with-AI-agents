@@ -2,7 +2,7 @@
 // (GHUS_AUTH_MODE=supabase). The server checks every action; these pages only
 // show what the signed-in person may do.
 
-import {createPendingDeletion, PERMISSION as DELETE_PERMISSION} from "./deletions.js?v=20261118a";
+import {createPendingDeletion, PERMISSION as DELETE_PERMISSION} from "./deletions.js?v=20261120a";
 
 const PERMISSION_WORDS = {
   "records.view": "Browse organizations, people, events and hubs",
@@ -367,9 +367,6 @@ export function createAccountPages({html, useState, useEffect}) {
   }
 
   // -- Preferences (on My profile) -------------------------------------------------------------
-  const SECTION_WORDS = {notifications: "Notifications", runs: "Running and recent runs", activity: "My recent activity",
-    records: "My Records", requests: "My Requests", maps: "My Maps", imports: "My Imports",
-    reviews: "My Review History", sectors: "Your sectors"};
 
   function PreferencesCard() {
     const [d, setD] = useState(null);
@@ -408,11 +405,6 @@ export function createAccountPages({html, useState, useEffect}) {
               <button class="example" type="button" style=${{marginLeft: "8px"}}
                 onClick=${() => save({directory: {saved_filters: p.directory.saved_filters.filter(x => x !== f)}},
                   `Removed '${f.name}'.`)}>Remove</button></div>`)}</div></div>
-      <div class="edit-field"><label>Dashboard shows</label><div class="pref-chips">
-        ${d.dashboard_sections.map(s => html`<label key=${s} class="check">
-          <input type="checkbox" checked=${!p.dashboard.hidden.includes(s)}
-            onChange=${() => save({dashboard: {hidden: toggleList(p.dashboard.hidden, s)}}, "Dashboard saved.")}/>
-          ${SECTION_WORDS[s] || s}</label>`)}</div></div>
       <div class="edit-field"><label>Notify me when</label><div>
         ${Object.entries(d.notification_kinds).map(([k, words]) => html`<label key=${k} class="check" style=${{display: "block"}}>
           <input type="checkbox" checked=${p.notifications[k]}
