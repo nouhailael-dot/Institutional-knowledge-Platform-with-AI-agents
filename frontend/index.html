@@ -783,7 +783,7 @@
 <link rel="stylesheet" href="/review.css?v=20261112b"/>
 <link rel="stylesheet" href="/discovery.css?v=20261112b"/>
 <link rel="stylesheet" href="/datafeed.css?v=20261113b"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261120a"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261120c"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -817,8 +817,8 @@ import {createReviewPage} from "./review.js?v=20261112g";
 import {createDiscoveryPage} from "./discovery.js?v=20261113a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261113b";
-import {createAccountPages} from "./accounts.js?v=20261120a";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261120a";
+import {createAccountPages} from "./accounts.js?v=20261120c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261120c";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});

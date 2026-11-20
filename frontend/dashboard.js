@@ -11,7 +11,8 @@
 //
 // The same page with the shared login and with individual accounts (GHUS,
 // 20 Nov 2026: keep this design). With an account, what a role cannot open is
-// left out, and Admins and Editors/Reviewers also see Pending Deletion.
+// left out; Notifications are added, and Admins and Editors/Reviewers also see
+// Pending Deletion. My profile chooses which parts show.
 
 import {NAVIGATE, formatUsd, isRunning, requestStatus, visibleRequests} from "./discovery.js?v=20261113a";
 import {usDate} from "./dates.js?v=20261110b";
@@ -246,6 +247,7 @@ export function createDashboardPage({html, useState, useEffect}) {
     refresh: icon(html, html`<path d="M19.5 12a7.5 7.5 0 0 1-13.2 4.9M4.5 12a7.5 7.5 0 0 1 13.2-4.9"/><path d="M17.7 3.5v3.6h-3.6M6.3 20.5v-3.6h3.6"/>`),
     building: icon(html, html`<path d="M4.5 20.5h15M6.5 20.5V5.5h11v15M10 9h1M13 9h1M10 12.5h1M13 12.5h1M10.5 20.5V17h3v3.5"/>`),
     person: icon(html, html`<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.7 3.6-5.5 7-5.5s6.2 1.8 7 5.5"/>`),
+    bell: icon(html, html`<path d="M6 9.5a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4s2-1.5 2-6.5"/><path d="M10 19.5a2 2 0 0 0 4 0"/>`),
     trash: icon(html, html`<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5"/>`),
     arrow: icon(html, html`<path d="M7 17 17 7M9 7h8v8"/>`, 16),
     chevron: icon(html, html`<path d="m9.5 6 6 6-6 6"/>`, 18),
@@ -275,17 +277,18 @@ export function createDashboardPage({html, useState, useEffect}) {
     </button></li>`;
   }
 
-  function Panel({symbol, title, lead, empty, rows, footer, onFooter, wide}) {
-    return html`<section class=${"dash-panel" + (wide ? " dash-wide" : "")}>
+  // ``span``: "two" or "all" columns of the panel grid.
+  function Panel({symbol, title, lead, empty, rows, footer, onFooter, span}) {
+    return html`<section class=${"dash-panel" + (span ? ` dash-span-${span}` : "")}>
       <header><span class="dash-panel-icon">${symbol}</span><div><h3>${title}</h3><p>${lead}</p></div></header>
       ${rows.length === 0 ? html`<p class="muted dash-empty">${empty}</p>`
         : html`<ul class="dash-entries">${rows}</ul>`}
-      <button class="dash-footer" type="button" onClick=${onFooter}>${footer} ${ICONS.arrow}</button>
+      ${footer && html`<button class="dash-footer" type="button" onClick=${onFooter}>${footer} ${ICONS.arrow}</button>`}
     </section>`;
   }
 
   // Records waiting for permanent removal, in this page's own style (Phase 6 card).
-  function DeletionPanel() {
+  function DeletionPanel({span}) {
     const [state, setState] = useState({loaded: false, rows: [], error: null});
     useEffect(() => {
       let live = true;
@@ -295,7 +298,7 @@ export function createDashboardPage({html, useState, useEffect}) {
     }, []);
     const {count, soonest} = widgetSummary(state.rows);
     const more = count > soonest.length ? ` (${count - soonest.length} more)` : "";
-    return html`<div class="dash-panels"><${Panel} wide=${true} symbol=${ICONS.trash}
+    return html`<${Panel} span=${span} symbol=${ICONS.trash}
       title=${`Pending Deletion${state.loaded && !state.error ? ` · ${count}` : ""}`}
       lead="Deleted records, removed for good after 30 days. Restore one before then."
       empty=${!state.loaded ? "Loading…" : state.error || "No records are waiting for permanent removal."}
@@ -303,13 +306,56 @@ export function createDashboardPage({html, useState, useEffect}) {
         meta=${`${kindLabel(r.entity_type)}${r.deleted_by ? ` · deleted by ${r.deleted_by}` : ""}`}
         state=${isUrgent(r.days_remaining) ? "attention" : "paused"} label=${daysLeftLabel(r.days_remaining)}
         onOpen=${() => navigate({tab: DELETIONS_TAB})}/>`)}
-      footer=${`View all${more}`} onFooter=${() => navigate({tab: DELETIONS_TAB})}/></div>`;
+      footer=${`View all${more}`} onFooter=${() => navigate({tab: DELETIONS_TAB})}/>`;
+  }
+
+  // The signed-in person's latest notifications (the bell's list), in this page's style.
+  function NotificationsPanel({span}) {
+    const [state, setState] = useState({loaded: false, items: [], unread: 0, error: null});
+    function load() {
+      get("/api/account/notifications").then(r => setState({loaded: true, items: r.items || [],
+        unread: r.unread || 0, error: null}))
+        .catch(() => setState(prev => ({...prev, loaded: true, error: "Notifications could not be read right now."})));
+    }
+    useEffect(() => {
+      load();
+      const timer = setInterval(load, 120000);
+      return () => clearInterval(timer);
+    }, []);
+    async function open(item) {
+      // The one change this page makes: a notification opened here is read.
+      if (!item.read_at) {
+        try { await fetch(`/api/account/notifications/${encodeURIComponent(item.id)}/read`, {method: "POST"}); }
+        catch { /* the bell will show it again */ }
+        load();
+      }
+      if (item.link) navigate({tab: item.link});
+    }
+    return html`<${Panel} span=${span} symbol=${ICONS.bell}
+      title=${`Notifications${state.unread ? ` · ${state.unread} new` : ""}`}
+      lead="What happened to my work and what needs me"
+      empty=${!state.loaded ? "Loading…" : state.error || "Nothing new."}
+      rows=${state.items.slice(0, PANEL_SIZE).map(n => html`<${Entry} key=${n.id} symbol=${ICONS.bell} name=${n.title}
+        meta=${[n.body, whenText(n.created_at)].filter(Boolean).join(" · ")}
+        state=${n.read_at ? null : "pending_review"} label="New" onOpen=${() => open(n)}/>`)}/>`;
   }
 
   // ``permissions``: the signed-in account's; null with the shared login (everything shows).
   return function Dashboard({permissions = null} = {}) {
     const can = p => !permissions || permissions.includes(p);
     const seesRequests = can("requests.view");
+    // What this person chose to hide in My profile (individual accounts only).
+    const [hidden, setHidden] = useState([]);
+    useEffect(() => {
+      if (!permissions) return undefined;
+      get("/api/account/preferences").then(r => setHidden(r.preferences?.dashboard?.hidden || [])).catch(() => {});
+      const changed = e => setHidden(e.detail?.dashboard?.hidden || []);
+      window.addEventListener("compass:preferences", changed);
+      return () => window.removeEventListener("compass:preferences", changed);
+    }, [permissions]);
+    const show = key => !hidden.includes(key);
+    const notes = Boolean(permissions) && show("notifications");
+    const deletions = Boolean(permissions) && can(DELETE_PERMISSION) && show("deletions");
     // Each list arrives on its own (requests take a while): null until then.
     const [data, setData] = useState(seesRequests ? {requests: null, updates: null, oneTime: null, maps: null}
       : {requests: [], updates: [], oneTime: [], maps: null});
@@ -383,16 +429,21 @@ export function createDashboardPage({html, useState, useEffect}) {
       <p class="lead dash-lead">Your COMPASS workspace at a glance.</p>
       ${failed.length > 0 && html`<p class="discovery-message error">Could not read: ${failed.join(", ")}.</p>`}
 
-      <div class="dash-summaries">
+      ${show("summary") && html`<div class="dash-summaries">
         <${Summary} icon=${ICONS.clipboard} count=${mapsReady ? counts.mapsPending : null} noun="map" label="Pending Review"/>
         ${seesRequests && html`<${Summary} icon=${ICONS.layers} count=${requestsReady ? counts.newUpdates : null} noun="request" label="New Updates"/>`}
         ${seesRequests && html`<${Summary} icon=${ICONS.alert} count=${requestsReady ? counts.attention : null} noun="request" label="Needing Attention"/>`}
-      </div>
+      </div>`}
 
-      ${seesRequests && html`<div class="dash-spending">
+      ${seesRequests && show("spending") && html`<div class="dash-spending">
         <span class="dash-spending-icon">${ICONS.coins}</span>
         <div class="dash-spending-label"><strong>My Spending This Month</strong><span>${monthRangeLabel(now)}</span></div>
         <strong class="dash-spending-amount">${allReady ? formatUsd(spent) || "$0.00" : "…"}</strong>
+      </div>`}
+
+      ${(notes || deletions) && html`<div class="dash-panels">
+        ${notes && html`<${NotificationsPanel} span=${deletions ? "two" : "all"}/>`}
+        ${deletions && html`<${DeletionPanel} span=${notes ? null : "all"}/>`}
       </div>`}
 
       <div class="dash-activity-head">
@@ -404,30 +455,29 @@ export function createDashboardPage({html, useState, useEffect}) {
       </div>
 
       <div class="dash-panels">
-        <${Panel} symbol=${ICONS.map} title="Recent Maps" lead="My latest mapping requests (Explore and Map)"
+        ${show("maps") && html`<${Panel} symbol=${ICONS.map} title="Recent Maps" lead="My latest mapping requests (Explore and Map)"
           empty=${!mapsReady ? "Loading…" : `No maps in the last ${days} days on this computer.`}
           rows=${maps.map(m => html`<${Entry} key=${m.id} symbol=${MAP_ICONS[m.category]} name=${m.name}
             meta=${`${m.category} · ${shortDate(m.date)}`} state=${m.state}
             onOpen=${() => navigate({tab: "map", map_id: m.id})}/>`)}
-          footer="View all maps" onFooter=${() => navigate({tab: "map"})}/>
+          footer="View all maps" onFooter=${() => navigate({tab: "map"})}/>`}
 
-        ${seesRequests && html`<${Panel} symbol=${ICONS.refresh} title="Recent Requests"
+        ${seesRequests && show("requests") && html`<${Panel} symbol=${ICONS.refresh} title="Recent Requests"
           lead="My latest update and monitoring requests (Monitor and Update)"
           empty=${requestsReady ? `No requests in the last ${days} days.` : "Loading requests…"}
           rows=${requests.map(r => html`<${Entry} key=${r.id} symbol=${ICONS.refresh} name=${r.name}
             meta=${`${r.type} · ${shortDate(r.date)}`} state=${r.state} onOpen=${() => openRequest(r.id)}/>`)}
           footer="View all requests" onFooter=${() => navigate({tab: "discovery", view: "requests"})}/>`}
 
-        <${Panel} symbol=${ICONS.building} title="Recent Directory Activity"
+        ${show("directory") && html`<${Panel} symbol=${ICONS.building} title="Recent Directory Activity"
           lead="My latest contributions to the Ecosystem Directory"
           empty=${!activity.signedIn ? `Nothing in the last ${days} days.`
             : activity.error || (activity.loaded ? `Nothing in the last ${days} days.` : "Loading…")}
           rows=${records.map((r, i) => html`<${Entry} key=${`${r.id}:${i}`} symbol=${RECORD_ICONS[r.kind] || ICONS.building}
             name=${r.name} meta=${`${r.category} · ${r.action}`}
             onOpen=${r.id ? () => navigate({tab: "browse", record: {kind: r.kind, id: r.id}}) : null}/>`)}
-          footer="Open Directory" onFooter=${() => navigate({tab: "browse"})}/>
+          footer="Open Directory" onFooter=${() => navigate({tab: "browse"})}/>`}
       </div>
-      ${permissions && can(DELETE_PERMISSION) && html`<${DeletionPanel}/>`}
     </div>`;
   };
 }

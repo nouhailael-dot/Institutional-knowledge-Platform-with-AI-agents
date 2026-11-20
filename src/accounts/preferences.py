@@ -20,8 +20,21 @@ NOTIFY_KINDS = {
     "decisions": "Someone decided on or changed a record I brought in",
     "schedule": "One of my requests runs in the next 24 hours",
 }
+# What My profile offers to show or hide on the Dashboard (GHUS, 20 Nov 2026: the
+# original Dashboard, with Notifications and Pending Deletion added), and the
+# permission each needs (None: everyone).
+DASHBOARD_CHOICES = {"summary": None, "spending": "requests.view", "notifications": None,
+                     "deletions": "records.delete_permanent", "maps": None, "requests": "requests.view",
+                     "directory": None}
+# Every name a saved preference may hold: the choices above and the earlier
+# personal Dashboard's, so preferences saved before still load.
 DASHBOARD_SECTIONS = ("notifications", "runs", "activity", "records", "requests", "maps", "imports",
-                      "reviews", "sectors")
+                      "reviews", "sectors", "summary", "spending", "deletions", "directory")
+
+
+def dashboard_choices(permissions) -> list[str]:
+    held = set(permissions or ())
+    return [name for name, need in DASHBOARD_CHOICES.items() if need is None or need in held]
 DIRECTORY_TABS = ("actors", "hubs", "people", "events")
 
 DEFAULTS = {

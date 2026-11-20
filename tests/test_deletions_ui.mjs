@@ -56,7 +56,8 @@ test('Review Results keeps Rejected to itself: no deleted records there', () => 
 test('the card is on the Dashboard only for deleters and View all opens the page', () => {
   // 20 Nov 2026: the original Dashboard design for everyone; the card is a panel in its style.
   const dashboard = read('../frontend/dashboard.js');
-  assert.match(dashboard, /\$\{permissions && can\(DELETE_PERMISSION\) && html`<\$\{DeletionPanel\}\/>`\}/);
+  assert.match(dashboard, /const deletions = Boolean\(permissions\) && can\(DELETE_PERMISSION\) && show\("deletions"\);/);
+  assert.match(dashboard, /\$\{deletions && html`<\$\{DeletionPanel\} span=/);
   assert.match(dashboard, /footer=\$\{`View all\$\{more\}`\} onFooter=\$\{\(\) => navigate\(\{tab: DELETIONS_TAB\}\)\}/);
   assert.match(dashboard, /widgetSummary\(state\.rows\)/);
   const panel = read('../frontend/deletions.js');

@@ -63,6 +63,7 @@
 
 /* 12 Nov 2026: waiting its turn behind another run. */
 .dash-pill.queued{background:#eef2ff;color:#3730a3;border-color:#c7d2fe}
-
-/* 20 Nov 2026: Pending Deletion spans the whole row under the three panels. */
-.dash-panel.dash-wide{grid-column:1/-1}
+/* 20 Nov 2026: Notifications (two columns) and Pending Deletion side by side, above My Recent Activity. */
+.dash-panel.dash-span-two{grid-column:span 2}
+.dash-panel.dash-span-all{grid-column:1/-1}
+@media (max-width:1100px){.dash-panel.dash-span-two{grid-column:auto}}

@@ -367,6 +367,9 @@ export function createAccountPages({html, useState, useEffect}) {
   }
 
   // -- Preferences (on My profile) -------------------------------------------------------------
+  // The Dashboard's parts a person may hide (the original Dashboard, 20 Nov 2026).
+  const SECTION_WORDS = {summary: "Counts at the top", spending: "My Spending This Month", notifications: "Notifications",
+    deletions: "Pending Deletion", maps: "Recent Maps", requests: "Recent Requests", directory: "Recent Directory Activity"};
 
   function PreferencesCard() {
     const [d, setD] = useState(null);
@@ -405,6 +408,11 @@ export function createAccountPages({html, useState, useEffect}) {
               <button class="example" type="button" style=${{marginLeft: "8px"}}
                 onClick=${() => save({directory: {saved_filters: p.directory.saved_filters.filter(x => x !== f)}},
                   `Removed '${f.name}'.`)}>Remove</button></div>`)}</div></div>
+      <div class="edit-field"><label>Dashboard shows</label><div class="pref-chips">
+        ${d.dashboard_sections.map(s => html`<label key=${s} class="check">
+          <input type="checkbox" checked=${!p.dashboard.hidden.includes(s)}
+            onChange=${() => save({dashboard: {hidden: toggleList(p.dashboard.hidden, s)}}, "Dashboard saved.")}/>
+          ${SECTION_WORDS[s] || s}</label>`)}</div></div>
       <div class="edit-field"><label>Notify me when</label><div>
         ${Object.entries(d.notification_kinds).map(([k, words]) => html`<label key=${k} class="check" style=${{display: "block"}}>
           <input type="checkbox" checked=${p.notifications[k]}

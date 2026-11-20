@@ -122,7 +122,10 @@ test('the page is navigation only and every destination listens for it', () => {
     'Open Directory']) {
     assert.ok(page.includes(words), words);
   }
-  assert.ok(!/method:\s*"POST"/.test(page), 'the Dashboard never starts or changes anything');
+  // It never starts or changes anything; the one exception is marking an opened notification read.
+  const posts = page.split(/\r?\n/).filter(line => /method:\s*"POST"/.test(line));
+  assert.equal(posts.length, 1);
+  assert.match(posts[0], /\/api\/account\/notifications\/\$\{encodeURIComponent\(item\.id\)\}\/read/);
   const shell = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
   assert.ok(shell.includes('window.addEventListener(NAVIGATE,go)'));
   assert.ok(shell.includes('restore(id);};'), 'Explore and Map opens the map');
@@ -191,6 +194,20 @@ test('one Dashboard for everyone: the original design, adapted to the role', () 
   // The shared login sees everything; a Viewer (no requests.view) never asks for requests.
   assert.match(src, /const can = p => !permissions \|\| permissions\.includes\(p\);/);
   assert.match(src, /if \(!seesRequests\) return;/);
-  assert.match(src, /\$\{seesRequests && html`<\$\{Panel\} symbol=\$\{ICONS\.refresh\} title="Recent Requests"/);
-  assert.match(src, /\$\{seesRequests && html`<div class="dash-spending">/);
+  assert.match(src, /\$\{seesRequests && show\("requests"\) && html`<\$\{Panel\} symbol=\$\{ICONS\.refresh\} title="Recent Requests"/);
+  assert.match(src, /\$\{seesRequests && show\("spending"\) && html`<div class="dash-spending">/);
+});
+
+test('the original Dashboard gains Notifications and Pending Deletion, and My profile chooses what shows', () => {
+  const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
+  assert.match(src, /const notes = Boolean\(permissions\) && show\("notifications"\);/);
+  assert.match(src, /const deletions = Boolean\(permissions\) && can\(DELETE_PERMISSION\) && show\("deletions"\);/);
+  assert.match(src, /<\$\{NotificationsPanel\} span=\$\{deletions \? "two" : "all"\}\/>/);
+  for (const key of ['summary', 'spending', 'maps', 'requests', 'directory']) assert.ok(src.includes(`show("${key}")`), key);
+  assert.match(src, /get\("\/api\/account\/preferences"\)/);
+  assert.match(src, /window\.addEventListener\("compass:preferences", changed\)/);
+  const profile = fs.readFileSync(new URL('../frontend/accounts.js', import.meta.url), 'utf8');
+  assert.match(profile, /<label>Dashboard shows<\/label>/);
+  for (const words of ['Counts at the top', 'My Spending This Month', 'Notifications', 'Pending Deletion', 'Recent Maps',
+    'Recent Requests', 'Recent Directory Activity']) assert.ok(profile.includes(`"${words}"`), words);
 });

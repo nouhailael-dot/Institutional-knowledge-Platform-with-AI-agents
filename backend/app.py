@@ -2488,12 +2488,12 @@ class PreferencesChange(BaseModel):
 
 @app.get("/api/account/preferences")
 def account_preferences():
-    from src.accounts.preferences import DASHBOARD_SECTIONS, NOTIFY_KINDS
+    from src.accounts.preferences import NOTIFY_KINDS, dashboard_choices
     store, me = _accounts_or_none()
     if me is None:
         raise HTTPException(status_code=401, detail="Sign in first.")
     return {"preferences": store.preferences(me.user_id), "notification_kinds": NOTIFY_KINDS,
-            "dashboard_sections": list(DASHBOARD_SECTIONS)}
+            "dashboard_sections": dashboard_choices(me.permissions)}
 
 
 @app.put("/api/account/preferences")
