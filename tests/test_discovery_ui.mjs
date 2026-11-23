@@ -777,3 +777,17 @@ test('a running run says its findings are counted when it finishes, not "0 findi
   assert.equal(runFindingsLabel({status: 'succeeded', staged_count: 1, review_item_count: 0}), '1 finding');
   assert.equal(runFindingsLabel({status: 'failed', actor_results: [], found_count: 0}), '0 findings');
 });
+
+test('a run whose process is gone says Interrupted, explains it, and can be run again', async () => {
+  const {stoppedLabel, stoppedMessage, runFindingsLabel, requestStatus, isRunning} = await import('../frontend/discovery.js');
+  const dead = {status: 'running', stalled: true, interrupted: true};
+  const old = {status: 'running', stalled: true, interrupted: false};
+  assert.equal(stoppedLabel(dead), 'Interrupted');
+  assert.equal(stoppedLabel(old), 'Stopped responding');
+  assert.match(stoppedMessage({runs: [dead]}), /^The last run was interrupted before it finished \(the server restarted\)/);
+  assert.match(stoppedMessage({runs: [old]}), /^The last run stopped responding/);
+  assert.equal(runFindingsLabel(dead), 'No findings recorded');
+  const request = {status: 'active', runs: [dead]};
+  assert.equal(isRunning(request), false);                 // Run now is offered again
+  assert.equal(requestStatus(request), 'stalled');
+});
