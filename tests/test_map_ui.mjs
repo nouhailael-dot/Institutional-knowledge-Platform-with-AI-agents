@@ -185,3 +185,20 @@ test('unfinished research continues only after the explicit button action',async
   assert.equal(resumes.length,1);
   assert.equal(JSON.parse(resumes[0][1].body).approve,true);
 });
+
+// 23 Nov 2026: Verify on a map card used to only mark it ready, and nothing reached
+// the Directory unless "Save verified to Compass" was also clicked. Verify now
+// confirms on the card and saves that one result; a card left ready the old way
+// offers "Save to Compass".
+test('Verify on a map card saves it to Compass after one confirmation', () => {
+  const card = script.slice(script.indexOf('function MapCard('), script.indexOf('function requestFromRows('));
+  assert.match(card, /onClick=\$\{\(\)=>setConfirmVerify\(true\)\}>\$\{ready\?"Save to Compass":"Verify"\}/);
+  assert.doesNotMatch(card, /review\(ready\?"unready":"ready"\)/);
+  assert.match(card, /<\$\{VerifyBox\} e=\$\{e\} jobId=\$\{jobId\}/);
+  assert.match(card, /Verified, not saved yet/);
+  const box = script.slice(script.indexOf('function VerifyBox('), script.indexOf('function BuildMap('));
+  assert.match(box, /\/api\/map\/\$\{jobId\}\/save-check/);
+  assert.match(box, /\/api\/map\/\$\{jobId\}\/save`/);
+  assert.match(box, /records:\[record\(\)\],attest/);
+  assert.match(box, /disabled=\$\{busy\|\|!can\|\|!attest\}/);
+});
