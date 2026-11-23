@@ -1070,7 +1070,7 @@ function SessionFoot({account,onProfile}){
   return html`<div class="sidebar-foot">
     <button class="session-name" type="button" title="My profile" onClick=${onProfile}>
       <strong>${account.full_name}</strong></button>
-    <span>${account.role_label||"No role"}</span>
+    <span style=${{marginLeft:"8px"}}>${account.role_label||"No role"}</span>
     <button class="example" type="button" style=${{display:"block",marginTop:"10px"}} disabled=${leaving}
       onClick=${signOut}>${leaving?"Signing out…":"Sign out"}</button>
   </div>`;
