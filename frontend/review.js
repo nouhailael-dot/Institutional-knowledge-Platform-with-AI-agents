@@ -25,6 +25,7 @@ import {
   TRIGGERS,
 } from "./labels.js?v=20261105a";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261110b";
+import {askConfirm} from "./dialog.js?v=20261123a";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
@@ -2353,10 +2354,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
      * asks first. A type belongs to exactly one category, so carrying it over
      * would record something untrue.
      */
-    function editCategory(value) {
+    async function editCategory(value) {
       const currentType = String(draft.category_type ?? "").trim();
       if (currentType && !isValidPair(value, currentType)) {
-        if (!window.confirm(SENTENCES.categoryChangeWarning)) return;
+        if (!(await askConfirm(SENTENCES.categoryChangeWarning, {ok: "Change category"}))) return;
         setDraft(current => ({...current, actor_category: value, category_type: ""}));
         return;
       }
@@ -2436,7 +2437,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         candidate: selected, reviewer, rejectionReason, rejectionOther, decisionKind, targetId,
         busy, admissionConfigured: data.admission_configured, draftErrors,
       })) return;
-      if (!window.confirm(confirmText(decisionKind))) return;
+      if (!(await askConfirm(confirmText(decisionKind), {ok: "Confirm"}))) return;
       const mapKey = `${selected.candidate_id}:${decisionKind}`;
       if (!keys.current.has(mapKey)) keys.current.set(mapKey, decisionKey());
       setBusy(true); setError(""); setFeedback("");
@@ -2483,7 +2484,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         .filter(row => categoryIds.includes(row.candidate_id));
       if (!canConfirmCategories({selectedIds: rows.map(row => row.candidate_id), reviewer,
         busy, admissionConfigured: data.admission_configured})) return;
-      if (!window.confirm(`Confirm the shown category for ${rows.length} organizations?`)) return;
+      if (!(await askConfirm(`Confirm the shown category for ${rows.length} organizations?`, {ok: "Confirm"}))) return;
       const keyName = `categories:${rows.map(row => row.candidate_id).sort().join(",")}`;
       if (!keys.current.has(keyName)) keys.current.set(keyName, decisionKey());
       setBusy(true); setError(""); setFeedback("");
@@ -2510,7 +2511,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       const label = kind === "location"
         ? (keepUnlocated ? "keep unlocated" : `locate at ${itemCity}, ${itemState}`)
         : (approve ? "approve this relationship" : "reject this relationship");
-      if (!window.confirm(`Confirm: ${label} for ${selected.display_name}?`)) return;
+      if (!(await askConfirm(`Confirm: ${label} for ${selected.display_name}?`, {ok: "Confirm"}))) return;
       const keyName = `${selected.candidate_id}:item:${label}`;
       if (!keys.current.has(keyName)) keys.current.set(keyName, decisionKey());
       setBusy(true); setError(""); setFeedback("");
@@ -2552,11 +2553,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       const plan = deep?.plan;
       if (!deepTarget || !plan?.can_check || deep.state === "running") return;
       const items = plan.fields.map(fieldLabel).join(", ");
-      if (!window.confirm([`Run Deep Pull for ${deepTarget.name} in ${plan.topic?.name || deepTarget.topic}?`,
+      if (!(await askConfirm([`Run Deep Pull for ${deepTarget.name} in ${plan.topic?.name || deepTarget.topic}?`,
         "", `It reads up to three of its own pages for ${plan.fields.length} selected items: ${items}.`,
         deepCostLine(plan.cost), "",
         "What the pages state is written to the directory with its source. Values set by GHUS and "
-          + "conflicting readings are not written over; they wait in Review Results."].join("\n"))) return;
+          + "conflicting readings are not written over; they wait in Review Results."].join("\n"),
+        {ok: "Run Deep Pull"}))) return;
       setDeep({...deep, state: "running"});
       try {
         const body = JSON.stringify({scope: "general", depth: "deep", topic: deepTarget.topic});
@@ -2579,7 +2581,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       if (!selected || busy || !reviewer.trim()) return;
       const text = [`${selected.display_name} — ${row.label}: ${choice.label}`, "", choice.consequence,
         "", "Nothing is deleted; every value stays in the history."].join("\n");
-      if (!window.confirm(text)) return;
+      if (!(await askConfirm(text, {ok: "Confirm"}))) return;
       const mapKey = `${selected.candidate_id}:${row.id}:${choice.value}`;
       if (!keys.current.has(mapKey)) keys.current.set(mapKey, decisionKey());
       setBusy(true); setError(""); setFeedback("");

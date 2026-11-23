@@ -109,9 +109,9 @@ test('the Category Type dropdown depends on the chosen category, and cross pairs
 test('changing the Organization Category clears an incompatible type after a confirmation', () => {
   // The control asks before it clears, because carrying a type across
   // categories would record a relationship that is not true.
-  assert.match(component, /function editCategory\(value\)/);
+  assert.match(component, /async function editCategory\(value\)/);
   assert.match(component, /isValidPair\(value, currentType\)/);
-  assert.match(component, /window\.confirm\(SENTENCES\.categoryChangeWarning\)/);
+  assert.match(component, /await askConfirm\(SENTENCES\.categoryChangeWarning, \{ok: "Change category"\}\)/);
   assert.match(component, /category_type: ""/);
 });
 
@@ -524,7 +524,7 @@ test('decisions, the sticky footer and the queue are reachable and keyboard-oper
   assert.match(component, /BUTTONS\.saveEdits/);
   assert.match(component, /request\(`\/api\/review\/candidates\/\$\{selectedId\}`\)/);
   assert.match(component, /request\(\s*`\/api\/review\/candidates\/\$\{selected\.candidate_id\}\/decision`/);
-  assert.match(component, /window\.confirm/);
+  assert.match(component, /await askConfirm\(/);                 // Compass's own pop-up (23 Nov 2026)
   assert.match(component, /target="_blank" rel="noreferrer"/);
   assert.match(component, /aria-pressed=/);
   assert.match(component, /aria-live="polite"/);
@@ -846,7 +846,7 @@ test('changing the actor category never discards what the reviewer typed', () =>
   lightPullBoxes(candidate, 'university_academic');
   assert.equal(JSON.stringify(candidate.reviewed_payload), before);
   // Only an incompatible category TYPE is cleared, and only after confirming.
-  assert.match(component, /window\.confirm\(SENTENCES\.categoryChangeWarning\)/);
+  assert.match(component, /await askConfirm\(SENTENCES\.categoryChangeWarning, \{ok: "Change category"\}\)/);
 });
 
 // --------------------------------------- requests and runs live in Discovery

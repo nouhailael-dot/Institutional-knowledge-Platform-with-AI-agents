@@ -5,6 +5,7 @@
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
 import {createDateInput, eventSpan, usDate} from "./dates.js?v=20261110b";
+import {askConfirm} from "./dialog.js?v=20261123a";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -2289,7 +2290,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     }, [requests, updates, watchUntil]);
 
     async function runNow(request) {
-      if (!window.confirm(`Run “${request.title}” now? It searches the web live and adds what passes the quality checks.`)) return;
+      if (!(await askConfirm(`Run “${request.title}” now? It searches the web live and adds what passes the quality checks.`,
+        {title: "Run this request now?", ok: "Run now"}))) return;
       setBusy(true); setMessage(null);
       try {
         const answer = await api(`/api/discovery/requests/${request.subscription_id}/run`, {method: "POST"});
@@ -2301,7 +2303,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     }
 
     async function onAction(request, action) {
-      if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
+      if (action === "cancel" && !(await askConfirm(`Cancel “${request.title}”? It will not run again.`,
+        {title: "Cancel this request?", ok: "Cancel request", cancel: "Keep it", danger: true}))) return;
       setBusy(true); setMessage(null);
       try {
         await api(`/api/discovery/requests/${request.subscription_id}/${action}`, {method: "POST"});
@@ -2311,9 +2314,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     }
 
     async function onUpdateAction(request, action) {
-      if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
-      if (action === "run" && !window.confirm(`Run “${request.title}” now? It reads each organization's `
-        + "sources; findings go to Review Results.")) return;
+      if (action === "cancel" && !(await askConfirm(`Cancel “${request.title}”? It will not run again.`,
+        {title: "Cancel this request?", ok: "Cancel request", cancel: "Keep it", danger: true}))) return;
+      if (action === "run" && !(await askConfirm(`Run “${request.title}” now? It reads each organization's `
+        + "sources; findings go to Review Results.", {title: "Run this update now?", ok: "Run now"}))) return;
       setBusy(true); setMessage(null);
       try {
         const answer = await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});

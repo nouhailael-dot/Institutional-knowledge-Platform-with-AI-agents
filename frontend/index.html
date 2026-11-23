@@ -813,12 +813,13 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261112g";
-import {createDiscoveryPage} from "./discovery.js?v=20261123b";
+import {createReviewPage} from "./review.js?v=20261123a";
+import {createDiscoveryPage} from "./discovery.js?v=20261123c";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
-import {createDataFeedPage} from "./datafeed.js?v=20261113b";
+import {createDataFeedPage} from "./datafeed.js?v=20261123a";
 import {createAccountPages} from "./accounts.js?v=20261123c";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261123b";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261123c";
+import {askConfirm, showMessage} from "./dialog.js?v=20261123a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -885,7 +886,7 @@ function Ask({onCarryOver,onExplore}){
     try{
       const r=await fetch("/api/upload",{method:"POST",body:fd});
       if(!r.ok){ const d=await r.json().catch(()=>({detail:"Upload failed"}));
-        alert(d.detail||"Upload failed"); }
+        await showMessage(d.detail||"Upload failed"); }
       else{ const d=await r.json(); setDocId(d.doc_id); setDocName(d.name); }
     } finally { setUploading(false); if(fileRef.current) fileRef.current.value=""; }
   }
@@ -2632,7 +2633,8 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   async function settleCharges(){
     if(!activeJob.current||busy) return;
     const most=(cost?.reserved_usd||0).toFixed(2);
-    if(!window.confirm(`A step was cut off before its cost was recorded. Count it at the most it could have cost ($${most}) and go on?`)) return;
+    if(!(await askConfirm(`A step was cut off before its cost was recorded. Count it at the most it could have cost ($${most}) and go on?`,
+      {ok:"Count it and go on"}))) return;
     const id=activeJob.current, version=generation.current;
     try{
       const r=await post("/api/map/"+id+"/settle-charges",{approve:true});
