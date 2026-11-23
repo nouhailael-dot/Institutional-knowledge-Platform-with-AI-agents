@@ -1,0 +1,50 @@
+# Hosted (Linux) dependencies for the platform and the ghus-backend agents it
+# runs, in ONE environment (GHUS, 9 Nov 2026). Exact versions: the ones the
+# local shared server runs with today, so the host runs what was validated.
+#
+# torch is installed first, CPU-only, by the Dockerfile (the default Linux
+# wheel pulls several GB of CUDA libraries the host cannot use).
+#
+# Development tools (pytest, ruff, ipykernel) and the legacy Streamlit UI are
+# left out on purpose.
+
+# Web app
+fastapi==0.141.1
+starlette==1.6.0
+pydantic==2.13.5
+uvicorn[standard]==0.53.0
+python-multipart==0.0.32
+python-dotenv==1.2.3
+
+# Database
+psycopg[binary]==3.3.5
+psycopg2-binary==2.9.12
+SQLAlchemy==2.0.52
+alembic==1.19.2
+
+# Models and APIs
+anthropic==1.0.0
+voyageai==0.5.0
+httpx==0.28.1
+
+# Entity resolution (Review admission): frozen model, pinned exactly
+scikit-learn==1.9.0
+joblib==1.5.3
+numpy==2.3.5
+scipy==1.16.3
+pandas==2.3.3
+sentence-transformers==6.0.1
+transformers==5.16.1
+huggingface_hub==1.30.0
+tokenizers==0.23.2
+
+# Reading pages and files
+beautifulsoup4==4.15.0
+lxml==6.1.3
+PyYAML==6.0.3
+pypdf==6.19.0
+RapidFuzz==3.14.6
+
+# Exports
+openpyxl==3.1.5
+python-pptx==1.0.2

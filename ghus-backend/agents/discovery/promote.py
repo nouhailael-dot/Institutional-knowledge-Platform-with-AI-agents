@@ -151,6 +151,59 @@ class PromotionResult:
     fields_absorbed: list[str] = field(default_factory=list)
     review_id: str | None = None
     step_trace: list[str] = field(default_factory=list)
+    # A person stored before their organization is in the directory (13 Nov 2026):
+    # the organization's name, for the team to look up.
+    organization_missing: str | None = None
+
+
+# 12 Nov 2026: several requests may run at once, one per person. Each run checks
+# its finds against the records it loaded when it started, so two runs could
+# both create the same organization or event. Creation takes this lock and looks
+# one last time for one made by another run in the last hours.
+CREATE_LOCK = 550_002
+# The record a GHUS person decided on (agents.review.admission, used by Review and
+# the Data Feed). A person or event it creates is Verified, not parked (13 Nov 2026):
+# "parked" means found by an agent and not yet checked by anyone.
+HUMAN_DECISION_PROMPT = "human-review-admission-v1"
+# The fact a person keeps when their organization is not in the directory yet.
+PENDING_AFFILIATION_FACT = "affiliation_not_in_directory"
+RECENT_HOURS = 6
+
+
+def created_meanwhile(session, entity_type: str, payload: dict[str, object]) -> str | None:
+    """The id of the same record created by a parallel run, or None (takes the lock).
+
+    The same statements run in a dry run (which rolls back), so a dry run and a
+    live run execute the same SQL. Only PostgreSQL has these locks.
+    """
+    bind = getattr(session, "bind", None) or getattr(session, "get_bind", lambda: None)()
+    if getattr(getattr(bind, "dialect", None), "name", None) != "postgresql":
+        return None
+    session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": CREATE_LOCK})
+    name = str(payload.get("name") or payload.get("title") or "").strip()
+    if not name:
+        return None
+    since = f"now() - interval '{int(RECENT_HOURS)} hours'"
+    if entity_type == "actor":
+        website = str(payload.get("website") or "").strip().lower()
+        domain = (urlparse(website if "://" in website else f"https://{website}").hostname or "") \
+            if website else ""
+        domain = domain.removeprefix("www.")
+        row = session.execute(text(
+            "SELECT actor_id::text FROM actor WHERE merged_into_actor_id IS NULL "
+            f"AND created_at > {since} AND (lower(name) = lower(:name) "
+            "OR (:domain <> '' AND lower(coalesce(website_domain, '')) = :domain)) LIMIT 1"),
+            {"name": name, "domain": domain}).first()
+        return row[0] if row else None
+    if entity_type == "event":
+        day = _iso_day(payload.get("start_date") or payload.get("next_date"))
+        row = session.execute(text(
+            f"SELECT event_id::text FROM event WHERE created_at > {since} "
+            "AND lower(name) = lower(:name) "
+            "AND start_date IS NOT DISTINCT FROM CAST(:day AS date) LIMIT 1"),
+            {"name": name, "day": day}).first()
+        return row[0] if row else None
+    return None
 
 
 def guard_actor_absorb_route(staged: StagedRecord, route: RouteDecision) -> RouteDecision:
@@ -249,13 +302,21 @@ def promote(
     transaction = session.begin() if manage_transaction else None
     try:
         if route.zone == "create":
+            existing = created_meanwhile(session, "event", staged.normalized_payload)
+            if existing:
+                if transaction is not None:
+                    transaction.rollback()
+                return PromotionResult(action="created_by_another_run", entity_type="event",
+                                       zone="create", entity_id=existing, dry_run=not live)
+        if route.zone == "create":
             source_id = insert_source(
                 session,
                 source_url=staged.source_url,
                 fetched_at=staged.extracted_at,
                 description="agent discovery event create",
             )
-            event_id = _insert_event(session, staged.normalized_payload, source_id)
+            event_id = _insert_event(session, staged.normalized_payload, source_id,
+                                     reviewed=staged.prompt_version == HUMAN_DECISION_PROMPT)
             _append_event_topics(session, event_id=event_id, staged=staged, source_id=source_id)
             if _table_columns(session, "event_fact"):
                 _append_record_facts(session, entity_type="event", entity_id=event_id, staged=staged)
@@ -341,7 +402,21 @@ def _dry_run_result(result: PromotionResult, route: RouteDecision) -> PromotionR
     return result
 
 
-def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
+# 12 Nov 2026 (GHUS): every data value starts with a capital letter -
+# "Conference", not "conference". Short list values only; free text, names and
+# links are kept exactly as found.
+_CAPITALIZED_VALUES = frozenset({"event_type", "recurring_pattern", "access_type", "event_format",
+                                 "audience", "sector", "expected_attendance"})
+
+
+def _capitalized(field_name: str, value):
+    if field_name in _CAPITALIZED_VALUES and isinstance(value, str) and value[:1].islower():
+        return value[0].upper() + value[1:]
+    return value
+
+
+def _insert_event(session, payload: dict[str, object], source_id: str, *,
+                  reviewed: bool = False) -> str:
     name = payload.get("name") or payload.get("title")
     if not name:
         raise ValueError("cannot create event without name")
@@ -350,7 +425,7 @@ def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
     for field_name in EVENT_CREATE_FIELDS:
         value = payload.get(field_name)
         if _has_value(value):
-            cols[field_name] = value
+            cols[field_name] = _capitalized(field_name, value)
     # Architecture V2: a newly discovered event is parked until GHUS reviews it.
     columns = _table_columns(session, "event")
     # The event's own dates, when stated. next_date alone lost every end date.
@@ -359,7 +434,7 @@ def _insert_event(session, payload: dict[str, object], source_id: str) -> str:
         if day and (not columns or field_name in columns):
             cols[field_name] = day
     if "record_status" in columns:
-        cols["record_status"] = "parked"
+        cols["record_status"] = "verified" if reviewed else "parked"
     if "source_origin" in columns:
         cols["source_origin"] = _record_origin(payload)
     if "date_status" in columns:
@@ -449,9 +524,13 @@ _EVENT_COLUMN_FACTS = frozenset({"description", "themes"})
 _PERSON_COLUMN_FACTS = frozenset({"bio", "linkedin_url", "description"})
 # Fields the Data Feed and Explore and Map carry beside the facts block.
 _EVENT_EXTRA_FIELDS = ("event_format", "audience", "previous_edition", "match_explanation",
-                       "um6p_ocp_involvement", "organizer")
+                       "um6p_ocp_involvement", "organizer", "sector")
 _PERSON_EXTRA_FIELDS = ("department", "relevant_work", "work_location", "other_affiliations",
                         "um6p_ocp_connection")
+# What a GHUS reviewer may correct in Review beyond the record's own columns
+# (12 Nov 2026: "all boxes here should be editable"); each is kept as a fact.
+EVENT_REVIEW_FACT_FIELDS = tuple(f for f in _EVENT_EXTRA_FIELDS if f != "match_explanation")
+PERSON_REVIEW_FACT_FIELDS = _PERSON_EXTRA_FIELDS
 
 
 def _fact_moment(value, fallback) -> datetime:
@@ -503,7 +582,7 @@ def _append_record_facts(session, *, entity_type: str, entity_id: str, staged: S
                     written += 1
             continue
         append_entity_fact(session, entity_type=entity_type, entity_id=entity_id, fact_key=key,
-                           value=value, source_url=url, date_read=moment,
+                           value=_capitalized(key, value), source_url=url, date_read=moment,
                            created_by="agent:promote", live=True)
         written += 1
     return written
@@ -804,6 +883,14 @@ def map_new_actor(
 
     transaction = session.begin() if manage_transaction else None
     try:
+        if route.zone == "create":
+            existing = created_meanwhile(session, "actor", staged.normalized_payload)
+            if existing:
+                if transaction is not None:
+                    transaction.rollback()
+                return PromotionResult(action="created_by_another_run", entity_type="actor",
+                                       zone="create", entity_id=existing, dry_run=not live,
+                                       step_trace=trace)
         source_id = insert_source(
             session,
             source_url=staged.source_url,
@@ -1835,7 +1922,16 @@ def _promote_person(
             )
             actor_id = str(metadata.get("affiliation_actor_id") or "").strip()
             created_affiliation_stub = metadata.get("create_affiliation_stub") is True
-            if created_affiliation_stub:
+            missing_organization = None
+            if created_affiliation_stub and "status" in _actor_columns(session):
+                # 13 Nov 2026 (GHUS): an organization that is not in the directory
+                # no longer stops its people. Architecture V2 cannot create it
+                # without a category (nothing is invented), so the person is stored
+                # with the organization's name kept beside them, unlinked, and the
+                # team is told to look the organization up.
+                missing_organization = str(metadata["affiliation_stub_name"]).strip()
+                actor_id = ""
+            elif created_affiliation_stub:
                 actor_id = _insert_actor(
                     session,
                     {"name": str(metadata["affiliation_stub_name"]).strip()},
@@ -1847,22 +1943,32 @@ def _promote_person(
                 staged.normalized_payload,
                 source_id,
                 confidence=float(route.score),
+                reviewed=staged.prompt_version == HUMAN_DECISION_PROMPT,
             )
             role = str(staged.normalized_payload["role"]).strip()
-            _insert_person_affiliation(
-                session,
-                person_id=person_id,
-                actor_id=actor_id,
-                role=role,
-            )
-            _insert_person_discovery_profile(
-                session,
-                staged=staged,
-                person_id=person_id,
-                actor_id=actor_id,
-                source_id=source_id,
-                needs_actor_enrichment=created_affiliation_stub,
-            )
+            if actor_id:
+                _insert_person_affiliation(
+                    session,
+                    person_id=person_id,
+                    actor_id=actor_id,
+                    role=role,
+                )
+                _insert_person_discovery_profile(
+                    session,
+                    staged=staged,
+                    person_id=person_id,
+                    actor_id=actor_id,
+                    source_id=source_id,
+                    needs_actor_enrichment=created_affiliation_stub,
+                )
+            elif missing_organization and _table_columns(session, "person_fact"):
+                from agents.enrichment.decisions import append_entity_fact
+
+                append_entity_fact(session, entity_type="person", entity_id=person_id,
+                                   fact_key=PENDING_AFFILIATION_FACT, value=missing_organization,
+                                   source_url=staged.source_url,
+                                   date_read=_fact_moment(None, staged.extracted_at),
+                                   created_by="agent:promote", live=True)
             if _table_columns(session, "person_fact"):
                 _append_record_facts(session, entity_type="person", entity_id=person_id,
                                      staged=staged)
@@ -1873,6 +1979,7 @@ def _promote_person(
                 zone="create",
                 entity_id=person_id,
                 dry_run=False,
+                organization_missing=missing_organization,
             )
         elif route.zone == "review":
             source_id = insert_source(
@@ -2058,6 +2165,7 @@ def _insert_person(
     source_id: str,
     *,
     confidence: float,
+    reviewed: bool = False,
 ) -> str:
     person_id = str(uuid.uuid4())
     cols: dict[str, object] = {
@@ -2068,12 +2176,24 @@ def _insert_person(
         "verification_status": "needs_review",
         "confidence": confidence,
     }
-    # Architecture V2: a discovered person is parked until GHUS reviews them.
+    # Architecture V2: a discovered person is parked until GHUS reviews them; one a
+    # GHUS person verified is Verified. The database derives record_status from
+    # verification_status on insert, so a verified person is written by record_status.
     columns = _table_columns(session, "person")
-    if "record_status" in columns:
+    if reviewed:
+        if "record_status" in columns:
+            cols.pop("verification_status")
+            cols["record_status"] = "verified"
+        else:
+            cols["verification_status"] = "verified"
+    elif "record_status" in columns:
         cols["record_status"] = "parked"
     if "source_origin" in columns:
         cols["source_origin"] = _record_origin(payload)
+    # The Data Feed's ORCID column (12 Nov 2026), as the Directory shows it.
+    orcid = str(payload.get("orcid") or "").strip()
+    if orcid and "orcid" in columns:
+        cols["orcid"] = orcid[:40]
     if columns and "verification_status" not in columns:
         cols.pop("verification_status")
     profile_url = str(payload.get("public_profile_url") or "").strip()

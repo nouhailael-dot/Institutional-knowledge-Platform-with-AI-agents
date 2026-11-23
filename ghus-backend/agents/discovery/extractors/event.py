@@ -60,6 +60,34 @@ class EventRecordValidationError(ValueError):
     """An extracted event record cannot fit the canonical event table."""
 
 
+# Short label fields whose column is narrow (recurring_pattern: 60). A longer
+# wording read from a page ("Annual, held each spring in a different host city
+# since 2009") failed the whole analysis (6 Nov 2026, awwa.org). It is now cut
+# at a word boundary to fit, and its full wording kept beside the record.
+SHORTENABLE_EVENT_FIELDS = ("event_type", "expected_attendance", "access_type",
+                            "recurring_pattern")
+
+
+def fit_event_label_lengths(record: dict[str, object]) -> tuple[dict[str, object], dict[str, str]]:
+    """(record with each long label cut at a word boundary to its column, the full wordings).
+
+    Nothing is invented: the kept text is the page's own first words. A value with
+    no word boundary inside the limit is left as it is, and validation reports it.
+    """
+    fitted = dict(record)
+    full: dict[str, str] = {}
+    for field_name in SHORTENABLE_EVENT_FIELDS:
+        value = fitted.get(field_name)
+        limit = EVENT_STRING_MAX_LENGTHS.get(field_name)
+        if not isinstance(value, str) or limit is None or len(value) <= limit:
+            continue
+        cut = value[: limit + 1].rsplit(" ", 1)[0].rstrip(" ,;:-(")
+        if 0 < len(cut) <= limit:
+            fitted[field_name] = cut
+            full[field_name] = value
+    return fitted, full
+
+
 def validate_event_record_lengths(record: dict[str, object]) -> None:
     """Reject extracted values that PostgreSQL would reject during promotion."""
     for field_name, max_length in EVENT_STRING_MAX_LENGTHS.items():

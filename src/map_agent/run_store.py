@@ -297,6 +297,24 @@ class RunStore:
                        "by_stage": stages, "calls": calls}
         return out
 
+    def undecided(self, run_ids) -> dict:
+        """Cards each map still waits on: not verified, parked, rejected or saved."""
+        if not run_ids:
+            return {}
+        marks = ",".join("?" * len(run_ids))
+        counts = {}
+        with self.connect() as db:
+            rows = db.execute(f"SELECT id, result FROM runs WHERE id IN ({marks})", list(run_ids))
+            for run_id, raw in rows.fetchall():
+                result = json.loads(raw) if raw else {}
+                cards = [card for group in ((result or {}).get("entities") or {}).values()
+                         if isinstance(group, list) for card in group if isinstance(card, dict)]
+                waiting = sum(1 for card in cards if not card.get("_review")
+                              and (card.get("_db_save") or {}).get("outcome") not in ("directory", "review"))
+                if waiting:
+                    counts[run_id] = waiting
+        return counts
+
     def recent(self):
         with self.connect() as db:
             return [dict(r) for r in db.execute(
@@ -420,9 +438,38 @@ class RunStore:
             if unknown or cost > row["reserved"]:
                 db.execute("UPDATE runs SET cancelled=1,status=?,stage='Stopped',error=?,updated=? WHERE id=?",
                            ("cost_unknown" if unknown else "budget_stopped",
-                            "A call's charge is uncertain; further calls are blocked." if unknown else
+                            UNKNOWN_CHARGE if unknown else
                             "Usage exceeded its reserved allowance; further calls are blocked.",
                             time.time(), row["run_id"]))
+
+    def settle_unknown(self, run_id) -> float:
+        """Count every charge that was never confirmed at the most it could cost.
+
+        12 Nov 2026 (GHUS feedback): a map whose step was cut off before its cost
+        was recorded (a server restart, a reply without usage) stayed blocked for
+        good, with Send disabled. With the person's approval each such call is
+        counted at its reserved maximum, so the budget can only be overstated,
+        never exceeded; the map is then stopped, ready to continue or reopen.
+        Returns the dollars counted. Starts no work.
+        """
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+            if row is None:
+                raise KeyError(run_id)
+            if row["status"] in ACTIVE and not row["cancelled"]:
+                raise MapStopped("This map is still working; wait for it to finish or stop.")
+            counted = db.execute("SELECT COALESCE(SUM(reserved),0) FROM calls "
+                                 "WHERE run_id=? AND status='unknown'", (run_id,)).fetchone()[0]
+            db.execute("UPDATE calls SET status='complete',cost=reserved,"
+                       "error=TRIM(COALESCE(error,'') || ' (counted at its reserved maximum)') "
+                       "WHERE run_id=? AND status='unknown'", (run_id,))
+            if row["status"] in ("cost_unknown", "interrupted"):
+                db.execute("UPDATE runs SET status='cancelled',cancelled=1,stage='Stopped',error=?,"
+                           "updated=? WHERE id=?",
+                           ("A step's cost was counted at its maximum. Continue or reopen the map to go on.",
+                            time.time(), run_id))
+        return counted / MICRO
 
     def recover(self):
         with self.connect() as db:
@@ -431,6 +478,10 @@ class RunStore:
             db.execute("UPDATE runs SET status='interrupted',stage='Interrupted',cancelled=1,"
                        "error='Server restarted. Saved results are available; no paid work was resumed.',updated=? "
                        "WHERE status IN ('planning','running','verifying')", (time.time(),))
+
+
+UNKNOWN_CHARGE = ("A step was cut off before its cost was recorded, so this map paused to "
+                  "protect the budget.")
 
 
 class RunContext:

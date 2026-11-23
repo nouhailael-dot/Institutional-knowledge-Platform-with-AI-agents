@@ -85,3 +85,45 @@ def test_the_api_answers_every_failure_in_plain_words(monkeypatch):
     invalid = client.post("/api/review/candidates/x/changes/y", json={"choice": "use_new"})
     assert invalid.status_code == 422
     assert invalid.json()["detail"].startswith("Some information is missing or not valid: ")
+
+
+CREDIT = ("Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+          "'message': 'Your credit balance is too low to access the Anthropic API. Please go to "
+          "Plans & Billing to upgrade or purchase credits.'}, 'request_id': 'req_011CXabc'}")
+
+
+def test_the_ai_service_out_of_credit_is_one_plain_sentence():
+    from src.plain_errors import explain
+
+    said = explain(CREDIT)
+    assert said == ("The AI service account has run out of credit, so Compass cannot use AI right "
+                    "now. Ask the platform's administrator to add credit; nothing was charged.")
+    for raw in ("Error code", "invalid_request_error", "request_id", "req_", "{"):
+        assert raw not in said
+
+
+def test_other_ai_service_answers_keep_only_what_it_said():
+    from src.plain_errors import GENERIC, explain
+
+    long_prompt = ("Error code: 400 - {'type': 'error', 'error': {'type': 'invalid_request_error', "
+                   "'message': 'prompt is too long: 210000 tokens > 200000 maximum'}, "
+                   "'request_id': 'req_1'}")
+    assert explain(long_prompt) == ("The AI service said: prompt is too long: 210000 tokens > "
+                                    "200000 maximum.")
+    busy = ("Error code: 529 - {'type': 'error', 'error': {'type': 'overloaded_error', "
+            "'message': 'Overloaded'}}")
+    assert explain(busy) == "The service is busy or unavailable right now; please try again shortly."
+    assert explain("Error code: 400 - {'type': 'error'}") == GENERIC
+    # A message that was already plain is untouched.
+    assert explain("No organizations matched this request.") == "No organizations matched this request."
+
+
+def test_a_failed_map_says_the_plain_reason_but_the_planner_reply_is_kept():
+    from src.plain_errors import explain_payload
+
+    failed = explain_payload({"status": "error", "message": CREDIT})
+    assert failed["message"].startswith("The AI service account has run out of credit")
+    assert failed["message_technical"] == CREDIT
+    assert explain_payload({"error": CREDIT})["error"].startswith("The AI service account")
+    reply = {"status": "reply", "message": "Should I include SQL training providers too?"}
+    assert explain_payload(reply) == reply

@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>GHUS Compass</title>
+<style>
+  :root{
+    --bg:#f4f3ef; --surface:#fffffe; --ink:#17191b; --muted:#697079; --line:#e8e4dc;
+    --accent:#ef7d1a; --accent-ink:#b05707; --danger:#b42318; --danger-soft:#fdecea;
+    --ok:#1f7a4d; --ok-soft:#e6f4ec;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){:root{
+    --bg:#0f1113; --surface:#181b1e; --ink:#ecedef; --muted:#99a0a7; --line:#282c31;
+    --accent:#f6a15c; --accent-ink:#f8ab63; --danger:#ff8a80; --danger-soft:#3a1714;
+    --ok:#7fd6a5; --ok-soft:#12301f;
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);
+       color:var(--ink);font-family:var(--sans);font-size:15px;padding:16px}
+  main{width:100%;max-width:400px;background:var(--surface);border:1px solid var(--line);
+       border-radius:14px;padding:32px 28px}
+  .brand{font-family:var(--serif);font-size:26px;font-weight:600;margin:0}
+  .caption{color:var(--muted);font-size:13px;margin:4px 0 22px}
+  h2{font-size:17px;margin:0 0 6px}
+  .lead{color:var(--muted);font-size:14px;margin:0 0 6px;line-height:1.5}
+  label{display:block;font-size:13px;font-weight:600;margin:14px 0 6px}
+  input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;
+        background:var(--surface);color:var(--ink);font:inherit}
+  input:focus{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+  .hint{color:var(--muted);font-size:12px;margin-top:6px}
+  button{width:100%;margin-top:22px;padding:12px;border:0;border-radius:8px;background:var(--accent);
+         color:#fff;font:inherit;font-weight:650;cursor:pointer}
+  button[disabled]{opacity:.6;cursor:progress}
+  .msg{margin-top:16px;padding:10px 12px;border-radius:8px;font-size:14px;line-height:1.45}
+  .msg.error{background:var(--danger-soft);color:var(--danger)}
+  .msg.ok{background:var(--ok-soft);color:var(--ok)}
+  .links{display:flex;justify-content:space-between;gap:12px;margin-top:18px;font-size:13px}
+  a{color:var(--accent-ink)}
+  .note{color:var(--muted);font-size:12px;margin-top:18px;line-height:1.5}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1 class="brand">COMPASS</h1>
+  <p class="caption">GHUS Ecosystem Intelligence</p>
+
+  <form id="login" hidden novalidate>
+    <h2>Sign in</h2>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="username" required>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <div class="links"><a href="/forgot">Forgot your password?</a></div>
+    <p class="note">Accounts are by invitation only. Need access? Ask a Compass administrator.</p>
+  </form>
+
+  <form id="forgot" hidden novalidate>
+    <h2>Reset your password</h2>
+    <p class="lead">Enter the email of your Compass account. If it has an active account, you will
+      receive a link to choose a new password.</p>
+    <label for="forgot-email">Email</label>
+    <input id="forgot-email" type="email" autocomplete="username" required>
+    <button type="submit">Send the link</button>
+    <div class="links"><a href="/login">Back to sign in</a></div>
+  </form>
+
+  <form id="accept" hidden novalidate>
+    <h2>Welcome to Compass</h2>
+    <p class="lead">You were invited to Compass. Choose a password to finish setting up your account.</p>
+    <label for="accept-name">Your name <span style="font-weight:400;color:var(--muted)">(optional: change it if needed)</span></label>
+    <input id="accept-name" type="text" autocomplete="name" maxlength="120">
+    <label for="accept-password">Choose a password</label>
+    <input id="accept-password" type="password" autocomplete="new-password" required>
+    <label for="accept-confirm">Repeat the password</label>
+    <input id="accept-confirm" type="password" autocomplete="new-password" required>
+    <p class="hint">At least 12 characters. Not your name or email.</p>
+    <button type="submit">Create my account</button>
+  </form>
+
+  <form id="reset" hidden novalidate>
+    <h2>Choose a new password</h2>
+    <label for="reset-password">New password</label>
+    <input id="reset-password" type="password" autocomplete="new-password" required>
+    <label for="reset-confirm">Repeat the password</label>
+    <input id="reset-confirm" type="password" autocomplete="new-password" required>
+    <p class="hint">At least 12 characters. Not your name or email. Other devices will be signed out.</p>
+    <button type="submit">Save the new password</button>
+  </form>
+
+  <div id="msg" class="msg" role="alert" hidden></div>
+</main>
+<script>
+  const mode = ({"/forgot": "forgot", "/accept": "accept", "/reset": "reset"})[location.pathname] || "login";
+  const params = new URLSearchParams(location.search);
+  // The email link's single-use code: read once, then removed from the address bar and history.
+  const tokenHash = params.get("token_hash") || "";
+  const linkType = params.get("type") || "";
+  if (tokenHash) history.replaceState(null, "", location.pathname);
+  // After signing in, go back only to a page on this site.
+  const next = (() => {
+    const n = params.get("next") || "/";
+    return n.startsWith("/") && !n.startsWith("//") && !n.startsWith("/\\") ? n : "/";
+  })();
+  const msg = document.getElementById("msg");
+  const say = (text, kind = "error") => { msg.textContent = text; msg.className = "msg " + kind; msg.hidden = false; };
+  document.getElementById(mode).hidden = false;
+  document.title = ({login: "Sign in", forgot: "Reset your password", accept: "Accept your invitation",
+                     reset: "Choose a new password"})[mode] + " · GHUS Compass";
+  if ((mode === "accept" || mode === "reset") && !tokenHash) {
+    document.getElementById(mode).querySelector("button").disabled = true;
+    say("This link is incomplete. Open the link from your email again, or ask a Compass administrator for a new one.");
+  }
+
+  async function send(url, body) {
+    const response = await fetch(url, {method: "POST", credentials: "same-origin",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+    const data = await response.json().catch(() => ({}));
+    const detail = typeof data.detail === "string" ? data.detail
+      : Array.isArray(data.detail) ? "Check the form and try again." : "";
+    return {ok: response.ok, data, detail};
+  }
+
+  function handle(formId, run) {
+    const form = document.getElementById(formId), button = form.querySelector("button");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      msg.hidden = true;
+      const label = button.textContent;
+      button.disabled = true; button.textContent = "Please wait…";
+      try { await run(); }
+      catch (e) { say("Compass could not be reached. Check your connection and try again."); }
+      button.disabled = false; button.textContent = label;
+    });
+  }
+
+  handle("login", async () => {
+    const email = document.getElementById("email").value.trim(), password = document.getElementById("password").value;
+    if (!email || !password) return say("Enter your email and password.");
+    const r = await send("/api/auth/login", {email, password});
+    if (r.ok) return location.replace(next);
+    say(r.detail || "Sign-in failed. Try again.");
+  });
+
+  handle("forgot", async () => {
+    const email = document.getElementById("forgot-email").value.trim();
+    if (!email) return say("Enter your email.");
+    const r = await send("/api/auth/recover", {email});
+    if (r.ok) return say(r.data.message, "ok");
+    say(r.detail || "The request failed. Try again.");
+  });
+
+  function samePasswords(a, b) {
+    const p = document.getElementById(a).value;
+    if (p.length < 12) { say("Use at least 12 characters."); return null; }
+    if (p !== document.getElementById(b).value) { say("The two passwords are different."); return null; }
+    return p;
+  }
+
+  handle("accept", async () => {
+    const password = samePasswords("accept-password", "accept-confirm");
+    if (password === null) return;
+    const r = await send("/api/auth/accept", {token_hash: tokenHash, password,
+      full_name: document.getElementById("accept-name").value.trim(),
+      kind: linkType === "recovery" ? "recovery" : "invite"});
+    if (r.ok) return location.replace("/");
+    say(r.detail || "The invitation could not be accepted.");
+  });
+
+  handle("reset", async () => {
+    const password = samePasswords("reset-password", "reset-confirm");
+    if (password === null) return;
+    const r = await send("/api/auth/reset", {token_hash: tokenHash, password});
+    if (r.ok) return location.replace("/");
+    say(r.detail || "The password could not be changed.");
+  });
+</script>
+</body>
+</html>

@@ -194,3 +194,17 @@ def test_run_now_ignores_the_cadence_but_not_the_status(session):
     paused = run_due_requests(db, live=False, today=later, config=CONFIG,
                               request_id=subscription_id)
     assert paused.outcomes == [] and paused.skipped[subscription_id] == "paused"
+
+
+def test_run_now_runs_a_request_that_has_not_started(session):
+    """12 Nov 2026: Run now on a request starting in May 2027 showed Running and
+    nothing ran (the runner skipped it as not started). Run now is a person's
+    explicit dispatch, so it runs; the scheduled runs still wait for the date."""
+    db, created = session
+    later = _create(db, created, start_date=TODAY + timedelta(days=200),
+                    end_date=TODAY + timedelta(days=380), cadence="monthly")
+    plan = run_due_requests(db, live=False, today=TODAY, config=CONFIG)
+    assert plan.skipped.get(later) == "not_started"
+    now = run_due_requests(db, live=False, today=TODAY, config=CONFIG, request_id=later)
+    assert later in {o.subscription_id for o in now.outcomes}
+    assert later not in now.skipped

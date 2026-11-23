@@ -6,8 +6,8 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261105b";
-import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261104e";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261112g";
+import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261110b";
 
 export const RECORD_TYPES = [
   {id: "actor", label: "Organizations", short: "Organizations", noun: "organization"},
@@ -320,6 +320,30 @@ export function canSend({preview, name, attestSource, admission = "directory", a
     && attestSource
     && (!["verified", "directory"].includes(admission) || attestAuthorized)
     && (!counts.needs_correction || accept));
+}
+
+/** Ask the Monitor and Update page to open a request that looks this organization up. */
+export const FIND_ORGANIZATION = "ghus:find-organization";
+export function findOrganization(name) {
+  window.dispatchEvent(new CustomEvent(FIND_ORGANIZATION, {detail: {name}}));
+}
+
+/** "1 organization they name is not in the Directory yet" (13 Nov 2026). */
+export function missingOrganizationsLine(names = []) {
+  const n = names.length;
+  if (!n) return "";
+  return `${n === 1 ? "1 organization" : `${n} organizations`} named in these records ${n === 1 ? "is" : "are"} `
+    + "not in the Ecosystem Directory yet. The records were stored with the organization's name; "
+    + "look it up with a request so it can be added and linked.";
+}
+
+/** The question asked before an import is withdrawn (13 Nov 2026). */
+export function withdrawLine(item = {}) {
+  const n = item.counts?.pending || 0;
+  return `Withdraw “${item.import_name}”? Its ${n === 1 ? "record" : `${n} records`} waiting in Review `
+    + `Results ${n === 1 ? "is" : "are"} taken off the Review page and this import leaves Import History. `
+    + "Nothing was stored in the Directory from it, and the same file can then be uploaded again. "
+    + "The withdrawal is kept in the history of decisions.";
 }
 
 /** What happened when the records were sent. */
@@ -842,8 +866,32 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     </div>`;
   }
 
+  /** "Withdraw this import" (13 Nov 2026): its waiting records leave Review, it leaves
+   *  this list, and the same file can be uploaded again. Asked once, then done. */
+  function Withdraw({item, onDone}) {
+    const [state, setState] = useState({asking: false, busy: false, error: ""});
+    async function go() {
+      setState({asking: true, busy: true, error: ""});
+      try {
+        await api(`/api/datafeed/imports/${item.run_id}/withdraw`, {method: "POST"});
+        onDone();
+      } catch (e) {
+        setState({asking: true, busy: false, error: e.message});
+      }
+    }
+    if (!state.asking) return html`<button class="btn ghost" onClick=${() => setState({...state, asking: true})}>
+      Withdraw this import</button>`;
+    return html`<div class="df-withdraw" role="alertdialog" aria-label="Withdraw this import">
+      <p>${withdrawLine(item)}</p>
+      ${state.error && html`<p class="discovery-message error">${state.error}</p>`}
+      <div class="discovery-actions">
+        <button class="btn" disabled=${state.busy} onClick=${go}>${state.busy ? "Withdrawing…" : "Withdraw"}</button>
+        <button class="btn ghost" disabled=${state.busy} onClick=${() => setState({asking: false, busy: false, error: ""})}>Cancel</button>
+      </div></div>`;
+  }
+
   /** One import's details, opened from its row: records, file, counts and actions. */
-  function ImportDetails({item, records, completing, setCompleting}) {
+  function ImportDetails({item, records, completing, setCompleting, onWithdrawn}) {
     return html`<div class="df-import-details">
       <p class="df-muted">${historyMeta(item)}</p>
       <p class="df-import-facts"><strong>${recordCount(item)}</strong>
@@ -851,11 +899,17 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
           ? `Original file: ${item.file_name || "download"}` : `Excel sheet: ${item.import_name}.xlsx`}</a>`
           : item.method === "upload" ? " · Original file not kept" : " · Entered by hand"}</p>
       <p class="df-muted">${historyLine(item)}</p>
+      ${(item.organizations_missing || []).length > 0 && html`<div class="df-missing" role="status">
+        <p>${missingOrganizationsLine(item.organizations_missing)}</p>
+        <ul>${item.organizations_missing.map(name => html`<li key=${name}><strong>${name}</strong>
+          <button class="btn ghost" onClick=${() => findOrganization(name)}>Find it with a request</button></li>`)}</ul>
+      </div>`}
       <div class="discovery-actions">
         ${item.counts.pending > 0 && html`<button class="btn ghost" onClick=${() => openImportInReview(item.run_id)}>
           ${item.counts.pending} incomplete: open in Review Results</button>`}
         ${item.record_type === "actor" && item.counts.pending > 0 && html`<button class="btn ghost"
           onClick=${() => setCompleting(completing === item.run_id ? null : item.run_id)}>Complete missing information with AI</button>`}
+        ${item.can_withdraw && html`<${Withdraw} item=${item} onDone=${onWithdrawn}/>`}
       </div>
       ${completing === item.run_id && html`<${Completion} item=${item} onClose=${() => setCompleting(null)}/>`}
       <div class="df-records">
@@ -879,7 +933,7 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     const [completing, setCompleting] = useState(null);
     const [unavailable, setUnavailable] = useState(false);
     async function load() {
-      // The table always shows (with its example import); a failed read is a quiet note.
+      // The table always shows; a failed read is a quiet note.
       try {
         const body = await api("/api/datafeed/history");
         setItems(body.imports || []);
@@ -906,9 +960,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
     // The signed-in user's imports once accounts exist; every import until then.
     const mine = items;
     const shown = filterImports(mine, search, category);
-    // The example finished import, listed after the real ones while it matches the filters.
-    const exampleRow = {...EXAMPLE_IMPORT, run_id: "example"};
-    const rows = [...shown, ...filterImports([exampleRow], search, category)];
+    // Real imports only (10 Nov 2026, team trial): the example import is no longer listed.
+    const rows = shown;
     return html`<div class="df-history-tools">
       <label class="df-search"><span class="sr-only">Search imports by name</span>
         <input type="search" value=${search} placeholder="Search imports by name…"
@@ -925,7 +978,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       <table>
         <thead><tr><th>Import Name</th><th>Record Type</th><th>Date</th><th class="num">Entries</th><th>Status</th></tr></thead>
         <tbody>
-          ${rows.length === 0 && html`<tr><td colspan="5" class="df-muted">No import matches this search.</td></tr>`}
+          ${rows.length === 0 && html`<tr><td colspan="5" class="df-muted">${mine.length
+            ? "No import matches this search." : "No imports yet. Your imports will appear here."}</td></tr>`}
           ${rows.map(item => {
             const result = importResult(item);
             return html`<${Fragment} key=${item.run_id}>
@@ -941,7 +995,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
               ${open === item.run_id && html`<tr class="df-import-row"><td colspan="5">
                 ${item.example ? html`<${ExampleDetails} item=${item}/>`
                   : html`<${ImportDetails} item=${item} records=${records[item.run_id]}
-                    completing=${completing} setCompleting=${setCompleting}/>`}</td></tr>`}
+                    completing=${completing} setCompleting=${setCompleting}
+                    onWithdrawn=${() => { setOpen(null); load(); }}/>`}</td></tr>`}
             <//>`;
           })}
         </tbody>
@@ -987,6 +1042,11 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
                 : "Stored in the Ecosystem Directory") : "Sent to Review Results"}</h3>
             <p>${doneLine(done)}</p>
             ${done.completion && html`<p>${done.completion}</p>`}
+            ${(done.organizations_missing || []).length > 0 && html`<div class="df-missing" role="status">
+              <p>${missingOrganizationsLine(done.organizations_missing)}</p>
+              <ul>${done.organizations_missing.map(name => html`<li key=${name}><strong>${name}</strong>
+                <button class="btn ghost" onClick=${() => findOrganization(name)}>Find it with a request</button></li>`)}</ul>
+            </div>`}
             ${[...(done.held_for_review || []), ...(done.not_stored || [])].length > 0 && html`<ul class="df-notes">
               ${[...(done.held_for_review || []), ...(done.not_stored || [])].map(h => html`<li key=${h.row_number}>
                 Row ${h.row_number}: ${h.reason}</li>`)}</ul>`}

@@ -383,10 +383,6 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 .review-status.pending_review{background:var(--amber-soft);color:var(--amber)}
 
 /* The example hub proposal (3 Nov 2026): marked, dashed, and its buttons inert. */
-.review-hub-example{border-style:dashed}
-.review-example-tag{margin:0 0 8px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.review-hub-steps{margin:8px 0 12px;padding-left:20px;display:grid;gap:4px;font-size:13.5px;color:var(--ink)}
-.review-hub-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:12px}
 
 /* Why COMPASS identified it (4 Nov 2026): the GHUS fit as short lists. */
 .review-fit-list{margin:0;padding-left:18px;display:grid;gap:4px}
@@ -396,3 +392,16 @@ textarea.review-inline{display:block;resize:vertical;font-weight:500;line-height
 
 /* The database is being read in the background (5 Nov 2026). */
 .review-syncing{margin:6px 0 0;font-size:13px}
+
+/* Essential-field completeness (6 Nov 2026): what was found, not a verification. */
+.review-completeness { margin: 4px 0 10px; padding: 8px 10px; border-radius: 8px;
+  background: var(--surface-2, #f4f2ee); font-size: 0.92em; line-height: 1.45; }
+.review-completeness small { display: block; color: var(--muted, #6b6f76); margin-top: 2px; }
+
+/* 12 Nov 2026: why Save Edits and Verify wait, said in words above the buttons. */
+.review-blocked{flex-basis:100%;margin:0 0 6px;color:#9a3412;font-size:13px}
+.review-match-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.review-check{display:flex;align-items:center;gap:8px;font-size:14px}
+
+/* 12 Nov 2026: a record reads like the Directory; Edit opens its boxes. */
+.review-edit-bar{display:flex;justify-content:flex-end;margin:-4px 0 8px}

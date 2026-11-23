@@ -730,7 +730,7 @@ def classify(field: str, before: dict | None, evidence: dict | None, rejected: s
     if outcome == "new" and field in ENTRY_BOXES:
         # The first value of an entry box is stored as its list from the start.
         from agents.common.fact_parts import entries_of, entry_value
-        write_value = entry_value(entries_of(evidence.get("value")))
+        write_value = entry_value(entries_of(evidence.get("value")), key=field)
     if proposed and write_value is not None:
         # What the box would hold: the new facts, and the recorded facts this
         # reading did not restate - never a poorer value than the record's.
@@ -1425,6 +1425,12 @@ def choose_actors(session, prepared: dict, *, config: dict | None = None,
     else:
         pool = group_actors(session, sector=prepared["sector"], category=options["category"],
                             state=prepared["state"])
+        matched = len(pool)
+    # A record awaiting permanent deletion is no longer updated (migration 710).
+    from agents.common.deletions import pending_deletion_ids
+    deleted = pending_deletion_ids(session, "actor")
+    if deleted:
+        pool = [a for a in pool if str(a.get("actor_id")) not in deleted]
         matched = len(pool)
     chosen_topic = topic_by_code(session, options["topic"]) if options["topic"] else None
     ready, waiting = [], []

@@ -22,6 +22,8 @@ recorded so the next update does not knock again.
 from __future__ import annotations
 
 import json
+import threading
+import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -127,8 +129,13 @@ class BlockedSites:
             return {}
 
     def _save(self, data: dict) -> None:
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        Path(self.path).write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+        # Several runs may write at once (12 Nov 2026): write a whole file, then
+        # swap it in, so a reader never sees half of one.
+        path = Path(self.path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        temporary.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+        os.replace(temporary, path)
 
     def blocked(self, url: str) -> dict | None:
         """The refusal still in its cooldown for this host, or None."""

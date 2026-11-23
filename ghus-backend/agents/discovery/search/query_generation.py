@@ -269,10 +269,15 @@ class QueryGenerator:
             if entity_type == "event":
                 queries, metadata = request_event_queries(
                     request, sectors, today=self.today, max_queries=limit)
+                pool, _ = request_event_queries(
+                    request, sectors, today=self.today, max_queries=limit * 2)
             else:
                 queries, metadata = self._person_request_queries(
                     request, sectors, session=session, limit=limit)
-            queries = _distinct_queries(queries)
+                pool = queries
+            queries = _fresh_first(_distinct_queries(queries), _distinct_queries(pool),
+                                   earlier_request_queries(session, request.subscription_id),
+                                   limit, metadata)
             if not queries:
                 raise RuntimeError("query generation returned zero queries for the request")
             return QueryBundle(
@@ -334,7 +339,16 @@ class QueryGenerator:
             deterministic = _interleave_queries(
                 queries, list(metadata.get("use_case_queries") or [])
             )
-            queries = _distinct_queries(deterministic)
+            limit = int(self.config.get("request_query_limit")
+                        or self.config.get("actor_query_limit") or 24)
+            pool_queries, pool_meta = request_actor_queries(
+                request, sectors, max_queries=limit * 2,
+                rotation_seed=_actor_type_rotation_seed(self.today, self.config))
+            pool = _interleave_queries(pool_queries,
+                                       list(pool_meta.get("use_case_queries") or []))
+            queries = _fresh_first(_distinct_queries(deterministic), _distinct_queries(pool),
+                                   earlier_request_queries(session, request.subscription_id),
+                                   len(_distinct_queries(deterministic)), metadata)
             if not queries:
                 raise RuntimeError("query generation returned zero queries for the request")
             return QueryBundle(
@@ -504,6 +518,41 @@ class QueryGenerator:
         if not clean:
             logger.warning("LLM query generation returned zero queries")
         return clean
+
+
+def earlier_request_queries(session, subscription_id: str | None, *, runs: int = 3) -> set[str]:
+    """The searches the last runs of this request already made (6 Nov 2026)."""
+    if session is None or not subscription_id:
+        return set()
+    try:
+        with session.begin_nested():
+            rows = session.execute(text(
+                "SELECT stats->'queries_executed' AS q FROM scrape_run "
+                "WHERE source_name = 'open_web_search' "
+                "AND stats->>'discovery_request_id' = :sid AND stats ? 'queries_executed' "
+                "ORDER BY started_at DESC LIMIT :runs"
+            ), {"sid": str(subscription_id), "runs": runs}).mappings().all()
+    except Exception:  # noqa: BLE001 - an older database: no earlier searches known
+        logger.warning("could not read earlier request searches", exc_info=True)
+        return set()
+    return {str(q).casefold() for row in rows for q in (row["q"] or []) if str(q).strip()}
+
+
+def _fresh_first(base: list[str], pool: list[str], earlier: set[str], limit: int,
+                 metadata: dict | None = None) -> list[str]:
+    """``limit`` searches: the request's own first, but never one an earlier run of
+    the same request already made while a fresh one (a further combination or a
+    synonym) is available; repeats only fill what is left."""
+    if not earlier:
+        return base[:limit]
+    candidates = [*base, *[q for q in pool if q not in base]]
+    fresh = [q for q in candidates if q.casefold() not in earlier]
+    repeated = [q for q in candidates if q.casefold() in earlier]
+    chosen = [*fresh, *repeated][:limit]
+    if metadata is not None:
+        metadata["queries_skipped_as_repeats"] = sum(1 for q in base[:limit] if q not in chosen)
+        metadata["queries_repeated"] = sum(1 for q in chosen if q.casefold() in earlier)
+    return chosen
 
 
 def load_seeded_sectors(project_root: Path) -> list[dict[str, str]]:

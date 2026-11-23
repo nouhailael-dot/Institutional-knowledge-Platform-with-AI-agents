@@ -127,6 +127,34 @@ class DataFeedBridge:
         """Stage the batch for Review, in one transaction."""
         return self._stage_command(batch, live=True)
 
+    def withdraw(self, run_id: str, by: str) -> dict[str, Any]:
+        """Take back an import so the same file can be sent again (13 Nov 2026).
+
+        The backend rejects each record still waiting in Review through the
+        review admission writer, with its withdrawal reason; nothing is deleted.
+        """
+        self._require()
+        command = [self.python_executable, "-m", "agents.datafeed.stage_import",
+                   "--withdraw", run_id, "--by", by, "--live"]
+        try:
+            done = self._run(command, cwd=self.project_root, env=self._env(writes=True),
+                             text=True, capture_output=True, check=False,
+                             timeout=float(os.environ.get("GHUS_DATAFEED_TIMEOUT_S") or 1200))
+        except subprocess.TimeoutExpired as exc:
+            raise DataFeedBridgeError("The backend did not answer in time. Open Import History "
+                                      "again to see what was withdrawn.") from exc
+        except OSError as exc:
+            raise DataFeedBridgeError("The backend command could not be started.") from exc
+        try:
+            result = json.loads((done.stdout or "").strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError) as exc:
+            raise DataFeedBridgeError("The backend returned no readable answer.") from exc
+        if result.get("status") == "refused":
+            raise DataFeedBridgeError(str(result.get("error") or "Refused."), rejected=True)
+        if done.returncode != 0:
+            raise DataFeedBridgeError("The import could not be withdrawn.")
+        return result
+
     # ---------------------------------------------------------- Light Pull completion
     def _light_pull_command(self, run_id: str, extra: list[str]) -> list[str]:
         command = [self.python_executable, "-m", "agents.collection.light_pull_candidates",

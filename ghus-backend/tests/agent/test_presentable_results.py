@@ -112,6 +112,8 @@ def test_an_update_reads_actors_whose_sites_answer_before_one_that_refused(monke
               {"actor_id": "tamu", "name": "Texas A&M", "website": "https://tamu.example.edu",
                "actor_category": "university_academic"}]
     monkeypatch.setattr(actor_updates, "group_actors", lambda session, **kw: actors)
+    from agents.common import deletions
+    monkeypatch.setattr(deletions, "pending_deletion_ids", lambda session, entity_type: set())
     monkeypatch.setattr(actor_updates, "topic_by_code",
                         lambda session, code: {"topic_id": "t", "code": code})
     monkeypatch.setattr(actor_updates, "schema_fields", lambda category: ["a", "b", "c"])

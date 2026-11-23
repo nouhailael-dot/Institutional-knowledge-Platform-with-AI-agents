@@ -234,7 +234,28 @@ def load_actors() -> list[dict]:
                 "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
                 "owner": OWNER_NOT_RECORDED,
             })
+        # A GHUS edit of a descriptive field (Directory Edit, 10 Nov 2026) is
+        # read before the imported value: the newest 'ghus_edit' fact wins.
+        cur.execute("""
+            SELECT DISTINCT ON (actor_id, fact_key) actor_id::text, fact_key,
+                   fact_value #>> '{}' AS value
+              FROM actor_fact
+             WHERE fact_type = 'ghus_edit' AND topic_id IS NULL AND fact_key = ANY(%s)
+             ORDER BY actor_id, fact_key, created_at DESC
+        """, (list(GHUS_EDIT_FACT_KEYS),))
+        edits: dict[str, dict] = {}
+        for actor_id, key, value in cur.fetchall():
+            edits.setdefault(actor_id, {})[key] = value
+    for item in out:
+        item.update(edits.get(item["id"], {}))
     return out
+
+
+# The descriptive fields an organization keeps in actor_fact; mirrors the
+# backend's decisions.DIRECTORY_EDIT_ACTOR_FACTS.
+GHUS_EDIT_FACT_KEYS = ("primary_technical_focus", "technical_approach", "current_activities",
+                       "technology_ip_notes", "key_constraints", "funding_summary",
+                       "primary_lifecycle_role")
 
 
 # What a Directory removal records (backend agents/review/admission.py); the
@@ -430,6 +451,7 @@ def load_people() -> list[dict]:
         SELECT p.person_id, p.full_name, p.title, p.orcid, p.linkedin_url,
                COALESCE(NULLIF(p.record_status, ''), p.verification_status) AS status,
                p.source_origin,
+               NULLIF(to_jsonb(p)->>'ghus_notes', '') AS ghus_notes,
                (SELECT string_agg(DISTINCT a.name, '{_HUB_SEP}')
                   FROM actor_person ap JOIN actor_read a ON a.actor_id = ap.actor_id
                  WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
@@ -448,6 +470,7 @@ def load_people() -> list[dict]:
                (SELECT d.public_profile_url FROM person_discovery_profile d
                  WHERE d.person_id = p.person_id AND d.public_profile_url IS NOT NULL
                  ORDER BY d.fetched_at DESC NULLS LAST LIMIT 1) AS profile_url
+               {{pending}}
         FROM person p
         WHERE COALESCE(p.record_status, '') <> 'rejected'
           AND COALESCE(p.verification_status, '') <> 'rejected'
@@ -456,21 +479,32 @@ def load_people() -> list[dict]:
     split = lambda value: value.split(_HUB_SEP) if value else []
     out = []
     with get_readonly_connection() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        # 13 Nov 2026: a person stored before their organization is in the
+        # directory keeps its name as a fact; shown, marked, until it is linked.
+        cur.execute("SELECT to_regclass('public.person_fact') IS NOT NULL")
+        has_facts = bool(cur.fetchone()[0])
+        cur.execute(sql.replace("{pending}", (
+            ", (SELECT f.fact_value #>> '{}' FROM person_fact f WHERE f.person_id = p.person_id "
+            "AND f.fact_key = 'affiliation_not_in_directory' ORDER BY f.created_at DESC LIMIT 1) "
+            "AS pending_organization") if has_facts else ", NULL AS pending_organization"))
         cols = [c.name for c in cur.description]
         for row in cur.fetchall():
             r = dict(zip(cols, row))
+            pending = str(r.get("pending_organization") or "").strip()
+            organizations = split(r["organizations"]) or (
+                [f"{pending} (not in the Directory yet)"] if pending else [])
             out.append({
                 "id": str(r["person_id"]),
                 "name": r["full_name"],
                 "title": r["title"],
                 "status": r["status"],
-                "organizations": split(r["organizations"]),
+                "organizations": organizations,
                 "states": split(r["states"]),
                 "topics": split(r["topics"]),
                 "research_areas": split(r["research_areas"]),
                 "profile_url": r["profile_url"] or r["linkedin_url"],
                 "orcid": r["orcid"],
+                "ghus_notes": r["ghus_notes"],
                 "origin": origin_label(r["source_origin"]),
                 "owner": OWNER_NOT_RECORDED,
             })

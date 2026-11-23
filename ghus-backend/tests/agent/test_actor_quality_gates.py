@@ -40,6 +40,9 @@ def _record(**overrides):
         "name": "Urban Future Lab",
         "website": "https://www.ufl.nyc",
         "description": GOOD_DESCRIPTION,
+        # Where it is and what kind of organisation: needed to accept (6 Nov 2026).
+        "state": "NY",
+        "actor_type": "research_center",
         **overrides,
     }
 
@@ -227,3 +230,44 @@ def test_auto_verification_needs_the_environment_to_confirm_the_policy(monkeypat
     text = open(source, encoding="utf-8").read()
     assert 'os.environ.get("GHUS_AGENT_AUTO_VERIFY", "") != "confirmed"' in text
     assert "actor_auto_verify_disabled" in text
+
+
+def test_a_record_without_its_place_or_kind_is_never_accepted_unseen():
+    """6 Nov 2026: too little to be useful without a person."""
+    for missing in ({"state": None}, {"actor_type": None}):
+        verdict = assess_actor(score=0.96, page_url="https://www.ufl.nyc/about",
+                               record=_record(**missing), rubric=FULL_RUBRIC, config=CONFIG)
+        assert verdict.band == "review" and "incomplete_record" in verdict.gates_failed
+    located = assess_actor(score=0.96, page_url="https://www.ufl.nyc/about",
+                           record=_record(state=None, location_city="Brooklyn"),
+                           rubric=FULL_RUBRIC, config=CONFIG)
+    assert "incomplete_record" not in located.gates_failed
+
+
+def test_a_unit_page_naming_only_its_parent_institution_is_held():
+    verdict = assess_actor(
+        score=0.96, page_url="https://energy.mit.edu/about/",
+        record=_record(name="Massachusetts Institute of Technology",
+                       website="https://energy.mit.edu"),
+        rubric=FULL_RUBRIC, config=CONFIG)
+    assert verdict.band == "review" and "unit_or_parent_unclear" in verdict.gates_failed
+    unit = assess_actor(score=0.96, page_url="https://energy.mit.edu/about/",
+                        record=_record(name="MIT Energy Initiative",
+                                       website="https://energy.mit.edu"),
+                        rubric=FULL_RUBRIC, config=CONFIG)
+    assert "unit_or_parent_unclear" not in unit.gates_failed
+
+
+def test_identity_and_topic_are_each_required_to_accept():
+    weak_identity = assess_actor(score=0.96, page_url="https://www.ufl.nyc/about",
+                                 record=_record(), rubric=FULL_RUBRIC, config=CONFIG,
+                                 identity_score=0.67, topic_score=1.0)
+    assert "identity_unreliable" in weak_identity.gates_failed
+    weak_topic = assess_actor(score=0.96, page_url="https://www.ufl.nyc/about",
+                              record=_record(), rubric=FULL_RUBRIC, config=CONFIG,
+                              identity_score=1.0, topic_score=0.0)
+    assert "weak_topic_evidence" in weak_topic.gates_failed
+    both = assess_actor(score=0.96, page_url="https://www.ufl.nyc/about",
+                        record=_record(), rubric=FULL_RUBRIC, config=CONFIG,
+                        identity_score=1.0, topic_score=1.0)
+    assert both.band == ACCEPT

@@ -469,3 +469,46 @@ def test_a_decided_candidate_is_never_refreshed(store):
     after = store.get(candidate["candidate_id"])
     assert after["reviewed_payload"].get("location_city") != "Somewhere Else"
     assert after["status"] == "rejected_by_reviewer"
+
+
+# ------------------------------------------- Reject in one step (12 Nov 2026)
+
+def _database_candidate(store):
+    from test_review import discovery_candidate
+
+    store.sync_external_candidates([discovery_candidate("event", "no-reason")])
+    return next(row for row in store.list(status="all", entity_type="event")["candidates"]
+                if row["source_run_id"] == "discovery:run-1")
+
+
+def test_a_rejection_without_a_reason_is_recorded_as_other_no_reason_given(store):
+    """GHUS feedback (11 Nov): rejecting is Reject, then Yes. The database keeps
+    one of its fixed reasons, so no reason given is Other: No reason given."""
+    candidate = _database_candidate(store)
+    plan = store.admission_request(
+        candidate["candidate_id"], decision_kind="reject", reviewer="R",
+        idempotency_key="no-reason", confirmed=True)
+    assert plan["rejection_reason"] == "Other"
+    assert plan["rejection_reason_other"] == "No reason given"
+
+
+def test_the_page_spelling_of_a_reason_is_accepted(store):
+    candidate = _database_candidate(store)
+    plan = store.admission_request(
+        candidate["candidate_id"], decision_kind="reject", reviewer="R",
+        idempotency_key="spelling", confirmed=True,
+        rejection_reason="Not an organization / event / person page")
+    assert plan["rejection_reason"] == "Not an organisation / event / person page"
+
+
+def test_save_edits_keeps_every_event_box(store):
+    """GHUS feedback, 11 Nov: Save Edits did nothing and edits were lost. Every
+    box of an event card is saved, including the newly editable ones."""
+    candidate = _database_candidate(store)
+    saved = store.update(candidate["candidate_id"], {
+        "end_date": "2026-11-21", "audience": "Founders and investors", "event_format": "In person",
+        "sector": "Entrepreneurship", "organizer": "Beyond Africa"})
+    payload = saved["reviewed_payload"]
+    assert payload["audience"] == "Founders and investors"
+    assert payload["end_date"] == "2026-11-21" and payload["organizer"] == "Beyond Africa"
+    assert store.get(candidate["candidate_id"])["reviewed_payload"]["sector"] == "Entrepreneurship"

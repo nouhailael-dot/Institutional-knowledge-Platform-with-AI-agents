@@ -105,6 +105,10 @@ def test_a_refusal_says_why_instead_of_an_exit_code():
     assert "close match" in close
     assert refusal_reason("agents.review.admission.AdmissionValidationError: "
                           "unsupported edited fields: foo", 1) == "unsupported edited fields: foo"
+    # A check the backend states as a sentence is shown as that sentence (13 Nov 2026).
+    stated = ("Traceback (most recent call last):\n  File \"promote.py\"\n"
+              "ValueError: affiliation organization is not a classified actor")
+    assert refusal_reason(stated, 1) == "affiliation organization is not a classified actor"
     # Anything that is not a named refusal never reaches the page.
     assert refusal_reason("psycopg.OperationalError: password authentication failed", 1) == \
         "Admission process exited with code 1."

@@ -469,6 +469,529 @@ def record_ghus_notes(
     return True
 
 
+# --- Directory Edit (10 Nov 2026) ---------------------------------------------
+# A GHUS person corrects a record from the Ecosystem Directory. Form field ->
+# column, per record type; nothing outside these lists is ever written.
+DIRECTORY_EDIT_TABLES = {"actor": ("actor", "actor_id"), "event": ("event", "event_id"),
+                         "person": ("person", "person_id"), "hub": ("hub", "hub_id")}
+DIRECTORY_EDIT_COLUMNS = {
+    "actor": {"name": "name", "alt_names": "alternate_names", "actor_type": "actor_category",
+              "category_type": "category_type", "website": "website", "city": "location_city",
+              "state": "state_code", "country_raw": "country", "region": "region_code",
+              "description": "description"},
+    "event": {k: k for k in ("name", "event_type", "website", "start_date", "end_date",
+                             "recurring_pattern", "location", "access_type", "description",
+                             "thematic_focus", "expected_attendance", "sponsoring_orgs")},
+    "person": {"name": "full_name", "title": "title", "orcid": "orcid"},
+    "hub": {k: k for k in ("name", "official_websites", "primary_city", "state", "country",
+                           "description", "strategic_value_summary", "core_topic_strengths",
+                           "programs_and_labs_narrative", "talent_narrative",
+                           "research_infrastructure_narrative", "industry_integration_narrative",
+                           "international_engagement_narrative", "funding_summary",
+                           "constraints_summary")},
+}
+# An organization's descriptive fields live in actor_fact (Architecture V2), not
+# in columns: an edit appends a GHUS fact, which the Directory reads first.
+DIRECTORY_EDIT_ACTOR_FACTS = ("primary_technical_focus", "technical_approach",
+                              "current_activities", "technology_ip_notes", "key_constraints",
+                              "funding_summary", "primary_lifecycle_role")
+DIRECTORY_EDIT_FACT_TYPE = "ghus_edit"
+_DIRECTORY_SHORT = {"name", "full_name", "title", "orcid", "website", "location_city", "country",
+                    "category_type", "event_type", "recurring_pattern", "location",
+                    "access_type", "expected_attendance", "primary_city", "state",
+                    "primary_lifecycle_role"}
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _directory_columns(session, table: str) -> set[str]:
+    return {row[0] for row in session.execute(text(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name=:t"), {"t": table}).all()}
+
+
+def _website_domain(url: str | None) -> str | None:
+    from urllib.parse import urlparse
+
+    if not url:
+        return None
+    host = urlparse(url if "//" in url else f"https://{url}").hostname or ""
+    host = host.lower().removeprefix("www.")
+    return host or None
+
+
+def _directory_value(session, entity_type: str, column: str, raw) -> object:
+    """The value to store for one edited field; ValueError explains a refusal."""
+    value = raw if isinstance(raw, list) else " ".join(str(raw or "").split()) \
+        if column in _DIRECTORY_SHORT else str(raw or "").strip()
+    if column in ("name", "full_name") and not value:
+        raise ValueError("the name cannot be empty")
+    if column == "alternate_names":
+        items = raw if isinstance(raw, list) else str(raw or "").split(",")
+        names = [" ".join(str(n).split()) for n in items]
+        return [n[:300] for n in dict.fromkeys(n for n in names if n)] or None
+    if not value:
+        return None
+    limit = 300 if column in _DIRECTORY_SHORT else 5000
+    if len(value) > limit:
+        raise ValueError(f"{column} is at most {limit} characters")
+    if column in ("start_date", "end_date", "next_date"):
+        if not _ISO_DATE.match(value):
+            raise ValueError(f"{column} must be a date (YYYY-MM-DD)")
+        datetime.strptime(value, "%Y-%m-%d")
+    if entity_type == "actor" and column == "actor_category":
+        code = session.execute(text(
+            "SELECT category_code FROM actor_category_definition WHERE category_code=:v "
+            "OR display_name=:v OR replace(display_name,'Corporate Actor',"
+            "'Corporate Organization')=:v"), {"v": value}).scalar()
+        if code is None:
+            raise ValueError(f"unknown organization category: {value}")
+        return code
+    if entity_type == "actor" and column == "state_code":
+        code = session.execute(text(
+            "SELECT state_code FROM region_state WHERE state_code=:v OR state_name=:v"),
+            {"v": value}).scalar()
+        if code is None:
+            raise ValueError(f"unknown US state: {value}")
+        return code
+    if entity_type == "actor" and column == "region_code":
+        code = session.execute(text(
+            "SELECT region_code FROM region_definition WHERE region_code=:v OR display_name=:v"),
+            {"v": value}).scalar()
+        if code is None:
+            raise ValueError(f"unknown region: {value}")
+        return code
+    return value
+
+
+def _same(a, b) -> bool:
+    norm = lambda v: None if v in (None, "", []) else (
+        [str(x) for x in v] if isinstance(v, (list, tuple)) else str(v))
+    return norm(a) == norm(b)
+
+
+def record_directory_edit(
+    session,
+    *,
+    entity_type: str,
+    entity_id: str,
+    changes: dict,
+    decided_by: str,
+    ghus_notes: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Apply a GHUS person's corrections to one Directory record (10 Nov 2026).
+
+    Only the fields in DIRECTORY_EDIT_COLUMNS / DIRECTORY_EDIT_ACTOR_FACTS can
+    change, and only to a valid value (a known category, state or region; a real
+    date; a non-empty name). Unchanged fields are skipped. For an organization
+    every changed field is also appended to actor_fact as a GHUS fact
+    (fact_type 'ghus_edit', creator_class 'ghus_human'), so the history keeps
+    who changed what, when and to which value; the descriptive fields live only
+    there. Agents never overwrite a GHUS value (gap-fill only, and
+    append_actor_fact turns their newer value into a pending update).
+    The caller owns the transaction. Returns the changed fields.
+    """
+    if entity_type not in DIRECTORY_EDIT_TABLES:
+        raise ValueError("unsupported record type")
+    if not str(decided_by or "").strip():
+        raise ValueError("decided_by is required")
+    table, key = DIRECTORY_EDIT_TABLES[entity_type]
+    entity_id = str(uuid.UUID(str(entity_id)))
+    allowed = DIRECTORY_EDIT_COLUMNS[entity_type]
+    facts = DIRECTORY_EDIT_ACTOR_FACTS if entity_type == "actor" else ()
+    unknown = sorted(set(changes or {}) - set(allowed) - set(facts))
+    if unknown:
+        raise ValueError(f"these fields cannot be edited here: {', '.join(unknown)}")
+    present = _directory_columns(session, table)
+    current = session.execute(
+        text(f"SELECT * FROM {table} WHERE {key}=CAST(:id AS uuid) FOR UPDATE"),
+        {"id": entity_id}).mappings().first()
+    if current is None:
+        raise ValueError(f"that {entity_type} is not in the database")
+    if current.get("merged_into_actor_id"):
+        raise ValueError("that record was merged into another organization; edit that one instead")
+
+    columns: dict[str, object] = {}
+    for field, raw in (changes or {}).items():
+        if field in facts:
+            continue
+        column = allowed[field]
+        if column == "start_date" and column not in present and "next_date" in present:
+            column = "next_date"
+        if column not in present:
+            continue      # a column this database does not have yet: nothing to write
+        value = _directory_value(session, entity_type, column, raw)
+        if not _same(value, current.get(column)):
+            columns[column] = value
+    if "website" in columns and "website_domain" in present:
+        columns["website_domain"] = _website_domain(columns["website"])
+
+    fact_values: dict[str, object] = {}
+    if facts:
+        shown = session.execute(text(
+            "SELECT DISTINCT ON (fact_key) fact_key, fact_value #>> '{}' AS v FROM actor_fact "
+            "WHERE actor_id=CAST(:id AS uuid) AND topic_id IS NULL AND fact_key = ANY(:keys) "
+            "AND fact_type IN ('legacy_baseline', :edit) "
+            "ORDER BY fact_key, (fact_type = :edit) DESC, created_at DESC"),
+            {"id": entity_id, "keys": list(facts), "edit": DIRECTORY_EDIT_FACT_TYPE},
+        ).mappings().all()
+        before = {r["fact_key"]: r["v"] for r in shown}
+        for field in facts:
+            if field in (changes or {}):
+                value = _directory_value(session, entity_type, field, changes[field])
+                if not _same(value, before.get(field)):
+                    fact_values[field] = value
+
+    notes_changed, notes_value = False, None
+    if ghus_notes is not None and "ghus_notes" in present:
+        notes_value = str(ghus_notes).strip() or None
+        if notes_value and len(notes_value) > GHUS_NOTES_MAX_LENGTH:
+            raise ValueError(f"GHUS notes are at most {GHUS_NOTES_MAX_LENGTH} characters")
+        notes_changed = not _same(notes_value, current.get("ghus_notes"))
+
+    changed = (sorted(set(columns) - {"website_domain"}) + sorted(fact_values)
+               + (["ghus_notes"] if notes_changed else []))
+    if not changed or not live:
+        return {"changed": changed, "written": False}
+
+    if columns:
+        sets = [f"{c} = :c_{c}" for c in columns]
+        if "updated_at" in present:
+            sets.append("updated_at = now()")
+        params = {f"c_{c}": v for c, v in columns.items()}
+        params["id"] = entity_id
+        execute_canonical_write(session, text(
+            f"UPDATE {table} SET {', '.join(sets)} WHERE {key}=CAST(:id AS uuid)"), params)
+    if notes_changed:
+        # Migration 530: only a session that declares itself human may change notes.
+        session.execute(text("SET LOCAL ghus.actor_is_human = 'on'"))
+        execute_canonical_write(session, text(
+            f"UPDATE {table} SET ghus_notes = :n WHERE {key}=CAST(:id AS uuid)"),
+            {"n": notes_value, "id": entity_id})
+    if entity_type == "actor":
+        history = {**{c: v for c, v in columns.items() if c != "website_domain"}, **fact_values}
+        if history:
+            source_id = insert_source(
+                session, source_url=None, fetched_at=datetime.now(UTC),
+                description=f"Ecosystem Directory edit by {decided_by}",
+                source_type="ghus_manual", trust_tier="ghus")
+            # creator_class / lifecycle_state arrived with the V2 fact ledger;
+            # an older database records the edit without them.
+            ledger = {"creator_class", "lifecycle_state"} <= _directory_columns(session, "actor_fact")
+            extra_cols = ",creator_class,lifecycle_state" if ledger else ""
+            extra_vals = ",'ghus_human','accepted'" if ledger else ""
+            for fact_key, value in history.items():
+                execute_canonical_write(session, text(
+                    "INSERT INTO actor_fact (actor_fact_id,actor_id,topic_id,fact_type,fact_key,"
+                    "fact_value,collection_state,layer,source_id,source_origin,confidence,"
+                    f"retrieved_at,generated_by{extra_cols}) VALUES ("
+                    "CAST(:id AS uuid),CAST(:actor AS uuid),NULL,:type,:key,CAST(:value AS jsonb),"
+                    ":state,2,CAST(:source AS uuid),'ghus_manual','high',now(),:by"
+                    f"{extra_vals})"),
+                    {"id": str(uuid.uuid4()), "actor": entity_id, "type": DIRECTORY_EDIT_FACT_TYPE,
+                     "key": fact_key,
+                     "value": None if value is None else json.dumps(value, default=str),
+                     "state": "not_found" if value is None else "found",
+                     "source": source_id, "by": decided_by})
+    return {"changed": changed, "written": True}
+
+
+# --- Record deletion with 30-day retention (GHUS policy, 17 Nov 2026; migration 710) ---------
+# Delete: the record is hidden at once (a pending compass.deleted_record row) and kept,
+# restorable, for 30 days. Purge, after that: its canonical data and dependents are
+# removed under the explicit policy below, inside the one transaction the database
+# guards let through (compass.purge_door_open()).
+RETENTION_DAYS = 30
+DELETABLE = {"actor": ("actor", "actor_id", "name"), "person": ("person", "person_id", "full_name"),
+             "event": ("event", "event_id", "name"), "hub": ("hub", "hub_id", "name")}
+
+# What purging does to each table that points at the record: "delete" the record's
+# own rows, "detach" (empty the link, keep the row: ledgers, other records, review
+# history), or "block" (the purge stops and says why). A link not listed here also
+# blocks: a new table is never handled by guesswork.
+PURGE_POLICY = {
+    "actor": [
+        ("actor", "merged_into_actor_id", "block"),             # duplicates merged into it
+        ("actor_fact_current_pointer", "actor_id", "delete"),
+        ("actor_fact", "actor_id", "delete"),
+        ("actor_details", "actor_id", "delete"),                 # 620/621: one row per organization
+        ("actor_capability_fact", "actor_id", "delete"),
+        ("actor_category_migration_audit", "actor_id", "delete"),
+        ("actor_evaluation", "actor_id", "delete"),
+        ("actor_location", "actor_id", "delete"),
+        ("review_queue", "actor_id_a", "delete"),
+        ("review_queue", "actor_id_b", "delete"),
+        ("actor_merge_log", "loser_actor_id", "delete"),
+        ("actor_merge_log", "winner_actor_id", "delete"),
+        ("actor_person", "actor_id", "delete"),
+        ("actor_profile", "actor_id", "delete"),
+        ("actor_ranking", "actor_id", "delete"),
+        ("actor_ranking", "context_actor_id", "delete"),
+        ("actor_relevance", "actor_id", "delete"),
+        ("actor_sector", "actor_id", "delete"),
+        ("actor_strategic_connection_check", "actor_id", "delete"),
+        ("actor_topic", "actor_id", "delete"),
+        ("actor_verification_event", "actor_id", "delete"),
+        ("hub_actor", "actor_id", "delete"),
+        ("hub_assignment_evidence", "actor_id", "delete"),
+        ("legacy_migration_record", "actor_id", "delete"),
+        ("organization_hierarchy", "parent_actor_id", "delete"),
+        ("organization_hierarchy", "child_actor_id", "delete"),
+        ("partnership_profile", "actor_id", "delete"),
+        ("person_discovery_profile", "actor_id", "delete"),
+        ("proposed_hub_member", "family_root_actor_id", "delete"),
+        ("proposed_hub_member", "actor_id", "delete"),
+        ("collection_request", "actor_id", "detach"),            # runs and their costs stay
+        ("event", "host_actor_id", "detach"),                    # the event stays, without host
+    ],
+    "event": [
+        ("event_fact", "event_id", "delete"), ("event_details", "event_id", "delete"),   # 600, 630
+        ("event_claim", "event_id", "delete"), ("event_scoring", "event_id", "delete"),
+        ("event_sector", "event_id", "delete"), ("event_topic", "event_id", "delete"),
+        ("event_review_queue", "candidate_event_id", "detach"),
+    ],
+    "hub": [
+        ("hub_actor", "hub_id", "delete"), ("hub_assignment_evidence", "hub_id", "delete"),
+        ("hub_center_review", "hub_id", "delete"), ("hub_funding", "hub_id", "delete"),
+        ("hub_sector", "hub_id", "delete"), ("hub_sector_strength", "hub_id", "delete"),
+        ("proposed_hub", "final_hub_id", "detach"),
+    ],
+    "person": [
+        ("person_fact", "person_id", "delete"), ("person_details", "person_id", "delete"),  # 600, 630
+        ("actor_person", "person_id", "delete"), ("contact_collection_authorization", "person_id", "delete"),
+        ("person_change_log", "person_id", "delete"), ("person_discovery_profile", "person_id", "delete"),
+        ("person_topic", "person_id", "delete"), ("person_verification_event", "person_id", "delete"),
+        ("person_review_queue", "candidate_person_id", "detach"),
+    ],
+}
+# Links that are the same rows as a listed one (a composite key over the same column).
+PURGE_SAME_ROWS = {("hub_actor", "hub_id,topic_id")}
+# Rows that point at rows being deleted: (parent table, its key) -> [(table, column, action)].
+PURGE_CHILDREN = {
+    ("actor_fact", "actor_fact_id"): [
+        ("actor_fact_current_pointer", "actor_fact_id", "delete"),
+        ("canonical_write_audit", "actor_fact_id", "delete"),
+        ("fact_corroboration", "actor_fact_id", "delete"),
+        ("fact_resolution", "actor_fact_id", "delete"),
+        ("fact_resolution", "related_actor_fact_id", "delete"),
+    ],
+    ("actor_merge_log", "merge_id"): [("review_queue", "merge_id", "detach")],
+}
+
+
+class DeletionError(ValueError):
+    """A deletion, restore or purge that cannot be done; the message is safe to show."""
+
+
+def _exists(session, table: str) -> bool:
+    return bool(session.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{table}"}).scalar())
+
+
+def _pending(session, entity_type: str, entity_id: str):
+    return session.execute(text(
+        "SELECT deletion_id::text, deleted_at, purge_after FROM compass.deleted_record "
+        "WHERE entity_type = :t AND entity_id = CAST(:id AS uuid) AND restored_at IS NULL AND purged_at IS NULL"
+    ), {"t": entity_type, "id": entity_id}).mappings().first()
+
+
+def pending_deletion(session, entity_type: str, entity_id: str) -> dict | None:
+    """The pending deletion of a record (None when it is not deleted), for the
+    writers that must not revive or recreate it."""
+    if not bool(session.execute(text("SELECT to_regclass('compass.deleted_record') IS NOT NULL")).scalar()):
+        return None
+    row = _pending(session, entity_type, entity_id)
+    return dict(row) if row else None
+
+
+def delete_record(session, *, entity_type: str, entity_id: str, deleted_by: str, reason: str | None = None,
+                  live: bool = False) -> dict:
+    """Hide a record at once and keep it, restorable, for RETENTION_DAYS. Nothing is
+    physically deleted and no verification decision changes. The caller owns the
+    transaction."""
+    if entity_type not in DELETABLE:
+        raise DeletionError("Only organizations, people, events and hubs can be deleted.")
+    table, key, name_column = DELETABLE[entity_type]
+    entity_id = str(uuid.UUID(str(entity_id)))
+    clean_reason = " ".join(str(reason or "").split())[:500] or None
+    row = session.execute(text(
+        f"SELECT to_jsonb(t) AS snapshot, t.{name_column} AS name FROM {table} t "
+        f"WHERE t.{key} = CAST(:id AS uuid) FOR UPDATE"), {"id": entity_id}).mappings().first()
+    if row is None:
+        raise DeletionError(f"That {entity_type} is not in the database.")
+    if entity_type == "actor" and (row["snapshot"] or {}).get("merged_into_actor_id"):
+        raise DeletionError("That record was merged into another organization; delete that one instead.")
+    pending = _pending(session, entity_type, entity_id)
+    if pending:
+        raise DeletionError(f"Already deleted on {pending['deleted_at']:%b %d, %Y}; it can be restored "
+                            "from Pending Deletion (on the Dashboard).")
+    links = {}
+    for link_table, column, _ in PURGE_POLICY[entity_type]:
+        if _exists(session, link_table):
+            count = session.execute(text(
+                f"SELECT count(*) FROM {link_table} WHERE {column} = CAST(:id AS uuid)"), {"id": entity_id}).scalar()
+            if count:
+                links[f"{link_table}.{column}"] = int(count)
+    if not live:
+        return {"written": False, "name": row["name"], "links": links}
+    created = session.execute(text("""
+        INSERT INTO compass.deleted_record (entity_type, entity_id, name, snapshot, reason, deleted_by, purge_after)
+        VALUES (:t, CAST(:id AS uuid), :name, CAST(:snap AS jsonb), :reason, CAST(:by AS uuid),
+                now() + make_interval(days => :days))
+        RETURNING deletion_id::text, deleted_at, purge_after
+    """), {"t": entity_type, "id": entity_id, "name": row["name"] or "(no name)",
+           "snap": json.dumps({"row": row["snapshot"], "links": links}, default=str), "reason": clean_reason,
+           "by": deleted_by, "days": RETENTION_DAYS}).mappings().first()
+    return {"written": True, "deletion_id": created["deletion_id"], "name": row["name"],
+            "deleted_at": created["deleted_at"], "purge_after": created["purge_after"], "links": links}
+
+
+def restore_record(session, *, deletion_id: str, restored_by: str, live: bool = False) -> dict:
+    """Bring a deleted record back before its deadline: it reappears with the status,
+    ownership, links and history it had (none of them were changed)."""
+    deletion_id = str(uuid.UUID(str(deletion_id)))
+    row = session.execute(text(
+        "SELECT deletion_id::text, entity_type, entity_id::text, name, purge_after, restored_at, purged_at, "
+        "purge_after <= now() AS expired FROM compass.deleted_record WHERE deletion_id = CAST(:id AS uuid) "
+        "FOR UPDATE"), {"id": deletion_id}).mappings().first()
+    if row is None:
+        raise DeletionError("Unknown deletion.")
+    if row["purged_at"] is not None:
+        raise DeletionError("That record was permanently deleted; it can no longer be restored.")
+    if row["restored_at"] is not None:
+        raise DeletionError("That record was already restored.")
+    if row["expired"]:
+        raise DeletionError(f"The 30 days ended on {row['purge_after']:%b %d, %Y}; it can no longer be restored.")
+    if not live:
+        return {"written": False, **{k: row[k] for k in ("entity_type", "entity_id", "name")}}
+    session.execute(text(
+        "UPDATE compass.deleted_record SET restored_at = now(), restored_by = CAST(:by AS uuid) "
+        "WHERE deletion_id = CAST(:id AS uuid)"), {"id": deletion_id, "by": restored_by})
+    return {"written": True, "deletion_id": deletion_id,
+            **{k: row[k] for k in ("entity_type", "entity_id", "name")}}
+
+
+def _unplanned_links(session, entity_type: str) -> list[str]:
+    """Foreign keys into the record or its deleted rows that the policy does not cover."""
+    table = DELETABLE[entity_type][0]
+    covered = {(t, c) for t, c, _ in PURGE_POLICY[entity_type]} | PURGE_SAME_ROWS
+    children = {(parent, (t, c)) for (parent, _), rows in PURGE_CHILDREN.items() for t, c, _ in rows}
+    deleted_tables = {t for t, _, a in PURGE_POLICY[entity_type] if a == "delete"}
+    found = session.execute(text("""
+        SELECT ref.relname, src.relname,
+               (SELECT string_agg(a.attname, ',' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY k(n, ord)
+                  JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.n)
+          FROM pg_constraint c JOIN pg_class src ON src.oid = c.conrelid JOIN pg_class ref ON ref.oid = c.confrelid
+          JOIN pg_namespace n ON n.oid = ref.relnamespace
+         WHERE c.contype = 'f' AND n.nspname = 'public' AND ref.relname = ANY(:tables)
+    """), {"tables": [table, *deleted_tables]}).all()
+    missing = []
+    for ref, src, cols in found:
+        if ref == table and (src, cols) not in covered:
+            missing.append(f"{src}.{cols}")
+        elif ref != table and src != ref and (ref, (src, cols)) not in children and (src, cols) not in covered:
+            missing.append(f"{src}.{cols} → {ref}")
+    return sorted(set(missing))
+
+
+def _purge_rows(session, deletion_id: str, entity_type: str, entity_id: str) -> dict[str, int]:
+    """Remove the record and its own rows under PURGE_POLICY; rows changed per table."""
+    table, key, _ = DELETABLE[entity_type]
+    session.execute(text("SELECT set_config('ghus.permanent_delete', :id, true)"), {"id": deletion_id})
+    report: dict[str, int] = {}
+
+    def run(statement: str, label: str) -> None:
+        done = session.execute(text(statement), {"id": entity_id}).rowcount
+        if done:
+            report[label] = report.get(label, 0) + int(done)
+
+    for link_table, column, action in PURGE_POLICY[entity_type]:
+        if action == "block" or not _exists(session, link_table):
+            continue
+        where = f"{column} = CAST(:id AS uuid)"
+        if action == "detach":
+            run(f"UPDATE {link_table} SET {column} = NULL WHERE {where}", f"{link_table}.{column} (detached)")
+            continue
+        for (parent, parent_key), rows in PURGE_CHILDREN.items():
+            if parent != link_table:
+                continue
+            for child, child_column, child_action in rows:
+                if not _exists(session, child):
+                    continue
+                child_where = f"{child_column} IN (SELECT {parent_key} FROM {link_table} WHERE {where})"
+                if child_action == "detach":
+                    run(f"UPDATE {child} SET {child_column} = NULL WHERE {child_where}",
+                        f"{child}.{child_column} (detached)")
+                else:
+                    run(f"DELETE FROM {child} WHERE {child_where}", f"{child}.{child_column}")
+        run(f"DELETE FROM {link_table} WHERE {where}", f"{link_table}.{column}")
+    run(f"DELETE FROM {table} WHERE {key} = CAST(:id AS uuid)", table)
+    session.execute(text("SELECT set_config('ghus.permanent_delete', '', true)"))   # door closed again
+    return report
+
+
+def purge_record(session, *, deletion_id: str, live: bool = False) -> dict:
+    """Permanently remove a deleted record whose 30 days are over. Idempotent: an already
+    purged, restored or not-yet-due deletion is reported and left alone. The caller owns
+    the transaction (one per deletion)."""
+    deletion_id = str(uuid.UUID(str(deletion_id)))
+    row = session.execute(text(
+        "SELECT deletion_id::text, entity_type, entity_id::text, name, snapshot, purge_after, restored_at, "
+        "purged_at, purge_after <= now() AS due FROM compass.deleted_record "
+        "WHERE deletion_id = CAST(:id AS uuid) FOR UPDATE"), {"id": deletion_id}).mappings().first()
+    if row is None:
+        raise DeletionError("Unknown deletion.")
+    base = {"deletion_id": deletion_id, "entity_type": row["entity_type"], "entity_id": row["entity_id"]}
+    if row["purged_at"] is not None:
+        return {**base, "outcome": "already_purged"}
+    if row["restored_at"] is not None:
+        return {**base, "outcome": "restored"}
+    if not row["due"]:
+        return {**base, "outcome": "not_due", "purge_after": row["purge_after"]}
+    entity_type, entity_id = row["entity_type"], row["entity_id"]
+    table, key, _ = DELETABLE[entity_type]
+    unplanned = _unplanned_links(session, entity_type)
+    if unplanned:
+        return {**base, "outcome": "blocked",
+                "reason": "Links the deletion policy does not cover yet: " + ", ".join(unplanned)}
+    blockers = {}
+    for link_table, column, action in PURGE_POLICY[entity_type]:
+        if action == "block" and _exists(session, link_table):
+            count = session.execute(text(
+                f"SELECT count(*) FROM {link_table} WHERE {column} = CAST(:id AS uuid)"), {"id": entity_id}).scalar()
+            if count:
+                blockers[f"{link_table}.{column}"] = int(count)
+    if blockers:
+        return {**base, "outcome": "blocked",
+                "reason": "Other records were merged into it: " + ", ".join(f"{k} ({v})" for k, v in blockers.items())}
+
+    # A dry run performs the very same purge inside a savepoint and rolls it back: its
+    # report is exact (rows reached two ways are counted once) and nothing persists.
+    savepoint = None if live else session.begin_nested()
+    try:
+        report = _purge_rows(session, deletion_id, entity_type, entity_id)
+    finally:
+        if savepoint is not None:
+            savepoint.rollback()
+    if not live:
+        return {**base, "outcome": "would_purge", "rows": report}
+
+    # The minimum kept: what the record was, when and why it went. A person's personal
+    # data is not kept.
+    snap = row["snapshot"] or {}
+    kept = {"entity_type": entity_type, "entity_id": entity_id, "removed_rows": report}
+    if entity_type == "person":
+        name = "Deleted person"
+    else:
+        name = row["name"]
+        original = snap.get("row") or {}
+        kept.update({k: original.get(k) for k in ("website_domain", "website", "country") if original.get(k)})
+    session.execute(text(
+        "UPDATE compass.deleted_record SET purged_at = now(), purge_report = CAST(:report AS jsonb), "
+        "snapshot = CAST(:kept AS jsonb), name = :name WHERE deletion_id = CAST(:id AS uuid)"),
+        {"report": json.dumps(report), "kept": json.dumps(kept, default=str), "name": name, "id": deletion_id})
+    return {**base, "outcome": "purged", "rows": report}
+
+
 SECTOR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
 
 
@@ -1978,3 +2501,60 @@ def _has_column(session, table: str, column: str) -> bool:
 def _assert_identifier(value: str) -> None:
     if not _IDENTIFIER_RE.match(value):
         raise ValueError(f"unsafe SQL identifier: {value!r}")
+
+
+# ------------------------------------------------- verified by a GHUS person (13 Nov 2026)
+_REVIEWED_TABLES = {"person": ("person", "person_id"), "event": ("event", "event_id")}
+
+
+def mark_reviewed_records_verified(session, *, live: bool = False) -> dict[str, object]:
+    """People and events a GHUS person verified, still shown Parked: made Verified.
+
+    Until 13 Nov 2026 the writer created every person and event as "parked" -
+    the state of a record an agent found and nobody has checked - even when a
+    GHUS person had just verified it in Review or stored it from the Data
+    Feed. Only records created by such a decision (review_admission_decision,
+    decision_kind 'new', approved) and still parked are changed; a record a
+    person later rejected or removed is left as it is. Dry run unless ``live``.
+    """
+    found: dict[str, list[str]] = {}
+    for entity_type, (table, id_column) in _REVIEWED_TABLES.items():
+        found[entity_type] = [str(r[0]) for r in session.execute(text(
+            f"SELECT t.{id_column} FROM {table} t WHERE t.record_status = 'parked' "
+            "AND EXISTS (SELECT 1 FROM review_admission_decision d "
+            "WHERE d.entity_type = :entity AND d.decision_kind = 'new' "
+            "AND d.outcome->>'status' = 'approved' "
+            f"AND d.outcome->>'canonical_entity_id' = t.{id_column}::text)"),
+            {"entity": entity_type}).all()]
+    if live:
+        for entity_type, ids in found.items():
+            table, id_column = _REVIEWED_TABLES[entity_type]
+            if ids:
+                execute_canonical_write(session, text(
+                    f"UPDATE {table} SET record_status = 'verified' "
+                    f"WHERE {id_column} = ANY(CAST(:ids AS uuid[])) AND record_status = 'parked'"),
+                    {"ids": ids})
+    return {"live": live, **{f"{k}_ids": v for k, v in found.items()},
+            **{k: len(v) for k, v in found.items()}}
+
+
+def _verified_backfill_main(argv: list[str] | None = None) -> int:
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="People and events a GHUS person verified, still shown Parked: made Verified.")
+    parser.add_argument("--live", action="store_true", help="write; absent means a dry run")
+    args = parser.parse_args(argv)
+    from agents.collection.discovery_requests import open_session
+
+    with open_session() as session:
+        with session.begin():
+            outcome = mark_reviewed_records_verified(session, live=args.live)
+    json.dump(outcome, sys.stdout, default=str)
+    sys.stdout.write("\n")
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(_verified_backfill_main())

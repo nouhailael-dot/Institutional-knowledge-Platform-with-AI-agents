@@ -4,7 +4,7 @@
 // The page never writes anything itself. Every call goes through
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
-import {createDateInput, eventSpan, usDate} from "./dates.js?v=20261104e";
+import {createDateInput, eventSpan, usDate} from "./dates.js?v=20261110b";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -111,6 +111,8 @@ export const STATUS_LABELS = {
   // Active and waiting for its next run; "Running" is said only while a run is.
   active: "Scheduled",
   running: "Running",
+  // Run now while another run goes: it starts by itself when that one ends (12 Nov 2026).
+  queued: "Queued",
   stalled: "Stopped responding",
   paused: "Paused",
   expired: "Finished",
@@ -223,7 +225,7 @@ export function openInReview(actor) {
 export function writtenLine(counts = {}) {
   const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
     ["corroborated", "confirmed"], ["conflict", "to review"], ["protected", "GHUS value kept"],
-    ["not_found", "not found"]];
+    ["not_found", "Not Found"]];
   return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`)
     .join(" · ") || "nothing new";
 }
@@ -241,8 +243,19 @@ export function runningRun(request) {
 }
 
 /** "Running", "Stopped responding", "Period over", or the request's own status. */
+/** What Run now did: started, or queued behind another run (12 Nov 2026). */
+export function runNowMessage(title, answer) {
+  if (answer?.queued) {
+    const ahead = Number(answer.position || 1) - 1;
+    return `“${title}” is queued: the server is busy with other requests${ahead > 0
+      ? `, and ${ahead} more ${ahead === 1 ? "waits" : "wait"} before it` : ""}. It starts by itself when its turn comes.`;
+  }
+  return `“${title}” is running. This takes a few minutes; the page updates by itself.`;
+}
+
 export function requestStatus(request) {
   if (isRunning(request)) return "running";
+  if (request.queued) return "queued";
   if ((request.runs || []).some((run) => run.status === "running" && run.stalled)) return "stalled";
   // Still active, but nothing more is scheduled: it runs only when asked.
   if (request.status === "active" && !request.next_run && request.skip_reason === "expired") {
@@ -296,7 +309,7 @@ const RUN_STATUS = {succeeded: "Completed", attention: "Completed with limits", 
 /** "4 updated · 2 confirmed · 2 not found": what a one-actor update found. */
 export function updateCountsLine(counts = {}) {
   const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
-    ["confirmed", "confirmed"], ["conflicts", "to review"], ["no_change", "unchanged"], ["missing", "not found"]];
+    ["confirmed", "confirmed"], ["conflicts", "to review"], ["no_change", "unchanged"], ["missing", "Not Found"]];
   return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`)
     .join(" · ") || "Nothing new";
 }
@@ -459,6 +472,42 @@ export function briefTerms(text, limit = 8) {
     .map((part) => part.replace(/^[\s\-*•\d.)]+/, "").trim())
     .filter(Boolean);
   return [...new Set(terms)].slice(0, limit);
+}
+
+// The words of a request that say how to search, not what to look for.
+const REQUEST_WORDS = new RegExp([
+  "^(please\\s+)?(can you\\s+)?(find|search|look|list|show|give|get|map|identify|track|monitor)" +
+    "(\\s+(me|us|for|up))*(\\s+(all|any|every|the|some))*\\s+",
+  "\\b(related|relevant|happening|taking place|upcoming|occurring|held|organized|organised)\\b",
+  "\\b(in|across|within|throughout)\\s+(the\\s+)?(united states|u\\.s\\.a?\\.?|usa|us|america|country|nation)\\b",
+  "\\b(in|over|during|for)\\s+the\\s+(next|coming|last|past)\\s+\\d*\\s*(days?|weeks?|months?|years?)\\b",
+  "\\b(this|next)\\s+(week|month|year|quarter)\\b",
+  "\\b(focused|focusing|centered|centred)\\s+on\\b",
+  "\\b(all|any|every)\\s+(sectors?|industries|topics|fields)\\b",
+  "\\b(events?|conferences?|organizations?|organisations?|people|persons?|experts?)\\b",
+].join("|"), "gi");
+
+/**
+ * Search terms from a one-line request (12 Nov 2026). "Find me all African
+ * Diaspora related events happening in the United States in the next 6 months
+ * - focused on all sectors, entrepreneurship" searched for that whole sentence,
+ * which a page almost never contains word for word, so the run found nothing.
+ * The request's own words are kept; only how-to-search words are dropped.
+ */
+export function termsFromSentence(text, limit = 8) {
+  const line = String(text || "").split(/\n/)[0];
+  const parts = line.split(/\s+[-–—]\s+|[,;:•]|\s+and\s+|\s+or\s+/i);
+  const terms = parts
+    .map((part) => part.replace(REQUEST_WORDS, " ").replace(/\s+/g, " ")
+      .replace(/^(of|on|for|in|about|with|the|a|an)\s+/i, "").replace(/\s+(of|on|for|in|the)$/i, "").trim())
+    .filter((part) => /[a-z]{3,}/i.test(part));
+  return [...new Set(terms)].slice(0, limit);
+}
+
+/** The description says the whole country, but the request names a smaller area. */
+export function areaContradicts(brief, draft) {
+  const nationwide = /\b(united states|u\.s\.a?\.?|usa|nationwide|across the (us|country))\b/i.test(String(brief || ""));
+  return nationwide && draft?.areaKind && draft.areaKind !== "us";
 }
 
 /**
@@ -880,7 +929,7 @@ export function actorResultLine(result) {
   if (!result.ok) return `${result.name}: not updated — ${result.error || "no reason recorded"}`;
   const counts = result.counts || {};
   const parts = [["new", "new"], ["changed", "changed"], ["additional", "more detail"], ["corroborated", "confirmed"],
-    ["not_found", "not found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
+    ["not_found", "Not Found"]].filter(([k]) => counts[k]).map(([k, w]) => `${counts[k]} ${w}`);
   if (result.review_items) parts.push(`${result.review_items} to Review Results`);
   if (!parts.length) parts.push("nothing new");
   return `${result.name}: ${parts.join(" · ")} · ${formatUsd(result.spent_usd)}`;
@@ -895,7 +944,7 @@ export const OUTCOME_LABELS = {
   conflict: "Conflict",
   protected: "GHUS value kept",
   unchanged: "No change",
-  not_found: "Not found",
+  not_found: "Not Found",
   not_yet_collected: "Not yet collected",
 };
 
@@ -1119,9 +1168,10 @@ export function resolveEventDraft(form, options = {}) {
   if (!brief) return form;
   const found = briefMatches(brief, options);
   const terms = briefTerms(brief, options.max_focus_terms || 8);
+  const fromLine = termsFromSentence(brief, options.max_focus_terms || 8);
   const resolved = {...form, title: briefTitle(brief),
     sector: form.sector || found.sector || ANY_SECTOR,
-    focusTerms: terms.length ? terms : [briefTitle(brief)]};
+    focusTerms: terms.length ? terms : fromLine.length ? fromLine : [briefTitle(brief)]};
   if (!form.areaTouched) {
     resolved.areaKind = found.state ? "state" : found.region ? "region" : "us";
     resolved.region = found.region || "";
@@ -1326,8 +1376,8 @@ function blankForm() {
  * cannot change them.
  */
 export function handoffForm(handoff, today) {
-  const form = {...blankForm(), brief: handoff.brief || "", cadence: "monthly", startDate: today,
-    duration: "3m"};
+  const form = {...blankForm(), brief: handoff.brief || "", cadence: handoff.cadence || "monthly",
+    startDate: today, duration: handoff.cadence === "once" ? "" : "3m"};
   if (handoff.edited) return form;
   form.sector = handoff.sector_code || "";
   form.areaTouched = true;
@@ -1340,6 +1390,14 @@ export function handoffForm(handoff, today) {
 // Sent to the signed-in user's own email: there is no address to type.
 export const EMAIL_NOTE = "You’ll receive an email notification when your results are ready to "
   + "review in Review Results.";
+
+let signedInCache = null;
+/** GET /api/me once per page: who is signed in and whether results are emailed. */
+export function whoAmI() {
+  if (signedInCache) return Promise.resolve(signedInCache);
+  return fetch("/api/me").then(r => (r.ok ? r.json() : {})).catch(() => ({}))
+    .then(body => (signedInCache = body));
+}
 
 export function createDiscoveryPage({html, useState, useEffect, useRef = () => ({current: null})}) {
   // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
@@ -1363,8 +1421,17 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
   }
 
   /** Frequency · Start Date · Duration, in one row; Duration only for a recurring request. */
-  /** Where the results are emailed: typed once here, kept in this browser (no sign-in yet). */
+  /**
+   * "You'll receive an email..." - said only when it is true (12 Nov 2026): a
+   * mail server is set up and the person signed in with an email address.
+   */
   function EmailNote() {
+    const [me, setMe] = useState(signedInCache);
+    useEffect(() => {
+      if (me) return;
+      whoAmI().then(setMe);
+    }, []);
+    if (!me?.email_notifications) return null;
     return html`<p class="discovery-email-note"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 11v6M12 7.5v.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       <span>${EMAIL_NOTE}</span></p>`;
   }
@@ -1840,14 +1907,12 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             ${statesForRegion(options, regionShown).map((s) => html`<option key=${s.code} value=${s.code}>${s.name}</option>`)}
           </select>
         <//>
-        <${Field} label="Event Type" error=${shown.types}>
-          <select value=${form.eventTypes[0] || ""} onChange=${(e) => set({eventTypes: e.target.value ? [e.target.value] : []})}>
-            <option value="">All Event Types</option>
-            ${(options.event_types || Object.keys(EVENT_TYPE_LABELS)).map((type) => html`
-              <option key=${type} value=${type}>${EVENT_TYPE_LABELS[type] || type}</option>`)}
-          </select>
-        <//>
+        ${/* 12 Nov 2026 (GHUS): no Event Type choice; a request finds every kind of event. */ ""}
       </div>
+      ${areaContradicts(form.brief, draft) && html`<p class="discovery-message warn" role="status">
+        Your description says the United States, but this request searches only
+        ${draft.areaKind === "state" ? "one state" : "one region"}. Choose All Regions to search the whole country.</p>`}
+      ${draft.focusTerms.length > 0 && html`<p class="discovery-hint">Searches for: ${draft.focusTerms.join(" · ")}</p>`}
       <div class="discovery-daterange">
         <span class="discovery-label">Event Date Range</span>
         <div class="discovery-daterange-row">
@@ -2050,6 +2115,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             <span class=${"requests-pill " + (run.status === "running" && run.stalled ? "stalled" : run.status)}>${
               run.status === "running" && run.stalled ? "Stopped responding" : RUN_STATUS[run.status] || run.status}</span>
             <span>${runFindings(run)} ${runFindings(run) === 1 ? "finding" : "findings"}</span>
+            <span class="requests-took" title="How long the run took">${run.elapsed_seconds != null
+              ? (run.status === "running" ? "Running for " : "Took ") + durationLabel(run.elapsed_seconds) : ""}</span>
             ${find && run.status !== "running" && reviewRunKey(run)
               ? html`<button class="link" onClick=${() => openRunInReview(run, entity)}>Show Results</button>` : html`<span></span>`}
           </li>`)}</ul>
@@ -2152,10 +2219,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       if (!handoff) return;
       setForm(handoffForm(handoff, today));
       setView("new"); setTouched(false);
-      if (status.configured) setMessage({kind: "running", text: "Proposed from your map. Check the "
+      if (status.configured) setMessage({kind: "running", text: handoff.note || ("Proposed from your map. Check the "
         + "description, sector and area before creating the request. "
         + "Monitoring doesn't know this map's results, so its first run may send some of the same "
-        + "organizations to Review Results again."});
+        + "organizations to Review Results again.")});
       onHandoffUsed();
     }, [handoff]);
 
@@ -2195,9 +2262,9 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       if (!window.confirm(`Run “${request.title}” now? It searches the web live and adds what passes the quality checks.`)) return;
       setBusy(true); setMessage(null);
       try {
-        await api(`/api/discovery/requests/${request.subscription_id}/run`, {method: "POST"});
-        setMessage({kind: "success", text: `“${request.title}” is running. This takes a few minutes; the page updates by itself.`});
-        setWatchUntil(Date.now() + 20 * 60 * 1000);
+        const answer = await api(`/api/discovery/requests/${request.subscription_id}/run`, {method: "POST"});
+        setMessage({kind: "success", text: runNowMessage(request.title, answer)});
+        setWatchUntil(Date.now() + (answer?.queued ? 60 : 20) * 60 * 1000);
         setTimeout(load, 4000);
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setBusy(false);
@@ -2219,8 +2286,11 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         + "sources; findings go to Review Results.")) return;
       setBusy(true); setMessage(null);
       try {
-        await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
-        if (action === "run") setWatchUntil(Date.now() + 20 * 60 * 1000);
+        const answer = await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
+        if (action === "run") {
+          setWatchUntil(Date.now() + (answer?.queued ? 60 : 20) * 60 * 1000);
+          setMessage({kind: "success", text: runNowMessage(request.title, answer)});
+        }
         await load();
       } catch (err) { setMessage({kind: "error", text: err.message}); }
       setBusy(false);

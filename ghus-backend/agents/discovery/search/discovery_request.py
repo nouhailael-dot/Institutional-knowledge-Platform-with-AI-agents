@@ -35,6 +35,56 @@ _USE_CASE_TEMPLATES = (
     "{theme} pilot project {geo}",
     "{theme} innovation hub {geo}",
 )
+# Technical synonyms and closely related terms for GHUS topics (6 Nov 2026).
+# They only ever add searches AFTER the request's own words (in the room the
+# request's own grid leaves, or in place of a search an earlier run of the same
+# request already made), and only for a topic the request itself names: a
+# search never drifts to a topic it did not ask for.
+TOPIC_SYNONYMS: dict[str, tuple[str, ...]] = {
+    # sectors, by name
+    "agriculture": ("agtech", "precision agriculture", "crop science"),
+    "water": ("water treatment", "desalination", "water reuse"),
+    "artificial intelligence": ("machine learning", "applied AI"),
+    "energy transition": ("renewable energy", "energy storage", "grid modernization"),
+    "mining": ("critical minerals", "mineral processing"),
+    "specialty chemicals": ("green chemistry", "industrial chemistry"),
+    "healthcare": ("digital health", "biomedical innovation"),
+    "sustainability": ("climate tech", "circular economy"),
+    # frequent sub-topics
+    "battery storage": ("energy storage", "grid-scale batteries"),
+    "energy storage": ("battery storage", "long-duration storage"),
+    "critical minerals": ("rare earth elements", "lithium extraction"),
+    "carbon capture": ("CCUS", "direct air capture"),
+    "desalination": ("brackish water treatment", "membrane desalination"),
+    "green hydrogen": ("clean hydrogen", "electrolysis"),
+    "hydrogen": ("clean hydrogen", "fuel cells"),
+    "precision agriculture": ("smart farming", "agtech"),
+    "fertilizer": ("crop nutrition", "soil fertility"),
+    "fertilizers": ("crop nutrition", "soil fertility"),
+    "phosphate": ("phosphorus", "phosphate fertilizer"),
+    "water reuse": ("wastewater recycling", "water recycling"),
+    "wastewater": ("wastewater treatment", "water reuse"),
+    "ai in healthcare": ("clinical AI", "medical machine learning"),
+    "machine learning": ("artificial intelligence", "deep learning"),
+    "soil health": ("regenerative agriculture", "soil carbon"),
+    "food security": ("agricultural resilience", "food systems"),
+    "solar": ("photovoltaics", "solar energy"),
+    "geothermal": ("geothermal energy", "enhanced geothermal"),
+    "climate adaptation": ("climate resilience", "adaptation planning"),
+}
+
+
+def theme_synonyms(themes) -> list[str]:
+    """Synonyms of the request's own topics, none repeating a topic it named."""
+    named = {str(t).casefold().strip() for t in themes}
+    out: list[str] = []
+    for theme in themes:
+        for synonym in TOPIC_SYNONYMS.get(str(theme).casefold().strip(), ()):
+            if synonym.casefold() not in named and synonym not in out:
+                out.append(synonym)
+    return out
+
+
 # Actor types that read naturally in a search; the full enum still drives
 # classification later.
 _QUERY_ACTOR_TYPES = (
@@ -248,6 +298,13 @@ def request_actor_queries(
          geos[(i + rotation_seed) % len(geos)])
         for i in range(len(themes) * len(types) * len(geos))
     ]
+    # Then the topics' synonyms, in the room the request's own words leave.
+    synonyms = theme_synonyms(themes)
+    grid += [
+        (synonyms[i % len(synonyms)], types[(i + rotation_seed) % len(types)],
+         geos[(i + rotation_seed) % len(geos)])
+        for i in range(len(synonyms) * len(types) * len(geos))
+    ] if synonyms else []
     use_case_budget = max(1, max_queries // 4)
     grid_budget = max_queries - use_case_budget
 
@@ -411,6 +468,14 @@ def request_event_queries(
         theme, kind = themes[i % len(themes)], types[(i // len(themes)) % len(types)]
         add(f"{theme} {kind} {years} official site registration",
             theme=theme, event_type=kind, query_type="official_source")
+    # Then the topics' synonyms, in the room the request's own words and the
+    # official-site searches leave (6 Nov 2026).
+    for theme, kind, geo in [(t, k, g) for k in types for g in geos
+                             for t in theme_synonyms(themes)]:
+        if len(queries) >= max_queries:
+            break
+        add(f"{theme} {kind} {geo} {years}", theme=theme, event_type=kind, geography=geo,
+            query_type="synonym")
     return queries, {"discovery_request": request.describe(), "query_plan": plan}
 
 

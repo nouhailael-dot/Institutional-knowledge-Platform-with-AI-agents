@@ -150,7 +150,7 @@ def test_macros_external_links_and_compression_bombs_are_refused():
 
 
 def test_formulas_are_never_evaluated_and_are_reported_on_their_row():
-    data = filled_xlsx("actor", [{**ACTOR, "Official name": '=HYPERLINK("http://x","y")'}])
+    data = filled_xlsx("actor", [{**ACTOR, "Official name": '=SUM(A1:A3)'}])
     parsed = parse.parse_upload("a.xlsx", data, "actor")
     row = parsed.rows[0]
     result = validate.RowChecker("actor", VOCAB).check(row["row_number"], row["values"])
@@ -208,7 +208,7 @@ def test_category_and_type_must_belong_together():
 
 
 def test_required_fields_types_and_lists():
-    result = check("actor", {"Website": "www.no-scheme.org", "Organization Category": "Bakery",
+    result = check("actor", {"Website": "not a web page", "Organization Category": "Bakery",
                              "Sector": "Space"})
     errors = " ".join(result["errors"])
     assert "Official name is required" in errors
@@ -775,3 +775,215 @@ def test_import_history_shows_when_the_database_cannot_be_reached(monkeypatch, t
     service.fail = True
     assert client.get("/api/datafeed/history").json() == {
         "imports": [{"run_id": "r1", "import_name": "Spring list"}], "unavailable": True}
+
+
+def test_the_templates_carry_the_directory_columns_and_ghus_notes():
+    """GHUS feedback, 11 Nov 2026: each Data Feed sheet has the columns the
+    Ecosystem Directory shows, and GHUS Notes has a column to go into."""
+    from src.datafeed import contract
+
+    keys = {t: {f.key for f in contract.fields(t)} for t in contract.RECORD_TYPES}
+    for record_type in contract.RECORD_TYPES:
+        assert "ghus_notes" in keys[record_type]
+    assert {"primary_technical_focus", "technical_approach", "current_activities",
+            "technology_ip_notes", "key_constraints", "funding_summary",
+            "primary_lifecycle_role"} <= keys["actor"]
+    assert {"access_type", "sponsoring_orgs"} <= keys["event"]
+    assert "orcid" in keys["person"]
+    # A file from the 2 Nov template still reads.
+    assert "2026-11-02.1" in contract.ACCEPTED_TEMPLATE_VERSIONS
+
+
+def test_an_event_without_an_exact_date_is_not_refused():
+    """12 Nov 2026: Beyond Africa (Explore and Map found only '2026') was never
+    saved, because an event's start date was required. A date not known yet is
+    Not Found on the record, not a reason to refuse it."""
+    from src.datafeed import contract
+
+    start = next(f for f in contract.fields("event") if f.key == "start_date")
+    assert start.required is False
+    from src.map_agent.save import _us_day
+    assert _us_day("2026") == ""   # a year alone is never turned into a day
+
+
+
+# ------------------------------------------------ links in the sheets (13 Nov 2026)
+
+def test_a_web_address_without_https_is_accepted():
+    for typed in ("beyondafrica.org", "www.afrotech.com", "afrotech.com/2026/agenda"):
+        result = check("actor", {**ACTOR, "Website": typed})
+        assert not any("Website" in e for e in result["errors"]), typed
+        assert result["payload"]["website"] == "https://" + typed
+
+
+def test_a_link_inserted_on_a_cell_is_read_as_its_address():
+    """Excel's Insert Link: the cell shows words, the link opens the page."""
+    wb = load_workbook(io.BytesIO(filled_xlsx("actor", [{**ACTOR, "Website": "Their website",
+                                                         "GHUS Notes": "Met at the summit"}])))
+    ws = wb[contract.SHEET_NAMES["actor"]]
+    columns = {contract.header_key(c.value): c.column for c in ws[1]}
+    ws.cell(row=2, column=columns[contract.header_key("Website")]).hyperlink = "https://prairiewaterlab-test.org"
+    ws.cell(row=2, column=columns[contract.header_key("GHUS Notes")]).hyperlink = "https://example.org/report"
+    out = io.BytesIO(); wb.save(out)
+    parsed = parse.parse_upload("a.xlsx", out.getvalue(), "actor")
+    row = parsed.rows[0]
+    result = validate.RowChecker("actor", VOCAB).check(row["row_number"], row["values"])
+    assert result["payload"]["website"] == "https://prairiewaterlab-test.org"
+    assert result["payload"]["ghus_notes"] == "Met at the summit (https://example.org/report)"
+    assert not any("formula" in e for e in result["errors"])
+
+
+def test_a_hyperlink_formula_is_read_never_run():
+    assert parse.hyperlink_formula('=HYPERLINK("https://afrotech.com","AfroTech")') ==         ("https://afrotech.com", "AfroTech")
+    assert parse.hyperlink_formula('=HYPERLINK(A1,"x")') is None           # not a plain address
+    assert parse.hyperlink_formula('=HYPERLINK("javascript:alert(1)")') is None
+    result = check("actor", {**ACTOR, "Website": '=HYPERLINK("https://prairiewaterlab-test.org","Site")'})
+    assert result["payload"]["website"] == "https://prairiewaterlab-test.org"
+    assert not any("formula" in e for e in result["errors"])
+    still = check("actor", {**ACTOR, "Description": "=SUM(A1:A3)"})
+    assert any("starts like a formula" in e for e in still["errors"])
+
+
+def test_the_directory_columns_and_ghus_notes_reach_the_record():
+    """13 Nov 2026: the columns added on 12 Nov were in the sheets but never saved."""
+    actor = check("actor", {**ACTOR, "GHUS Notes": "Met at the summit", "Funding": "NSF grant",
+                            "Primary technical focus": "Soil sensors", "Lifecycle role": "Validation"})
+    assert {k: actor["payload"].get(k) for k in
+            ("ghus_notes", "funding_summary", "primary_technical_focus", "primary_lifecycle_role")} == \
+        {"ghus_notes": "Met at the summit", "funding_summary": "NSF grant",
+         "primary_technical_focus": "Soil sensors", "primary_lifecycle_role": "Validation"}
+    event = check("event", {"Event name": "X Summit", "Official event URL": "https://x-summit.org",
+                            "Organizer": "X Org", "Access": "Free", "Sponsors": "A; B", "GHUS Notes": "n"})
+    assert (event["payload"]["access_type"], event["payload"]["sponsoring_orgs"],
+            event["payload"]["organizer"], event["payload"]["ghus_notes"]) == ("Free", "A; B", "X Org", "n")
+    person = check("person", {"First name": "Ana", "Last name": "Ruiz", "Professional title": "Professor",
+                              "Organization": "University of Arizona", "ORCID": "0000-0002-1825-0097",
+                              "Public LinkedIn URL": "https://www.linkedin.com/in/ana", "GHUS Notes": "n"})
+    assert (person["payload"]["orcid"], person["payload"]["ghus_notes"]) == ("0000-0002-1825-0097", "n")
+
+
+# ------------------------- organizations not in the Directory yet (13 Nov 2026)
+
+def test_missing_organizations_are_kept_with_the_import_for_the_team(tmp_path):
+    from src.datafeed.service import DataFeedService
+
+    service = DataFeedService(preview_dir=tmp_path / "previews")
+    service.originals_dir = tmp_path / "originals"
+    run = "11111111-2222-4333-8444-555555555555"
+    service._keep_missing_organizations(run, ["University Mohammed 6 Polytechnic GHUS"])
+    assert service.missing_organizations(run) == ["University Mohammed 6 Polytechnic GHUS"]
+    assert service.missing_organizations("22222222-2222-4333-8444-555555555555") == []
+    service._keep_missing_organizations("not-a-run", ["X"])      # never a bad file name
+    assert not (tmp_path / "originals" / "not-a-run.organizations-missing.json").exists()
+
+
+@needs_db
+def test_a_withdrawn_import_leaves_review_and_history_and_the_same_file_can_be_sent_again(live):
+    """GHUS, 13 Nov 2026: 'UM6P GHUS Team Information' was taken back to be imported
+    again, so the team could see it stored straight in the Directory."""
+    import subprocess
+    import sys
+
+    service, runs = live
+    suffix = str(int(time.time() * 1000))
+    data = filled_xlsx("person", [{
+        "First name": "Salma", "Last name": f"Withdraw {suffix}", "Organization": "University of Arizona",
+        "Public LinkedIn URL": f"https://www.linkedin.com/in/salma-{suffix}"}])
+    first = service.validate_upload("person", f"team-{suffix}.xlsx", data)
+    assert first["counts"]["valid"] == 1, first["rows"]
+    staged = service.confirm(first["preview_id"], uploaded_by="Test Uploader", attest_source=True,
+                             admission="review", import_name=f"Team {suffix}", accept_left_out=False)
+    runs.append(staged["run_id"])
+    assert staged["run_id"] in {i["run_id"] for i in _history_with_review(service)}
+    assert service.validate_upload("person", f"team-{suffix}.xlsx", data)["already_imported_run_id"]
+
+    env = {**os.environ, "DATABASE_URL": URL, "DATAFEED_WRITES_ENABLED": "true"}
+    command = [sys.executable, "-m", "agents.datafeed.stage_import", "--withdraw",
+               staged["run_id"], "--by", "Test Uploader"]
+    check = subprocess.run(command, cwd=BACKEND, env=env, capture_output=True, text=True)
+    assert json.loads(check.stdout.splitlines()[-1])["waiting"] == 1, check.stderr[-800:]
+    done = subprocess.run([*command, "--live"], cwd=BACKEND, env=env, capture_output=True, text=True)
+    outcome = json.loads(done.stdout.splitlines()[-1])
+    assert (outcome["withdrawn"], outcome["is_withdrawn"]) == (1, True), done.stderr[-800:]
+
+    assert staged["run_id"] not in {i["run_id"] for i in _history_with_review(service)}
+    again = service.validate_upload("person", f"team-{suffix}.xlsx", data)
+    assert not again["already_imported_run_id"] and again["can_confirm"], again
+    assert [r["status"] for r in again["rows"]] == ["new"]
+
+
+def test_withdrawing_an_import_takes_its_records_off_the_review_page(monkeypatch, tmp_path):
+    """GHUS, 13 Nov 2026: 'Withdraw this import' in Import History. The backend
+    rejects its waiting records; the Review page's own copy drops them at once,
+    and the person signed in is the one named as withdrawing it."""
+    from fastapi.testclient import TestClient
+
+    import backend.app as app_module
+    from backend import datafeed_routes
+    from src.identity import acting_as, done
+    from src.review.store import ReviewStore
+
+    run = "5b0c2f9e-7c1a-4d2b-9e3f-2a1b0c9d8e7f"
+    store = ReviewStore(tmp_path / "review.sqlite3")
+    with store.connect() as db:
+        for index, (source_run, status) in enumerate((
+                (f"datafeed:{run}", "pending_review"), (f"datafeed:{run}", "pending_review"),
+                (f"datafeed:{run}", "approved"), ("datafeed:other", "pending_review"))):
+            db.execute(
+                "INSERT INTO review_candidate (candidate_id,source_run_id,source_index,"
+                "source_description,entity_type,display_name,original_payload,reviewed_payload,"
+                "evidence,agent_metadata,duplicate_state,status,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (f"c{index}", source_run, str(index), "Data Feed import: UM6P · team.xlsx",
+                 "person", f"Person {index}", "{}", "{}", "[]", "{}", "new", status, 1.0))
+    asked = []
+
+    class Service:
+        def withdraw(self, run_id, *, by):
+            asked.append((run_id, by))
+            return {"run_id": run_id, "withdrawn": 2, "is_withdrawn": True}
+
+    monkeypatch.setattr(datafeed_routes, "datafeed_service", lambda: Service())
+    monkeypatch.setattr(app_module, "review_store", lambda: store)
+    token = acting_as("Zahra")
+    try:
+        answer = TestClient(app_module.app).post(f"/api/datafeed/imports/{run}/withdraw").json()
+    finally:
+        done(token)
+    assert answer["left_review"] == 2
+    with store.connect() as db:
+        left = {r[0]: (r[1], r[2]) for r in db.execute(
+            "SELECT candidate_id, status, folded_into FROM review_candidate")}
+    assert left == {"c0": ("pending_review", "withdrawn_import"),
+                    "c1": ("pending_review", "withdrawn_import"),
+                    "c2": ("approved", None), "c3": ("pending_review", None)}
+    assert asked and asked[0][0] == run
+
+
+def test_only_an_import_with_nothing_stored_can_be_withdrawn(tmp_path):
+    from src.datafeed.service import DataFeedService
+
+    service = DataFeedService(bridge=FakeBridge(), connect=None, preview_dir=tmp_path)
+    with pytest.raises(DataFeedError, match="Unknown import"):
+        service.withdraw("not-a-run", by="Zahra")
+    with pytest.raises(DataFeedError, match="Sign in"):
+        service.withdraw("5b0c2f9e-7c1a-4d2b-9e3f-2a1b0c9d8e7f", by="")
+
+
+def test_an_uploaded_file_is_kept_even_when_sending_it_fails(tmp_path):
+    """GHUS, 13 Nov 2026: 'UM6P GHUS Team Information' offered no Excel to download.
+    Its sending failed part-way, and the file was kept only after a full success.
+    It is now kept before sending, under its fingerprint, and found from the import."""
+    service = _offline_service(tmp_path)
+    sha = "ab" * 32
+    run = "11111111-2222-4333-8444-555555555555"
+    preview = {"preview_id": "c" * 32, "file": {"name": "GHUS_People_Template (2).xlsx", "sha256": sha}}
+    service._upload_path("c" * 32).write_bytes(b"cells")
+    service._keep_upload(preview)                       # before the records are sent
+    assert service.original_file(run) is None           # no database to say which file
+    kept = service.original_file(run, sha)              # Import History knows the fingerprint
+    assert kept.read_bytes() == b"cells"
+    assert kept.name.split("__", 1)[1] == "GHUS_People_Template _2_.xlsx"   # safe characters only
+    service._keep_upload(preview)                       # kept once
+    assert len(list(service.originals_dir.glob(f"sha-{sha}__*"))) == 1
+    assert service.original_file(run, "not-a-fingerprint") is None

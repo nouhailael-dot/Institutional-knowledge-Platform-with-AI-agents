@@ -435,7 +435,7 @@ test('only API-provided editable fields enter a decision payload', () => {
   assert.deepEqual(payload, {name: 'Reviewed Lab', description: 'Reviewed'});
 });
 
-test('decisions enforce a reviewer, a target and a fixed rejection reason', () => {
+test('decisions enforce a reviewer and a target; rejecting needs no reason', () => {
   const candidate = {status: 'pending_review'};
   for (const entity of ['actor', 'event', 'person']) {
     assert.deepEqual(decisionOptions(entity).map(x => x.value),
@@ -449,7 +449,8 @@ test('decisions enforce a reviewer, a target and a fixed rejection reason', () =
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'same_existing', targetId: '', admissionConfigured: true}), false);
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'same_existing', targetId: 'id', admissionConfigured: true}), true);
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'reject', rejectionReason: 'Outside target geography', admissionConfigured: true}), true);
-  assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'reject', rejectionReason: 'Other', rejectionOther: '', admissionConfigured: true}), false);
+  // 12 Nov 2026 (GHUS feedback): Reject asks "are you sure?" and nothing else.
+  assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'reject', admissionConfigured: true}), true);
   assert.equal(canSubmitReview({candidate: {status: 'approved'}, reviewer: 'R', decisionKind: 'defer', admissionConfigured: true}), false);
   // A draft error blocks the decision too.
   assert.equal(canSubmitReview({candidate, reviewer: 'R', decisionKind: 'new', admissionConfigured: true, draftErrors: {name: 'Required.'}}), false);
@@ -469,7 +470,10 @@ test('the confirmation lists every pending edit, before and after', () => {
   );
   assert.match(component, /function confirmText\(kind\)/);
   assert.match(component, /SENTENCES\.verifyConsequences/);
-  assert.match(component, /SENTENCES\.noDeletion/);
+  // Reject and Park ask once, in plain words; no reason, no second step.
+  assert.match(component, /Reject "\$\{selected\.display_name\}"\?/);
+  assert.match(component, /Park "\$\{selected\.display_name\}"\?/);
+  assert.doesNotMatch(component, /Confirm Reject|BUTTONS\.confirm\} \$\{BUTTONS\.reject/);
 });
 
 test('inline length validation and explicit duplicate differences', () => {
@@ -530,7 +534,7 @@ test('decisions, the sticky footer and the queue are reachable and keyboard-oper
 test('every action is disabled while the canonical writer is unavailable', () => {
   // Off only when the server says so; while loading it is unknown, not "off".
   assert.match(component, /const writerDown = data.admission_configured === false/);
-  assert.match(component, /disabled=\$\{!pending \|\| busy \|\| writerDown\}/);
+  assert.match(component, /disabled=\$\{!pending \|\| busy \|\| writerDown/);
   assert.match(component, /SENTENCES\.writerUnavailable/);
 });
 
@@ -1174,7 +1178,7 @@ test('older update results render in the boxes, from what they wrote, with their
   assert.equal(rows.mission_sector_focus.state, 'Not Yet Collected');
   const [run] = updateRunRows(legacy);
   assert.equal(run.title, 'Clean Energy Group');
-  assert.equal(run.summary, '1 updated · 3 confirmed · 1 not found');
+  assert.equal(run.summary, '1 updated · 3 confirmed · 1 Not Found');
   assert.deepEqual(run.pages, ['https://www.cleanegroup.org/']);
 });
 
@@ -1513,15 +1517,15 @@ test('an organization card has no Mapped Topic line (3 Nov 2026)', () => {
   assert.doesNotMatch(src, /"Mapped Topic"/);
 });
 
-test('Hub Proposals shows one example proposal, marked, with inert buttons', async () => {
-  const {EXAMPLE_HUB_PROPOSAL, thresholdLabel, hubProposalPlace} = await import('../frontend/review.js');
-  assert.equal(EXAMPLE_HUB_PROPOSAL.example, true);
-  assert.ok(EXAMPLE_HUB_PROPOSAL.members.every(m => m.name.startsWith('Example ')));
-  assert.equal(thresholdLabel(EXAMPLE_HUB_PROPOSAL.family_count, EXAMPLE_HUB_PROPOSAL.families_required), '5 of 4 required');
-  assert.equal(hubProposalPlace(EXAMPLE_HUB_PROPOSAL), 'Wichita, Kansas, United States · sector WATER');
+test('Hub Recommendations shows only real proposals, no example (10 Nov 2026)', async () => {
+  const {thresholdLabel, hubProposalPlace} = await import('../frontend/review.js');
+  const proposal = {primary_city: 'Wichita', state: 'Kansas', country: 'United States',
+    dimension: 'sector', dimension_key: 'WATER', family_count: 5, families_required: 4};
+  assert.equal(thresholdLabel(proposal.family_count, proposal.families_required), '5 of 4 required');
+  assert.equal(hubProposalPlace(proposal), 'Wichita, Kansas, United States · sector WATER');
   const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
-  assert.match(src, /\[\.\.\.hubDemo\.proposals, EXAMPLE_HUB_PROPOSAL\]/);
-  assert.match(src, /<button class="btn" disabled title="Example: creates the hub/);
+  assert.match(src, /\$\{hubDemo\.proposals\.map\(proposal =>/);
+  assert.doesNotMatch(src, /EXAMPLE_HUB_PROPOSAL|proposal\.example|not real data/);
 });
 
 test('agent reasons in Review use the platform spelling of organization', async () => {
@@ -1554,4 +1558,39 @@ test('a list box shows one line per entry, dates first for activities', async ()
 test('the organization card no longer shows a Category Note field', () => {
   const src = fs.readFileSync(new URL('../frontend/review.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /"category_note", draft\.category_note/);
+});
+
+test('each grant says whether it is active, recent or historical', () => {
+  const text = formatFactValue({entries: [
+    {amount: '$3M', funder: 'DOE', date: '2024-2028', status: 'active'},
+    {amount: '$1M', funder: 'NSF', date: '2016', status: 'historical'},
+  ]});
+  const [first, second] = text.split('\n');
+  assert.match(first, /^• \[Active\] /);
+  assert.match(first, /\$3M/);
+  assert.match(second, /^• \[Historical\] /);
+  assert.doesNotMatch(text, /Status:/);
+});
+
+test('Review counts the essential fields found with a source, without calling it verified', async () => {
+  const {essentialCompleteness} = await import('../frontend/review.js');
+  const candidate = {
+    entity_type: 'actor',
+    reviewed_payload: {actor_category: 'research_center'},
+    agent_metadata: {facts: [
+      {fact_key: 'location', fact_type: 'light_pull', layer: 1, collection_state: 'found',
+       value: {city: 'Tucson', state: 'AZ'}, source_url: 'https://lab.example/contact'},
+      {fact_key: 'why_matched', fact_type: 'light_pull', layer: 1, collection_state: 'not_found',
+       value: null},
+      {fact_key: 'parent_and_center_type', fact_type: 'light_pull', layer: 1,
+       collection_state: 'found', value: {parent_organization: 'University of Arizona'},
+       source_url: 'https://lab.example/about'},
+    ]},
+  };
+  const out = essentialCompleteness(candidate);
+  assert.equal(out.total, 5);
+  assert.equal(out.supported.length, 2);
+  assert.equal(out.missing.length, 3);
+  const src = fs.readFileSync(new URL('../frontend/labels.js', import.meta.url), 'utf8');
+  assert.match(src, /Complete is not verified/);
 });

@@ -59,7 +59,8 @@ def test_one_sentence_becomes_separate_facts_in_their_own_boxes():
                                         "quotes": ["operates in Texas"]},
         "funding_signal": {"stated": True, "page": HOME,
                            "value": {"amount": "$2M", "funder": "Texas Energy Fund",
-                                     "funding_type": "grant", "date": "March 2026"},
+                                     "funding_type": "grant", "date": "March 2026",
+                                     "role": "received"},
                            "quotes": ["received a $2M grant from the Texas Energy Fund in March 2026"]},
     }, ["ownership_and_size", "mapped_geography_operations", "funding_signal"])
     ev = read.evidence
@@ -86,7 +87,7 @@ def test_a_part_the_quotes_do_not_state_is_dropped_never_kept():
     assert evidence["dropped_parts"] == ["employees: 650", "revenue: $40 million"]
     # Nothing left that the quotes back: not found, with the reason.
     read, _ = _read({"funding_signal": {"stated": True, "page": HOME,
-                                        "value": {"amount": "$9M"},
+                                        "value": {"amount": "$9M", "role": "received"},
                                         "quotes": ["operates in Texas"]}}, ["funding_signal"])
     assert read.evidence["funding_signal"]["collection_state"] == "not_found"
     assert "no part" in read.rejected["funding_signal"]

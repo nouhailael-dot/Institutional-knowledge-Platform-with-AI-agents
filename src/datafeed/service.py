@@ -30,6 +30,7 @@ PREVIEW_TTL = 24 * 3600
 BATCH_CONTRACT = "ghus-datafeed-batch/1"
 _PREVIEW_ID = re.compile(r"^[0-9a-f]{32}$")
 _UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 MAX_MANUAL_ROWS = 50
 # What the uploader confirms, recorded word for word with the import.
 ATTESTATIONS = {
@@ -350,10 +351,62 @@ class DataFeedService:
             self.originals_dir.mkdir(parents=True, exist_ok=True)
             (self.originals_dir / f"{run_id}__{safe}.xlsx").write_bytes(data)
 
-    def original_file(self, run_id: str) -> Path | None:
+    def _keep_upload(self, preview: dict[str, Any]) -> None:
+        """The uploaded file, kept on the disk before its records are sent (13 Nov 2026).
+
+        It was kept only once the import had fully succeeded, so an import whose
+        sending failed part-way (its records staged, the answer lost) kept no
+        file, and Import History could not offer it. Kept under the file's
+        SHA-256, which the import records, so it is found whatever happens next.
+        """
+        upload = self._upload_path(preview["preview_id"])
+        sha = str((preview.get("file") or {}).get("sha256") or "")
+        if not upload.is_file() or not _SHA256.match(sha) or self._file_by_sha(sha):
+            return
+        safe = re.sub(r"[^\w.\- ]", "_", Path((preview.get("file") or {}).get("name")
+                                                 or "import").name)
+        self.originals_dir.mkdir(parents=True, exist_ok=True)
+        (self.originals_dir / f"sha-{sha}__{safe}").write_bytes(upload.read_bytes())
+
+    def _file_by_sha(self, sha: str | None) -> Path | None:
+        if not _SHA256.match(str(sha or "")) or not self.originals_dir.is_dir():
+            return None
+        return next(iter(sorted(self.originals_dir.glob(f"sha-{sha}__*"))), None)
+
+    def _keep_missing_organizations(self, run_id: object, names: list[str]) -> None:
+        """13 Nov 2026 (GHUS): organizations a file names that are not in the
+        directory, kept with its import so Import History tells the whole team."""
+        if not names or not _UUID.match(str(run_id or "")):
+            return
+        self.originals_dir.mkdir(parents=True, exist_ok=True)
+        (self.originals_dir / f"{run_id}.organizations-missing.json").write_text(
+            json.dumps(names, ensure_ascii=False), encoding="utf-8")
+
+    def missing_organizations(self, run_id: str) -> list[str]:
+        path = self.originals_dir / f"{run_id}.organizations-missing.json"
+        try:
+            names = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        return [str(n) for n in names if str(n).strip()] if isinstance(names, list) else []
+
+    def original_file(self, run_id: str, sha256: str | None = None) -> Path | None:
         if not _UUID.match(run_id or "") or not self.originals_dir.is_dir():
             return None
-        return next(iter(sorted(self.originals_dir.glob(f"{run_id}__*"))), None)
+        kept = next(iter(sorted(self.originals_dir.glob(f"{run_id}__*"))), None)
+        if kept is not None:
+            return kept
+        if sha256 is None and self.connect is not None:
+            try:
+                with self.connect() as conn:
+                    row = conn.execute(
+                        "SELECT config->'datafeed'->>'file_sha256' FROM scrape_run "
+                        "WHERE run_id = %s::uuid AND source_name = 'ghus_data_feed'",
+                        (run_id,)).fetchone()
+                sha256 = row[0] if row else None
+            except Exception:  # noqa: BLE001 - the database unreachable: no file offered
+                sha256 = None
+        return self._file_by_sha(sha256)
 
     def _store(self, preview: dict[str, Any]) -> None:
         self.preview_dir.mkdir(parents=True, exist_ok=True)
@@ -371,6 +424,25 @@ class DataFeedService:
         return json.loads(path.read_text(encoding="utf-8"))
 
     # ------------------------------------------------------------------ confirm
+    @staticmethod
+    def _claim_ownership(preview: dict, run_id, admitted: list[dict]) -> None:
+        """The signed-in uploader owns the import and every record it *created*
+        (accounts Phase 3). A record matched to an existing one keeps its owner.
+        Records stored later by the background completion are traced through the
+        import (its run id); nothing is claimed for them here."""
+        from src.accounts import activity
+
+        origin = "mapped" if preview.get("method") == "map" else "imported"
+        if run_id:
+            # The record type travels with the import's ownership, so records the
+            # background completion stores later can be given the same owner.
+            activity.claim("import", run_id, origin, source_ref=f"type:{preview.get('record_type')}")
+        kind = preview.get("record_type")
+        for item in admitted:
+            if item.get("outcome") in ("stored", "approved_verified") and item.get("entity_id") \
+                    and kind in ("actor", "person", "event"):
+                activity.claim(kind, item["entity_id"], origin, source_ref=f"datafeed:{run_id}")
+
     def confirm(self, preview_id: str, *, import_name: str, accept_left_out: bool,
                 uploaded_by: str | None = None, attest_source: bool = False,
                 admission: str = "directory", attest_authorized: bool = False,
@@ -432,6 +504,7 @@ class DataFeedService:
                                               else "source"]})
         batch["rows_total"] = preview["counts"]["total"]
         batch["ai_enrichment"] = bool(ai_enrichment)
+        self._keep_upload(preview)
         try:
             outcome = self.bridge.stage(batch)
         except DataFeedBridgeError as exc:
@@ -440,6 +513,7 @@ class DataFeedService:
         self._path(preview_id).unlink(missing_ok=True)
         rows = outcome.get("rows") or []
         admitted = outcome.get("admissions") or []
+        self._claim_ownership(preview, outcome.get("run_id"), admitted)
         enriching = None
         if outcome.get("admissions_pending") and outcome.get("run_id"):
             cap = enrichment_cap(outcome.get("staged", 0))
@@ -449,7 +523,11 @@ class DataFeedService:
                 enriching = {"started": True, "max_usd": cap}
             except DataFeedBridgeError as exc:
                 enriching = {"started": False, "error": str(exc)}
+        missing = sorted({str(a["organization_missing"]).strip() for a in admitted
+                          if str(a.get("organization_missing") or "").strip()})
+        self._keep_missing_organizations(outcome.get("run_id"), missing)
         return {"status": outcome.get("status"), "run_id": outcome.get("run_id"),
+                "organizations_missing": missing,
                 "stored": sum(a.get("outcome") in ("stored", "matched_existing") for a in admitted),
                 "not_stored": [a for a in admitted
                                if a.get("outcome") in ("not_stored", "possible_duplicate")],
@@ -467,7 +545,7 @@ class DataFeedService:
         if self.connect is None:
             return []
         with self.connect() as conn:
-            rows = conn.execute(HISTORY_SQL, (limit,)).fetchall()
+            rows = conn.execute(HISTORY_SQL, (limit, WITHDRAWN_REASON)).fetchall()
         out = []
         for r in rows:
             meta, stats = r[3] or {}, r[4] or {}
@@ -475,6 +553,9 @@ class DataFeedService:
             # 3 Nov 2026). Earlier imports sent to Review are hidden, not deleted:
             # their records stay in Review until decided.
             if meta.get("admission") not in HISTORY_ADMISSIONS:
+                continue
+            # Withdrawn to be imported again (13 Nov 2026): the new import is the one listed.
+            if len(r) > 12 and r[11] and r[12] == r[11]:
                 continue
             counts = {"pending": r[5], "approved_new": r[6], "matched_existing": r[7],
                       "rejected": r[8], "deferred": r[9]}
@@ -493,7 +574,11 @@ class DataFeedService:
                 "status": ("Awaiting Review" if pending and not decided
                            else "Partly reviewed" if pending else "Reviewed"),
                 "light_pull_read": r[10],
-                "has_file": self.original_file(r[0]) is not None,
+                "has_file": self.original_file(r[0], meta.get("file_sha256") or "") is not None,
+                "organizations_missing": self.missing_organizations(str(r[0])),
+                # Nothing of it is in the directory yet: it can be taken back and sent again.
+                "can_withdraw": bool(counts["pending"]) and not (
+                    counts["approved_new"] or counts["matched_existing"]),
             })
         return out
 
@@ -509,6 +594,16 @@ class DataFeedService:
         return [{"row_number": r[0], "name": r[1], "status": labels.get(
             r[3] if r[2] == "approved" and r[3] else r[2], r[2]), "entity_id": r[4],
             "light_pull_read": bool(r[5])} for r in rows]
+
+    def created_entities(self, run_id: str) -> list[str]:
+        """Records this import created (not those matched to existing records), as
+        recorded by Review's decisions, including those its background completion
+        stored after the upload."""
+        if not _UUID.match(run_id or "") or self.connect is None:
+            return []
+        with self.connect() as conn:
+            rows = conn.execute(RECORDS_SQL, {"run": run_id}).fetchall()
+        return [str(r[4]) for r in rows if r[3] in ("new", "imported_verified") and r[4]]
 
     # ------------------------------------------------------------------ completion
     def completion_estimate(self, run_id: str) -> dict[str, Any]:
@@ -535,6 +630,17 @@ class DataFeedService:
         return {"started": True, "pid": pid, "organisations": len(estimate["organisations"]),
                 "max_usd": max_usd}
 
+    def withdraw(self, run_id: str, *, by: str) -> dict[str, Any]:
+        """Withdraw an import whose records all still wait in Review (13 Nov 2026)."""
+        if not _UUID.match(run_id or ""):
+            raise DataFeedError("Unknown import.")
+        if not str(by or "").strip():
+            raise DataFeedError("Sign in to withdraw an import.")
+        try:
+            return self.bridge.withdraw(run_id, str(by).strip())
+        except DataFeedBridgeError as exc:
+            raise DataFeedError(str(exc)) from exc
+
     def _actor_import(self, run_id: str) -> None:
         if not _UUID.match(run_id or "") or self.connect is None:
             raise DataFeedError("Unknown import.")
@@ -556,6 +662,9 @@ class DataFeedService:
 
 # Per import: what Review has done with its records. Read only.
 HISTORY_ADMISSIONS = ("directory",)
+# The reason the backend's withdraw step records (agents/datafeed/stage_import.py
+# WITHDRAWN_REASON): an import whose records were all withdrawn is not listed.
+WITHDRAWN_REASON = "Withdrawn from Import History to be imported again"
 
 HISTORY_SQL = """
 WITH runs AS (
@@ -574,8 +683,8 @@ items AS (
     FROM person_review_queue q JOIN staged_record s ON s.staged_record_id = q.staged_record_id
     JOIN runs ON runs.run_id = s.run_id),
 decided AS (
-    SELECT i.*, d.decision_kind FROM items i
-    LEFT JOIN LATERAL (SELECT decision_kind FROM review_admission_decision d
+    SELECT i.*, d.decision_kind, d.rejection_reason_other FROM items i
+    LEFT JOIN LATERAL (SELECT decision_kind, rejection_reason_other FROM review_admission_decision d
                        WHERE d.source_row_id = i.id AND d.source_table = i.t
                        ORDER BY decided_at DESC LIMIT 1) d ON true)
 SELECT r.run_id::text, r.entity_type, r.started_at, r.meta, r.stats,
@@ -584,7 +693,9 @@ SELECT r.run_id::text, r.entity_type, r.started_at, r.meta, r.stats,
        count(*) FILTER (WHERE d.status = 'approved' AND d.decision_kind = 'same_existing'),
        count(*) FILTER (WHERE d.status = 'rejected'),
        count(*) FILTER (WHERE d.status = 'deferred'),
-       count(*) FILTER (WHERE d.read)
+       count(*) FILTER (WHERE d.read),
+       count(d.id),
+       count(*) FILTER (WHERE d.status = 'rejected' AND d.rejection_reason_other = %s)
 FROM runs r LEFT JOIN decided d ON d.run_id = r.run_id
 GROUP BY 1, 2, 3, 4, 5 ORDER BY r.started_at DESC
 """

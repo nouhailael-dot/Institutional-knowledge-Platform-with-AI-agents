@@ -21,13 +21,12 @@ class BrowseEditTests(unittest.TestCase):
         for column in ("website", "recurring_pattern", "description", "record_status"):
             self.assertIn(column, sql)
 
-    def test_save_stores_nothing_until_logins_exist_and_says_so_when_clicked(self):
-        # 5 Nov 2026: Save is shown, writes nothing, and a click says it isn't stored.
+    def test_save_goes_through_the_backend_writer(self):
+        # 10 Nov 2026: Save sends the changed fields to /api/browse/<type>/<id>/edit,
+        # which hands them to the backend's approved writer.
         page = PAGE.read_text(encoding="utf-8")
-        form = page[page.index("function RecordEditor("):page.index("/* ------------------------------------------------- The four tabs */")]
-        self.assertIn('onClick=${()=>setSaveNote(true)}>Save</button>', form)
-        self.assertIn("Not stored yet: saving comes with personal logins.", form)
-        self.assertNotIn("fetch(", form)
+        self.assertNotIn("Saving isn't connected yet", page)
+        self.assertIn("/edit`,{method:\"POST\"", page)
         for kind in ('kind="actor"', 'kind="event"', 'kind="person"', 'kind="hub"'):
             self.assertIn(kind, page)
 

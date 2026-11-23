@@ -25,13 +25,29 @@ _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
 NOT_APPLICABLE = taxonomy.NOT_APPLICABLE
 
 
+DIRECTORY_COLUMNS = {
+    "actor": ("primary_technical_focus", "technical_approach", "current_activities",
+              "technology_ip_notes", "key_constraints", "funding_summary",
+              "primary_lifecycle_role", "ghus_notes"),
+    "event": ("access_type", "ghus_notes"),
+    "person": ("orcid", "ghus_notes"),
+}
+
+
 class RowResult(dict):
     """{row_number, values, payload, errors, warnings, missing}"""
+
+
+_BARE_ADDRESS = re.compile(r"^(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:[/?#]\S*)?$", re.IGNORECASE)
 
 
 def _url(value: str) -> str | None:
     if not value:
         return None
+    value = value.strip()
+    # 13 Nov 2026: "beyondafrica.org" or "www.afrotech.com" is a web address too.
+    if "://" not in value and _BARE_ADDRESS.match(value):
+        value = "https://" + value
     parts = urlsplit(value)
     if parts.scheme not in ("http", "https") or not parts.hostname or "." not in parts.hostname \
             or _URL_SPACE.search(value):
@@ -122,6 +138,14 @@ class RowChecker:
             cells["name"] = " ".join(p for p in (cells.get("first_name"), cells.get("last_name")) if p)
         for field in self.fields:
             value = cells.get(field.key, "")
+            link = parse.hyperlink_formula(value) if value else None
+            if link:
+                # A link: its address in a web-address column; elsewhere (GHUS
+                # Notes, descriptions) the text with its address kept beside it.
+                address, shown = link
+                value = address if field.kind == "url" or not shown or shown == address \
+                    else f"{shown} ({address})"
+                cells[field.key] = value
             if value and parse.formula_like(value):
                 errors.append(f"{field.header} starts like a formula ('{value[:12]}...'). "
                               "Type the value itself.")
@@ -146,6 +170,11 @@ class RowChecker:
                 except ValueError as exc:
                     errors.append(f"{field.header} '{cells.get(field.key)}' {exc}.")
         getattr(self, f"_{self.record_type}")(cells, payload, errors, warnings)
+        # The Directory's columns and GHUS Notes (template 2026-11-12.1): kept on
+        # the record as typed. 13 Nov 2026: they were in the sheets but not saved.
+        for key in DIRECTORY_COLUMNS[self.record_type]:
+            if cells.get(key) and not payload.get(key):
+                payload[key] = cells[key]
         payload = {k: v for k, v in payload.items() if v not in (None, "", [], {})}
         missing = [f.header for f in self.fields
                    if not f.required and not f.category and f.key in RECOMMENDED[self.record_type]
@@ -355,7 +384,10 @@ class RowChecker:
         payload.update(name=cells.get("name"), title=cells.get("name"),
                        description=cells.get("description"),
                        thematic_focus=cells.get("themes"),
-                       sponsoring_orgs=cells.get("organizer"),
+                       # Sponsors has its own column now; files without it keep
+                       # the organizer there, as before. The organizer is kept too.
+                       sponsoring_orgs=cells.get("sponsoring_orgs") or cells.get("organizer"),
+                       organizer=cells.get("organizer"),
                        expected_attendance=cells.get("expected_attendance"))
         for key, label, target in (("event_type", "Event type", "event_type"),
                                    ("event_format", "Format", "event_format"),

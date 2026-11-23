@@ -23,11 +23,17 @@ _TECHNICAL = re.compile(
     r"Traceback|\b[A-Z][A-Za-z]+(Error|Exception|Timeout)\b|\berrno\b|\bstatus code\b|"
     r"psycopg|sqlalchemy|httpx|Client error '|Server error '|developer\.mozilla|"
     r"\bat 0x[0-9a-f]+|File \"|\bNoneType\b|\bKeyError\b|\[Errno|\bSQL\b|"
-    r"UndefinedColumn|UndefinedTable|stderr|exit code|returncode|ECONN|ETIMEDOUT",
+    r"UndefinedColumn|UndefinedTable|stderr|exit code|returncode|ECONN|ETIMEDOUT|"
+    # The AI service's own error answers: "Error code: 400 - {'type': 'error', ...}".
+    r"Error code: \d{3}|'type': 'error'|invalid_request_error|request_id",
     re.IGNORECASE)
 
 # (pattern, plain sentence). The first that matches explains the message.
 _RULES: list[tuple[re.Pattern, str]] = [(re.compile(p, re.IGNORECASE), s) for p, s in [
+    # 14 Nov 2026: shown to a person as the whole raw answer of the AI service.
+    (r"credit balance is too low|insufficient credit|billing",
+     "the AI service account has run out of credit, so Compass cannot use AI right now. "
+     "Ask the platform's administrator to add credit; nothing was charged"),
     (r"robots\.txt", "the website asks automated tools not to read this page, and we "
                      "respect that"),
     (r"\b403\b|forbidden", "the website refused automated access, so it could not be read"),
@@ -69,6 +75,9 @@ def is_technical(text: str | None) -> bool:
     return bool(text) and bool(_TECHNICAL.search(str(text)))
 
 
+_SERVICE_MESSAGE = re.compile(r"""['"]message['"]\s*:\s*(['"])(.+?)\1\s*[},]""")
+
+
 def explain(text: str | None) -> str | None:
     """The message in plain words; a plain message is returned as it is."""
     if text is None:
@@ -76,6 +85,15 @@ def explain(text: str | None) -> str | None:
     text = str(text).strip()
     if not text or not is_technical(text):
         return text
+    if re.match(r"Error code: \d{3}\b", text):
+        # The AI service's raw answer: say only what it means, never its codes and ids.
+        plain = next((sentence for pattern, sentence in _RULES if pattern.search(text)), None)
+        if plain:
+            return plain[0].upper() + plain[1:] + "."
+        said = _SERVICE_MESSAGE.search(text)
+        if said and not is_technical(said.group(2)):
+            return f"The AI service said: {said.group(2).rstrip('.')}."
+        return GENERIC
     plain = next((sentence for pattern, sentence in _RULES if pattern.search(text)), None)
     # Keep what the message said in plain words before the technical part:
     # "CPower Energy could not be checked: HTTPStatusError ..." keeps its subject.
@@ -92,7 +110,8 @@ def explain(text: str | None) -> str | None:
 
 
 # Fields of a successful answer that carry a reason something did not work.
-REASON_KEYS = frozenset({"error", "status_reason", "related_error", "refusal", "admission_error"})
+REASON_KEYS = frozenset({"error", "status_reason", "related_error", "refusal", "admission_error",
+                         "message"})
 
 
 def explain_payload(value, *, depth: int = 0):
@@ -102,7 +121,9 @@ def explain_payload(value, *, depth: int = 0):
     if isinstance(value, dict):
         out = {}
         for key, item in value.items():
-            if key in REASON_KEYS and isinstance(item, str) and is_technical(item):
+            # The planner's own reply also travels as "message": its words are never rewritten.
+            spoken = key == "message" and value.get("status") in ("reply", "plan")
+            if key in REASON_KEYS and not spoken and isinstance(item, str) and is_technical(item):
                 out[key] = explain(item)
                 out.setdefault(f"{key}_technical", item)
             else:

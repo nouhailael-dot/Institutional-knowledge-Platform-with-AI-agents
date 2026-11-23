@@ -669,6 +669,7 @@ def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, t
             record={
                 **_canonical_record("High Actor"),
                 "website": "https://high.example",
+                "state": "TX",
                 "description": (
                     "High Actor is a water-technology company operating three pilot "
                     "desalination plants in Texas. It runs field trials with municipal "
@@ -701,7 +702,10 @@ def test_only_auto_high_actor_records_reach_existing_staging_path(monkeypatch, t
 
     class Source:
         def fetch(self, url):
-            return FetchedDoc.from_content(url=url, content=f"Page for {url}")
+            # The strong record's own page states where it is: a state the page
+            # never ties to it is withheld (agents/common/location_evidence.py).
+            return FetchedDoc.from_content(
+                url=url, content=f"Page for {url}. 100 Main Street, Austin, TX 78701.")
 
     class Extractor:
         def extract(self, doc, **_kwargs):

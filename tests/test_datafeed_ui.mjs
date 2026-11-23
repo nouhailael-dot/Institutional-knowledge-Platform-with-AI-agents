@@ -137,7 +137,7 @@ test('the manual form shows a line under a box only when it matters', () => {
   assert.doesNotMatch(src, /\$\{field\.description\}/);
 });
 
-test('the history lists an example finished import, marked as not real', async () => {
+test('the history lists real imports only; the example is no longer shown (10 Nov 2026)', async () => {
   assert.equal(EXAMPLE_IMPORT.file_name, 'Kansas water organizations.xlsx');
   assert.equal(historyLine(EXAMPLE_IMPORT),
     '4 staged · 3 approved and added · 1 matched to existing · 1 failed validation');
@@ -148,6 +148,8 @@ test('the history lists an example finished import, marked as not real', async (
   assert.ok(EXAMPLE_IMPORT.records.every(r => r.name.startsWith('Example ')));
   const page = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
   assert.match(page, /if \(!item\.example && !records\[item\.run_id\]\)/);   // never fetched
+  assert.match(page, /const rows = shown;/);
+  assert.doesNotMatch(page, /exampleRow/);
   const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
   assert.match(src, /not real data/);
 });
@@ -316,4 +318,25 @@ test('Import History: search, Category, and a Result that says what Review did',
     'How to Add Records <span class="df-req">*</span>', 'Add Another Record', '"Submit Import"']) {
     assert.ok(src.includes(words), words);
   }
+});
+
+test('organizations not in the Directory are flagged with a way to look them up (13 Nov 2026)', async () => {
+  const {missingOrganizationsLine, FIND_ORGANIZATION} = await import('../frontend/datafeed.js');
+  assert.equal(missingOrganizationsLine([]), '');
+  assert.match(missingOrganizationsLine(['UM6P GHUS']), /^1 organization named in these records is not in the Ecosystem Directory yet/);
+  assert.match(missingOrganizationsLine(['A', 'B']), /^2 organizations .* are not/);
+  assert.equal(FIND_ORGANIZATION, 'ghus:find-organization');
+  const src = fs.readFileSync(new URL('../frontend/datafeed.js', import.meta.url), 'utf8');
+  assert.equal((src.match(/Find it with a request/g) || []).length, 2);   // after storing, and in Import History
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /addEventListener\("ghus:find-organization"/);
+  assert.match(page, /cadence:"once"/);
+});
+
+test('withdrawing an import says what happens before it is done (13 Nov 2026)', async () => {
+  const {withdrawLine} = await import('../frontend/datafeed.js');
+  const line = withdrawLine({import_name: 'UM6P GHUS Team Information', counts: {pending: 7}});
+  assert.match(line, /^Withdraw “UM6P GHUS Team Information”\? Its 7 records waiting in Review Results are taken off/);
+  assert.match(line, /the same file can then be uploaded again/);
+  assert.match(withdrawLine({import_name: 'X', counts: {pending: 1}}), /Its record waiting in Review Results is taken off/);
 });

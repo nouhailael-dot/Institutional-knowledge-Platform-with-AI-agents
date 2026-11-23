@@ -305,7 +305,7 @@ def test_update_request_routes_validate_and_run_now_starts_the_runner(monkeypatc
             self.calls.append((action, subscription_id))
             return {"status": "paused"}
 
-        def run_now(self, subscription_id):
+        def run_now(self, subscription_id, user=None):
             self.calls.append(("run", subscription_id))
             return {"started": True}
 
@@ -364,7 +364,6 @@ def test_the_routes_pass_on_what_the_forms_send():
      "This request has ended on 2026-11-02"),
     ({"exists": True, "status": "cancelled", "end_date": None, "runner_busy": False}, "has ended"),
     ({"exists": False}, "no longer exists"),
-    ({"exists": True, "status": "active", "runner_busy": True}, "Another request is running"),
 ])
 def test_run_now_says_why_it_cannot_start_and_starts_nothing(tmp_path, monkeypatch, state, words):
     monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
@@ -384,7 +383,10 @@ def test_run_now_goes_ahead_when_the_state_cannot_be_read(tmp_path, monkeypatch)
     from src.discovery.bridge import run_refusal
 
     assert run_refusal(None) is None
-    assert run_refusal({"exists": True, "status": "paused", "runner_busy": False}) is None
+    assert run_refusal({"exists": True, "status": "active", "runner_busy": False}) is None
+    # 12 Nov 2026: the runner never runs a paused request, so Run now says so
+    # instead of showing Running while nothing happens.
+    assert "paused" in run_refusal({"exists": True, "status": "paused", "runner_busy": False})
 
 
 def test_run_now_lets_the_light_pull_read_on_the_shared_database_only(tmp_path, monkeypatch):
@@ -459,3 +461,101 @@ def test_the_app_reads_each_list_once_and_again_after_a_change(tmp_path, monkeyp
                     calls=(seen := []))
     plain.list_requests(); plain.list_requests()
     assert len(seen) == 2
+
+
+# ----------------------------------------- several people press Run now (12 Nov 2026)
+
+class _Process:
+    """A started run: alive until it is finished."""
+    def __init__(self):
+        self.done = False
+    def poll(self):
+        return 0 if self.done else None
+
+
+def _queue_bridge(tmp_path, monkeypatch, state, parallel=None, memory=None):
+    monkeypatch.setenv("GHUS_AGENT_CONTACT_EMAIL", "team@example.org")
+    monkeypatch.delenv("GHUS_RUNS_PER_PERSON", raising=False)
+    if parallel is None:
+        monkeypatch.delenv("GHUS_MAX_PARALLEL_RUNS", raising=False)
+    else:
+        monkeypatch.setenv("GHUS_MAX_PARALLEL_RUNS", str(parallel))
+    monkeypatch.setattr("src.discovery.bridge.DiscoveryBridge._ensure_queue_watcher", lambda self: None)
+    started = {}
+    def start(command, **kwargs):
+        process = _Process()
+        started[command[command.index("--request-id") + 1]] = process
+        return process
+    bridge = DiscoveryBridge(project_root=_backend(tmp_path), python_executable="py",
+                             database_url="postgresql://local/x_test", start_process=start,
+                             run_state=lambda _id: state)
+    free = {"mb": memory}
+    bridge._memory = lambda: free["mb"]
+    return bridge, started, free
+
+
+def _id(n):
+    return f"00000000-0000-4000-8000-{n:012d}"
+
+
+ACTIVE = {"exists": True, "status": "active", "runner_busy": False}
+
+
+def test_everyone_runs_at_the_same_time_with_no_team_limit(tmp_path, monkeypatch):
+    """GHUS, 12 Nov 2026: no limit across accounts; each person up to two at once."""
+    bridge, started, _free = _queue_bridge(tmp_path, monkeypatch, dict(ACTIVE))
+    people = ("zahra", "david", "tariq", "ismail", "nouhaila", "amina")
+    for n, who in enumerate(people, 1):
+        assert bridge.run_now(_id(n), user=who)["started"] is True
+        assert bridge.run_now(_id(100 + n), user=who)["started"] is True    # a second each
+    assert len(started) == 12
+
+
+def test_a_person_runs_up_to_two_at_once(tmp_path, monkeypatch):
+    bridge, started, _free = _queue_bridge(tmp_path, monkeypatch, dict(ACTIVE))
+    assert bridge.run_now(_id(1), user="zahra")["started"] is True
+    assert bridge.run_now(_id(2), user="zahra")["started"] is True
+    with pytest.raises(DiscoveryBridgeError, match="You already have 2 requests running"):
+        bridge.run_now(_id(3), user="zahra")
+    with pytest.raises(DiscoveryBridgeError, match="already running"):
+        bridge.run_now(_id(1), user="david")                            # the same request
+    started[_id(1)].done = True
+    assert bridge.run_now(_id(3), user="zahra")["started"] is True      # one ended: she may
+
+
+def test_a_run_waits_only_when_the_server_has_no_memory_left(tmp_path, monkeypatch):
+    bridge, started, free = _queue_bridge(tmp_path, monkeypatch, dict(ACTIVE), memory=2000)
+    assert bridge.run_now(_id(1), user="zahra")["started"] is True
+    free["mb"] = 150                                                    # the server is full
+    queued = bridge.run_now(_id(2), user="david")
+    assert queued == {"started": False, "queued": True, "position": 1, "subscription_id": _id(2)}
+    listed = bridge.mark_starting({"requests": [{"subscription_id": _id(2), "runs": []}]})
+    assert listed["requests"][0]["queued"] == 1
+    assert bridge.advance_queue() is True and _id(2) not in started
+    free["mb"] = 900                                                    # memory freed
+    assert bridge.advance_queue() is False and _id(2) in started
+
+
+def test_a_request_running_from_elsewhere_is_not_started_again(tmp_path, monkeypatch):
+    bridge, started, _free = _queue_bridge(tmp_path, monkeypatch, {**ACTIVE, "request_busy": True})
+    with pytest.raises(DiscoveryBridgeError, match="already running"):
+        bridge.run_now(_id(1), user="zahra")
+    assert started == {}
+
+
+def test_a_queued_request_that_ended_meanwhile_does_not_run(tmp_path, monkeypatch):
+    state = dict(ACTIVE)
+    bridge, started, _free = _queue_bridge(tmp_path, monkeypatch, state, parallel=1)
+    bridge.run_now(_id(1), user="zahra")
+    assert bridge.run_now(_id(2), user="david")["queued"] is True       # a cap set by the host
+    started[_id(1)].done = True
+    state["status"] = "paused"
+    assert bridge.advance_queue() is False and _id(2) not in started
+
+
+def test_the_memory_left_is_read_from_the_container_first(tmp_path, monkeypatch):
+    from src.discovery import bridge as module
+
+    files = {"/sys/fs/cgroup/memory.max": 2 * 1024 ** 3, "/sys/fs/cgroup/memory.current": 1536 * 1024 ** 2}
+    monkeypatch.setattr(module, "_read_int", lambda path: files.get(path))
+    assert module.memory_headroom_mb() == 512

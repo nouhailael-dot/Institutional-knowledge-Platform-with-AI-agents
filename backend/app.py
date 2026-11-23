@@ -55,6 +55,7 @@ from src.map_agent.run_store import RunStore, RunContext, MapStopped
 from src.map_agent.search_backend import availability as research_availability
 from src.retrieve import retrieve
 from src.discovery.bridge import DiscoveryBridge, DiscoveryBridgeError
+from backend.access import require_login
 from backend.datafeed_routes import router as datafeed_router
 from src.plain_errors import GENERIC as PLAIN_GENERIC
 from src.plain_errors import REASON_KEYS, explain, explain_payload, is_technical
@@ -90,7 +91,12 @@ def _local_review_demo_enabled() -> bool:
 
 @lru_cache(maxsize=1)
 def review_store():
-    return ReviewStore(enable_test_canonical=_local_review_demo_enabled())
+    from src.trial import trial_start
+    store = ReviewStore(enable_test_canonical=_local_review_demo_enabled())
+    # The hosted trial's clean start: each sync sets aside what came before it.
+    start = trial_start()
+    store.trial_cutoff = start.timestamp() if start else None
+    return store
 
 
 def review_source_store():
@@ -137,7 +143,25 @@ async def lifespan(app):
             discovery_bridge().warm_lists()
         except Exception:  # noqa: BLE001 - Monitor then reads the lists on first visit
             logger.exception("Could not start reading the request lists")
+    # Records deleted more than 30 days ago: the daily cleanup (GHUS_PURGE_MODE, off by default).
+    scheduler = _start_purge_scheduler()
     yield
+    if scheduler is not None:
+        scheduler.stop()
+
+
+def _start_purge_scheduler():
+    from backend import accounts_routes
+    from backend.purge_scheduler import PurgeScheduler, purge_mode
+    if purge_mode() == "off" or not accounts_routes.accounts_enabled():
+        return None
+    try:
+        scheduler = PurgeScheduler(bridge=review_admission_bridge(), store=accounts_routes.accounts_store())
+        scheduler.start()
+        return scheduler
+    except Exception:  # noqa: BLE001 - the server runs without the cleanup; the log says so
+        logger.exception("Could not start the scheduled cleanup")
+        return None
 
 
 app = FastAPI(title="UM6P Intelligence API", lifespan=lifespan)
@@ -208,32 +232,83 @@ async def plain_reasons(request, call_next):
             body = json.dumps(explain_payload(json.loads(body))).encode("utf-8")
         except ValueError:
             pass
-    headers = {k: v for k, v in response.headers.items() if k.lower() != "content-length"}
-    return Response(content=body, status_code=response.status_code, headers=headers,
-                    media_type="application/json")
+    rebuilt = Response(content=body, status_code=response.status_code, media_type="application/json")
+    # Every header as it came, repeated ones included: a sign-in sets three cookies, and a
+    # dict of headers kept only the last one (accounts could not stay signed in).
+    rebuilt.raw_headers.extend((k, v) for k, v in response.headers.raw
+                               if k.lower() not in (b"content-length", b"content-type"))
+    return rebuilt
+
+
+# Registered last, so it runs first: the hosted app asks for a login before
+# anything else answers. Individual accounts (backend/accounts_routes.py) only
+# with GHUS_AUTH_MODE=supabase; otherwise the shared login (backend/access.py;
+# off locally unless configured), exactly as before.
+from backend import accounts_routes  # noqa: E402
+
+if accounts_routes.accounts_enabled():
+    from backend import accounts_admin  # noqa: E402
+
+    app.include_router(accounts_routes.router)
+    app.include_router(accounts_admin.router)
+    app.middleware("http")(accounts_routes.require_account)
+    accounts_routes.warn_without_administrator()
+else:
+    app.middleware("http")(require_login)
 
 
 FRONTEND = ROOT / "frontend"
 
 
 # --- read-only data loads, cached in-process (the whole live set is <1000 rows).
-# lru_cache keeps Browse snappy; restart the server to pick up source-data edits.
-@lru_cache(maxsize=1)
+# 13 Nov 2026: each list is kept for DIRECTORY_FRESH_SECONDS, then read again.
+# It was kept until the server restarted, so a record verified in Review, stored
+# from the Data Feed or deleted in the database stayed invisible (or visible)
+# in the Ecosystem Directory until the next deploy.
+DIRECTORY_FRESH_SECONDS = float(os.environ.get("GHUS_DIRECTORY_FRESH_SECONDS") or 30)
+
+
+def _fresh_for(seconds: float):
+    """Like lru_cache(maxsize=1) on a function without arguments, for ``seconds``."""
+    def wrap(load):
+        state: dict[str, Any] = {}
+        lock = Lock()
+
+        def cached():
+            with lock:
+                if "value" in state and time.monotonic() - state["at"] < seconds:
+                    return state["value"]
+            value = load()
+            with lock:
+                state.update(value=value, at=time.monotonic())
+            return value
+
+        def cache_clear():
+            with lock:
+                state.clear()
+
+        cached.cache_clear = cache_clear
+        cached.__wrapped__ = load
+        return cached
+    return wrap
+
+
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _actors():
     return browse.load_actors()
 
 
-@lru_cache(maxsize=1)
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _hubs():
     return browse.load_hubs()
 
 
-@lru_cache(maxsize=1)
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _events():
     return browse.load_events()
 
 
-@lru_cache(maxsize=1)
+@_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _people():
     return browse.load_people()
 
@@ -312,6 +387,30 @@ def ask_stream(question: str = Query(..., min_length=1),
     the previous answer instead of being searched literally. `meta.rewritten`
     carries the standalone form when it differs (shown in the UI for transparency).
     """
+    # Who asked, taken now: the answer streams after this function returns.
+    from src.identity import current_account
+    asker = current_account()
+
+    def on_usage(model, usage):
+        """The answer's token usage, priced like the maps' calls (accounts Phase 5)."""
+        if asker is None:
+            return
+        import uuid
+
+        from src.map_agent.costs import PRICES, usage_cost
+        # The SDK gives an object; the shared pricing reads plain data.
+        data = usage.model_dump() if hasattr(usage, "model_dump") else dict(getattr(usage, "__dict__", {}) or {})
+        tokens_in, tokens_out = data.get("input_tokens"), data.get("output_tokens")
+        priced = model in PRICES
+        try:
+            cost = usage_cost(model, data) / 1_000_000 if priced else None
+        except Exception:  # noqa: BLE001 - unpriced tool use: tokens kept, cost unknown
+            cost, priced = None, False
+        activity.record_usage("ask", uuid.uuid4().hex, cost_usd=cost,
+                              cost_basis="usage_priced" if priced else "unknown",
+                              input_tokens=tokens_in, output_tokens=tokens_out,
+                              detail={"model": model}, account=asker)
+
     def gen():
         q = question.strip()
         if not q:
@@ -329,10 +428,10 @@ def ask_stream(question: str = Query(..., min_length=1),
         # Document attached -> merge doc chunks + map hits into one cited answer.
         doc = _DOC_STORES.get(doc_id) if doc_id else None
         if doc is not None:
-            merged = search_chunks(doc["store"], standalone) + retrieve(standalone, top_k=8)
+            merged = search_chunks(doc["store"], standalone) + _ask_visible(retrieve(standalone, top_k=8))
             yield _sse("meta", {"mode": "doc", "sources": _sources(merged), "rewritten": rewritten})
             if merged:
-                for chunk in stream_answer(standalone, merged):
+                for chunk in stream_answer(standalone, merged, on_usage=on_usage):
                     yield _sse("delta", {"text": chunk})
             yield _sse("done", {})
             return
@@ -349,11 +448,11 @@ def ask_stream(question: str = Query(..., min_length=1),
             except Exception:
                 mode = "semantic"      # fall back to map search, same as the UI
 
-        hits = retrieve(standalone)
+        hits = _ask_visible(retrieve(standalone))
         hits += _parked_hits(standalone, hits)
         yield _sse("meta", {"mode": "semantic", "sources": _sources(hits), "rewritten": rewritten})
         if hits:
-            for chunk in stream_answer(standalone, hits):
+            for chunk in stream_answer(standalone, hits, on_usage=on_usage):
                 yield _sse("delta", {"text": chunk})
         yield _sse("done", {})
 
@@ -403,6 +502,43 @@ def _sectors_by_hub() -> dict:
     return out
 
 
+# ------------------------------------------- Deleted records are hidden at once (Phase 6)
+def _accounts_on() -> bool:
+    """Individual accounts are in use (the switch is on, or someone is signed in)."""
+    from backend.accounts_routes import accounts_enabled
+    from src.identity import current_account
+    return accounts_enabled() or current_account() is not None
+
+
+def _deleted_ids(kind: str) -> set[str]:
+    """Records awaiting permanent deletion (empty without individual accounts or 710)."""
+    if not _accounts_on():
+        return set()
+    from backend.accounts_routes import accounts_store
+    try:
+        return accounts_store().hidden_ids(kind)
+    except Exception:
+        logger.warning("Could not read deleted %s records", kind, exc_info=True)
+        return set()
+
+
+def _without_deleted(rows: list[dict], kind: str, *, key: str = "id") -> list[dict]:
+    hidden = _deleted_ids(kind)
+    return [r for r in rows if str(r.get(key)) not in hidden] if hidden else rows
+
+
+_ASK_KINDS = {"actor": "actor", "organization": "actor", "event": "event", "person": "person", "hub": "hub"}
+
+
+def _ask_visible(hits: list[dict]) -> list[dict]:
+    """Ask never answers from a deleted record."""
+    hidden = {kind: _deleted_ids(kind) for kind in ("actor", "event", "person", "hub")}
+    if not any(hidden.values()):
+        return hits
+    return [h for h in hits if str(h.get("entity_id")) not in
+            hidden.get(_ASK_KINDS.get(str(h.get("entity_type") or "").lower(), ""), set())]
+
+
 @app.get("/api/browse/actors")
 def browse_actors():
     by_hub = _sectors_by_hub()
@@ -414,7 +550,9 @@ def browse_actors():
         enriched.append({**a, "sectors": secs})
     options = browse.actor_filter_options(_actors())
     options["sectors"] = sorted(all_sectors)
-    return JSONResponse(jsonable_encoder({"actors": enriched, "options": options}))
+    enriched = _without_deleted(enriched, "actor")
+    return JSONResponse(jsonable_encoder({"actors": activity.with_owners(enriched, "actor"),
+                                          "options": options}))
 
 
 # --- Delete in the Ecosystem Directory (29 Oct 2026). Removable, never wiped: the
@@ -423,6 +561,8 @@ def browse_actors():
 # Who is acting: src.identity, the one place (decided 29 Oct 2026; Review, Monitor
 # and the Data Feed since 3 Nov). Nobody types a name or an email.
 from src.identity import NO_SIGN_IN_YET, current_user, current_user_email  # noqa: E402
+# Who did what, and who brought each record in (accounts Phase 3; does nothing without accounts).
+from src.accounts import activity  # noqa: E402
 
 
 class DirectoryDecision(BaseModel):
@@ -448,6 +588,13 @@ def _directory_decision(kind: str, actor_id: str, payload: DirectoryDecision):
             "idempotency_key": f"directory:{kind}:{actor_id}:{int(time.time())}"})
     except AdmissionBridgeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    activity.note(reason=reason[:500], result=outcome.get("status"))
+    activity.notify_owner("actor", actor_id, key=f"directory:{kind}:{actor_id}:{int(time.time())}",
+                          link="browse",
+                          title=f"'{outcome.get('name') or 'An organization'}' was "
+                                f"{'removed from' if kind == 'remove_from_directory' else 'restored to'} "
+                                "the Directory",
+                          body=f"By {reviewer}." + (f" Reason: {reason[:200]}" if reason else ""))
     _actors.cache_clear()
     return outcome
 
@@ -462,8 +609,168 @@ def directory_restore(actor_id: str, payload: DirectoryDecision):
     return _directory_decision("restore_to_directory", actor_id, payload)
 
 
+class DirectoryEdit(BaseModel):
+    changes: dict = {}
+    ghus_notes: str | None = None
+
+
+_DIRECTORY_EDIT_KINDS = {"actors": "actor", "events": "event", "people": "person", "hubs": "hub"}
+
+
+@app.post("/api/browse/{kind}/{record_id}/edit")
+def directory_edit(kind: str, record_id: str, payload: DirectoryEdit):
+    """Save an edit made in the Ecosystem Directory (10 Nov 2026).
+
+    The platform never writes the record itself: the backend's approved writer
+    (decisions.record_directory_edit, through the admission process) checks
+    every field and writes them in one transaction, with the person's name.
+    """
+    entity_type = _DIRECTORY_EDIT_KINDS.get(kind)
+    if entity_type is None:
+        raise HTTPException(status_code=404, detail="Unknown record type.")
+    if not payload.changes and payload.ghus_notes is None:
+        raise HTTPException(status_code=400, detail="Nothing to save: no field was changed.")
+    bridge = review_admission_bridge()
+    if not bridge.configured:
+        raise HTTPException(status_code=503, detail=(
+            "Saving isn't set up on this computer: Review's decision writer is not configured."))
+    try:
+        outcome = bridge.apply({
+            "decision_kind": "edit_directory_record", "entity_type": entity_type,
+            "entity_id": record_id, "changes": payload.changes,
+            "ghus_notes": payload.ghus_notes, "reviewer": current_user(),
+            "idempotency_key": f"directory:edit:{record_id}:{time.time_ns()}"})
+    except AdmissionBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    # The lists are read again; an organization's name also shows on hubs and people.
+    activity.note(changed=outcome.get("changed"), result=outcome.get("status"))
+    if outcome.get("status") == "applied":
+        activity.notify_owner(entity_type, record_id, link="browse",
+                              key=f"edit:{entity_type}:{record_id}:{time.time_ns()}",
+                              title="A record you brought in was edited",
+                              body=f"{current_user()} changed: {', '.join(outcome.get('changed') or []) or 'details'}.")
+    for cached in (_actors, _hubs, _events, _people):
+        cached.cache_clear()
+    return outcome
+
+
+# ------------------------------------------------- Delete, keep 30 days, restore (Phase 6)
+# GHUS policy (17 Nov 2026): a deleted record disappears from active use at once,
+# waits 30 days under Pending Deletion (Dashboard; restorable), then the
+# scheduled cleanup removes it permanently. The backend's approved writer does
+# every step (decisions.delete_record / restore_record / purge_record).
+class RecordDeletion(BaseModel):
+    reason: str = Field(default="", max_length=500)
+    confirm: bool = False
+
+
+def _signed_in_account():
+    from src.identity import current_account
+    me = current_account()
+    if me is None:
+        raise HTTPException(status_code=409, detail="Deleting needs individual accounts (who deleted is recorded).")
+    return me
+
+
+def _deletion_label(entity_type: str, name: str | None) -> str:
+    if entity_type == "person" or not name:
+        return {"person": "A person", "event": "An event", "hub": "A hub"}.get(entity_type, "An organization")
+    return f"'{name}'"
+
+
+def _deletion_call(decision: dict) -> dict:
+    bridge = review_admission_bridge()
+    if not bridge.configured:
+        raise HTTPException(status_code=503, detail=(
+            "Deleting isn't set up on this computer: Review's decision writer is not configured."))
+    try:
+        outcome = bridge.apply(decision)
+    except AdmissionBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    from backend.accounts_routes import accounts_store
+    accounts_store().forget_hidden()
+    for cached in (_actors, _hubs, _events, _people):
+        cached.cache_clear()
+    return outcome
+
+
+@app.post("/api/browse/{kind}/{record_id}/delete")
+def directory_delete(kind: str, record_id: str, payload: RecordDeletion):
+    """Delete a record: hidden at once, restorable for 30 days, then removed for good."""
+    entity_type = _DIRECTORY_EDIT_KINDS.get(kind)
+    if entity_type is None:
+        raise HTTPException(status_code=404, detail="Unknown record type.")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=400, detail="Confirm the deletion first.")
+    me = _signed_in_account()
+    outcome = _deletion_call({
+        "decision_kind": "delete_record", "entity_type": entity_type, "entity_id": record_id,
+        "reason": " ".join(payload.reason.split())[:500], "user_id": me.user_id, "reviewer": me.full_name,
+        "idempotency_key": f"delete:{entity_type}:{record_id}:{time.time_ns()}"})
+    # The audit history is permanent: a person's name stays out of it (and out of the
+    # owner's notification), so nothing personal outlives the permanent deletion.
+    shown = _deletion_label(entity_type, outcome.get("name"))
+    activity.note(record_name=None if entity_type == "person" else outcome.get("name"),
+                  deletion_id=outcome.get("deletion_id"), purge_after=outcome.get("purge_after"),
+                  reason=payload.reason.strip() or None)
+    activity.notify_owner(entity_type, record_id, link="deletions", key=f"deleted:{outcome.get('deletion_id')}",
+                          title=f"{shown} you brought in was deleted",
+                          body=f"By {me.full_name}. It can be restored from Pending Deletion "
+                               "(on the Dashboard) for 30 days." + (f" Reason: {payload.reason.strip()[:200]}" if payload.reason.strip() else ""))
+    return outcome
+
+
+def _deletion_view(d: dict) -> dict:
+    snapshot = d.get("snapshot") or {}
+    row = snapshot.get("row") or {}
+    keep = ("website", "city", "location_city", "country", "description", "title", "event_type", "location",
+            "start_date", "primary_city", "state", "status")
+    return {**{k: d[k] for k in ("deletion_id", "entity_type", "entity_id", "name", "reason", "deleted_at",
+                                 "purge_after", "deleted_by", "days_remaining", "owner")},
+            "details": {k: row[k] for k in keep if row.get(k)}, "links": snapshot.get("links") or {}}
+
+
+@app.get("/api/review/deleted")
+def review_deleted():
+    """Deleted records waiting for permanent removal (Pending Deletion: the Dashboard card and
+    page). Separate from Review Results: a deletion is not a rejection."""
+    from backend.accounts_routes import accounts_store
+    if not _accounts_on():
+        return {"deleted": [], "retention_days": 30}
+    return {"deleted": [_deletion_view(d) for d in accounts_store().deletions()], "retention_days": 30}
+
+
+class RestoreRequest(BaseModel):
+    confirm: bool = False
+
+
+@app.post("/api/review/deleted/{deletion_id}/restore")
+def review_restore_deleted(deletion_id: str, payload: RestoreRequest):
+    """Bring a deleted record back within its 30 days: status, owner, links and history as they were."""
+    if payload.confirm is not True:
+        raise HTTPException(status_code=400, detail="Confirm the restore first.")
+    try:
+        deletion_id = str(UUID(deletion_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Unknown deletion.") from exc
+    me = _signed_in_account()
+    outcome = _deletion_call({"decision_kind": "restore_record", "deletion_id": deletion_id,
+                              "user_id": me.user_id, "reviewer": me.full_name,
+                              "idempotency_key": f"restore:{deletion_id}"})
+    entity_type = outcome.get("entity_type") or "actor"
+    activity.note(record_type=entity_type, record_id=outcome.get("entity_id"),
+                  record_name=None if entity_type == "person" else outcome.get("name"))
+    activity.notify_owner(entity_type, outcome.get("entity_id"), link="browse",
+                          key=f"restored:{deletion_id}",
+                          title=f"{_deletion_label(entity_type, outcome.get('name'))} you brought in was restored",
+                          body=f"By {me.full_name}.")
+    return outcome
+
+
 @app.get("/api/browse/actors/{actor_id}/profile")
 def browse_actor_profile(actor_id: str):
+    if actor_id in _deleted_ids("actor"):
+        raise HTTPException(status_code=404, detail="That organization was deleted.")
     return JSONResponse(jsonable_encoder(browse.load_actor_profile(actor_id)))
 
 
@@ -475,21 +782,25 @@ def browse_removed_actors():
 @app.get("/api/browse/hubs")
 def browse_hubs():
     return JSONResponse(jsonable_encoder(
-        {"hubs": _hubs(), "columns": browse.hub_columns()}))
+        {"hubs": activity.with_owners(_without_deleted(_hubs(), "hub", key="hub_id"), "hub"),
+         "columns": browse.hub_columns()}))
 
 
 @app.get("/api/browse/events")
 def browse_events():
     evts = _events()
     types = sorted({e["event_type"] for e in evts if e.get("event_type")})
-    return JSONResponse(jsonable_encoder({"events": evts, "event_types": types}))
+    evts = _without_deleted(evts, "event")
+    return JSONResponse(jsonable_encoder({"events": activity.with_owners(evts, "event"),
+                                          "event_types": types}))
 
 
 @app.get("/api/browse/people")
 def browse_people():
     people = _people()
     return JSONResponse(jsonable_encoder(
-        {"people": people, "options": browse.people_filter_options(people)}))
+        {"people": activity.with_owners(_without_deleted(people, "person"), "person"),
+         "options": browse.people_filter_options(people)}))
 
 
 # ---------------------------------------------------------------- Build the Map
@@ -499,7 +810,9 @@ def browse_people():
 # stateless — the frontend posts back the entities it already holds.
 #
 # Maps and usage persist locally, independently of the production actor DB.
-_MAP_POOL = ThreadPoolExecutor(max_workers=2)   # a map is expensive; don't fan out
+# Maps research side by side for everyone (GHUS, 12 Nov 2026): a map waits on
+# the AI service, not on this server, so many fit; more wait their turn.
+_MAP_POOL = ThreadPoolExecutor(max_workers=max(1, int(os.environ.get("GHUS_MAP_WORKERS") or 8)))
 
 
 def map_record(job_id):
@@ -523,22 +836,41 @@ def public_map(job_id):
 
 @app.post("/api/map/session")
 def map_session():
-    return {"job_id": map_store().create()}
+    job_id = map_store().create()
+    activity.claim("map", job_id, "created")
+    return {"job_id": job_id}
 
 
 @app.get("/api/maps")
 def maps_recent():
+    from src.trial import trial_start
     enabled, reason = research_availability()
     maps = map_store().recent()
+    # The hosted trial lists only the maps made since it started (src.trial).
+    if (start := trial_start()) is not None:
+        maps = [m for m in maps if float(m.get("created") or 0) >= start.timestamp()]
     # Records each map sent to Review Results that nobody has decided yet (Dashboard).
     try:
-        pending = review_store().pending_by_run([m["id"] for m in maps])
+        # Cards still undecided on the map itself: maps are reviewed on their own
+        # page (GHUS, 12 Nov 2026), never in Review Results.
+        pending = map_store().undecided([m["id"] for m in maps])
     except Exception:
         logger.warning("Could not count maps' pending Review records", exc_info=True)
         pending = {}
     for m in maps:
         m["pending_review"] = pending.get(m["id"], 0)
     return {"maps": maps, "research_available": enabled, "research_disabled_reason": reason}
+
+
+@app.get("/api/me")
+def who_am_i():
+    """The signed-in person, and whether results can be emailed to them (12 Nov 2026)."""
+    who = current_user()
+    mail = bool(os.environ.get("GHUS_SMTP_HOST", "").strip()
+                and (os.environ.get("GHUS_NOTIFY_FROM") or os.environ.get("GHUS_SMTP_USER") or "").strip())
+    email = current_user_email()
+    return {"signed_in": who != NO_SIGN_IN_YET, "name": None if who == NO_SIGN_IN_YET else who,
+            "email": email, "email_notifications": bool(mail and email)}
 
 
 @app.get("/api/dashboard/directory-activity")
@@ -557,6 +889,17 @@ def dashboard_directory_activity(days: int = Query(30, ge=1, le=366)):
     except Exception:
         logger.exception("Dashboard directory activity failed")
         raise HTTPException(503, "The Directory activity could not be read right now.")
+
+
+@app.get("/api/dashboard/start")
+def dashboard_start():
+    """When the Dashboard starts counting: the hosted trial's start (src.trial).
+
+    Spending, counts and recent items only from that moment; earlier work stays
+    in the database and on its own pages. Not set: no start, everything counts.
+    """
+    from src.trial import iso, trial_start
+    return {"since": iso(trial_start())}
 
 
 @app.get("/api/dashboard/spending")
@@ -634,6 +977,7 @@ def start_people_search(job_id: str, payload: PeopleRequest):
     except MapStopped as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     if created:
+        activity.record_usage("people_search", task_id, detail={"map_id": job_id})
         try:
             _MAP_POOL.submit(_run_people_job, task_id, actor, record["description"], criteria)
         except Exception:
@@ -683,6 +1027,8 @@ def map_chat_turn(payload: ChatRequest):
         raise HTTPException(status_code=400, detail="messages is required")
     description = "\n".join(str(m.get("content", "")) for m in payload.messages if m.get("role") == "user")
     job_id = payload.job_id or map_store().create(description)
+    if not payload.job_id:
+        activity.claim("map", job_id, "created")
     record = map_record(job_id)
     # Once a map exists the thread carries questions too, so the joined turns stop
     # being the request. Keep the request that produced these results; a follow-up
@@ -760,6 +1106,8 @@ def map_start(payload: MapRequest):
     doc_text = doc["text"] if doc else None
 
     job_id = payload.job_id or map_store().create(desc)
+    if not payload.job_id:
+        activity.claim("map", job_id, "created")
     record = map_record(job_id)
     if not (record["plan"] or payload.plan or {}).get("tasks"):
         raise HTTPException(status_code=400, detail="A search plan is required before research.")
@@ -945,6 +1293,19 @@ def map_budget_extension(job_id: str, payload: BudgetExtensionRequest):
         raise HTTPException(status_code=400, detail="Explicit approval is required to raise the total budget to $3.")
     try:
         map_store().approve_extension(job_id)
+    except MapStopped as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    return public_map(job_id)
+
+
+@app.post("/api/map/{job_id}/settle-charges")
+def map_settle_charges(job_id: str, payload: BudgetExtensionRequest):
+    """Count unconfirmed charges at their maximum so a blocked map can go on (12 Nov 2026)."""
+    map_record(job_id)
+    if payload.approve is not True:
+        raise HTTPException(status_code=400, detail="Explicit approval is required to count the charge.")
+    try:
+        map_store().settle_unknown(job_id)
     except MapStopped as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return public_map(job_id)
@@ -1138,7 +1499,9 @@ def _sync_review_candidates_now(*, force: bool = False):
         warnings = []
         try:
             local = map_store()
-            target.sync_run_store(local)
+            if target.enable_test_canonical:
+                # Tests and the demo build Review from map results directly.
+                target.sync_run_store(local)
         except Exception as exc:
             raise HTTPException(
                 status_code=503,
@@ -1163,6 +1526,10 @@ def _sync_review_candidates_now(*, force: bool = False):
                 warnings.extend(source_warnings)
                 target.set_sync_state("postgresql", success=not source_warnings,
                                       error="; ".join(source_warnings) or None)
+            if not target.enable_test_canonical:
+                # A map is reviewed on its own page, never in Review Results
+                # (GHUS, 12 Nov 2026): its copies and saved records are folded away.
+                target.retire_map_copies(local)
         except PostgresReviewSourceError as exc:
             logger.warning("PostgreSQL review source unavailable: %s", exc)
             warnings.append(str(exc))
@@ -1433,6 +1800,7 @@ def review_candidate_update(candidate_id: str, payload: ReviewUpdateRequest):
 
 @app.post("/api/review/candidates/{candidate_id}/approve")
 def review_candidate_approve(candidate_id: str, payload: ReviewDecisionRequest):
+    activity.note(decision="approve")
     try:
         return review_store().approve(
             candidate_id, reviewer=current_user(),
@@ -1445,6 +1813,7 @@ def review_candidate_approve(candidate_id: str, payload: ReviewDecisionRequest):
 
 @app.post("/api/review/candidates/{candidate_id}/reject")
 def review_candidate_reject(candidate_id: str, payload: ReviewRejectionRequest):
+    activity.note(decision="reject", reason=payload.rejection_reason)
     try:
         return review_store().reject(
             candidate_id, reviewer=current_user(),
@@ -1454,6 +1823,34 @@ def review_candidate_reject(candidate_id: str, payload: ReviewRejectionRequest):
         )
     except Exception as exc:
         _raise_review_error(exc)
+
+
+def _attribute_review(store, candidate_id: str, decision_kind: str, outcome: dict) -> None:
+    """What the decision did, in its audit entry; a record it created gets its
+    original owner: the importer when it came from a Data Feed import that has
+    one, otherwise the person who verified it into the database."""
+    try:
+        candidate = store.get(candidate_id)
+    except Exception:
+        candidate = {}
+    created = outcome.get("canonical_entity_id")
+    activity.note(decision=decision_kind, result=outcome.get("status"),
+                  record_type=candidate.get("entity_type"), record_name=candidate.get("display_name"),
+                  canonical_entity_id=str(created) if created else None)
+    source = str(candidate.get("source_run_id") or "")
+    importer = activity.import_owner(source)
+    words = {"new": "verified", "same_existing": "matched to an existing record", "reject": "rejected",
+             "defer": "parked"}
+    if importer and decision_kind in words:
+        activity.notify_user(importer, key=f"decision:{candidate_id}:{decision_kind}", link="review",
+                             title=f"'{candidate.get('display_name') or 'A record'}' from your import was "
+                                   f"{words[decision_kind]}",
+                             body=f"Decided in Review Results by {current_user()}.")
+    if decision_kind == "new" and created and candidate.get("entity_type") in ("actor", "person", "event"):
+        origin = ("imported" if source.startswith("datafeed:")
+                  else "mapped" if source.startswith("v2-review:") else "discovered")
+        activity.claim(candidate["entity_type"], created, origin, source_ref=f"review:{candidate_id}",
+                       owner_user_id=importer)
 
 
 @app.post("/api/review/candidates/{candidate_id}/decision")
@@ -1484,6 +1881,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
                        "changes_to_map": "none"}
         else:
             outcome = review_admission_bridge().apply(decision)
+        _attribute_review(store, candidate_id, payload.decision_kind, outcome)
         return store.record_admission_success(
             candidate_id,
             idempotency_key=payload.idempotency_key,
@@ -1600,7 +1998,11 @@ def discovery_preview(draft: DiscoveryDraft):
 
 @app.post("/api/discovery/requests")
 def discovery_create(draft: DiscoveryDraft):
-    return _discovery_call(discovery_bridge().create, _as_requester(draft))
+    answer = _discovery_call(discovery_bridge().create, _as_requester(draft))
+    created = activity.subscription_id(answer)
+    activity.claim("request", created, "requested")
+    activity.note(entity_type="request", entity_id=created, request_kind="discovery")
+    return answer
 
 
 @app.post("/api/discovery/requests/{subscription_id}/run")
@@ -1611,7 +2013,13 @@ def discovery_run_now(subscription_id: str):
         UUID(subscription_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown request") from exc
-    return _discovery_call(discovery_bridge().run_now, subscription_id)
+    # One run at a time per person (12 Nov 2026): who pressed it is the sign-in.
+    answer = _discovery_call(lambda sid: discovery_bridge().run_now(sid, user=current_user()),
+                             subscription_id)
+    # Its cost goes to whoever pressed it (accounts Phase 5; nothing without accounts).
+    activity.record_usage("run_now", f"{subscription_id}:{time.time_ns()}", trigger="run_now",
+                          detail={"subscription_id": subscription_id})
+    return answer
 
 
 class EndDateChange(BaseModel):
@@ -1683,7 +2091,14 @@ def discovery_actor_plan(actor_id: str, payload: ActorUpdateRequest):
 @app.post("/api/discovery/actors/{actor_id}/check")
 def discovery_actor_check(actor_id: str, payload: ActorUpdateRequest):
     """Read the actor's own pages once (capped) and compare. Writes nothing."""
-    return _actor_update_call(actor_id, "check", payload)
+    answer = _actor_update_call(actor_id, "check", payload)
+    if isinstance(answer, dict) and answer.get("check_id"):
+        cost = answer.get("cost_usd")
+        activity.record_usage("actor_check", answer["check_id"],
+                              cost_usd=float(cost) if cost is not None else None,
+                              cost_basis="check_result" if cost is not None else "unknown",
+                              detail={"actor_id": actor_id, "actor_name": answer.get("actor_name")})
+    return answer
 
 
 @app.post("/api/discovery/actor-checks/{check_id}/apply")
@@ -1742,7 +2157,11 @@ def discovery_update_request_plan(draft: UpdateRequestDraft):
 
 @app.post("/api/discovery/update-requests")
 def discovery_update_request_create(draft: UpdateRequestDraft):
-    return _discovery_call(discovery_bridge().create_update_request, _as_requester(draft))
+    answer = _discovery_call(discovery_bridge().create_update_request, _as_requester(draft))
+    created = activity.subscription_id(answer)
+    activity.claim("request", created, "requested")
+    activity.note(entity_type="request", entity_id=created, request_kind="actor_update")
+    return answer
 
 
 def _as_requester(draft) -> dict:
@@ -1763,7 +2182,11 @@ def discovery_update_request_change(subscription_id: str, action: str):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail="unknown request") from exc
     if action == "run":
-        return _discovery_call(discovery_bridge().run_now, subscription_id)
+        answer = _discovery_call(lambda sid: discovery_bridge().run_now(sid, user=current_user()),
+                                 subscription_id)
+        activity.record_usage("run_now", f"{subscription_id}:{time.time_ns()}", trigger="run_now",
+                              detail={"subscription_id": subscription_id})
+        return answer
     if action not in ("pause", "resume", "cancel"):
         raise HTTPException(status_code=404, detail="unknown action")
     return _discovery_call(discovery_bridge().change_update_request, subscription_id, action)
@@ -1819,6 +2242,337 @@ def health():
 
 # Data Feed: spreadsheet and manual records, staged for Review by the backend.
 app.include_router(datafeed_router)
+
+
+# ------------------------------------------------------------- My work (accounts Phase 3)
+# What the signed-in person brought into Compass, and what they decided. Read from
+# the session only: there is no way to ask for someone else's. The shared records
+# themselves are not copied: these are lists of ids, named from the shared lists.
+def _names_of(kind: str) -> dict[str, str]:
+    try:
+        if kind == "actor":
+            return {str(a["id"]): a["name"] for a in _actors()}
+        if kind == "event":
+            return {str(e["id"]): e["name"] for e in _events()}
+        if kind == "person":
+            return {str(p["id"]): p["name"] for p in _people()}
+        if kind == "hub":
+            return {str(h.get("hub_id")): h.get("name") for h in _hubs()}
+        if kind == "map":
+            return {str(m["id"]): m.get("description") or "Untitled map" for m in map_store().recent()}
+        if kind == "request":
+            bridge, out = discovery_bridge(), {}
+            for listing in (bridge.list_requests(), bridge.list_update_requests()):
+                for r in (listing or {}).get("requests") or []:
+                    rid = r.get("subscription_id") or r.get("actor_update_subscription_id") or r.get("id")
+                    out[str(rid)] = r.get("title") or r.get("name") or "Untitled request"
+            return out
+        if kind == "import":
+            from backend.datafeed_routes import datafeed_service
+            return {str(i.get("run_id")): i.get("import_name") or "Untitled import"
+                    for i in datafeed_service().history()}
+    except Exception:
+        logger.warning("Could not name %s records for My work", kind, exc_info=True)
+    return {}
+
+
+@app.get("/api/account/mine")
+def account_mine():
+    """My Records, My Requests, My Maps, My Imports: what I brought in, newest first."""
+    from backend.accounts_routes import accounts_store
+    from src.identity import current_account
+
+    me = current_account()
+    if me is None:
+        return {"signed_in": False, "records": [], "requests": [], "maps": [], "imports": []}
+    owned = accounts_store().owned_by(me.user_id)
+    groups = {"records": [], "requests": [], "maps": [], "imports": []}
+    names: dict[str, dict[str, str]] = {}
+    for item in owned:
+        kind = item["entity_type"]
+        if kind not in names:
+            names[kind] = _names_of(kind)
+        name = names[kind].get(str(item["entity_id"]))
+        group = ("requests" if kind == "request" else "maps" if kind == "map"
+                 else "imports" if kind == "import" else "records")
+        groups[group].append({**item, "name": name,
+                              "note": None if name else "Not in the current list (removed, or not loaded)"})
+    return {"signed_in": True, **groups}
+
+
+# What counts as a review decision for My Review History.
+REVIEW_ACTIONS = ("review.", "map.save", "map.review", "browse.", "datafeed.previews_confirm")
+
+
+# ------------------------------------------------------------- Usage and costs (Phase 5)
+# Costs are read from the ledgers that hold them (src/accounts/usage.py); nothing
+# is copied. One's own usage needs usage.view_own; everyone's, usage.view_all.
+def _usage_ops(store):
+    from src.accounts import usage
+    try:
+        with map_store().connect() as map_db:
+            return usage.operations(store, map_db), map_db_ok(map_db)
+    except Exception:
+        logger.warning("Map store unavailable for usage; map costs left out", exc_info=True)
+        return usage.operations(store, None), False
+
+
+def map_db_ok(map_db) -> bool:
+    try:
+        map_db.execute("SELECT 1 FROM calls LIMIT 1")
+        return True
+    except Exception:
+        return False
+
+
+def _month_now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m")
+
+
+def _ops_json(ops) -> list[dict]:
+    return [{**o, "started_at": o["started_at"].isoformat() if o.get("started_at") else None} for o in ops]
+
+
+@app.get("/api/account/usage")
+def account_usage(months: int = Query(6, ge=1, le=24)):
+    """My usage: this month's spending and runs, recent paid operations, monthly history."""
+    from src.accounts import usage
+    store, me = _accounts_or_none()
+    if me is None:
+        return {"signed_in": False}
+    ops, _ = _usage_ops(store)
+    mine = usage.filtered(ops, user_id=me.user_id)
+    month = _month_now()
+    this_month = usage.filtered(mine, since=month, until=month)
+    counts = store.monthly_counts(me.user_id)
+    by_month = usage.summary(mine)["by_month"]
+    history_months = sorted(set(by_month) | set(counts))[-months:]
+    return {
+        "signed_in": True, "month": month,
+        "this_month": {**usage.summary(this_month)["total"],
+                       "by_feature": usage.summary(this_month)["by_feature"],
+                       **counts.get(month, {})},
+        "recent": _ops_json(usage.newest_first(mine)[:15]),
+        "history": [{"month": m, **by_month.get(m, {"cost_usd": 0, "not_final_usd": 0, "operations": 0}),
+                     **counts.get(m, {})} for m in history_months],
+    }
+
+
+def _admin_filters(since, until, user_id, feature, unattributed):
+    import re as _re
+    for value in (since, until):
+        if value and not _re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
+            raise HTTPException(status_code=422, detail="Months are written YYYY-MM.")
+    return {"since": since or None, "until": until or None, "user_id": user_id or None,
+            "feature": feature or None, "unattributed": unattributed}
+
+
+@app.get("/api/admin/usage")
+def admin_usage(since: str | None = None, until: str | None = None, user_id: str | None = None,
+                feature: str | None = None, unattributed: bool = False):
+    """Platform spending: totals, by person and month, by feature, counts, Not recorded,
+    and the reconciliation with each ledger."""
+    from src.accounts import usage
+    store, me = _accounts_or_none()
+    if me is None:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    filters = _admin_filters(since, until, user_id, feature, unattributed)
+    ops, map_ok = _usage_ops(store)
+    chosen = usage.filtered(ops, **filters)
+    try:
+        with map_store().connect() as map_db:
+            reconciliation = usage.reconcile(store, ops, map_db)
+    except Exception:
+        reconciliation = usage.reconcile(store, ops, None)
+    return {
+        "filters": filters, "summary": usage.summary(chosen),
+        "not_recorded": usage.summary(usage.filtered(ops, unattributed=True,
+                                                     since=filters["since"], until=filters["until"]))["total"],
+        "counts": store.monthly_counts(filters["user_id"]),
+        "reconciliation": reconciliation, "map_costs_included": map_ok,
+        "people": [{"user_id": k, "name": v} for k, v in sorted(store.people().items(), key=lambda kv: kv[1])],
+        "features": sorted({o["feature"] for o in ops}),
+        "operations": _ops_json(usage.newest_first(chosen)[:500]),
+    }
+
+
+@app.get("/api/admin/usage/export")
+def admin_usage_export(format: str = Query("csv", pattern="^(csv|xlsx)$"), since: str | None = None,
+                       until: str | None = None, user_id: str | None = None, feature: str | None = None,
+                       unattributed: bool = False):
+    """The filtered operations as CSV or Excel (with by-person and by-feature sheets)."""
+    from fastapi.responses import Response
+    from src.accounts import usage
+    store, me = _accounts_or_none()
+    if me is None:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    filters = _admin_filters(since, until, user_id, feature, unattributed)
+    ops, _ = _usage_ops(store)
+    chosen = usage.filtered(ops, **filters)
+    name = f"compass-usage-{filters['since'] or 'all'}-{filters['until'] or 'now'}"
+    if format == "csv":
+        return Response(usage.to_csv(chosen), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
+    return Response(usage.to_xlsx(chosen, usage.summary(chosen)),
+                    media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}.xlsx"'})
+
+
+# ----------------------------------------------- Dashboard, notifications, preferences (Phase 4)
+def _datafeed():
+    from backend.datafeed_routes import datafeed_service
+    return datafeed_service()
+
+
+def _my_sync(store, me) -> None:
+    """Bring this person's notifications up to date from their own work (at most once a
+    minute), and give their imports' late records their owner."""
+    from src.accounts.notifier import sync_for
+
+    try:
+        owned = store.owned_by(me.user_id)
+        map_ids = {o["entity_id"] for o in owned if o["entity_type"] == "map"}
+        import_ids = {o["entity_id"] for o in owned if o["entity_type"] == "import"}
+        maps = [m for m in map_store().recent() if str(m["id"]) in map_ids] if map_ids else []
+        imports = []
+        if import_ids:
+            try:
+                imports = [i for i in _datafeed().history() if str(i.get("run_id")) in import_ids]
+            except Exception:
+                logger.warning("Import history unavailable for notifications", exc_info=True)
+        sync_for(store, me.user_id, maps=maps, imports=imports,
+                 created_entities=_datafeed().created_entities if import_ids else None)
+    except Exception:
+        logger.exception("Notification sync failed for %s", me.user_id)
+
+
+def _accounts_or_none():
+    from backend.accounts_routes import accounts_store
+    from src.identity import current_account
+    me = current_account()
+    return (accounts_store(), me) if me else (None, None)
+
+
+@app.get("/api/account/notifications")
+def account_notifications(unread: bool = False):
+    store, me = _accounts_or_none()
+    if me is None:
+        return {"signed_in": False, "unread": 0, "items": []}
+    _my_sync(store, me)
+    return {"signed_in": True, **store.notifications(me.user_id, unread_only=unread)}
+
+
+@app.post("/api/account/notifications/read-all")
+def account_notifications_read_all():
+    store, me = _accounts_or_none()
+    if me is None:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    return {"marked": store.mark_read(me.user_id)}
+
+
+@app.post("/api/account/notifications/{notification_id}/read")
+def account_notification_read(notification_id: int):
+    store, me = _accounts_or_none()
+    if me is None:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    # Only one's own: another person's notification is simply not found.
+    if not store.mark_read(me.user_id, notification_id):
+        raise HTTPException(status_code=404, detail="No such unread notification.")
+    return {"marked": 1}
+
+
+class PreferencesChange(BaseModel):
+    preferences: dict
+
+
+@app.get("/api/account/preferences")
+def account_preferences():
+    from src.accounts.preferences import NOTIFY_KINDS, dashboard_choices
+    store, me = _accounts_or_none()
+    if me is None:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    return {"preferences": store.preferences(me.user_id), "notification_kinds": NOTIFY_KINDS,
+            "dashboard_sections": dashboard_choices(me.permissions)}
+
+
+@app.put("/api/account/preferences")
+def account_preferences_update(change: PreferencesChange):
+    from src.accounts.preferences import PreferenceError, merge
+    store, me = _accounts_or_none()
+    if me is None:
+        raise HTTPException(status_code=401, detail="Sign in first.")
+    try:
+        merged = merge(store.preferences(me.user_id), change.preferences)
+    except PreferenceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    store.set_preferences(me.user_id, merged)
+    return {"preferences": merged}
+
+
+@app.get("/api/account/record-trail")
+def account_record_trail(entity_type: str = Query(..., pattern="^(actor|person|event|hub)$"),
+                         entity_id: str = Query(..., min_length=1, max_length=80)):
+    """Original owner, reviewer and last editor of one shared record: three roles, kept apart."""
+    store, me = _accounts_or_none()
+    if me is None:
+        return {"owner": None, "reviewed_by": None, "last_edited_by": None}
+    return store.record_trail(entity_type, entity_id)
+
+
+@app.get("/api/account/dashboard")
+def account_dashboard():
+    """Everything the personal Dashboard shows, in one call, for the signed-in person."""
+    store, me = _accounts_or_none()
+    if me is None:
+        return {"signed_in": False}
+    _my_sync(store, me)
+    mine = account_mine()
+    preferences = store.preferences(me.user_id)
+    owned_maps = {m["entity_id"] for m in mine["maps"]}
+    maps = [m for m in map_store().recent() if str(m["id"]) in owned_maps] if owned_maps else []
+    active = {"running", "planning", "verifying"}
+    runs = [{"kind": "map", "id": m["id"], "name": m.get("description") or "Untitled map",
+             "status": m.get("status"), "at": m.get("updated")} for m in maps
+            if m.get("status") in active | {"done", "error", "interrupted", "budget_stopped", "cancelled"}]
+    runs += [{"kind": "request", "id": r["run_id"], "name": r["title"], "status": r["status"],
+              "at": r["finished_at"] or r["started_at"]} for r in store.request_runs(me.user_id)]
+    sectors = []
+    if preferences["sectors"] and me.can("records.view"):
+        by_hub = _sectors_by_hub()
+        for sector in preferences["sectors"]:
+            count = sum(1 for a in _without_deleted(_actors(), "actor")
+                        if any(sector in by_hub.get(h, []) for h in a.get("hubs", [])))
+            sectors.append({"sector": sector, "organizations": count})
+    return {
+        "signed_in": True,
+        "name": me.full_name, "role_label": me.role_label, "permissions": sorted(me.permissions),
+        "hidden": preferences["dashboard"]["hidden"],
+        "notifications": store.notifications(me.user_id, limit=8),
+        "running": [r for r in runs if r["status"] in active],
+        "recent_runs": [r for r in runs if r["status"] not in active][:8],
+        "activity": [e for e in store.audit_entries(user_id=me.user_id, limit=40)
+                     if not e["action"].startswith(("auth.", "access."))][:10],
+        "counts": {k: len(mine[k]) for k in ("records", "requests", "maps", "imports")},
+        "records": mine["records"][:5], "requests": mine["requests"][:5], "maps": mine["maps"][:5],
+        "imports": mine["imports"][:5],
+        "reviews": store.audit_entries(user_id=me.user_id, actions=REVIEW_ACTIONS, limit=5),
+        "sectors": sectors,
+    }
+
+
+@app.get("/api/account/review-history")
+def account_review_history(limit: int = Query(200, ge=1, le=1000)):
+    """My Review History: what I verified, rejected, parked, edited or removed."""
+    from backend.accounts_routes import accounts_store
+    from src.identity import current_account
+
+    me = current_account()
+    if me is None:
+        return {"signed_in": False, "history": []}
+    return {"signed_in": True,
+            "history": accounts_store().audit_entries(user_id=me.user_id, actions=REVIEW_ACTIONS,
+                                                      limit=limit)}
 
 
 # ---------------------------------------------------------------- static frontend

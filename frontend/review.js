@@ -24,7 +24,7 @@ import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
 } from "./labels.js?v=20261105a";
-import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261104e";
+import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261110b";
 
 export const REVIEW_STATUS_LABELS = {
   pending_review: BADGES.pending,
@@ -343,6 +343,8 @@ export function recordsOfRun(candidates = [], runKey) {
  */
 export function originLabel(candidate) {
   const meta = candidate?.agent_metadata || {};
+  // A map's saved cards: "Proposed by Explore and Map" says it already.
+  if (meta.data_feed?.method === "map") return null;
   if (meta.data_feed) return "Imported";
   if (["search_candidate", "event_review_queue", "person_review_queue"].includes(meta.source_table)) {
     return "AI-Mapped";
@@ -390,6 +392,39 @@ export function deepResultLine(checked = {}, applied = null) {
 }
 
 /** A record row's second line: what it is and why it waits. */
+/**
+ * What every record of a run has in common - its kind and where it came from,
+ * e.g. "Event · Proposed by Explore and Map" - said once in the run's header,
+ * not under each name (GHUS, 11 Nov 2026). Returns the shared words and each
+ * record's own remaining note.
+ */
+export function sharedRecordNotes(records = []) {
+  const parts = records.map(candidate => ({
+    id: candidate.candidate_id,
+    note: recordRowNote(candidate),
+    movable: [RECORD_KIND_LABELS[candidate?.entity_type], originLabel(candidate),
+      candidate?.review_reason ? reviewReasonLabel(candidate.review_reason) : ""].filter(Boolean),
+  }));
+  const common = parts.length
+    ? parts[0].movable.filter(word => parts.every(row => row.movable.includes(word)
+      && row.note.split(" · ").includes(word)))
+    : [];
+  return {common, own: ownNotes(parts, common)};
+}
+
+/** The header's words after the run type, without repeating the kind it names. */
+export function runHeader(runType, records = []) {
+  const named = runTypeName(runType);
+  const extra = sharedRecordNotes(records).common
+    .filter(word => !named.toLowerCase().includes(word.toLowerCase()));
+  return [named, ...extra].join(" · ");
+}
+
+function ownNotes(parts, common) {
+  return Object.fromEntries(parts.map(row => [row.id,
+    row.note.split(" · ").filter(word => !common.includes(word)).join(" · ")]));
+}
+
 export function recordRowNote(candidate) {
   const meta = candidate?.agent_metadata || {};
   if (meta.review_kind === "actor_profile") {
@@ -682,7 +717,7 @@ export function partChanges(previous, current) {
 const UPDATE_WORDS = {
   new: "New", changed: "Updated", additional: "More detail", confirmed: "Confirmed",
   no_change: "No change",
-  not_found: "Not found on its pages", conflict: "Change to review",
+  not_found: "Not Found on Its Pages", conflict: "Change to review",
   protected: "GHUS value kept", not_yet_collected: "Not read",
 };
 
@@ -830,7 +865,7 @@ const RUN_STATUS_WORDS = {succeeded: "Completed", attention: "Completed with lim
 function countsLine(counts = {}) {
   const words = [["new", "new"], ["changed", "updated"], ["additional", "more detail"],
     ["confirmed", "confirmed"],
-    ["conflict", "to review"], ["protected", "GHUS kept"], ["not_found", "not found"]];
+    ["conflict", "to review"], ["protected", "GHUS kept"], ["not_found", "Not Found"]];
   return words.filter(([key]) => counts[key]).map(([key, word]) => `${counts[key]} ${word}`).join(" · ")
     || "nothing new";
 }
@@ -1066,11 +1101,8 @@ export function canSubmitReview({
   }
   if (twoWayKind(candidate)) return ["new", "reject", "defer"].includes(kind);
   if (kind === "same_existing" && !String(targetId || "").trim()) return false;
-  if (kind === "reject") {
-    return REJECTION_REASONS.includes(rejectionReason)
-      && (rejectionReason !== "Other" || Boolean(String(rejectionOther || "").trim()));
-  }
-  return ["same_existing", "new", "defer"].includes(kind);
+  // 12 Nov 2026: rejecting asks "are you sure?" and nothing else; no reason needed.
+  return ["same_existing", "new", "reject", "defer"].includes(kind);
 }
 
 export function diffFields(candidatePayload, match) {
@@ -1221,13 +1253,23 @@ export function formatFactValue(value) {
   try { return JSON.stringify(value, null, 2); } catch { return String(value); }
 }
 
+// A funding entry's status, set by the agent from the grant's own dates (6 Nov 2026).
+export const FUNDING_STATUS_WORDS = {
+  active: "Active", recent_award: "Awarded recently (end not stated)",
+  recently_completed: "Recently completed", historical: "Historical",
+  undated: "Date not stated",
+};
+
 /** "• 03/14/2026 — Opened a pilot · • Amount: $2M · Funder: NSF": each entry on its line. */
 export function formatEntries(entries) {
   const lines = (entries || []).map(entry => {
     if (!entry) return "";
     if (typeof entry !== "object") return String(entry).trim();
-    if (entry.date && entry.description) return `${usDate(entry.date)} — ${entry.description}`;
-    return formatFactValue(entry).split("\n").join(" · ");
+    const {status, ...rest} = entry;
+    const tag = FUNDING_STATUS_WORDS[status] ? `[${FUNDING_STATUS_WORDS[status]}] ` : "";
+    if (rest.date && rest.description) return `${tag}${usDate(rest.date)} — ${rest.description}`;
+    const line = formatFactValue(rest).split("\n").join(" · ");
+    return line && line !== "No value recorded" ? tag + line : "";
   }).filter(line => line && line !== "No value recorded");
   return lines.length ? lines.map(line => `• ${line}`).join("\n") : "No value recorded";
 }
@@ -1380,6 +1422,53 @@ const LIGHT_ROWS_SHOWN_AS_CONTROLS = new Set([
 // bottom), its connections and category boxes (the profile), funding (under Funding).
 const SHOWN_ELSEWHERE = new Set(["why_matched", "international_connection", "um6p_ocp_connection",
   "funding_signal"]);
+
+// The boxes a record is not useful without, by category - the same list the
+// agent follows up on (ghus-backend light_pull_reader.ESSENTIAL_BOXES).
+export const ESSENTIAL_FIELDS = {
+  common: ["location", "why_matched"],
+  university_academic: ["topic_unit_and_work", "relevant_centers_programs"],
+  research_center: ["parent_and_center_type", "topic_research_focus", "active_recent_projects"],
+  national_laboratory: ["sponsoring_agency", "topic_program_area"],
+  applied_facility: ["facility_type_operator", "testing_demonstration_scope"],
+  hospital_clinical: ["clinical_research_focus", "hospital_type_scale"],
+  company: ["ownership_and_size", "topic_business_segment_product"],
+  startup: ["technology_and_problem", "founding_year_location"],
+  innovation_platform: ["platform_type_operator", "platform_offerings"],
+  investor: ["investor_type_headquarters", "sector_stage_focus"],
+  government: ["jurisdiction_parent_agency", "topic_mandate_program"],
+  foundation_nonprofit: ["mission_sector_focus", "relevant_program"],
+  association_network: ["association_type", "member_types"],
+};
+
+/**
+ * How many of the category's essential fields have a value read from a source
+ * (6 Nov 2026). It says what is there, not that it is right: completeness is
+ * not verification.
+ */
+export function essentialCompleteness(candidate, category) {
+  const resolved = String(category ?? candidate?.reviewed_payload?.actor_category ?? "");
+  const keys = [...ESSENTIAL_FIELDS.common, ...(ESSENTIAL_FIELDS[resolved] || [])];
+  const rows = new Map(lightFactRows({
+    ...candidate,
+    reviewed_payload: {...(candidate?.reviewed_payload || {}), actor_category: resolved},
+  }).map(row => [row.key, row]));
+  // A box with its own place on the card (Why It Matched) is read from its fact.
+  const facts = new Map(lightPullFacts(candidate).filter(fact => fact?.fact_key)
+    .map(fact => [String(fact.fact_key), fact]));
+  const supported = [];
+  const missing = [];
+  for (const key of keys) {
+    const row = rows.get(key);
+    const fact = facts.get(key);
+    const value = row ? row.value : fact?.value;
+    const found = row
+      ? !row.state && value !== null && value !== undefined && value !== ""
+      : fact?.collection_state === "found" && value !== null && value !== undefined;
+    (found ? supported : missing).push(row ? row.label : reviewFieldLabel(key));
+  }
+  return {supported, missing, total: supported.length + missing.length};
+}
 
 export function lightPullBoxes(candidate, category) {
   const resolved = String(
@@ -1663,32 +1752,6 @@ export function hubProposalPlace(proposal = {}) {
  * The count alone does not say whether it passed, and the requirement alone
  * does not say by how much.
  */
-/**
- * One hub proposal shown as an example (3 Nov 2026): how detection presents a
- * cluster for GHUS to decide. It lives only in the page - nothing of it is in
- * the database, and its buttons do nothing.
- */
-export const EXAMPLE_HUB_PROPOSAL = {
-  example: true, proposed_hub_id: "example",
-  name: "Example · Wichita – Manhattan Water & Agriculture Innovation Cluster",
-  primary_city: "Wichita", state: "Kansas", country: "United States",
-  dimension: "sector", dimension_key: "WATER",
-  rationale: "Six organizations within 60 miles of Wichita work on agricultural water management: "
-    + "two universities' research units, a federal laboratory partner, two companies and a state "
-    + "agency. They come from five independent families (no two share a parent) and four GHUS "
-    + "categories, so the cluster met every threshold for a new hub.",
-  family_count: 5, families_required: 4, category_count: 4, categories_required: 3,
-  core_radius_miles: 25, radius_miles: 60, created_hub: false,
-  members: [
-    {name: "Example State University · Water Research Institute", actor_category: "university_academic"},
-    {name: "Example State University · Agronomy Department", actor_category: "university_academic"},
-    {name: "Example Plains Irrigation Research Center", actor_category: "research_center"},
-    {name: "Example AquaSense Technologies", actor_category: "startup"},
-    {name: "Example Prairie Pumps & Controls", actor_category: "company"},
-    {name: "Example Kansas Water Office", actor_category: "government"},
-  ],
-};
-
 export function thresholdLabel(count, required) {
   if (count === null || count === undefined) return MISSING.notYetChecked;
   if (required === null || required === undefined) return String(count);
@@ -1802,6 +1865,64 @@ const CARD_FIELDS = {
     ["research_area", "Expertise", ["expertise"]], ["work_evidence", "Relevant Work", ["relevant_work"]],
     ["_um6p_ocp", "UM6P/OCP", ["um6p_ocp_connection"]], ["orcid", "ORCID"]],
 };
+/**
+ * The field a card row is edited as (12 Nov 2026: "all boxes here should be
+ * editable"). A row shown under the map's own name is saved under the field
+ * the backend keeps; Status and Why It Matched stay read-only (worked out, not
+ * entered).
+ */
+export const EDIT_AS = {
+  event: {_um6p_ocp: "um6p_ocp_involvement"},
+  person: {organization_location: "work_location", affiliation_note: "department",
+    work_evidence: "relevant_work", _um6p_ocp: "um6p_ocp_connection"},
+};
+function editField(candidate, field) {
+  return EDIT_AS[candidate?.entity_type]?.[field] || field;
+}
+
+/**
+ * The value each editable card box starts with when the record has none of its
+ * own: what the card already shows (the map's or the page's reading). Kept apart
+ * so an untouched box is not sent as a reviewer's edit.
+ */
+export function profilePrefill(candidate, draft = {}) {
+  const editable = new Set(candidate?.editable_fields || []);
+  const filled = {};
+  for (const [field, , factKeys] of CARD_FIELDS[candidate?.entity_type] || []) {
+    const target = editField(candidate, field);
+    if (!editable.has(target) || DATE_FIELDS.has(target)) continue;
+    const current = draft[target];
+    if (current !== undefined && current !== null && String(current).trim() !== "") continue;
+    const value = profileValue(candidate, draft, field, factKeys);
+    if (value !== null && value !== undefined && String(value).trim() !== "") filled[target] = String(value);
+  }
+  return filled;
+}
+
+// 12 Nov 2026 (GHUS): every data value starts with a capital letter -
+// "Conference", not "conference". Text values only; codes and links never.
+const CAPITALIZE = {
+  event: ["event_type", "event_format", "recurring_pattern", "access_type", "audience", "sector",
+    "expected_attendance", "thematic_focus", "date_status"],
+  person: ["role", "research_area", "department"],
+};
+export function capitalizeData(entityType, payload = {}) {
+  const out = {...payload};
+  for (const field of CAPITALIZE[entityType] || []) {
+    const value = out[field];
+    if (typeof value === "string" && /^[a-z]/.test(value) && !/^https?:/.test(value)) {
+      out[field] = value.charAt(0).toUpperCase() + value.slice(1);
+    }
+  }
+  return out;
+}
+
+/** The reviewer's edits: a box still holding its starting value is not one. */
+export function changedOnly(payload, prefill = {}) {
+  return Object.fromEntries(Object.entries(payload || {})
+    .filter(([field, value]) => !(field in prefill) || prefill[field] !== value));
+}
+
 // A person has no website of their own: these two take its place, under Name.
 export const PERSON_LINK_FIELDS = [["public_profile_url", "Public Profile"],
   ["linkedin_url", "LinkedIn", ["linkedin_url"]]];
@@ -1831,7 +1952,7 @@ export function profileValue(candidate, draft, field, factKeys = []) {
     && !(Array.isArray(value) && !value.length);
   if (field === "_um6p_ocp" && original.um6p_ocp_status) {
     return original.um6p_ocp_status === "found"
-      ? `Found — ${original.um6p_ocp_detail || "details not recorded"}` : original.um6p_ocp_status;
+      ? `Found — ${original.um6p_ocp_detail || "details not recorded"}` : null;
   }
   for (const value of [draft?.[field], original[field]]) {
     if (has(value)) {
@@ -1859,8 +1980,9 @@ export function showsCategoryFilter(filters = {}) {
 
 /** One row of an event's or person's card (CARD_FIELDS); `always` shows Not Found when empty. */
 function profileRow(html, candidate, draft, [field, label, factKeys], {edit, disabled, errors, always = false}) {
-  if ((candidate?.editable_fields || []).includes(field)) {
-    return cardField(html, candidate, field, draft[field], edit, disabled, errors[field], label);
+  const target = editField(candidate, field);
+  if ((candidate?.editable_fields || []).includes(target)) {
+    return cardField(html, candidate, target, draft[target], edit, disabled, errors[target], label);
   }
   const value = profileValue(candidate, draft, field, factKeys);
   if (!value) return always ? cardLine(html, label, "") : null;
@@ -1955,6 +2077,29 @@ function sourceLink(html, url) {
  * this browser for Review, else the one typed for the Data Feed. Empty when
  * neither is known - only then does Review ask for it.
  */
+const NOTES_DRAFT = "ghus.review.notesDraft:";
+/** GHUS Notes typed in Review are kept in this browser until the decision is made. */
+export function notesDraft(candidateId) {
+  try { return window.localStorage.getItem(NOTES_DRAFT + candidateId); } catch { return null; }
+}
+export function keepNotesDraft(candidateId, text) {
+  try {
+    if (text) window.localStorage.setItem(NOTES_DRAFT + candidateId, text);
+    else window.localStorage.removeItem(NOTES_DRAFT + candidateId);
+  } catch { /* a private window keeps nothing */ }
+}
+
+/** What Verify does with this record: add it, or merge it into a duplicate. */
+export function verifyKind(decisionKind) {
+  return ["same_existing", "keep_both"].includes(decisionKind) ? decisionKind : "new";
+}
+
+/** Why Save Edits and Verify are unavailable, in words: "Start Date: Use MM/DD/YYYY." */
+export function blockedReason(draftErrors = {}) {
+  return Object.entries(draftErrors)
+    .map(([field, message]) => `${reviewFieldLabel(field)}: ${message}`).join(" · ");
+}
+
 export function storedReviewer() {
   return SIGNED_IN_USER;
 }
@@ -1985,7 +2130,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [notes, setNotes] = useState("");
     // GHUS analyst notes, kept on the actor or event when it is verified.
     const [analystNotes, setAnalystNotes] = useState("");
-    const [decisionKind, setDecisionKind] = useState("same_existing");
+    const [decisionKindState, setDecisionKind] = useState("new");
+    const decisionKind = decisionKindState;
     const [targetId, setTargetId] = useState("");
     const [rejectionReason, setRejectionReason] = useState("");
     const [rejectionOther, setRejectionOther] = useState("");
@@ -2007,9 +2153,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [feedback, setFeedback] = useState("");
+    // A message belongs to the record it was about: opening another clears it
+    // (10 Nov 2026: a failed decision's error stayed on the next record).
+    useEffect(() => { setError(""); setFeedback(""); }, [selected?.candidate_id]);
     // The Deep Pull offered after a verification: its plan (free), then its run.
     const [deep, setDeep] = useState(null);
     const keys = useRef(new Map());
+    const prefilled = useRef({});
+    // A record reads like the Directory; Edit opens its boxes (GHUS, 11 Nov 2026).
+    const [editing, setEditing] = useState(false);
+    useEffect(() => { setEditing(false); }, [selected?.candidate_id]);
+    const prefilledFacts = useRef({});
 
     const loaded = useRef(null);
     // While the server reads the database in the background (5 Nov 2026), the
@@ -2086,24 +2240,39 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       let active = true;
       request(`/api/review/candidates/${selectedId}`).then(candidate => {
         if (!active) return;
-        setSelected(candidate);
-        setDraft(normalizeMapDraft(candidate.reviewed_payload, candidate.original_payload));
+        const base = capitalizeData(candidate.entity_type,
+          normalizeMapDraft(candidate.reviewed_payload, candidate.original_payload));
+        // A capitalised value is sent as the record's value, not listed as an edit.
+        const prefill = {...capitalizeData(candidate.entity_type, candidate.reviewed_payload || {}),
+          ...profilePrefill(candidate, base)};
+        for (const [field, value] of Object.entries(prefill)) {
+          if ((candidate.reviewed_payload || {})[field] === value) delete prefill[field];
+        }
+        prefilled.current = prefill;
+        // Capitalised values are sent (the record keeps them); untouched page readings are not.
+        prefilledFacts.current = profilePrefill(candidate, base);
+        // The starting values are the record's, not edits: the confirmation
+        // lists only what the reviewer changed.
+        setSelected({...candidate, reviewed_payload: {...candidate.reviewed_payload, ...prefill}});
+        setDraft({...base, ...prefill});
         setItemCity(candidate.reviewed_payload?.location_city || "");
         setItemState(candidate.reviewed_payload?.state_code || candidate.reviewed_payload?.state || "");
         setKeepUnlocated(false);
         setSourceUrl("");
         // Two values for one box: keeping the map's value is the safe default.
         // Keeping the map as it is is the safe default; a proposal waits.
-        setDecisionKind(isFactReview(candidate) ? "reject"
-          : twoWayKind(candidate) === "update" ? "new" : twoWayKind(candidate) ? "defer"
-          : candidate.duplicate_state === "already_exists" ? "same_existing" : "new");
-        setTargetId("");
+        // Verify adds the record as new unless the platform found that it
+        // already exists; then it merges into that record (changeable below).
+        const sure = !twoWayKind(candidate) && candidate.duplicate_state === "already_exists"
+          && (candidate.top_matches || [])[0]?.entity_id;
+        setDecisionKind(sure ? "same_existing" : "new");
+        setTargetId(sure ? String(candidate.top_matches[0].entity_id) : "");
         setRejectionReason("");
         setRejectionOther("");
         setHubIds([]);
         setProposeHub(false);
         setFactView("current");
-        setAnalystNotes(candidate.agent_metadata?.ghus_notes || "");
+        setAnalystNotes(notesDraft(candidate.candidate_id) ?? (candidate.agent_metadata?.ghus_notes || ""));
       }).catch(exception => { if (active) setError(exception.message); });
       return () => { active = false; };
     }, [selectedId]);
@@ -2215,7 +2384,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         const saved = await request(`/api/review/candidates/${selected.candidate_id}`, {
           method: "PATCH",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({fields: editableReviewPayload(selected, draft)}),
+          body: JSON.stringify({fields: changedOnly(editableReviewPayload(selected, draft), prefilled.current)}),
         });
         setSelected(saved);
         setData(current => ({...current, candidates: current.candidates.map(row =>
@@ -2230,6 +2399,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     }
 
     function confirmText(kind) {
+      if (kind === "reject" && !twoWayKind(selected)) {
+        return `Reject "${selected.display_name}"?\n\nIt leaves Review Results. Nothing is deleted.`;
+      }
+      if (kind === "defer") {
+        return `Park "${selected.display_name}"?\n\nIt stays in Review Results under Parked, to decide later.`;
+      }
       const edits = pendingEdits(selected, draft);
       const lines = [`${selected.display_name} — ${decisionOptions(selected.entity_type, selected)
         .find(option => option.value === kind)?.label}`];
@@ -2249,16 +2424,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       } else if (kind === "new" || kind === "same_existing") {
         lines.push("", SENTENCES.verifyConsequences);
       }
-      if (kind === "reject" && !twoWayKind(selected)) {
-        lines.push("", `${FIELDS.rejectionReason}: ${rejectionReason}`
-          + (rejectionReason === "Other" ? ` — ${rejectionOther}` : ""), SENTENCES.noDeletion);
-      }
-      if (kind === "defer") lines.push("", `${FIELDS.notes}: ${notes || "—"}`);
       return lines.join("\n");
     }
 
-    async function decide() {
-      const draftErrors = validateReviewDraft(selected, draft);
+    async function decide(chosen) {
+      const decisionKind = chosen || verifyKind(decisionKindState);
+      // Rejecting or parking never waits on an unfinished edit.
+      const draftErrors = ["reject", "defer"].includes(decisionKind)
+        ? {} : validateReviewDraft(selected, draft);
       if (!canSubmitReview({
         candidate: selected, reviewer, rejectionReason, rejectionOther, decisionKind, targetId,
         busy, admissionConfigured: data.admission_configured, draftErrors,
@@ -2275,15 +2448,15 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           idempotency_key: keys.current.get(mapKey),
           confirmed: true,
           notes: notes.trim() || null,
-          edited_payload: editableReviewPayload(selected, draft),
+          edited_payload: ["reject", "defer"].includes(decisionKind)
+            ? null : changedOnly(editableReviewPayload(selected, draft), prefilledFacts.current),
           target_id: targetId.trim() || null,
           hub_ids: hubIds,
           proposed_hub: proposeHub && proposedHub.name.trim()
             ? {name: proposedHub.name.trim(), rationale: proposedHub.rationale.trim() || null}
             : null,
-          rejection_reason: decisionKind === "reject" ? rejectionReason : null,
-          rejection_reason_other: decisionKind === "reject" && rejectionReason === "Other"
-            ? rejectionOther.trim() : null,
+          rejection_reason: null,
+          rejection_reason_other: null,
           // Saved on the record only when it is verified: organizations, events and people.
           ghus_notes: ["new", "same_existing"].includes(decisionKind)
             && ["actor", "event", "person"].includes(selected.entity_type) && analystNotes.trim()
@@ -2294,6 +2467,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)},
         );
         setSelected(updated);
+        keepNotesDraft(selected.candidate_id, "");
         setFeedback("Decision recorded. It is kept in history permanently.");
         keys.current.delete(mapKey);
         await load(undefined, true);
@@ -2450,6 +2624,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const lightBoxes = selected && isActor
       ? lightPullBoxes(selected, draft.actor_category)
       : {common: [], specific: []};
+    const completeness = selected && isActor
+      ? essentialCompleteness(selected, draft.actor_category) : null;
     const summary = isActor
       ? actorReviewSummary(draft, selected?.original_payload || selected?.reviewed_payload)
       : null;
@@ -2484,7 +2660,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const mapDetails = fromMap ? (mapProfile.category_details || []).filter(d => d && d.label) : [];
     const mapSector = fromMap ? mapProfile.sector : "";
     const sources = (selected?.evidence || []).filter(item => item && item.url);
-    const editableHere = (selected?.editable_fields || []).filter(field =>
+    const cardView = selected && (editing ? selected : {...selected, editable_fields: []});
+    const editableHere = (cardView?.editable_fields || []).filter(field =>
       !DERIVED_FIELDS.has(field) && !AUDIT_ONLY_FIELDS.has(field)
       && !["actor_category", "category_type", "category_note", "name", "website", "description",
            "location_city", "state", "country", "primary_sector", "primary_technical_focus",
@@ -2538,24 +2715,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           <p class="muted">${SENTENCES.hubProposalsUnavailable}</p>`}
         ${hubDemo.loaded && hubDemo.configured && !hubDemo.proposals.length && html`
           <p class="muted">${SENTENCES.hubProposalsNone}</p>`}
-        ${[...hubDemo.proposals, EXAMPLE_HUB_PROPOSAL].map(proposal => html`
-          <div class=${"review-match" + (proposal.example ? " review-hub-example" : "")} key=${proposal.proposed_hub_id}>
-            ${proposal.example && html`<p class="review-example-tag">Example · how a hub proposal works
-              (not real data, not stored in the database)</p>`}
+        ${hubDemo.proposals.map(proposal => html`
+          <div class="review-match" key=${proposal.proposed_hub_id}>
             <div class="review-detail-head">
               <div><strong>${proposal.name}</strong>
                 <p class="review-subhead">${hubProposalPlace(proposal)}</p></div>
               <span class=${"review-status " + (proposal.created_hub ? "verified" : "parked")}>
                 ${proposal.created_hub ? BADGES.verified : BADGES.parked}</span>
             </div>
-            ${proposal.example && html`<ol class="review-hub-steps">
-              <li><b>Detected.</b> COMPASS finds organizations in the directory clustered in one place and sector.</li>
-              <li><b>Checked.</b> The cluster must meet every threshold: enough independent families, enough
-                different categories, and members inside the core and cluster radius.</li>
-              <li><b>Proposed.</b> It appears here with its members and the reasons. Nothing is created yet.</li>
-              <li><b>Decided by GHUS.</b> Accept creates the hub and links its members; Refuse closes the
-                proposal with its reason. Either way the decision is recorded.</li>
-            </ol>`}
             <p>${proposal.rationale}</p>
             <dl class="review-facts">
               <div><dt>${FIELDS.families}</dt>
@@ -2575,11 +2742,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   ? " · " + typeLabel(member.actor_category, member.category_type) : ""}</span>
               </li>`)}
             </ul>
-            ${proposal.example && html`<div class="review-hub-actions">
-              <button class="btn" disabled title="Example: creates the hub and links its six members">Accept and create the hub</button>
-              <button class="btn ghost" disabled title="Example: closes the proposal with its reason">Refuse</button>
-              <small class="muted">In a real proposal, these buttons record GHUS's decision.</small>
-            </div>`}
           </div>`)}
       </section>`}
 
@@ -2659,7 +2821,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           ${activeRun && html`
             <header class="review-records-head">
               <div>
-                <span class="review-run-type">${runTypeName(activeRun.run_type)}</span>
+                <span class="review-run-type">${runHeader(activeRun.run_type, records)}</span>
                 <h2>${activeRun.run_name || activeRun.label}</h2>
                 <p class="review-subhead">${runMeta(activeRun, filters.status)}</p>
               </div>
@@ -2669,7 +2831,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <button class="review-record" onClick=${() => openRecord(candidate.candidate_id)}>
                   <span class="review-row-main">
                     <strong>${candidate.display_name}</strong>
-                    <small>${recordRowNote(candidate)}</small>
+                    ${(() => { const own = sharedRecordNotes(records).own[candidate.candidate_id];
+                      return own && html`<small>${own}</small>`; })()}
                   </span>
                   <span class=${"review-status " + (isParkedByReviewer(candidate) ? "parked" : candidate.status)}>${
                     // Anything still waiting for a decision reads Pending Review (5 Nov 2026).
@@ -2693,6 +2856,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 <span key=${index} class=${"review-status " + badge.tone}
                   title=${badge.hint || ""}>${badge.label}</span>`)}
             </div>
+            ${pending && twoWayKind(selected) !== "update" && html`<div class="review-edit-bar">
+              <button class=${"review-act" + (editing ? " chosen" : "")} disabled=${busy}
+                onClick=${() => setEditing(!editing)}>${editing ? "Done Editing" : "Edit"}</button></div>`}
             <p class="review-card-sub">
               ${selected.entity_type === "person"
                 ? (personLink(selected, draft) && html`<a href=${personLink(selected, draft)} target="_blank"
@@ -2713,25 +2879,32 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 ${about ? about.text : html`<span class="review-missing">${MISSING.notFound}</span>`}
                 ${about && html`<small>${about.kind}${about.source && html` · <a href=${about.source}
                   target="_blank" rel="noreferrer">Source</a>`}</small>`}</div>`;
-            })() : html`<textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")}
+            })() : !editing ? html`<div class="review-desc read">${present(draft.description)
+                ? draft.description : html`<span class="review-missing">${MISSING.notFound}</span>`}</div>`
+              : html`<textarea class=${"review-desc" + (draftErrors.description ? " invalid" : "")}
               rows=${Math.max(3, textRows(draft.description))}
               aria-label=${reviewFieldLabel("description")} placeholder="Description"
-              value=${draft.description ?? ""} disabled=${!pending || busy}
+              value=${draft.description ?? ""} disabled=${!editing || !pending || busy}
               onInput=${e => edit("description", e.target.value)}></textarea>`}
             ${draftErrors.description && html`<small class="field-error">${draftErrors.description}</small>`}
-            ${cardField(html, selected, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
+            ${cardField(html, cardView, "name", draft.name, edit, !pending || busy, draftErrors.name, "Name")}
             ${selected.entity_type === "person"
-              ? PERSON_LINK_FIELDS.map(row => profileRow(html, selected, draft, row,
+              ? PERSON_LINK_FIELDS.map(row => profileRow(html, cardView, draft, row,
                 {edit, disabled: !pending || busy, errors: draftErrors, always: true}))
-              : cardField(html, selected, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
+              : cardField(html, cardView, "website", draft.website, edit, !pending || busy, draftErrors.website, "Website")}
 
             ${isActor ? html`
             <details class="mpeople review-profile" open>
               <summary>Organization profile</summary>
+              ${completeness && completeness.total > 0 && html`<div class="review-completeness">
+                <b>Essential fields:</b> ${`${completeness.supported.length} of ${completeness.total} found with a source`}${
+                  completeness.missing.length ? html` · <span class="review-missing">${
+                  `Missing: ${completeness.missing.join(", ")}`}</span>` : ""}
+                <small>${SENTENCES.completenessNotVerification}</small></div>`}
               ${cardLine(html, "Other Names", otherNames.join(", "))}
               <label class="review-line"><b>${FIELDS.primarySector}</b>
                 <span class="review-value review-value-row">
-                <select class="review-inline" value=${draft.primary_sector ?? ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${draft.primary_sector ?? ""} disabled=${!editing || !pending || busy}
                   data-sectors=${sectorState.version}
                   onChange=${e => e.target.value === NEW_SECTOR
                     ? startNewSector(selected.agent_metadata?.unmatched_sector_suggestion)
@@ -2792,7 +2965,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             <div class="review-facts-row">
               <label class=${"review-stack" + (draftErrors.actor_category ? " invalid" : "")}>
                 <span>${FIELDS.actorCategory}</span>
-                <select class="review-inline" value=${draft.actor_category ?? ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${draft.actor_category ?? ""} disabled=${!editing || !pending || busy}
                   onChange=${e => editCategory(e.target.value)}>
                   <option value="">Choose a category</option>
                   ${categoryOptions().map(option => html`
@@ -2803,7 +2976,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               <label class=${"review-stack" + (draftErrors.category_type ? " invalid" : "")}>
                 <span>${FIELDS.categoryType}</span>
                 <select class="review-inline" value=${draft.category_type ?? ""}
-                  disabled=${!pending || busy || !draft.actor_category}
+                  disabled=${!editing || !pending || busy || !draft.actor_category}
                   onChange=${e => edit("category_type", e.target.value)}>
                   <option value="">${summary?.pending_classification ? MISSING.pending : "Choose a type"}</option>
                   ${typeOptions(draft.actor_category).map(option => html`
@@ -2815,7 +2988,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                   <small class="review-hint">${typeLabel(draft.actor_category, RETIRED_CATCH_ALL)}</small>`}
               </label>
               <label class="review-stack"><span>${FIELDS.country}</span>
-                <select class="review-inline" value=${normalizeCountry(draft.country) || ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${normalizeCountry(draft.country) || ""} disabled=${!editing || !pending || busy}
                   onChange=${e => editCountry(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
                   ${countryOptions().map(option => html`
@@ -2825,12 +2998,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                 </select></label>
               <label class=${"review-stack" + (draftErrors.location_city ? " invalid" : "")}><span>City</span>
                 <input class="review-inline" value=${draft.location_city ?? ""} placeholder=${MISSING.notFound}
-                  disabled=${!pending || busy || !(selected.editable_fields || []).includes("location_city")}
+                  disabled=${!editing || !pending || busy || !(selected.editable_fields || []).includes("location_city")}
                   onInput=${e => edit("location_city", e.target.value)}/>
                 ${draftErrors.location_city && html`<small class="field-error">${draftErrors.location_city}</small>`}
               </label>
               <label class="review-stack"><span>${FIELDS.state}</span>
-                <select class="review-inline" value=${draft.state ?? ""} disabled=${!pending || busy}
+                <select class="review-inline" value=${draft.state ?? ""} disabled=${!editing || !pending || busy}
                   onChange=${e => editState(e.target.value)}>
                   <option value="">${MISSING.notProvided}</option>
                   ${stateOptions().map(option => html`
@@ -2849,7 +3022,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               return row && (row.value || row.update || row.pending)
                 && lightLine(html, {...row, label: "Location read from its pages"});
             })()}
-            ${cardField(html, selected, "primary_technical_focus", draft.primary_technical_focus, edit,
+            ${cardField(html, cardView, "primary_technical_focus", draft.primary_technical_focus, edit,
               !pending || busy, draftErrors.primary_technical_focus, "Focus")}
             ${(() => {
               // Funding the Light Pull found shows in the Funding box itself when the
@@ -2858,12 +3031,12 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               const read = lightBoxes.common.find(row => row.key === "funding_signal" && !row.state && row.value);
               const found = read ? formatFactValue(read.value) : "";
               const own = draft.funding_summary;
-              return html`${cardField(html, selected, "funding_summary",
+              return html`${cardField(html, cardView, "funding_summary",
                 own === undefined || own === null || own === "" ? found : own, edit,
                 !pending || busy, draftErrors.funding_summary, "Funding")}
                 ${read && own && lightLine(html, {...read, label: "Funding found on its pages"})}`;
             })()}
-            ${cardField(html, selected, "current_activities", draft.current_activities, edit,
+            ${cardField(html, cardView, "current_activities", draft.current_activities, edit,
               !pending || busy, draftErrors.current_activities, "Current Programs")}
 
             <div class="review-hubs">
@@ -2885,7 +3058,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ` : html`
             <details class="mpeople review-profile" open>
               <summary>${selected.entity_type === "event" ? "Event profile" : "Person profile"}</summary>
-              ${(CARD_FIELDS[selected.entity_type] || []).map(row => profileRow(html, selected, draft, row,
+              ${(CARD_FIELDS[selected.entity_type] || []).map(row => profileRow(html, cardView, draft, row,
                 {edit, disabled: !pending || busy, errors: draftErrors}))}
             </details>`}
 
@@ -2940,7 +3113,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
                     : selected.entity_type === "person"
                       ? "How GHUS knows them: where you met, past conversations, who introduced them. Links to notes (OneDrive)."
                       : "Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}
-                  onInput=${e => setAnalystNotes(e.target.value)}></textarea>
+                  onInput=${e => { setAnalystNotes(e.target.value);
+                    keepNotesDraft(selected.candidate_id, e.target.value); }}></textarea>
                 <small class="muted">Kept on the record when you verify it, as written by GHUS; Compass never writes here.</small>
               </label>
             </div>
@@ -2993,8 +3167,17 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
           <!-- 5 POSSIBLE DUPLICATES -->
           ${matches.length > 0 && html`<section class="review-section">
             <h3><span class="review-step">5</span>${SECTIONS.duplicates}</h3>
+            <p class="review-hint">${decisionKind === "same_existing"
+              ? "Verify will merge it into the record marked below."
+              : "Verify will add it as a new record. If it is one of these, mark it the same."}</p>
             ${matches.map((match, index) => html`<div class="review-match" key=${index}>
-              <strong>${match.name || match.entity_id}</strong>
+              <div class="review-match-head"><strong>${match.name || match.entity_id}</strong>
+                ${match.entity_id && pending && !twoWayKind(selected) && (
+                  decisionKind === "same_existing" && targetId === String(match.entity_id)
+                    ? html`<button class="review-act chosen" disabled=${busy}
+                        onClick=${() => { setDecisionKind("new"); setTargetId(""); }}>Same record ✓ (undo)</button>`
+                    : html`<button class="review-act" disabled=${busy}
+                        onClick=${() => { setDecisionKind("same_existing"); setTargetId(String(match.entity_id)); }}>Same record</button>`)}</div>
               <table><thead><tr>
                 <th>${FIELDS.field}</th><th>This Candidate</th><th>Existing Record</th>
               </tr></thead>
@@ -3017,7 +3200,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             </dl>
             ${editableHere.length > 0 && html`<div class="review-field-grid">
               ${editableHere.map(field =>
-                textField(html, selected, field, draft[field], edit, !pending || busy, draftErrors[field]))}
+                textField(html, cardView, field, draft[field], edit, !pending || busy, draftErrors[field]))}
             </div>`}
             <details><summary>${FIELDS.rawCandidate}</summary>
               <pre>${JSON.stringify(selected.agent_metadata, null, 2)}</pre></details>
@@ -3030,67 +3213,39 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         ${reviewItemKind(selected)==="relationship"&&html`<section class="review-section review-decision"><h3>Legacy relationship</h3><p><strong>${selected.display_name}</strong> → ${String(selected.agent_metadata?.pipeline?.legacy_relationship_type||"").replaceAll("_"," ")} → <strong>${selected.agent_metadata?.related_actor_name||selected.agent_metadata?.pipeline?.object_actor_id}</strong></p><p class="muted">This parent/child link came from the old database without a source. Approve only with the URL of a page that shows it; it then becomes a sourced "unit of" relationship. Reject if it is wrong.</p><label class="review-field"><span>Source URL</span><input type="url" value=${sourceUrl} disabled=${!pending||busy} onInput=${e=>setSourceUrl(e.target.value)} placeholder="https://"/></label><label class="review-field"><span>Notes</span><textarea value=${notes} disabled=${!pending||busy} onInput=${e=>setNotes(e.target.value)}></textarea></label><div class="review-actions"><button class="btn" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:true,sourceUrl,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(true)}>Approve with source</button> <button class="btn danger" disabled=${!canSubmitReviewItem({candidate:selected,kind:"relationship",reviewer,approve:false,busy,admissionConfigured:data.admission_configured})} onClick=${()=>decideReviewItem(false)}>Reject</button></div></section>`}
           <!-- DECISION + STICKY FOOTER -->
           ${!reviewItemKind(selected) && html`
+          ${(writerDown || canKeepBothLocations(selected)
+              || (isUpdateProfile(selected) && (selected.agent_metadata?.changes || []).length > 0)) && html`
           <section class="review-section review-decision">
-            <h3>Decision</h3>
             ${writerDown && html`<p class="review-hint">${SENTENCES.writerUnavailable}</p>`}
             ${isUpdateProfile(selected) && (selected.agent_metadata?.changes || []).length > 0 && html`
               <p class="review-hint">Decide the ${selected.agent_metadata.changes.length} change(s) above
                 first; then mark this profile as reviewed.</p>`}
-            <div class="review-field-grid">
-              <label class="review-field"><span>Decision</span>
-                <select value=${decisionKind} disabled=${!pending || busy}
-                  onChange=${e => setDecisionKind(e.target.value)}>
-                  ${decisionOptions(selected.entity_type, selected).map(option => html`
-                    <option key=${option.value} value=${option.value}>${option.label}</option>`)}
-                </select></label>
-              ${decisionKind === "same_existing" && html`
-                <label class="review-field"><span>Existing record</span>
-                  <input value=${targetId} disabled=${!pending || busy}
-                    onInput=${e => setTargetId(e.target.value)} placeholder="Existing record ID"/></label>`}
-            </div>
-            ${decisionKind === "reject" && !twoWayKind(selected) && html`<div class="review-field-grid">
-              <label class="review-field"><span>${FIELDS.rejectionReason}</span>
-                <select value=${rejectionReason} onChange=${e => setRejectionReason(e.target.value)}
-                  disabled=${!pending || busy}>
-                  <option value="">Select a reason</option>
-                  ${REJECTION_REASONS.map(reason => html`
-                    <option key=${reason} value=${reason}>${reason}</option>`)}
-                </select></label>
-              ${rejectionReason === "Other" && html`
-                <label class="review-field"><span>Explain</span>
-                  <input value=${rejectionOther} disabled=${!pending || busy}
-                    onInput=${e => setRejectionOther(e.target.value)}/></label>`}
-            </div>
-            <p class="review-reason">${SENTENCES.noDeletion}</p>`}
-            ${proposeHub && html`<div class="review-field-grid">
-              <label class="review-field"><span>Proposed hub name</span>
-                <input value=${proposedHub.name} disabled=${!pending || busy}
-                  onInput=${e => setProposedHub(current => ({...current, name: e.target.value}))}/></label>
-              <label class="review-field"><span>Rationale</span>
-                <input value=${proposedHub.rationale} disabled=${!pending || busy}
-                  onInput=${e => setProposedHub(current => ({...current, rationale: e.target.value}))}/></label>
-            </div>`}
-          </section>
+            ${canKeepBothLocations(selected) && html`<label class="review-check">
+              <input type="checkbox" checked=${decisionKind === "keep_both"} disabled=${!pending || busy}
+                onChange=${e => setDecisionKind(e.target.checked ? "keep_both" : "new")}/>
+              Keep both locations (the current one and the proposed one)</label>`}
+          </section>`}
 
           <footer class="review-footer">
-            ${/* 5 Nov 2026: Save Edits, Reject, Park, then Verify in orange. */ ""}
-            ${twoWayKind(selected) !== "update" && html`<button class="review-act"
+            ${pending && blockedReason(draftErrors) && html`<p class="review-blocked" role="status">
+              To save or verify, fix: ${blockedReason(draftErrors)}</p>`}
+            ${/* 12 Nov 2026: Save Edits, Reject, Park, then Verify in orange; each asks once. */ ""}
+            ${editing && twoWayKind(selected) !== "update" && html`<button class="review-act"
               disabled=${!pending || busy || Object.keys(draftErrors).length > 0}
               onClick=${save}>${BUTTONS.saveEdits}</button>`}
-            <button class=${"review-act" + (decisionKind === "reject" ? " chosen" : "")}
-              disabled=${!pending || busy || writerDown}
-              onClick=${() => { setDecisionKind("reject"); }}>${twoWayKind(selected)
+            <button class="review-act"
+              disabled=${!pending || busy || writerDown || !canSubmitReview({candidate: selected, reviewer,
+                decisionKind: "reject", busy, admissionConfigured: data.admission_configured})}
+              onClick=${() => decide("reject")}>${twoWayKind(selected)
                 ? TWO_WAY_ANSWERS[twoWayKind(selected)][1] : BUTTONS.reject}</button>
-            <button class=${"review-act" + (decisionKind === "defer" ? " chosen" : "")}
-              disabled=${!pending || busy || writerDown}
-              onClick=${() => { setDecisionKind("defer"); }}>${BUTTONS.park}</button>
-            <button class="review-act primary" onClick=${decide} disabled=${!canSubmitReview({
-              candidate: selected, reviewer, rejectionReason, rejectionOther, decisionKind,
+            <button class="review-act"
+              disabled=${!pending || busy || writerDown || !canSubmitReview({candidate: selected, reviewer,
+                decisionKind: "defer", busy, admissionConfigured: data.admission_configured})}
+              onClick=${() => decide("defer")}>${BUTTONS.park}</button>
+            <button class="review-act primary" onClick=${() => decide()} disabled=${!canSubmitReview({
+              candidate: selected, reviewer, decisionKind: verifyKind(decisionKind),
               targetId, busy, admissionConfigured: data.admission_configured, draftErrors,
-            })}>${twoWayKind(selected) && decisionKind !== "defer"
-              ? decisionOptions(selected.entity_type, selected).find(o => o.value === decisionKind)?.label
-              : decisionKind === "reject" ? BUTTONS.reject
-              : decisionKind === "defer" ? BUTTONS.park : BUTTONS.verify}</button>
+            })}>${twoWayKind(selected) ? TWO_WAY_ANSWERS[twoWayKind(selected)][0] : BUTTONS.verify}</button>
           </footer>`}`}
         </article>`}
         </div>

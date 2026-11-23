@@ -14,6 +14,7 @@ import {
   recentRequests,
   requestRows,
   requestState,
+  sinceStart,
   summaryCounts,
 } from '../frontend/dashboard.js';
 
@@ -121,7 +122,10 @@ test('the page is navigation only and every destination listens for it', () => {
     'Open Directory']) {
     assert.ok(page.includes(words), words);
   }
-  assert.ok(!/method:\s*"POST"/.test(page), 'the Dashboard never starts or changes anything');
+  // It never starts or changes anything; the one exception is marking an opened notification read.
+  const posts = page.split(/\r?\n/).filter(line => /method:\s*"POST"/.test(line));
+  assert.equal(posts.length, 1);
+  assert.match(posts[0], /\/api\/account\/notifications\/\$\{encodeURIComponent\(item\.id\)\}\/read/);
   const shell = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
   assert.ok(shell.includes('window.addEventListener(NAVIGATE,go)'));
   assert.ok(shell.includes('restore(id);};'), 'Explore and Map opens the map');
@@ -134,6 +138,76 @@ test('the Directory activity panel never asks for a typed name', async () => {
   const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /Type your name/);
   assert.doesNotMatch(src, /ghus\.review\.reviewer/);
-  const {NOT_SIGNED_IN_ACTIVITY} = await import('../frontend/dashboard.js');
-  assert.match(NOT_SIGNED_IN_ACTIVITY, /takes your name from your account/);
+  // 11 Nov 2026 (GHUS): like the other panels - activity, or nothing in the period.
+  assert.doesNotMatch(src, /once sign-in is on/);
+  assert.match(src, /!activity\.signedIn \? `Nothing in the last \$\{days\} days\.`/);
+});
+
+test('a request running now is on the Dashboard, even one made before the trial', async () => {
+  const {sinceStart, requestRows, recentRequests} = await import('../frontend/dashboard.js');
+  const start = '2026-11-10T00:00:00Z';
+  const old = {subscription_id: 'un', title: 'UN events updates', created_at: '2026-10-20T00:00:00Z',
+    status: 'active', starting: true, runs: []};
+  const shown = sinceStart({requests: [old]}, start);
+  assert.equal(shown.requests.length, 1);
+  const rows = requestRows({requests: shown.requests});
+  assert.equal(recentRequests(rows, 7).length, 1);
+});
+
+test('spending counts the whole month from the 1st, and Compass opens on the Dashboard', () => {
+  const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
+  assert.match(src, /<span>\$\{monthRangeLabel\(now\)\}<\/span>/);
+  assert.match(src, /const spent = monthSpending\(\{requests: data\.requests/);
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /const \[tab,setTab\]=useState\("dashboard"\)/);
+});
+
+test('the hosted trial starts the Dashboard clean: nothing before its start counts', () => {
+  const start = '2026-11-10T00:00:00Z';
+  const now = new Date('2026-11-12T12:00:00Z');
+  const data = {
+    requests: [
+      {subscription_id: 'old', created_at: '2026-11-03T09:00:00Z', runs: [run({started_at: '2026-11-03T10:00:00Z', spent_usd: '4'})]},
+      {subscription_id: 'both', created_at: '2026-11-03T09:00:00Z', runs: [
+        run({started_at: '2026-11-11T10:00:00Z', spent_usd: '0.30'}), run({started_at: '2026-11-04T10:00:00Z', spent_usd: '2'})]},
+      {subscription_id: 'new', created_at: '2026-11-11T09:00:00Z', runs: []},
+    ],
+    updates: [{subscription_id: 'u', created_at: '2026-11-02T09:00:00Z', runs: [run({started_at: '2026-11-05T10:00:00Z', status: 'failed'})]}],
+    oneTime: [{started_at: '2026-11-09T23:00:00Z', spent_usd: 1}, {started_at: '2026-11-10T08:00:00Z', spent_usd: 0.2}],
+    maps: [{created: epoch('2026-11-08T10:00:00Z'), spent_usd: 3}, {created: epoch('2026-11-11T10:00:00Z'), spent_usd: 0.1}],
+  };
+  const shown = sinceStart(data, start);
+  assert.deepEqual(shown.requests.map(r => r.subscription_id), ['both', 'new']);
+  assert.equal(shown.requests[0].runs.length, 1);
+  assert.deepEqual(shown.updates, []);           // its failed run was before: no "Needing Attention"
+  assert.equal(monthSpending(shown, now), 0.6);
+  assert.equal(monthSpending(sinceStart(data, null), now), 11.1);   // no start: unchanged
+  assert.equal(monthRangeLabel(now, start), 'November 10–12, 2026');
+  assert.equal(monthRangeLabel(new Date('2026-12-02T12:00:00Z'), start), 'December 1–2, 2026');
+});
+
+test('one Dashboard for everyone: the original design, adapted to the role', () => {
+  const page = fs.readFileSync(new URL('../frontend/index.html', import.meta.url), 'utf8');
+  assert.match(page, /<\$\{Dashboard\}\s+permissions=\$\{account\?account\.permissions:null\}\/>/);
+  assert.doesNotMatch(page, /<\$\{DashboardPage\}/);
+  const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
+  // The shared login sees everything; a Viewer (no requests.view) never asks for requests.
+  assert.match(src, /const can = p => !permissions \|\| permissions\.includes\(p\);/);
+  assert.match(src, /if \(!seesRequests\) return;/);
+  assert.match(src, /\$\{seesRequests && show\("requests"\) && html`<\$\{Panel\} symbol=\$\{ICONS\.refresh\} title="Recent Requests"/);
+  assert.match(src, /\$\{seesRequests && show\("spending"\) && html`<div class="dash-spending">/);
+});
+
+test('the original Dashboard gains Notifications and Pending Deletion, and My profile chooses what shows', () => {
+  const src = fs.readFileSync(new URL('../frontend/dashboard.js', import.meta.url), 'utf8');
+  assert.match(src, /const notes = Boolean\(permissions\) && show\("notifications"\);/);
+  assert.match(src, /const deletions = Boolean\(permissions\) && can\(DELETE_PERMISSION\) && show\("deletions"\);/);
+  assert.match(src, /<\$\{NotificationsPanel\} span=\$\{deletions \? "two" : "all"\}\/>/);
+  for (const key of ['summary', 'spending', 'maps', 'requests', 'directory']) assert.ok(src.includes(`show("${key}")`), key);
+  assert.match(src, /get\("\/api\/account\/preferences"\)/);
+  assert.match(src, /window\.addEventListener\("compass:preferences", changed\)/);
+  const profile = fs.readFileSync(new URL('../frontend/accounts.js', import.meta.url), 'utf8');
+  assert.match(profile, /<label>Dashboard shows<\/label>/);
+  for (const words of ['Counts at the top', 'My Spending This Month', 'Notifications', 'Pending Deletion', 'Recent Maps',
+    'Recent Requests', 'Recent Directory Activity']) assert.ok(profile.includes(`"${words}"`), words);
 });

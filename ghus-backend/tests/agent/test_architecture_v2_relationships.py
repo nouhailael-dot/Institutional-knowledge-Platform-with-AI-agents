@@ -137,12 +137,21 @@ def test_superseding_proposal_preserves_frozen_250_and_has_db_guards():
     assert "source_id uuid NOT NULL" in frozen
 
 
+def _isolated_sessions():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    return sessionmaker(bind=create_engine(os.environ["V2_TEST_DATABASE_URL"]))
+
+
 @pytest.mark.skipif(
     not os.environ.get("V2_TEST_DATABASE_URL"),
     reason="V2_TEST_DATABASE_URL is required for isolated database enforcement",
 )
 def test_isolated_database_enforces_endpoints_cycles_and_idempotency():
-    from src.db.session import SessionLocal
+    # Only the isolated test database, never DATABASE_URL (which may be the
+    # shared team database): the skip condition and the connection agree.
+    SessionLocal = _isolated_sessions()
 
     with SessionLocal() as session:
         actors = session.execute(

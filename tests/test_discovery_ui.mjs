@@ -440,7 +440,7 @@ test('update runs are one list: name, actors, when, status and what each found',
   assert.equal(topic.result, '13 new or updated · 0 to Review Results');
   assert.equal(topic.statusLabel, 'Finished');
   assert.equal(single.schedule, 'One-time update · Energy Transition');
-  assert.equal(single.result, '4 updated · 2 confirmed · 2 not found');
+  assert.equal(single.result, '4 updated · 2 confirmed · 2 Not Found');
   assert.equal(updateCountsLine({}), 'Nothing new');
 });
 
@@ -454,7 +454,7 @@ test('a page read from another source says which', async () => {
 
 test('run now writes, says what it wrote, and opens Review - no findings table', async () => {
   const {writtenLine, openInReview, OPEN_IN_REVIEW} = await import('../frontend/discovery.js');
-  assert.equal(writtenLine({new: 4, not_found: 7}), '4 new · 7 not found');
+  assert.equal(writtenLine({new: 4, not_found: 7}), '4 new · 7 Not Found');
   assert.equal(writtenLine({changed: 1, additional: 1, conflict: 1}), '1 updated · 1 more detail · 1 to review');
   assert.equal(writtenLine({}), 'nothing new');
   const seen = [];
@@ -634,6 +634,9 @@ test('the Monitor page leads with New Request, Requests, Organization Updates an
   // The results email is the account's: a notice, never an address to type.
   const {EMAIL_NOTE} = await import('../frontend/discovery.js');
   assert.equal(EMAIL_NOTE, 'You’ll receive an email notification when your results are ready to review in Review Results.');
+  // 12 Nov 2026: said only when a mail server is set up and the sign-in is an email.
+  const src = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(!me\?\.email_notifications\) return null;/);
   assert.doesNotMatch(page, /type="email"|ghus\.monitor\.email/);
   const {MONITOR_TITLE, REVIEW_NOTE} = await import('../frontend/discovery.js');
   assert.equal(MONITOR_TITLE, 'What would you like to monitor?');
@@ -726,4 +729,42 @@ test('a starting request has a running run that says it is starting up', async (
   assert.equal(run.status, 'running');
   assert.equal(runningLine(run), 'Starting up: searching the web in a moment');
   assert.equal(runningRun({runs: []}), null);
+});
+
+// -------------------------------- one-line event requests (12 Nov 2026)
+test('a one-line events request searches for its key words, not the whole sentence', async () => {
+  const {termsFromSentence, areaContradicts, resolveEventDraft, blankEntityForm} =
+    await import('../frontend/discovery.js');
+  const sentence = 'Find me all African Diaspora related events happening in the United States '
+    + 'in the next 6 months - focused on all sectors, entrepreneurship';
+  assert.deepEqual(termsFromSentence(sentence), ['African Diaspora', 'entrepreneurship']);
+  const draft = resolveEventDraft({...blankEntityForm('2026-11-12', 'event'), brief: sentence}, {});
+  assert.deepEqual(draft.focusTerms, ['African Diaspora', 'entrepreneurship']);
+  // Several lines: the lines after the first are the terms, as before.
+  const listed = resolveEventDraft({...blankEntityForm('2026-11-12', 'event'),
+    brief: 'Diaspora events\nAfroTech\nBlack founders'}, {});
+  assert.deepEqual(listed.focusTerms, ['AfroTech', 'Black founders']);
+  // The whole country in words, one region in the form: said before saving.
+  assert.equal(areaContradicts(sentence, {areaKind: 'region'}), true);
+  assert.equal(areaContradicts(sentence, {areaKind: 'us'}), false);
+});
+
+test('each run in Request Details says how long it took (GHUS, 11 Nov 2026)', () => {
+  const src = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.match(src, /"Took " \) \+ durationLabel\(run\.elapsed_seconds\)|"Took "\) \+ durationLabel\(run\.elapsed_seconds\)/);
+});
+
+test('the events request form has no Event Type choice (GHUS, 12 Nov 2026)', () => {
+  const src = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /<\$\{Field\} label="Event Type"/);
+  assert.doesNotMatch(src, /All Event Types/);
+});
+
+test('Run now while another run goes says Queued and starts by itself (12 Nov 2026)', async () => {
+  const {runNowMessage, requestStatus, STATUS_LABELS} = await import('../frontend/discovery.js');
+  assert.match(runNowMessage('UN events', {queued: true, position: 1}), /queued: the server is busy with other requests\. It starts by itself/);
+  assert.match(runNowMessage('UN events', {queued: true, position: 3}), /, and 2 more wait before it/);
+  assert.match(runNowMessage('UN events', {started: true}), /is running/);
+  assert.equal(requestStatus({status: 'active', queued: 1, runs: []}), 'queued');
+  assert.equal(STATUS_LABELS.queued, 'Queued');
 });

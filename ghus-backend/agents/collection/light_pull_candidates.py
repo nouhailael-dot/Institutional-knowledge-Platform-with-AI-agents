@@ -216,7 +216,10 @@ def _reader(config: dict, max_usd: float, *, reader_class=None):
         client._client = Anthropic(timeout=180.0, max_retries=1)
     source = OpenWebEventSource(config)
     reader_class = reader_class or LightPullReader
-    return reader_class(client, source.fetch, fallback=_fallback(config, meter)), meter, model
+    cache = config.get("light_pull_answer_cache", "agents/runs/light_pull_answers")
+    cache_dir = (Path(__file__).resolve().parents[2] / cache) if cache else None
+    return reader_class(client, source.fetch, fallback=_fallback(config, meter),
+                        answer_cache=cache_dir), meter, model
 
 
 def _fallback(config: dict, meter):
@@ -232,6 +235,16 @@ def _fallback(config: dict, meter):
         from agents.discovery.search.providers import build_search_provider
 
         provider = build_search_provider(config, cost_meter=meter)
+        # The same search within a few days (a retried read, an organisation read
+        # by Discovery and then by Actor Updates) is answered from disk, not paid
+        # for again (agents/discovery/search/search_cache.py).
+        from agents.common.raw_storage import RawContentStore
+        from agents.discovery.search.search_cache import CachedSearchProvider
+
+        root = Path(__file__).resolve().parents[2]
+        provider = CachedSearchProvider(
+            provider, RawContentStore.from_config(root, config).base_dir / "search_cache",
+            ttl_hours=float(config.get("search_cache_ttl_hours", 72)))
         search = lambda query: provider.search(query, count=5)
     return Fallback(blocked=BlockedSites(BLOCKED_SITES), search=search, max_searches=searches)
 

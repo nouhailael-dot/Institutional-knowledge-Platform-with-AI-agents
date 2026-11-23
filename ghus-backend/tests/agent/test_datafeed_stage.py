@@ -155,7 +155,8 @@ def test_event_checks():
     assert feed.check_event(ok) == []
     assert any("before the start" in p for p in feed.check_event({**ok, "end_date": "2027-04-01"}))
     assert any("not a date" in p for p in feed.check_event({**ok, "start_date": "04/02/2027"}))
-    assert any("Start date is required" in p for p in feed.check_event({**ok, "start_date": ""}))
+    # An exact date not known yet is no reason to refuse an event (12 Nov 2026).
+    assert not any("Start date" in p for p in feed.check_event({**ok, "start_date": ""}))
 
 
 # ------------------------------------------------------------------ staging (database)
@@ -450,3 +451,198 @@ def test_a_possible_duplicate_is_never_added_twice(monkeypatch):
                                           "source_table": "person_review_queue", "source_id": "q1"}]}
     out = feed.admit_directory(type("S", (), {"rollback": lambda self: None})(), b, result)
     assert out[0]["outcome"] == "possible_duplicate" and "not added twice" in out[0]["reason"]
+
+
+@needs_db
+def test_a_map_event_without_an_exact_date_is_staged_and_verified_with_edits_and_notes(session):
+    """GHUS feedback, 11 Nov 2026, end to end on the test database: Beyond Africa
+    (date '2026' only) is saved from a map, then verified in Review with an end
+    date, audience and GHUS Notes. Each part was refused or lost before."""
+    from agents.review.admission import apply_review_decision
+
+    row = {"row_number": 2, "payload": {
+        "name": "BeyondAfrica Conference Test", "event_type": "conference",
+        "website": "https://beyondafrica-test.org", "sector_codes": ["AI"],
+        "event_format": "in_person", "ghus_notes": "Zahra attended in Austin."},
+        "original": {}, "match": {"kind": "new"}}
+    staged = feed.stage_batch(session, batch("event", rows=[row], method="map",
+                                             file_name=None, file_sha256=None))
+    assert staged["rows"][0]["outcome"] == "staged"
+    session.commit()  # staging and the later decision are separate transactions
+    done = apply_review_decision(session, {
+        "entity_type": "event", "decision_kind": "new",
+        "source_ref": {"table": "event_review_queue", "id": staged["rows"][0]["source_id"]},
+        "reviewer": "zahra@ghus.example", "idempotency_key": "beyond-africa-test",
+        "edited_payload": {"end_date": "2026-11-21", "audience": "Founders and investors",
+                           "event_format": "In person"},
+        "ghus_notes": "Zahra attended in Austin.",
+    })
+    event_id = done["canonical_entity_id"]
+    event = session.execute(text("SELECT start_date, end_date, ghus_notes, event_type FROM event "
+                                 "WHERE event_id = CAST(:id AS uuid)"), {"id": event_id}).one()
+    assert event.start_date is None and str(event.end_date) == "2026-11-21"
+    assert event.ghus_notes == "Zahra attended in Austin."
+    assert event.event_type == "Conference"
+    facts = dict(session.execute(text(
+        "SELECT fact_key, fact_value::text FROM event_fact WHERE event_id = CAST(:id AS uuid)"),
+        {"id": event_id}).all())
+    assert "Founders and investors" in facts.get("audience", "")
+
+
+@needs_db
+def test_rejecting_with_no_reason_is_accepted_by_the_database(session):
+    """Reject is Reject, then Yes (12 Nov 2026): recorded as Other: No reason given,
+    which the database's fixed list accepts."""
+    from agents.review.admission import apply_review_decision
+
+    row = {"row_number": 2, "payload": {
+        "name": "AfroTech Conference Test", "event_type": "conference",
+        "website": "https://afrotech-test.org", "sector_codes": ["AI"]},
+        "original": {}, "match": {"kind": "new"}}
+    staged = feed.stage_batch(session, batch("event", rows=[row], method="map",
+                                             file_name=None, file_sha256=None))
+    session.commit()
+    done = apply_review_decision(session, {
+        "entity_type": "event", "decision_kind": "reject",
+        "source_ref": {"table": "event_review_queue", "id": staged["rows"][0]["source_id"]},
+        "reviewer": "zahra@ghus.example", "idempotency_key": "afrotech-reject-test",
+        "edited_payload": {}, "rejection_reason": "Other", "rejection_reason_other": "No reason given",
+    })
+    assert done["status"] in ("rejected", "rejected_by_reviewer")
+
+
+@needs_db
+def test_an_event_created_by_a_parallel_run_is_not_created_twice(session):
+    """12 Nov 2026: runs go side by side (one per person); creation takes a lock
+    and looks one last time for the same record made by another run."""
+    from agents.discovery.promote import _insert_event, created_meanwhile, insert_source
+
+    source = insert_source(session, source_url="https://parallel-test.org",
+                           fetched_at="2026-11-12T10:00:00+00:00", description="parallel test")
+    payload = {"name": "Parallel Run Summit Test", "start_date": "2027-03-04", "website": "https://parallel-test.org"}
+    assert created_meanwhile(session, "event", payload) is None
+    made = _insert_event(session, dict(payload), source)
+    assert created_meanwhile(session, "event", {**payload, "name": "parallel run summit test"}) == made
+    # Another edition (another date) is another event.
+    assert created_meanwhile(session, "event", {**payload, "start_date": "2028-03-04"}) is None
+    # Only recent records count: an old one is left to the normal duplicate check.
+    session.execute(text("UPDATE event SET created_at = now() - interval '2 days' "
+                         "WHERE event_id = CAST(:id AS uuid)"), {"id": made})
+    assert created_meanwhile(session, "event", payload) is None
+
+
+@needs_db
+def test_a_person_whose_organization_is_not_in_the_directory_is_stored_and_flagged(session):
+    """GHUS, 13 Nov 2026: a person is no longer refused because their organization
+    is not in the directory. The person is stored, unlinked, with the
+    organization's name kept; the outcome names it for the team to look up."""
+    org = "Organization Not In Directory Test 7f3a"
+    row = {"row_number": 2, "payload": {
+        "name": "Ana Test Ruiz", "role": "Director", "affiliation": org,
+        "linkedin_url": "https://www.linkedin.com/in/ana-test-ruiz-7f3a",
+        "source_url": "https://www.linkedin.com/in/ana-test-ruiz-7f3a"},
+        "original": {}, "match": {"kind": "new"}}
+    imported = batch("person", rows=[row], method="manual", file_name=None, file_sha256=None,
+                     admission="directory", attestation={"source": True, "authorized": True})
+    staged = feed.stage_batch(session, imported)
+    session.commit()
+    outcomes = feed.admit_directory(session, imported, staged)
+    assert [o["outcome"] for o in outcomes] == ["stored"], outcomes
+    assert outcomes[0]["organization_missing"] == org
+    person = outcomes[0]["entity_id"]
+    links = session.execute(text("SELECT count(*) FROM actor_person WHERE person_id = CAST(:p AS uuid)"),
+                            {"p": person}).scalar()
+    assert links == 0                                   # nothing invented, nothing linked
+    kept = session.execute(text(
+        "SELECT fact_value::text FROM person_fact WHERE person_id = CAST(:p AS uuid) "
+        "AND fact_key = 'affiliation_not_in_directory'"), {"p": person}).scalar()
+    assert org in kept
+    assert session.execute(text("SELECT count(*) FROM actor WHERE name = :n"), {"n": org}).scalar() == 0
+    # The Directory shows it from that fact (src/browse.py load_people, same expression).
+    shown = session.execute(text(
+        "SELECT f.fact_value #>> '{}' FROM person_fact f WHERE f.person_id = CAST(:p AS uuid) "
+        "AND f.fact_key = 'affiliation_not_in_directory' ORDER BY f.created_at DESC LIMIT 1"),
+        {"p": person}).scalar()
+    assert shown == org
+
+
+@needs_db
+def test_a_person_held_in_review_whose_organization_is_not_in_the_directory_can_be_verified(session):
+    """13 Nov 2026: Verify on such a person in Review failed with 'exited with code 1'."""
+    from agents.review.admission import apply_review_decision
+
+    org = "Organization Not In Directory Review Test 9c1e"
+    row = {"row_number": 2, "payload": {
+        "name": "Omar Test Bennani", "role": "Research Analyst", "affiliation": org,
+        "linkedin_url": "https://www.linkedin.com/in/omar-test-bennani-9c1e",
+        "source_url": "https://www.linkedin.com/in/omar-test-bennani-9c1e"},
+        "original": {}, "match": {"kind": "new"}}
+    staged = feed.stage_batch(session, batch("person", rows=[row], method="upload",
+                                             file_name="team.xlsx", file_sha256="ab" * 32))
+    session.commit()
+    done = apply_review_decision(session, {
+        "entity_type": "person", "decision_kind": "new",
+        "source_ref": {"table": "person_review_queue", "id": staged["rows"][0]["source_id"]},
+        "reviewer": "zahra@ghus.example", "idempotency_key": "omar-review-test",
+        "edited_payload": {},
+    })
+    assert done["status"] == "approved"
+    assert done["organization_missing"] == org
+
+
+@needs_db
+def test_people_and_events_a_ghus_person_verifies_are_verified_not_parked(session):
+    """GHUS, 13 Nov 2026: four people verified in Review showed 'Parked' in the
+    Directory. A record a GHUS person decided on is Verified; one an agent found is
+    still parked until someone checks it. The one-time correction fixes the
+    records created before, and only those."""
+    from agents.discovery.promote import _insert_person, insert_source
+    from agents.enrichment.decisions import mark_reviewed_records_verified
+    from agents.review.admission import apply_review_decision
+
+    def status(table, column, entity_id):
+        return session.execute(text(f"SELECT record_status FROM {table} WHERE {column} = "
+                                    "CAST(:id AS uuid)"), {"id": entity_id}).scalar()
+
+    tag = uuid.uuid4().hex[:8]
+    person_row = {"row_number": 2, "payload": {
+        "name": f"Leila Zq{tag} Verified", "role": "Program Manager", "affiliation": f"Unlisted Institute Zq{tag}",
+        "linkedin_url": f"https://www.linkedin.com/in/leila-zq-{tag}",
+        "source_url": f"https://www.linkedin.com/in/leila-zq-{tag}"},
+        "original": {}, "match": {"kind": "new"}}
+    event_row = {"row_number": 2, "payload": {
+        "name": f"Qzx Verified Gathering {tag}", "event_type": "conference",
+        "website": f"https://qzx-gathering-{tag}.org", "sector_codes": ["AI"]},
+        "original": {}, "match": {"kind": "new"}}
+    made = {}
+    for kind, row, table in (("person", person_row, "person_review_queue"),
+                             ("event", event_row, "event_review_queue")):
+        staged = feed.stage_batch(session, batch(kind, rows=[row], method="manual",
+                                                 file_name=None, file_sha256=None))
+        session.commit()
+        done = apply_review_decision(session, {
+            "entity_type": kind, "decision_kind": "new",
+            "source_ref": {"table": table, "id": staged["rows"][0]["source_id"]},
+            "reviewer": "zahra@ghus.example", "idempotency_key": f"verified-{kind}-{tag}",
+            "edited_payload": {}})
+        made[kind] = done["canonical_entity_id"]
+    assert status("person", "person_id", made["person"]) == "verified"
+    assert status("event", "event_id", made["event"]) == "verified"
+
+    # Records verified before the fix were left parked; an agent's own finding stays parked.
+    session.execute(text("UPDATE person SET record_status = 'parked' WHERE person_id = CAST(:id AS uuid)"),
+                    {"id": made["person"]})
+    session.execute(text("UPDATE event SET record_status = 'parked' WHERE event_id = CAST(:id AS uuid)"),
+                    {"id": made["event"]})
+    source = insert_source(session, source_url="https://agent-found-4d2a.org",
+                           fetched_at="2026-11-13T10:00:00+00:00", description="agent test")
+    found_by_agent = _insert_person(session, {"name": "Agent Found 4d2a", "role": "Analyst"}, source,
+                                    confidence=0.9)
+    dry = mark_reviewed_records_verified(session)
+    assert made["person"] in dry["person_ids"] and made["event"] in dry["event_ids"]
+    assert found_by_agent not in dry["person_ids"]
+    assert status("person", "person_id", made["person"]) == "parked"      # a dry run writes nothing
+    mark_reviewed_records_verified(session, live=True)
+    assert status("person", "person_id", made["person"]) == "verified"
+    assert status("event", "event_id", made["event"]) == "verified"
+    assert status("person", "person_id", found_by_agent) == "parked"

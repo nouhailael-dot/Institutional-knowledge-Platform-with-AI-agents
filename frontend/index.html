@@ -351,7 +351,7 @@
   button,a,input,select,textarea{touch-action:manipulation}
   button{transition:background .16s,border-color .16s,box-shadow .16s}
   :focus-visible{outline:3px solid #d7410b70;outline-offset:3px}
-  .sidebar{position:fixed;inset:0 auto 0 0;width:236px;background:var(--surface);border-right:1px solid var(--line);padding:30px 20px;display:flex;flex-direction:column;z-index:25}
+  .sidebar{position:fixed;inset:0 auto 0 0;width:236px;background:var(--surface);border-right:1px solid var(--line);padding:30px 20px;display:flex;flex-direction:column;z-index:25;overflow-y:auto}
   .workspace-brand{padding:0 12px 30px}.brand-name{font-size:29px;font-weight:800;letter-spacing:3px;color:var(--accent)}
   .brand-caption{font-size:10px;letter-spacing:1.5px;font-weight:650;color:var(--muted);margin-top:3px}
   .nav-label,.eyebrow{font-size:10px;letter-spacing:1.7px;text-transform:uppercase;font-weight:700;color:var(--muted)}
@@ -366,11 +366,77 @@
   .date-input-pick:hover:not(:disabled){color:var(--accent-ink);border-color:var(--accent)}
   .date-input-pick:hover{background:var(--surface-2)}
   .date-input-pick:disabled{opacity:.5;cursor:default}
-  .date-input>.date-input-native{position:absolute;right:0;bottom:0;width:1px;height:1px;min-height:0;padding:0;margin:0;border:0;opacity:0;pointer-events:none}
+  .date-cal{position:absolute;top:calc(100% + 6px);right:0;z-index:60;width:272px;padding:10px;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 12px 32px rgba(20,20,20,.16)}
+  .date-cal.up{top:auto;bottom:calc(100% + 6px)}
+  .date-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .date-cal-head strong{font-size:14px;color:var(--ink)}
+  .date-cal-head button,.date-cal-foot button{border:0;background:transparent;color:var(--accent-ink);font-size:18px;line-height:1;padding:4px 10px;border-radius:8px;cursor:pointer;min-height:0;width:auto}
+  .date-cal-foot button{font-size:13px;font-weight:600}
+  .date-cal-head button:hover,.date-cal-foot button:hover:not(:disabled){background:var(--surface-2)}
+  .date-cal-grid{width:100%;border-collapse:collapse;table-layout:fixed;margin:0}
+  .date-cal-grid th{font-size:11px;font-weight:600;color:var(--muted);padding:4px 0;text-align:center;border:0;background:none}
+  .date-cal-grid td{padding:1px;text-align:center;border:0}
+  .date-cal-day{width:100%;height:32px;min-height:0;padding:0;border:0;border-radius:8px;background:transparent;color:var(--ink);font-size:13px;cursor:pointer}
+  .date-cal-day:hover:not(:disabled){background:var(--surface-2)}
+  .date-cal-day.today{box-shadow:inset 0 0 0 1px var(--accent)}
+  .date-cal-day.selected{background:var(--accent);color:#fff}
+  .date-cal-day:disabled{opacity:.3;cursor:default}
+  .date-cal-foot{display:flex;justify-content:space-between;margin-top:6px}
+  .date-cal-foot button:disabled{opacity:.4;cursor:default}
   .nav-item.active{background:var(--accent-soft);color:var(--accent-ink);border-color:#f5d5c7}
   .nav-symbol{width:21px;height:21px;display:grid;place-items:center;font-size:20px;line-height:1}
   .sidebar-foot{margin-top:auto;border-top:1px solid var(--line);padding:20px 12px 0;font-size:12px;color:var(--muted)}
   .sidebar-foot strong{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}
+  .session-name{background:none;border:0;padding:0;font:inherit;text-align:left;cursor:pointer;color:inherit}
+  .workspace-header{display:flex;align-items:center;justify-content:space-between}
+  .notify-wrap{position:relative}
+  .notify-bell{position:relative;background:none;border:1px solid transparent;border-radius:8px;padding:6px;color:var(--muted);cursor:pointer}
+  .notify-bell:hover{background:var(--surface-2);color:var(--ink)}
+  .notify-count{position:absolute;top:-2px;right:-4px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+  .notify-panel{position:absolute;right:0;top:40px;width:min(360px,calc(100vw - 32px));max-height:70vh;overflow-y:auto;z-index:40;padding:12px}
+  .notify-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .notify-item{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);padding:10px 4px;cursor:pointer;color:var(--ink);font:inherit}
+  .notify-item.unread .notify-title{font-weight:650}
+  .notify-item.unread::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px}
+  .notify-title,.notify-body,.notify-when{display:block}
+  .notify-body{color:var(--muted);font-size:13px;margin-top:2px}.notify-when{color:var(--faint);font-size:12px;margin-top:2px}
+  .dash-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-top:14px}
+  .dash-card-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .dash-list{list-style:none;margin:8px 0 0;padding:0}.dash-list li{padding:6px 0;border-top:1px solid var(--line);font-size:14px}
+  .dash-list li.unread{font-weight:600}
+  /* Pending Deletion (Phase 6): a compact Dashboard card and its own page */
+  .pd-count{display:inline-block;min-width:20px;margin-left:6px;padding:0 7px;border-radius:999px;font-size:12px;
+    line-height:20px;text-align:center;background:var(--surface-2,#f1f3f5);color:var(--muted,#667085)}
+  .pd-count.has{background:#fdecea;color:#b3261e}
+  .pd-line{margin:6px 0 0;font-size:13px}
+  .pd-list li{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap}
+  .pd-list .pd-name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%}
+  .pd-days{margin-left:auto;font-size:12px;color:var(--muted,#667085);white-space:nowrap}
+  .pd-days.urgent{color:#b3261e;font-weight:600}
+  .pd-filters{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0}
+  .pd-filters label{display:flex;flex-direction:column;gap:2px}
+  .pd-table-wrap{overflow-x:auto;padding:0}
+  .pd-table{width:100%;border-collapse:collapse;font-size:14px}
+  .pd-table th,.pd-table td{text-align:left;vertical-align:top;padding:10px 12px;border-top:1px solid var(--line)}
+  .pd-table thead th{border-top:0;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted,#667085)}
+  .pd-table td.pd-action{text-align:right;white-space:nowrap}
+  .pd-confirm{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  @media (max-width:720px){
+    .pd-table thead{display:none}
+    .pd-table tr{display:block;border-top:1px solid var(--line);padding:8px 0}
+    .pd-table td{display:flex;justify-content:space-between;gap:12px;border:0;padding:4px 12px}
+    .pd-table td::before{content:attr(data-label);color:var(--muted,#667085);font-size:12px}
+    .pd-table td.pd-action{justify-content:flex-end}
+  }
+  .link-like{background:none;border:0;padding:0;font:inherit;color:var(--accent-ink);cursor:pointer;text-align:left}
+  .pref-chips{display:flex;flex-wrap:wrap;gap:6px 14px}
+  .saved-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin-top:10px;font-size:13px}
+  .saved-filters label{display:flex;flex-direction:column;gap:4px}
+  .record-trail{display:flex;flex-wrap:wrap;gap:4px 18px;margin:-4px 0 8px;font-size:13px}
+  .usage-stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:14px}
+  .usage-stat{display:flex;flex-direction:column;gap:4px}.usage-stat strong{font-size:22px}
+  .session-name:hover strong{text-decoration:underline}
   .compass-brand{display:flex;align-items:center;gap:12px;padding:18px 12px 20px;margin-bottom:10px;border-top:1px solid var(--line)}
   .compass-mark{flex:0 0 44px;color:var(--ink)}
   .compass-name{font-size:19px;font-weight:700;letter-spacing:1.5px;color:var(--ink)}
@@ -444,6 +510,8 @@
   .example.danger{color:#b3261e;border-color:#e6b8b3}
   .delete-panel{margin-top:14px;border-color:#e6b8b3}
   .delete-warning{color:#b3261e;font-weight:600}
+  .delete-panel .field-label{display:block;font-size:13px;font-weight:600;margin:0 0 4px}
+  .delete-reason{width:100%;box-sizing:border-box;font:inherit;padding:8px;border:1px solid var(--line,#d0d5dd);border-radius:8px;margin-bottom:10px;resize:vertical}
   .pf-grid{display:grid;grid-template-columns:minmax(0,2fr) minmax(240px,1fr);gap:18px;margin-top:6px}
   .pf-main{display:flex;flex-direction:column;gap:12px;min-width:0}
   .pf-section{border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--surface)}
@@ -497,7 +565,7 @@
   .attach-row select{max-width:100%;padding:8px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--ink)}
   .chip{font-size:11px}.bubble.user{background:var(--accent-soft);color:var(--ink)}
   @media(max-width:1100px){.sidebar{width:200px;padding:26px 14px}.workspace-main{margin-left:200px}.wrap{padding:30px 24px 60px}.workspace-header{padding:0 24px}.prompt-grid{gap:10px}.prompt-card{padding:16px 28px 16px 16px}}
-  @media(max-width:760px){.sidebar{position:static;width:auto;padding:14px 18px;border-right:0;border-bottom:1px solid var(--line)}.workspace-brand{padding:0 0 14px;display:flex;align-items:center;gap:14px}.brand-name{font-size:23px}.brand-caption{font-size:9px}.nav-label,.sidebar-foot{display:none}.workspace-nav{display:flex;gap:6px}.nav-item{flex:1;justify-content:center;padding:10px 6px;font-size:12px;gap:7px}.nav-symbol{font-size:16px}.workspace-main{margin-left:0}.workspace-header{height:50px;padding:0 18px}.workspace-tag{display:none}.wrap{padding:24px 18px 40px}.hero-h{font-size:27px}.welcome{padding-top:10px}.prompt-grid{grid-template-columns:1fr}.prompt-card{min-height:0;padding:14px 35px 14px 16px}.prompt-card small{margin-bottom:5px}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}table.grid{display:block;overflow-x:auto;white-space:nowrap}.metrics,.kv{grid-template-columns:1fr}.ask-form{flex-wrap:wrap}.input-shell{min-width:0;flex-basis:100%}.attach-row{max-width:100%;overflow-wrap:anywhere}.attach-row label{max-width:100%}.pad{padding:16px}}
+  @media(max-width:760px){.sidebar{position:static;width:auto;padding:14px 18px;border-right:0;border-bottom:1px solid var(--line)}.workspace-brand{padding:0 0 14px;display:flex;align-items:center;gap:14px}.brand-name{font-size:23px}.brand-caption{font-size:9px}.nav-label{display:none}.sidebar-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding:10px 4px 0}.sidebar-foot strong{display:inline;margin:0}.sidebar-foot button{margin-top:0!important;margin-left:auto}.workspace-nav{display:flex;gap:6px}.nav-item{flex:1;justify-content:center;padding:10px 6px;font-size:12px;gap:7px}.nav-symbol{font-size:16px}.workspace-main{margin-left:0}.workspace-header{height:50px;padding:0 18px}.workspace-tag{display:none}.wrap{padding:24px 18px 40px}.hero-h{font-size:27px}.welcome{padding-top:10px}.prompt-grid{grid-template-columns:1fr}.prompt-card{min-height:0;padding:14px 35px 14px 16px}.prompt-card small{margin-bottom:5px}.filters{grid-template-columns:repeat(2,minmax(0,1fr))}table.grid{display:block;overflow-x:auto;white-space:nowrap}.metrics,.kv{grid-template-columns:1fr}.ask-form{flex-wrap:wrap}.input-shell{min-width:0;flex-basis:100%}.attach-row{max-width:100%;overflow-wrap:anywhere}.attach-row label{max-width:100%}.pad{padding:16px}}
   @media(max-width:760px){.composer{position:static}.ask-form>.btn{min-height:44px;width:100%}.nav-item{white-space:nowrap;font-size:11px;gap:5px}}
   .hub-suggestion{margin:14px 0;padding:12px 14px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;border-left:3px solid var(--teal)}
   .hub-suggestion-title{display:flex;align-items:center;flex-wrap:wrap;gap:9px;font-size:12px;font-weight:600;margin-bottom:5px}
@@ -708,18 +776,14 @@
   .mcard .mfg .v{font-size:15px;line-height:1.6}
   .mcard .mwhy-box{margin-top:20px;padding:16px 20px;border-radius:8px;background:var(--accent-soft)}
   .mcard .mwhy-t{font-size:15px}.mcard .mstar{color:var(--accent);margin-right:6px}
-  .mverify{margin:0 0 16px;padding:14px 16px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
-  .mverify-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;margin:10px 0 6px;font-size:14px}
-  .mverify-row label{display:flex;align-items:center;gap:8px}.mverify-row .field{width:auto;min-width:200px}
-  .mverify .bad{color:var(--red)}
   .mcard .mpeople{background:none;margin:20px 0 0;padding:0;border:0}
   .mcard .mpeople>.example{color:var(--accent-ink);border-color:var(--line);padding:8px 16px}
   @media(max-width:760px){.mcard{padding:18px 16px}.mcard .mh{flex-wrap:wrap}.mcard .mactions{width:100%}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261105b"/>
-<link rel="stylesheet" href="/discovery.css?v=20261103h"/>
-<link rel="stylesheet" href="/datafeed.css?v=20261105c"/>
-<link rel="stylesheet" href="/dashboard.css?v=20261102d"/>
+<link rel="stylesheet" href="/review.css?v=20261112b"/>
+<link rel="stylesheet" href="/discovery.css?v=20261112b"/>
+<link rel="stylesheet" href="/datafeed.css?v=20261113b"/>
+<link rel="stylesheet" href="/dashboard.css?v=20261120c"/>
 <script type="importmap">
 { "imports": {
   "react": "https://esm.sh/react@18.3.1",
@@ -731,21 +795,36 @@
 </head>
 <body>
 <div id="root"></div>
+<script>
+// Individual accounts (GHUS_AUTH_MODE=supabase): when a session ends, any call
+// that answers 401 sends the person to the sign-in page, then back here. The
+// shared login (HTTP Basic) answers 401 with WWW-Authenticate instead, and the
+// browser handles that itself, so this does nothing there.
+(()=>{const send=window.fetch.bind(window);let leaving=false;
+  window.fetch=async(...args)=>{const response=await send(...args);
+    const url=String(args[0]&&args[0].url||args[0]||"");
+    if(response.status===401&&!leaving&&!response.headers.get("www-authenticate")
+       &&!url.includes("/api/auth/login")){
+      leaving=true;location.assign("/login?next="+encodeURIComponent(location.pathname+location.search));}
+    return response;};})();
+</script>
 <script type="module">
 import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261105b";
-import {createDiscoveryPage} from "./discovery.js?v=20261104g";
-import {createDateInput, usDate} from "./dates.js?v=20261104e";
-import {createDataFeedPage} from "./datafeed.js?v=20261105d";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261104g";
+import {createReviewPage} from "./review.js?v=20261112g";
+import {createDiscoveryPage} from "./discovery.js?v=20261113a";
+import {createDateInput, usDate} from "./dates.js?v=20261110b";
+import {createDataFeedPage} from "./datafeed.js?v=20261113b";
+import {createAccountPages} from "./accounts.js?v=20261120c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261120c";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect,useRef});
 const DataFeed=createDataFeedPage({html,useState,useEffect,Fragment:React.Fragment});
+const {ProfilePage,UsersPage,MyWorkPage,NotificationBell,AuditPage,UsagePage,CostsPage,PendingDeletionPage}=createAccountPages({html,useState,useEffect});
 // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
 const DateInput=createDateInput({html,useState,useEffect});
 const Dashboard=createDashboardPage({html,useState,useEffect});
@@ -978,6 +1057,24 @@ const api = (p)=>fetch(p).then(async r=>{
   const body=await r.json().catch(()=>({}));
   return r.ok?body:{__error:body.detail||`The server answered ${r.status}.`};
 }).catch(()=>({__error:"The server could not be reached."}));
+/* Who is signed in, and Sign out (individual accounts only: without them
+   /api/auth/me does not exist and nothing is shown). */
+function SessionFoot({account,onProfile}){
+  const [leaving,setLeaving]=useState(false);
+  if(!account) return null;
+  async function signOut(){
+    setLeaving(true);
+    try{ await fetch("/api/auth/logout",{method:"POST"}); }catch(e){}
+    location.assign("/login");
+  }
+  return html`<div class="sidebar-foot">
+    <button class="session-name" type="button" title="My profile" onClick=${onProfile}>
+      <strong>${account.full_name}</strong></button>
+    <span>${account.role_label||"No role"}</span>
+    <button class="example" type="button" style=${{display:"block",marginTop:"10px"}} disabled=${leaving}
+      onClick=${signOut}>${leaving?"Signing out…":"Sign out"}</button>
+  </div>`;
+}
 function LoadError({message}){
   return html`<div class="empty load-error" role="alert"><b>This list could not be loaded.</b>
     <span>${message}</span><button class="btn ghost" onClick=${()=>location.reload()}>Try again</button></div>`;
@@ -1006,6 +1103,11 @@ function useOnce(fn,dep){ const[d,setD]=useState(null);
    badge, a count with Export, and a detail page whose Edit form shows every field
    in one column, in groups. Owner reads "Not recorded" until logins exist. */
 const OWNER_NONE="Not recorded";
+// The signed-in account (individual accounts only), set by App once loaded.
+let CURRENT_ACCOUNT=null;
+// Their preferences (individual accounts): Directory default view, saved filters.
+let CURRENT_PREFS=null;
+const currentAccount=()=>CURRENT_ACCOUNT;
 const ownerOf=r=>r.owner||OWNER_NONE;
 // Pending review = still waiting for a decision; Parked = a person clicked Park.
 function statusOf(r){
@@ -1020,33 +1122,55 @@ function statusOf(r){
 // every other tag is a colored dot and the word.
 const STATUS_CHIP={"Verified":"green","Pending Review":"amber","Parked":"orange","Rejected":"slate","Deleted":"red"};
 
-/* Delete in the Ecosystem Directory (30 Oct 2026): one confirmation, no reason
-   to type, no restore. The backend still records the GHUS decision (with a fixed
-   reason) and the directory hides the record. Organizations only for now. */
+/* Delete in the Ecosystem Directory.
+   With individual accounts (Phase 6, GHUS policy of 17 Nov 2026) every record
+   type can be deleted: it disappears from the platform at once, waits 30 days
+   under Pending Deletion (Dashboard; Admins and Editors can restore it there), then
+   the scheduled cleanup removes it permanently. Who deleted it comes from the
+   sign-in. Without accounts the earlier path stays: organizations only, removed
+   from the directory (30 Oct 2026). */
 const DELETE_REASON="Deleted from the Ecosystem Directory";
+const KIND_PATH={actor:"actors",event:"events",person:"people",hub:"hubs"};
+const KIND_WORD={actor:"organization",event:"event",person:"person",hub:"hub"};
+const RETENTION_DAYS=30;
 function DeletePanel({kind,r,onDone,onClose}){
-  const works=kind==="actor";
+  const retained=!!currentAccount();
+  const works=retained||kind==="actor";
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
+  const [reason,setReason]=useState("");
+  const until=new Date(Date.now()+RETENTION_DAYS*864e5).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
   async function send(){
     if(busy||!works) return;
     setBusy(true); setErr(null);
     try{
-      const res=await fetch(`/api/browse/actors/${r.id}/remove`,{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:DELETE_REASON,confirm:true})});
+      const res=retained
+        ? await fetch(`/api/browse/${KIND_PATH[kind]}/${encodeURIComponent(r.id)}/delete`,{method:"POST",
+            headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason.trim(),confirm:true})})
+        : await fetch(`/api/browse/actors/${r.id}/remove`,{method:"POST",
+            headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:DELETE_REASON,confirm:true})});
       const d=await res.json();
       if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not delete that.");
-      onDone(`${r.name} was deleted from the directory.`);
+      onDone(retained
+        ? `${r.name} was deleted. It can be restored from Pending Deletion on the Dashboard until ${until}; after that it is removed permanently.`
+        : `${r.name} was deleted from the directory.`);
     }catch(e){ setErr(String(e.message||e)); setBusy(false); }
   }
   return html`<div class="card pad fade delete-panel" role="alertdialog" aria-label=${`Delete ${r.name}`}>
-    <p class="delete-warning" style=${{marginTop:0}}>Are you sure you want to delete ${r.name}?</p>
-    <p class="hint" style=${{margin:"0 0 10px"}}>Clicking Yes removes it from the Ecosystem Directory for everyone.</p>
-    ${!works&&html`<p class="hint">Deleting ${kind==="event"?"events":kind==="hub"?"hubs":"people"} connects once the
-      backend has the same path; organizations can be deleted now.</p>`}
+    <p class="delete-warning" style=${{marginTop:0}}>Delete the ${KIND_WORD[kind]||"record"} “${r.name}”?</p>
+    ${retained
+      ? html`<p class="hint" style=${{margin:"0 0 10px"}}>It disappears at once from the Directory, Explore and Map,
+          search, Ask and the agents. For ${RETENTION_DAYS} days (until ${until}) it is listed under Pending Deletion
+          on the Dashboard, where an Admin or Editor can restore it with everything it had. After that it is removed permanently.</p>
+        <label class="field-label" for="delete-reason">Reason (optional)</label>
+        <textarea id="delete-reason" class="delete-reason" rows="2" maxlength="500" value=${reason}
+          placeholder="Why is it being deleted?" onInput=${e=>setReason(e.target.value)}></textarea>`
+      : html`<p class="hint" style=${{margin:"0 0 10px"}}>Clicking Yes removes it from the Ecosystem Directory for everyone.</p>`}
+    ${!works&&html`<p class="hint">Deleting ${kind==="event"?"events":kind==="hub"?"hubs":"people"} needs individual
+      accounts; organizations can be deleted now.</p>`}
     ${err&&html`<div class="whynot" role="alert">${err}</div>`}
     <div class="attach-row">
-      <button class="btn danger" type="button" disabled=${busy||!works} onClick=${send}>${busy?"Deleting…":"Yes, I'm sure"}</button>
+      <button class="btn danger" type="button" disabled=${busy||!works} onClick=${send}>${busy?"Deleting…":"Yes, delete it"}</button>
       <button class="example" type="button" disabled=${busy} onClick=${onClose}>No, keep</button>
     </div>
   </div>`;
@@ -1085,6 +1209,26 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
   const [vals,setVals]=useState({});
   const [mine,setMine]=useState(false);
   const set=(k,v)=>setVals(x=>({...x,[k]:v}));
+  // Personal preferences (individual accounts): the view the Directory opens on, once,
+  // and this tab's saved filters. Only what this person sees changes.
+  const prefTab={organizations:"actors",hubs:"hubs",people:"people",events:"events"}[exportName]||exportName;
+  const prefView=CURRENT_PREFS?.directory?.default_view;
+  const appliedView=useRef(false);
+  useEffect(()=>{if(!appliedView.current&&prefView&&currentAccount()){appliedView.current=true;
+    if(prefView==="mine") setMine(true);}},[prefView]);
+  const savedFilters=(CURRENT_PREFS?.directory?.saved_filters||[]).filter(f=>f.tab===prefTab);
+  const [saveName,setSaveName]=useState("");
+  const [saveNote,setSaveNote]=useState("");
+  async function saveFilters(){
+    const name=saveName.trim(); if(!name) return;
+    const values=Object.fromEntries(Object.entries(vals).filter(([,v])=>v));
+    const others=(CURRENT_PREFS?.directory?.saved_filters||[]).filter(f=>!(f.tab===prefTab&&f.name.toLowerCase()===name.toLowerCase()));
+    const r=await fetch("/api/account/preferences",{method:"PUT",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({preferences:{directory:{saved_filters:[...others,{name,tab:prefTab,values,...(q.trim()?{search:q.trim()}:{})}]}}})});
+    const d=await r.json().catch(()=>({}));
+    if(r.ok){window.dispatchEvent(new CustomEvent("compass:preferences",{detail:d.preferences}));setSaveName("");setSaveNote(`Saved as '${name}'.`);}
+    else setSaveNote(typeof d.detail==="string"?d.detail:"Could not save.");
+  }
   const nonUS=!!vals.country&&vals.country!==US;
   const common=[
     {key:"_status",label:"Status",options:distinct(rows.map(statusOf)).filter(v=>v!=="Deleted"),test:(r,v)=>statusOf(r)===v},
@@ -1095,8 +1239,12 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
   filters=filters.filter(usable); more=more.filter(usable); columns=columns.filter(usable);
   const all=[...filters,...common,...more];
   const needle=q.trim().toLowerCase();
+  // My Records: the records this person originally brought in (their owner is
+  // them). The shared records are the same; nothing is copied per person.
+  const me=currentAccount();
   const matches=rows.filter(r=>
     statusOf(r)!=="Deleted" &&
+    (!mine||(me&&r.owner_user_id===me.user_id)) &&
     (!needle||search.text(r).toLowerCase().includes(needle)) &&
     all.every(f=>!vals[f.key]||f.test(r,vals[f.key])));
   const control=f=>html`<div key=${f.key}><label>${f.label}</label>
@@ -1114,12 +1262,24 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
       <div class="dir-top">
         <div class="seg" role="group" aria-label="Whose records">
           <button type="button" class=${mine?"":"on"} onClick=${()=>setMine(false)}>All Records</button>
-          <button type="button" class=${mine?"on":""} disabled title="Available once logins exist"
+          <button type="button" class=${mine?"on":""} disabled=${!me}
+            title=${me?"Records you brought into Compass":"Available with individual accounts"}
             onClick=${()=>{setMine(true);set("_owner","");}}>My Records</button>
         </div>
         <input class="field" placeholder=${search.placeholder} aria-label="Search"
           value=${q} onInput=${e=>setQ(e.target.value)}/>
       </div>
+      ${currentAccount()&&html`<div class="saved-filters">
+        ${savedFilters.length>0&&html`<label>Saved filters
+          <select class="field" value="" onChange=${e=>{const f=savedFilters.find(x=>x.name===e.target.value);
+            if(f){setVals({...f.values});setQ(f.search||"");setSaveNote("");}}}>
+            <option value="">Choose…</option>
+            ${savedFilters.map(f=>html`<option key=${f.name} value=${f.name}>${f.name}</option>`)}</select></label>`}
+        ${(Object.values(vals).some(Boolean)||q.trim())&&html`<label>Save these filters as
+          <input class="field" value=${saveName} maxlength="60" placeholder="A name" onInput=${e=>setSaveName(e.target.value)}/></label>
+          <button class="example" type="button" disabled=${!saveName.trim()} onClick=${saveFilters}>Save</button>`}
+        ${saveNote&&html`<span class="hint" role="status">${saveNote}</span>`}
+      </div>`}
       <div class="filters">${[...filters,...common].map(control)}</div>
       <div class="dir-row">
         ${more.length>0&&html`<details class="more-filters"><summary>More filters</summary>
@@ -1154,7 +1314,7 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
    name, a one-line summary and badges; a main column of titled sections, where an
    empty field reads "Not found" (an empty field is itself an answer); a side
    column with the key facts and the sources and history. */
-const NOT_FOUND=html`<span class="dash">Not found</span>`;
+const NOT_FOUND=html`<span class="dash">Not Found</span>`;
 const isEmpty=v=>v==null||v===""||(Array.isArray(v)&&!v.length);
 // Long text keeps its paragraphs and bullet points; a long one opens with Show more.
 function RichText({text,limit=420}){
@@ -1231,8 +1391,23 @@ function SourcesHistory({kind,r,profile,bare}){
   </div>`;
 }
 
-function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],children,options,layout,tags,meta}){
+function RecordTrail({kind,id}){
+  const [t,setT]=useState(null);
+  useEffect(()=>{let live=true;if(!currentAccount()) return;
+    fetch(`/api/account/record-trail?entity_type=${kind}&entity_id=${encodeURIComponent(id)}`)
+      .then(r=>r.ok?r.json():null).then(d=>live&&setT(d)).catch(()=>{});return()=>{live=false;};},[kind,id]);
+  if(!t) return null;
+  const who=(x,fallback)=>x?`${x.name}, ${new Date(x.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:fallback;
+  return html`<div class="record-trail hint">
+    <span><b>Brought in by</b> ${who(t.owner,"Not recorded")}</span>
+    <span><b>Verified by</b> ${who(t.reviewed_by,"Not recorded")}</span>
+    <span><b>Last edited by</b> ${who(t.last_edited_by,"Not edited since accounts")}</span></div>`;
+}
+
+function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[],children,options,layout,tags,meta}){
   const [editing,setEditing]=useState(false);
+  const [saved,setSaved]=useState(null);
+  useEffect(()=>{setSaved(null);setEditing(false);},[r.id]);
   const [deleting,setDeleting]=useState(false);
   const [profile,setProfile]=useState(null);
   const removed=statusOf(r)==="Deleted";
@@ -1244,20 +1419,28 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <button class="backlink" onClick=${onBack}>← Back to results</button>
       <span style=${{display:"inline-flex",gap:"8px"}}>
-        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" onClick=${()=>setEditing(true)}>Edit</button>`}
-        ${!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
+        ${/* Delete: every record type with accounts (Phase 6); organizations only without. */ ""}
+        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" data-needs="records.edit" onClick=${()=>{setSaved(null);setEditing(true);}}>Edit</button>`}
+        ${(currentAccount()||kind==="actor")&&!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
+          data-needs=${currentAccount()?"records.delete_permanent":"records.remove"}
           onClick=${()=>setDeleting(true)}>Delete</button>`}
       </span>
     </div>
     ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
       onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
+    ${saved&&html`<div class="selnote" role="status">${saved}</div>`}
     <h2>${r.name}</h2>
+    <${RecordTrail} kind=${kind} id=${r.id}/>
     ${layout==="card"&&tags}
     ${layout==="card"&&meta&&html`<div class="mmeta" style=${{margin:"4px 0 8px"}}>${meta}</div>`}
     ${layout!=="card"&&subtitle&&html`<div class="loc">${subtitle}</div>`}
     <div class="badges"><${RecordBadges} r=${r}/></div>
     ${editing
-      ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}/>`
+      ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}
+          onSaved=${(values,outcome)=>{setEditing(false);
+            setSaved(outcome&&outcome.status==="unchanged"?"Nothing changed: the record already had these values."
+              :"Saved. The record is updated in the Ecosystem Directory.");
+            onSaved&&onSaved(values);}}/>`
       : layout==="card"
       ? html`<div class="pf-card">${body}${children}
           <details class="mwhy-box pf-origin">
@@ -1278,12 +1461,15 @@ function RecordPage({kind,r,onBack,onChanged,subtitle,sections,glance=[],childre
   </div>`;
 }
 
-/* ------------------------------------------------- Edit — save not wired yet
+/* ------------------------------------------------- Edit
    Every field the database holds, one column, in groups (asked for on 27 Oct
-   2026). Saving needs the backend's approved writers (facts, verification
-   history, notes), so it stays off and says so; nothing typed here is stored. */
-const RECORD_STATUSES=["verified","pending review","parked","rejected"];
-const FREQUENCIES=["One-time","Annual","Every two years","Twice a year","Quarterly","Monthly","Irregular","Not found"];
+   2026). Save (10 Nov 2026) sends only the changed fields to the backend's
+   approved writer (decisions.record_directory_edit, through Review's admission
+   process): it checks each one and writes them together, with the person's
+   name; an organization's change is also kept in its fact history. Read-only
+   boxes come from elsewhere: links, sectors, and the status (Review, Delete). */
+const FREQUENCIES=["One-time","Annual","Every two years","Twice a year","Quarterly","Monthly","Irregular","Not Found"];
+const EDIT_PATHS={actor:"actors",event:"events",person:"people",hub:"hubs"};
 // [field, label, type, options-key]. Types: text, long, date, select, readonly.
 const EDIT_GROUPS={
   actor:[
@@ -1309,48 +1495,70 @@ const EDIT_GROUPS={
       ["funding_summary","Funding","long"],["constraints_summary","Constraints","long"]]],
   ],
   event:[
-    ["Identity",[["name","Name"],["event_type","Type"],["organizer","Organizer"],["website","Website"]]],
+    ["Identity",[["name","Name"],["event_type","Type"],["organizer","Organizer","readonly"],["website","Website"]]],
     ["When and where",[["start_date","Start date","date"],["end_date","End date","date"],
       ["recurring_pattern","Frequency","select","frequencies"],["location","Location"],["access_type","Access"]]],
     ["What it covers",[["description","Description","long"],["thematic_focus","Topic","long"],
       ["expected_attendance","Scale"],["sponsoring_orgs","Sponsors","long"]]],
   ],
   person:[
-    ["Identity",[["name","Name"],["title","Title"],["organizations","Organization"],
-      ["profile_url","Public profile"],["orcid","ORCID"]]],
-    ["Expertise",[["topics","Sector","readonly"],["research_areas","Research areas","long"]]],
+    ["Identity",[["name","Name"],["title","Title"],["organizations","Organization","readonly"],
+      ["profile_url","Public profile","readonly"],["orcid","ORCID"]]],
+    ["Expertise",[["topics","Sector","readonly"],["research_areas","Research areas","readonly"]]],
   ],
 };
+// GHUS Notes: organizations and events (migration 530), people (migration 625).
+const HAS_NOTES={actor:true,event:true,person:true};
 const asText=v=>Array.isArray(v)?v.join(", "):(v??"");
-function RecordEditor({kind,record,options,onClose}){
+const editValue=(type,v)=>type==="date"?String(v||"").slice(0,10):String(asText(v));
+const plainSaveError=m=>{const t=String(m||"").replace(/^.*?(AdmissionValidationError|ValueError):\s*/,"")
+  .replace(/^GHUS rejected the decision; no local final decision was recorded\.\s*/,"");
+  return t&&t[0].toUpperCase()+t.slice(1);};
+function RecordEditor({kind,record,options,onClose,onSaved}){
   const fields=EDIT_GROUPS[kind].flatMap(([,fs])=>fs);
+  const editable=fields.filter(([,,t])=>t!=="readonly");
   const choices={...options,frequencies:FREQUENCIES};
-  const initial=()=>Object.fromEntries(fields.map(([k])=>[k,String(asText(record[k]))]));
-  const firstStatus=()=>statusOf(record).toLowerCase();
+  const initial=()=>Object.fromEntries(fields.map(([k,,t])=>[k,editValue(t,record[k])]));
   const [draft,setDraft]=useState(initial);
-  const [status,setStatus]=useState(firstStatus);
   const [notes,setNotes]=useState(record.ghus_notes||"");
-  const [attended,setAttended]=useState(!!record.attended);
-  const [saveNote,setSaveNote]=useState(false);
-  const set=(k,v)=>setDraft(d=>({...d,[k]:v}));
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState(null);
+  const set=(k,v)=>{setErr(null);setDraft(d=>({...d,[k]:v}));};
+  const start=initial();
+  const changes=Object.fromEntries(editable.filter(([k])=>draft[k]!==start[k]).map(([k])=>[k,draft[k]]));
+  const notesChanged=!!HAS_NOTES[kind]&&notes.trim()!==String(record.ghus_notes||"").trim();
+  const count=Object.keys(changes).length+(notesChanged?1:0);
+  async function save(){
+    if(!count||saving) return;
+    setSaving(true); setErr(null);
+    try{
+      const res=await fetch(`/api/browse/${EDIT_PATHS[kind]}/${record.id}/edit`,{method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({changes,ghus_notes:notesChanged?notes:null})});
+      const d=await res.json().catch(()=>({}));
+      if(!res.ok) throw new Error(plainSaveError((d.detail&&d.detail.message)||d.detail)||"Could not save.");
+      onSaved&&onSaved({...changes,...(notesChanged?{ghus_notes:notes.trim()}:{})},d);
+    }catch(e){ setErr(String(e.message||e)); setSaving(false); }
+  }
   const input=([k,label,type,opts])=>{
     if(type==="readonly") return html`<div class="edit-ro">${draft[k]||html`<span class="dash">—</span>`}</div>`;
-    if(type==="long") return html`<textarea class="field edit-long" aria-label=${label}
+    if(type==="long") return html`<textarea class="field edit-long" aria-label=${label} disabled=${saving}
       rows=${Math.min(10,Math.max(2,Math.ceil((draft[k]||"").length/90)))}
       value=${draft[k]} onInput=${e=>set(k,e.target.value)}></textarea>`;
-    if(type==="date") return html`<${DateInput} ariaLabel=${label} value=${(draft[k]||"").slice(0,10)} onChange=${v=>set(k,v)}/>`;
+    if(type==="date") return html`<${DateInput} ariaLabel=${label} value=${draft[k]} onChange=${v=>set(k,v||"")}/>`;
     if(type==="select"){
       const list=choices[opts]||[];
-      return html`<select class="field" aria-label=${label} value=${draft[k]} onChange=${e=>set(k,e.target.value)}>
+      return html`<select class="field" aria-label=${label} value=${draft[k]} disabled=${saving} onChange=${e=>set(k,e.target.value)}>
         ${!list.includes(draft[k])&&html`<option value=${draft[k]}>${draft[k]||"Not recorded"}</option>`}
         ${list.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`;
     }
-    return html`<input class="field" type="text" aria-label=${label} value=${draft[k]} onInput=${e=>set(k,e.target.value)}/>`;
+    return html`<input class="field" type="text" aria-label=${label} value=${draft[k]} disabled=${saving}
+      onInput=${e=>set(k,e.target.value)}/>`;
   };
   return html`<div class="card pad fade edit-form">
     <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <strong>Edit ${kind==="actor"?"organization":kind}</strong>
-      <button class="example" type="button" onClick=${onClose}>Close</button>
+      <button class="example" type="button" disabled=${saving} onClick=${onClose}>Close</button>
     </div>
     ${EDIT_GROUPS[kind].map(([group,fs])=>html`<div class="edit-group" key=${group}>
       <div class="edit-h">${group}${fs.every(([,,t])=>t==="readonly")?html` <span class="hint" style=${{margin:0}}>read only</span>`:""}</div>
@@ -1358,29 +1566,23 @@ function RecordEditor({kind,record,options,onClose}){
     </div>`)}
     <div class="edit-group">
       <div class="edit-h">Review</div>
-      <div class="edit-field"><label>Status</label>
-        <select class="field" value=${status} onChange=${e=>setStatus(e.target.value)}>
-          ${RECORD_STATUSES.map(v=>html`<option key=${v} value=${v}>${v[0].toUpperCase()+v.slice(1)}</option>`)}
-        </select></div>
+      <div class="edit-field"><label>Status</label><div class="edit-ro">${statusOf(record)}
+        <span class="hint" style=${{margin:"0 0 0 8px"}}>changed in Review Results, or with Delete</span></div></div>
       <div class="edit-field"><label>Source</label><div class="edit-ro">${record.origin||html`<span class="dash">—</span>`}</div></div>
       <div class="edit-field"><label>Owner</label><div class="edit-ro">${ownerOf(record)}</div></div>
-      ${kind==="event"&&html`<div class="edit-field"><label>Attended</label>
-        <label class="check"><input type="checkbox" checked=${attended} onChange=${e=>setAttended(e.target.checked)}/>
-          GHUS attended this event</label></div>`}
-      <div class="edit-field"><label>GHUS Notes</label>
-        <textarea class="field edit-long" rows="4" value=${notes} onInput=${e=>setNotes(e.target.value)}
+      ${HAS_NOTES[kind]&&html`<div class="edit-field"><label>GHUS Notes</label>
+        <textarea class="field edit-long" rows="4" value=${notes} disabled=${saving} onInput=${e=>{setErr(null);setNotes(e.target.value);}}
           placeholder=${kind==="event"
             ?"Who attended, what was worth it, whether to go next year. Link to the back-to-office report (OneDrive)."
-            :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea></div>
+            :kind==="person"
+            ?"Where GHUS met them, past conversations, who introduced them. Links to reports (OneDrive)."
+            :"Context only GHUS has: meetings, contacts, past collaboration. Links to reports (OneDrive)."}></textarea></div>`}
     </div>
+    ${err&&html`<div class="whynot" role="alert">${err}</div>`}
     <div class="attach-row" style=${{marginTop:"12px"}}>
-      ${/* Save is shown but stores nothing until logins exist (5 Nov 2026): edits would
-           be stored under no one's name. GHUS Notes can then go through the backend's
-           record_ghus_notes. A click says so rather than dropping the edits silently. */""}
-      <button class="btn" type="button" style=${{height:"auto",padding:"8px 22px",fontSize:"14px"}} onClick=${()=>setSaveNote(true)}>Save</button>
-      <button class="example" type="button" onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");
-        setAttended(!!record.attended);setStatus(firstStatus());setSaveNote(false);}}>Reset</button>
-      ${saveNote&&html`<span class="hint" role="status" style=${{margin:0}}>Not stored yet: saving comes with personal logins.</span>`}
+      <button class="btn" type="button" disabled=${!count||saving} onClick=${save}>${saving?html`<span class="spin"></span> Saving…`:"Save"}</button>
+      <button class="example" type="button" disabled=${saving||!count} onClick=${()=>{setDraft(initial());setNotes(record.ghus_notes||"");setErr(null);}}>Reset</button>
+      <span class="hint" style=${{margin:0}}>${count?`${count} change${count>1?"s":""} not saved yet. Saving updates the record for everyone.`:"Change a box, then Save. Saving updates the record for everyone."}</span>
     </div>
   </div>`;
 }
@@ -1416,10 +1618,11 @@ function Actors({focus}){
   const longText=v=>isEmpty(v)?null:html`<${RichText} text=${v} limit=${320}/>`;
   const us=!!sel&&(!sel.country||sel.country===US);
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
+    onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     layout="card"
     tags=${html`<div class="mtags">${typeOf(sel)&&html`<span class="mtag cat">${typeOf(sel)}</span>`}
       ${(sel.sectors||[]).map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`}
-    meta=${html`📍 ${[sel.city,us&&sel.state,us&&sel.region,sel.country].filter(Boolean).join(" · ")||"Location not found"}${us&&html` <span class="msep">·</span> Hub: ${!sel.hubs.length?"not in a hub":sel.hubs.length===1?sel.hubs[0]:`${sel.hubs[0]} +${sel.hubs.length-1} more`}`}`}
+    meta=${html`📍 ${[sel.city,us&&sel.state,us&&sel.region,sel.country].filter(Boolean).join(" · ")||"Location Not Found"}${us&&html` <span class="msep">·</span> Hub: ${!sel.hubs.length?"not in a hub":sel.hubs.length===1?sel.hubs[0]:`${sel.hubs[0]} +${sel.hubs.length-1} more`}`}`}
     sections=${profile=>[
       html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
       html`<${Section} key="facts" title="Key Facts"><${Facts} items=${[
@@ -1441,7 +1644,7 @@ function Actors({focus}){
       html`<${Section} key="people" title=${`People${peopleAt(sel)?` (${peopleAt(sel).length})`:""}`}>
         ${!peopleAt(sel)?html`<span class="dash">Loading…</span>`
           :!peopleAt(sel).length?html`<span class="dash">No people in the directory work here yet.</span>`
-          :html`<${Facts} items=${peopleAt(sel).map(x=>[x.name,x.title||html`<span class="dash">Title not found</span>`])}/>`}
+          :html`<${Facts} items=${peopleAt(sel).map(x=>[x.name,x.title||html`<span class="dash">Title Not Found</span>`])}/>`}
       </${Section}>`,
       html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
         :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
@@ -1475,7 +1678,10 @@ function Actors({focus}){
 }
 
 function Hubs(){
-  const data=useOnce(()=>api("/api/browse/hubs"));
+  const [version,setVersion]=useState(0);
+  const [notice,setNotice]=useState(null);
+  const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
+  const data=useOnce(()=>api("/api/browse/hubs"),[version]);
   const actorsData=useOnce(()=>api("/api/browse/actors"));
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
@@ -1486,7 +1692,7 @@ function Hubs(){
   const hubRegion=h=>regionOfState(hubState(h));
   if(sel){
     const related=(actorsData?.actors||[]).filter(a=>(a.hubs||[]).includes(sel.name));
-    return html`<${RecordPage} kind="hub" r=${sel} onBack=${()=>setSel(null)}
+    return html`<${RecordPage} kind="hub" r=${{...sel,id:sel.id||sel.hub_id}} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
       subtitle=${[sectorOf(sel),[sel.primary_city,sel.state].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
       glance=${[["Sector",sectorOf(sel)],["Organizations",String(sel.actor_count??related.length)],
         ["Center",[sel.primary_city,sel.state,sel.country].filter(Boolean).join(", ")],
@@ -1510,7 +1716,7 @@ function Hubs(){
       </${Section}>
     </${RecordPage}>`;
   }
-  return html`<${Directory} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
     onOpen=${setSel} empty="No hubs in the database yet."
     search=${{placeholder:"Search name, city, description…",
       text:h=>[h.name,h.primary_city,h.state,h.description,sectorOf(h)].join(" ")}}
@@ -1545,7 +1751,9 @@ const EVENT_COUNTRY=/^(usa|us|u\.?s\.?a?\.?|\(u\.?s\.?\)|united states( of ameri
 const EVENT_NO_CITY=/^(various|online|virtual|hybrid|multiple|rotating|location tbd|tba|tbd|to be confirmed)/i;
 const EVENT_VENUE=/\b(headquarters|hq|studios?|space|club|hotels?|marriott|hilton|hyatt|pavilion|resort|cent(er|re)|hall|house|school|plaza|building|museum|theat(er|re)|venue|floor|street|avenue|broadway|road|suite|inc|llc)\b/i;
 const EVENT_NYC=/\bnew york city\b|\bnyc\b|\bmanhattan\b|\bbrooklyn\b/i;
-function eventCity(location){
+// Takes an event or its location text (Ismail's filter passes the event, 11 Nov 2026).
+function eventCity(event){
+  const location=typeof event==="string"?event:event&&event.location;
   // Drop a trailing note ("New York, NY — venue not confirmed"), not a venue's own dash.
   const t=String(location||"").replace(/\s+[—–]\s+[^,]*\b(confirm\w*|tbd|tba)\b[^,]*$/i,"").trim();
   if(!t) return null;
@@ -1569,7 +1777,10 @@ function eventCity(location){
   return parts.length>1&&cityLike(parts[parts.length-2])?parts[parts.length-2]:null;
 }
 function Events({focus}){
-  const data=useOnce(()=>api("/api/browse/events"));
+  const [version,setVersion]=useState(0);
+  const [notice,setNotice]=useState(null);
+  const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
+  const data=useOnce(()=>api("/api/browse/events"),[version]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.events,setSel);
   if(!data) return html`<${Loading}/>`;
@@ -1580,7 +1791,7 @@ function Events({focus}){
   const dated=events.filter(e=>e.start_date).length;
   const eventState=e=>stateInText(e.location);
   const eventRegion=e=>regionOfState(eventState(e));
-  if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)}
+  if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     subtitle=${[capFirst(sel.event_type),sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
     glance=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],["When",when(sel)==="No date"?null:when(sel)],
       ["Location",sel.location],["Frequency",sel.recurring_pattern],["Website",link(sel.website)]]}
@@ -1592,7 +1803,7 @@ function Events({focus}){
       html`<${Section} key="who" title="Who" rows=${[["Organizer",sel.organizer],["Sponsors",sel.sponsoring_orgs],["Scale",sel.expected_attendance]]}/>`,
       html`<${Section} key="ghus" title="GHUS engagement" rows=${[["Attended",html`<span class="dash">Not recorded yet</span>`],
         ["Notes",sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`:html`<span class="dash">No notes yet. Add them with Edit.</span>`]]}/>`]}/>`;
-  return html`<${Directory} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
     onOpen=${setSel} empty="No events in the database yet."
     note=${`Upcoming events first, then those without a date, then past ones. ${dated} of ${events.length} events have a date.`}
     search=${{placeholder:"Search name, description, topic…",
@@ -1601,8 +1812,9 @@ function Events({focus}){
       {key:"from",label:"From",kind:"date",test:(e,v)=>!!e.start_date&&(e.end_date||e.start_date).slice(0,10)>=v},
       {key:"to",label:"To",kind:"date",test:(e,v)=>!!e.start_date&&e.start_date.slice(0,10)<=v},
       {key:"type",label:"Type",options:data.event_types||[],test:(e,v)=>e.event_type===v},
-      {key:"city",label:"City",options:distinct(events.map(e=>eventCity(e.location))),
-        test:(e,v)=>eventCity(e.location)===v},
+      // A list starting on All, like every other filter (GHUS, 11 Nov 2026).
+      {key:"location",label:"City",options:vals=>distinct(events.filter(e=>!vals.state||eventState(e)===vals.state).map(eventCity)),
+        test:(e,v)=>eventCity(e)===v},
       {key:"state",label:"State",options:distinct(events.map(eventState)),test:(e,v)=>eventState(e)===v},
       {key:"region",label:"Region",options:distinct(events.map(eventRegion)),test:(e,v)=>eventRegion(e)===v},
     ]}
@@ -1621,20 +1833,25 @@ function Events({focus}){
 }
 
 function People({focus}){
-  const data=useOnce(()=>api("/api/browse/people"));
+  const [version,setVersion]=useState(0);
+  const [notice,setNotice]=useState(null);
+  const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
+  const data=useOnce(()=>api("/api/browse/people"),[version]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.people,setSel);
   if(!data) return html`<${Loading}/>`;
   if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {people,options}=data;
-  if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)}
+  if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
     glance=${[["Title",sel.title],["Organization",sel.organizations.join(", ")],["State",sel.states.join(", ")]]}
     sections=${[
       html`<${Section} key="role" title="Role" rows=${[["Title",sel.title],["Organization",sel.organizations.join(", ")]]}/>`,
       html`<${Section} key="exp" title="Expertise" rows=${[["Sector",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")]]}/>`,
-      html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`]}/>`;
-  return html`<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
+      html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`,
+      html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
+        :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
     onOpen=${setSel}
     empty="No people in the database yet. People found in Build the Map appear here once they are verified into the database."
     search=${{placeholder:"Search name, title, employer, expertise…",
@@ -1678,10 +1895,13 @@ const MFIELDS={
          ["sponsoring_orgs","Sponsors"],["access_type","Access"]],
 };
 // Short list values read better capitalized ("conference" -> "Conference").
-const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector"]);
-const capFirst=v=>typeof v==="string"&&v?v.charAt(0).toUpperCase()+v.slice(1):v;
+// 12 Nov 2026 (GHUS): every data value starts with a capital letter.
+const CAPITALIZED=new Set(["event_type","date_status","event_format","recurring_pattern","sector",
+  "audience","access_type","expected_attendance","thematic_focus","actor_type","category_type"]);
+// "not found" from an agent reads Not Found (GHUS, 11 Nov 2026).
+const capFirst=v=>typeof v==="string"&&v?(/^not[ _]found$/i.test(v.trim())?"Not Found":v.charAt(0).toUpperCase()+v.slice(1)):v;
 // An edition's dates as src/map_agent/event_dates.py dates_text writes them:
-// "11/16/2026", "11/16/2026 – 11/19/2026", "02/2026", "2026 (exact date not found)".
+// "11/16/2026", "11/16/2026 – 11/19/2026", "02/2026", "2026 (Exact Date Not Found)".
 const eventDates=(start,end)=>{
   const s=String(start||"").trim(), e=String(end||"").trim();
   if(/^\d{4}-\d{2}-\d{2}/.test(s)){
@@ -1690,13 +1910,13 @@ const eventDates=(start,end)=>{
   }
   const month=s.match(/^(\d{4})-(\d{2})$/);
   if(month) return `${month[2]}/${month[1]}`;
-  if(/^\d{4}$/.test(s)) return `${s} (exact date not found)`;
+  if(/^\d{4}$/.test(s)) return `${s} (Exact Date Not Found)`;
   return s;
 };
 // Architecture V2 §5.5 states; records from before the check show nothing.
 const um6pOcp=e=>e.um6p_ocp_status==="found"
   ? "Found — "+(e.um6p_ocp_detail||"details not recorded")
-  : e.um6p_ocp_status||null;
+  : e.um6p_ocp_status?"Not Found":null;
 const ename=(e)=>e.full_name||e.name||"—";
 
 /* one result card: fields, sources (struck through when dead), judge verdict */
@@ -1792,7 +2012,7 @@ function PeopleSearch({actor,jobId,disabled}){
     try{const r=await fetch(`/api/map/${id}/stop`,{method:"POST"});if(!r.ok)throw Error("Could not stop the search.");const d=await r.json();setTasks(old=>old.map(t=>t.id===id?d:t));}catch(e){setError(e.message);}
   }
   return html`<div class="mpeople">
-    <button class="example" type="button" onClick=${()=>setOpen(!open)} aria-expanded=${open}>${open?"Hide people research":"Find relevant people"}</button>
+    <button class="example" type="button" data-needs="maps.create" onClick=${()=>setOpen(!open)} aria-expanded=${open}>${open?"Hide people research":"Find relevant people"}</button>
     ${open&&html`<div>
       <label style=${{display:"block",marginTop:"12px"}}>What kind of people are you looking for?
         <textarea value=${criteria} maxLength="2000" rows="3" disabled=${sending||running} onChange=${e=>{setCriteria(e.target.value);key.current=null;}}
@@ -1940,10 +2160,10 @@ function OrgCardBody({e,deadWeb}){
       <${Facts} items=${more}/></div>`}`;
 }
 function EventCardBody({e}){
-  const when=e.next_date?eventDates(e.next_date,e.end_date)+(e.date_status?` (${capFirst(e.date_status)})`:""):"Not found";
+  const when=e.next_date?eventDates(e.next_date,e.end_date)+(e.date_status?` (${capFirst(e.date_status)})`:""):"Not Found";
   return html`
     <${CardStrip} items=${[
-      ["Date",when],["Location",e.location||"Not found"],
+      ["Date",when],["Location",e.location||"Not Found"],
       ["Region",regionOfState(stateInText(e.location))],
       ["Format",capFirst(e.event_format)],["Frequency",capFirst(e.recurring_pattern)],
     ]}/>
@@ -2108,8 +2328,6 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
   // In-card confirmation: browser pop-ups (confirm()) are closed automatically in
   // some browsers, which silently cancelled every Reject.
   const [confirmReject,setConfirmReject]=useState(false);
-  // Verify opens a confirmation on the card and then saves this one result (5 Nov 2026).
-  const [confirmVerify,setConfirmVerify]=useState(false);
   const j=e._judge||null, lc=e._link_check||null;
   const parked=e._review==="parked";
 
@@ -2128,9 +2346,8 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
     setReviewing(false);
   }
 
-  // Verify saves the card to Compass after a confirmation on the card (5 Nov 2026;
-  // until then it only marked it ready for a "Save verified to Compass" button).
-  // Cards marked ready before that still show "✓ Verified" and can be unmarked.
+  // Verify marks the card checked and ready to save (free). "Save verified to
+  // Compass" then sends every ready card to the database (28 Oct 2026).
   const ready=e._review==="ready";
   const saved=e._db_save||null, savedDone=!!saved&&saved.outcome!=="not_saved";
 
@@ -2159,24 +2376,21 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
         </div>
         <${CardTags} e=${e}/>
       </div>
-      ${!savedDone&&onReviewed&&html`<div class="mactions">
-          <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject||confirmVerify}
+      ${!savedDone&&onReviewed&&html`<div class="mactions" data-needs="review.decide">
+          <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
             title="Remove from this map for good" onClick=${()=>setConfirmReject(true)}>Reject</button>
-          <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject||confirmVerify}
+          <button class="example" type="button" disabled=${reviewing||reviewDisabled||confirmReject}
             title=${parked?"Back to not reviewed":"Set aside to decide later; Ask can still find it"}
             onClick=${()=>review(parked?"unpark":"park")}>${parked?"Unpark":"Park"}</button>
-        <button class=${"example "+(ready?"on":"mprimary")} type="button" disabled=${reviewing||reviewDisabled||confirmReject||confirmVerify}
-          title=${ready?"Undo: not checked yet":null}
-          onClick=${()=>ready?review("unready"):setConfirmVerify(true)}>${ready?"✓ Verified":"Verify"}</button>
+        <button class=${"example "+(ready?"on":"mprimary")} type="button" disabled=${reviewing||reviewDisabled||confirmReject}
+          title=${ready?"Undo: not checked yet":"You checked it and its sources; save it with “Save verified to Compass”"}
+          onClick=${()=>review(ready?"unready":"ready")}>${ready?"✓ Verified":"Verify"}</button>
       </div>`}
     </div>
     ${saved&&html`<div class=${saved.outcome==="not_saved"?"whynot":"hint"} style=${{margin:"0 0 8px"}}>
       ${saved.outcome==="directory"?`Saved to Compass${byWhom(saved.by)}.`
         :saved.outcome==="review"?`Sent to Review Results${byWhom(saved.by)}. ${saved.reason||""}`
         :`Not saved. ${saved.reason||""}`}</div>`}
-    ${confirmVerify&&html`<${VerifyBox} e=${e} jobId=${jobId}
-      onCancel=${()=>setConfirmVerify(false)}
-      onSaved=${d=>{setConfirmVerify(false);onReviewed(d);}}/>`}
     ${confirmReject&&html`<div class="whynot" role="alert" style=${{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"8px"}}>
       Remove ${ename(e)} from this map? This can't be undone.
       <button class="example" type="button" disabled=${reviewing} onClick=${()=>review("reject")}>Yes, reject</button>
@@ -2253,75 +2467,81 @@ function CarriedRows({rows,onChange,onDismiss}){
   </div>`;
 }
 
-/* Saving a verified result (28 Oct 2026; one card at a time since 5 Nov). It goes
-   to the database through the Data Feed and the backend's admission: a new
-   organization with a category type is added Verified under the reviewer's name;
-   the rest wait in Review Results. A check that writes nothing runs first. */
+/* Save verified to Compass (28 Oct 2026). The ready cards go to the database
+   through the Data Feed and the backend's admission: every verified card is
+   stored in the directory (12 Nov 2026: a map is reviewed on its own page, never
+   in Review Results). A check that writes nothing runs first and on every change. */
 const KIND_LABEL={actor:"Organization",event:"Event",person:"Person"};
 // " by Name" once accounts record who acted; nothing while it reads "Not recorded".
 const byWhom=by=>by&&!String(by).startsWith("Not recorded")?` by ${by}`:"";
 const OUTCOME_TEXT={directory:"Will be added to the directory",review:"Will go to Review Results",
   not_saved:"Can't be saved yet"};
-// The database's sectors, loaded once; saving needs one. The card's own sector is
-// the first guess when it names one of them.
-let SECTORS=null;
-const loadSectors=()=>SECTORS||(SECTORS=fetch("/api/datafeed/catalog").then(r=>r.json())
-  .then(d=>(d.vocabularies&&d.vocabularies.sectors||[]).map(x=>x.label))
-  .catch(err=>{SECTORS=null;throw err;}));
-const guessSector=(e,list)=>{const own=String(e.sector||"").toLowerCase();
-  return list.find(l=>own===l.toLowerCase())||list.find(l=>own&&own.includes(l.toLowerCase()))||"";};
-/* Verify on a card (5 Nov 2026): choose the sector, see what saving will do (the
-   check writes nothing), then "Yes, verify" saves this one result: a new
-   organization goes to the Ecosystem Directory as Verified; events, people and
-   possible duplicates go to Review Results. */
-function VerifyBox({e,jobId,onSaved,onCancel}){
-  const [sectors,setSectors]=useState(null);
-  const [sector,setSector]=useState("");
-  const [check,setCheck]=useState(null);
+function SavePanel({jobId,items,onSaved,onClose}){
+  const [sectors,setSectors]=useState([]);
+  const [picked,setPicked]=useState({});
+  const [checked,setChecked]=useState(null);
+  const [attest,setAttest]=useState(false);
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
-  const record=()=>({name:ename(e),website:e.website||null,kind:e._entity_type||"actor",sector});
-  useEffect(()=>{loadSectors().then(list=>{setSectors(list);setSector(guessSector(e,list));})
-    .catch(()=>setErr("Could not load the sector list."));},[]);
-  useEffect(()=>{ if(!sectors) return; let alive=true; setCheck(null); setErr(null);
-    (async()=>{try{
+  const keyOf=e=>e._entity_type+"|"+ename(e);
+  useEffect(()=>{(async()=>{try{
+    const d=await (await fetch("/api/datafeed/catalog")).json();
+    const list=(d.vocabularies&&d.vocabularies.sectors||[]).map(x=>x.label);
+    setSectors(list);
+    // The map's own sector when it names one of the database's sectors.
+    const guess=e=>{const own=String(e.sector||"").toLowerCase();
+      return list.find(l=>own===l.toLowerCase())||list.find(l=>own&&own.includes(l.toLowerCase()))||"";};
+    setPicked(Object.fromEntries(items.map(e=>[keyOf(e),guess(e)])));
+  }catch(e){setErr("Could not load the sector list.");}})();},[]);
+  const records=()=>items.map(e=>({name:ename(e),website:e.website||null,kind:e._entity_type||"actor",
+    sector:picked[keyOf(e)]||""}));
+  useEffect(()=>{ if(!sectors.length) return; (async()=>{
+    setChecked(null); setErr(null);
+    try{
       const r=await fetch(`/api/map/${jobId}/save-check`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({records:[record()]})});
+        body:JSON.stringify({records:records()})});
       const d=await r.json();
-      if(!r.ok) throw new Error(d.detail||"Could not check this result.");
-      if(alive) setCheck(d.records[0]);
-    }catch(x){if(alive) setErr(x.message);}})();
-    return ()=>{alive=false;};},[sectors,sector]);
+      if(!r.ok) throw new Error(d.detail||"Could not check these results.");
+      setChecked(d.records);
+    }catch(e){setErr(e.message);}
+  })();},[sectors,JSON.stringify(picked)]);
   async function save(){
     if(busy) return;
     setBusy(true); setErr(null);
     try{
       const r=await fetch(`/api/map/${jobId}/save`,{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({records:[record()],attest:true})});
+        body:JSON.stringify({records:records(),attest})});
       const d=await r.json();
       if(!r.ok) throw new Error(d.detail||"Could not save.");
       onSaved(d);
-    }catch(x){setErr(x.message);setBusy(false);}
+    }catch(e){setErr(e.message);}
+    setBusy(false);
   }
-  const can=!!check&&check.outcome!=="not_saved";
-  return html`<div class="mverify" role="group" aria-label=${"Verify "+ename(e)}>
-    <strong>Verify ${ename(e)}?</strong>
-    <div class="mverify-row">
-      <label>Sector <select class="field" value=${sector} disabled=${!sectors||busy}
-        onChange=${ev=>setSector(ev.target.value)}>
-        <option value="">Choose a sector…</option>
-        ${(sectors||[]).map(l=>html`<option key=${l} value=${l}>${l}</option>`)}</select></label>
-      <span>${!check?(sectors&&!err?html`<span class="spin"></span>`:null)
-        :html`<span class=${check.outcome==="not_saved"?"bad":""}>${OUTCOME_TEXT[check.outcome]}</span>`}</span>
+  const savable=(checked||[]).filter(c=>c.outcome!=="not_saved").length;
+  return html`<div class="card pad save-panel">
+    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+      <strong>Save verified to Compass</strong>
+      <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
     </div>
-    ${check&&check.reason&&html`<div class="hint" style=${{margin:"0 0 6px"}}>${check.reason}</div>`}
-    <div class="hint" style=${{margin:"0 0 10px"}}>By verifying, you confirm you're authorized GHUS staff
-      and you checked this result and its sources.</div>
-    ${err&&html`<div class="whynot" role="alert">${err}</div>`}
-    <div style=${{display:"flex",gap:"8px"}}>
-      <button class="btn" type="button" disabled=${busy||!can} onClick=${save}>
-        ${busy?html`<span class="spin"></span> Saving…`:"Yes, verify"}</button>
-      <button class="example" type="button" disabled=${busy} onClick=${onCancel}>Cancel</button>
+    <p class="hint">Verified organizations, events and people are added to the Ecosystem
+      Directory; one that matches a record already there updates it. A map is reviewed here,
+      on its own page, never in Review Results.</p>
+    <table class="grid save-list"><thead><tr><th>Result</th><th>Sector</th><th>What happens</th></tr></thead>
+      <tbody>${items.map((e,i)=>{const c=(checked||[])[i];return html`<tr key=${keyOf(e)}>
+        <td><div class="name-link">${ename(e)}</div><span class="hint" style=${{margin:0}}>${KIND_LABEL[e._entity_type||"actor"]}</span></td>
+        <td><select class="field" value=${picked[keyOf(e)]||""} aria-label=${"Sector for "+ename(e)}
+          onChange=${ev=>setPicked(x=>({...x,[keyOf(e)]:ev.target.value}))}>
+          <option value="">Choose a sector…</option>
+          ${sectors.map(l=>html`<option key=${l} value=${l}>${l}</option>`)}</select></td>
+        <td>${!c?html`<span class="spin"></span>`:html`<div class=${c.outcome==="not_saved"?"bad":""}>${OUTCOME_TEXT[c.outcome]}</div>
+          ${c.reason&&html`<div class="hint" style=${{margin:0}}>${c.reason}</div>`}`}</td></tr>`;})}</tbody></table>
+    <label class="check" style=${{display:"flex",gap:"8px",alignItems:"flex-start",fontSize:"14px"}}>
+      <input type="checkbox" checked=${attest} onChange=${ev=>setAttest(ev.target.checked)}/>
+      I'm authorized GHUS staff, I checked these results and their sources, and I verify them.</label>
+    ${err&&html`<div class="whynot" role="alert" style=${{marginTop:"10px"}}>${err}</div>`}
+    <div class="attach-row" style=${{marginTop:"12px"}}>
+      <button class="btn" type="button" disabled=${busy||!checked||!savable||!attest} onClick=${save}>
+        ${busy?html`<span class="spin"></span> Saving…`:`Save ${savable} to Compass`}</button>
     </div>
   </div>`;
 }
@@ -2336,6 +2556,8 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const [runStatus,setRunStatus]=useState("draft");
   // Result filters for the whole conversation (Fatima's redesign, 27 Oct 2026).
   const [statusFilter,setStatusFilter]=useState("all");   // all | pending | parked | verified
+  const [saving,setSaving]=useState(false);
+  const [saveSummary,setSaveSummary]=useState(null);
   const [typeFilter,setTypeFilter]=useState("all");       // all | actor | person | event
   // Results that don't match the request stay folded until asked for (2 Nov 2026).
   const [othersOpen,setOthersOpen]=useState({});
@@ -2421,7 +2643,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       if(r.status===404){ remember(null); return; }
       if(!r.ok) throw new Error(d.detail||"Could not load the saved map.");
       remember(id); setMsgs(d.messages||[]); setRequest(d.description||"");
-      setDesc(""); setFile(null); setDocId(null);
+      setDesc(""); setFile(null); setDocId(null); setSaving(false); setSaveSummary(null);
       setRes(d.result); setCost(d.cost); setErr(d.error); setRunStatus(d.status);
       const running=["running","planning","verifying"].includes(d.status);
       setBusy(running); setPhase(running?d.stage:"");
@@ -2465,6 +2687,22 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       const d=await r.json();
       if(version!==generation.current||id!==activeJob.current) return;
       if(!r.ok) throw new Error(d.detail||"Could not reopen the map.");
+      setCost(d.cost); setRunStatus(d.status); setErr(null); refreshRecent();
+    }catch(e){if(version===generation.current&&id===activeJob.current)setErr(e.message);}
+  }
+
+  // A step cut off before its cost was recorded blocked the map for good
+  // (GHUS, 11 Nov 2026). Counting it at its maximum keeps the budget safe.
+  async function settleCharges(){
+    if(!activeJob.current||busy) return;
+    const most=(cost?.reserved_usd||0).toFixed(2);
+    if(!window.confirm(`A step was cut off before its cost was recorded. Count it at the most it could have cost ($${most}) and go on?`)) return;
+    const id=activeJob.current, version=generation.current;
+    try{
+      const r=await post("/api/map/"+id+"/settle-charges",{approve:true});
+      const d=await r.json();
+      if(version!==generation.current||id!==activeJob.current) return;
+      if(!r.ok) throw new Error(d.detail||"Could not count the charge.");
       setCost(d.cost); setRunStatus(d.status); setErr(null); refreshRecent();
     }catch(e){if(version===generation.current&&id===activeJob.current)setErr(e.message);}
   }
@@ -2577,7 +2815,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     if(busy||verifying) return;
     generation.current++; remember(null); setCost(null); setRunStatus("draft");
     clearTimeout(pollRef.current);
-    setMsgs([]); setDesc(""); setRes(null); setErr(null);
+    setMsgs([]); setDesc(""); setRes(null); setErr(null); setSaving(false); setSaveSummary(null);
     setFile(null); setDocId(null); setBusy(false); setPhase("");
     if(fileRef.current) fileRef.current.value="";
   }
@@ -2646,6 +2884,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     if(runStatus==="ready") return "A search plan is ready. Use “Start saved plan” above to run it."+fresh;
     if(runStatus==="budget_stopped") return "Approve $1 more above, then continue."+fresh;
     if(runStatus==="interrupted") return "This map was interrupted. Use “Continue unfinished research” above."+fresh;
+    if(runStatus==="cost_unknown"||cost?.usage_complete===false) return "This map paused to protect the budget. Use “Count it at its maximum and go on” above."+fresh;
     return null;
   }
 
@@ -2754,6 +2993,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
   const chip=(value,current,set,label)=>html`<button type="button" key=${value}
     class=${"fchip"+(current===value?" on":"")} onClick=${()=>set(value)}>${label}</button>`;
   const shown=visibleItems();
+  const readyItems=shown.filter(e=>statusOf(e)==="ready");
   const typesShown=MGROUPS.filter(([k])=>shown.some(e=>(e._entity_type||"actor")===k));
 
   // Before the first prompt: Fatima's start screen (27 Oct 2026 mockup).
@@ -2764,7 +3004,7 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
     ${carried&&html`<${CarriedRows} rows=${carried} onChange=${onCarriedChange}
       onDismiss=${()=>{onCarriedChange(null); setDesc("");}}/>`}
-    <form class="start-card" onSubmit=${e=>{e.preventDefault();send();}}>
+    <form class="start-card" data-needs="maps.create" onSubmit=${e=>{e.preventDefault();send();}}>
       ${savedMaps("start-select")}
       <textarea ref=${boxRef} class="field start-box" rows="4" readOnly=${!!(carried&&!carried.raw)}
         placeholder="Describe the organizations, people, or events you want to map. Include your objective, sector or topic, and geographic focus."
@@ -2785,12 +3025,15 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
       <div class="map-tools">
         ${cost&&html`<span class="hint" style=${{margin:0}} aria-live="polite">Cost so far: $${cost.estimated_usd.toFixed(2)}</span>`}
         ${savedMaps("map-select")}
-        <button class="example" type="button" disabled=${busy||verifying} onClick=${reset}>+ New map</button>
+        <button class="example" type="button" data-needs="maps.create" disabled=${busy||verifying} onClick=${reset}>+ New map</button>
       </div>
     </div>
     ${!researchAvailable&&html`<p class="hint">${researchReason} Saved maps remain available.</p>`}
     ${cost&&(!cost.usage_complete||needsMore||cost.can_resume||runStatus==="ready"||cost.can_reopen)&&html`<div class="selnote" aria-live="polite">
-      ${!cost.usage_complete&&html`<div>Some costs are still being confirmed, so new searches are paused.</div>`}
+      ${!cost.usage_complete&&html`<div>${busy
+        ? "Some costs are still being confirmed, so new searches are paused."
+        : "A step was cut off before its cost was recorded (usually a restart of the server), so this map paused to protect the budget."}
+        ${!busy&&html` <button class="example" type="button" onClick=${settleCharges}>Count it at its maximum and go on</button>`}</div>`}
       ${needsMore&&html`<div>${runStatus==="budget_stopped"?"":"This map is close to its budget."}
         <button class="example" type="button" disabled=${busy||verifying} onClick=${extendBudget}>Approve $1 more</button></div>`}
       ${(cost.can_resume||runStatus==="ready")&&html`<div>
@@ -2837,6 +3080,8 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
         : html`
           <div class="mbar">
             <span class="chip slate">${total} found in this map</span>
+            <button class="btn" type="button" data-needs="review.decide" disabled=${busy||!readyItems.length||!["done","error"].includes(runStatus)}
+              onClick=${()=>{setSaveSummary(null);setSaving(true);}}>Save verified to Compass (${readyItems.length})</button>
             <button class="example" type="button" disabled=${!!exporting}
               onClick=${()=>download("xlsx")}>
               ${exporting==="xlsx"?html`<span class="spin"></span> Excel…`:"⤓ Excel"}</button>
@@ -2844,11 +3089,26 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
               onClick=${()=>download("pptx")}>
               ${exporting==="pptx"?html`<span class="spin"></span> PowerPoint…`:"⤓ PowerPoint"}</button>
           </div>`}
-      ${res.partial&&!busy&&html`<div class="selnote" style=${{marginTop:"14px"}}>Research is unfinished.</div>`}
+      ${saving&&html`<${SavePanel} jobId=${jobId} items=${readyItems} onClose=${()=>setSaving(false)}
+        onSaved=${d=>{setRes(d.result);setCost(d.cost);setSaving(false);
+          const n=k=>d.saved.filter(x=>x.outcome===k).length;
+          setSaveSummary([n("directory")&&`${n("directory")} added to the directory`,
+            n("review")&&`${n("review")} sent to Review Results`,n("not_saved")&&`${n("not_saved")} not saved`]
+            .filter(Boolean).join(" · "));}}/>`}
+      ${saveSummary&&html`<div class="selnote" role="status" style=${{marginTop:"14px"}}>${saveSummary}</div>`}
+      ${res.partial&&!busy&&html`<div class="selnote" style=${{marginTop:"14px"}}>Research is unfinished: some planned searches did not run.${cost?.can_resume?" Use “Continue unfinished research” above to finish them.":""}</div>`}
       ${(res.failures||[]).length>0&&html`<div class="selnote" style=${{color:"var(--violet)"}}>
         Some searches failed, so this map may be incomplete.</div>`}
-      ${/* "Keep finding organizations like these" → "Monitor this topic" removed from the map
-           page (5 Nov 2026); proposeDiscovery stays for when it comes back. */""}
+      ${total>0&&(res.map_type||"organizations")==="organizations"&&html`<div class="selnote" data-needs="requests.create" style=${{marginTop:"22px"}}>
+        <strong>Keep finding organizations like these</strong>
+        <div>Monitor and Update can keep searching for more of them, every month for as long
+          as you choose. This opens the request there, filled in from what you asked,
+          and you edit it there before anything is saved.</div>
+        <button class="example" type="button" style=${{marginTop:"8px"}}
+          disabled=${proposing||busy||verifying||!researchAvailable||!["done","error"].includes(runStatus)}
+          onClick=${proposeDiscovery}>
+          ${proposing?html`<span class="spin"></span> Proposing…`:"Monitor this topic"}</button>
+      </div>`}
     </div>`}
 
     <div class="composer">
@@ -2880,8 +3140,8 @@ function Browse(){
   const V={actors:Actors,hubs:Hubs,events:Events,people:People}[k];
   return html`<div>
     <h1 class="hero-h">Ecosystem Directory</h1>
-    <p class="start-lead">Find verified organizations, hubs, people, and events. View and edit profiles,
-      add GHUS Notes, and record team engagement.</p>
+    <p class="start-lead">Find verified organizations, hubs, people, and events. View and edit
+      profiles, and add GHUS Notes.</p>
     <div class="subnav">
       ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${label}</button>`)}
@@ -2905,13 +3165,58 @@ const NAV_ICONS={
   discovery:svg(html`<path d="M4 19.5l5-6 4 3 7-9"/><path d="M15 7.5h5v5"/>`),
   datafeed:svg(html`<path d="M12 15.5V4M7.5 8.5 12 4l4.5 4.5M4.5 15.5v4h15v-4"/>`),
   review:svg(html`<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M10 12.5h5M10 16h5"/>`),
+  mywork:svg(html`<path d="M5 4.5h14v16H5z"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4"/>`),
+  usage:svg(html`<path d="M4 19.5h16"/><path d="M7 16V11M12 16V6M17 16v-3"/>`),
+  costs:svg(html`<circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.2c-.5-.9-1.5-1.4-2.6-1.4-1.6 0-2.7.9-2.7 2.1 0 2.9 5.6 1.6 5.6 4.3 0 1.3-1.2 2.2-2.9 2.2-1.2 0-2.3-.6-2.8-1.6M12 6.3v1.5M12 16.7v1.5"/>`),
+  audit:svg(html`<path d="M12 3.5 4.5 6.5v5c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9v-5z"/><path d="M9 12l2 2 4-4"/>`),
+  users:svg(html`<circle cx="9" cy="8" r="3.5"/><path d="M3 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5"/><path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.6.8 2.7 2.5 3 5.2"/>`),
 };
+// Pages outside the main menu: My profile (from the sidebar name). Users joins the
+// menu for people who can manage users.
+const EXTRA_PAGES={profile:"My profile",users:"Users",mywork:"My work",audit:"Audit History",usage:"My usage",costs:"Usage and Costs",
+  deletions:"Pending Deletion"};
+// What each menu entry needs (individual accounts). The server refuses the rest anyway.
+const NAV_NEEDS={dashboard:"dashboard.view",ask:"ask.use",map:"maps.view",browse:"records.view",
+  discovery:"requests.view",datafeed:"datafeed.import",review:"review.view",mywork:"dashboard.view",
+  users:"users.manage",audit:"audit.view_all",usage:"usage.view_own",costs:"usage.view_all",
+  deletions:"records.delete_permanent"};
+// Hide every control marked data-needs="<permission>" the person does not hold.
+function applyPermissions(account){
+  let style=document.getElementById("compass-permissions");
+  if(!style){style=document.createElement("style");style.id="compass-permissions";document.head.appendChild(style);}
+  const held=new Set(account?account.permissions:[]);
+  const all=[...new Set(Object.values(NAV_NEEDS).concat(["records.edit","records.remove","records.delete_permanent","review.decide",
+    "maps.create","requests.create","notes.write"]))];
+  style.textContent=account?all.filter(p=>!held.has(p)).map(p=>`[data-needs~="${p}"]{display:none!important}`).join("\n"):"";
+}
 const COMPASS_MARK=html`<svg class="compass-mark" width="44" height="44" viewBox="0 0 44 44" aria-hidden="true">
   <circle cx="22" cy="22" r="20" fill="none" stroke="currentColor" stroke-width="2.2"/>
   <path d="M29.5 14.5 24.6 24.6 14.5 29.5 19.4 19.4z" fill="var(--accent)"/>
   <path d="M19.4 19.4 24.6 24.6 14.5 29.5z" fill="currentColor" opacity=".9"/></svg>`;
 function App(){
-  const [tab,setTab]=useState("ask");
+  // Compass opens on the Dashboard (GHUS, 11 Nov 2026).
+  const [tab,setTab]=useState("dashboard");
+  // The signed-in account (individual accounts only; null with the shared login).
+  const [account,setAccount]=useState(null);
+  const [checked,setChecked]=useState(false);
+  const loadAccount=()=>fetch("/api/auth/me").then(r=>r.ok?r.json():null)
+    .then(d=>setAccount(d?d.account:null)).catch(()=>{}).finally(()=>setChecked(true));
+  // Preferences (individual accounts): the Directory's default view and saved filters.
+  useEffect(()=>{if(!account) return;
+    fetch("/api/account/preferences").then(r=>r.ok?r.json():null).then(d=>{if(d){CURRENT_PREFS=d.preferences;setPrefsVersion(v=>v+1);}}).catch(()=>{});
+    const on=e=>{CURRENT_PREFS=e.detail;setPrefsVersion(v=>v+1);};
+    window.addEventListener("compass:preferences",on);return()=>window.removeEventListener("compass:preferences",on);},[account]);
+  const [,setPrefsVersion]=useState(0);
+  useEffect(()=>{applyPermissions(account);},[account]);
+  const allowed=id=>!account||account.permissions.includes(NAV_NEEDS[id]);
+  useEffect(()=>{loadAccount();},[]);
+  CURRENT_ACCOUNT=account;
+  const canManage=!!account&&account.permissions.includes("users.manage");
+  const nav=[...NAV.filter(([id])=>allowed(id)),
+    ...(account?[["mywork","My work"],["usage","My usage"],["users","Users"],["costs","Usage and Costs"],
+      ["audit","Audit History"]].filter(([id])=>allowed(id)):[])];
+  // A page the person may not open falls back to the first one they may.
+  useEffect(()=>{if(checked&&!allowed(tab)&&!["profile"].includes(tab)&&nav.length) setTab(nav[0][0]);},[checked,account,tab]);
   // Discovery's Run now opens the actor's profile in Review (discovery.js openInReview).
   useEffect(()=>{const go=()=>setTab("review");window.addEventListener("ghus:open-review",go);
     return ()=>window.removeEventListener("ghus:open-review",go);},[]);
@@ -2927,6 +3232,14 @@ function App(){
   const [carried,setCarried]=useState(null);
   // A Discovery request proposed from a map, waiting for the Discovery page to open it.
   const [discoveryHandoff,setDiscoveryHandoff]=useState(null);
+  // Data Feed: an organization named in a file is not in the Directory yet
+  // (13 Nov 2026). Open a one-time request that looks it up, ready to check.
+  useEffect(()=>{const go=(e)=>{const name=String(e.detail?.name||"").trim(); if(!name) return;
+    setDiscoveryHandoff({brief:`Find ${name}
+${name}`, cadence:"once", edited:true,
+      note:`${name} is named in a Data Feed import but is not in the Ecosystem Directory yet. Choose its sector, check the request, then create it and press Run now.`});
+    setTab("discovery");};
+    window.addEventListener("ghus:find-organization",go); return ()=>window.removeEventListener("ghus:find-organization",go);},[]);
   // Keep every page mounted when switching tabs. BuildMap owns the active job
   // poll and its result state, so unmounting it makes a running map appear to
   // stop even though the backend worker continues.
@@ -2936,24 +3249,37 @@ function App(){
     <div class="compass-brand">${COMPASS_MARK}<div><div class="compass-name">COMPASS</div>
       <div class="compass-tag">Ecosystem Intelligence</div></div></div>
     <nav class="workspace-nav" aria-label="Main navigation">
-      ${NAV.map(([id,label])=>html`
+      ${nav.map(([id,label])=>html`
         <button key=${id} class=${"nav-item"+(tab===id?" active":"")} aria-current=${tab===id?"page":undefined} onClick=${()=>setTab(id)}><span class="nav-symbol" aria-hidden="true">${NAV_ICONS[id]}</span>${label}${id==="dashboard"&&unseen>0&&html`<span class="nav-badge" aria-label=${`${unseen} new completed runs`}>${unseen}</span>`}</button>`)}
     </nav>
+    <${SessionFoot} account=${account} onProfile=${()=>setTab("profile")}/>
   </aside>
   <div class="workspace-main">
-  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${Object.fromEntries(NAV)[tab]}</strong></div></header>
+  <header class="workspace-header"><div class="breadcrumb">Workspace<span>/</span><strong>${Object.fromEntries(NAV)[tab]||EXTRA_PAGES[tab]}</strong></div>
+    ${account&&html`<${NotificationBell} onNavigate=${setTab}/>`}</header>
   <main class="wrap">
-    <div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard"><${Dashboard}/><//></div>
-    <div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
-      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>
-    <div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>
-    <div style=${{display:tab==="discovery"?"block":"none"}}><${PageBoundary} name="Monitor and Update"><${Discovery}
-      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/><//></div>
-    <div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>
-    <div style=${{display:tab==="review"?"block":"none"}}><${PageBoundary} name="Review Results"><${Review}/><//></div>
-    <div style=${{display:tab==="map"?"block":"none"}}><${PageBoundary} name="Explore and Map"><${BuildMap}
+    ${/* Pages mount once the account is known, and only those the person may open
+       (individual accounts); with the shared login every page mounts as before. */ ""}
+    ${checked&&html`
+    ${allowed("dashboard")&&html`<div style=${{display:tab==="dashboard"?"block":"none"}}><${PageBoundary} name="Dashboard"><${Dashboard}
+      permissions=${account?account.permissions:null}/><//></div>`}
+    ${allowed("ask")&&html`<div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
+      onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>`}
+    ${allowed("browse")&&html`<div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>`}
+    ${allowed("discovery")&&html`<div style=${{display:tab==="discovery"?"block":"none"}}><${PageBoundary} name="Monitor and Update"><${Discovery}
+      handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/><//></div>`}
+    ${allowed("datafeed")&&html`<div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>`}
+    ${allowed("review")&&html`<div style=${{display:tab==="review"?"block":"none"}}><${PageBoundary} name="Review Results"><${Review}/><//></div>`}
+    ${account&&tab==="profile"&&html`<div><${PageBoundary} name="My profile"><${ProfilePage} onAccount=${loadAccount}/><//></div>`}
+    ${account&&allowed("mywork")&&tab==="mywork"&&html`<div><${PageBoundary} name="My work"><${MyWorkPage}/><//></div>`}
+    ${account&&allowed("users")&&tab==="users"&&html`<div><${PageBoundary} name="Users"><${UsersPage} account=${account}/><//></div>`}
+    ${account&&allowed("usage")&&tab==="usage"&&html`<div><${PageBoundary} name="My usage"><${UsagePage}/><//></div>`}
+    ${account&&allowed("costs")&&tab==="costs"&&html`<div><${PageBoundary} name="Usage and Costs"><${CostsPage}/><//></div>`}
+    ${account&&allowed("audit")&&tab==="audit"&&html`<div><${PageBoundary} name="Audit History"><${AuditPage}/><//></div>`}
+    ${account&&allowed("deletions")&&tab==="deletions"&&html`<div><${PageBoundary} name="Pending Deletion"><${PendingDeletionPage} onNavigate=${setTab}/><//></div>`}
+    ${allowed("map")&&html`<div style=${{display:tab==="map"?"block":"none"}}><${PageBoundary} name="Explore and Map"><${BuildMap}
       carried=${carried} onCarriedChange=${setCarried}
-      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/><//></div>
+      onDiscovery=${(d)=>{setDiscoveryHandoff(d); setTab("discovery");}}/><//></div>`}`}
   </main></div>`;
 }
 createRoot(document.getElementById("root")).render(html`<${App}/>`);

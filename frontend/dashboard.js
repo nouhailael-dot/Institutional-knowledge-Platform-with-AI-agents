@@ -5,13 +5,19 @@
 // item (Explore and Map, Monitor and Update > Requests, Ecosystem Directory).
 // Nothing here starts, changes or expands anything.
 //
-// "Yours": there is no sign-in yet. Requests are yours by the email typed in
-// Monitor and Update (requests with no email are everyone's, as on that page),
-// Directory activity by the name typed in Review Results, and maps are the ones
-// made on this computer.
+// "Yours": requests are yours by the email typed in Monitor and Update (requests
+// with no email are everyone's, as on that page), Directory activity by the
+// signed-in name, and maps are the ones made on this server.
+//
+// The same page with the shared login and with individual accounts (GHUS,
+// 20 Nov 2026: keep this design). With an account, what a role cannot open is
+// left out; Notifications are added, and Admins and Editors/Reviewers also see
+// Pending Deletion. My profile chooses which parts show.
 
-import {NAVIGATE, formatUsd, requestStatus, visibleRequests} from "./discovery.js?v=20261104g";
-import {usDate} from "./dates.js?v=20261104e";
+import {NAVIGATE, formatUsd, isRunning, requestStatus, visibleRequests} from "./discovery.js?v=20261113a";
+import {usDate} from "./dates.js?v=20261110b";
+import {PAGE_TAB as DELETIONS_TAB, PERMISSION as DELETE_PERMISSION, daysLeftLabel, isUrgent, kindLabel,
+  readDeleted, widgetSummary} from "./deletions.js?v=20261120a";
 
 export const DASHBOARD_UNSEEN = "ghus:dashboard-unseen";
 export {NAVIGATE};
@@ -22,7 +28,7 @@ const PANEL_SIZE = 5;
 const DAY = 86400000;
 
 export const STATE_LABELS = {
-  completed: "Completed", pending_review: "Pending Review", in_progress: "In Progress",
+  completed: "Completed", pending_review: "Pending Review", in_progress: "In Progress", queued: "Queued",
   stopped: "Stopped", new_update: "New Update", scheduled: "Scheduled", paused: "Paused",
   attention: "Needs Attention", cancelled: "Cancelled",
 };
@@ -48,11 +54,39 @@ export function shortDate(value) {
   return t ? new Date(t).toLocaleDateString("en-US", {month: "short", day: "numeric"}) : "";
 }
 
-/** "November 1–2, 2026": the 1st of this month to today. */
-export function monthRangeLabel(now = new Date()) {
+/**
+ * "November 1–2, 2026": the 1st of this month to today. With a start in this
+ * month (the hosted trial's first day), from that day: "November 10–12, 2026".
+ */
+export function monthRangeLabel(now = new Date(), start = null) {
   const month = now.toLocaleDateString("en-US", {month: "long"});
   const day = now.getDate();
-  return `${month} 1${day > 1 ? `–${day}` : ""}, ${now.getFullYear()}`;
+  const begun = start ? new Date(time(start)) : null;
+  const first = begun && inMonth(start, now) ? begun.getDate() : 1;
+  return `${month} ${first}${day > first ? `–${day}` : ""}, ${now.getFullYear()}`;
+}
+
+/**
+ * Only what happened from ``start`` on (GET /api/dashboard/start: the hosted
+ * team trial's first moment, 10 Nov 2026). Runs before it are dropped from each
+ * request, and a request with no run since, made before it, is left out, so
+ * the spending, the counts and the panels all begin at $0 and empty. Earlier
+ * work stays in the database and on Monitor and Update. No start: unchanged.
+ */
+export function sinceStart({requests = [], updates = [], oneTime = [], maps = []} = {}, start = null) {
+  const from = time(start);
+  if (!from) return {requests, updates, oneTime, maps};
+  const later = value => time(value) >= from;
+  const trim = r => ({...r, runs: (r.runs || []).filter(run => later(run.started_at))});
+  // A request running now is shown, even one made before the start (12 Nov 2026:
+  // a Run now that had no run record yet was missing from the Dashboard).
+  const current = r => r.runs.length > 0 || later(r.created_at) || isRunning(r);
+  return {
+    requests: requests.map(trim).filter(current),
+    updates: updates.map(trim).filter(current),
+    oneTime: oneTime.filter(u => later(u.started_at)),
+    maps: maps.filter(m => later(m.created)),
+  };
 }
 
 function inMonth(value, now) {
@@ -97,6 +131,8 @@ export function recentMaps(maps = [], days = 30, now = new Date()) {
 }
 
 function lastActivity(request) {
+  // Run now, still starting (no run record yet): its activity is now.
+  if (request.starting && !(request.runs || []).length) return new Date().toISOString();
   return (request.runs || [])[0]?.started_at || request.created_at;
 }
 
@@ -125,6 +161,7 @@ export function needsAttention(request) {
 export function requestState(request, kind, since = 0) {
   const status = requestStatus(request);
   if (status === "running") return "in_progress";
+  if (status === "queued") return "queued";
   if (needsAttention(request)) return "attention";
   if (hasNewUpdate(request, kind, since)) return "new_update";
   if (status === "active" && request.next_run) return "scheduled";
@@ -198,10 +235,6 @@ export function whenText(value) {
 const icon = (html, d, size = 22) => html`<svg width=${size} height=${size} viewBox="0 0 24 24" fill="none"
   stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 
-/** Until sign-in exists COMPASS cannot tell whose activity this is (3 Nov 2026: no typed names). */
-export const NOT_SIGNED_IN_ACTIVITY =
-  "Your verifications, additions and updates appear here once sign-in is on: COMPASS takes your name from your account.";
-
 export function createDashboardPage({html, useState, useEffect}) {
   const ICONS = {
     clipboard: icon(html, html`<path d="M9 4.5h6v2.5H9z"/><path d="M15 5.5h2.5v15h-11v-15H9"/><path d="m9.5 13 2 2 3.5-4"/>`, 30),
@@ -214,6 +247,8 @@ export function createDashboardPage({html, useState, useEffect}) {
     refresh: icon(html, html`<path d="M19.5 12a7.5 7.5 0 0 1-13.2 4.9M4.5 12a7.5 7.5 0 0 1 13.2-4.9"/><path d="M17.7 3.5v3.6h-3.6M6.3 20.5v-3.6h3.6"/>`),
     building: icon(html, html`<path d="M4.5 20.5h15M6.5 20.5V5.5h11v15M10 9h1M13 9h1M10 12.5h1M13 12.5h1M10.5 20.5V17h3v3.5"/>`),
     person: icon(html, html`<circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.7 3.6-5.5 7-5.5s6.2 1.8 7 5.5"/>`),
+    bell: icon(html, html`<path d="M6 9.5a6 6 0 0 1 12 0c0 5 2 6.5 2 6.5H4s2-1.5 2-6.5"/><path d="M10 19.5a2 2 0 0 0 4 0"/>`),
+    trash: icon(html, html`<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5"/>`),
     arrow: icon(html, html`<path d="M7 17 17 7M9 7h8v8"/>`, 16),
     chevron: icon(html, html`<path d="m9.5 6 6 6-6 6"/>`, 18),
   };
@@ -233,31 +268,106 @@ export function createDashboardPage({html, useState, useEffect}) {
     </div>`;
   }
 
-  function Entry({symbol, name, meta, state, onOpen}) {
+  function Entry({symbol, name, meta, state, label, onOpen}) {
     return html`<li><button class="dash-entry" type="button" onClick=${onOpen} disabled=${!onOpen}>
       <span class="dash-entry-icon">${symbol}</span>
       <span class="dash-entry-text"><strong>${name}</strong><small>${meta}</small></span>
-      ${state && html`<span class=${"dash-pill " + state}>${STATE_LABELS[state]}</span>`}
+      ${state && html`<span class=${"dash-pill " + state}>${label || STATE_LABELS[state]}</span>`}
       ${onOpen && html`<span class="dash-chevron">${ICONS.chevron}</span>`}
     </button></li>`;
   }
 
-  function Panel({symbol, title, lead, empty, rows, footer, onFooter}) {
-    return html`<section class="dash-panel">
+  // ``span``: "two" or "all" columns of the panel grid.
+  function Panel({symbol, title, lead, empty, rows, footer, onFooter, span}) {
+    return html`<section class=${"dash-panel" + (span ? ` dash-span-${span}` : "")}>
       <header><span class="dash-panel-icon">${symbol}</span><div><h3>${title}</h3><p>${lead}</p></div></header>
       ${rows.length === 0 ? html`<p class="muted dash-empty">${empty}</p>`
         : html`<ul class="dash-entries">${rows}</ul>`}
-      <button class="dash-footer" type="button" onClick=${onFooter}>${footer} ${ICONS.arrow}</button>
+      ${footer && html`<button class="dash-footer" type="button" onClick=${onFooter}>${footer} ${ICONS.arrow}</button>`}
     </section>`;
   }
 
-  return function Dashboard() {
+  // Records waiting for permanent removal, in this page's own style (Phase 6 card).
+  function DeletionPanel({span}) {
+    const [state, setState] = useState({loaded: false, rows: [], error: null});
+    useEffect(() => {
+      let live = true;
+      readDeleted().then(rows => live && setState({loaded: true, rows, error: null}))
+        .catch(e => live && setState({loaded: true, rows: [], error: String(e.message || e)}));
+      return () => { live = false; };
+    }, []);
+    const {count, soonest} = widgetSummary(state.rows);
+    const more = count > soonest.length ? ` (${count - soonest.length} more)` : "";
+    return html`<${Panel} span=${span} symbol=${ICONS.trash}
+      title=${`Pending Deletion${state.loaded && !state.error ? ` · ${count}` : ""}`}
+      lead="Deleted records, removed for good after 30 days. Restore one before then."
+      empty=${!state.loaded ? "Loading…" : state.error || "No records are waiting for permanent removal."}
+      rows=${soonest.map(r => html`<${Entry} key=${r.deletion_id} symbol=${ICONS.trash} name=${r.name}
+        meta=${`${kindLabel(r.entity_type)}${r.deleted_by ? ` · deleted by ${r.deleted_by}` : ""}`}
+        state=${isUrgent(r.days_remaining) ? "attention" : "paused"} label=${daysLeftLabel(r.days_remaining)}
+        onOpen=${() => navigate({tab: DELETIONS_TAB})}/>`)}
+      footer=${`View all${more}`} onFooter=${() => navigate({tab: DELETIONS_TAB})}/>`;
+  }
+
+  // The signed-in person's latest notifications (the bell's list), in this page's style.
+  function NotificationsPanel({span}) {
+    const [state, setState] = useState({loaded: false, items: [], unread: 0, error: null});
+    function load() {
+      get("/api/account/notifications").then(r => setState({loaded: true, items: r.items || [],
+        unread: r.unread || 0, error: null}))
+        .catch(() => setState(prev => ({...prev, loaded: true, error: "Notifications could not be read right now."})));
+    }
+    useEffect(() => {
+      load();
+      const timer = setInterval(load, 120000);
+      return () => clearInterval(timer);
+    }, []);
+    async function open(item) {
+      // The one change this page makes: a notification opened here is read.
+      if (!item.read_at) {
+        try { await fetch(`/api/account/notifications/${encodeURIComponent(item.id)}/read`, {method: "POST"}); }
+        catch { /* the bell will show it again */ }
+        load();
+      }
+      if (item.link) navigate({tab: item.link});
+    }
+    return html`<${Panel} span=${span} symbol=${ICONS.bell}
+      title=${`Notifications${state.unread ? ` · ${state.unread} new` : ""}`}
+      lead="What happened to my work and what needs me"
+      empty=${!state.loaded ? "Loading…" : state.error || "Nothing new."}
+      rows=${state.items.slice(0, PANEL_SIZE).map(n => html`<${Entry} key=${n.id} symbol=${ICONS.bell} name=${n.title}
+        meta=${[n.body, whenText(n.created_at)].filter(Boolean).join(" · ")}
+        state=${n.read_at ? null : "pending_review"} label="New" onOpen=${() => open(n)}/>`)}/>`;
+  }
+
+  // ``permissions``: the signed-in account's; null with the shared login (everything shows).
+  return function Dashboard({permissions = null} = {}) {
+    const can = p => !permissions || permissions.includes(p);
+    const seesRequests = can("requests.view");
+    // What this person chose to hide in My profile (individual accounts only).
+    const [hidden, setHidden] = useState([]);
+    useEffect(() => {
+      if (!permissions) return undefined;
+      get("/api/account/preferences").then(r => setHidden(r.preferences?.dashboard?.hidden || [])).catch(() => {});
+      const changed = e => setHidden(e.detail?.dashboard?.hidden || []);
+      window.addEventListener("compass:preferences", changed);
+      return () => window.removeEventListener("compass:preferences", changed);
+    }, [permissions]);
+    const show = key => !hidden.includes(key);
+    const notes = Boolean(permissions) && show("notifications");
+    const deletions = Boolean(permissions) && can(DELETE_PERMISSION) && show("deletions");
     // Each list arrives on its own (requests take a while): null until then.
-    const [data, setData] = useState({requests: null, updates: null, oneTime: null, maps: null});
+    const [data, setData] = useState(seesRequests ? {requests: null, updates: null, oneTime: null, maps: null}
+      : {requests: [], updates: [], oneTime: [], maps: null});
     const [problems, setProblems] = useState({});
     const [days, setDays] = useState(30);
     const [activity, setActivity] = useState({loaded: false, rows: [], error: null, signedIn: true});
     const [seen, setSeen] = useState(() => readJson(REQUEST_SEEN_KEY, {}));
+    // undefined until read; null when the Dashboard counts everything.
+    const [start, setStart] = useState(undefined);
+    useEffect(() => {
+      get("/api/dashboard/start").then(r => setStart(r.since || null)).catch(() => setStart(null));
+    }, []);
 
     function load() {
       const email = "";  // the signed-in user's, once accounts exist: everything until then
@@ -265,6 +375,7 @@ export function createDashboardPage({html, useState, useEffect}) {
         .then(body => { setData(prev => ({...prev, ...apply(body)})); setProblems(prev => ({...prev, [name]: false})); })
         .catch(() => setProblems(prev => ({...prev, [name]: true})));
       read("maps", "/api/maps", body => ({maps: body.maps || []}));
+      if (!seesRequests) return;      // a Viewer: no Monitor and Update
       read("requests", "/api/discovery/requests", body => ({requests: visibleRequests(body.requests || [], email)}));
       read("organization updates", "/api/discovery/update-requests", body => ({
         updates: visibleRequests(body.requests || [], email), oneTime: body.one_time || []}));
@@ -286,10 +397,13 @@ export function createDashboardPage({html, useState, useEffect}) {
           signedIn: true}));
     }, [days]);
 
-    const requestsReady = data.requests !== null && data.updates !== null;
-    const rows = requestRows({requests: data.requests || [], updates: data.updates || []},
+    const requestsReady = data.requests !== null && data.updates !== null && start !== undefined;
+    const shown = sinceStart({requests: data.requests || [], updates: data.updates || [],
+      oneTime: data.oneTime || [], maps: data.maps || []}, start);
+    const mapsReady = data.maps !== null && start !== undefined;
+    const rows = requestRows({requests: shown.requests, updates: shown.updates},
       seen, readText(SEEN_KEY) || null);
-    const counts = summaryCounts({maps: data.maps || [], rows});
+    const counts = summaryCounts({maps: shown.maps, rows});
     useEffect(() => {
       window.dispatchEvent(new CustomEvent(DASHBOARD_UNSEEN, {detail: {count: counts.newUpdates}}));
     }, [counts.newUpdates]);
@@ -302,11 +416,12 @@ export function createDashboardPage({html, useState, useEffect}) {
     }
 
     const now = new Date();
-    const allReady = requestsReady && data.maps !== null;
+    const allReady = requestsReady && mapsReady;
+    // The whole month, from the 1st to today, whatever the trial start (GHUS, 11 Nov).
     const spent = monthSpending({requests: data.requests || [], updates: data.updates || [],
       oneTime: data.oneTime || [], maps: data.maps || []}, now);
     const failed = Object.keys(problems).filter(name => problems[name]);
-    const maps = recentMaps(data.maps || [], days, now);
+    const maps = recentMaps(shown.maps, days, now);
     const requests = recentRequests(rows, days, now);
     const records = directoryRows(activity.rows);
     return html`<div class="dashboard-page">
@@ -314,17 +429,22 @@ export function createDashboardPage({html, useState, useEffect}) {
       <p class="lead dash-lead">Your COMPASS workspace at a glance.</p>
       ${failed.length > 0 && html`<p class="discovery-message error">Could not read: ${failed.join(", ")}.</p>`}
 
-      <div class="dash-summaries">
-        <${Summary} icon=${ICONS.clipboard} count=${data.maps === null ? null : counts.mapsPending} noun="map" label="Pending Review"/>
-        <${Summary} icon=${ICONS.layers} count=${requestsReady ? counts.newUpdates : null} noun="request" label="New Updates"/>
-        <${Summary} icon=${ICONS.alert} count=${requestsReady ? counts.attention : null} noun="request" label="Needing Attention"/>
-      </div>
+      ${show("summary") && html`<div class="dash-summaries">
+        <${Summary} icon=${ICONS.clipboard} count=${mapsReady ? counts.mapsPending : null} noun="map" label="Pending Review"/>
+        ${seesRequests && html`<${Summary} icon=${ICONS.layers} count=${requestsReady ? counts.newUpdates : null} noun="request" label="New Updates"/>`}
+        ${seesRequests && html`<${Summary} icon=${ICONS.alert} count=${requestsReady ? counts.attention : null} noun="request" label="Needing Attention"/>`}
+      </div>`}
 
-      <div class="dash-spending">
+      ${seesRequests && show("spending") && html`<div class="dash-spending">
         <span class="dash-spending-icon">${ICONS.coins}</span>
         <div class="dash-spending-label"><strong>My Spending This Month</strong><span>${monthRangeLabel(now)}</span></div>
         <strong class="dash-spending-amount">${allReady ? formatUsd(spent) || "$0.00" : "…"}</strong>
-      </div>
+      </div>`}
+
+      ${(notes || deletions) && html`<div class="dash-panels">
+        ${notes && html`<${NotificationsPanel} span=${deletions ? "two" : "all"}/>`}
+        ${deletions && html`<${DeletionPanel} span=${notes ? null : "all"}/>`}
+      </div>`}
 
       <div class="dash-activity-head">
         <h2>My Recent Activity</h2>
@@ -335,28 +455,28 @@ export function createDashboardPage({html, useState, useEffect}) {
       </div>
 
       <div class="dash-panels">
-        <${Panel} symbol=${ICONS.map} title="Recent Maps" lead="My latest mapping requests (Explore and Map)"
-          empty=${data.maps === null ? "Loading…" : `No maps in the last ${days} days on this computer.`}
+        ${show("maps") && html`<${Panel} symbol=${ICONS.map} title="Recent Maps" lead="My latest mapping requests (Explore and Map)"
+          empty=${!mapsReady ? "Loading…" : `No maps in the last ${days} days on this computer.`}
           rows=${maps.map(m => html`<${Entry} key=${m.id} symbol=${MAP_ICONS[m.category]} name=${m.name}
             meta=${`${m.category} · ${shortDate(m.date)}`} state=${m.state}
             onOpen=${() => navigate({tab: "map", map_id: m.id})}/>`)}
-          footer="View all maps" onFooter=${() => navigate({tab: "map"})}/>
+          footer="View all maps" onFooter=${() => navigate({tab: "map"})}/>`}
 
-        <${Panel} symbol=${ICONS.refresh} title="Recent Requests"
+        ${seesRequests && show("requests") && html`<${Panel} symbol=${ICONS.refresh} title="Recent Requests"
           lead="My latest update and monitoring requests (Monitor and Update)"
           empty=${requestsReady ? `No requests in the last ${days} days.` : "Loading requests…"}
           rows=${requests.map(r => html`<${Entry} key=${r.id} symbol=${ICONS.refresh} name=${r.name}
             meta=${`${r.type} · ${shortDate(r.date)}`} state=${r.state} onOpen=${() => openRequest(r.id)}/>`)}
-          footer="View all requests" onFooter=${() => navigate({tab: "discovery", view: "requests"})}/>
+          footer="View all requests" onFooter=${() => navigate({tab: "discovery", view: "requests"})}/>`}
 
-        <${Panel} symbol=${ICONS.building} title="Recent Directory Activity"
+        ${show("directory") && html`<${Panel} symbol=${ICONS.building} title="Recent Directory Activity"
           lead="My latest contributions to the Ecosystem Directory"
-          empty=${!activity.signedIn ? NOT_SIGNED_IN_ACTIVITY
+          empty=${!activity.signedIn ? `Nothing in the last ${days} days.`
             : activity.error || (activity.loaded ? `Nothing in the last ${days} days.` : "Loading…")}
           rows=${records.map((r, i) => html`<${Entry} key=${`${r.id}:${i}`} symbol=${RECORD_ICONS[r.kind] || ICONS.building}
             name=${r.name} meta=${`${r.category} · ${r.action}`}
             onOpen=${r.id ? () => navigate({tab: "browse", record: {kind: r.kind, id: r.id}}) : null}/>`)}
-          footer="Open Directory" onFooter=${() => navigate({tab: "browse"})}/>
+          footer="Open Directory" onFooter=${() => navigate({tab: "browse"})}/>`}
       </div>
     </div>`;
   };

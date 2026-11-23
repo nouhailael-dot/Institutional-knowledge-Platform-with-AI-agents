@@ -53,7 +53,10 @@ class Model:
 
     def extract_with_tool(self, **kwargs):
         self.calls += 1
-        self.schema = kwargs["input_schema"]
+        # The first call's schema: what the first read asked (a follow-up asks
+        # only the boxes still missing, 6 Nov 2026).
+        self.schemas = [*getattr(self, "schemas", []), kwargs["input_schema"]]
+        self.schema = self.schemas[0]
         return self.answers
 
 
@@ -84,7 +87,8 @@ def test_every_box_is_answered_and_only_checked_quotes_count():
                                       "description": "Launched BREW 2.0, a global accelerator."},
                             "quote": "In March 2026 it launched BREW 2.0, a global accelerator"},
         "funding_signal": {"stated": True, "page": ABOUT_URL,
-                           "value": "$2 million grant from the Fund for Lake Michigan.",
+                           "value": {"amount": "$2 million", "funder": "Fund for Lake Michigan",
+                                     "role": "received"},
                            "quote": "received a $2 million grant from the Fund for Lake Michigan"},
         # Invented: the quote is on no page.
         "international_connection": {"stated": True, "page": ABOUT_URL,
@@ -106,7 +110,14 @@ def test_every_box_is_answered_and_only_checked_quotes_count():
     wanted = {*COMMON_READ_FIELDS, *CATEGORY_LIGHT_FIELDS["association_network"]}
     assert set(read.evidence) == wanted                      # every box has an answer
     assert set(model.schema["required"]) == wanted           # and every box was asked
-    assert model.calls == 1
+    # One follow-up on its own site, for the essential boxes still missing only.
+    assert model.calls == 2
+    assert sorted(model.schemas[1]["required"]) == ["association_type", "member_types",
+                                                    "why_matched"]
+    assert read.followups[0]["step"] == "own_site"
+    assert read.completeness["essential"] == ["location", "why_matched", "association_type",
+                                              "member_types"]
+    assert read.completeness["found"] == ["location"]
     states = {k: v["collection_state"] for k, v in read.evidence.items()}
     assert "not_yet_collected" not in states.values()
     assert states["recent_activity"] == states["funding_signal"] == "found"
@@ -117,7 +128,9 @@ def test_every_box_is_answered_and_only_checked_quotes_count():
     assert "not on the page" in read.rejected["international_connection"]
     # Not stated: recorded as not found on the pages that were read.
     assert states["um6p_ocp_connection"] == "not_found"
-    assert read.pages == ["https://thewatercouncil.com/", ABOUT_URL, TOPIC_URL]
+    # The first three pages, then the one more read for the missing boxes.
+    assert read.pages[:3] == ["https://thewatercouncil.com/", ABOUT_URL, TOPIC_URL]
+    assert read.pages[3:] == read.followups[0]["pages"]
 
 
 def test_an_answer_breaking_a_light_pull_rule_is_refused():
@@ -222,17 +235,21 @@ def test_the_website_publishing_content_is_not_recent_activity():
     assert "website's content" in read.rejected["recent_activity"]
 
 
-@pytest.mark.parametrize(("stated", "stored"), [
+@pytest.mark.parametrize(("stated", "stored", "where"), [
     ({"city": "Milwaukee", "state": "Wisconsin", "country": None},
-     {"city": "Milwaukee", "state": "WI", "country": "US"}),
-    ({"city": "Milwaukee", "state": "WI"}, {"city": "Milwaukee", "state": "WI", "country": "US"}),
+     {"city": "Milwaukee", "state": "WI", "country": "US"}, "Milwaukee, Wisconsin"),
+    ({"city": "Milwaukee", "state": "WI"}, {"city": "Milwaukee", "state": "WI", "country": "US"},
+     "Milwaukee, Wisconsin"),
     # Not a US state: kept as the page says it, never placed in the US.
     ({"city": "Toronto", "state": "Ontario", "country": "Canada"},
-     {"city": "Toronto", "state": "Ontario", "country": "Canada"}),
+     {"city": "Toronto", "state": "Ontario", "country": "Canada"}, "Toronto, Ontario"),
 ])
-def test_a_location_is_stored_in_one_shape(stated, stored):
+def test_a_location_is_stored_in_one_shape(stated, stored, where, monkeypatch):
+    # The quote must give the place it is stored as (6 Nov 2026: a quote naming
+    # another place does not carry a location).
+    monkeypatch.setitem(PAGES, ABOUT_URL, ABOUT.replace("Milwaukee, Wisconsin", where))
     model = Model({"location": {"stated": True, "page": ABOUT_URL, "value": stated,
-                                "quote": "nonprofit in Milwaukee, Wisconsin"}})
+                                "quote": f"nonprofit in {where}"}})
     read = LightPullReader(model, _fetch).read(
         name="The Water Council", website="https://thewatercouncil.com/",
         actor_category="association_network", read_at=NOW, fields=["location"])
@@ -303,12 +320,16 @@ FUNDER = "https://fundforlakemichigan.org/grants-2026"
 
 
 def test_funding_its_own_pages_do_not_state_is_searched_for_and_checked(tmp_path, monkeypatch):
+    # "The Water Council" is a name others share: the funder's page links its site
+    # (6 Nov 2026: a same-named organisation's page is not used without such a sign).
     monkeypatch.setitem(PAGES, FUNDER, "<p>The Fund awarded The Water Council a $500,000 grant "
-                                       "in 2026 for its BREW accelerator.</p>")
+                                       "in 2026 for its BREW accelerator. "
+                                       '<a href="https://thewatercouncil.com">The Water Council</a></p>')
     monkeypatch.setitem(PAGES, "https://www.linkedin.com/company/x", "<p>The Water Council</p>")
     searches: list[str] = []
     model = _TwoReads({"funding_signal": {
-        "stated": True, "page": FUNDER, "value": "$500,000 grant, 2026",
+        "stated": True, "page": FUNDER,
+        "value": {"amount": "$500,000", "date": "2026", "role": "received"},
         "quote": "The Fund awarded The Water Council a $500,000 grant in 2026"}})
     read = LightPullReader(model, _fetch, fallback=_searching_fallback(
         tmp_path, ["https://www.linkedin.com/company/x", FUNDER], searches)).read(
@@ -338,7 +359,8 @@ def test_a_search_result_that_does_not_name_it_is_never_read_for_it(tmp_path, mo
 def test_no_search_when_its_own_pages_state_it(tmp_path):
     searches: list[str] = []
     model = Model({"funding_signal": {
-        "stated": True, "page": ABOUT_URL, "value": "$2 million grant from the Fund for Lake Michigan.",
+        "stated": True, "page": ABOUT_URL,
+        "value": {"amount": "$2 million", "funder": "Fund for Lake Michigan", "role": "received"},
         "quote": "received a $2 million grant from the Fund for Lake Michigan"}})
     read = LightPullReader(model, _fetch, fallback=_searching_fallback(tmp_path, [FUNDER], searches)).read(
         name="The Water Council", website="https://thewatercouncil.com", actor_category=None,
@@ -350,14 +372,16 @@ def test_no_search_when_its_own_pages_state_it(tmp_path):
 def test_an_entry_box_keeps_every_quoted_entry_and_refuses_one_riding_on_another_quote():
     model = Model({"funding_signal": {
         "stated": True, "page": ABOUT_URL,
-        "value": [{"amount": "$2 million", "funder": "Fund for Lake Michigan"},
-                  {"amount": "$5 million", "funder": "National Science Foundation"}],
+        "value": [{"amount": "$2 million", "funder": "Fund for Lake Michigan", "role": "received"},
+                  {"amount": "$5 million", "funder": "National Science Foundation",
+                   "role": "received"}],
         "quotes": ["It received a $2 million grant from the Fund for Lake Michigan."]}})
     read = LightPullReader(model, _fetch).read(
         name="The Water Council", website="https://thewatercouncil.com",
         actor_category="association_network", read_at=NOW, fields=["funding_signal"])
     value = read.evidence["funding_signal"]["value"]
-    assert value == {"entries": [{"amount": "$2 million", "funder": "Fund for Lake Michigan"}]}
+    assert value == {"entries": [{"amount": "$2 million", "funder": "Fund for Lake Michigan",
+                                  "status": "undated"}]}
     assert read.evidence["funding_signal"]["dropped_entries"]
 
 

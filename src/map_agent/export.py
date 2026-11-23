@@ -158,13 +158,23 @@ def _sources_text(e: dict) -> str:
     return "\n".join(s.get("url", "") for s in (e.get("sources") or []) if s.get("url"))
 
 
+CAPITALIZED_FIELDS = frozenset({
+    "event_type", "date_status", "event_format", "recurring_pattern", "audience", "access_type",
+    "expected_attendance", "thematic_focus", "sector", "actor_type", "category_type",
+})
+
+
 def _field_value(entity: dict, field: str):
     """Human-readable value for scalar and relationship fields."""
     value = entity.get(field)
     if field in ("next_date", "previous_edition"):
         end = entity.get("end_date") if field == "next_date" else None
         return dates_text(value, end) if value else value
-    if field in ("event_type", "date_status", "event_format", "recurring_pattern") and isinstance(value, str) and value:
+    if field == "um6p_ocp_status" and value:
+        # Old maps wrote "not found in what's been read"; Compass says Not Found.
+        return "Found" if value == "found" else "Not Found"
+    # 12 Nov 2026 (GHUS): every data value starts with a capital letter.
+    if field in CAPITALIZED_FIELDS and isinstance(value, str) and value:
         return value[0].upper() + value[1:]
     if field == "_review":
         if (entity.get("_db_save") or {}).get("outcome") in ("directory", "review"):

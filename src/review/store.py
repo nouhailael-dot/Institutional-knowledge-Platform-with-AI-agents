@@ -60,6 +60,9 @@ REJECTION_REASONS = (
     "Insufficient evidence on the page",
     "Other",
 )
+NO_REASON_GIVEN = "No reason given"
+# The page says "organization"; the database's fixed list says "organisation".
+REASON_SPELLINGS = {"Not an organization / event / person page": "Not an organisation / event / person page"}
 REVIEWABLE_RUN_STATUSES = (
     "done", "interrupted", "cancelled", "cost_unknown", "budget_stopped", "error",
 )
@@ -77,11 +80,16 @@ EDITABLE_FIELDS = {
     "person": (
         "name", "affiliation", "affiliation_raw", "role",
         "public_profile_url", "research_area",
+        # 12 Nov 2026: every box of the card is editable; each is kept as a fact.
+        "work_location", "department", "relevant_work", "um6p_ocp_connection",
     ),
     "event": (
         "name", "event_type", "description", "location", "website", "next_date", "end_date",
         "recurring_pattern", "sponsoring_orgs", "thematic_focus",
         "expected_attendance", "access_type",
+        # 12 Nov 2026: every box of the card is editable; each is kept as a fact.
+        "event_format", "organizer", "previous_edition", "audience", "sector",
+        "um6p_ocp_involvement",
     ),
 }
 
@@ -343,6 +351,9 @@ ACTOR_UPDATE_PREFIX = "actor-update:"
 # Records GHUS supplied through the Data Feed (a spreadsheet or the form).
 DATAFEED_PREFIX = "datafeed:"
 DATAFEED_LABEL = "Data Feed import"
+# Where an import came from, as postgres_source adds it after the import's name:
+# " · team.xlsx" or " · manual entry". Review titles show the name only.
+_DATAFEED_WHERE = re.compile(r"\s·\s(?:manual entry|[^·]+\.(?:xlsx|xlsm|xls|csv))$", re.IGNORECASE)
 # Review items about one box's value (raised by the Phase 11 fact writer).
 FACT_REVIEW_KINDS = ("fact_conflict", "pending_update")
 MAP_CHECKS_KEY = "map-checks"
@@ -368,7 +379,10 @@ RUN_TYPES = ("discovery_actors", "discovery_events", "discovery_people", "actor_
              "data_feed")
 
 
-def run_type_of(source_run_id: Any, entity_types: Any) -> str:
+MAP_IMPORT_MARK = "Explore and Map: "
+
+
+def run_type_of(source_run_id: Any, entity_types: Any, description: Any = None) -> str:
     """Which kind of run this is, from what is recorded - never guessed.
 
     An actor update run is keyed "actor-update:<run>"; a discovery run by the
@@ -378,7 +392,9 @@ def run_type_of(source_run_id: Any, entity_types: Any) -> str:
     run_id = str(source_run_id or "")
     if run_id.startswith(ACTOR_UPDATE_PREFIX):
         return "actor_updates"
-    if run_id.startswith(DATAFEED_PREFIX):
+    # A map's saved cards arrive through the Data Feed, but they are a new
+    # request's findings (12 Nov 2026): grouped as one, by kind of record.
+    if run_id.startswith(DATAFEED_PREFIX) and MAP_IMPORT_MARK not in str(description or ""):
         return "data_feed"
     if run_id.startswith(MAP_CHECKS_PREFIX):
         return "map_checks"
@@ -427,8 +443,10 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
         if "dry_run" in raw or "dry run" in raw.casefold():
             parts.append("test run")
     elif run_id.startswith(DATAFEED_PREFIX):
-        # "Data Feed import · Kansas water actors · actors.xlsx · Oct 26, 2026"
-        parts = [DATAFEED_LABEL, raw.removeprefix(f"{DATAFEED_LABEL}:").strip()]
+        # "Data Feed import · Kansas water actors · Oct 26, 2026": the name the
+        # person gave the import, never the spreadsheet's file name (13 Nov 2026).
+        name = raw.removeprefix(f"{DATAFEED_LABEL}:").strip()
+        parts = [DATAFEED_LABEL, _DATAFEED_WHERE.sub("", name).strip() or name]
     elif run_id.startswith(ACTOR_UPDATE_PREFIX):
         # "Actor update · CPower Energy · Oct 19, 2026": what an update wrote,
         # and anything it raised for a person (conflicts, links, hubs).
@@ -481,8 +499,12 @@ _GATE_REASONS = (
 
 def derive_review_reason(metadata: dict[str, Any], entity_type: Any = None) -> str | None:
     if "data_feed" in metadata:
-        # Supplied by GHUS through the Data Feed: no agent scored it.
-        return "possible_duplicate" if metadata.get("top_matches") else "data_feed"
+        # Supplied by GHUS through the Data Feed: no agent scored it. A map's
+        # saved cards say where they came from: Proposed by Explore and Map.
+        if metadata.get("top_matches"):
+            return "possible_duplicate"
+        feed = metadata.get("data_feed") or {}
+        return "map_agent" if feed.get("method") == "map" else "data_feed"
     kind = str(metadata.get("review_kind") or "").strip()
     if kind:
         return _KIND_REASONS.get(kind, kind)
@@ -636,6 +658,9 @@ class ReviewStore:
         self.path = Path(path or os.environ.get("REVIEW_STORE_DB") or root / ".review" / "review.sqlite3")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.enable_test_canonical = enable_test_canonical
+        # Epoch seconds of the hosted trial's start (src.trial), set by the app;
+        # each sync then sets aside what was raised before it.
+        self.trial_cutoff: float | None = None
         self._initialize()
 
     def persistence_warnings(self) -> list[str]:
@@ -871,7 +896,9 @@ class ReviewStore:
                 result = _loads(run["result"], {})
                 for entity_type, source_index, payload in _normalized_entities(result):
                     candidate_id = _candidate_id(run["id"], entity_type, source_index)
-                    now = _now()
+                    # When the map made it, not when this store first saw it: a
+                    # trial start (src.trial) must not take an old map for new.
+                    now = float(run["created"] or 0) or _now()
                     cursor = db.execute(
                         "INSERT OR IGNORE INTO review_candidate "
                         "(candidate_id,source_run_id,source_index,source_description,entity_type,"
@@ -891,6 +918,7 @@ class ReviewStore:
                             (_json(_evidence(payload)), _json(_metadata(payload, result)),
                              _duplicate_state(payload), candidate_id),
                         )
+            self._set_aside_before_trial(db)
         return inserted
 
     def sync_external_candidates(self, candidates: list[dict[str, Any]],
@@ -992,21 +1020,97 @@ class ReviewStore:
                 if not folds:
                     continue
                 target = _external_candidate_id(str(candidate["source_key"]).strip())
-                db.executemany(
-                    "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
-                    "AND candidate_id<>? AND status='pending_review'",
-                    [(target, _external_candidate_id(key), target) for key in folds],
+                fresh = 0
+                for key in folds:
+                    fresh += db.execute(
+                        "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
+                        "AND candidate_id<>? AND status='pending_review' AND folded_into IS NOT ?",
+                        (target, _external_candidate_id(key), target, target),
+                    ).rowcount
+                # The profile itself is listed - unless it was set aside and
+                # nothing new has been folded into it since (set_aside).
+                db.execute(
+                    "UPDATE review_candidate SET folded_into=NULL WHERE candidate_id=? "
+                    "AND (? OR folded_into IS NULL OR folded_into NOT LIKE ?)",
+                    (target, fresh > 0, self.SET_ASIDE_PREFIX + "%"),
                 )
-                # The profile itself is always listed.
-                db.execute("UPDATE review_candidate SET folded_into=NULL WHERE candidate_id=?",
-                           (target,))
             for key, reason in (retired or {}).items():
                 db.execute(
                     "UPDATE review_candidate SET folded_into=? WHERE candidate_id=? "
                     "AND status='pending_review' AND folded_into IS NULL",
                     (str(reason or "retired"), _external_candidate_id(str(key))),
                 )
+            self._set_aside_before_trial(db)
         return inserted
+
+    MAP_COPY = "map_copy"
+
+    MAP_IMPORT_PREFIX = "Data Feed import: Explore and Map: "
+
+    def retire_map_copies(self, run_store=None) -> int:
+        """Take every map's records off the Review page (12 Nov 2026).
+
+        GHUS: a map is reviewed on its own page; Review Results is for new
+        requests and organization updates only. Both a map's direct copies and
+        the records a map saved through the Data Feed are folded away (kept,
+        not listed); decided ones are never touched.
+
+
+        A copy made straight from a map has no record in the database behind
+        it, so Review can neither verify nor reject it ("no authoritative
+        PostgreSQL source reference"), and edits made on it are lost. A map's
+        cards reach Review only through "Save verified to Compass" (the Data
+        Feed), as records that can be decided.
+        """
+        run_ids = []
+        if run_store is not None:
+            with run_store.connect() as source:
+                run_ids = [row[0] for row in source.execute("SELECT id FROM runs").fetchall()]
+        changed = 0
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            changed += db.execute(
+                "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                "AND folded_into IS NULL AND source_description LIKE ? ESCAPE '!'",
+                (self.MAP_COPY, self.MAP_IMPORT_PREFIX.replace("!", "!!").replace("%", "!%")
+                 .replace("_", "!_") + "%")).rowcount
+            for start in range(0, len(run_ids), 500):
+                chunk = run_ids[start:start + 500]
+                changed += db.execute(
+                    "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                    f"AND folded_into IS NULL AND source_run_id IN ({','.join('?' * len(chunk))})",
+                    [self.MAP_COPY, *chunk]).rowcount
+        return changed
+
+    WITHDRAWN_IMPORT = "withdrawn_import"
+
+    def retire_run(self, source_run_id: str, reason: str = WITHDRAWN_IMPORT) -> int:
+        """Take a run's waiting records off the Review page (13 Nov 2026).
+
+        A Data Feed import withdrawn on the Data Feed page: its records were
+        rejected in the database, which the sync never removes from this copy
+        (a pending row that leaves the source stays pending here). Folded, kept,
+        not listed; decided rows are never touched.
+        """
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return db.execute(
+                "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                "AND folded_into IS NULL AND source_run_id=?",
+                (reason, str(source_run_id)),
+            ).rowcount
+
+    def _set_aside_before_trial(self, db) -> int:
+        """In the sync's own transaction: no list ever shows an item from before
+        the trial start (src.trial), not even during a fresh store's first sync."""
+        if getattr(self, "trial_cutoff", None) is None:
+            return 0
+        from src.trial import SET_ASIDE_REASON
+        return db.execute(
+            "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+            "AND folded_into IS NULL AND created_at < ?",
+            (self.SET_ASIDE_PREFIX + SET_ASIDE_REASON, float(self.trial_cutoff)),
+        ).rowcount
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> dict[str, Any]:
@@ -1226,7 +1330,7 @@ class ReviewStore:
                 "latest": float(row["latest"] or 0),
                 "is_backlog": False,
                 "source_run_ids": [row["source_run_id"]],
-                "run_type": run_type_of(row["source_run_id"], row["entity_types"]),
+                "run_type": run_type_of(row["source_run_id"], row["entity_types"], row["description"]),
                 "run_name": run_name(row["description"], row["source_run_id"]),
                 "run_date": _short_day(row["earliest"]) or None,
                 "status_counts": status_counts.get(str(row["source_run_id"]), {}),
@@ -1615,6 +1719,11 @@ class ReviewStore:
         if decision_kind == "same_existing" and not str(target_id or "").strip():
             raise ReviewValidationError("Select the existing record for a same-existing decision.")
         if decision_kind == "reject":
+            # 12 Nov 2026: rejecting needs no reason. The database keeps one of
+            # its fixed reasons, so none given is recorded as Other: no reason.
+            rejection_reason = REASON_SPELLINGS.get(rejection_reason, rejection_reason)
+            if not str(rejection_reason or "").strip():
+                rejection_reason, rejection_reason_other = "Other", NO_REASON_GIVEN
             if rejection_reason not in REJECTION_REASONS:
                 raise ReviewValidationError("Select one of the fixed rejection reasons.")
             if rejection_reason == "Other" and not str(rejection_reason_other or "").strip():
@@ -1633,7 +1742,9 @@ class ReviewStore:
                 "decision_kind": "verify_actor",
                 "review_item_id": str(metadata.get("review_item_id") or ""),
                 "verified": decision_kind != "reject",
-                "rejection_reason": rejection_reason if decision_kind == "reject" else None,
+                "rejection_reason": (None if decision_kind != "reject" else rejection_reason
+                                     if rejection_reason != "Other"
+                                     else f"Other: {_clean_text(rejection_reason_other, max_length=4000)}"),
                 "reviewer": reviewer,
                 "notes": notes,
                 "ghus_notes": ghus_notes,
@@ -1757,6 +1868,20 @@ class ReviewStore:
                 f"AND folded_into IS NULL AND source_run_id IN ({marks}) GROUP BY source_run_id",
                 list(run_ids))}
 
+    def pending_by_description(self, prefixes: dict[str, str]) -> dict[str, int]:
+        """Listed pending records per key, matched by the start of their run label."""
+        if not prefixes:
+            return {}
+        counts: dict[str, int] = {}
+        with self.connect() as db:
+            for key, prefix in prefixes.items():
+                like = prefix.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+                counts[key] = int(db.execute(
+                    "SELECT COUNT(*) FROM review_candidate WHERE status='pending_review' "
+                    "AND folded_into IS NULL AND source_description LIKE ? ESCAPE '!'",
+                    (like,)).fetchone()[0])
+        return {key: count for key, count in counts.items() if count}
+
     SET_ASIDE_PREFIX = "set_aside:"
 
     def set_aside(self, candidate_ids: list[str], *, reason: str) -> int:
@@ -1778,6 +1903,21 @@ class ReviewStore:
                     (label, str(candidate_id)),
                 ).rowcount
         return changed
+
+    def set_aside_before(self, cutoff: float, *, reason: str) -> int:
+        """Set aside every listed pending item raised before ``cutoff`` (epoch seconds).
+
+        The hosted trial's clean start (src.trial): run after each sync, so an
+        old item reaching a fresh store never shows. Decided items are never
+        touched; ``restore_set_aside(reason)`` lists them again.
+        """
+        label = self.SET_ASIDE_PREFIX + _clean_text(reason, required=True, max_length=80)
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            return db.execute(
+                "UPDATE review_candidate SET folded_into=? WHERE status='pending_review' "
+                "AND folded_into IS NULL AND created_at < ?", (label, float(cutoff)),
+            ).rowcount
 
     def restore_set_aside(self, reason: str) -> int:
         """List again every item set aside under ``reason``."""

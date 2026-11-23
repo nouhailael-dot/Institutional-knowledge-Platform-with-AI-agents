@@ -45,7 +45,16 @@ def refusal_reason(stderr: str | None, returncode: int) -> str:
             return ("It may already be in the directory: a close match was found. "
                     "Choose “Same as existing” with the right record, or Defer.")
         return message[:300]
+    # A check the backend states in words ("ValueError: affiliation organization is
+    # not a classified actor; ..."): its sentence, not "exited with code 1".
+    for line in reversed(plain.strip().splitlines()):
+        found = _STATED.match(line.strip())
+        if found:
+            return found.group(1)[:300]
     return f"Admission process exited with code {returncode}."
+
+
+_STATED = re.compile(r"^ValueError: (.+)$")
 
 
 class AdmissionBridgeError(RuntimeError):

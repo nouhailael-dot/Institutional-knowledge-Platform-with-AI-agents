@@ -88,6 +88,68 @@ class DiscoveryBridgeError(RuntimeError):
 
 # How long a started request reads "Running" before its run record appears.
 STARTING_FOR_S = 20 * 60
+# Run now when the host already runs as many as it may (12 Nov 2026): the
+# request waits its turn; the queue is checked this often.
+QUEUE_POLL_S = 15
+# 12 Nov 2026 (GHUS): everyone may run requests at the same time, and each
+# person up to two at once. No team-wide number: a run waits only when the host
+# has no memory left for another (each run is a process of its own, about
+# 160 MB at start and more while it reads pages).
+DEFAULT_RUNS_PER_PERSON = 2
+DEFAULT_RUN_MEMORY_MB = 400
+
+
+def _env_int(name: str, default: int | None) -> int | None:
+    raw = str(os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
+
+def runs_per_person() -> int:
+    return _env_int("GHUS_RUNS_PER_PERSON", DEFAULT_RUNS_PER_PERSON)
+
+
+def parallel_runs() -> int | None:
+    """A team-wide cap only when the host sets one (GHUS_MAX_PARALLEL_RUNS); none by default."""
+    return _env_int("GHUS_MAX_PARALLEL_RUNS", None)
+
+
+def run_memory_mb() -> int:
+    return _env_int("GHUS_RUN_MEMORY_MB", DEFAULT_RUN_MEMORY_MB)
+
+
+def _read_int(path: str) -> int | None:
+    try:
+        raw = Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return int(raw) if raw.isdigit() else None
+
+
+def memory_headroom_mb() -> int | None:
+    """Memory still free for this service, in MB; None when it cannot be told (not Linux).
+
+    The container's own limit first (cgroup v2, then v1), else the machine's
+    available memory. A container reads the machine's memory in /proc, not its
+    own limit, so the cgroup comes first.
+    """
+    for limit_file, used_file in (("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory.current"),
+                                  ("/sys/fs/cgroup/memory/memory.limit_in_bytes",
+                                   "/sys/fs/cgroup/memory/memory.usage_in_bytes")):
+        limit, used = _read_int(limit_file), _read_int(used_file)
+        if limit and used is not None and limit < 1 << 60:
+            return max(0, (limit - used) // (1024 * 1024))
+    try:
+        for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
 
 
 def _epoch(value: Any) -> float:
@@ -116,6 +178,9 @@ def run_refusal(state: dict[str, Any] | None) -> str | None:
         ended = f" on {state['end_date']}" if state.get("end_date") else ""
         return (f"This request has ended{ended}, so it cannot run again. Create a new "
                 "request with the same settings to run it now.")
+    if state.get("status") == "paused":
+        # The runner never runs a paused request; say so instead of "Running".
+        return "This request is paused. Resume it first, then run it."
     if state.get("runner_busy"):
         return ("Another request is running right now. Run this one when it has "
                 "finished: a run takes a few minutes.")
@@ -233,6 +298,15 @@ class DiscoveryBridge:
         # Requests started by Run now, until their run record appears (4 Nov 2026:
         # the page said "Scheduled" for the minute or two the runner takes to start).
         self._started: dict[str, float] = {}
+        # Run now pressed while another run was going: first come, first run.
+        self._queue: list[str] = []
+        self._queue_lock = threading.Lock()
+        self._queue_thread: threading.Thread | None = None
+        self._last_launch = 0.0
+        # Who started each run, and its process: up to two at once per person.
+        self._owner: dict[str, str] = {}
+        self._memory = memory_headroom_mb
+        self._launched: dict[str, tuple[float, Any]] = {}
         # The app caches the two lists (cache_lists=True); tests read them fresh.
         self._lists = ({"requests": _ListCache(lambda: self._call(["list"], retries=1)),
                         # Sectors, regions and kinds: they change with a deployment.
@@ -292,6 +366,12 @@ class DiscoveryBridge:
                 self._started.pop(sid, None)
                 continue
             request["starting"] = True
+        with self._queue_lock:
+            waiting = list(self._queue)
+        for request in (payload or {}).get("requests") or []:
+            sid = str(request.get("subscription_id") or "")
+            if sid in waiting:
+                request["queued"] = waiting.index(sid) + 1
         return payload
 
     def preview(self, draft: dict[str, Any]) -> dict[str, Any]:
@@ -317,7 +397,7 @@ class DiscoveryBridge:
                            json.dumps({"end_date": end_date}), "--live"])
 
     @_invalidates_lists
-    def run_now(self, subscription_id: str) -> dict[str, Any]:
+    def run_now(self, subscription_id: str, user: str | None = None) -> dict[str, Any]:
         """Start a live run of one request, in the background.
 
         A person pressing "Run now" is the explicit dispatch a live run needs.
@@ -329,9 +409,100 @@ class DiscoveryBridge:
         if not _UUID.match(subscription_id or ""):
             raise DiscoveryBridgeError("unknown request", rejected=True)
         _require_contact()
-        refusal = run_refusal(self._run_state(subscription_id))
+        state = self._run_state(subscription_id)
+        refusal = run_refusal({**state, "runner_busy": False} if state else state)
         if refusal:
             raise DiscoveryBridgeError(refusal, rejected=True)
+        who = str(user or "").strip() or "everyone"
+        with self._queue_lock:
+            if (state and state.get("request_busy")) or self._is_active(subscription_id):
+                raise DiscoveryBridgeError("This request is already running or waiting to run.",
+                                           rejected=True)
+            mine = [sid for sid, owner in self._owner.items()
+                    if owner == who and self._is_active(sid)]
+            if len(mine) >= runs_per_person():
+                # Up to two at once per person (GHUS_RUNS_PER_PERSON); everyone side by side.
+                limit = runs_per_person()
+                raise DiscoveryBridgeError(
+                    f"You already have {limit} request{'s' if limit > 1 else ''} running. "
+                    "Run this one when one has finished.", rejected=True)
+            self._owner[subscription_id] = who
+            if self._queue or not self._room(state):
+                self._queue.append(subscription_id)
+                self._ensure_queue_watcher()
+                return {"started": False, "queued": True,
+                        "position": self._queue.index(subscription_id) + 1,
+                        "subscription_id": subscription_id}
+        return self._launch(subscription_id)
+
+    def _is_active(self, subscription_id: str, now: float | None = None) -> bool:
+        """Queued, or started and still going (its process alive, or just started)."""
+        if subscription_id in self._queue:
+            return True
+        launched = self._launched.get(subscription_id)
+        if launched is None:
+            return False
+        began, process = launched
+        now = time.time() if now is None else now
+        poll = getattr(process, "poll", None)
+        if callable(poll):
+            return poll() is None
+        return now - began < STARTING_FOR_S
+
+    def _room(self, state: dict[str, Any] | None, now: float | None = None) -> bool:
+        """Whether another run may start now: memory left, and under any host cap."""
+        cap = parallel_runs()
+        if cap is not None and self._running_count(state, now) >= cap:
+            return False
+        headroom = self._memory()
+        return headroom is None or headroom >= run_memory_mb()
+
+    def _running_count(self, state: dict[str, Any] | None, now: float | None = None) -> int:
+        """Runs going now: the larger of what the database and this server know."""
+        now = time.time() if now is None else now
+        known = sum(1 for sid in self._launched if self._is_active(sid, now))
+        return max(known, int((state or {}).get("runs_going") or 0))
+
+    def _ensure_queue_watcher(self) -> None:
+        """One background thread starts each queued request when its turn comes."""
+        if self._queue_thread is not None and self._queue_thread.is_alive():
+            return
+        def watch():
+            while True:
+                time.sleep(QUEUE_POLL_S)
+                if not self.advance_queue():
+                    return
+        self._queue_thread = threading.Thread(target=watch, name="run-now-queue", daemon=True)
+        self._queue_thread.start()
+
+    def advance_queue(self, now: float | None = None) -> bool:
+        """Start the next queued request when the host has room. True while any still wait."""
+        now = time.time() if now is None else now
+        with self._queue_lock:
+            if not self._queue:
+                return False
+            head = self._queue[0]
+        state = self._run_state(head)
+        with self._queue_lock:
+            if not self._room(state, now):
+                return True
+        with self._queue_lock:
+            if not self._queue or self._queue[0] != head:
+                return bool(self._queue)
+            self._queue.pop(0)
+        # Ended or paused while it waited: it does not run.
+        if not run_refusal({**state, "runner_busy": False} if state else state):
+            try:
+                self._launch(head)
+            except DiscoveryBridgeError:
+                pass
+        if self._lists is not None:
+            self._lists["requests"].invalidate()
+            self._lists["updates"].invalidate()
+        with self._queue_lock:
+            return bool(self._queue)
+
+    def _launch(self, subscription_id: str) -> dict[str, Any]:
         env = os.environ.copy()
         env["DATABASE_URL"] = str(self.database_url)
         runs = self.project_root / "agents" / "runs"
@@ -342,7 +513,7 @@ class DiscoveryBridge:
         if os.name == "nt":
             flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
         try:
-            self._start_process(
+            process = self._start_process(
                 [self.python_executable, "-m", "agents.collection.subscription_runner",
                  "--live", "--request-id", subscription_id, "--light-pull",
                  "--report-out", str(runs / f"{stem}-summary.md"),
@@ -356,7 +527,8 @@ class DiscoveryBridge:
             raise DiscoveryBridgeError("The GHUS discovery run could not be started.") from exc
         finally:
             log.close()
-        self._started[subscription_id] = time.time()
+        self._started[subscription_id] = self._last_launch = time.time()
+        self._launched[subscription_id] = (self._last_launch, process)
         return {"started": True, "subscription_id": subscription_id}
 
     def _read_run_state(self, subscription_id: str) -> dict[str, Any] | None:
@@ -374,11 +546,18 @@ class DiscoveryBridge:
                     "WHERE actor_update_subscription_id = %s::uuid", (subscription_id,)).fetchone()
                 busy = conn.execute(
                     "SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' "
-                    "AND granted AND objid = %s)", (RUNNER_LOCK,)).fetchone()[0]
+                    "AND granted AND objsubid = 1 AND objid = %s)", (RUNNER_LOCK,)).fetchone()[0]
+                # Run now locks its own request (classid = the runner's key,
+                # objid = the request's hash): this one, and how many go.
+                mine, going = conn.execute(
+                    "SELECT bool_or(objid::bigint = (hashtext(%s)::bigint & 4294967295)), count(*) "
+                    "FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 2 "
+                    "AND classid = %s", (subscription_id, RUNNER_LOCK)).fetchone()
         except Exception:  # noqa: BLE001 - an unreadable state never blocks a run
             return None
         return {"exists": row is not None, "status": row[0] if row else None,
-                "end_date": row[1] if row else None, "runner_busy": bool(busy)}
+                "end_date": row[1] if row else None, "runner_busy": bool(busy),
+                "request_busy": bool(mine), "runs_going": int(going or 0) + (1 if busy else 0)}
 
     # Actor updates: plan (free), check (one capped read, writes nothing),
     # apply (writes what the check found through the backend's fact writer).
