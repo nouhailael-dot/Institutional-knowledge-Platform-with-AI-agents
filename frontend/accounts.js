@@ -234,6 +234,15 @@ export function createAccountPages({html, useState, useEffect}) {
       try { setData(await call("/api/account/notifications", "GET")); } catch (e) { /* quiet */ }
     }
     useEffect(() => { load(); const t = setInterval(load, 120000); return () => clearInterval(t); }, []);
+    // The open panel closes on a click anywhere else on the page, or on Escape (GHUS, 23 Nov 2026).
+    useEffect(() => {
+      if (!open) return undefined;
+      const outside = (e) => { if (!(e.target instanceof Element) || !e.target.closest(".notify-wrap")) setOpen(false); };
+      const escape = (e) => { if (e.key === "Escape") setOpen(false); };
+      document.addEventListener("mousedown", outside);
+      document.addEventListener("keydown", escape);
+      return () => { document.removeEventListener("mousedown", outside); document.removeEventListener("keydown", escape); };
+    }, [open]);
     async function openItem(item) {
       if (!item.read_at) { try { await call(`/api/account/notifications/${item.id}/read`); } catch (e) {} }
       setOpen(false); await load();

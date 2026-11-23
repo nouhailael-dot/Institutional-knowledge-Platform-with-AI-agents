@@ -71,3 +71,11 @@ test('the card is on the Dashboard only for deleters and View all opens the page
   assert.match(index, /restored from Pending Deletion on the Dashboard until/);
   assert.match(index, /\/api\/browse\/\$\{KIND_PATH\[kind\]\}\/\$\{encodeURIComponent\(r\.id\)\}\/delete/);
 });
+
+test('the notification panel closes on a click elsewhere or on Escape', () => {
+  const accounts = read('../frontend/accounts.js');
+  const bell = accounts.slice(accounts.indexOf('function NotificationBell('), accounts.indexOf('// -- The personal Dashboard'));
+  assert.match(bell, /if \(!\(e\.target instanceof Element\) \|\| !e\.target\.closest\("\.notify-wrap"\)\) setOpen\(false\);/);
+  assert.match(bell, /if \(e\.key === "Escape"\) setOpen\(false\);/);
+  assert.match(bell, /document\.removeEventListener\("mousedown", outside\)/);
+});
