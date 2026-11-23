@@ -556,14 +556,6 @@ export function createAccountPages({html, useState, useEffect}) {
         <tbody>${Object.entries(d.counts).map(([m, c]) => html`<tr key=${m}><td>${monthName(m)}</td><td class="num">${c.requests_created}</td>
           <td class="num">${c.maps_created}</td><td class="num">${c.imports}</td><td class="num">${c.records_created}</td>
           <td class="num">${c.review_decisions}</td></tr>`)}</tbody></table></div>
-      <div class="card pad" style=${{marginTop: "14px", overflowX: "auto"}}><strong>Reconciliation with the ledgers</strong>
-        <p class="hint" style=${{margin: "4px 0 8px"}}>Each ledger's own total, and how much of it is attributed or Not recorded. The difference is always zero.
-          ${!d.map_costs_included && " The map store could not be read, so map costs are not included."}</p>
-        <table class="grid"><thead><tr><th>Ledger</th><th class="num">Ledger total</th><th class="num">Attributed</th>
-          <th class="num">Not recorded</th><th class="num">Difference</th></tr></thead>
-        <tbody>${d.reconciliation.map(r => html`<tr key=${r.ledger}><td>${r.ledger}</td><td class="num">${usd(r.ledger_total_usd)}</td>
-          <td class="num">${usd(r.attributed_usd)}</td><td class="num">${usd(r.not_recorded_usd)}</td>
-          <td class="num">${usd(r.difference_usd)}</td></tr>`)}</tbody></table></div>
       <div class="card pad" style=${{marginTop: "14px", overflowX: "auto"}}>
         <div class="dash-card-head"><strong>Operations</strong><span>
           <a class="example" href=${`/api/admin/usage/export?format=csv&${query(f)}`} download>⤓ CSV</a>
