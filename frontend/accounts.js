@@ -340,57 +340,135 @@ export function createAccountPages({html, useState, useEffect}) {
   const SECTION_WORDS = {summary: "Counts at the top", spending: "My Spending This Month", notifications: "Notifications",
     deletions: "Pending Deletion", maps: "Recent Maps", requests: "Recent Requests", directory: "Recent Directory Activity"};
 
+  // A change applied on the page at once (the server confirms it; a refusal undoes it).
+  function withChange(p, change) {
+    return {
+      ...p,
+      ...(change.sectors ? {sectors: change.sectors} : {}),
+      directory: {...p.directory, ...(change.directory || {})},
+      dashboard: {...p.dashboard, ...(change.dashboard || {})},
+      notifications: {...p.notifications, ...(change.notifications || {})},
+    };
+  }
+
+  // On/off switch: a button with role="switch", so a keyboard and a screen reader use it too.
+  function Switch({checked, onChange, labelledBy}) {
+    return html`<button type="button" class="pref-switch" role="switch" aria-checked=${checked ? "true" : "false"}
+      aria-labelledby=${labelledBy} onClick=${() => onChange(!checked)}></button>`;
+  }
+
+  // One setting group: its name and what it does on the left, its controls on the right.
+  function Group({title, help, children}) {
+    return html`<section class="pref-group">
+      <div class="pref-group-head"><h4>${title}</h4>${help && html`<p>${help}</p>`}</div>
+      <div class="pref-group-body">${children}</div></section>`;
+  }
+
+  // My profile → preferences (GHUS, 23 Nov 2026): personal focus, kept apart from
+  // the platform's settings, with controls that fit each choice.
   function PreferencesCard() {
     const [d, setD] = useState(null);
     const [sectors, setSectors] = useState([]);
     const [note, setNote] = useState({});
+    const [saved, setSaved] = useState(null);
     useEffect(() => {
       call("/api/account/preferences", "GET").then(setD).catch(e => setNote({error: e.message}));
       call("/api/browse/actors", "GET").then(a => setSectors(a.options?.sectors || [])).catch(() => {});
     }, []);
+    useEffect(() => {
+      if (!saved) return undefined;
+      const t = setTimeout(() => setSaved(null), 2200);
+      return () => clearTimeout(t);
+    }, [saved]);
     if (!d) return html`<div class="card pad" style=${{marginTop: "14px"}}><p class="hint">${note.error || "Loading preferences…"}</p></div>`;
     const p = d.preferences;
-    async function save(change, ok) {
+    async function save(change, where) {
+      const before = d;
       setNote({});
-      try { const r = await call("/api/account/preferences", "PUT", {preferences: change});
-            setD({...d, preferences: r.preferences}); setNote({ok}); window.dispatchEvent(new CustomEvent("compass:preferences", {detail: r.preferences})); }
-      catch (e) { setNote({error: e.message}); }
+      setD({...d, preferences: withChange(p, change)});
+      try {
+        const r = await call("/api/account/preferences", "PUT", {preferences: change});
+        setD(current => ({...current, preferences: r.preferences}));
+        setSaved({where, at: Date.now()});
+        window.dispatchEvent(new CustomEvent("compass:preferences", {detail: r.preferences}));
+      } catch (e) {
+        setD(before);
+        setNote({error: e.message});
+      }
     }
     const toggleList = (list, value) => list.includes(value) ? list.filter(v => v !== value) : [...list, value];
-    return html`<div class="card pad" style=${{marginTop: "14px"}}>
-      <strong>Preferences</strong>
-      <p class="hint" style=${{margin: "4px 0 10px"}}>Only what you see changes; the shared records stay the same for everyone.</p>
-      <${Notice} ...${note}/>
-      <div class="edit-field"><label>Preferred sectors</label><div class="pref-chips">
-        ${(sectors.length ? sectors : p.sectors).map(s => html`<label key=${s} class="check">
-          <input type="checkbox" checked=${p.sectors.includes(s)}
-            onChange=${() => save({sectors: toggleList(p.sectors, s)}, "Sectors saved.")}/> ${s}</label>`)}
-        ${sectors.length === 0 && p.sectors.length === 0 && html`<span class="hint">No sectors to choose from.</span>`}</div></div>
-      <div class="edit-field"><label>The Directory opens on</label><div>
-        ${[["all", "All Records"], ["mine", "My Records"]].map(([v, l]) => html`<label key=${v} class="check" style=${{marginRight: "14px"}}>
-          <input type="radio" name="dir-view" checked=${p.directory.default_view === v}
-            onChange=${() => save({directory: {default_view: v}}, `The Directory opens on ${l}.`)}/> ${l}</label>`)}</div></div>
-      <div class="edit-field"><label>Saved Directory filters</label><div>
-        ${p.directory.saved_filters.length === 0 ? html`<span class="hint">None. Save one from the Directory's filters.</span>`
-          : p.directory.saved_filters.map(f => html`<div key=${f.tab + f.name}>${f.name}
-              <span class="hint"> (${f.tab})</span>
-              <button class="example" type="button" style=${{marginLeft: "8px"}}
-                onClick=${() => save({directory: {saved_filters: p.directory.saved_filters.filter(x => x !== f)}},
-                  `Removed '${f.name}'.`)}>Remove</button></div>`)}</div></div>
-      <div class="edit-field"><label>Dashboard shows</label><div class="pref-chips">
-        ${d.dashboard_sections.map(s => html`<label key=${s} class="check">
-          <input type="checkbox" checked=${!p.dashboard.hidden.includes(s)}
-            onChange=${() => save({dashboard: {hidden: toggleList(p.dashboard.hidden, s)}}, "Dashboard saved.")}/>
-          ${SECTION_WORDS[s] || s}</label>`)}</div></div>
-      <div class="edit-field"><label>Notify me when</label><div>
-        ${Object.entries(d.notification_kinds).map(([k, words]) => html`<label key=${k} class="check" style=${{display: "block"}}>
-          <input type="checkbox" checked=${p.notifications[k]}
-            onChange=${() => save({notifications: {[k]: !p.notifications[k]}}, "Notifications saved.")}/> ${words}</label>`)}
-        <label class="check" style=${{display: "block", marginTop: "6px"}}>
-          <input type="checkbox" checked=${p.notifications.email}
-            onChange=${() => save({notifications: {email: !p.notifications.email}}, "Saved.")}/>
-          Also by email <span class="hint">(once email is switched on for Compass; nothing is sent yet)</span></label>
-      </div></div>
+    const savedHere = (where) => saved && saved.where === where
+      && html`<span class="pref-saved" role="status">Saved ✓</span>`;
+    const choices = sectors.length ? sectors : p.sectors;
+    const filters = p.directory.saved_filters;
+    const TAB_WORDS = {actors: "Organizations", hubs: "Hubs", people: "People", events: "Events"};
+
+    return html`<div class="pref-cards">
+      ${note.error && html`<${Notice} error=${note.error}/>`}
+
+      <div class="card pad pref-card">
+        <div class="pref-card-head"><div><h3>Your focus</h3>
+          <p>What you work on. Compass uses it to tailor what you see; it is yours alone.</p></div>${savedHere("focus")}</div>
+        <${Group} title="Sectors you follow"
+          help=${p.sectors.length ? `${p.sectors.length} selected` : "Choose the sectors you work in."}>
+          <div class="pref-pills">
+            ${choices.map(s => html`<button key=${s} type="button" class="pref-pill" aria-pressed=${p.sectors.includes(s) ? "true" : "false"}
+              onClick=${() => save({sectors: toggleList(p.sectors, s)}, "focus")}>
+              <span class="pref-pill-mark" aria-hidden="true">${p.sectors.includes(s) ? "✓" : "+"}</span>${s}</button>`)}
+            ${choices.length === 0 && html`<span class="hint">No sectors to choose from yet.</span>`}
+          </div>
+          ${p.sectors.length > 0 && html`<button type="button" class="link-like pref-clear"
+            onClick=${() => save({sectors: []}, "focus")}>Clear all</button>`}
+        <//>
+      </div>
+
+      <div class="card pad pref-card">
+        <div class="pref-card-head"><div><h3>Platform settings</h3>
+          <p>How Compass looks and behaves for you. The shared records stay the same for everyone.</p></div>
+          ${savedHere("platform")}</div>
+
+        <${Group} title="Ecosystem Directory" help="Where it opens, and the filters you saved there.">
+          <div class="pref-line"><span id="pref-opens" class="pref-label">Opens on</span>
+            <div class="pref-seg" role="group" aria-labelledby="pref-opens">
+              ${[["all", "All Records"], ["mine", "My Records"]].map(([v, l]) => html`<button key=${v} type="button"
+                aria-pressed=${p.directory.default_view === v ? "true" : "false"}
+                onClick=${() => p.directory.default_view !== v && save({directory: {default_view: v}}, "platform")}>${l}</button>`)}
+            </div></div>
+          <div class="pref-line pref-line-top"><span class="pref-label">Saved filters</span>
+            ${filters.length === 0 ? html`<span class="hint">None yet. Save one from the Directory's filters.</span>`
+              : html`<div class="pref-pills">${filters.map(f => html`<span key=${f.tab + f.name} class="pref-filter">
+                  ${f.name}<small>${TAB_WORDS[f.tab] || f.tab}</small>
+                  <button type="button" aria-label=${`Remove the saved filter ${f.name}`}
+                    onClick=${() => save({directory: {saved_filters: filters.filter(x => x !== f)}}, "platform")}>×</button>
+                </span>`)}</div>`}
+          </div>
+        <//>
+
+        <${Group} title="Dashboard" help="The parts of the Dashboard you see.">
+          <div class="pref-rows">
+            ${d.dashboard_sections.map(s => html`<div key=${s} class="pref-row">
+              <span id=${`pref-dash-${s}`}>${SECTION_WORDS[s] || s}</span>
+              <${Switch} labelledBy=${`pref-dash-${s}`} checked=${!p.dashboard.hidden.includes(s)}
+                onChange=${() => save({dashboard: {hidden: toggleList(p.dashboard.hidden, s)}}, "platform")}/>
+            </div>`)}
+          </div>
+        <//>
+
+        <${Group} title="Notifications" help="What the bell tells you about.">
+          <div class="pref-rows pref-rows-one">
+            ${Object.entries(d.notification_kinds).map(([k, words]) => html`<div key=${k} class="pref-row">
+              <span id=${`pref-note-${k}`}>${words}</span>
+              <${Switch} labelledBy=${`pref-note-${k}`} checked=${!!p.notifications[k]}
+                onChange=${(on) => save({notifications: {[k]: on}}, "platform")}/>
+            </div>`)}
+            <div class="pref-row">
+              <span id="pref-note-email">Also send them by email <span class="pref-badge">Not sent yet</span></span>
+              <${Switch} labelledBy="pref-note-email" checked=${!!p.notifications.email}
+                onChange=${(on) => save({notifications: {email: on}}, "platform")}/>
+            </div>
+          </div>
+        <//>
+      </div>
     </div>`;
   }
 

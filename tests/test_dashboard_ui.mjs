@@ -207,7 +207,21 @@ test('the original Dashboard gains Notifications and Pending Deletion, and My pr
   assert.match(src, /get\("\/api\/account\/preferences"\)/);
   assert.match(src, /window\.addEventListener\("compass:preferences", changed\)/);
   const profile = fs.readFileSync(new URL('../frontend/accounts.js', import.meta.url), 'utf8');
-  assert.match(profile, /<label>Dashboard shows<\/label>/);
+  assert.match(profile, /<\$\{Group\} title="Dashboard" help="The parts of the Dashboard you see.">/);
   for (const words of ['Counts at the top', 'My Spending This Month', 'Notifications', 'Pending Deletion', 'Recent Maps',
     'Recent Requests', 'Recent Directory Activity']) assert.ok(profile.includes(`"${words}"`), words);
+});
+
+test('My profile keeps your focus apart from the platform settings, with fitting controls', () => {
+  const src = fs.readFileSync(new URL('../frontend/accounts.js', import.meta.url), 'utf8');
+  const prefs = src.slice(src.indexOf('function PreferencesCard('), src.indexOf('// -- Audit History'));
+  assert.ok(prefs.indexOf('<h3>Your focus</h3>') < prefs.indexOf('<h3>Platform settings</h3>'));
+  for (const title of ['Sectors you follow', 'Ecosystem Directory', 'Dashboard', 'Notifications']) {
+    assert.ok(prefs.includes(`title="${title}"`), title);
+  }
+  assert.match(prefs, /class="pref-pill" aria-pressed=/);            // sectors: pills
+  assert.match(prefs, /class="pref-seg" role="group"/);              // opens on: a two-way switch
+  assert.match(src, /role="switch" aria-checked=/);                  // dashboard and notifications: switches
+  assert.ok(!/type="checkbox"|type="radio"/.test(prefs), 'no plain checkboxes or radio buttons left');
+  assert.match(prefs, /setD\(before\);/);                            // a refused change is undone
 });
