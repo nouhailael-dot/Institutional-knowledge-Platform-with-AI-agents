@@ -225,46 +225,6 @@ export function createAccountPages({html, useState, useEffect}) {
     </div>`;
   }
 
-  function MyWorkPage() {
-    const [mine, setMine] = useState(null);
-    const [history, setHistory] = useState(null);
-    const [error, setError] = useState("");
-    useEffect(() => {
-      call("/api/account/mine", "GET").then(setMine).catch(e => setError(e.message));
-      call("/api/account/review-history", "GET").then(d => setHistory(d.history)).catch(e => setError(e.message));
-    }, []);
-    const list = (items, empty) => !items ? html`<p class="hint">Loading…</p>`
-      : items.length === 0 ? html`<p class="hint">${empty}</p>`
-      : html`<table class="grid"><thead><tr><th>Name</th><th>Type</th><th>How</th><th>Since</th></tr></thead>
-          <tbody>${items.map(i => html`<tr key=${i.entity_type + i.entity_id}>
-            <td>${i.name || html`<span class="hint">${i.entity_id}</span>`}
-              ${i.note && html`<div class="hint" style=${{margin: "2px 0 0"}}>${i.note}</div>`}</td>
-            <td>${TYPE_WORDS[i.entity_type] || i.entity_type}</td>
-            <td>${ORIGIN_WORDS[i.origin] || i.origin}</td><td>${day(i.recorded_at)}</td></tr>`)}</tbody></table>`;
-    const section = (title, help, body) => html`<div class="card pad" style=${{marginTop: "14px", overflowX: "auto"}}>
-      <strong>${title}</strong><p class="hint" style=${{margin: "4px 0 10px"}}>${help}</p>${body}</div>`;
-    return html`<div class="accounts-page">
-      <h1 class="hero-h" style=${{marginBottom: "6px"}}>My work</h1>
-      <p class="hint" style=${{marginTop: 0}}>What you brought into Compass and what you decided. Records stay
-        shared with the whole team; this page only lists yours. Work from before accounts shows its
-        owner as Not recorded.</p>
-      ${error && html`<div class="whynot" role="alert">${error}</div>`}
-      ${section("My Records", "Organizations, people and events you added to the shared database.",
-        list(mine?.records, "None yet."))}
-      ${section("My Requests", "Discovery and update requests you created in Monitor and Update.",
-        list(mine?.requests, "None yet."))}
-      ${section("My Maps", "Maps you started in Explore and Map.", list(mine?.maps, "None yet."))}
-      ${section("My Imports", "Imports you sent through Data Feed (and maps you saved to the database).",
-        list(mine?.imports, "None yet."))}
-      ${section("My Review History", "Your decisions in Review Results and your changes in the Directory, newest first.",
-        !history ? html`<p class="hint">Loading…</p>` : history.length === 0 ? html`<p class="hint">None yet.</p>`
-        : html`<table class="grid"><thead><tr><th>When</th><th>What</th><th>Record</th></tr></thead>
-          <tbody>${history.map(h => html`<tr key=${h.audit_id}><td>${moment(h.occurred_at)}</td>
-            <td>${actionWords(h)}</td>
-            <td>${h.detail?.record_name || (h.entity_type ? `${TYPE_WORDS[h.entity_type] || h.entity_type} ${h.entity_id || ""}` : "—")}</td>
-            </tr>`)}</tbody></table>`)}
-    </div>`;
-  }
 
   // -- Notifications: the bell in the header (Phase 4) --------------------------------------
   function NotificationBell({onNavigate}) {
@@ -469,39 +429,6 @@ export function createAccountPages({html, useState, useEffect}) {
       <td>${{manual: "Started by hand", run_now: "Run now", scheduled: "Scheduled"}[o.trigger] || o.trigger}</td>
       <td>${o.basis}</td><td class="num">${usd(o.cost_usd)}</td></tr>`)}</tbody></table>`;
 
-  function UsagePage() {
-    const [d, setD] = useState(null);
-    const [error, setError] = useState("");
-    useEffect(() => { call("/api/account/usage", "GET").then(setD).catch(e => setError(e.message)); }, []);
-    if (!d) return html`<p class="hint">${error || "Loading your usage…"}</p>`;
-    const m = d.this_month;
-    const stat = (label, value, note) => html`<div class="card pad usage-stat"><span class="hint">${label}</span>
-      <strong>${value}</strong>${note && html`<span class="hint">${note}</span>`}</div>`;
-    return html`<div class="accounts-page">
-      <h1 class="hero-h" style=${{marginBottom: "6px"}}>My usage</h1>
-      <p class="hint" style=${{marginTop: 0}}>What your searches, runs and questions cost, from the amounts Compass
-        recorded when they ran. A cost marked "in progress", "partial run" or "estimate" is not final yet.</p>
-      <div class="usage-stats">
-        ${stat(`Spent in ${monthName(d.month)}`, usd(m.cost_usd), m.not_final_usd ? `${usd(m.not_final_usd)} not final yet` : "")}
-        ${stat("Searches and agent runs", m.operations || 0)}
-        ${stat("Maps started", m.maps_created || 0)}
-        ${stat("Records added", m.records_created || 0)}
-        ${stat("Review decisions", m.review_decisions || 0)}
-      </div>
-      ${Object.keys(m.by_feature || {}).length > 0 && html`<div class="card pad" style=${{marginTop: "14px"}}>
-        <strong>This month by feature</strong><ul class="dash-list">
-        ${Object.entries(m.by_feature).map(([f, v]) => html`<li key=${f}>${f}<span class="hint"> · ${v.operations} · ${usd(v.cost_usd)}</span></li>`)}</ul></div>`}
-      <div class="card pad" style=${{marginTop: "14px", overflowX: "auto"}}><strong>Monthly history</strong>
-        ${d.history.length === 0 ? html`<p class="hint">Nothing yet.</p>` : html`<table class="grid" style=${{marginTop: "8px"}}>
-          <thead><tr><th>Month</th><th class="num">Spent</th><th class="num">Runs</th><th class="num">Maps</th>
-            <th class="num">Records added</th><th class="num">Review decisions</th></tr></thead>
-          <tbody>${d.history.map(h => html`<tr key=${h.month}><td>${monthName(h.month)}</td><td class="num">${usd(h.cost_usd)}</td>
-            <td class="num">${h.operations || 0}</td><td class="num">${h.maps_created || 0}</td>
-            <td class="num">${h.records_created || 0}</td><td class="num">${h.review_decisions || 0}</td></tr>`)}</tbody></table>`}</div>
-      <div class="card pad" style=${{marginTop: "14px", overflowX: "auto"}}><strong>Recent paid operations</strong>
-        <div style=${{marginTop: "8px"}}>${opsTable(d.recent)}</div></div>
-    </div>`;
-  }
 
   function CostsPage() {
     const [d, setD] = useState(null);
@@ -565,8 +492,8 @@ export function createAccountPages({html, useState, useEffect}) {
     </div>`;
   }
 
-  return {ProfilePage, UsersPage, MyWorkPage, DashboardPage, NotificationBell, PreferencesCard, AuditPage,
-          UsagePage, CostsPage, PendingDeletionPage};
+  return {ProfilePage, UsersPage, DashboardPage, NotificationBell, PreferencesCard, AuditPage,
+          CostsPage, PendingDeletionPage};
 }
 
 function activityWords(entry) {

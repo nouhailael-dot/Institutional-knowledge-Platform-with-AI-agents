@@ -817,14 +817,14 @@ import {createReviewPage} from "./review.js?v=20261112g";
 import {createDiscoveryPage} from "./discovery.js?v=20261123a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261113b";
-import {createAccountPages} from "./accounts.js?v=20261123a";
+import {createAccountPages} from "./accounts.js?v=20261123b";
 import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261123a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
 const Discovery=createDiscoveryPage({html,useState,useEffect,useRef});
 const DataFeed=createDataFeedPage({html,useState,useEffect,Fragment:React.Fragment});
-const {ProfilePage,UsersPage,MyWorkPage,NotificationBell,AuditPage,UsagePage,CostsPage,PendingDeletionPage}=createAccountPages({html,useState,useEffect});
+const {ProfilePage,UsersPage,NotificationBell,AuditPage,CostsPage,PendingDeletionPage}=createAccountPages({html,useState,useEffect});
 // Dates are typed and shown as MM/DD/YYYY whatever the computer's language.
 const DateInput=createDateInput({html,useState,useEffect});
 const Dashboard=createDashboardPage({html,useState,useEffect});
@@ -3103,20 +3103,19 @@ const NAV_ICONS={
   discovery:svg(html`<path d="M4 19.5l5-6 4 3 7-9"/><path d="M15 7.5h5v5"/>`),
   datafeed:svg(html`<path d="M12 15.5V4M7.5 8.5 12 4l4.5 4.5M4.5 15.5v4h15v-4"/>`),
   review:svg(html`<path d="M7 3.5h7l4 4v13H7z"/><path d="M14 3.5v4h4M10 12.5h5M10 16h5"/>`),
-  mywork:svg(html`<path d="M5 4.5h14v16H5z"/><path d="M8.5 9h7M8.5 12.5h7M8.5 16h4"/>`),
-  usage:svg(html`<path d="M4 19.5h16"/><path d="M7 16V11M12 16V6M17 16v-3"/>`),
   costs:svg(html`<circle cx="12" cy="12" r="8.5"/><path d="M14.5 9.2c-.5-.9-1.5-1.4-2.6-1.4-1.6 0-2.7.9-2.7 2.1 0 2.9 5.6 1.6 5.6 4.3 0 1.3-1.2 2.2-2.9 2.2-1.2 0-2.3-.6-2.8-1.6M12 6.3v1.5M12 16.7v1.5"/>`),
   audit:svg(html`<path d="M12 3.5 4.5 6.5v5c0 4.5 3.2 7.8 7.5 9 4.3-1.2 7.5-4.5 7.5-9v-5z"/><path d="M9 12l2 2 4-4"/>`),
   users:svg(html`<circle cx="9" cy="8" r="3.5"/><path d="M3 20c.6-3.4 3-5.5 6-5.5s5.4 2.1 6 5.5"/><path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.6.8 2.7 2.5 3 5.2"/>`),
 };
 // Pages outside the main menu: My profile (from the sidebar name). Users joins the
 // menu for people who can manage users.
-const EXTRA_PAGES={profile:"My profile",users:"Users",mywork:"My work",audit:"Audit History",usage:"My usage",costs:"Usage and Costs",
+// My work and My usage were removed (GHUS, 23 Nov 2026): the same things show across the platform.
+const EXTRA_PAGES={profile:"My profile",users:"Users",audit:"Audit History",costs:"Usage and Costs",
   deletions:"Pending Deletion"};
 // What each menu entry needs (individual accounts). The server refuses the rest anyway.
 const NAV_NEEDS={dashboard:"dashboard.view",ask:"ask.use",map:"maps.view",browse:"records.view",
-  discovery:"requests.view",datafeed:"datafeed.import",review:"review.view",mywork:"dashboard.view",
-  users:"users.manage",audit:"audit.view_all",usage:"usage.view_own",costs:"usage.view_all",
+  discovery:"requests.view",datafeed:"datafeed.import",review:"review.view",
+  users:"users.manage",audit:"audit.view_all",costs:"usage.view_all",
   deletions:"records.delete_permanent"};
 // Hide every control marked data-needs="<permission>" the person does not hold.
 function applyPermissions(account){
@@ -3154,7 +3153,7 @@ function App(){
   CURRENT_ACCOUNT=account;
   const canManage=!!account&&account.permissions.includes("users.manage");
   const nav=[...NAV.filter(([id])=>allowed(id)),
-    ...(account?[["mywork","My work"],["usage","My usage"],["users","Users"],["costs","Usage and Costs"],
+    ...(account?[["users","Users"],["costs","Usage and Costs"],
       ["audit","Audit History"]].filter(([id])=>allowed(id)):[])];
   // A page the person may not open falls back to the first one they may.
   useEffect(()=>{if(checked&&!allowed(tab)&&!["profile"].includes(tab)&&nav.length) setTab(nav[0][0]);},[checked,account,tab]);
@@ -3212,9 +3211,7 @@ ${name}`, cadence:"once", edited:true,
     ${allowed("datafeed")&&html`<div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>`}
     ${allowed("review")&&html`<div style=${{display:tab==="review"?"block":"none"}}><${PageBoundary} name="Review Results"><${Review}/><//></div>`}
     ${account&&tab==="profile"&&html`<div><${PageBoundary} name="My profile"><${ProfilePage} onAccount=${loadAccount}/><//></div>`}
-    ${account&&allowed("mywork")&&tab==="mywork"&&html`<div><${PageBoundary} name="My work"><${MyWorkPage}/><//></div>`}
     ${account&&allowed("users")&&tab==="users"&&html`<div><${PageBoundary} name="Users"><${UsersPage} account=${account}/><//></div>`}
-    ${account&&allowed("usage")&&tab==="usage"&&html`<div><${PageBoundary} name="My usage"><${UsagePage}/><//></div>`}
     ${account&&allowed("costs")&&tab==="costs"&&html`<div><${PageBoundary} name="Usage and Costs"><${CostsPage}/><//></div>`}
     ${account&&allowed("audit")&&tab==="audit"&&html`<div><${PageBoundary} name="Audit History"><${AuditPage}/><//></div>`}
     ${account&&allowed("deletions")&&tab==="deletions"&&html`<div><${PageBoundary} name="Pending Deletion"><${PendingDeletionPage} onNavigate=${setTab}/><//></div>`}
