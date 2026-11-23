@@ -747,6 +747,35 @@ def test_import_history_lists_only_imports_stored_in_the_directory():
     assert [i["run_id"] for i in service.history()] == ["new-directory"]
 
 
+def test_cards_saved_from_explore_and_map_are_not_listed_as_imports():
+    """GHUS, 23 Nov 2026: a map save goes straight to the Directory; it is not an import."""
+    from datetime import datetime
+
+    from src.datafeed import service as module
+
+    def row(run, meta):
+        return (run, "event", datetime(2026, 11, 23), {"admission": "directory", **meta},
+                {}, 0, 0, 0, 0, 0, False)
+
+    class Conn:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params):
+            class R:
+                def fetchall(_):
+                    return [row("spreadsheet", {"import_name": "Spring list", "method": "upload"}),
+                            row("typed", {"import_name": "Manual entry 11/23/2026", "method": "manual"}),
+                            row("map-save", {"import_name": "Explore and Map: African Diaspora events",
+                                             "method": "map"}),
+                            row("older-map-save", {"import_name": "Explore and Map: Water labs"})]
+            return R()
+
+    service = module.DataFeedService(bridge=None, connect=lambda: Conn())
+    assert [i["run_id"] for i in service.history()] == ["spreadsheet", "typed"]
+    from src.map_agent.save import import_name
+    assert import_name("Anything").startswith(module.MAP_IMPORT_PREFIX)      # the two stay in step
+
+
 def test_import_history_shows_when_the_database_cannot_be_reached(monkeypatch, tmp_path):
     """5 Nov 2026: a connection timeout made the tab an error page; it now shows the
     last list read (or none, so the page shows its example import) and says so."""
