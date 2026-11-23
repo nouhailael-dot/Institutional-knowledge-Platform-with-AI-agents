@@ -143,10 +143,10 @@ def main(argv=None) -> int:
                                  confirm_email=email["admin"], site_url=SITE, live=True)
         check("invitation_issued_by_supabase", result.sent, result.lines)
         r = client().post("/api/auth/accept", headers=H, json={"token_hash": links[(email["admin"], "invite")],
-                                                               "password": pw["admin"], "full_name": "Check Admin (synthetic)"})
+                                                               "password": pw["admin"], "email": email["admin"], "full_name": "Check Admin (synthetic)"})
         check("invitation_link_verified_and_password_set", r.status_code == 200, r.text[:200])
         r = client().post("/api/auth/accept", headers=H, json={"token_hash": links[(email["admin"], "invite")],
-                                                               "password": pw["admin"]})
+                                                               "password": pw["admin"], "email": email["admin"]})
         check("invitation_link_single_use", r.status_code == 400, r.text[:200])
         admin, r = sign_in("admin")
         check("login", r.status_code == 200, r.text[:200])
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
                            json={"email": email[role], "full_name": f"Check {role} (synthetic)", "role": role})
             check(f"admin_invites_{role}", r.status_code == 200, r.text[:200])
             r = client().post("/api/auth/accept", headers=H, json={"token_hash": links[(email[role], "invite")],
-                                                                   "password": pw[role]})
+                                                                   "password": pw[role], "email": email[role]})
             check(f"{role}_accepts", r.status_code == 200, r.text[:200])
         editor, _ = sign_in("editor")
         viewer, _ = sign_in("viewer")

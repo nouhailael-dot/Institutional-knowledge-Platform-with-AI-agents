@@ -125,7 +125,7 @@ def main(argv=None) -> int:
                                  confirm_email="ana.admin@example.test", site_url=SITE, live=True)
         check("bootstrap_sends_one_invitation", result.sent, result.lines)
         r = client().post("/api/auth/accept", headers=H, json={
-            "token_hash": link("ana.admin@example.test"), "password": PASSWORD,
+            "token_hash": link("ana.admin@example.test"), "password": PASSWORD, "email": "ana.admin@example.test",
             "full_name": "Ana Admin (synthetic)", "kind": "invite"})
         check("admin_accepts", r.status_code == 200, r.text[:200])
         admin = sign_in("ana.admin@example.test")
@@ -138,7 +138,7 @@ def main(argv=None) -> int:
             r = admin.post("/api/admin/invitations", headers=H, json={"email": email, "full_name": name, "role": role})
             check(f"invite_{role}", r.status_code == 200, r.text[:200])
             r = client().post("/api/auth/accept", headers=H, json={
-                "token_hash": link(email), "password": PASSWORD, "full_name": name,
+                "token_hash": link(email), "password": PASSWORD, "email": email, "full_name": name,
                 "kind": "invite"})
             check(f"{role}_accepts", r.status_code == 200, r.text[:200])
             people[role] = sign_in(email)
@@ -290,7 +290,7 @@ def main(argv=None) -> int:
         second = admin.post("/api/admin/invitations", headers=H, json={
             "email": "eda.editor@example.test", "full_name": "Eda Editor (synthetic)", "role": "editor"})
         client().post("/api/auth/accept", headers=H, json={"token_hash": link("eda.editor@example.test"),
-                                                           "password": PASSWORD, "full_name": "Eda Editor (synthetic)", "kind": "invite"})
+                                                           "password": PASSWORD, "email": "eda.editor@example.test", "full_name": "Eda Editor (synthetic)", "kind": "invite"})
         eda = sign_in("eda.editor@example.test")
         edits = [a for a in actors if a["id"] not in (target["id"], victim["id"])][:6]
         barrier = threading.Barrier(2)

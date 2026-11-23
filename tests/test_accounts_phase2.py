@@ -124,19 +124,41 @@ def test_an_admin_invites_and_the_person_accepts_with_their_own_password(world):
     assert _client(world).post("/api/auth/login", json={"email": email, "password": STRONG},
                                headers=H).status_code == 401
     person = _client(world)
-    weak = person.post("/api/auth/accept", json={"token_hash": mail["token_hash"], "password": "short"}, headers=H)
+    weak = person.post("/api/auth/accept", json={"token_hash": mail["token_hash"], "password": "short",
+                                             "email": email}, headers=H)
     assert weak.status_code == 422                       # refused before the single-use link is spent
     done = person.post("/api/auth/accept", json={"token_hash": mail["token_hash"], "password": STRONG,
-                                                 "full_name": "Bilal B. Editor"}, headers=H)
+                                                 "email": email.upper(), "full_name": "Bilal B. Editor"},
+                       headers=H)
     assert done.status_code == 200, done.text
     assert done.json()["account"]["role"] == "editor"
     assert person.get("/api/review/candidates").json() == {"who": "Bilal B. Editor"}
-    again = _client(world).post("/api/auth/accept", json={"token_hash": mail["token_hash"], "password": STRONG},
+    again = _client(world).post("/api/auth/accept", json={"token_hash": mail["token_hash"], "password": STRONG,
+                                                      "email": email},
                                 headers=H)
     assert again.status_code == 400 and "already used" in again.json()["detail"]
     assert _client(world).post("/api/auth/login", json={"email": email, "password": STRONG},
                                headers=H).status_code == 200
     assert {"invitation.created", "invitation.accepted"} <= set(_actions(user_id))
+
+
+def test_the_invitation_page_asks_for_the_invited_email(world):
+    """23 Nov 2026: the page asks for the email instead of the name, and it must match."""
+    admin = _signed_in(world, _member(world, "admin"))
+    email = _email()
+    assert _invite(admin, email, "viewer").status_code == 200
+    link = world["gotrue"].last_link(email, "invite")
+    missing = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG}, headers=H)
+    assert missing.status_code == 422 and "email" in missing.json()["detail"]   # the link is not spent
+    other = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG,
+                                                          "email": _email()}, headers=H)
+    assert other.status_code == 422 and "different email" in other.json()["detail"]
+    # Refused before the password was set: the invitation stays open and nobody can sign in.
+    assert world["gotrue"].users[email]["password"] is None
+    row = next(u for u in admin.get("/api/admin/users").json()["users"] if u["email"] == email)
+    assert row["status"] == "invited"
+    page = _client(world).get("/accept").text
+    assert 'id="accept-email" type="email"' in page and "accept-name" not in page
 
 
 def test_duplicate_and_invalid_invitations_are_refused_before_any_email(world):
@@ -161,7 +183,8 @@ def test_an_expired_invitation_cannot_be_accepted_but_can_be_resent(world):
     link = world["gotrue"].last_link(email, "invite")
     _sql("UPDATE compass.invitation SET created_at = now() - interval '9 days', "
          "expires_at = now() - interval '2 days' WHERE invitation_id = %s", invitation_id)
-    late = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG}, headers=H)
+    late = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG, "email": email},
+                               headers=H)
     assert late.status_code == 403 and "expired" in late.json()["detail"]
     row = next(u for u in admin.get("/api/admin/users").json()["users"] if u["user_id"] == user_id)
     assert row["status_label"] == "invitation expired"
@@ -183,7 +206,8 @@ def test_a_revoked_invitation_cannot_be_accepted(world):
     link = world["gotrue"].last_link(email, "invite")
     assert admin.post(f"/api/admin/invitations/{r.json()['invitation']['invitation_id']}/revoke",
                       headers=H).status_code == 200
-    refused = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG}, headers=H)
+    refused = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG, "email": email},
+                                  headers=H)
     assert refused.status_code == 403 and "withdrawn" in refused.json()["detail"]
     # The invitation is checked before the password is set, so none was: sign-in fails.
     assert _client(world).post("/api/auth/login", json={"email": email, "password": STRONG},
@@ -387,7 +411,8 @@ def test_the_first_administrator_bootstrap(world):
     twice = bootstrap_admin(store, auth, email=_email(), full_name="Second", confirm_email=None, site_url=SITE)
     assert not twice.ready and "still open" in twice.lines[-1]
     link = world["gotrue"].last_link(email, "invite")
-    accepted = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG}, headers=H)
+    accepted = _client(world).post("/api/auth/accept", json={"token_hash": link, "password": STRONG, "email": email},
+                                   headers=H)
     assert accepted.status_code == 200 and accepted.json()["account"]["role"] == "admin"
     after = bootstrap_admin(store, auth, email=_email(), full_name="Third", confirm_email=None, site_url=SITE)
     assert not after.ready and "already has an administrator" in after.lines[-1]

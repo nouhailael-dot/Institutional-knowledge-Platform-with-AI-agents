@@ -102,6 +102,9 @@ class AcceptInvitation(BaseModel):
     token_hash: str = Field(min_length=8, max_length=512)
     password: str = Field(min_length=1, max_length=512)
     full_name: str = Field(default="", max_length=200)
+    # The address the invitation was sent to (23 Nov 2026). The page asks for it
+    # instead of the name, which the administrator already gave; it must match.
+    email: str = Field(default="", max_length=254)
     kind: str = Field(default="invite", pattern="^(invite|recovery)$")
 
 
@@ -120,7 +123,8 @@ def _signed_in_response(request: Request, session, account: Account, body: dict 
     return _secured(response)
 
 
-def _accept(request: Request, session, *, password: str, full_name: str, kind: str):
+def _accept(request: Request, session, *, password: str, full_name: str, kind: str,
+            email: str | None = None):
     store = accounts_store()
     profile = store.user(session.user_id)
     if profile is None or profile["status"] != "invited":
@@ -130,6 +134,14 @@ def _accept(request: Request, session, *, password: str, full_name: str, kind: s
                detail={"reason": "no open invitation", "link": kind})
         _fail(409 if profile else 403, "This invitation was already used or is not valid. Sign in instead."
               if profile else "This invitation is not valid.")
+    if email is not None and email != clean_email(profile["email"]):
+        # Checked before the password is set, so the invitation stays open.
+        auth_service().sign_out(session.access_token)
+        _audit(action="invitation.refused", account=None, label=profile["email"], client=_client(request),
+               entity_type="user", entity_id=session.user_id,
+               detail={"reason": "email does not match the invitation", "link": kind})
+        _fail(422, "This invitation was sent to a different email address. Ask a Compass "
+                   "administrator to send you a new invitation.")
     problem = password_problem(password, email=profile["email"], name=full_name or profile["full_name"])
     if problem:
         _fail(422, problem)
@@ -156,6 +168,9 @@ def accept_invitation(payload: AcceptInvitation, request: Request):
         _fail(429, "Too many attempts. Wait a few minutes and try again.")
     if payload.full_name and clean_name(payload.full_name) is None:
         _fail(422, "Enter your name (at most 120 characters).")
+    email = clean_email(payload.email)       # before the single-use link is spent
+    if email is None:
+        _fail(422, "Enter the email address this invitation was sent to.")
     if len(payload.password) < 12:          # before the single-use link is spent
         _fail(422, password_problem(payload.password) or "Choose a longer password.")
     try:
@@ -163,7 +178,7 @@ def accept_invitation(payload: AcceptInvitation, request: Request):
     except AuthError as exc:
         _fail(exc.status, exc.message)
     return _accept(request, session, password=payload.password, full_name=payload.full_name,
-                   kind=payload.kind)
+                   kind=payload.kind, email=email)
 
 
 @router.post("/api/auth/recover")
