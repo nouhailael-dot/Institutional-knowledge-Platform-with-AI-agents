@@ -37,9 +37,11 @@ import binascii
 import hashlib
 import hmac
 import os
+import re
 import secrets
 import time
 from collections import deque
+from pathlib import Path
 from threading import Lock
 from urllib.parse import urlsplit
 
@@ -55,10 +57,53 @@ MAX_FAILURES_PER_NAME = 5
 MAX_FAILURES_PER_CLIENT = 20
 _MAX_TRACKED = 5000
 
+FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
+# The pages whose inline <script> blocks may run (served unchanged from disk).
+SCRIPT_PAGES = ("index.html", "auth.html")
+# The only outside origin pages load code from (React, htm and marked, by import map).
+SCRIPT_ORIGINS = ("https://esm.sh",)
+
+
+def inline_script_hashes(pages=SCRIPT_PAGES, folder: Path = FRONTEND) -> list[str]:
+    """'sha256-…' of each inline <script> in the pages, so exactly those run and no
+    injected one does (Ask's answers are rendered as HTML)."""
+    found: list[str] = []
+    for name in pages:
+        try:
+            text = (folder / name).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for body in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", text, flags=re.S | re.I):
+            digest = base64.b64encode(hashlib.sha256(body.encode("utf-8")).digest()).decode()
+            if f"'sha256-{digest}'" not in found:
+                found.append(f"'sha256-{digest}'")
+    return found
+
+
+def content_security_policy(hashes=None) -> str:
+    hashes = inline_script_hashes() if hashes is None else hashes
+    return "; ".join([
+        "default-src 'self'",
+        "script-src " + " ".join(["'self'", *SCRIPT_ORIGINS, *hashes]),
+        "style-src 'self' 'unsafe-inline'",      # inline <style> and style attributes
+        "img-src 'self' data:",
+        "font-src 'self' data:",
+        "connect-src " + " ".join(["'self'", *SCRIPT_ORIGINS]),
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'self'",
+    ])
+
+
+# 23 Nov 2026 security check: HSTS (browsers use HTTPS only, for a year) and a
+# Content-Security-Policy (only Compass's own scripts and esm.sh run).
 SECURITY_HEADERS = {
     "X-Frame-Options": "SAMEORIGIN",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Content-Security-Policy": content_security_policy(),
 }
 
 

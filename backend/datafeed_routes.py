@@ -91,12 +91,18 @@ def preview(preview_id: str):
     return _call(datafeed_service().preview, preview_id)
 
 
+def directory_changed() -> None:
+    """Set by backend.app: the Directory's cached lists are read again."""
+
+
 @router.post("/previews/{preview_id}/confirm")
 def confirm(preview_id: str, body: Confirmation):
-    return _call(datafeed_service().confirm, preview_id, import_name=body.import_name,
-                 accept_left_out=body.accept_left_out, uploaded_by=current_user(),
-                 attest_source=body.attest_source, admission=body.admission,
-                 attest_authorized=body.attest_authorized, ai_enrichment=body.ai_enrichment)
+    answer = _call(datafeed_service().confirm, preview_id, import_name=body.import_name,
+                   accept_left_out=body.accept_left_out, uploaded_by=current_user(),
+                   attest_source=body.attest_source, admission=body.admission,
+                   attest_authorized=body.attest_authorized, ai_enrichment=body.ai_enrichment)
+    directory_changed()
+    return answer
 
 
 @router.get("/history")

@@ -814,11 +814,11 @@ import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261112g";
-import {createDiscoveryPage} from "./discovery.js?v=20261113a";
+import {createDiscoveryPage} from "./discovery.js?v=20261123a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261113b";
 import {createAccountPages} from "./accounts.js?v=20261120c";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261120c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261123a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
 const Review=createReviewPage({html,useState,useEffect,useRef});
@@ -1070,7 +1070,7 @@ function SessionFoot({account,onProfile}){
   return html`<div class="sidebar-foot">
     <button class="session-name" type="button" title="My profile" onClick=${onProfile}>
       <strong>${account.full_name}</strong></button>
-    <span>${account.role_label||"No role"}</span>
+    <span style=${{marginLeft:"8px"}}>${account.role_label||"No role"}</span>
     <button class="example" type="button" style=${{display:"block",marginTop:"10px"}} disabled=${leaving}
       onClick=${signOut}>${leaving?"Signing out…":"Sign out"}</button>
   </div>`;
@@ -1594,11 +1594,11 @@ function useFocus(focus,rows,setSel){
     const row=rows.find(r=>String(r.id)===String(focus.id)); if(row) setSel(row);},[focus,rows]);
 }
 
-function Actors({focus}){
+function Actors({focus,visit}){
   const [version,setVersion]=useState(0);
   const [notice,setNotice]=useState(null);
-  const data=useOnce(()=>api("/api/browse/actors"),[version]);
-  const peopleData=useOnce(()=>api("/api/browse/people").catch(()=>({people:[]})));
+  const data=useOnce(()=>api("/api/browse/actors"),[version,visit]);
+  const peopleData=useOnce(()=>api("/api/browse/people").catch(()=>({people:[]})),[visit]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.actors,setSel);
   if(!data) return html`<${Loading}/>`;
@@ -1677,12 +1677,12 @@ function Actors({focus}){
     ]}/>`;
 }
 
-function Hubs(){
+function Hubs({visit}){
   const [version,setVersion]=useState(0);
   const [notice,setNotice]=useState(null);
   const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
-  const data=useOnce(()=>api("/api/browse/hubs"),[version]);
-  const actorsData=useOnce(()=>api("/api/browse/actors"));
+  const data=useOnce(()=>api("/api/browse/hubs"),[version,visit]);
+  const actorsData=useOnce(()=>api("/api/browse/actors"),[visit]);
   const [sel,setSel]=useState(null);
   if(!data) return html`<${Loading}/>`;
   if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
@@ -1776,11 +1776,11 @@ function eventCity(event){
   // ("Gaylord Palms Resort") may be a venue, so it is not taken as a city.
   return parts.length>1&&cityLike(parts[parts.length-2])?parts[parts.length-2]:null;
 }
-function Events({focus}){
+function Events({focus,visit}){
   const [version,setVersion]=useState(0);
   const [notice,setNotice]=useState(null);
   const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
-  const data=useOnce(()=>api("/api/browse/events"),[version]);
+  const data=useOnce(()=>api("/api/browse/events"),[version,visit]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.events,setSel);
   if(!data) return html`<${Loading}/>`;
@@ -1832,11 +1832,11 @@ function Events({focus}){
     ]}/>`;
 }
 
-function People({focus}){
+function People({focus,visit}){
   const [version,setVersion]=useState(0);
   const [notice,setNotice]=useState(null);
   const changed=msg=>{setSel(null);setNotice(msg);setVersion(v=>v+1);};
-  const data=useOnce(()=>api("/api/browse/people"),[version]);
+  const data=useOnce(()=>api("/api/browse/people"),[version,visit]);
   const [sel,setSel]=useState(null);
   useFocus(focus,data?.people,setSel);
   if(!data) return html`<${Loading}/>`;
@@ -3129,7 +3129,10 @@ function BuildMap({carried,onCarriedChange,onDiscovery}){
 }
 
 /* ------------------------------------------------------------------ App */
-function Browse(){
+/* ``visit`` grows each time the Directory is opened, and its lists are read again
+   (23 Nov 2026): a record verified in Review Results or saved from a map shows
+   without reloading the browser. */
+function Browse({visit}){
   const [k,setK]=useState("actors");
   const [focus,setFocus]=useState(null);
   useEffect(()=>{const on=(e)=>{const record=e.detail?.record;
@@ -3145,7 +3148,7 @@ function Browse(){
     <div class="subnav">
       ${[["actors","Organizations"],["hubs","Hubs"],["people","People"],["events","Events"]].map(([x,label])=>html`<button key=${x} class=${k===x?"active":""}
         onClick=${()=>setK(x)}>${label}</button>`)}
-    </div><${V} focus=${focus}/></div>`;
+    </div><${V} focus=${focus} visit=${visit}/></div>`;
 }
 const LOGO=html`<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="1.7"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="6" r="2.3"/>
@@ -3196,6 +3199,9 @@ const COMPASS_MARK=html`<svg class="compass-mark" width="44" height="44" viewBox
 function App(){
   // Compass opens on the Dashboard (GHUS, 11 Nov 2026).
   const [tab,setTab]=useState("dashboard");
+  // Each opening of the Ecosystem Directory reads its lists again (see Browse).
+  const [browseVisit,setBrowseVisit]=useState(0);
+  useEffect(()=>{if(tab==="browse") setBrowseVisit(v=>v+1);},[tab]);
   // The signed-in account (individual accounts only; null with the shared login).
   const [account,setAccount]=useState(null);
   const [checked,setChecked]=useState(false);
@@ -3265,7 +3271,7 @@ ${name}`, cadence:"once", edited:true,
       permissions=${account?account.permissions:null}/><//></div>`}
     ${allowed("ask")&&html`<div style=${{display:tab==="ask"?"block":"none"}}><${PageBoundary} name="Ask Compass"><${Ask} onExplore=${()=>setTab("map")}
       onCarryOver=${(d)=>{setCarried({...d,useKnown:true,raw:false,at:Date.now()}); setTab("map");}}/><//></div>`}
-    ${allowed("browse")&&html`<div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse}/><//></div>`}
+    ${allowed("browse")&&html`<div style=${{display:tab==="browse"?"block":"none"}}><${PageBoundary} name="Ecosystem Directory"><${Browse} visit=${browseVisit}/><//></div>`}
     ${allowed("discovery")&&html`<div style=${{display:tab==="discovery"?"block":"none"}}><${PageBoundary} name="Monitor and Update"><${Discovery}
       handoff=${discoveryHandoff} onHandoffUsed=${()=>setDiscoveryHandoff(null)}/><//></div>`}
     ${allowed("datafeed")&&html`<div style=${{display:tab==="datafeed"?"block":"none"}}><${PageBoundary} name="Data Feed"><${DataFeed}/><//></div>`}

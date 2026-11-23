@@ -14,7 +14,7 @@
 // left out; Notifications are added, and Admins and Editors/Reviewers also see
 // Pending Deletion. My profile chooses which parts show.
 
-import {NAVIGATE, formatUsd, isRunning, requestStatus, visibleRequests} from "./discovery.js?v=20261113a";
+import {NAVIGATE, formatUsd, isRunning, requestStatus, visibleRequests} from "./discovery.js?v=20261123a";
 import {usDate} from "./dates.js?v=20261110b";
 import {PAGE_TAB as DELETIONS_TAB, PERMISSION as DELETE_PERMISSION, daysLeftLabel, isUrgent, kindLabel,
   readDeleted, widgetSummary} from "./deletions.js?v=20261120a";

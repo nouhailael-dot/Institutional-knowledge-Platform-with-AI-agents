@@ -768,3 +768,12 @@ test('Run now while another run goes says Queued and starts by itself (12 Nov 20
   assert.equal(requestStatus({status: 'active', queued: 1, runs: []}), 'queued');
   assert.equal(STATUS_LABELS.queued, 'Queued');
 });
+
+test('a running run says its findings are counted when it finishes, not "0 findings"', async () => {
+  const {runFindingsLabel} = await import('../frontend/discovery.js');
+  assert.equal(runFindingsLabel({status: 'running', staged_count: 0, review_item_count: 0}),
+    'Findings counted when it finishes');
+  assert.equal(runFindingsLabel({status: 'succeeded', staged_count: 2, review_item_count: 3}), '5 findings');
+  assert.equal(runFindingsLabel({status: 'succeeded', staged_count: 1, review_item_count: 0}), '1 finding');
+  assert.equal(runFindingsLabel({status: 'failed', actor_results: [], found_count: 0}), '0 findings');
+});
