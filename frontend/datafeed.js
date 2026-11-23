@@ -390,13 +390,15 @@ export function doneLine(done = {}) {
   return parts.join(" ");
 }
 
-/** "Organizations · file.xlsx · Oct 26, 2026 · Uploaded by Not recorded (no sign-in yet)" */
+/** "Organizations · file.xlsx · 10/26/2026, 2:00 PM · Uploaded by Ana Ruiz · Sent to Review Results".
+ * A card verified in Explore and Map is saved through the Data Feed too, so it is
+ * listed here, named as a map save (23 Nov 2026). Who acted is the signed-in person. */
 export function historyMeta(item = {}) {
+  const map = item.method === "map";
   return [typeInfo(item.record_type).label,
-    item.method === "upload" ? item.file_name : "Manual entry",
+    item.method === "upload" ? item.file_name : map ? "Saved from Explore and Map" : "Manual entry",
     formatDateTime(item.uploaded_at),
-    `Uploaded by ${item.uploaded_by ? `${item.uploaded_by} (as typed; no sign-in yet)`
-      : "Not recorded"}`,
+    `${map ? "Verified" : "Uploaded"} by ${item.uploaded_by || "Not recorded"}`,
     item.admission === "directory" ? "Stored in the Directory"
       : item.admission === "verified" ? "Imported as Verified" : "Sent to Review Results",
   ].filter(Boolean).join(" · ");
@@ -897,7 +899,8 @@ export function createDataFeedPage({html, useState, useEffect, Fragment = global
       <p class="df-import-facts"><strong>${recordCount(item)}</strong>
         ${item.has_file ? html` · <a href=${`/api/datafeed/imports/${item.run_id}/file`} download>${item.method === "upload"
           ? `Original file: ${item.file_name || "download"}` : `Excel sheet: ${item.import_name}.xlsx`}</a>`
-          : item.method === "upload" ? " · Original file not kept" : " · Entered by hand"}</p>
+          : item.method === "upload" ? " · Original file not kept"
+          : item.method === "map" ? " · Verified on a map" : " · Entered by hand"}</p>
       <p class="df-muted">${historyLine(item)}</p>
       ${(item.organizations_missing || []).length > 0 && html`<div class="df-missing" role="status">
         <p>${missingOrganizationsLine(item.organizations_missing)}</p>

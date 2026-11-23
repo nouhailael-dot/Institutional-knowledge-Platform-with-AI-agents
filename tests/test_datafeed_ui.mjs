@@ -243,9 +243,13 @@ test('sentences agree in number and keep their spaces', () => {
   const meta = historyMeta({record_type: 'event', method: 'upload', file_name: 'ev.csv',
     uploaded_at: '2026-10-26T12:00:00Z', uploaded_by: 'Ana Ruiz'});
   assert.match(meta, /^Events · ev\.csv · 10\/2[67]\/2026, \d{1,2}:\d{2} [AP]M/);       // date and time
-  assert.match(meta, /Uploaded by Ana Ruiz \(as typed; no sign-in yet\) · Sent to Review Results$/);
+  assert.match(meta, /Uploaded by Ana Ruiz · Sent to Review Results$/);
   assert.match(historyMeta({record_type: 'actor', admission: 'verified'}),
     /Uploaded by Not recorded · Imported as Verified$/);
+  // A card verified in Explore and Map is saved through the Data Feed (23 Nov 2026).
+  assert.match(historyMeta({record_type: 'event', method: 'map', uploaded_by: 'Zahra El Alami',
+    uploaded_at: '2026-11-23T19:16:00Z', admission: 'directory'}),
+    /^Events · Saved from Explore and Map · .* · Verified by Zahra El Alami · Stored in the Directory$/);
   assert.equal(boxesLine({name: 'ADM', boxes: ['a']}), 'ADM: 1 empty box');
   assert.equal(approveLine('0.12'), 'I approve spending up to $0.12 on this read.');
 });
