@@ -517,6 +517,29 @@ def _update_source_status(session, table: str, source_id: str, status: str, revi
         raise AdmissionConflict("source review row is no longer pending")
 
 
+APPROVED_AS_NEW_NOTE = "verified when approved as a new organization in Review Results"
+
+
+def _verify_approved_new_actor(session, clean: Mapping[str, Any], result) -> bool:
+    """A new organization a GHUS person approved is Verified, not Parked (23 Nov 2026).
+
+    Creating it opens a ``verify_actor`` review ("verify this organization"), and
+    until now it stayed Parked until someone decided that second item - which
+    nobody did: every organization approved in Review stayed Parked. The approval
+    is that check, so the same writer decides the item now, under the reviewer's
+    name. "Parked" stays for what an agent found and nobody has checked.
+    """
+    if not (clean["entity_type"] == "actor" and clean["decision_kind"] == "new"
+            and result is not None and result.action == "created" and result.review_id):
+        return False
+    from agents.enrichment.decisions import record_actor_verification_review_decision
+
+    done = record_actor_verification_review_decision(
+        session, review_item_id=str(result.review_id), decided_by=clean["reviewer"],
+        verified=True, notes=APPROVED_AS_NEW_NOTE, live=True)
+    return done.get("action") == "decided"
+
+
 def apply_review_decision(session, decision: Mapping[str, Any], *,
                           import_verification: Mapping[str, str] | None = None) -> dict[str, Any]:
     """Apply one idempotent review decision in a single database transaction.
@@ -549,6 +572,7 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
         result = None
         proposed_hub_id = None
         ghus_notes_saved = False
+        verified_now = False
         # A record awaiting permanent deletion is never revived or added to (710).
         if clean["decision_kind"] == "same_existing" and clean.get("target_id"):
             from agents.enrichment.decisions import pending_deletion
@@ -570,6 +594,7 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
                 staged, route, session=session, live=True, people_enabled=True,
                 manage_transaction=False,
             )
+            verified_now = _verify_approved_new_actor(session, clean, result)
             proposed_hub_id = _insert_proposed_hub(session, clean)
             if (clean["ghus_notes"] and result is not None and result.entity_id
                     and _notes_column_exists(session, clean["entity_type"])):
@@ -595,6 +620,8 @@ def apply_review_decision(session, decision: Mapping[str, Any], *,
             "fields_absorbed": result.fields_absorbed if result is not None else [],
             "proposed_hub_id": proposed_hub_id,
             "ghus_notes_saved": ghus_notes_saved,
+            # A new organization a person approved is verified by that approval (23 Nov 2026).
+            "verified": verified_now,
             "idempotent_replay": False,
             # Stored before its organization is in the directory (13 Nov 2026).
             "organization_missing": getattr(result, "organization_missing", None),

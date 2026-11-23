@@ -646,3 +646,64 @@ def test_people_and_events_a_ghus_person_verifies_are_verified_not_parked(sessio
     assert status("person", "person_id", made["person"]) == "verified"
     assert status("event", "event_id", made["event"]) == "verified"
     assert status("person", "person_id", found_by_agent) == "parked"
+
+
+@needs_db
+def test_an_organization_a_ghus_person_approves_as_new_is_verified_not_parked(session, monkeypatch):
+    """GHUS, 23 Nov 2026: organizations approved as new in Review stayed Parked, with
+    a "verify this organization" item nobody decided. The approval is that check: the
+    organization is Verified at once, under the reviewer's name. The one-time
+    correction verifies those approved before, and leaves agent finds Parked."""
+    from agents.enrichment.decisions import mark_reviewed_records_verified
+    from agents.review import admission
+
+    def status(actor_id):
+        return session.execute(text(
+            "SELECT COALESCE(to_jsonb(a)->>'status', to_jsonb(a)->>'record_status') FROM actor a "
+            "WHERE actor_id = CAST(:id AS uuid)"), {"id": actor_id}).scalar()
+
+    def verify_item(actor_id):
+        return session.execute(text(
+            "SELECT status FROM review_item WHERE entity_id = CAST(:id AS uuid) "
+            "AND review_kind = 'verify_actor'"), {"id": actor_id}).scalar()
+
+    tag = uuid.uuid4().hex[:8]
+
+    # Two clearly different organizations, so neither matches the other.
+    unlike = {1: dict(name=f"Qzv{tag} Water Sensors", city="Wichita", location_city="Wichita",
+                      state="KS", state_code="KS", description="A company that builds water sensors."),
+              2: dict(name=f"Brightmoor{tag} Robotics Guild", city="Boise", location_city="Boise",
+                      state="ID", state_code="ID",
+                      description="A nonprofit network of farm robotics makers.")}
+
+    def approve(n):
+        row = actor_row(website=f"https://site{n}-{tag}.org",
+                        source_url=f"https://site{n}-{tag}.org/about", **unlike[n])
+        staged = feed.stage_batch(session, batch(rows=[row], method="manual", file_name=None,
+                                                 file_sha256=None, import_name=f"Qzv {tag} {n}"))
+        session.commit()
+        first = staged["rows"][0]
+        return admission.apply_review_decision(session, {
+            "entity_type": "actor", "decision_kind": "new",
+            "source_ref": {"table": first.get("source_table") or "search_candidate", "id": first["source_id"]},
+            "reviewer": "zahra@ghus.example", "idempotency_key": f"verified-actor-{tag}-{n}",
+            "edited_payload": {}})
+
+    done = approve(1)
+    assert done["status"] == "approved" and done["verified"] is True
+    assert status(done["canonical_entity_id"]) == "verified"
+    assert verify_item(done["canonical_entity_id"]) == "approved"
+
+    # One approved before the fix: Parked, its verify item still pending.
+    monkeypatch.setattr(admission, "_verify_approved_new_actor", lambda *_: False)
+    before = approve(2)["canonical_entity_id"]
+    assert status(before) == "parked" and verify_item(before) == "pending"
+    dry = mark_reviewed_records_verified(session)
+    assert before in dry["actor_ids"] and done["canonical_entity_id"] not in dry["actor_ids"]
+    assert status(before) == "parked"                                   # a dry run writes nothing
+    mark_reviewed_records_verified(session, live=True)
+    assert status(before) == "verified" and verify_item(before) == "approved"
+    decided_by = session.execute(text(
+        "SELECT decided_by FROM actor_verification_event WHERE actor_id = CAST(:id AS uuid) "
+        "ORDER BY recorded_at DESC LIMIT 1"), {"id": before}).scalar()
+    assert decided_by == "zahra@ghus.example"

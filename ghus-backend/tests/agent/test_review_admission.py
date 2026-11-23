@@ -214,3 +214,42 @@ def test_every_box_review_shows_for_an_event_or_a_person_can_be_corrected():
     validate_edited_payload("person", {
         "name": "A Person", "work_location": "Houston, TX", "department": "Engineering",
         "relevant_work": "Water reuse pilots", "um6p_ocp_connection": "Not Found"})
+
+
+@pytest.mark.parametrize("entity_type,kind,review_id,verifies", [
+    ("actor", "new", "verify-item", True),          # a person's approval is the check
+    ("actor", "new", None, False),                  # already verified (import, agent)
+    ("actor", "same_existing", "verify-item", False),
+    ("event", "new", "verify-item", False),
+])
+def test_a_new_organization_a_person_approves_is_verified_by_that_approval(
+        monkeypatch, entity_type, kind, review_id, verifies):
+    """23 Nov 2026: organizations approved as new stayed Parked until a second item was
+    decided; the approval now decides it, under the reviewer's name."""
+    from agents.enrichment import decisions
+
+    session = FakeSession()
+    monkeypatch.setattr(admission, "_load_source", lambda *_: {
+        "source_id": "source", "run_id": "run", "entity_type": entity_type,
+        "source_url": "https://example.org", "payload": decision(entity_type)["edited_payload"],
+        "extracted_at": "2026-09-22T00:00:00+00:00",
+    })
+    monkeypatch.setattr(admission, "_promotion_route", lambda *_: object())
+    monkeypatch.setattr(admission, "promote", Mock(return_value=PromotionResult(
+        action="created" if kind == "new" else "absorbed", entity_type=entity_type,
+        zone="create" if kind == "new" else "absorb", entity_id="canonical-id",
+        review_id=review_id, dry_run=False)))
+    monkeypatch.setattr(admission, "_insert_proposed_hub", lambda *_: None)
+    monkeypatch.setattr(admission, "_update_source_status", lambda *args: None)
+    verified = Mock(return_value={"action": "decided"})
+    monkeypatch.setattr(decisions, "record_actor_verification_review_decision", verified)
+
+    outcome = admission.apply_review_decision(session, decision(entity_type, kind))
+
+    assert outcome["verified"] is verifies
+    if verifies:
+        kwargs = verified.call_args.kwargs
+        assert (kwargs["review_item_id"], kwargs["decided_by"], kwargs["verified"], kwargs["live"]) == (
+            "verify-item", "Reviewer", True, True)
+    else:
+        verified.assert_not_called()

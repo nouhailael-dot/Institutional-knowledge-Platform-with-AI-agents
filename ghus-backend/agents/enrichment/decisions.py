@@ -2508,7 +2508,8 @@ _REVIEWED_TABLES = {"person": ("person", "person_id"), "event": ("event", "event
 
 
 def mark_reviewed_records_verified(session, *, live: bool = False) -> dict[str, object]:
-    """People and events a GHUS person verified, still shown Parked: made Verified.
+    """People, events and organizations a GHUS person verified, still shown Parked:
+    made Verified (organizations added 23 Nov 2026, through their verification item).
 
     Until 13 Nov 2026 the writer created every person and event as "parked" -
     the state of a record an agent found and nobody has checked - even when a
@@ -2526,14 +2527,36 @@ def mark_reviewed_records_verified(session, *, live: bool = False) -> dict[str, 
             "AND d.outcome->>'status' = 'approved' "
             f"AND d.outcome->>'canonical_entity_id' = t.{id_column}::text)"),
             {"entity": entity_type}).all()]
+    # Organizations (23 Nov 2026): a new one approved in Review was created Parked
+    # with a "verify this organization" item nobody decided. Their status follows
+    # their verification events, so the item is decided as verified under the
+    # approving reviewer's name. One pending deletion is left alone.
+    actors = [(str(r[0]), str(r[1]), str(r[2])) for r in session.execute(text(
+        "SELECT a.actor_id, ri.review_item_id, d.reviewer FROM actor a "
+        "JOIN review_admission_decision d ON d.entity_type = 'actor' AND d.decision_kind = 'new' "
+        "AND d.outcome->>'status' = 'approved' AND d.outcome->>'canonical_entity_id' = a.actor_id::text "
+        "JOIN review_item ri ON ri.entity_id = a.actor_id AND ri.review_kind = 'verify_actor' "
+        "AND ri.status = 'pending' "
+        "WHERE COALESCE(to_jsonb(a)->>'status', to_jsonb(a)->>'record_status') = 'parked' "
+        "AND a.merged_into_actor_id IS NULL "
+        "ORDER BY a.name")).all()]
+    actors = [a for a in actors if not pending_deletion(session, "actor", a[0])]
+    found["actor"] = [a[0] for a in actors]
     if live:
         for entity_type, ids in found.items():
+            if entity_type == "actor":
+                continue
             table, id_column = _REVIEWED_TABLES[entity_type]
             if ids:
                 execute_canonical_write(session, text(
                     f"UPDATE {table} SET record_status = 'verified' "
                     f"WHERE {id_column} = ANY(CAST(:ids AS uuid[])) AND record_status = 'parked'"),
                     {"ids": ids})
+        for _actor_id, item_id, reviewer in actors:
+            record_actor_verification_review_decision(
+                session, review_item_id=item_id, decided_by=reviewer, verified=True,
+                notes="verified when approved as a new organization in Review Results "
+                      "(correction of 23 Nov 2026)", live=True)
     return {"live": live, **{f"{k}_ids": v for k, v in found.items()},
             **{k: len(v) for k, v in found.items()}}
 

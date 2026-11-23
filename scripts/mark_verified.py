@@ -1,4 +1,6 @@
-"""People and events a GHUS person verified, still shown Parked: made Verified (13 Nov 2026).
+"""People, events and organizations a GHUS person verified, still shown Parked: made
+Verified (13 Nov 2026; organizations since 23 Nov 2026, through their "verify this
+organization" item, under the name of the person who approved them).
 
 A one-time correction, run by hand in the Render shell (or locally):
 
