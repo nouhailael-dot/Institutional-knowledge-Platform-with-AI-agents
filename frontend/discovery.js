@@ -1360,6 +1360,17 @@ export function runFindings(run) {
   return (run.staged_count ?? 0) + (run.review_item_count ?? 0);
 }
 
+/**
+ * The Run History's findings column. A run's findings are counted when it finishes
+ * (the backend writes them with its end), so a running run says so instead of a
+ * misleading "0 findings" (GHUS, 23 Nov 2026).
+ */
+export function runFindingsLabel(run) {
+  if (run.status === "running") return "Findings counted when it finishes";
+  const n = runFindings(run);
+  return `${n} ${n === 1 ? "finding" : "findings"}`;
+}
+
 function blankForm() {
   return {
     brief: "", areaTouched: false,
@@ -2114,7 +2125,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
             <span>${formatDay(run.started_at)}</span>
             <span class=${"requests-pill " + (run.status === "running" && run.stalled ? "stalled" : run.status)}>${
               run.status === "running" && run.stalled ? "Stopped responding" : RUN_STATUS[run.status] || run.status}</span>
-            <span>${runFindings(run)} ${runFindings(run) === 1 ? "finding" : "findings"}</span>
+            <span class=${run.status === "running" ? "muted" : ""}>${runFindingsLabel(run)}</span>
             <span class="requests-took" title="How long the run took">${run.elapsed_seconds != null
               ? (run.status === "running" ? "Running for " : "Took ") + durationLabel(run.elapsed_seconds) : ""}</span>
             ${find && run.status !== "running" && reviewRunKey(run)
