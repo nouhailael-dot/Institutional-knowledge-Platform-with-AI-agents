@@ -554,10 +554,11 @@ class DataFeedService:
             # their records stay in Review until decided.
             if meta.get("admission") not in HISTORY_ADMISSIONS:
                 continue
-            # A card saved from Explore and Map goes straight to the Directory through
-            # the Data Feed's admission, but it is not an import: it is not listed here
-            # (GHUS, 23 Nov 2026). Older saves are known by their name.
-            if (meta.get("method") == "map"
+            # Only what was done on the Data Feed page itself: an Excel sheet uploaded
+            # there, or records entered there (GHUS, 23 Nov 2026). A card saved from
+            # Explore and Map also goes to the Directory through the Data Feed's
+            # admission, but it is not listed here; older saves are known by their name.
+            if (meta.get("method") not in PAGE_METHODS
                     or str(meta.get("import_name") or "").startswith(MAP_IMPORT_PREFIX)):
                 continue
             # Withdrawn to be imported again (13 Nov 2026): the new import is the one listed.
@@ -670,6 +671,9 @@ class DataFeedService:
 HISTORY_ADMISSIONS = ("directory",)
 # The name every Explore and Map save arrives under (src.map_agent.save.import_name).
 MAP_IMPORT_PREFIX = "Explore and Map: "
+# How the Data Feed page itself sends records: a sheet, or records typed in. The
+# only imports Import History lists.
+PAGE_METHODS = ("upload", "manual")
 # The reason the backend's withdraw step records (agents/datafeed/stage_import.py
 # WITHDRAWN_REASON): an import whose records were all withdrawn is not listed.
 WITHDRAWN_REASON = "Withdrawn from Import History to be imported again"

@@ -730,7 +730,8 @@ def test_import_history_lists_only_imports_stored_in_the_directory():
     from src.datafeed import service as module
 
     def row(run, admission):
-        return (run, "actor", datetime(2026, 11, 4), {"import_name": run, "admission": admission},
+        return (run, "actor", datetime(2026, 11, 4), {"import_name": run, "admission": admission,
+                                                      "method": "upload"},
                 {}, 0, 0, 0, 0, 0, False)
 
     class Conn:
@@ -767,10 +768,13 @@ def test_cards_saved_from_explore_and_map_are_not_listed_as_imports():
                             row("typed", {"import_name": "Manual entry 11/23/2026", "method": "manual"}),
                             row("map-save", {"import_name": "Explore and Map: African Diaspora events",
                                              "method": "map"}),
-                            row("older-map-save", {"import_name": "Explore and Map: Water labs"})]
+                            row("older-map-save", {"import_name": "Explore and Map: Water labs",
+                                                   "method": "manual"}),
+                            row("not-from-the-page", {"import_name": "Sent some other way"})]
             return R()
 
     service = module.DataFeedService(bridge=None, connect=lambda: Conn())
+    # Only what was done on the Data Feed page: an uploaded sheet, or records typed in.
     assert [i["run_id"] for i in service.history()] == ["spreadsheet", "typed"]
     from src.map_agent.save import import_name
     assert import_name("Anything").startswith(module.MAP_IMPORT_PREFIX)      # the two stay in step
