@@ -146,6 +146,25 @@ def has_entity_requests(session) -> bool:
 # ended without finishing); the page says so instead of "Running" for ever.
 STALLED_AFTER = "3 hours"
 
+# 23 Nov 2026: a run whose process is gone (a deploy or a restart killed it) is
+# known at once. Every run holds an advisory lock for as long as its process
+# lives (subscription_runner: Run now locks (key, hashtext(request)); the
+# scheduled run locks (key)); the lock goes with the process's connection. A run
+# still marked running, past a short grace, with neither lock held is
+# interrupted. If a lock were ever left behind, the run is simply treated as
+# alive and the STALLED_AFTER rule still applies, as before.
+RUNNER_LOCK_KEY = 550_001
+INTERRUPTED_GRACE = "2 minutes"
+_RUN_REQUEST = ("COALESCE(cr.config_snapshot->>'subscription_id', "
+                "cr.config_snapshot->'discovery_request'->>'subscription_id')")
+_PROCESS_GONE = (
+    "(now() - cr.started_at > CAST(:grace AS interval) "
+    " AND NOT EXISTS (SELECT 1 FROM pg_locks l WHERE l.locktype = 'advisory' AND l.granted "
+    "   AND ((l.objsubid = 1 AND l.classid::bigint = 0 AND l.objid::bigint = CAST(:lock_key AS bigint)) "
+    "     OR (l.objsubid = 2 AND l.classid::bigint = CAST(:lock_key AS bigint) "
+    f"        AND l.objid::bigint = (hashtext({_RUN_REQUEST})::bigint & 4294967295)))))"
+)
+
 
 def load_request_runs(session, subscription_id: str, *, limit: int = 20) -> list[dict[str, object]]:
     """A request's runs, newest first - the one running now included.
@@ -162,7 +181,7 @@ def load_request_runs(session, subscription_id: str, *, limit: int = 20) -> list
         " cr.config_snapshot->>'search_run_id' AS search_run_id, "
         # Actor update runs: what each actor's update found (NULL otherwise).
         " cr.config_snapshot->'actor_results' AS actor_results, "
-        " cr.config_snapshot->>'stopped' AS stopped, false AS stalled, "
+        " cr.config_snapshot->>'stopped' AS stopped, false AS stalled, false AS interrupted, "
         " EXTRACT(EPOCH FROM (COALESCE(cr.finished_at, now()) - cr.started_at))::int "
         "   AS elapsed_seconds "
         " FROM actor_update_subscription_run sr "
@@ -178,7 +197,8 @@ def load_request_runs(session, subscription_id: str, *, limit: int = 20) -> list
         " (SELECT s.run_id::text FROM scrape_run s WHERE s.source_name = 'open_web_search' "
         "   AND s.started_at >= cr.started_at ORDER BY s.started_at LIMIT 1) AS search_run_id, "
         " NULL::jsonb, NULL::text, "
-        " (now() - cr.started_at > CAST(:stalled AS interval)) AS stalled, "
+        " (now() - cr.started_at > CAST(:stalled AS interval) OR " + _PROCESS_GONE + ") AS stalled, "
+        + _PROCESS_GONE + " AS interrupted, "
         " EXTRACT(EPOCH FROM (now() - cr.started_at))::int "
         " FROM collection_run cr "
         " WHERE cr.status = 'running' "
@@ -187,7 +207,8 @@ def load_request_runs(session, subscription_id: str, *, limit: int = 20) -> list
         " AND NOT EXISTS (SELECT 1 FROM actor_update_subscription_run l "
         "                 WHERE l.collection_run_id = cr.collection_run_id)"
         ") runs ORDER BY started_at DESC LIMIT :limit"
-    ), {"id": subscription_id, "limit": limit, "stalled": STALLED_AFTER}).mappings()
+    ), {"id": subscription_id, "limit": limit, "stalled": STALLED_AFTER,
+         "grace": INTERRUPTED_GRACE, "lock_key": RUNNER_LOCK_KEY}).mappings()
     return [dict(row) for row in rows]
 
 
@@ -274,7 +295,7 @@ def load_runs_for_requests(session, subscription_ids, *, limit: int = 20
         " cr.staged_count, cr.review_item_count, cr.status_reason, cr.spent_usd, "
         " cr.config_snapshot->>'search_run_id' AS search_run_id, "
         " cr.config_snapshot->'actor_results' AS actor_results, "
-        " cr.config_snapshot->>'stopped' AS stopped, false AS stalled, "
+        " cr.config_snapshot->>'stopped' AS stopped, false AS stalled, false AS interrupted, "
         " EXTRACT(EPOCH FROM (COALESCE(cr.finished_at, now()) - cr.started_at))::int "
         "   AS elapsed_seconds "
         " FROM actor_update_subscription_run sr "
@@ -292,7 +313,8 @@ def load_runs_for_requests(session, subscription_ids, *, limit: int = 20
         " (SELECT s.run_id::text FROM scrape_run s WHERE s.source_name = 'open_web_search' "
         "   AND s.started_at >= cr.started_at ORDER BY s.started_at LIMIT 1) AS search_run_id, "
         " NULL::jsonb, NULL::text, "
-        " (now() - cr.started_at > CAST(:stalled AS interval)) AS stalled, "
+        " (now() - cr.started_at > CAST(:stalled AS interval) OR " + _PROCESS_GONE + ") AS stalled, "
+        + _PROCESS_GONE + " AS interrupted, "
         " EXTRACT(EPOCH FROM (now() - cr.started_at))::int "
         " FROM collection_run cr "
         " WHERE cr.status = 'running' "
@@ -301,7 +323,8 @@ def load_runs_for_requests(session, subscription_ids, *, limit: int = 20
         " AND NOT EXISTS (SELECT 1 FROM actor_update_subscription_run l "
         "                 WHERE l.collection_run_id = cr.collection_run_id)"
         ") runs) ranked WHERE position <= :limit ORDER BY sid, started_at DESC"
-    ), {"ids": ids, "limit": limit, "stalled": STALLED_AFTER}).mappings()
+    ), {"ids": ids, "limit": limit, "stalled": STALLED_AFTER,
+         "grace": INTERRUPTED_GRACE, "lock_key": RUNNER_LOCK_KEY}).mappings()
     out: dict[str, list[dict[str, object]]] = {i: [] for i in ids}
     for row in rows:
         item = dict(row)

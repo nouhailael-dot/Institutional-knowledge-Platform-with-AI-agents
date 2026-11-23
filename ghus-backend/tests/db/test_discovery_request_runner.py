@@ -208,3 +208,43 @@ def test_run_now_runs_a_request_that_has_not_started(session):
     now = run_due_requests(db, live=False, today=TODAY, config=CONFIG, request_id=later)
     assert later in {o.subscription_id for o in now.outcomes}
     assert later not in now.skipped
+
+
+def test_a_run_whose_process_is_gone_shows_interrupted_at_once(session, monkeypatch):
+    """23 Nov 2026: a deploy killed a running request, and the page said "Running" for
+    three hours. A run whose lock is gone (its process ended) is interrupted at once;
+    one whose lock is held, its own or the scheduled runner's, is alive."""
+    db, created = session
+    subscription_id = _create(db, created)
+    monkeypatch.setattr(store, "INTERRUPTED_GRACE", "0 seconds")
+    observer = create_engine(URL)
+    seen = {}
+    key = {"k": store.RUNNER_LOCK_KEY, "rid": subscription_id}
+
+    def look(label):
+        with Session(observer) as other:
+            run = store.load_request_runs(other, subscription_id)[0]
+            seen[label] = (run["status"], run["stalled"], run["interrupted"])
+
+    def discover(request):
+        look("own lock held")
+        db.execute(text("SELECT pg_advisory_unlock(:k, hashtext(:rid))"), key)       # the process "dies"
+        look("no lock")
+        db.execute(text("SELECT pg_advisory_lock(:k)"), key)                        # the scheduled runner's
+        look("scheduled lock held")
+        db.execute(text("SELECT pg_advisory_unlock(:k)"), key)
+        db.execute(text("SELECT pg_advisory_lock(:k, hashtext(:rid))"), key)       # back, for the runner's unlock
+        return {"status": "succeeded", "status_reason": "", "run_id": SEARCH_RUN,
+                "stats": {"search_results_unique": 1, "search_results_deduplicated": 0,
+                          "pages_fetched": 1, "cost_usd": 0.1}, "candidates": []}
+
+    try:
+        run_due_requests(db, live=True, today=TODAY, config=CONFIG, discover=discover,
+                         request_id=subscription_id)
+    finally:
+        observer.dispose()
+    assert seen == {"own lock held": ("running", False, False),
+                    "no lock": ("running", True, True),
+                    "scheduled lock held": ("running", False, False)}
+    finished = store.load_request_runs(db, subscription_id)[0]
+    assert finished["status"] == "succeeded" and finished["interrupted"] is False

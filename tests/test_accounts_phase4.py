@@ -385,9 +385,10 @@ def test_the_menu_and_pages_follow_permissions():
     needs = dict(re.findall(r'(\w+):"([a-z_]+\.[a-z_]+)"', page[page.index("const NAV_NEEDS="):page.index("function applyPermissions")]))
     assert needs == {"dashboard": "dashboard.view", "ask": "ask.use", "map": "maps.view", "browse": "records.view",
                      "discovery": "requests.view", "datafeed": "datafeed.import", "review": "review.view",
-                     "mywork": "dashboard.view", "users": "users.manage", "audit": "audit.view_all",
-                     "usage": "usage.view_own", "costs": "usage.view_all",
+                     "users": "users.manage", "audit": "audit.view_all", "costs": "usage.view_all",
                      "deletions": "records.delete_permanent"}
+    # My work and My usage were removed (GHUS, 23 Nov 2026): repeated across the platform.
+    assert '"My work"' not in page and '"My usage"' not in page
     for tab in ("dashboard", "ask", "browse", "discovery", "datafeed", "review", "map"):
         assert f'${{allowed("{tab}")&&html`' in page, tab                 # pages mount only when allowed
     for marked in ('class="mactions" data-needs="review.decide"', 'class="start-card" data-needs="maps.create"',

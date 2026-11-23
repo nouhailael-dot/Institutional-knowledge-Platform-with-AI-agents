@@ -5,6 +5,7 @@
 // /api/discovery/*, which hands it to the GHUS backend's own command.
 
 import {createDateInput, eventSpan, usDate} from "./dates.js?v=20261110b";
+import {askConfirm} from "./dialog.js?v=20261123a";
 
 export const CADENCE_LABELS = {
   once: "Once",
@@ -251,6 +252,24 @@ export function runNowMessage(title, answer) {
       ? `, and ${ahead} more ${ahead === 1 ? "waits" : "wait"} before it` : ""}. It starts by itself when its turn comes.`;
   }
   return `“${title}” is running. This takes a few minutes; the page updates by itself.`;
+}
+
+/**
+ * A run marked running whose process is gone (23 Nov 2026): "Interrupted" at once
+ * when its lock is gone (a deploy or restart ended it), "Stopped responding" after
+ * three hours otherwise. Either way the request can be run again.
+ */
+export function stoppedLabel(run) {
+  return run && run.interrupted ? "Interrupted" : "Stopped responding";
+}
+
+export function stoppedMessage(request) {
+  const run = (request.runs || []).find((r) => r.status === "running" && r.stalled);
+  return run && run.interrupted
+    ? "The last run was interrupted before it finished (the server restarted). Nothing from it reached "
+      + "Review Results; its spend so far is recorded. You can run the request again."
+    : "The last run stopped responding before it finished. Its spend so far is recorded; you can run "
+      + "the request again.";
 }
 
 export function requestStatus(request) {
@@ -1366,6 +1385,7 @@ export function runFindings(run) {
  * misleading "0 findings" (GHUS, 23 Nov 2026).
  */
 export function runFindingsLabel(run) {
+  if (run.status === "running" && run.stalled) return "No findings recorded";
   if (run.status === "running") return "Findings counted when it finishes";
   const n = runFindings(run);
   return `${n} ${n === 1 ? "finding" : "findings"}`;
@@ -1975,7 +1995,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${orgWords(last.status_reason) || "no reason recorded"}</p>`}
       ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
         ${runningLine(current)}. Searching, reading pages and scoring; results appear in Review Results when it finishes.</p>`}
-      ${status === "stalled" && html`<p class="discovery-message error">The last run stopped responding before it finished. Its spend so far is recorded; you can run the request again.</p>`}
+      ${status === "stalled" && html`<p class="discovery-message error">${stoppedMessage(request)}</p>`}
       <div class="discovery-actions">
         ${current ? html`<button class="btn running" disabled aria-live="polite">Running…</button>`
           : request.status === "active" && html`<button class="btn" disabled=${busy} onClick=${() => onRun(request)}>${runButtonLabel(request)}</button>`}
@@ -2013,7 +2033,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           <thead><tr><th>Date</th><th>Result</th><th>Time</th><th>Pages found</th><th>Added</th><th>To Review</th><th>Spent</th><th>Per Relevant Organization</th><th></th></tr></thead>
           <tbody>${runs.map((run) => html`<tr key=${run.collection_run_id}>
             <td>${formatDay(run.started_at)}</td>
-            <td>${run.status === "running" && run.stalled ? "Stopped responding"
+            <td>${run.status === "running" && run.stalled ? stoppedLabel(run)
               : {succeeded: "Completed", attention: "Completed with limits", failed: "Failed", running: "Running"}[run.status] || run.status}</td>
             <td>${durationLabel(run.elapsed_seconds)}</td>
             <td>${run.found_count ?? ""}</td><td>${run.staged_count ?? ""}</td><td>${run.review_item_count ?? ""}</td>
@@ -2109,7 +2129,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       ${last && last.status === "failed" && html`<p class="discovery-message error">Last run failed: ${last.status_reason || "no reason recorded"}</p>`}
       ${current && html`<p class="discovery-message running" role="status"><strong>Running</strong> ·
         ${runningLine(current)}. Results appear in Review Results when it finishes.</p>`}
-      ${row.status === "stalled" && html`<p class="discovery-message error">The last run stopped responding before it finished. Its spend so far is recorded; you can run the request again.</p>`}
+      ${row.status === "stalled" && html`<p class="discovery-message error">${stoppedMessage(request)}</p>`}
       <div class="requests-actions">
         ${current ? html`<button class="btn running" disabled aria-live="polite">Running…</button>`
           : request.status === "active" && html`<button class="btn" disabled=${!!busy} onClick=${() => onRun(row)}>${runButtonLabel(request)}</button>`}
@@ -2124,7 +2144,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
           ${runs.map((run) => html`<li key=${run.collection_run_id}>
             <span>${formatDay(run.started_at)}</span>
             <span class=${"requests-pill " + (run.status === "running" && run.stalled ? "stalled" : run.status)}>${
-              run.status === "running" && run.stalled ? "Stopped responding" : RUN_STATUS[run.status] || run.status}</span>
+              run.status === "running" && run.stalled ? stoppedLabel(run) : RUN_STATUS[run.status] || run.status}</span>
             <span class=${run.status === "running" ? "muted" : ""}>${runFindingsLabel(run)}</span>
             <span class="requests-took" title="How long the run took">${run.elapsed_seconds != null
               ? (run.status === "running" ? "Running for " : "Took ") + durationLabel(run.elapsed_seconds) : ""}</span>
@@ -2270,7 +2290,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     }, [requests, updates, watchUntil]);
 
     async function runNow(request) {
-      if (!window.confirm(`Run “${request.title}” now? It searches the web live and adds what passes the quality checks.`)) return;
+      if (!(await askConfirm(`Run “${request.title}” now? It searches the web live and adds what passes the quality checks.`,
+        {title: "Run this request now?", ok: "Run now"}))) return;
       setBusy(true); setMessage(null);
       try {
         const answer = await api(`/api/discovery/requests/${request.subscription_id}/run`, {method: "POST"});
@@ -2282,7 +2303,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     }
 
     async function onAction(request, action) {
-      if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
+      if (action === "cancel" && !(await askConfirm(`Cancel “${request.title}”? It will not run again.`,
+        {title: "Cancel this request?", ok: "Cancel request", cancel: "Keep it", danger: true}))) return;
       setBusy(true); setMessage(null);
       try {
         await api(`/api/discovery/requests/${request.subscription_id}/${action}`, {method: "POST"});
@@ -2292,9 +2314,10 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     }
 
     async function onUpdateAction(request, action) {
-      if (action === "cancel" && !window.confirm(`Cancel “${request.title}”? It will not run again.`)) return;
-      if (action === "run" && !window.confirm(`Run “${request.title}” now? It reads each organization's `
-        + "sources; findings go to Review Results.")) return;
+      if (action === "cancel" && !(await askConfirm(`Cancel “${request.title}”? It will not run again.`,
+        {title: "Cancel this request?", ok: "Cancel request", cancel: "Keep it", danger: true}))) return;
+      if (action === "run" && !(await askConfirm(`Run “${request.title}” now? It reads each organization's `
+        + "sources; findings go to Review Results.", {title: "Run this update now?", ok: "Run now"}))) return;
       setBusy(true); setMessage(null);
       try {
         const answer = await api(`/api/discovery/update-requests/${request.subscription_id}/${action}`, {method: "POST"});
