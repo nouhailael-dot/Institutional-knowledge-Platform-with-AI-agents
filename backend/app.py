@@ -56,6 +56,7 @@ from src.map_agent.search_backend import availability as research_availability
 from src.retrieve import retrieve
 from src.discovery.bridge import DiscoveryBridge, DiscoveryBridgeError
 from backend.access import require_login
+from backend import datafeed_routes
 from backend.datafeed_routes import router as datafeed_router
 from src.plain_errors import GENERIC as PLAIN_GENERIC
 from src.plain_errors import REASON_KEYS, explain, explain_payload, is_technical
@@ -311,6 +312,14 @@ def _events():
 @_fresh_for(DIRECTORY_FRESH_SECONDS)
 def _people():
     return browse.load_people()
+
+
+def _directory_changed() -> None:
+    """Something was written to the Directory (a Review decision, a map save, a Data
+    Feed import): its lists are read again on the next request, not up to
+    DIRECTORY_FRESH_SECONDS later (23 Nov 2026)."""
+    for cached in (_actors, _hubs, _events, _people):
+        cached.cache_clear()
 
 
 # ---------------------------------------------------------------- Doc upload
@@ -1268,6 +1277,7 @@ def map_save_verified(job_id: str, payload: SaveRequest):
                                 map_name=record["description"] or "untitled map")
     except DataFeedError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    _directory_changed()
     when = time.time()
     def change(result, workflow):
         for pick, outcome in zip(payload.records, results):
@@ -1881,6 +1891,7 @@ def review_candidate_decision(candidate_id: str, payload: ReviewAdmissionRequest
                        "changes_to_map": "none"}
         else:
             outcome = review_admission_bridge().apply(decision)
+            _directory_changed()
         _attribute_review(store, candidate_id, payload.decision_kind, outcome)
         return store.record_admission_success(
             candidate_id,
@@ -2211,6 +2222,7 @@ def review_item_decision(candidate_id: str, payload: ReviewItemDecisionRequest):
         request = store.review_item_decision_request(
             candidate_id, **{**payload.model_dump(), "reviewer": current_user()})
         outcome = review_admission_bridge().apply(request)
+        _directory_changed()
         return store.record_review_item_success(request, outcome)
     except Exception as exc:
         _raise_review_error(exc)
@@ -2230,6 +2242,7 @@ def review_category_decisions(payload: ReviewCategoryRequest):
             confirmed=payload.confirmed,
         )
         outcome = review_admission_bridge().apply(request)
+        _directory_changed()
         return {"outcome": outcome, "candidates": store.record_category_success(request, outcome)}
     except Exception as exc:
         _raise_review_error(exc)
@@ -2242,6 +2255,8 @@ def health():
 
 # Data Feed: spreadsheet and manual records, staged for Review by the backend.
 app.include_router(datafeed_router)
+# A Data Feed import stored in the Directory shows on its next read.
+datafeed_routes.directory_changed = _directory_changed
 
 
 # ------------------------------------------------------------- My work (accounts Phase 3)

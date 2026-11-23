@@ -13,8 +13,8 @@ test('a failed request is an error, never data shaped like a list', () => {
 });
 
 test('every directory list says it could not load instead of crashing', () => {
-  for (const route of ['/api/browse/actors"),[version]', '/api/browse/hubs"),[version]', '/api/browse/events"),[version]',
-                       '/api/browse/people"),[version]']) {
+  for (const route of ['/api/browse/actors"),[version,visit]', '/api/browse/hubs"),[version,visit]',
+                       '/api/browse/events"),[version,visit]', '/api/browse/people"),[version,visit]']) {
     const at = page.indexOf(`useOnce(()=>api("${route}`);
     assert.ok(at > 0, route);
     const guard = page.indexOf('if(data.__error) return html`<${LoadError}', at);
