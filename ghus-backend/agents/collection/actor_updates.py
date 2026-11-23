@@ -1723,6 +1723,8 @@ def one_time_updates(session, *, inactive=frozenset(), limit: int = 30) -> list[
                     "status": row["status"], "spent_usd": float(row["spent_usd"] or 0),
                     "actor_id": row["actor_id"], "name": row["name"],
                     "topic_name": row["topic_name"], "scope": snapshot.get("scope"),
+                    # The check it applied: the platform shows each person their own.
+                    "check_id": snapshot.get("check_id"),
                     "counts": counts})
     return out
 

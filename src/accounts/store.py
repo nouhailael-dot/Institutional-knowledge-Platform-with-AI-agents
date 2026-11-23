@@ -470,6 +470,64 @@ class AccountsStore:
             row = cur.fetchone()
         return row[0] if row else None
 
+    def owner_ids(self, entity_type: str) -> dict[str, str]:
+        """entity id -> owner's account id, for one type (personal pages, 23 Nov 2026)."""
+        with self.connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT entity_id, owner_user_id::text FROM compass.record_owner "
+                        "WHERE entity_type = %s", (entity_type,))
+            return {str(eid): uid for eid, uid in cur.fetchall()}
+
+    def check_owners(self) -> dict[str, str]:
+        """Organization check id -> who ran it (its usage event)."""
+        with self.connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT reference, user_id::text FROM compass.usage_event "
+                        "WHERE kind = 'actor_check' AND user_id IS NOT NULL")
+            return {str(ref): uid for ref, uid in cur.fetchall()}
+
+    def deletion_owner(self, deletion_id: str) -> str | None:
+        """Who deleted it (Pending Deletion is personal, 23 Nov 2026), or None if unknown."""
+        with self.connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('compass.deleted_record') IS NOT NULL")
+            if not cur.fetchone()[0]:
+                return None
+            cur.execute("SELECT deleted_by::text FROM compass.deleted_record "
+                        "WHERE deletion_id::text = %s", (str(deletion_id),))
+            row = cur.fetchone()
+        return row[0] if row else None
+
+    def review_run_links(self, run_ids: list[str]) -> dict[str, dict]:
+        """Review run id -> the Monitor request (and organization check) it ran for.
+
+        "discovery:<scrape run>" from the run's stats.discovery_request_id;
+        "actor-update:<collection run>" from its request link or its config
+        (subscription_id, check_id). Read only; runs without a link are left out.
+        """
+        discovery = [r.split(":", 1)[1] for r in run_ids if r.startswith("discovery:")]
+        updates = [r.split(":", 1)[1] for r in run_ids if r.startswith("actor-update:")]
+        out: dict[str, dict] = {}
+        with self.connect() as conn, conn.cursor() as cur:
+            if discovery and self._has_tables(cur, "public.scrape_run"):
+                cur.execute("SELECT run_id::text, stats->>'discovery_request_id' FROM public.scrape_run "
+                            "WHERE run_id::text = ANY(%s)", (discovery,))
+                for run, sid in cur.fetchall():
+                    if sid:
+                        out[f"discovery:{run}"] = {"request": sid, "check": None}
+            if updates and self._has_tables(cur, "public.collection_run"):
+                linked = self._has_tables(cur, "public.actor_update_subscription_run")
+                cur.execute(f"""
+                    SELECT r.collection_run_id::text,
+                           COALESCE({"sr.actor_update_subscription_id::text, " if linked else ""}
+                                    r.config_snapshot->>'subscription_id'),
+                           r.config_snapshot->>'check_id'
+                      FROM public.collection_run r
+                      {"LEFT JOIN public.actor_update_subscription_run sr "
+                       "ON sr.collection_run_id = r.collection_run_id" if linked else ""}
+                     WHERE r.collection_run_id::text = ANY(%s)""", (updates,))
+                for run, sid, check in cur.fetchall():
+                    if sid or check:
+                        out[f"actor-update:{run}"] = {"request": sid, "check": check}
+        return out
+
     def owners(self, entity_type: str) -> dict[str, dict]:
         """entity id -> its original owner, for one record type. Records without a
         row have no known owner ("Not recorded")."""
@@ -786,7 +844,7 @@ class AccountsStore:
                 SELECT d.deletion_id::text, d.entity_type, d.entity_id::text, d.name, d.snapshot, d.reason,
                        d.deleted_at, d.purge_after, d.restored_at, d.purged_at, p.full_name, r.full_name,
                        GREATEST(0, ceil(extract(epoch FROM d.purge_after - now()) / 86400))::int,
-                       o.full_name
+                       o.full_name, d.deleted_by::text
                   FROM compass.deleted_record d
                   JOIN compass.user_profile p ON p.user_id = d.deleted_by
                   LEFT JOIN compass.user_profile r ON r.user_id = d.restored_by
@@ -798,7 +856,7 @@ class AccountsStore:
             """)
             keys = ("deletion_id", "entity_type", "entity_id", "name", "snapshot", "reason", "deleted_at",
                     "purge_after", "restored_at", "purged_at", "deleted_by", "restored_by", "days_remaining",
-                    "owner")
+                    "owner", "deleted_by_user_id")
             return [dict(zip(keys, row)) for row in cur.fetchall()]
 
     # -- audit ----------------------------------------------------------------

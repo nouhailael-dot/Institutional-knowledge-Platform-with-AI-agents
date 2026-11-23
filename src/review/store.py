@@ -379,6 +379,15 @@ RUN_TYPES = ("discovery_actors", "discovery_events", "discovery_people", "actor_
              "data_feed")
 
 
+def _hidden_clause(hidden_runs) -> tuple[str, tuple]:
+    """' AND source_run_id NOT IN (...)' for the runs someone else owns, as one JSON
+    parameter (no limit on how many). Empty when nothing is hidden."""
+    if not hidden_runs:
+        return "", ()
+    return (" AND source_run_id NOT IN (SELECT value FROM json_each(?))",
+            (json.dumps(sorted(str(r) for r in hidden_runs)),))
+
+
 MAP_IMPORT_MARK = "Explore and Map: "
 
 
@@ -1176,10 +1185,27 @@ class ReviewStore:
                 metadata["decided_changes"] = decided
         return item
 
+    def source_run_ids(self) -> list[str]:
+        """Every run with items here (whose they are is decided by the accounts)."""
+        with self.connect() as db:
+            return [str(r[0]) for r in db.execute(
+                "SELECT DISTINCT source_run_id FROM review_candidate WHERE folded_into IS NULL")]
+
+    def source_run_of(self, candidate_id: str) -> str | None:
+        """The run one item came from, or None when there is no such item."""
+        with self.connect() as db:
+            row = db.execute("SELECT source_run_id FROM review_candidate WHERE candidate_id=?",
+                             (str(candidate_id),)).fetchone()
+        return str(row[0]) if row else None
+
     def list(self, *, status: str | None = "pending_review", entity_type: str | None = None,
              source_run_id: str | None = None, search: str | None = None,
              run_group: str | None = None, actor_category: str | None = None,
-             review_reason: str | None = None, region: str | None = None) -> dict[str, Any]:
+             review_reason: str | None = None, region: str | None = None,
+             hidden_runs: frozenset[str] = frozenset()) -> dict[str, Any]:
+        """``hidden_runs``: runs that are someone else's (personal pages, 23 Nov 2026),
+        left out of the items, the counts and the run groups alike."""
+        hide, hide_params = _hidden_clause(hidden_runs)
         if status not in (*LIST_STATUSES, None, "all"):
             raise ReviewValidationError("Unsupported review status.")
         verified_since = time.time() - VERIFIED_SHOWN_DAYS * 86400
@@ -1187,7 +1213,7 @@ class ReviewStore:
             raise ReviewValidationError("Unsupported entity type.")
         if actor_category and actor_category != "all" and actor_category not in CATEGORY_LABELS:
             raise ReviewValidationError("Unsupported organization category.")
-        where, params = ["folded_into IS NULL"], []
+        where, params = ["folded_into IS NULL" + hide], list(hide_params)
         if status == "parked":
             where.append("status='pending_review'")
         elif status in ("approved", "rejected_by_reviewer"):
@@ -1217,19 +1243,19 @@ class ReviewStore:
                 params,
             ).fetchall()
             counts = {row["status"]: row["n"] for row in db.execute(
-                "SELECT status,count(*) AS n FROM review_candidate WHERE folded_into IS NULL "
-                "AND (status = 'pending_review' OR COALESCE(reviewed_at, 0) >= ?) GROUP BY status",
-                (verified_since,),
+                "SELECT status,count(*) AS n FROM review_candidate WHERE folded_into IS NULL" + hide +
+                " AND (status = 'pending_review' OR COALESCE(reviewed_at, 0) >= ?) GROUP BY status",
+                (*hide_params, verified_since),
             )}
             counts["parked"] = sum(1 for row in db.execute(
                 "SELECT decision_kind, agent_metadata FROM review_candidate "
-                "WHERE folded_into IS NULL AND status='pending_review'")
+                "WHERE folded_into IS NULL" + hide + " AND status='pending_review'", hide_params)
                 if is_parked(row["decision_kind"], row["agent_metadata"]))
             counts["pending_review"] = counts.get("pending_review", 0) - counts["parked"]
             maps = [dict(row) for row in db.execute(
                 "SELECT source_run_id, max(source_description) AS description, count(*) AS candidate_count "
-                "FROM review_candidate WHERE folded_into IS NULL GROUP BY source_run_id "
-                "ORDER BY source_run_id"
+                "FROM review_candidate WHERE folded_into IS NULL" + hide + " GROUP BY source_run_id "
+                "ORDER BY source_run_id", hide_params
             )]
         candidates = [self._decode(row) for row in rows]
         if status in ("parked", "pending_review"):
@@ -1265,14 +1291,14 @@ class ReviewStore:
             "candidates": candidates,
             "counts": {key: counts.get(key, 0) for key in LIST_STATUSES},
             "source_maps": maps,
-            "run_groups": self.run_groups(),
+            "run_groups": self.run_groups(hidden_runs=hidden_runs),
             "reason_counts": dict(sorted(reason_counts.items(), key=lambda kv: (-kv[1], kv[0]))),
             "review_redesign_cutoff": review_redesign_cutoff(),
             "admission_configured": self.admission_configured,
             "last_sync": self.sync_state(),
         }
 
-    def run_groups(self) -> list[dict[str, Any]]:
+    def run_groups(self, hidden_runs: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
         """Queue groups: one per run, newest first, each with a readable label.
 
         A pure projection over what is already stored. Deterministic: newest
@@ -1281,6 +1307,7 @@ class ReviewStore:
         map's own checks sit side by side, each labelled for what it is.
         """
 
+        hide, hide_params = _hidden_clause(hidden_runs)
         with self.connect() as db:
             rows = db.execute(
                 "SELECT source_run_id, max(source_description) AS description, "
@@ -1288,11 +1315,12 @@ class ReviewStore:
                 "max(created_at) AS latest, "
                 "sum(CASE WHEN status='pending_review' THEN 1 ELSE 0 END) AS pending_count, "
                 "group_concat(DISTINCT entity_type) AS entity_types "
-                "FROM review_candidate WHERE folded_into IS NULL GROUP BY source_run_id"
+                "FROM review_candidate WHERE folded_into IS NULL" + hide + " GROUP BY source_run_id",
+                hide_params,
             ).fetchall()
             by_status = db.execute(
                 "SELECT source_run_id, status, count(*) AS n FROM review_candidate "
-                "WHERE folded_into IS NULL GROUP BY source_run_id, status"
+                "WHERE folded_into IS NULL" + hide + " GROUP BY source_run_id, status", hide_params
             ).fetchall()
         status_counts: dict[str, dict[str, int]] = {}
         for row in by_status:

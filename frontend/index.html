@@ -863,11 +863,11 @@ import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
 import {createReviewPage} from "./review.js?v=20261123a";
-import {createDiscoveryPage} from "./discovery.js?v=20261123c";
+import {createDiscoveryPage} from "./discovery.js?v=20261123d";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261123b";
 import {createAccountPages} from "./accounts.js?v=20261123d";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261123c";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261123d";
 import {askConfirm, showMessage} from "./dialog.js?v=20261123a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
@@ -1287,6 +1287,8 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
   ];
   const usable=f=>!(nonUS&&f.usOnly);
   filters=filters.filter(usable); more=more.filter(usable); columns=columns.filter(usable);
+  // The Directory is the one shared page: every row shows whose record it is (GHUS, 23 Nov 2026).
+  columns=[...columns,{label:"Owner",text:ownerOf}];
   const all=[...filters,...common,...more];
   const needle=q.trim().toLowerCase();
   // My Records: the records this person originally brought in (their owner is
@@ -2364,6 +2366,7 @@ function SavedMaps({maps,value,disabled,onPick,cls}){
         ${shown.map(m=>html`<li key=${m.id} role="option" aria-selected=${m.id===value}>
           <button type="button" class=${m.id===value?"on":""} title=${m.description||""} onClick=${()=>pick(m.id)}>
             <span>${mapTitle(m.description)}</span>
+            ${m.shared&&html`<small title="Made before accounts; shared with everyone">Shared · from before accounts</small>`}
             ${m.status!=="done"&&html`<small>${m.status.replace(/_/g," ")}</small>`}
           </button></li>`)}
         ${!shown.length&&html`<li class="saved-none">No saved map matches “${q.trim()}”.</li>`}

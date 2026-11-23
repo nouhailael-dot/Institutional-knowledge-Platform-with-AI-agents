@@ -108,6 +108,11 @@ function withRequester(payload, email) {
   return isEmail(email) ? {...payload, requested_by: String(email).trim()} : payload;
 }
 
+// Each person sees their own requests (GHUS, 23 Nov 2026); one made before accounts
+// has no recorded owner and stays shared with everyone, marked as such.
+export const SHARED_LABEL = "Shared · from before accounts";
+const SHARED_TITLE = "Made before accounts; shared with everyone";
+
 export const STATUS_LABELS = {
   // Active and waiting for its next run; "Running" is said only while a run is.
   active: "Scheduled",
@@ -1836,6 +1841,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       <div class="discovery-request-head">
         <div>
           <span class="discovery-kind">Organizations Update</span>
+          ${request.shared && html`<span class="discovery-kind" title=${SHARED_TITLE}>${SHARED_LABEL}</span>`}
           <h3>${request.title || "Organizations update"}</h3>
           <p>${updateRequestScope(request, sectors)}</p>
         </div>
@@ -1977,6 +1983,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       <div class="discovery-request-head">
         <div>
           ${entity !== "actor" && html`<span class="discovery-kind">${noun}</span>`}
+          ${request.shared && html`<span class="discovery-kind" title=${SHARED_TITLE}>${SHARED_LABEL}</span>`}
           <h3>${request.title || "Untitled request"}</h3>
           <p>${entity === "actor" ? requestSummary(request, options) : entitySummary(request, options)}</p>
         </div>

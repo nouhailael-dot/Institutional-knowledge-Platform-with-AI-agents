@@ -208,3 +208,20 @@ dedicated Pending Deletion page (name, type, deleted by, date, reason, days left
   mode with the real backend writers on a migrated production copy.
 - Runbook: `docs/ACCOUNTS_ACTIVATION.md` (rewritten: order, Render, migrations, bootstrap,
   monitoring, rollback).
+
+## Personal pages (GHUS decision, 23 Nov 2026)
+
+- Everything is personal apart from the Ecosystem Directory. Each person sees only their own
+  maps (and Ask's parked organizations from them), Monitor and Update requests (their scheduled
+  runs included), one-off organization updates, Data Feed imports and map saves, Review Results
+  (items from their own requests, imports and checks) and Pending Deletion (their own deletions).
+- Admins' own pages are personal too; everyone's work is seen on Users, Usage and Costs and Audit
+  History only. `GET /api/dashboard/spending` (everyone's spending) now needs usage.view_all.
+- Made before accounts (no recorded owner): shared with everyone, marked "Shared · from before
+  accounts". Nothing is reassigned or guessed.
+- The Directory stays shared and shows an Owner column on every tab.
+- One check in the sign-in middleware (`src/accounts/personal.py`): a route naming someone else's
+  map, request, import, Review item, deletion or check answers 404 "Not found."; owners that cannot
+  be read answer 503 rather than showing everyone's items. Lists filter the same way.
+- Tests: tests/test_personal_pages.py; phase 5 and 6 tests updated (Run now and restore on someone
+  else's request or deletion are now refused).

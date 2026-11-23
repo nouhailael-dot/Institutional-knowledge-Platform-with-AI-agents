@@ -374,11 +374,12 @@ def _sources(hits: list[dict]) -> list[dict]:
     return out
 
 
-def _parked_hits(question: str, hits: list[dict]) -> list[dict]:
-    """Parked organizations for Ask. A secondary source: if it fails, Ask still
-    answers from the database alone."""
+def _parked_hits(question: str, hits: list[dict], visible=None) -> list[dict]:
+    """Parked organizations for Ask, from the asker's own maps. A secondary source:
+    if it fails, Ask still answers from the database alone."""
     try:
-        return parked.search(question, map_store(), skip_names=[h["name"] for h in hits])
+        return parked.search(question, map_store(), skip_names=[h["name"] for h in hits],
+                             visible=visible)
     except Exception as exc:
         print(f"Parked search skipped: {exc}", file=sys.stderr)
         return []
@@ -399,6 +400,12 @@ def ask_stream(question: str = Query(..., min_length=1),
     # Who asked, taken now: the answer streams after this function returns.
     from src.identity import current_account
     asker = current_account()
+    # Parked organizations come only from the asker's own maps (and those from
+    # before accounts); read now, for the same reason. Unknown owners: none.
+    try:
+        own_maps = personal.visible_test("map")
+    except personal.OwnershipUnavailable:
+        own_maps = lambda _id: False  # noqa: E731
 
     def on_usage(model, usage):
         """The answer's token usage, priced like the maps' calls (accounts Phase 5)."""
@@ -458,7 +465,7 @@ def ask_stream(question: str = Query(..., min_length=1),
                 mode = "semantic"      # fall back to map search, same as the UI
 
         hits = _ask_visible(retrieve(standalone))
-        hits += _parked_hits(standalone, hits)
+        hits += _parked_hits(standalone, hits, own_maps)
         yield _sse("meta", {"mode": "semantic", "sources": _sources(hits), "rewritten": rewritten})
         if hits:
             for chunk in stream_answer(standalone, hits, on_usage=on_usage):
@@ -572,6 +579,20 @@ def browse_actors():
 from src.identity import NO_SIGN_IN_YET, current_user, current_user_email  # noqa: E402
 # Who did what, and who brought each record in (accounts Phase 3; does nothing without accounts).
 from src.accounts import activity  # noqa: E402
+# Personal pages (GHUS, 23 Nov 2026): maps, requests, imports, Review Results and
+# Pending Deletion are each person's own; the Directory is shared.
+from src.accounts import personal  # noqa: E402
+
+
+@app.exception_handler(personal.OwnershipUnavailable)
+async def _owners_unavailable(request, exc):
+    # Refused rather than shown whole: a personal list never leaks everyone's items.
+    return JSONResponse({"detail": exc.message}, status_code=503)
+
+
+# A Review item's run, for "is it theirs?" on every route that names one.
+personal.candidate_run = lambda candidate_id: (
+    review_store().source_run_of(candidate_id) if hasattr(review_store(), "source_run_of") else None)
 
 
 class DirectoryDecision(BaseModel):
@@ -746,7 +767,10 @@ def review_deleted():
     from backend.accounts_routes import accounts_store
     if not _accounts_on():
         return {"deleted": [], "retention_days": 30}
-    return {"deleted": [_deletion_view(d) for d in accounts_store().deletions()], "retention_days": 30}
+    # Each person's own deletions, admins included (personal pages, 23 Nov 2026).
+    me = _signed_in_account()
+    return {"deleted": [_deletion_view(d) for d in accounts_store().deletions()
+                        if d.get("deleted_by_user_id") == me.user_id], "retention_days": 30}
 
 
 class RestoreRequest(BaseModel):
@@ -825,6 +849,10 @@ _MAP_POOL = ThreadPoolExecutor(max_workers=max(1, int(os.environ.get("GHUS_MAP_W
 
 
 def map_record(job_id):
+    # Someone else's map is unknown here too (personal pages, 23 Nov 2026): this
+    # covers the routes that name the map in the body (chat, start, upload).
+    if not personal.may_open("map", job_id):
+        raise HTTPException(status_code=404, detail="Unknown map session.")
     try:
         return map_store().get(job_id)
     except KeyError:
@@ -854,7 +882,8 @@ def map_session():
 def maps_recent():
     from src.trial import trial_start
     enabled, reason = research_availability()
-    maps = map_store().recent()
+    # Your own maps, and those from before accounts (personal pages, 23 Nov 2026).
+    maps = personal.keep(map_store().recent(), "map")
     # The hosted trial lists only the maps made since it started (src.trial).
     if (start := trial_start()) is not None:
         maps = [m for m in maps if float(m.get("created") or 0) >= start.timestamp()]
@@ -1664,7 +1693,8 @@ def review_subscriptions():
     if source is None:
         return {"subscriptions": [], "configured": False}
     try:
-        return {"subscriptions": source.fetch_subscriptions(), "configured": True}
+        mine = personal.keep(source.fetch_subscriptions(), "request", key="subscription_id")
+        return {"subscriptions": mine, "configured": True}
     except PostgresReviewSourceError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
@@ -1743,12 +1773,15 @@ def review_candidates(status: str = Query("pending_review"),
                       search: str | None = Query(None, max_length=200),
                       refresh: bool = Query(False)):
     sync_warnings = _sync_review_candidates(force=refresh)
+    # Only the items from this person's own requests, imports and maps, and those
+    # from before accounts (personal pages, 23 Nov 2026). Unknown owners: refused.
+    hidden = personal.hidden_review_runs(review_store().source_run_ids())
     try:
         result = review_store().list(
             status=status, entity_type=entity_type,
             source_run_id=source_run_id, search=search,
             run_group=run_group, actor_category=actor_category,
-            review_reason=review_reason, region=region,
+            review_reason=review_reason, region=region, hidden_runs=hidden,
         )
         result["sync_warnings"] = sync_warnings
         # The database is being read in the background: the page asks again.
@@ -1997,9 +2030,22 @@ def discovery_options():
     return _discovery_call(discovery_bridge().options)
 
 
+def _own_requests(payload):
+    """Only the signed-in person's requests (and those from before accounts), and
+    only their one-off organization updates (personal pages, 23 Nov 2026). A new
+    dict: the cached list is shared and never changed."""
+    if not isinstance(payload, dict):
+        return payload
+    out = {**payload, "requests": personal.keep(payload.get("requests") or [], "request",
+                                                key="subscription_id")}
+    if "one_time" in payload:
+        out["one_time"] = personal.keep_checks(payload.get("one_time") or [])
+    return out
+
+
 @app.get("/api/discovery/requests")
 def discovery_requests():
-    return _discovery_call(discovery_bridge().list_requests)
+    return _own_requests(_discovery_call(discovery_bridge().list_requests))
 
 
 @app.post("/api/discovery/preview")
@@ -2156,7 +2202,7 @@ def discovery_update_requests():
     payload = _discovery_call(bridge.list_update_requests)
     # Run now's start, shown as running until the run record appears.
     mark = getattr(bridge, "mark_starting", None)
-    return mark(payload) if mark else payload
+    return _own_requests(mark(payload) if mark else payload)
 
 
 @app.post("/api/discovery/update-requests/plan")
@@ -2231,6 +2277,9 @@ def review_item_decision(candidate_id: str, payload: ReviewItemDecisionRequest):
 @app.post("/api/review/category-decisions")
 def review_category_decisions(payload: ReviewCategoryRequest):
     """Confirm GHUS actor categories for one or many category_doubt reviews at once."""
+    # The items are named in the body: each must be this person's (personal pages).
+    if not all(personal.may_open_candidate(cid) for cid in payload.candidate_ids):
+        raise HTTPException(status_code=404, detail="Not found.")
     store = review_store()
     try:
         request = store.category_decision_request(

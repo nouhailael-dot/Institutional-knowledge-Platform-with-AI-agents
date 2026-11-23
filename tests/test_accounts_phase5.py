@@ -172,15 +172,21 @@ def test_scheduled_runs_go_to_the_request_owner_and_run_now_to_whoever_pressed_i
     owner, presser = _member(world, name="Olga Owner"), _member(world, name="Pat Presser")
     sid = _request(owner)
     scheduled = _run(sid=sid, cost=1.25, started=NOW - timedelta(days=2))
-    r = _client(world, presser).post(f"/api/discovery/requests/{sid}/run", headers=H)
+    # A request is its owner's alone (personal pages, 23 Nov 2026): nobody else runs it.
+    assert _client(world, presser).post(f"/api/discovery/requests/{sid}/run", headers=H).status_code == 404
+    # One from before accounts is shared: whoever presses Run now has that run.
+    shared = _request(None)
+    r = _client(world, presser).post(f"/api/discovery/requests/{shared}/run", headers=H)
     assert r.status_code == 200
     now = datetime.now(timezone.utc)        # when Run now was pressed (NOW is when the module loaded)
-    pressed = _run(sid=sid, cost=0.75, started=now + timedelta(seconds=20))
-    later = _run(sid=sid, cost=0.5, started=now + timedelta(hours=3))        # outside the window
+    pressed = _run(sid=shared, cost=0.75, started=now + timedelta(seconds=20))
+    later_shared = _run(sid=shared, cost=0.5, started=now + timedelta(hours=3))   # outside the window
+    later = _run(sid=sid, cost=0.5, started=now + timedelta(hours=3))
     ops = _ops(world)
     assert (_op(ops, scheduled)["user"], _op(ops, scheduled)["trigger"]) == ("Olga Owner", "scheduled")
     assert (_op(ops, pressed)["user"], _op(ops, pressed)["trigger"]) == ("Pat Presser", "run_now")
     assert (_op(ops, later)["user"], _op(ops, later)["trigger"]) == ("Olga Owner", "scheduled")
+    assert (_op(ops, later_shared)["user"], _op(ops, later_shared)["trigger"]) == ("Not recorded", "scheduled")
     assert _op(ops, pressed)["feature"] == "Discovery requests"
 
 
@@ -265,7 +271,7 @@ def test_ask_answers_record_tokens_and_a_cost_only_when_the_model_has_a_price(wo
     monkeypatch.setattr(app_module, "stream_answer", fake_stream)
     monkeypatch.setattr(app_module, "plan", lambda q: ("semantic", None))
     monkeypatch.setattr(app_module, "retrieve", lambda q, **kw: [{"name": "x"}])
-    monkeypatch.setattr(app_module, "_parked_hits", lambda q, hits: [])
+    monkeypatch.setattr(app_module, "_parked_hits", lambda q, hits, visible=None: [])
     monkeypatch.setattr(app_module, "_sources", lambda hits: [])
 
     async def drain(response):

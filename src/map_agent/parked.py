@@ -44,9 +44,12 @@ def _distance(a, b) -> float:
     return 1 - dot / math.sqrt(sum(x * x for x in a) * sum(y * y for y in b))
 
 
-def search(question: str, store, skip_names=()) -> list[dict]:
-    """Parked organizations, people and events close to the question, as Ask source rows."""
-    found = store.parked_records()
+def search(question: str, store, skip_names=(), visible=None) -> list[dict]:
+    """Parked organizations, people and events close to the question, as Ask source rows.
+
+    ``visible`` (map id -> bool) keeps only the asker's own maps and those from
+    before accounts (personal pages, 23 Nov 2026); None keeps every map."""
+    found = [f for f in store.parked_records() if visible is None or visible(f[0])]
     if not found:
         return []
     docs = [_doc(record) for _, _, record in found]

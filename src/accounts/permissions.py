@@ -117,7 +117,8 @@ ROUTE_POLICY: list[Rule] = [
     *_rules("ask.use", "GET /api/ask/stream", "POST /api/upload"),
     # Dashboard
     *_rules("dashboard.view", "GET /api/dashboard/start", "GET /api/dashboard/directory-activity"),
-    *_rules("usage.view_own", "GET /api/dashboard/spending"),
+    # Everyone's spending by month: admins only (personal pages, 23 Nov 2026).
+    *_rules("usage.view_all", "GET /api/dashboard/spending"),
     # Monitor and Update (Discovery and Update requests run paid agents)
     *_rules("requests.view",
             "GET /api/discovery/actors", "GET /api/discovery/options",

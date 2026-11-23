@@ -207,8 +207,12 @@ def test_admins_and_editors_may_delete_and_restore_viewers_may_not(world):
     assert _delete(admin, "events", world.ids["Delta Summit"]).status_code == 200
     deletion_id = admin.get("/api/review/deleted").json()["deleted"][0]["deletion_id"]
     assert _restore(viewer, deletion_id).status_code == 403
+    # Pending Deletion is personal (GHUS, 23 Nov 2026): another editor neither sees
+    # nor restores it; the person who deleted it does.
     editor = _client(world, _member(world, "editor"))
-    assert _restore(editor, deletion_id).status_code == 200
+    assert editor.get("/api/review/deleted").json()["deleted"] == []
+    assert _restore(editor, deletion_id).status_code == 404
+    assert _restore(admin, deletion_id).status_code == 200
 
 
 def test_pending_deletion_is_for_deleters_only_not_for_every_reviewer(world):
@@ -296,11 +300,12 @@ def test_restore_brings_it_back_with_owner_and_trail_and_is_recorded(world):
     _sql("INSERT INTO compass.record_owner (entity_type, entity_id, owner_user_id, origin) "
          "VALUES ('event', %s, %s::uuid, 'created')", world.ids["Delta Summit"], owner["id"])
     restorer = _member(world, "admin", name="Admin Ama")
-    client = _client(world, _member(world))
-    assert _delete(client, "events", world.ids["Delta Summit"]).status_code == 200
-    deletion_id = client.get("/api/review/deleted").json()["deleted"][0]["deletion_id"]
-
     admin = _client(world, restorer)
+    assert _delete(admin, "events", world.ids["Delta Summit"]).status_code == 200
+    deletion_id = admin.get("/api/review/deleted").json()["deleted"][0]["deletion_id"]
+    # Someone else's deletion is not theirs to restore (personal pages, 23 Nov 2026).
+    assert _restore(_client(world, _member(world)), deletion_id).status_code == 404
+
     answer = _restore(admin, deletion_id)
     assert answer.status_code == 200 and answer.json()["entity_id"] == world.ids["Delta Summit"]
     assert [e["id"] for e in admin.get("/api/browse/events").json()["events"]] == [world.ids["Delta Summit"]]
@@ -324,7 +329,7 @@ def test_restore_is_refused_once_the_30_days_are_over(world):
         VALUES ('actor', %s::uuid, 'Water Lab', '{}'::jsonb, %s::uuid, now() - interval '31 days',
                 now() - interval '1 day') RETURNING deletion_id::text
     """, world.ids["Water Lab"], deleter["id"])[0][0]          # simulated time: deleted 31 days ago
-    client = _client(world, _member(world, "admin"))
+    client = _client(world, deleter)                           # Pending Deletion is the deleter's
     [row] = client.get("/api/review/deleted").json()["deleted"]
     assert row["days_remaining"] == 0
     answer = _restore(client, deletion_id)
@@ -355,8 +360,8 @@ def test_the_database_refuses_a_restore_after_the_deadline_and_any_rewrite(world
 
 # ------------------------------------------------------------------ concurrency
 def test_two_people_deleting_or_restoring_at_once_make_one_change(world):
-    a = _client(world, _member(world, "editor"))
-    b = _client(world, _member(world, "admin"))
+    people = {"editor": _member(world, "editor"), "admin": _member(world, "admin")}
+    a, b = _client(world, people["editor"]), _client(world, people["admin"])
     barrier = threading.Barrier(2)
     answers = []
 
@@ -371,7 +376,13 @@ def test_two_people_deleting_or_restoring_at_once_make_one_change(world):
     assert sorted(r.status_code for r in answers) == [200, 422]
     assert _sql("SELECT count(*) FROM compass.deleted_record")[0][0] == 1
 
-    deletion_id = a.get("/api/review/deleted").json()["deleted"][0]["deletion_id"]
+    # Only the one who deleted it may restore it (personal pages, 23 Nov 2026): the
+    # race is between two of their own sessions, and the other person is refused.
+    deletion_id, deleted_by = _sql("SELECT deletion_id::text, deleted_by::text FROM compass.deleted_record")[0]
+    deleter = next(p for p in people.values() if p["id"] == deleted_by)
+    other = next(p for p in people.values() if p["id"] != deleted_by)
+    assert _restore(_client(world, other), deletion_id).status_code == 404
+    a, b = _client(world, deleter), _client(world, deleter)
     answers.clear()
     threads = [threading.Thread(target=run, args=(lambda c=c: _restore(c, deletion_id),)) for c in (a, b)]
     [t.start() for t in threads]

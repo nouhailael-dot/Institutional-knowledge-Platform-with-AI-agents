@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from src.datafeed.parse import MAX_BYTES
 from src.datafeed.service import XLSX, DataFeedError, DataFeedService
+from src.accounts import personal
 from src.identity import current_user
 
 router = APIRouter(prefix="/api/datafeed", tags=["datafeed"])
@@ -120,9 +121,11 @@ def history():
         raise
     except Exception:  # noqa: BLE001 - database unreachable: show what we have
         logger.warning("Import History could not be read from the database", exc_info=True)
-        return {"imports": list(_last_history or []), "unavailable": True}
+        return {"imports": personal.keep(_last_history or [], "import", key="run_id"), "unavailable": True}
     _last_history = imports
-    return {"imports": imports}
+    # This person's own imports and map saves, and those from before accounts
+    # (personal pages, 23 Nov 2026). The kept copy stays whole; each reader filters.
+    return {"imports": personal.keep(imports, "import", key="run_id")}
 
 
 @router.get("/example-import.xlsx")

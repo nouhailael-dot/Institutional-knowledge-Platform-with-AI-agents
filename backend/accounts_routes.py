@@ -35,7 +35,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from backend.access import FAILURES, SECURITY_HEADERS, UNSAFE_METHODS, same_origin
-from src.accounts import activity
+from src.accounts import activity, personal
 from src.accounts.permissions import (PUBLIC, SIGNED_IN, audit_entity, audit_name, permission_for,
                                       rule_for)
 from src.accounts.store import Account, AccountsStore
@@ -233,6 +233,15 @@ async def require_account(request: Request, call_next):
     token = activity.begin()
     try:
         with signed_in_as(account):
+            # Personal pages (GHUS, 23 Nov 2026): someone else's map, request, import,
+            # Review item or deletion answers "not found"; unknown owners refuse.
+            found = rule_for(method, path)
+            try:
+                theirs = not personal.allowed_path(found[1] if found else {})
+            except personal.OwnershipUnavailable as exc:
+                return _refuse(request, 503, exc.message)
+            if theirs:
+                return _refuse(request, 404, "Not found.")
             response = await call_next(request)
     finally:
         notes = activity.end(token)
