@@ -1,8 +1,19 @@
 # Migration 720: "actor" becomes "organization" in the database (stage 1 of 2)
 
-Status: **rehearsed on a production copy, not applied to Supabase.** GHUS decision of
-24 Nov 2026 (platform owner): "actor" becomes "Organization" everywhere, the database
-included. Needs the platform owner's go-ahead for the production window.
+Status: **applied to Supabase on 24 Nov 2026** (platform owner's go-ahead, a quiet
+window: no run in progress, no other session). GHUS decision of 24 Nov 2026: "actor"
+becomes "Organization" everywhere, the database included.
+
+Applied in order: backup `C:\Users\Ismail\GHUS-data\backups\supabase-before-720-20261124T144929Z-without-raw-document-rows.dump`
+(every table's data except `raw_document`'s fetched pages, which 720 does not touch; a
+full dump was cut off over the VPN on that table) → preflight (all true, after the fix
+below) → 720 → ledger → verify (10 of 10 true). Afterwards the old and new names read
+the same rows (980 organizations, 820 in the Directory view, 651 hub memberships,
+13,086 facts) and the platform's Directory and record pages load.
+
+The production preflight first refused: `ghus_guard_subscription_run_append_only` is
+stored there with Windows line endings. The checks now read CRLF as LF (a real
+difference still refuses); rehearsal rerun before applying.
 
 | | File |
 |---|---|
