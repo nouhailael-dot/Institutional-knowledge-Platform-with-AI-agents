@@ -56,10 +56,19 @@ def test_the_correction_changes_us_spellings_only_and_is_a_dry_run_by_default(se
 
     tag = uuid.uuid4().hex[:8]
     made = {}
+    # A production-shaped database requires where a record came from and its status;
+    # older test copies have no such columns.
+    present = {r[0] for r in session.execute(text(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'actor' "
+        "AND column_name IN ('source_origin', 'status')")).all()}
+    wanted = [(c, v) for c, v in (("source_origin", "'ghus_manual'"), ("status", "'parked'")) if c in present]
+    extra_col = "".join(f", {c}" for c, _ in wanted)
+    extra_val = "".join(f", {v}" for _, v in wanted)
     for country in ("United States", "US", "USA", "Morocco"):
         actor_id = str(uuid.uuid4())
         session.execute(text(
-            "INSERT INTO actor (actor_id, name, slug, country) VALUES (CAST(:id AS uuid), :name, :slug, :country)"),
+            f"INSERT INTO actor (actor_id, name, slug, country, actor_category{extra_col}) "
+            f"VALUES (CAST(:id AS uuid), :name, :slug, :country, 'company'{extra_val})"),
             {"id": actor_id, "name": f"Country {country} {tag}", "slug": f"country-{tag}-{len(made)}",
              "country": country})
         made[country] = actor_id
