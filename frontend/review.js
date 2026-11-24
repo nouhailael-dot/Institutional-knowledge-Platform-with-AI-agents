@@ -23,7 +23,7 @@ import {
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261105a";
+} from "./labels.js?v=20261124b";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261110b";
 import {askConfirm} from "./dialog.js?v=20261123a";
 
@@ -876,7 +876,7 @@ export function updateRunRows(candidate) {
   const meta = candidate?.agent_metadata || {};
   const runs = meta.update_runs || (meta.run_id ? [{
     run_id: meta.run_id, date: candidate.created_at, title: String(candidate.source_description || "")
-      .replace(/^Actor update:\s*/, ""), status: meta.run_status, pages_read: meta.pages_read || [],
+      .replace(/^(?:Actor|Organization) update:\s*/, ""), status: meta.run_status, pages_read: meta.pages_read || [],
     counts: Object.fromEntries(Object.entries((meta.written || []).reduce((acc, fact) => {
       const key = fact.lifecycle_state === "conflict_flagged" ? "conflict"
         : fact.lifecycle_state === "pending_update" ? "protected"

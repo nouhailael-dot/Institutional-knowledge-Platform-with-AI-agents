@@ -45,7 +45,7 @@ class ActorCategoryCompatibilityTests(unittest.TestCase):
         source = Path("src/assemble.py").read_text(encoding="utf-8")
         self.assertIn("to_jsonb(a)->>'actor_category'", source)
         self.assertIn("to_jsonb(a)->>'actor_type'", source)
-        self.assertIn('_section("Actor category", r["actor_category"])', source)
+        self.assertIn('_section("Organization category", r["actor_category"])', source)   # 24 Nov 2026
         self.assertIn('_section("Category type", r["category_type"])', source)
 
     def test_browse_reads_columns_migration_500_drops_or_renames_through_to_jsonb(self):

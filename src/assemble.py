@@ -96,7 +96,7 @@ def assemble_actors() -> list[dict]:
                 _section("Name", r["name"])
                 # Abbreviations ("NMSU") are what keyword search needs most.
                 + _section("Other names", alt_names)
-                + _section("Actor category", r["actor_category"])
+                + _section("Organization category", r["actor_category"])
                 + _section("Category type", r["category_type"])
                 + _section("Record status", verification_label(r["status"]))
                 + _section("Location", location)

@@ -945,7 +945,7 @@ def _record_run(session, record: dict) -> tuple[str, str]:
 
     return store.start_actor_update_run(
         session, actor_id=record["actor_id"], topic_id=record["topic_id"],
-        need=f"Actor update ({record['scope']}): {record['summary']}",
+        need=f"Organization update ({record['scope']}): {record['summary']}",
         requested_by=REQUESTED_BY, job_name=JOB_NAME, cap_usd=float(record["cap_usd"]),
         deep=record.get("depth") == "deep",
         spent_usd=float(record["cost_usd"]), pages_fetched=len(record["pages_read"]),

@@ -361,6 +361,8 @@ MAP_CHECKS_LABEL = "Map checks"
 
 _DISCOVERY_KIND = re.compile(r"^Open-web (actor|event|person) discovery", re.IGNORECASE)
 _REQUEST_TITLE = re.compile(r"^Discovery request:\s*(.+?)\s*(?:·|$)")
+# An organization update's stored title prefix; "Actor update:" before 24 Nov 2026.
+UPDATE_TITLE = re.compile(r"^(?:Actor|Organization) update:\s*")
 
 
 def _short_day(when: Any) -> str | None:
@@ -459,8 +461,8 @@ def _run_label(description: Any, source_run_id: Any, when: Any = None) -> str:
     elif run_id.startswith(ACTOR_UPDATE_PREFIX):
         # "Actor update · CPower Energy · Oct 19, 2026": what an update wrote,
         # and anything it raised for a person (conflicts, links, hubs).
-        # Stored descriptions still start "Actor update:"; the page says Organization update.
-        parts = ["Organization update", raw.removeprefix("Actor update:").strip()]
+        # Stored "Organization update: …" (older records "Actor update: …").
+        parts = ["Organization update", UPDATE_TITLE.sub("", raw).strip()]
     elif run_id.startswith(MAP_CHECKS_PREFIX) or raw.startswith("Architecture V2"):
         # Review items the map itself raised - a verification, a place that
         # would not geocode, a link or a hub to confirm. No run is behind them,

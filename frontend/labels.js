@@ -218,7 +218,7 @@ export const SENTENCES = {
   sectorExisted: (name) => `Sector “${name}” already exists and has been selected.`,
   noHubCreated: "No — a proposal only.",
   hubProposalsExplain: "Detection proposes; GHUS decides. A proposal never creates a hub — it records a cluster that met every threshold, for a person to accept or refuse.",
-  hubProposalsSub: "Assign actors to existing hubs or propose new hubs",
+  hubProposalsSub: "Assign organizations to existing hubs or propose new hubs",
   reviewActionsSub: "Organizations, people, and events",
   hubProposalsNone: "No open hub proposals. Detection runs produce a proposal only when a cluster meets every threshold.",
   hubProposalsUnavailable: "Hub proposals aren't available on this computer.",

@@ -439,7 +439,7 @@ def render_report(report: RunnerReport) -> str:
         if outcome.notified:
             lines.append(f"Email: sent to {outcome.notified['to']}" if outcome.notified.get("sent")
                          else f"Email: not sent - {outcome.notified.get('reason')}")
-        label = "Actors" if outcome.kind == "actor_update" else "Queries"
+        label = "Organizations" if outcome.kind == "actor_update" else "Queries"
         lines.append(f"{label} ({len(outcome.queries)}):")
         lines.extend(f"- {query}" for query in outcome.queries)
         lines.append("")

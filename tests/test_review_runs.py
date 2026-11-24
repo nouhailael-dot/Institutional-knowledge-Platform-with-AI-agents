@@ -702,6 +702,8 @@ def test_an_actor_update_run_is_labelled_with_its_actor_and_date():
 
     label = _run_label("Actor update: CPower Energy", "actor-update:3f2a", CUTOFF_TS + 5)
     assert label.startswith("Organization update · CPower Energy · ")
+    # New records are stored "Organization update:" (24 Nov 2026); both read the same.
+    assert _run_label("Organization update: CPower Energy", "actor-update:3f2a", CUTOFF_TS + 5) == label
     request = _run_label("Actor update: Fill missing boxes: California water organizations",
                          "actor-update:9b1c", CUTOFF_TS + 5)
     assert request.startswith("Organization update · Fill missing boxes: California water organizations")

@@ -25,6 +25,8 @@ from dotenv import dotenv_values
 
 
 DATAFEED_SOURCE = "ghus_data_feed"
+# An organization update's stored title prefix; "Actor update:" before 24 Nov 2026.
+UPDATE_TITLE = re.compile(r"^(?:Actor|Organization) update:\s*")
 
 
 class PostgresReviewSourceError(RuntimeError):
@@ -662,7 +664,7 @@ class PostgresReviewSource:
                 run_meta = card["agent_metadata"]
                 run_rows.append({
                     "run_id": run_meta["run_id"], "date": card.get("created_at"),
-                    "title": str(card["source_description"]).removeprefix("Actor update: "),
+                    "title": UPDATE_TITLE.sub("", str(card["source_description"])),
                     "status": run_meta.get("run_status"), "scope": run_meta.get("scope"),
                     "topic_name": (run_topic or {}).get("name"),
                     "pages_read": run_meta.get("pages_read") or [],
@@ -749,7 +751,7 @@ class PostgresReviewSource:
             if topic_id and meta.get("topic_id") and meta.get("topic_id") != topic_id:
                 continue
             base = {"run_id": meta["run_id"], "date": card.get("created_at"),
-                    "run_title": str(card["source_description"]).removeprefix("Actor update: ")}
+                    "run_title": UPDATE_TITLE.sub("", str(card["source_description"]))}
             for fact in meta.get("written") or []:
                 notes.setdefault(fact["fact_key"], {
                     **base, "outcome": self._outcome_of(fact),
@@ -1139,7 +1141,7 @@ class PostgresReviewSource:
             "source_key": f"postgres:actor_update:{run['run_id']}:{actor_id}",
             "source_run_id": f"actor-update:{run['run_id']}",
             "source_index": f"actor-update:{run['run_id']}:{actor_id}",
-            "source_description": f"Actor update: {run.get('request_title') or actor['name']}",
+            "source_description": f"Organization update: {run.get('request_title') or actor['name']}",
             "entity_type": "actor",
             "payload": payload,
             "evidence": evidence,
@@ -2152,7 +2154,7 @@ class PostgresReviewSource:
             "source_run_id": (f"actor-update:{update_run}" if update_run
                               else f"v2-review:{row.get('topic_id') or 'unscoped'}"),
             "source_index": f"review-item:{review_id}",
-            "source_description": (f"Actor update: {row.get('name')}" if update_run
+            "source_description": (f"Organization update: {row.get('name')}" if update_run
                                    else f"Architecture V2 {row.get('review_kind')} review"),
             "entity_type": "actor",
             "payload": actor_payload,
