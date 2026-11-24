@@ -547,6 +547,8 @@
   .dir-results .empty{margin:0;border:0}
   .row-go{color:var(--muted);font-size:20px;width:24px;text-align:right}
   .save-panel{margin-top:16px}
+  .mcard .hint .link{border:0;background:transparent;color:var(--accent-ink);font:inherit;font-weight:600;cursor:pointer;padding:0}
+  .mcard .hint .link:hover{text-decoration:underline}
   .mverify{margin:0 0 16px;padding:14px 16px;border:1px solid var(--line);border-radius:8px;background:var(--surface-2)}
   .mverify-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px;margin:10px 0 6px;font-size:14px}
   .mverify-row label{display:flex;align-items:center;gap:8px}.mverify-row .field{width:auto;min-width:200px}
@@ -829,7 +831,7 @@
   .mcard .mpeople>.example{color:var(--accent-ink);border-color:var(--line);padding:8px 16px}
   @media(max-width:760px){.mcard{padding:18px 16px}.mcard .mh{flex-wrap:wrap}.mcard .mactions{width:100%}}
 </style>
-<link rel="stylesheet" href="/review.css?v=20261124c"/>
+<link rel="stylesheet" href="/review.css?v=20261124d"/>
 <link rel="stylesheet" href="/discovery.css?v=20261112b"/>
 <link rel="stylesheet" href="/datafeed.css?v=20261113b"/>
 <link rel="stylesheet" href="/dashboard.css?v=20261120c"/>
@@ -862,10 +864,10 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261124c";
+import {createReviewPage} from "./review.js?v=20261124d";
 import {createDiscoveryPage} from "./discovery.js?v=20261124a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
-import {createDataFeedPage} from "./datafeed.js?v=20261124c";
+import {createDataFeedPage} from "./datafeed.js?v=20261124d";
 import {createAccountPages} from "./accounts.js?v=20261124a";
 import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261124a";
 import {askConfirm, showMessage} from "./dialog.js?v=20261123a";
@@ -2452,9 +2454,12 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
       onCancel=${()=>setConfirmVerify(false)}
       onSaved=${d=>{setConfirmVerify(false);onReviewed(d);}}/>`}
     ${saved&&html`<div class=${saved.outcome==="not_saved"?"whynot":"hint"} style=${{margin:"0 0 8px"}}>
-      ${saved.outcome==="directory"?`Saved to Compass${byWhom(saved.by)}.`
+      ${saved.outcome==="directory"?savedWhere(saved,ename(e))
         :saved.outcome==="review"?`Sent to Review Results${byWhom(saved.by)}. ${saved.reason||""}`
-        :`Not saved. ${saved.reason||""}`}</div>`}
+        :`Not saved. ${saved.reason||""}`}
+      ${saved.outcome==="directory"&&saved.entity_id&&html` <button class="link" type="button"
+        onClick=${()=>window.dispatchEvent(new CustomEvent(NAVIGATE,{detail:{tab:"browse",
+          record:{kind:e._entity_type||"actor",id:saved.entity_id}}}))}>Open in the Directory</button>`}</div>`}
     ${confirmReject&&html`<div class="whynot" role="alert" style=${{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"8px"}}>
       Remove ${ename(e)} from this map? This can't be undone.
       <button class="example" type="button" disabled=${reviewing} onClick=${()=>review("reject")}>Yes, reject</button>
@@ -2538,6 +2543,15 @@ function CarriedRows({rows,onChange,onDismiss}){
 const KIND_LABEL={actor:"Organization",event:"Event",person:"Person"};
 // " by Name" once accounts record who acted; nothing while it reads "Not recorded".
 const byWhom=by=>by&&!String(by).startsWith("Not recorded")?` by ${by}`:"";
+// Where a saved card went (24 Nov 2026): added as a new record, or merged into one there.
+// Older saves recorded neither and keep the plain line.
+function savedWhere(saved,name){
+  const who=byWhom(saved.by), lead=who?`Saved${who}: `:"";
+  const say=t=>lead?lead+t.charAt(0).toLowerCase()+t.slice(1):t;
+  if(saved.placed==="matched") return say(`Matched to the existing record “${saved.matched_name||name}” in the Ecosystem Directory, which it updated.`);
+  if(saved.placed==="added") return say(`Added to the Ecosystem Directory as “${name}”.`);
+  return `Saved to Compass${who}.`;
+}
 const OUTCOME_TEXT={directory:"Will be added to the directory",review:"Will go to Review Results",
   not_saved:"Can't be saved yet"};
 function SavePanel({jobId,items,onSaved,onClose}){

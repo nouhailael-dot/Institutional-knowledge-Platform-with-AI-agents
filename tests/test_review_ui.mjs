@@ -1607,3 +1607,15 @@ test('a possible duplicate waiting for deletion says who, when, and how to bring
   assert.match(component, /!match\.pending_deletion && \(/);                  // no "Same record" button for it
   assert.match(component, /!\(candidate\.top_matches \|\| \[\]\)\[0\]\?\.pending_deletion/);   // never pre-chosen
 });
+
+// 24 Nov 2026: after Verify, Review says where the record went and links to it.
+test('after Verify, Review says whether the record was added or merged, with a link', async () => {
+  const {placedLine} = await import('../frontend/review.js');
+  const selected = {display_name: 'Prairie Water Lab', top_matches: [{entity_id: 'a1', name: 'Prairie Water Lab Inc.'}]};
+  assert.equal(placedLine({decisionKind: 'same_existing', targetId: 'a1', selected}),
+    'Merged into the existing record “Prairie Water Lab Inc.” in the Ecosystem Directory, which it updated.');
+  assert.equal(placedLine({decisionKind: 'new', selected, name: 'Prairie Water Lab'}),
+    'Added to the Ecosystem Directory as “Prairie Water Lab”.');
+  assert.equal(placedLine({decisionKind: 'reject', selected}), null);
+  assert.match(component, /record: placed\}\}\)\)\}>Open in the Directory<\/button>/);
+});

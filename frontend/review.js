@@ -1106,6 +1106,22 @@ export function canSubmitReview({
   return ["same_existing", "new", "reject", "defer"].includes(kind);
 }
 
+/**
+ * Where a verified record went (24 Nov 2026): merged into the record chosen as the
+ * same, or added as a new one. Null for a decision that stores nothing.
+ */
+export function placedLine({decisionKind, targetId, selected = {}, name = ""} = {}) {
+  if (decisionKind === "same_existing") {
+    const match = (selected.top_matches || []).find(m => String(m.entity_id) === String(targetId));
+    return `Merged into the existing record “${match?.name || "chosen"}” in the Ecosystem Directory, `
+      + "which it updated.";
+  }
+  if (decisionKind === "new" || decisionKind === "keep_both") {
+    return `Added to the Ecosystem Directory as “${name || selected.display_name || "this record"}”.`;
+  }
+  return null;
+}
+
 /** A possible duplicate that waits in Pending Deletion (24 Nov 2026): who deleted it,
  * when, until when, and how to bring it back. It cannot be merged into until then. */
 export function pendingDeletionNote(match = {}) {
@@ -2168,6 +2184,8 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState("");
     const [feedback, setFeedback] = useState("");
+    // The Directory record a Verify stored or updated, for "Open in the Directory".
+    const [placed, setPlaced] = useState(null);
     // A message belongs to the record it was about: opening another clears it
     // (10 Nov 2026: a failed decision's error stayed on the next record).
     useEffect(() => { setError(""); setFeedback(""); }, [selected?.candidate_id]);
@@ -2456,7 +2474,7 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
       if (!(await askConfirm(confirmText(decisionKind), {ok: "Confirm"}))) return;
       const mapKey = `${selected.candidate_id}:${decisionKind}`;
       if (!keys.current.has(mapKey)) keys.current.set(mapKey, decisionKey());
-      setBusy(true); setError(""); setFeedback("");
+      setBusy(true); setError(""); setFeedback(""); setPlaced(null);
       try {
         const body = {
           decision_kind: decisionKind === "keep_both" ? "new" : decisionKind,
@@ -2485,7 +2503,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         );
         setSelected(updated);
         keepNotesDraft(selected.candidate_id, "");
-        setFeedback("Decision recorded. It is kept in history permanently.");
+        // Where it went (24 Nov 2026), and a way to open it.
+        const where = placedLine({decisionKind, targetId, selected,
+          name: (draft && (draft.name || draft.full_name)) || selected.display_name});
+        setFeedback(where ? `${where} The decision is kept in history permanently.`
+          : "Decision recorded. It is kept in history permanently.");
+        const entityId = updated?.canonical_entity_id || (decisionKind === "same_existing" ? targetId : null);
+        setPlaced(where && entityId && ["actor", "event", "person"].includes(selected.entity_type)
+          ? {kind: selected.entity_type, id: String(entityId)} : null);
         keys.current.delete(mapKey);
         await load(undefined, true);
       } catch (exception) {
@@ -2790,7 +2815,9 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             placeholder="Search by name, topic, organization, location, etc."/></label>
       </div>`}
       ${error && html`<div class="review-message error" role="alert">${error}</div>`}
-      ${feedback && html`<div class="review-message success" role="status">${feedback}</div>`}
+      ${feedback && html`<div class="review-message success" role="status">${feedback}
+        ${placed && html` <button class="link" type="button" onClick=${() => window.dispatchEvent(
+          new CustomEvent("ghus:navigate", {detail: {tab: "browse", record: placed}}))}>Open in the Directory</button>`}</div>`}
       ${deepTarget && deep?.key === deepTarget.key && html`<section class="review-deep" aria-label="Deep Pull">
         <div>
           <strong>Deep Pull for ${deepTarget.name}</strong>

@@ -192,7 +192,10 @@ def check(service, picks: list[tuple[str, dict, str]]) -> list[dict]:
         for (index, entity, _), row in zip(group, preview["rows"]):
             outcome, reason = _check_outcome(row)
             out.append({"index": index, "kind": kind, "outcome": outcome, "reason": reason,
-                        "preview_id": preview["preview_id"], "row_number": row["row_number"]})
+                        "preview_id": preview["preview_id"], "row_number": row["row_number"],
+                        # The record it matches, named on the card after saving.
+                        "matched_name": (row.get("match") or {}).get("name")
+                        if row.get("status") in ("existing", "possible") else None})
     return sorted(out, key=lambda r: r["index"])
 
 
@@ -220,6 +223,7 @@ def save(service, picks: list[tuple[str, dict, str]], *, uploader: str, map_name
                                  ai_enrichment=False)
         staged = {r.get("row_number"): r.get("outcome") for r in answer.get("rows") or []}
         refused = {a.get("row_number"): a for a in answer.get("not_stored") or []}
+        placed = {a.get("row_number"): a for a in answer.get("placed") or []}
         for r in rows:
             result = results[r["index"]]
             if staged.get(r["row_number"]) == "already_awaiting_review":
@@ -231,5 +235,9 @@ def save(service, picks: list[tuple[str, dict, str]], *, uploader: str, map_name
                 result.update(outcome=NOT_SAVED, reason=refused[r["row_number"]].get("reason")
                               or "The directory did not accept it.")
             else:
-                result.update(outcome=DIRECTORY, reason="")
+                # Where it went (24 Nov 2026): added as new, or merged into a record there.
+                where = placed.get(r["row_number"]) or {}
+                result.update(outcome=DIRECTORY, reason="",
+                              placed="matched" if where.get("outcome") == "matched_existing" else "added",
+                              entity_id=where.get("entity_id"), matched_name=r.get("matched_name"))
     return [results[i] for i in sorted(results)]

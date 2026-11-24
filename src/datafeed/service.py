@@ -568,7 +568,12 @@ class DataFeedService:
                 "verified": sum(a.get("outcome") == "approved_verified" for a in admitted),
                 "held_for_review": [a for a in admitted if a.get("outcome") != "approved_verified"],
                 "rows": [{"row_number": r.get("row_number"), "outcome": r.get("outcome")}
-                         for r in rows]}
+                         for r in rows],
+                # Where each stored record went (24 Nov 2026): "stored" = added as a new
+                # record, "matched_existing" = it updated one already there; with its id.
+                "placed": [{"row_number": a.get("row_number"), "outcome": a.get("outcome"),
+                            "entity_id": a.get("entity_id")} for a in admitted
+                           if a.get("outcome") in ("stored", "matched_existing", "approved_verified")]}
 
     # ------------------------------------------------------------------ history
     def history(self, limit: int = 100) -> list[dict[str, Any]]:

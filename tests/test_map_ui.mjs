@@ -202,3 +202,12 @@ test('Verify on a map card saves it to Compass after one confirmation', () => {
   assert.match(box, /records:\[record\(\)\],attest/);
   assert.match(box, /disabled=\$\{busy\|\|!can\|\|!attest\}/);
 });
+
+// 24 Nov 2026: a saved card says where it went, with a link to the Directory record.
+test('a saved map card says whether it was added or matched, and opens the record', () => {
+  const where = script.slice(script.indexOf('function savedWhere('), script.indexOf('function savedWhere(') + 600);
+  assert.match(where, /saved\.placed==="matched"/);
+  assert.match(where, /Matched to the existing record/);
+  assert.match(where, /Added to the Ecosystem Directory as/);
+  assert.match(script, /record:\{kind:e\._entity_type\|\|"actor",id:saved\.entity_id\}\}\}\)\)\}>Open in the Directory<\/button>/);
+});

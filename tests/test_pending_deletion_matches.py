@@ -94,3 +94,28 @@ def test_review_shows_a_deleted_possible_duplicate(monkeypatch):
     monkeypatch.setattr(app_module, "_accounts_on", lambda: False)
     assert "pending_deletion" not in app_module._flag_deleted_matches(
         {"entity_type": "actor", "top_matches": [{"entity_id": "bbb"}]})["top_matches"][0]
+
+
+# --- after Verify, where the record went (24 Nov 2026) ---------------------------------------
+
+class SaveService:
+    """Checks two cards (one matches a record, one is new) and stores both."""
+
+    def validate_manual(self, kind, records, method):
+        return {"preview_id": "p1", "rows": [
+            {"row_number": 2, "status": "existing", "errors": [], "match": {"name": "Water Lab Inc."}},
+            {"row_number": 3, "status": "new", "errors": [], "match": {"kind": "new"}}]}
+
+    def confirm(self, preview_id, **kw):
+        return {"rows": [{"row_number": 2, "outcome": "staged"}, {"row_number": 3, "outcome": "staged"}],
+                "not_stored": [],
+                "placed": [{"row_number": 2, "outcome": "matched_existing", "entity_id": "old-1"},
+                           {"row_number": 3, "outcome": "stored", "entity_id": "new-2"}]}
+
+
+def test_a_map_save_says_whether_each_card_was_added_or_matched():
+    picks = [("actor", {"name": "Water Lab"}, "Water"), ("actor", {"name": "Brand New Lab"}, "Water")]
+    first, second = map_save.save(SaveService(), picks, uploader="Ana", map_name="Water labs")
+    assert (first["outcome"], first["placed"], first["entity_id"], first["matched_name"]) == \
+        (map_save.DIRECTORY, "matched", "old-1", "Water Lab Inc.")
+    assert (second["outcome"], second["placed"], second["entity_id"]) == (map_save.DIRECTORY, "added", "new-2")
