@@ -48,7 +48,7 @@ SELECT check_name, ok, detail FROM (
     UNION ALL
     SELECT 10, 'ledger row 720 with the reviewed checksum',
            EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger
-                    WHERE migration_id = '720' AND source_sha256 = '7f4a032812feda93ed4a57bbfac165d6bd3b734082d4a53bcba5ae51c60dd359'), NULL
+                    WHERE migration_id = '720' AND source_sha256 = '869f0ec2158b5b5463121cd9eedddb840fe106a70db8a7042d7ca69a11bb3242'), NULL
 ) checks ORDER BY n;
 
 ROLLBACK;

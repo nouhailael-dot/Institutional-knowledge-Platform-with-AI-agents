@@ -276,7 +276,7 @@ def read_catalog(database: str) -> dict:
             cur.execute("""SELECT a.attname FROM pg_attribute a WHERE a.attrelid = %s::regclass
                            AND a.attnum > 0 AND NOT a.attisdropped ORDER BY a.attnum""", (f"public.{rel}",))
             columns[rel] = [r[0] for r in cur.fetchall()]
-        cur.execute("""SELECT p.proname, md5(p.prosrc), pg_get_function_identity_arguments(p.oid)
+        cur.execute("""SELECT p.proname, md5(replace(p.prosrc, chr(13) || chr(10), chr(10))), pg_get_function_identity_arguments(p.oid)
                        FROM pg_proc p WHERE p.pronamespace='public'::regnamespace AND p.proname = ANY(%s)
                        ORDER BY 1""", (list(ORIGINAL_FUNCTIONS),))
         functions = {name: {"md5": digest, "args": args} for name, digest, args in cur.fetchall()}
@@ -324,7 +324,8 @@ def build(cat: dict) -> dict[str, str]:
 -- the columns named actor in tables that keep their names (event.host_actor_id ...).
 --
 -- One transaction: any failure changes nothing. Refuses unless the catalog is exactly
--- the one this was generated from.
+-- the one this was generated from (function bodies compared with Windows line endings
+-- read as Unix ones: production stores some with CRLF).
 
 BEGIN;
 SET LOCAL lock_timeout = '15s';
@@ -348,7 +349,7 @@ BEGIN
     IF found IS DISTINCT FROM {q(expected)} THEN
         RAISE EXCEPTION '{ID} refused: the relations named actor differ from the reviewed ones: %', found;
     END IF;
-    SELECT string_agg(proname || '=' || md5(prosrc), ' ' ORDER BY proname) INTO fns
+    SELECT string_agg(proname || '=' || md5(replace(prosrc, chr(13) || chr(10), chr(10))), ' ' ORDER BY proname) INTO fns
       FROM pg_proc WHERE pronamespace = 'public'::regnamespace
        AND proname IN ({", ".join(q(n) for n in sorted(cat["functions"]))});
     IF fns IS DISTINCT FROM {q(fn_expect)} THEN
@@ -554,7 +555,7 @@ SELECT check_name, ok, detail FROM (
                AND relname LIKE '%actor%' AND relkind IN ('r','v','m')) f
     UNION ALL
     SELECT 5, 'the functions {ID} rewrites are as reviewed', g.found = {q(fn_expect)}, g.found
-      FROM (SELECT string_agg(proname || '=' || md5(prosrc), ' ' ORDER BY proname) AS found
+      FROM (SELECT string_agg(proname || '=' || md5(replace(prosrc, chr(13) || chr(10), chr(10))), ' ' ORDER BY proname) AS found
               FROM pg_proc WHERE pronamespace = 'public'::regnamespace
                AND proname IN ({", ".join(q(n) for n in sorted(cat["functions"]))})) g
     UNION ALL
