@@ -24,7 +24,6 @@ from agents.discovery.search.phase2 import (
 from agents.discovery.sources.base import FetchedDoc
 from agents.discovery.sources.http_utils import RobotsAwareHttp
 from agents.discovery.stage import InMemoryStageStore, StagedRecord
-from agents.weekly_discovery import run_weekly
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -582,36 +581,6 @@ def test_untrusted_event_extractor_discards_free_form_commentary():
     assert "<untrusted_source_content>" in call["user"]
     assert call["input_schema"]["additionalProperties"] is False
     assert set(call["input_schema"]["properties"]) == {"events"}
-
-
-def test_open_web_failure_does_not_stop_configured_sources_or_downstream(tmp_path):
-    commands = []
-
-    def runner(command):
-        commands.append(list(command))
-        module = command[command.index("-m") + 1]
-        if module == "agents.discovery.search.run":
-            return 1
-        if module == "agents.discovery.run":
-            digest = Path(command[command.index("--digest-out") + 1])
-            digest.write_text("**Status:** succeeded\n", encoding="utf-8")
-        return 0
-
-    outcome = run_weekly(runs_dir=tmp_path, runner=runner)
-
-    configured = [
-        command[command.index("--source") + 1]
-        for command in commands
-        if command[command.index("-m") + 1] == "agents.discovery.run"
-    ]
-    assert configured == ["climate_week", "unga_programme", "unga_guide"]
-    assert [command[command.index("-m") + 1] for command in commands][-2:] == [
-        "agents.enrichment.run",
-        "agents.index.refresh",
-    ]
-    assert outcome.exit_code == 1
-    assert outcome.discovery[0].name == "open_web_event"
-    assert outcome.discovery[0].failed
 
 
 def test_discovered_domain_migration_has_required_contract():

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from argparse import Namespace
 from pathlib import Path
 
 import pytest
@@ -12,7 +11,6 @@ from agents.common.digest import build_digest
 from agents.enrichment.decisions import apply_or_propose_field
 from agents.enrichment.fields import FieldPolicy, load_field_config, policies_for_entity
 from agents.enrichment.gaps import is_gap
-from agents.enrichment.run import run_enrichment
 from agents.enrichment.specs import get_entity_spec
 from agents.index import refresh as refresh_module
 from agents.index.refresh import (
@@ -248,29 +246,6 @@ def test_every_field_proposal_has_source_row_and_source_id_link():
 
     assert proposal_params["source_id"] == source_params["source_id"]
     assert staged_payload["source_id"] == source_params["source_id"]
-
-
-def test_no_adapter_run_closes_skipped_and_digest_requires_attention():
-    session = FakeSession(select_rows=[{"entity_id": str(uuid.uuid4()), "name": "Sparse Hub"}])
-    result = run_enrichment(
-        Namespace(entity="hub", field_set="profile", limit=1, live=False, allow_claude=False),
-        session=session,
-        root=PROJECT_ROOT,
-    )
-    digest = build_digest(
-        run_id=result["run_id"],
-        source="enrichment",
-        entity_type="hub",
-        status=result["status"],
-        stats=result["stats"],
-    )
-
-    assert result["status"] == "skipped"
-    assert result["stats"]["attention_required"] is True
-    assert "no candidate adapter exists for entity=hub" in result["stats"]["skipped_reason"]
-    assert "**Status:** skipped" in digest
-    assert "**Attention Required:** yes" in digest
-    assert "no candidate adapter exists for entity=hub" in digest
 
 
 def test_digest_reports_in_sector_and_out_of_sector_counts():

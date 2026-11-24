@@ -287,9 +287,9 @@ The three enabled discovery sources are event-only. `climate_week`, `unga_progra
 
 Network source adapters check `robots.txt`, use `GHUS_AGENT_CONTACT_EMAIL` in the User-Agent, and fail loudly if that contact address is missing.
 
-## Weekly Schedule
+## Weekly Schedule (retired)
 
-`.github/workflows/weekly-discovery.yml` runs every Monday at 06:00 UTC and can also be started manually. Scheduled runs are dry-run. Live writes require manual `workflow_dispatch` with the `live` input set to true. The workflow first runs the Anthropic SDK compatibility test, then runs each discovery source independently, then deterministic actor profile enrichment, then incremental `search_doc` refresh. One source failure does not stop the remaining sources or downstream maintenance; the workflow writes `agents/runs/source-outcomes.md`, uploads all available artifacts, and exits nonzero at the end if any source or downstream step failed.
+The Monday `weekly-discovery` workflow, its `agents/weekly_discovery.py` runner, and the `agents.enrichment.run` batch CLI were retired on 2026-11-24. Discovery now runs only when someone makes a request on the Discovery page (`discovery-requests.yml`), and organizations are brought up to date through Organization Updates (Light Pull / Deep Pull).
 
 ## Sector-Discovery Handoff
 
@@ -299,15 +299,7 @@ The teammate-owned sector-discovery agent reads `staged_record WHERE sector_matc
 
 ## Enrichment
 
-Generalized enrichment entry point:
-
-```powershell
-python -m agents.enrichment.run --entity actor --field-set profile --limit 10
-```
-
-`agents/config/fields.yaml` defines enrichable fields and per-field auto-apply floors. Fields without a floor are proposal-only. Person fields are proposal-only. Low-confidence or human-review candidates with a `source_url` become `field_proposal` rows in live mode.
-
-The actor adapter preserves the existing `ActorEnrichmentCandidatePipeline` candidate generation and cost tracking. Other entity types currently have field policies and sparse-row gap detection, but no candidate adapter yet, so the CLI logs counts and attempts no writes for them.
+`agents/config/fields.yaml` defines enrichable fields and per-field auto-apply floors. Fields without a floor are proposal-only. Person fields are proposal-only. `agents/enrichment/decisions.py` is the approved writer that applies or proposes each field; low-confidence or human-review values with a `source_url` become `field_proposal` rows.
 
 ## Search Index
 

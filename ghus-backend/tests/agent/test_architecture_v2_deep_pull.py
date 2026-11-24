@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from argparse import Namespace
 from datetime import UTC, datetime
 
 import pytest
@@ -15,7 +14,6 @@ from agents.collection.deep_pull import (
     map_linked_subentities,
     validate_deep_request,
 )
-from agents.enrichment.run import run_enrichment
 
 
 def _request(category="company", fields=("relevant_products",)):
@@ -94,8 +92,3 @@ def test_linked_subentities_are_capped_and_forced_through_parent_mapping():
     with pytest.raises(ValueError, match="cap"):
         map_linked_subentities([{"name": str(i)} for i in range(6)],
                                parent_actor_id=str(uuid.uuid4()), mapper=lambda value: value)
-
-
-def test_legacy_live_actor_enrichment_cannot_bypass_verified_topic_gate():
-    with pytest.raises(RuntimeError, match="verified, topic-scoped"):
-        run_enrichment(Namespace(entity="actor", live=True))

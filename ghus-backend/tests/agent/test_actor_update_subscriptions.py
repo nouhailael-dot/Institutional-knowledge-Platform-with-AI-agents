@@ -11,7 +11,6 @@ The four properties that matter, and the one thing that must NOT change:
 
 from __future__ import annotations
 
-import re
 from datetime import date
 from pathlib import Path
 
@@ -224,26 +223,21 @@ def test_a_broken_configuration_is_refused_rather_than_guessed_at():
         }})
 
 
-# ------------------------------------------- the event schedule does not change
+# ------------------------------------------- event requests come from Discovery only
 
-def test_the_event_update_schedule_is_untouched():
-    """WS6 replaces the ACTOR sweep only. Events go stale on their own."""
+def test_only_a_discovery_page_request_can_find_events():
+    """The weekly sweep was retired on 2026-11-24; discovery runs only on request.
 
-    workflow = (ROOT / ".github/workflows/weekly-discovery.yml").read_text(encoding="utf-8")
-    # Still weekly, Monday 06:00 UTC, as it was.
-    assert 'cron: "0 6 * * 1"' in workflow
-    runner = (ROOT / "agents/weekly_discovery.py").read_text(encoding="utf-8")
-    # The event discovery step is still there and still unconditional.
-    assert re.search(r'"--entity",\s*\n\s*"event",', runner), "the event sweep was removed"
-    assert "open-web-event-report.md" in runner
-    # Since 2026-10-23 (migration 580) a person may also ASK for events on the
-    # Discovery page. That adds a scoped request; it never replaces or schedules
-    # the weekly sweep above. Only a Discovery-page request can find events, and
-    # every existing request stays an organization request.
+    Since 2026-10-23 (migration 580) a person may ASK for events on the
+    Discovery page. Only such a request can find events, and every existing
+    request stays an organization request.
+    """
+
+    assert not (ROOT / ".github/workflows/weekly-discovery.yml").exists()
+    assert not (ROOT / "agents/weekly_discovery.py").exists()
     assert _subscription().discovery_entity == "actor"
     with pytest.raises(SubscriptionError, match="only a Discovery-page request"):
         _subscription(discovery_entity="event")
-    assert "agents.collection.subscription_runner" not in runner
 
 
 # --------------------------------------------------------------- the migration
