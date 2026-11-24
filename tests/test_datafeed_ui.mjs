@@ -17,6 +17,7 @@ import {
   defaultImportName,
   draftName,
   EXAMPLE_IMPORT,
+  FILTERS,
   filterCount,
   filterRows,
   historyLine,
@@ -77,7 +78,7 @@ test('three record types, chosen from a dropdown', () => {
   assert.match(source, /Choose a record type/);
   assert.match(source, /templates\/\$\{recordType\}\.xlsx/);
   assert.doesNotMatch(source, /df-templates">\$\{RECORD_TYPES\.map/);
-  assert.deepEqual(Object.keys(STATUS), ['invalid', 'new', 'existing', 'possible', 'waiting']);
+  assert.deepEqual(Object.keys(STATUS), ['invalid', 'new', 'existing', 'possible', 'waiting', 'deleted']);
 });
 
 test('summary tiles show every count the preview needs, and flag problems', () => {
@@ -85,7 +86,8 @@ test('summary tiles show every count the preview needs, and flag problems', () =
     possible_duplicates: 1, already_waiting: 1, missing_optional: 4});
   assert.deepEqual(tiles.map(t => [t.label, t.value]), [
     ['Records', 8], ['Valid', 5], ['Need correction', 3], ['New', 2], ['Existing matches', 1],
-    ['Possible duplicates', 1], ['Already in Review Results', 1], ['Missing optional info', 4]]);
+    ['Possible duplicates', 1], ['Already in Review Results', 1], ['Match a deleted record', 0],
+    ['Missing optional info', 4]]);
   assert.equal(tiles.find(t => t.key === 'needs_correction').tone, 'error');
   assert.equal(summaryTiles({}).find(t => t.key === 'needs_correction').tone, '');
 });
@@ -95,6 +97,7 @@ test('records already waiting in Review are not counted as sent', () => {
   assert.equal(stageable(counts), 3);
   assert.equal(confirmLabel(counts), 'Send 3 records to Review Results');
   assert.equal(confirmLabel({valid: 1}), 'Send 1 record to Review Results');
+  assert.equal(stageable({valid: 5, already_waiting: 1, deleted_matches: 2}), 2);   // 24 Nov 2026
 });
 
 test('filters split the preview by status', () => {
@@ -343,4 +346,11 @@ test('withdrawing an import says what happens before it is done (13 Nov 2026)', 
   assert.match(line, /^Withdraw “UM6P GHUS Team Information”\? Its 7 records waiting in Review Results are taken off/);
   assert.match(line, /the same file can then be uploaded again/);
   assert.match(withdrawLine({import_name: 'X', counts: {pending: 1}}), /Its record waiting in Review Results is taken off/);
+});
+
+// 24 Nov 2026: a record matching one waiting in Pending Deletion is still matched, and flagged.
+test('a match to a record waiting for deletion has its own status and filter', () => {
+  assert.equal(STATUS.deleted.label, 'Matches a deleted record');
+  assert.ok(FILTERS.some(f => f.id === 'deleted'));
+  assert.ok(summaryTiles({deleted_matches: 1}).some(t => t.key === 'deleted_matches' && t.value === 1 && t.tone === 'warn'));
 });

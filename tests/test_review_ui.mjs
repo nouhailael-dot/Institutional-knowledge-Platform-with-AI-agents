@@ -1597,3 +1597,13 @@ test('Review counts the essential fields found with a source, without calling it
   const src = fs.readFileSync(new URL('../frontend/labels.js', import.meta.url), 'utf8');
   assert.match(src, /Complete is not verified/);
 });
+
+// 24 Nov 2026: a possible duplicate waiting in Pending Deletion stays listed, flagged, and cannot be merged into.
+test('a possible duplicate waiting for deletion says who, when, and how to bring it back', async () => {
+  const {pendingDeletionNote} = await import('../frontend/review.js');
+  const note = pendingDeletionNote({pending_deletion: {deleted_at: '2026-11-23', purge_after: '2026-12-23', deleted_by: 'Ismail Sabbar'}});
+  assert.match(note, /^Ismail Sabbar deleted this record on 11\/23\/2026; it waits in Pending Deletion until 12\/23\/2026\./);
+  assert.match(note, /can restore it from Pending Deletion/);
+  assert.match(component, /!match\.pending_deletion && \(/);                  // no "Same record" button for it
+  assert.match(component, /!\(candidate\.top_matches \|\| \[\]\)\[0\]\?\.pending_deletion/);   // never pre-chosen
+});

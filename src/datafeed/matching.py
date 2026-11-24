@@ -76,6 +76,26 @@ class Matcher:
             "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' "
             "AND table_name = 'actor'").fetchall()}
         self.alt = "alt_names" if "alt_names" in columns else "alternate_names"
+        # Records waiting for permanent deletion (migration 710), when the table exists.
+        self.deletions = bool(conn.execute(
+            "SELECT to_regclass('compass.deleted_record') IS NOT NULL").fetchall()[0][0])
+
+    def flag(self, record_type: str, match: dict[str, Any]) -> dict[str, Any]:
+        """A match to a record waiting for permanent deletion is kept, and says so
+        (GHUS, 24 Nov 2026): who deleted it, when, and when it goes for good, so the
+        reviewer knows before anything is sent."""
+        if not self.deletions or match.get("kind") not in ("existing", "possible") or not match.get("entity_id"):
+            return match
+        rows = self._rows(
+            "SELECT d.deleted_at::date::text, d.purge_after::date::text, p.full_name "
+            "FROM compass.deleted_record d LEFT JOIN compass.user_profile p ON p.user_id = d.deleted_by "
+            "WHERE d.entity_type = %s AND d.entity_id = %s::uuid "
+            "AND d.restored_at IS NULL AND d.purged_at IS NULL", (record_type, match["entity_id"]))
+        if rows:
+            deleted_at, purge_after, who = rows[0]
+            match = {**match, "pending_deletion": {"deleted_at": deleted_at, "purge_after": purge_after,
+                                                   "deleted_by": who or "someone"}}
+        return match
 
     def _rows(self, sql: str, params: tuple) -> list[tuple]:
         return list(self.conn.execute(sql, params).fetchall())

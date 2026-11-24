@@ -6,7 +6,7 @@
 // and confirming hands the records to the GHUS backend, which stages them for
 // Review. Nothing is added to the map, or verified, without a GHUS decision.
 
-import {lightPullBoxes, formatFactValue} from "./review.js?v=20261124b";
+import {lightPullBoxes, formatFactValue} from "./review.js?v=20261124c";
 import {createDateInput, usDate, usDateTime} from "./dates.js?v=20261110b";
 
 export const RECORD_TYPES = [
@@ -21,6 +21,8 @@ export const STATUS = {
   existing: {label: "Matches an existing record", tone: "info"},
   possible: {label: "Possible duplicate", tone: "warn"},
   waiting: {label: "Already waiting in Review Results", tone: "muted"},
+  // Matches a record waiting in Pending Deletion: the reviewer is told, nothing is stored (24 Nov 2026).
+  deleted: {label: "Matches a deleted record", tone: "warn"},
 };
 
 export const FILTERS = [
@@ -30,6 +32,7 @@ export const FILTERS = [
   {id: "existing", label: "Existing matches"},
   {id: "possible", label: "Possible duplicates"},
   {id: "waiting", label: "Already in Review Results"},
+  {id: "deleted", label: "Matches a deleted record"},
 ];
 
 export function typeInfo(recordType) {
@@ -50,6 +53,8 @@ export function summaryTiles(counts = {}) {
       value: counts.possible_duplicates ?? 0, tone: counts.possible_duplicates ? "warn" : ""},
     {key: "already_waiting", label: "Already in Review Results", value: counts.already_waiting ?? 0,
       tone: ""},
+    {key: "deleted_matches", label: "Match a deleted record", value: counts.deleted_matches ?? 0,
+      tone: counts.deleted_matches ? "warn" : ""},
     {key: "missing_optional", label: "Missing optional info",
       value: counts.missing_optional ?? 0, tone: ""},
   ];
@@ -70,7 +75,8 @@ export function confirmLabel(counts = {}) {
 }
 
 export function stageable(counts = {}) {
-  return Math.max(0, (counts.valid ?? 0) - (counts.already_waiting ?? 0));
+  // A record matching one waiting for deletion is not sent either (24 Nov 2026).
+  return Math.max(0, (counts.valid ?? 0) - (counts.already_waiting ?? 0) - (counts.deleted_matches ?? 0));
 }
 
 export const DATAFEED_LEAD = "Add organizations, people, and events to the COMPASS Ecosystem "

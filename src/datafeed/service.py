@@ -75,7 +75,26 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 STATUS_LABELS = {
     "invalid": "Needs correction", "new": "New record", "existing": "Matches an existing record",
     "possible": "Possible duplicate", "waiting": "Already waiting in Review",
+    "deleted": "Matches a deleted record",
 }
+
+
+def _us_date(iso: str | None) -> str:
+    try:
+        y, m, d = str(iso)[:10].split("-")
+        return f"{m}/{d}/{y}"
+    except ValueError:
+        return str(iso or "")
+
+
+def pending_deletion_note(match: dict[str, Any]) -> str:
+    """What a reviewer reads when a record matches one waiting for deletion (24 Nov 2026)."""
+    gone = (match or {}).get("pending_deletion") or {}
+    who = gone.get("deleted_by") or "someone"
+    return (f"Matches '{match.get('name')}', which {who} deleted on {_us_date(gone.get('deleted_at'))}; "
+            f"it waits in Pending Deletion until {_us_date(gone.get('purge_after'))}. {who} can restore "
+            "it from Pending Deletion (on the Dashboard) so this record updates it. Until then this "
+            "record is not stored.")
 
 
 # The block Explore and Map adds to a record: card fields with no template column.
@@ -235,7 +254,7 @@ class DataFeedService:
                                 "as written. A person is added only once their organization is "
                                 "(add it with the Organizations feed, or Discovery), so Review will hold "
                                 "this record until then.")
-                    result["match"] = getattr(matcher, record_type)(payload)
+                    result["match"] = matcher.flag(record_type, getattr(matcher, record_type)(payload))
         except Exception as exc:  # noqa: BLE001 - say so; never guess a match
             notes.append("Existing records could not be checked just now "
                          f"({type(exc).__name__}). Review will check identity.")
@@ -288,6 +307,12 @@ class DataFeedService:
                 status = "invalid"
             elif result.get("backend_outcome") == "already_awaiting_review":
                 status = "waiting"
+            elif match.get("pending_deletion"):
+                # Matched, and the match waits for deletion: the reviewer is told why.
+                status = "deleted"
+                note = f"Row {result['row_number']}: {pending_deletion_note(match)}"
+                if note not in result["warnings"]:
+                    result["warnings"].append(note)
             else:
                 status = {"existing": "existing", "possible": "possible"}.get(match["kind"], "new")
             rows.append({"row_number": result["row_number"], "status": status,
@@ -302,10 +327,11 @@ class DataFeedService:
             "existing_matches": sum(r["status"] == "existing" for r in rows),
             "new": sum(r["status"] == "new" for r in rows),
             "already_waiting": sum(r["status"] == "waiting" for r in rows),
+            "deleted_matches": sum(r["status"] == "deleted" for r in rows),
             "missing_optional": sum(bool(r["missing"]) for r in rows if r["status"] != "invalid"),
         }
         backend = backend or {}
-        stageable = counts["valid"] - counts["already_waiting"]
+        stageable = counts["valid"] - counts["already_waiting"] - counts["deleted_matches"]
         preview = {
             "preview_id": uuid.uuid4().hex, "record_type": record_type, "method": method,
             "template_version": contract.TEMPLATE_VERSION, "file": file_info,
@@ -491,7 +517,11 @@ class DataFeedService:
         if invalid and not accept_left_out:
             raise DataFeedError(f"{invalid} record(s) need correction and would be left out. "
                                 "Confirm that, or correct the file and check it again.")
-        send = [r for r in preview["rows"] if r["status"] not in ("invalid",)]
+        # A record matching one waiting for deletion is not sent: it is listed with why.
+        held_deleted = [{"row_number": r["row_number"], "outcome": "not_stored",
+                         "reason": pending_deletion_note(r["match"])}
+                        for r in preview["rows"] if r["status"] == "deleted"]
+        send = [r for r in preview["rows"] if r["status"] not in ("invalid", "deleted")]
         results = [{"row_number": r["row_number"], "payload": r["payload"], "values": r["values"],
                     "match": r["match"], "warnings": r["warnings"]} for r in send]
         batch = self._batch(
@@ -530,7 +560,7 @@ class DataFeedService:
                 "organizations_missing": missing,
                 "stored": sum(a.get("outcome") in ("stored", "matched_existing") for a in admitted),
                 "not_stored": [a for a in admitted
-                               if a.get("outcome") in ("not_stored", "possible_duplicate")],
+                               if a.get("outcome") in ("not_stored", "possible_duplicate")] + held_deleted,
                 "enriching": enriching,
                 "import_name": name, "staged": outcome.get("staged", 0),
                 "already_awaiting_review": outcome.get("already_awaiting_review", 0),

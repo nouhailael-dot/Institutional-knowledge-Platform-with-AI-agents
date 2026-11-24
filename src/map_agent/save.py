@@ -167,6 +167,10 @@ def _check_outcome(row) -> tuple[str, str]:
         return NOT_SAVED, "Needs: " + "; ".join(e.split(": ", 1)[-1] for e in row["errors"])[:400]
     if row["status"] == "waiting":
         return NOT_SAVED, "It is already waiting to be added from another import."
+    if row["status"] == "deleted":
+        # The match waits for permanent deletion (24 Nov 2026): say so, store nothing.
+        from src.datafeed.service import pending_deletion_note
+        return NOT_SAVED, pending_deletion_note(row.get("match") or {})
     if row["status"] == "existing":
         return DIRECTORY, "Matches a record already in the directory, which it updates."
     if row["status"] == "possible":

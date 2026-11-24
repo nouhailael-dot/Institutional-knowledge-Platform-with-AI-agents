@@ -1106,6 +1106,20 @@ export function canSubmitReview({
   return ["same_existing", "new", "reject", "defer"].includes(kind);
 }
 
+/** A possible duplicate that waits in Pending Deletion (24 Nov 2026): who deleted it,
+ * when, until when, and how to bring it back. It cannot be merged into until then. */
+export function pendingDeletionNote(match = {}) {
+  const gone = match.pending_deletion || {};
+  const us = iso => {
+    const [y, m, d] = String(iso || "").slice(0, 10).split("-");
+    return y && m && d ? `${m}/${d}/${y}` : "";
+  };
+  const who = gone.deleted_by || "Someone";
+  return `${who} deleted this record on ${us(gone.deleted_at)}; it waits in Pending Deletion until `
+    + `${us(gone.purge_after)}. ${who} can restore it from Pending Deletion (on the Dashboard) to merge `
+    + "this candidate into it; until then, add the candidate as new or defer it.";
+}
+
 export function diffFields(candidatePayload, match) {
   const held = match?.payload || match || {};
   const keys = [...new Set([...Object.keys(candidatePayload || {}), ...Object.keys(held)])].sort();
@@ -2264,8 +2278,10 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
         // Keeping the map as it is is the safe default; a proposal waits.
         // Verify adds the record as new unless the platform found that it
         // already exists; then it merges into that record (changeable below).
+        // Never pre-chosen when that record waits in Pending Deletion (24 Nov 2026).
         const sure = !twoWayKind(candidate) && candidate.duplicate_state === "already_exists"
-          && (candidate.top_matches || [])[0]?.entity_id;
+          && (candidate.top_matches || [])[0]?.entity_id
+          && !(candidate.top_matches || [])[0]?.pending_deletion;
         setDecisionKind(sure ? "same_existing" : "new");
         setTargetId(sure ? String(candidate.top_matches[0].entity_id) : "");
         setRejectionReason("");
@@ -3174,12 +3190,14 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
               : "Verify will add it as a new record. If it is one of these, mark it the same."}</p>
             ${matches.map((match, index) => html`<div class="review-match" key=${index}>
               <div class="review-match-head"><strong>${match.name || match.entity_id}</strong>
-                ${match.entity_id && pending && !twoWayKind(selected) && (
+                ${match.pending_deletion && html`<span class="review-pill warn">Waiting for deletion</span>`}
+                ${match.entity_id && pending && !twoWayKind(selected) && !match.pending_deletion && (
                   decisionKind === "same_existing" && targetId === String(match.entity_id)
                     ? html`<button class="review-act chosen" disabled=${busy}
                         onClick=${() => { setDecisionKind("new"); setTargetId(""); }}>Same record ✓ (undo)</button>`
                     : html`<button class="review-act" disabled=${busy}
                         onClick=${() => { setDecisionKind("same_existing"); setTargetId(String(match.entity_id)); }}>Same record</button>`)}</div>
+              ${match.pending_deletion && html`<p class="review-hint warn">${pendingDeletionNote(match)}</p>`}
               <table><thead><tr>
                 <th>${FIELDS.field}</th><th>This Candidate</th><th>Existing Record</th>
               </tr></thead>

@@ -1828,9 +1828,34 @@ def _list_view(candidate: dict) -> dict:
 @app.get("/api/review/candidates/{candidate_id}")
 def review_candidate(candidate_id: str):
     try:
-        return review_store().get(candidate_id)
+        return _flag_deleted_matches(review_store().get(candidate_id))
     except Exception as exc:
         _raise_review_error(exc)
+
+
+def _flag_deleted_matches(item: dict) -> dict:
+    """A possible duplicate that waits in Pending Deletion stays listed, and says so
+    (GHUS, 24 Nov 2026): who deleted it, when, and when it goes for good. The reviewer
+    knows before choosing; the backend refuses a merge into it until it is restored.
+    Never breaks the page: without accounts, or if deletions cannot be read, nothing is added."""
+    matches = (item or {}).get("top_matches") or []
+    if not matches or not _accounts_on():
+        return item
+    try:
+        from backend.accounts_routes import accounts_store
+        pending = {(d["entity_type"], str(d["entity_id"])): d for d in accounts_store().deletions()}
+    except Exception:
+        logger.warning("Pending deletions could not be read for a Review item", exc_info=True)
+        return item
+    kind = str(item.get("entity_type") or "")
+    for match in matches:
+        gone = pending.get((kind, str(match.get("entity_id") or "")))
+        if gone:
+            day = lambda v: v.date().isoformat() if hasattr(v, "date") else (str(v)[:10] if v else None)  # noqa: E731
+            match["pending_deletion"] = {"deleted_at": day(gone.get("deleted_at")),
+                                         "purge_after": day(gone.get("purge_after")),
+                                         "deleted_by": gone.get("deleted_by") or "someone"}
+    return item
 
 
 @app.patch("/api/review/candidates/{candidate_id}")

@@ -49,7 +49,10 @@ test('the page filters by type and searches name, reason and who deleted', () =>
 
 test('Review Results keeps Rejected to itself: no deleted records there', () => {
   const review = read('../frontend/review.js');
-  assert.doesNotMatch(review, /deletions\.js|DeletedRecords|Pending Deletion|Pending Permanent Removal/);
+  // Review never loads or shows the deletion list. Since 24 Nov 2026 a possible
+  // duplicate waiting there is named in a note (pendingDeletionNote), nothing more.
+  assert.doesNotMatch(review, /deletions\.js|DeletedRecords|Pending Permanent Removal|\/api\/review\/deleted/);
+  assert.match(review, /export function pendingDeletionNote/);
   assert.doesNotMatch(read('../frontend/review.css'), /deleted-records/);
 });
 
