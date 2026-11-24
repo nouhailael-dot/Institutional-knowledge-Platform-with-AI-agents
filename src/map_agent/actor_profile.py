@@ -1,5 +1,7 @@
 """Architecture V2 actor light-pull contract, independent of production DB schema."""
+from src.datafeed import contract
 from src.map_agent.search_backend import canonical_url
+from src.review import taxonomy
 
 NOT_APPLICABLE = 'Not Applicable'
 NOT_CLASSIFIED = 'Not classified'
@@ -39,6 +41,15 @@ for _types in CATEGORY_TYPES.values():
     _types.append(NOT_APPLICABLE)
 CATEGORIES = list(CATEGORY_TYPES)
 ALL_CATEGORY_TYPES = list(dict.fromkeys(t for types in CATEGORY_TYPES.values() for t in types))
+# The category facts, named as the Organizations template and the update agent name
+# them (24 Nov 2026), so a map fills the same columns: {category label: {key: label}}.
+CATEGORY_FACTS: dict[str, dict[str, str]] = {}
+for _field in contract.FIELDS['actor']:
+    for _code in contract.box_categories(_field):
+        CATEGORY_FACTS.setdefault(taxonomy.CATEGORY_LABELS[_code], {})[_field.key] = \
+            _field.header.split(': ', 1)[-1]
+FACT_KEYS = sorted({k for facts in CATEGORY_FACTS.values() for k in facts})
+OTHER_FACT = 'other'
 # Names used before the intern guide renamed three categories. Saved operation
 # replays and older maps still carry them.
 LEGACY_CATEGORIES = {
@@ -70,7 +81,7 @@ def region_for(country, state):
     return next((r for r, codes in REGIONS.items() if code in codes.split()), '')
 
 LIGHT_GUIDANCE = '''For actors use the Architecture V2 light pull only. Assign exactly one supplied category by the organization's main job as it describes itself, never by its funder, sector or fame. Any formal unit run by a university (department, college or school, research lab or center, tech transfer office, executive education, accelerator or incubator, medical school, testbed or field site, extension program) is University / Academic Institution, related "unit of" the university. Research Center, Applied Research Facility and E&I Platform are for independent organizations only. Two exceptions never become University: a hospital or medical center is always Hospital / Clinical System / Medical Center, even when a university runs it; a formally designated national laboratory (on the NSF FFRDC list or chartered as one) is always National Laboratory, even when a university holds the operating contract, related "operated by" the operator. Government funding or agency housing alone is not designation; such a lab is a Research Center. An E&I Platform runs programs or space itself; an Association / Consortium / Network convenes member organizations that run their own. Judge a startup by development stage, not age. Keep distinct units separate, one record each. When the category is genuinely uncertain, still choose the closest one and write a one-line category_note explaining the doubt. Then choose the category_type from that category's own list only; when none fits, choose Not Applicable and explain why in category_note. Record factual topic-relevant information, never imagined GHUS use or engagement recommendations. Use 1–3 factual description sentences. Record aliases, sector, mapped topic, strong/moderate match with explanation, country/state/city and a multi-location flag. Record a real parent only with evidence, otherwise do not invent one. Relationships distinguish unit of, operated by, member of, portfolio of, spinout of, funded by and collaborates with. Hub assignment is not inferred here.
-Collect category-specific light facts only: academic—public/private, land-grant if relevant, relevant centers/program names and topic focus; research center—operator/type, focus, 1–2 recent projects and main funders; national lab—sponsor, formal designation and program area; applied facility—operator, facility type, what it tests and current project; hospital—clinical/research focus, academic link, type/scale and initiative; company—public/private, size, relevant product/segment, mapped operating location and current activity; startup—technology/problem, founding year, published stage/TRL, funding stage and visible pilot/customer evidence; E&I platform—operator/type, sector, offerings and scale; investor—type, headquarters, sector/stage/geography, published fund size and thesis; government—jurisdiction, parent, mandate/program and visible funding programs; nonprofit—mission, geography, program and grant themes; association/consortium/network—type, sector/geography, member types, visible initiative and documented members. Category details are concise labeled facts, not full catalogs.
+Collect category-specific light facts only: academic—public/private, land-grant if relevant, relevant centers/program names and topic focus; research center—operator/type, focus, 1–2 recent projects and main funders; national lab—sponsor, formal designation and program area; applied facility—operator, facility type, what it tests and current project; hospital—clinical/research focus, academic link, type/scale and initiative; company—public/private, size, relevant product/segment, mapped operating location and current activity; startup—technology/problem, founding year, published stage/TRL, funding stage and visible pilot/customer evidence; E&I platform—operator/type, sector, offerings and scale; investor—type, headquarters, sector/stage/geography, published fund size and thesis; government—jurisdiction, parent, mandate/program and visible funding programs; nonprofit—mission, geography, program and grant themes; association/consortium/network—type, sector/geography, member types, visible initiative and documented members. Category details are concise labeled facts, not full catalogs. Put each category fact in category_details under the key from the chosen category's own list. Give a startup's development stage only as the startup publishes it, and a national laboratory's formal designation only from an official source. A fact that fits no key uses key 'other'.
 One dated recent topic activity, one visible funding signal and documented Africa/Morocco connections may be captured from supplied sources. No exhaustive grants, programs, publications or people directories. Never estimate TRL. Cite collected sources for factual claims. Unsupported information is omitted, never guessed. Use only supplied evidence.'''
 
 def _check_category_type(entity):
@@ -95,10 +106,14 @@ def normalize_actor_profile(entity, available):
                   'unsupported_fields', 'hub_status', 'um6p_ocp_status'):
         entity.pop(field, None)
     entity['region'] = region_for(entity.get('country'), entity.get('state'))
-    entity['category_details'] = [d for d in entity.get('category_details', [])
-        if isinstance(d, dict) and isinstance(d.get('label'), str) and isinstance(d.get('value'), str)]
     if entity.get('actor_type') in LEGACY_CATEGORIES:
         entity['actor_type'] = LEGACY_CATEGORIES[entity['actor_type']]
+    # A fact keyed for another category is kept, as 'other': never moved to a wrong column.
+    own = CATEGORY_FACTS.get(entity.get('actor_type'), {})
+    entity['category_details'] = [
+        {**d, 'key': d.get('key') if d.get('key') in own else OTHER_FACT}
+        for d in entity.get('category_details', [])
+        if isinstance(d, dict) and isinstance(d.get('label'), str) and isinstance(d.get('value'), str)]
     if entity.get('actor_type') not in CATEGORIES:
         entity['category_note'] = 'Category needs review: ' + str(entity.get('actor_type', 'Not found'))
     _check_category_type(entity)

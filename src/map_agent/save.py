@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from src.datafeed import reference
+from src.map_agent.actor_profile import CATEGORY_FACTS
 
 KINDS = ("actor", "event", "person")
 # What a card shows after saving.
@@ -73,11 +74,13 @@ def event_type(raw) -> str:
 _NOT_FACTS = frozenset({"sources", "profile_version", "record_status", "field_evidence",
                         "unsupported_fields", "verification_history", "ghus_notes", "hub_status",
                         "id", "entity_id", "_why", "selected", "excluded", "reason"})
+# Organization card fields stored under the name the update agent uses for the same fact.
+_FACT_NAMES = {"match_explanation": "why_matched"}
 # Card fields to_record reads, per kind: everything else goes to map_facts.
 _READ = {
     "actor": {"name", "other_names", "website", "actor_type", "category_type", "category_note",
               "description", "location_city", "state", "country", "funding_summary",
-              "um6p_ocp_detail"},
+              "um6p_ocp_detail", "international_connections"},
     "event": {"name", "event_type", "organizer", "next_date", "end_date", "event_format",
               "location", "thematic_focus", "description", "website", "recurring_pattern",
               "expected_attendance"},
@@ -86,10 +89,31 @@ _READ = {
 }
 
 
+def _category_facts(entity: dict) -> tuple[dict, list]:
+    """(facts for the template's own columns, the rest kept as category details).
+
+    24 Nov 2026: a fact keyed from the card's own category fills that column, as the
+    update agent's does; one with no key (maps before this date) or 'other' stays a detail."""
+    own = CATEGORY_FACTS.get(entity.get("actor_type"), {})
+    fixed, rest = {}, []
+    for detail in entity.get("category_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        key, value = detail.get("key"), _clean(detail.get("value"))
+        if key in own and key not in fixed and value:
+            fixed[key] = value
+        else:
+            rest.append(detail)
+    return fixed, rest
+
+
 def map_facts(kind: str, entity: dict) -> dict:
     """Every non-empty card field the Data Feed record does not carry (4 Nov 2026):
     stored as sourced facts at admission, so nothing the card showed is lost."""
-    return {key: value for key, value in entity.items()
+    if kind == "actor" and entity.get("category_details"):
+        entity = {**entity, "category_details": _category_facts(entity)[1]}
+    names = _FACT_NAMES if kind == "actor" else {}
+    return {names.get(key, key): value for key, value in entity.items()
             if key not in _READ[kind] and key not in _NOT_FACTS and not str(key).startswith("_")
             and value not in (None, "", [], {}) and str(value).strip().casefold()
             not in ("not found", "not classified")}
@@ -124,8 +148,10 @@ def _contract_record(kind: str, entity: dict, sector: str) -> dict:
             "source_url": _source(entity),
             # Not "recent_activity": the Data Feed needs its date, and the map
             # records none (a date is never guessed).
-            "funding_signal": _clean(entity.get("funding_summary")),
+            "funding_summary": _clean(entity.get("funding_summary")),
+            "international_connection": _clean(entity.get("international_connections")),
             "um6p_ocp_connection": _clean(entity.get("um6p_ocp_detail")),
+            **_category_facts(entity)[0],
         }.items() if v}
     if kind == "event":
         city, state, country = _place(entity.get("location"))
