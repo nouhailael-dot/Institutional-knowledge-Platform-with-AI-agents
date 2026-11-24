@@ -1,4 +1,4 @@
--- Read-only preflight for migration 730 (remove two unused tables). Run in the Supabase
+-- Read-only preflight for migration 750 (remove two unused tables). Run in the Supabase
 -- SQL editor BEFORE applying it; every row must say ok = true. Changes nothing.
 
 BEGIN READ ONLY;
@@ -8,8 +8,8 @@ SELECT check_name, ok, detail FROM (
            EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger WHERE migration_id = '720') AS ok,
            NULL::text AS detail
     UNION ALL
-    SELECT 2, 'ledger has no 730 row',
-           NOT EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger WHERE migration_id = '730'), NULL
+    SELECT 2, 'ledger has no 750 row',
+           NOT EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger WHERE migration_id = '750'), NULL
     UNION ALL
     SELECT 3, 'organization_ranking exists and is empty',
            to_regclass('public.organization_ranking') IS NOT NULL

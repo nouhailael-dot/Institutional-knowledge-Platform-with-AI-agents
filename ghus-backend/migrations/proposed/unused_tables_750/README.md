@@ -1,4 +1,7 @@
-# Migration 730: remove two unused tables
+# Migration 750: remove two unused tables
+
+Numbered 750 because 730 (organization template) and 740 (event fields) were applied to
+Supabase on 24 Nov 2026 by Nouhaila.
 
 Status: **ready, not applied.** Platform owner's decision of 24 Nov 2026.
 
@@ -18,19 +21,19 @@ tables describe the older schemas and stay.
 
 | | File |
 |---|---|
-| Migration | `../deferred/730_remove_unused_tables.sql` (SHA-256 in `ledger.sql`) |
-| Rollback | `../deferred/rollback/730_remove_unused_tables.sql` |
+| Migration | `../deferred/750_remove_unused_tables.sql` (SHA-256 in `ledger.sql`) |
+| Rollback | `../deferred/rollback/750_remove_unused_tables.sql` |
 
 ## Rehearsal (24 Nov 2026)
 
 On a throwaway copy of `ghus_phase7_prodcopy_test` (the 5 Nov 2026 Supabase backup with
 700 and 710) with 720 applied:
 
-- preflight: every row true; apply 730; ledger; verify: 7 of 7 true; a second apply
-  refuses ("730 is already applied");
+- preflight: every row true; apply 750; ledger; verify: 7 of 7 true; a second apply
+  refuses ("750 is already applied");
 - rollback, then the whole `public` schema (`pg_dump --schema-only`) is identical to
-  the copy before 730 (0 lines differ); apply again: the tables are gone;
-- with 730 applied: the Directory loads (743 organizations, 48 hubs, 357 events,
+  the copy before 750 (0 lines differ); apply again: the tables are gone;
+- with 750 applied: the Directory loads (743 organizations, 48 hubs, 357 events,
   7 people); deleting an organization, the purge check and restoring it work, and the
   deletion policy finds no uncovered link (all in a transaction rolled back).
 
@@ -40,7 +43,7 @@ On a throwaway copy of `ghus_phase7_prodcopy_test` (the 5 Nov 2026 Supabase back
    `C:\Users\Ismail\GHUS-data\backups`.
 2. `preflight.sql` — every row `ok = true`. Stop otherwise (the migration would refuse
    anyway, changing nothing).
-3. `../deferred/730_remove_unused_tables.sql` — one transaction.
+3. `../deferred/750_remove_unused_tables.sql` — one transaction.
 4. `ledger.sql`.
 5. `verify.sql` — every row `ok = true`.
 
@@ -48,6 +51,6 @@ No deploy is needed.
 
 ## Rollback
 
-`../deferred/rollback/730_remove_unused_tables.sql`, then
-`DELETE FROM architecture_v2_migration_ledger WHERE migration_id = '730';`.
-`query_log` comes back empty (its rows are in the backup). Roll 730 back before 720.
+`../deferred/rollback/750_remove_unused_tables.sql`, then
+`DELETE FROM architecture_v2_migration_ledger WHERE migration_id = '750';`.
+`query_log` comes back empty (its rows are in the backup). Roll 750 back before 720.

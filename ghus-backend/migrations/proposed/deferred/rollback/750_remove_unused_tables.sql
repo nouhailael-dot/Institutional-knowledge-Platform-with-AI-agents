@@ -1,8 +1,8 @@
--- Rollback of migration 730: recreates organization_ranking (with its guard function,
+-- Rollback of migration 750: recreates organization_ranking (with its guard function,
 -- triggers, keys and the actor_ranking stand-in view) and query_log, exactly as they
 -- were after 720. query_log comes back empty: its old rows are in the backup taken
--- before 730. Then: DELETE FROM architecture_v2_migration_ledger WHERE migration_id = '730';
--- Roll 730 back before rolling 720 back.
+-- before 750. Then: DELETE FROM architecture_v2_migration_ledger WHERE migration_id = '750';
+-- Roll 750 back before rolling 720 back.
 
 BEGIN;
 

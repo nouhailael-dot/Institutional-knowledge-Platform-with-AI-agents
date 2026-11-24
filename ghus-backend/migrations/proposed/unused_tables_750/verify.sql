@@ -1,4 +1,4 @@
--- Read-only checks after migration 730; every row must say ok = true.
+-- Read-only checks after migration 750; every row must say ok = true.
 
 BEGIN READ ONLY;
 
@@ -22,9 +22,9 @@ SELECT check_name, ok, detail FROM (
            (SELECT count(*) FROM public.organization_read) > 0,
            (SELECT count(*)::text FROM public.organization_read)
     UNION ALL
-    SELECT 7, 'the ledger has the 730 row with this checksum',
+    SELECT 7, 'the ledger has the 750 row with this checksum',
            EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger
-                    WHERE migration_id = '730' AND source_sha256 = 'e93be08d14ab9c6c83e67d7bda0eb0d3eeb4b3724c9c5e7da91318e8d48c7872'), NULL
+                    WHERE migration_id = '750' AND source_sha256 = 'c41b46263ecf7925f7e8473d0fc6d53f0c027846c3389ea88eaecb170c5f532f'), NULL
 ) checks ORDER BY n;
 
 ROLLBACK;

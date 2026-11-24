@@ -1,4 +1,4 @@
--- Migration 730: remove two tables Compass never uses (platform owner's decision, 24 Nov 2026).
+-- Migration 750: remove two tables Compass never uses (platform owner's decision, 24 Nov 2026).
 --
 --   organization_ranking  (actor_ranking before 720): university rankings, never filled.
 --                          With it go its stand-in view actor_ranking (720) and its
@@ -8,10 +8,10 @@
 -- Kept on purpose: challenge (holds the NutriCrops challenge; organization_relevance
 -- points to it) and strategic_document (for attached strategy documents).
 --
--- One transaction. It refuses, changing nothing, unless 720 is applied, 730 is not,
+-- One transaction. It refuses, changing nothing, unless 720 is applied, 750 is not,
 -- organization_ranking is empty, and nothing else depends on the two tables.
 -- The code needs no change: every reader skips a table that does not exist.
--- Rollback: rollback/730_remove_unused_tables.sql (recreates the objects; query_log's
+-- Rollback: rollback/750_remove_unused_tables.sql (recreates the objects; query_log's
 -- rows come back only from the backup taken before applying).
 
 BEGIN;
@@ -21,10 +21,10 @@ DECLARE
     dependents text;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger WHERE migration_id = '720') THEN
-        RAISE EXCEPTION '730 needs 720 (organization names) applied first';
+        RAISE EXCEPTION '750 needs 720 (organization names) applied first';
     END IF;
-    IF EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger WHERE migration_id = '730') THEN
-        RAISE EXCEPTION '730 is already applied';
+    IF EXISTS (SELECT 1 FROM public.architecture_v2_migration_ledger WHERE migration_id = '750') THEN
+        RAISE EXCEPTION '750 is already applied';
     END IF;
     IF to_regclass('public.organization_ranking') IS NULL OR to_regclass('public.query_log') IS NULL THEN
         RAISE EXCEPTION 'organization_ranking or query_log is missing; nothing to remove';

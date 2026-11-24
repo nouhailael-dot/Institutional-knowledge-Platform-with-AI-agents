@@ -1,6 +1,6 @@
-"""The package for migration 730 (remove two unused tables) stays consistent.
+"""The package for migration 750 (remove two unused tables) stays consistent.
 
-See migrations/proposed/unused_tables_730/README.md.
+See migrations/proposed/unused_tables_750/README.md.
 """
 
 import hashlib
@@ -9,15 +9,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFERRED = ROOT / "migrations" / "proposed" / "deferred"
-PACKAGE = ROOT / "migrations" / "proposed" / "unused_tables_730"
-MIGRATION = DEFERRED / "730_remove_unused_tables.sql"
-ROLLBACK = DEFERRED / "rollback" / "730_remove_unused_tables.sql"
+PACKAGE = ROOT / "migrations" / "proposed" / "unused_tables_750"
+MIGRATION = DEFERRED / "750_remove_unused_tables.sql"
+ROLLBACK = DEFERRED / "rollback" / "750_remove_unused_tables.sql"
 FILES = [MIGRATION, ROLLBACK, *(PACKAGE / n for n in ("preflight.sql", "ledger.sql", "verify.sql"))]
 
 
 def test_ledger_and_verify_carry_the_migration_checksum():
     digest = hashlib.sha256(MIGRATION.read_bytes()).hexdigest()
-    assert f"('730', 'migrations/proposed/deferred/730_remove_unused_tables.sql', '{digest}')" in (
+    assert f"('750', 'migrations/proposed/deferred/750_remove_unused_tables.sql', '{digest}')" in (
         PACKAGE / "ledger.sql").read_text(encoding="utf-8")
     assert digest in (PACKAGE / "verify.sql").read_text(encoding="utf-8")
 
@@ -33,7 +33,7 @@ def test_it_drops_only_the_two_unused_tables_and_keeps_challenge():
     assert drops == [("VIEW", "public.actor_ranking"), ("TABLE", "public.organization_ranking"),
                      ("FUNCTION", "public.ghus_guard_ranking_is_university"), ("TABLE", "public.query_log")]
     assert "DROP TABLE public.challenge" not in sql and "DROP TABLE public.strategic_document" not in sql
-    assert "has rows; it is not unused" in sql and "730 needs 720" in sql
+    assert "has rows; it is not unused" in sql and "750 needs 720" in sql
 
 
 def test_the_rollback_recreates_every_dropped_object():
