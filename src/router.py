@@ -3,7 +3,7 @@ SQL instead of RAG.
 
 Why this exists: RAG retrieves ~10 chunks, so it structurally cannot count or
 list-all — it undercounts (the assessment showed "8" for a hub that has 14, and
-"4" for a TRL filter that has 34). Structured questions instead have Claude write
+"4" for a filter that has 34). Structured questions instead have Claude write
 a read-only SELECT, which Postgres executes for an EXACT, authoritative answer.
 
 Flow:

@@ -232,9 +232,6 @@
   table.grid tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
   .name-cell{font-weight:600}
   .dash{color:var(--faint)}
-  .trl{display:inline-block;min-width:22px;text-align:center;font-family:var(--mono);
-    font-size:12px;font-weight:600;padding:2px 7px;border-radius:6px;
-    background:var(--accent-soft);color:var(--accent-ink)}
   .tablecap{color:var(--muted);font-size:13px;padding:14px 16px;border-top:1px solid var(--line)}
 
   /* detail */
@@ -2093,7 +2090,7 @@ function PeopleSearch({actor,jobId,disabled}){
 const FOCUS_LIKE=/focus|program area/i;
 const PUBLIC_PRIVATE=/^public\s*\/?\s*(or\s*)?private$/i;
 // The category-specific light facts named in actor_profile.LIGHT_GUIDANCE.
-const LISTED_FACT=/^(land.grant|relevant cent|program|key program|operator|type|.*\btype$|recent project|projects?$|main funders?|funders?|sponsor|formal designation|facility|what it tests|current project|clinical|academic link|scale|initiative|size|company size|products?|key products?|relevant products?|segment|operating location|current activity|technology|problem|found|stage|trl|funding stage|pilot|customer|offerings?|headquarters|fund size|thesis|jurisdiction|parent|mandate|funding programs?|mission|geography|grant themes?|member|documented members|institution type|governance)/i;
+const LISTED_FACT=/^(land.grant|relevant cent|program|key program|operator|type|.*\btype$|recent project|projects?$|main funders?|funders?|sponsor|formal designation|facility|what it tests|current project|clinical|academic link|scale|initiative|size|company size|products?|key products?|relevant products?|segment|operating location|current activity|technology|problem|found|stage|funding stage|pilot|customer|offerings?|headquarters|fund size|thesis|jurisdiction|parent|mandate|funding programs?|mission|geography|grant themes?|member|documented members|institution type|governance)/i;
 // Words only, lower case, for comparing names ("U.S. Department of Energy (DOE)").
 const plainWords=t=>String(t||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 // A fact that only restates a relationship ("Sponsor: U.S. Department of Energy (DOE)"
