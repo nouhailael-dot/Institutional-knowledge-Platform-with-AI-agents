@@ -166,8 +166,9 @@ def accept_invitation(payload: AcceptInvitation, request: Request):
     _same_site(request)
     if not LINK_ATTEMPTS.allow(f"client:{_client(request)}"):
         _fail(429, "Too many attempts. Wait a few minutes and try again.")
-    if payload.full_name and clean_name(payload.full_name) is None:
-        _fail(422, "Enter your name (at most 120 characters).")
+    # The page asks for the person's own name (24 Nov 2026); checked before the link is spent.
+    if clean_name(payload.full_name) is None:
+        _fail(422, "Enter your name, not your email (at most 120 characters).")
     email = clean_email(payload.email)       # before the single-use link is spent
     if email is None:
         _fail(422, "Enter the email address this invitation was sent to.")
@@ -270,7 +271,7 @@ def update_my_profile(payload: ProfileChange, request: Request):
     me = _me(request)
     name = clean_name(payload.full_name)
     if name is None:
-        _fail(422, "Enter your name (at most 120 characters).")
+        _fail(422, "Enter your name, not your email (at most 120 characters).")
     if name != me.full_name:
         accounts_store().update_profile(me.user_id, full_name=name)
         _audit(action="profile.updated", account=me, label=name, client=_client(request),
@@ -352,7 +353,7 @@ def invite(payload: Invite, request: Request):
     if email is None:
         _fail(422, "Enter a valid email address.")
     if name is None:
-        _fail(422, "Enter the person's name (at most 120 characters).")
+        _fail(422, "Enter the person's name, not their email (at most 120 characters).")
     _no_escalation(me, payload.role)
     if not INVITES_PER_ADMIN.allow(f"admin:{me.user_id}"):
         _fail(429, "Too many invitations in the last hour. Try again later.")

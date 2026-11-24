@@ -76,6 +76,9 @@
     <label for="accept-email">Email</label>
     <input id="accept-email" type="email" autocomplete="username" maxlength="254" required>
     <p class="hint">The email address this invitation was sent to. You sign in with it.</p>
+    <label for="accept-name">Your name</label>
+    <input id="accept-name" type="text" autocomplete="name" maxlength="120" required>
+    <p class="hint">Shown next to your role in Compass.</p>
     <label for="accept-password">Choose a password</label>
     <input id="accept-password" type="password" autocomplete="new-password" required>
     <label for="accept-confirm">Repeat the password</label>
@@ -166,10 +169,12 @@
   handle("accept", async () => {
     const email = document.getElementById("accept-email").value.trim();
     if (!email) return say("Enter the email address this invitation was sent to.");
+    const fullName = document.getElementById("accept-name").value.trim();
+    if (!fullName || fullName.includes("@")) return say("Enter your name, not your email.");
     const password = samePasswords("accept-password", "accept-confirm");
     if (password === null) return;
     const r = await send("/api/auth/accept", {token_hash: tokenHash, password, email,
-      kind: linkType === "recovery" ? "recovery" : "invite"});
+      full_name: fullName, kind: linkType === "recovery" ? "recovery" : "invite"});
     if (r.ok) return location.replace("/");
     say(r.detail || "The invitation could not be accepted.");
   });

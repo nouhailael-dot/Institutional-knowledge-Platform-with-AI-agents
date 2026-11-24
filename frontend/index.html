@@ -866,7 +866,7 @@ import {createReviewPage} from "./review.js?v=20261124b";
 import {createDiscoveryPage} from "./discovery.js?v=20261124a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
 import {createDataFeedPage} from "./datafeed.js?v=20261124b";
-import {createAccountPages} from "./accounts.js?v=20261123d";
+import {createAccountPages} from "./accounts.js?v=20261124a";
 import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261124a";
 import {askConfirm, showMessage} from "./dialog.js?v=20261123a";
 const html = htm.bind(React.createElement);
@@ -1119,7 +1119,9 @@ function SessionFoot({account,onProfile}){
   }
   return html`<div class="sidebar-foot">
     <button class="session-name" type="button" title="My profile" onClick=${onProfile}>
-      <strong>${account.full_name}</strong></button>
+      ${/* The name, never the email (24 Nov 2026): an email saved as the name asks for the name. */
+        String(account.full_name||"").includes("@")||!String(account.full_name||"").trim()
+        ?html`<strong>Add your name</strong>`:html`<strong>${account.full_name}</strong>`}</button>
     <span style=${{marginLeft:"8px"}}>${account.role_label||"No role"}</span>
     <button class="example" type="button" style=${{display:"block",marginTop:"10px"}} disabled=${leaving}
       onClick=${signOut}>${leaving?"Signing out…":"Sign out"}</button>

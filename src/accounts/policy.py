@@ -38,8 +38,10 @@ def clean_email(value: str) -> str | None:
 
 
 def clean_name(value: str) -> str | None:
+    """A person's name, shown next to their role. Never an email address (GHUS,
+    24 Nov 2026): an email typed into the name box was shown in its place."""
     name = " ".join((value or "").split())
-    return name if 1 <= len(name) <= 120 else None
+    return name if 1 <= len(name) <= 120 and "@" not in name else None
 
 
 class Limiter:

@@ -61,7 +61,8 @@ export function createAccountPages({html, useState, useEffect}) {
     async function load() {
       try {
         const d = await call("/api/account/profile", "GET");
-        setData(d); setName(d.profile.full_name);
+        // An email saved as the name is not a name (24 Nov 2026): the box starts empty.
+        setData(d); setName(String(d.profile.full_name || "").includes("@") ? "" : d.profile.full_name);
       } catch (e) { setNote({error: e.message}); }
     }
     useEffect(() => { load(); }, []);
@@ -94,14 +95,16 @@ export function createAccountPages({html, useState, useEffect}) {
         <form onSubmit=${saveName}>
           <div class="edit-field"><label for="me-name">Name</label>
             <input id="me-name" class="field" value=${name} maxlength="120" disabled=${busy === "name"}
-              onInput=${e => setName(e.target.value)}/></div>
+              placeholder="Your full name" onInput=${e => setName(e.target.value)}/></div>
+          ${String(p.full_name || "").includes("@") && html`<p class="hint" style=${{margin: "-4px 0 10px"}}>
+            Add your name: it is shown next to your role instead of your email.</p>`}
           <div class="edit-field"><label>Email</label><div class="edit-ro">${p.email}
             <span class="hint" style=${{margin: "0 0 0 8px"}}>to change it, ask an administrator</span></div></div>
           <div class="edit-field"><label>Role</label><div class="edit-ro">${p.role_label || "No role"}</div></div>
           <div class="edit-field"><label>Member since</label><div class="edit-ro">${day(p.created_at)}</div></div>
           <div class="edit-field"><label>Last sign-in</label><div class="edit-ro">${moment(p.last_login_at)}</div></div>
           <button class="btn" type="submit" disabled=${busy === "name" || !name.trim() || name.trim() === p.full_name}>
-            ${busy === "name" ? "Saving…" : "Save name"}</button>
+            ${busy === "name" ? "Saving…" : "Save"}</button>
         </form>
       </div>
       <div class="card pad" style=${{marginTop: "14px"}}>

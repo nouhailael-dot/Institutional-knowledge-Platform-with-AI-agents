@@ -146,7 +146,7 @@ def main(argv=None) -> int:
                                                                "password": pw["admin"], "email": email["admin"], "full_name": "Check Admin (synthetic)"})
         check("invitation_link_verified_and_password_set", r.status_code == 200, r.text[:200])
         r = client().post("/api/auth/accept", headers=H, json={"token_hash": links[(email["admin"], "invite")],
-                                                               "password": pw["admin"], "email": email["admin"]})
+                                                               "password": pw["admin"], "email": email["admin"], "full_name": "Check Admin (synthetic)"})
         check("invitation_link_single_use", r.status_code == 400, r.text[:200])
         admin, r = sign_in("admin")
         check("login", r.status_code == 200, r.text[:200])
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
                            json={"email": email[role], "full_name": f"Check {role} (synthetic)", "role": role})
             check(f"admin_invites_{role}", r.status_code == 200, r.text[:200])
             r = client().post("/api/auth/accept", headers=H, json={"token_hash": links[(email[role], "invite")],
-                                                                   "password": pw[role], "email": email[role]})
+                                                                   "password": pw[role], "email": email[role], "full_name": f"Check {role} (synthetic)"})
             check(f"{role}_accepts", r.status_code == 200, r.text[:200])
         editor, _ = sign_in("editor")
         viewer, _ = sign_in("viewer")
