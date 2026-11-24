@@ -1,4 +1,4 @@
-"""The package for migration 750 (remove two unused tables) stays consistent.
+"""The package for migration 750 (remove the unused tables) stays consistent.
 
 See migrations/proposed/unused_tables_750/README.md.
 """
@@ -12,7 +12,10 @@ DEFERRED = ROOT / "migrations" / "proposed" / "deferred"
 PACKAGE = ROOT / "migrations" / "proposed" / "unused_tables_750"
 MIGRATION = DEFERRED / "750_remove_unused_tables.sql"
 ROLLBACK = DEFERRED / "rollback" / "750_remove_unused_tables.sql"
-FILES = [MIGRATION, ROLLBACK, *(PACKAGE / n for n in ("preflight.sql", "ledger.sql", "verify.sql"))]
+FILES = [MIGRATION, ROLLBACK, *(PACKAGE / n for n in ("preflight.sql", "ledger.sql", "verify.sql",
+                                                     "restore_migration_snapshot.sql"))]
+REMOVED = ["organization_ranking", "organization_evaluation", "event_scoring", "fetched_document",
+           "canonical_write_audit", "contact_collection_authorization", "query_log", "migration_snapshot"]
 
 
 def test_ledger_and_verify_carry_the_migration_checksum():
@@ -27,19 +30,23 @@ def test_files_are_lf_so_checksums_are_the_same_on_every_computer():
         assert b"\r\n" not in path.read_bytes(), path.name
 
 
-def test_it_drops_only_the_two_unused_tables_and_keeps_challenge():
+def test_it_drops_only_the_unused_tables_and_keeps_the_planned_ones():
     sql = MIGRATION.read_text(encoding="utf-8")
-    drops = re.findall(r"^DROP (VIEW|TABLE|FUNCTION) (public\.\w+)", sql, flags=re.MULTILINE)
-    assert drops == [("VIEW", "public.actor_ranking"), ("TABLE", "public.organization_ranking"),
-                     ("FUNCTION", "public.ghus_guard_ranking_is_university"), ("TABLE", "public.query_log")]
-    assert "DROP TABLE public.challenge" not in sql and "DROP TABLE public.strategic_document" not in sql
-    assert "has rows; it is not unused" in sql and "750 needs 720" in sql
+    dropped = re.findall(r"^DROP TABLE (?:public|compass)\.(\w+);", sql, flags=re.MULTILINE)
+    assert sorted(dropped) == sorted(REMOVED)
+    assert re.findall(r"^DROP VIEW public\.(\w+);", sql, flags=re.MULTILINE) == ["actor_ranking", "actor_evaluation"]
+    for kept in ("challenge", "strategic_document", "strategic_entity", "organization_strategic_connection_check",
+                 "organization_relevance"):
+        assert f"DROP TABLE public.{kept};" not in sql
+    assert "750 needs 720" in sql and "never filled now has rows" in sql
 
 
-def test_the_rollback_recreates_every_dropped_object():
+def test_the_rollback_and_the_snapshot_file_bring_everything_back():
     sql = ROLLBACK.read_text(encoding="utf-8")
-    for created in ("CREATE FUNCTION public.ghus_guard_ranking_is_university()",
-                    "CREATE TABLE public.organization_ranking", "CREATE VIEW public.actor_ranking",
-                    "CREATE TABLE public.query_log", "organization_ranking_university_only",
-                    "organization_ranking_append_only"):
-        assert created in sql, created
+    for table in REMOVED:
+        assert re.search(rf"CREATE TABLE (public|compass)\.{table} \(", sql), table
+    assert "CREATE VIEW public.actor_ranking" in sql and "CREATE VIEW public.actor_evaluation" in sql
+    assert "CREATE FUNCTION public.ghus_guard_ranking_is_university()" in sql
+    snapshot = (PACKAGE / "restore_migration_snapshot.sql").read_text(encoding="utf-8")
+    assert snapshot.count("INSERT INTO compass.migration_snapshot") == 256
+    assert "ON CONFLICT (migration_id, object_name) DO NOTHING" in snapshot
