@@ -1403,8 +1403,7 @@ function Section({title,rows,children}){
 }
 const link=(url,label)=>url?html`<a href=${url} target="_blank" rel="noopener noreferrer">${label||url.replace(/^https?:\/\/(www\.)?/,"").replace(/\/$/,"")}</a>`:null;
 const FACT_LABELS={description:"description",primary_technical_focus:"technical focus",technical_approach:"approach",
-  current_activities:"current activities",technology_ip_notes:"technology and IP",key_constraints:"constraints",
-  funding_summary:"funding",primary_lifecycle_role:"lifecycle role"};
+  current_activities:"current activities",funding_summary:"funding"};
 const RELATION_LABELS={unit_of:["Unit of","Has unit"],operated_by:["Operated by","Operates"],member_of:["Member of","Has member"],
   portfolio_of:["In the portfolio of","Has in its portfolio"],spinout_of:["Spinout of","Spun out"],funded_by:["Funded by","Funds"],
   collaborates_with:["Collaborates with","Collaborates with"]};
@@ -1535,8 +1534,7 @@ const EDIT_GROUPS={
       ["region","Region","select","regions"]]],
     ["What it does",[["description","Description","long"],["primary_technical_focus","Primary technical focus","long"],
       ["technical_approach","Technical approach","long"],["current_activities","Current activities","long"],
-      ["technology_ip_notes","Technology and IP","long"],["key_constraints","Key constraints","long"],
-      ["funding_summary","Funding","long"],["primary_lifecycle_role","Lifecycle role"]]],
+      ["funding_summary","Funding","long"]]],
     ["Hubs and sector",[["hubs","Hubs","readonly"],["sectors","Sector","readonly"]]],
   ],
   hub:[
@@ -1669,9 +1667,9 @@ function Actors({focus,visit}){
   const peopleAt=a=>!peopleData||peopleData.__error?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
   // The organization page in the Explore and Map card's style (3 Nov 2026): tags and
   // a one-line location under the name, facts in two columns, where the record comes
-  // from folded at the bottom. Approach and Lifecycle role stay in the Edit form only.
+  // from folded at the bottom. Approach stays in the Edit form only. Technology and IP,
+  // Constraints and Lifecycle role are gone (migration 750: no agent collects them).
   const orFound=v=>isEmpty(v)?NOT_FOUND:html`<${RichText} text=${v} limit=${320}/>`;
-  const longText=v=>isEmpty(v)?null:html`<${RichText} text=${v} limit=${320}/>`;
   const us=!!sel&&(!sel.country||isUS(sel.country));
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
     onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
@@ -1686,9 +1684,7 @@ function Actors({focus,visit}){
         ["Website",sel.website?extLink(sel.website):NOT_FOUND],
         ["Focus",orFound(sel.primary_technical_focus),true],
         ["Activity",orFound(sel.current_activities),true],
-        ["Technology and IP",longText(sel.technology_ip_notes),true],
         ["Funding",orFound(sel.funding_summary),true],
-        ["Constraints",longText(sel.key_constraints),true],
         ["Other names",sel.alt_names],
       ]}/></${Section}>`,
       html`<${Section} key="links" title="Connections"><${Facts} items=${[

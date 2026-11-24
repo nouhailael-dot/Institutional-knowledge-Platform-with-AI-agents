@@ -29,7 +29,7 @@ Postgres schema (answer with standard PostgreSQL). Key tables and columns:
 
 actor_read(actor_id uuid, name text, actor_category text, description text,
       city text, state_code text, region_code text, country text,
-      estimated_trl smallint, status text, merged_into_actor_id uuid)
+      status text, merged_into_actor_id uuid)
   - ALWAYS query actors through actor_read, never the actor table: it excludes
     records GHUS rejected. ALWAYS add WHERE merged_into_actor_id IS NULL when
     counting/listing (the rest are merged duplicates).
@@ -44,8 +44,9 @@ actor_read(actor_id uuid, name text, actor_category text, description text,
     'midwest_great_lakes', 'south_central_texas_gulf', 'mountain_west',
     'west_coast_pacific'.
   - status is 'verified', 'imported', 'parked' or 'rejected'.
-  - estimated_trl is 1..9 or NULL. country is free text and inconsistent
-    ('USA' vs 'United States') — match with ILIKE/IN when needed.
+  - There is no TRL column (migration 750, 24 Nov 2026): a TRL question is
+    SEMANTIC. country is free text and inconsistent ('USA' vs 'United States')
+    — match with ILIKE/IN when needed.
 
 hub(hub_id uuid PK, name text, primary_city text, state text, country text, region text)
 
@@ -69,7 +70,7 @@ engine. {SCHEMA}
 Decide which kind of question this is:
 
 - STRUCTURED — answerable by an exact SQL query: counts ("how many..."), \
-aggregations, filters by a structured field (TRL, type, country, hub membership), \
+aggregations, filters by a structured field (type, state, region, country, hub membership), \
 "which X have/lack Y", "list all X in Y". For these, write ONE read-only SELECT.
 
 - SEMANTIC — about meaning, topics, descriptions, or "why valuable" — better \
@@ -176,7 +177,7 @@ def sql_answer(question: str, sql: str) -> str:
 
 if __name__ == "__main__":
     import sys
-    q = " ".join(sys.argv[1:]) or "How many actors are at TRL 6 or above?"
+    q = " ".join(sys.argv[1:]) or "How many universities are in Texas?"
     mode, sql = plan(q)
     print(f"Q: {q}\nrouted to: {mode}")
     if mode == "sql":
