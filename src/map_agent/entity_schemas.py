@@ -62,7 +62,7 @@ _ACTOR_ITEM = {
         "website":                 {"type": "string", "description": "Homepage URL."},
         "location_city":           {"type": "string", "description": "City name."},
         "state":                   {"type": "string", "description": "US state (full name or abbreviation)."},
-        "country":                 {"type": "string", "description": "Always 'United States'."},
+        "country":                 {"type": "string", "description": "Always 'USA'."},
         "primary_technical_focus": {"type": "string", "description": "Main technical domain."},
         "technical_approach":      {"type": "string", "description": "How they approach the problem."},
         "current_activities":      {"type": "string", "description": "What they are currently doing."},

@@ -113,7 +113,7 @@ def normalize_country(raw: str | None) -> str | None:
     """Best-effort canonical country for browsing. Returns None if we can't tell.
 
     Not authoritative — a display convenience. Anything US-flavored collapses to
-    'United States'; recognizable foreign countries pass through; messy free-text
+    'USA' (GHUS's one form, 24 Nov 2026); recognizable foreign countries pass through; messy free-text
     that we can't confidently classify returns None (shown as 'Unknown')."""
     if not raw or not raw.strip():
         return None
@@ -123,7 +123,7 @@ def normalize_country(raw: str | None) -> str | None:
             or low in _US_STATES
             or low.startswith("usa ")
             or "united states" in low):
-        return "United States"
+        return "USA"
     if low in _CLEAN_COUNTRIES:
         return raw.strip().title() if low != "united kingdom" else "United Kingdom"
     # startswith match for the "India; major operations..." style leaks

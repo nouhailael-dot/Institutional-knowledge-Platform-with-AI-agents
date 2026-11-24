@@ -189,7 +189,7 @@ def test_a_valid_actor_becomes_the_staged_payload():
     p = result["payload"]
     assert (p["actor_category"], p["category_type"], p["state_code"], p["primary_sector"]) == \
         ("company", "small_mid_size", "KS", "WATER")
-    assert p["country"] == "United States"                     # implied by a US state, and said
+    assert p["country"] == "USA"                     # implied by a US state, and said; one form (24 Nov 2026)
     assert any("Country was empty" in w for w in result["warnings"])
     assert p["light_pull_values"] == {
         "recent_activity": {"description": "Pilot with K-State", "date": "2026-05-14"},

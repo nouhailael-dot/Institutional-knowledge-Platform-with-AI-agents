@@ -26,7 +26,7 @@ from agents.common.actor_classification import (
     classification_from_payload,
 )
 from agents.common.facts import ActorFactWrite
-from agents.common.geography import PreparedActorGeography, prepare_actor_geography
+from agents.common.geography import PreparedActorGeography, prepare_actor_geography, stored_country
 from agents.common.hub_assignment import (
     HUB_ASSIGNMENT_METHOD_VERSION,
     NEEDS_REVIEW_LOCATION,
@@ -1199,7 +1199,8 @@ def _insert_actor_locations(
                 "location_id": str(uuid.uuid4()),
                 "actor_id": actor_id,
                 "location_name": location.location_name,
-                "country": result.country,
+                # Saved as "USA", the one form (24 Nov 2026); the gazetteer says "US".
+                "country": stored_country(result.country),
                 "state_code": result.state_code,
                 "city": result.city,
                 "region_code": result.region_code,

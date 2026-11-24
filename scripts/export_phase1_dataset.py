@@ -11,7 +11,7 @@ tags and technical codes.
 
 Cleaning, applied the same way to every row:
 
-* one spelling per value: "United States" (never USA / US), full state names,
+* one spelling per value: "USA" (never United States / US; GHUS, 24 Nov 2026), full state names,
   category and type display names, sector names, https:// websites;
 * text that is not evidence is left empty, never rewritten: the "should be
   verified from primary sources" placeholder, SEC-filing boilerplate, and any
@@ -274,7 +274,7 @@ def build_rows(rows, sectors, hubs, facts):
             sector_cell, others = "; ".join(s[1] for s in own), []
         else:
             sector_cell = primary[1]
-        country = normalize_country(r["country"]) or ("United States" if r["state_code"] else "")
+        country = normalize_country(r["country"]) or ("USA" if r["state_code"] else "")
         if r["country"] and not normalize_country(r["country"]):
             notes.append(f"Country unclear in source: {clean_text(r['country'])}")
         if several_addresses(r["website"]):
@@ -401,7 +401,7 @@ def write(kept, excluded, out: Path) -> None:
         ("Column names match the Data Feed organization template and the Ecosystem Directory.", False),
         ("", False),
         ("Cleaning rules (the same for every row)", True),
-        ("Country is always 'United States' for US organizations (never USA or US); states are "
+        ("Country is always 'USA' for US organizations (never United States or US); states are "
          "full names; categories, types, sectors and regions use their display names.", False),
         ("Text that is not evidence is left empty, never rewritten: the 'should be verified from "
          "primary sources' placeholder, SEC-filing boilerplate, and legacy profile sentences "

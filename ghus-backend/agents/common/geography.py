@@ -388,6 +388,21 @@ def normalize_country(value: object) -> str:
     return str(value or "").strip()
 
 
+# The one form a country is SAVED in for the US (GHUS, 24 Nov 2026): "USA", never
+# "United States" or "US". The gazetteer above keeps its own two-letter code.
+STORED_US = "USA"
+US_SPELLINGS = ("us", "usa", "u.s.", "u.s.a.", "u s", "u s a", "united states",
+                "united states of america")
+
+
+def stored_country(value: object) -> str | None:
+    """The country as it is saved: every US spelling becomes "USA"; others as given."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return STORED_US if text.casefold() in US_SPELLINGS else text
+
+
 @lru_cache(maxsize=1)
 def default_gazetteer() -> CensusPlacesGazetteer:
     return CensusPlacesGazetteer.from_zip()
@@ -449,7 +464,7 @@ def prepare_actor_geography(
         result = prepared[0].result
         actor_values.update(
             {
-                "country": result.country,
+                "country": stored_country(result.country),      # "USA", not the code "US"
                 "location_city": result.city or None,
                 "state_code": result.state_code,
                 "region_code": result.region_code,

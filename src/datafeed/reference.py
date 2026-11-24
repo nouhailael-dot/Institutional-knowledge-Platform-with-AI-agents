@@ -25,7 +25,8 @@ EVENT_TYPES = ("conference", "summit", "workshop", "forum", "symposium", "expo",
                "webinar", "hackathon", "training")
 EVENT_FORMATS = (("in_person", "In person"), ("online", "Online"), ("hybrid", "Hybrid"))
 RECURRENCE = (("annual", "Annual"), ("recurring", "Recurring"), ("one_time", "One-time"))
-US = "United States"
+# One form for the country (GHUS, 24 Nov 2026): "USA", never "United States" or "US".
+US = "USA"
 # Dropdown suggestion only: a non-US country is accepted as written (its region
 # is then "Not Applicable (Non-US)"). There is no country table in V2.
 COUNTRIES = (US, "Canada", "Mexico", "Morocco", "United Kingdom", "France", "Germany")

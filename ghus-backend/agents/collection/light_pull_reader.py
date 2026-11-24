@@ -739,7 +739,7 @@ def _normal_location(value: Mapping) -> dict:
     us_country = (country or "").casefold() in {"", "us", "usa", "united states",
                                                 "united states of america"}
     out = {"city": city, "state": code if code and us_country else state_text,
-           "country": "US" if code and us_country else country}
+           "country": "USA" if code and us_country else country}       # the one saved form
     return {key: item for key, item in out.items() if item}
 
 

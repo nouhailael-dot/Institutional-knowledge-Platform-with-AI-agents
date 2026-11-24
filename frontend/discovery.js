@@ -113,6 +113,9 @@ function withRequester(payload, email) {
 export const SHARED_LABEL = "Shared · from before accounts";
 const SHARED_TITLE = "Made before accounts; shared with everyone";
 
+// Every US spelling a stored row may still carry; "USA" is the one saved form.
+const US_NAMES = new Set(["USA", "US", "UNITED STATES", "UNITED STATES OF AMERICA"]);
+
 export const STATUS_LABELS = {
   // Active and waiting for its next run; "Running" is said only while a run is.
   active: "Scheduled",
@@ -195,7 +198,7 @@ export function entityResultFacts(row) {
 }
 
 export function resultFacts(row) {
-  const place = [row.city, row.state, row.country && row.country !== "United States" ? row.country : null]
+  const place = [row.city, row.state, row.country && !US_NAMES.has(String(row.country).toUpperCase()) ? row.country : null]
     .filter(Boolean).join(", ");
   return [
     ["Location", place],

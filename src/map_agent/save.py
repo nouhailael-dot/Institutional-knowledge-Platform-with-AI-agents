@@ -52,14 +52,14 @@ def _source(entity) -> str:
 
 
 def _place(location) -> tuple[str, str, str]:
-    """(city, state, country) from free text like "Westminster, Colorado, United States"."""
+    """(city, state, country) from free text like "Westminster, Colorado, USA"."""
     parts = [p.strip() for p in str(location or "").split(",") if p.strip()]
     states = {name.casefold(): name for name in reference.taxonomy.STATE_NAMES.values()}
     states.update({code.casefold(): code for code in reference.taxonomy.STATE_NAMES})
     for i, part in enumerate(parts):
         word = re.sub(r"\s+\d{5}(-\d{4})?$", "", part)   # "TX 77002" -> "TX"
         if word.casefold() in states:
-            return (parts[i - 1] if i else ""), states[word.casefold()], "United States"
+            return (parts[i - 1] if i else ""), states[word.casefold()], "USA"
     return "", "", ""
 
 

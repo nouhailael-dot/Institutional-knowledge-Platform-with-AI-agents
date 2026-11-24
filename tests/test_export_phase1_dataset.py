@@ -40,7 +40,7 @@ def test_one_spelling_placeholders_and_templates_left_empty_and_noted():
     kept, excluded = build_rows(rows, {"a0": [("WATER", "Water", True)]}, {}, {})
     first = kept[0]
     assert excluded == []
-    assert first["country"] == "United States" and first["state"] == "Kansas"
+    assert first["country"] == "USA" and first["state"] == "Kansas"      # one form (24 Nov 2026)
     assert first["description"] == "" and first["funding_summary"] == ""
     assert first["sector"] == "Water" and first["primary_lifecycle_role"] == ""
     assert "placeholder" in first["notes"] and "Generic" in first["notes"]

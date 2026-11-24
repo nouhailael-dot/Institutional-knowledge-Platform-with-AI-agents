@@ -201,7 +201,7 @@ class RowChecker:
                 state = code
                 if not country:
                     country = US
-                    warnings.append("Country was empty; a US state means United States.")
+                    warnings.append("Country was empty; a US state means USA.")
         if country and country != US:
             warnings.append(f"Country '{country}' is outside the US: its region is Not "
                             "Applicable (Non-US).")

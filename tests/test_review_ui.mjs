@@ -53,6 +53,7 @@ import {
   CATEGORIES,
   COMMON_LIGHT_ROWS,
   COUNTRIES,
+  countryOptions,
   MISSING,
   NOT_APPLICABLE,
   PARENT_LINK_TYPES,
@@ -789,9 +790,11 @@ test('sector is a controlled dropdown that grows with the reference data', () =>
 test('country is a controlled dropdown and the stored spellings resolve', () => {
   assert.match(component, /countryOptions\(\)/);
   assert.ok(COUNTRIES.length > 150);
-  // The data holds both spellings for the same country; both resolve to one.
-  assert.equal(normalizeCountry('USA'), 'United States');
-  assert.equal(normalizeCountry('United States'), 'United States');
+  // Every US spelling resolves to one form, "USA" (GHUS, 24 Nov 2026).
+  for (const spelling of ['USA', 'United States', 'US', 'u.s.a.', 'United States of America']) {
+    assert.equal(normalizeCountry(spelling), 'USA');
+  }
+  assert.equal(countryOptions()[0].value, 'USA');                     // listed first
   assert.equal(normalizeCountry('Morocco'), 'Morocco');
   // An unrecognised value is kept exactly as stored rather than discarded.
   assert.equal(normalizeCountry('Atlantis'), 'Atlantis');

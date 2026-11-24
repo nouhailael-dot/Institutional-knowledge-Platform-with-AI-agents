@@ -32,6 +32,7 @@ from agents.common.resolve_route import (
     route_event,
     route_person,
 )
+from agents.common.geography import STORED_US, stored_country
 from agents.discovery.normalize import is_institution_affiliation
 from agents.discovery.promote import (
     ACTOR_CREATE_FIELDS,
@@ -361,7 +362,7 @@ def _location_from_light_pull(payload: dict[str, Any]) -> None:
     payload["location_city"] = city
     if not recorded:
         payload["state"] = state
-    payload.setdefault("country", country or "US")
+    payload.setdefault("country", stored_country(country) or STORED_US)   # "USA", the one form
 
 
 def _state_from_record(payload: dict[str, Any]) -> None:

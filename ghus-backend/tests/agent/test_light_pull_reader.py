@@ -237,8 +237,8 @@ def test_the_website_publishing_content_is_not_recent_activity():
 
 @pytest.mark.parametrize(("stated", "stored", "where"), [
     ({"city": "Milwaukee", "state": "Wisconsin", "country": None},
-     {"city": "Milwaukee", "state": "WI", "country": "US"}, "Milwaukee, Wisconsin"),
-    ({"city": "Milwaukee", "state": "WI"}, {"city": "Milwaukee", "state": "WI", "country": "US"},
+     {"city": "Milwaukee", "state": "WI", "country": "USA"}, "Milwaukee, Wisconsin"),
+    ({"city": "Milwaukee", "state": "WI"}, {"city": "Milwaukee", "state": "WI", "country": "USA"},
      "Milwaukee, Wisconsin"),
     # Not a US state: kept as the page says it, never placed in the US.
     ({"city": "Toronto", "state": "Ontario", "country": "Canada"},

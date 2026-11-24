@@ -43,7 +43,7 @@ def test_admission_fills_an_empty_record_location_from_the_light_pull_read_only(
     payload = {"name": "Clean Energy Group", "light_pull_evidence": evidence}
     _location_from_light_pull(payload)
     assert (payload["location_city"], payload["state"], payload["country"]) == (
-        "Montpelier", "VT", "US")
+        "Montpelier", "VT", "USA")                                  # one saved form (24 Nov 2026)
     # A reviewer's value always wins.
     reviewed = {"name": "X", "location_city": "Burlington", "state": "VT",
                 "light_pull_evidence": evidence}

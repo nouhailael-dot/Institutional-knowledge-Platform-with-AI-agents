@@ -1849,7 +1849,7 @@ def record_geocode_review_decision(
     city_column = "city" if _has_column(session, "actor", "city") else "location_city"
     execute_canonical_write(session, text(
         f"UPDATE actor SET {city_column}=:city,state_code=:state_code,region_code=:region_code,"
-        "country='US',latitude=:latitude,longitude=:longitude,updated_at=now() "
+        "country='USA',latitude=:latitude,longitude=:longitude,updated_at=now() "
         "WHERE actor_id=CAST(:actor AS uuid)"
     ), {**outcome, "actor": item["entity_id"]})
     _close_review_item(session, review_item_id, decision="resolve", status="resolved",
@@ -1908,7 +1908,7 @@ def fill_actor_location(
     legacy_state = ",state=:legacy_state" if _has_column(session, "actor", "state") else ""
     execute_canonical_write(session, text(
         f"UPDATE actor SET {city_column}=:city,state_code=:state_code{legacy_state},"
-        "region_code=:region_code,country='US',latitude=:latitude,longitude=:longitude,"
+        "region_code=:region_code,country='USA',latitude=:latitude,longitude=:longitude,"
         "updated_at=now() WHERE actor_id=CAST(:actor AS uuid)"
     ), {**outcome, "legacy_state": result.state_code, "actor": actor_id})
     return {"action": "located", **outcome}
@@ -2501,6 +2501,82 @@ def _has_column(session, table: str, column: str) -> bool:
 def _assert_identifier(value: str) -> None:
     if not _IDENTIFIER_RE.match(value):
         raise ValueError(f"unsafe SQL identifier: {value!r}")
+
+
+# ------------------------------------------------- one form for the country (24 Nov 2026)
+# Where a country is stored, and the key that names each row in the report.
+_COUNTRY_COLUMNS = (("actor", "actor_id", "name"), ("actor_location", "actor_location_id", "location_name"),
+                    ("hub", "hub_id", "name"), ("proposed_hub", "proposed_hub_id", "name"))
+
+
+def standardize_countries(session, *, live: bool = False) -> dict[str, object]:
+    """Every stored US spelling ("United States", "US", "U.S.A."...) becomes "USA".
+
+    GHUS decision of 24 Nov 2026: one form for the country everywhere. Only exact
+    US spellings change; a value that is something else (a city or a state typed
+    into a hub's country) is listed for a person to decide, never rewritten.
+    ``updated_at`` is left as it was: nothing about the record itself changed.
+    A location that would then duplicate one already saved as "USA" is left and
+    listed. Dry run unless ``live``.
+    """
+    from agents.common.geography import STORED_US, US_SPELLINGS
+
+    spellings = [s for s in US_SPELLINGS if s != STORED_US.casefold()]
+    out: dict[str, object] = {"live": live, "to": STORED_US}
+    for table, key, label in _country_columns_present(session):
+        found = session.execute(text(
+            f"SELECT {key}::text AS id, {label} AS label, country FROM {table} "
+            "WHERE lower(btrim(country)) = ANY(:spellings) AND country <> :usa"),
+            {"spellings": spellings, "usa": STORED_US}).mappings().all()
+        blocked: list[str] = []
+        if table == "actor_location" and found:
+            # (actor, country, state, city, name) is unique: a twin already "USA" stays.
+            blocked = [str(r[0]) for r in session.execute(text(
+                "SELECT a.actor_location_id::text FROM actor_location a JOIN actor_location b "
+                "ON b.actor_id = a.actor_id AND b.country = :usa "
+                "AND b.state_code IS NOT DISTINCT FROM a.state_code AND b.city IS NOT DISTINCT FROM a.city "
+                "AND b.location_name IS NOT DISTINCT FROM a.location_name "
+                "WHERE a.actor_location_id = ANY(CAST(:ids AS uuid[]))"),
+                {"usa": STORED_US, "ids": [r["id"] for r in found]}).all()]
+        ids = [r["id"] for r in found if r["id"] not in blocked]
+        others = session.execute(text(
+            f"SELECT {key}::text AS id, {label} AS label, country FROM {table} "
+            "WHERE country IS NOT NULL AND btrim(country) <> '' AND country <> :usa "
+            "AND NOT (lower(btrim(country)) = ANY(:spellings))"),
+            {"spellings": spellings, "usa": STORED_US}).mappings().all()
+        out[table] = {
+            "change": len(ids),
+            "from": sorted({r["country"] for r in found if r["id"] not in blocked}),
+            "left_duplicate": blocked,
+            # Not a US spelling: kept as stored, for a person to look at.
+            "other_values": sorted({str(r["country"]) for r in others}),
+        }
+        if live and ids:
+            execute_canonical_write(session, text(
+                f"UPDATE {table} SET country = :usa WHERE {key} = ANY(CAST(:ids AS uuid[]))"),
+                {"usa": STORED_US, "ids": ids})
+    return out
+
+
+def _country_columns_present(session):
+    """The country columns this database has (older test copies lack some tables)."""
+    return [(t, k, n) for t, k, n in _COUNTRY_COLUMNS if _has_column(session, t, "country")]
+
+
+def _countries_main(argv: list[str] | None = None) -> int:
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="Every stored US spelling becomes 'USA'.")
+    parser.add_argument("--live", action="store_true", help="write; absent means a dry run")
+    args = parser.parse_args(argv)
+    from agents.collection.discovery_requests import open_session
+
+    with open_session() as session:
+        with session.begin():
+            outcome = standardize_countries(session, live=args.live)
+    json.dump(outcome, sys.stdout, default=str, indent=1)
+    return 0
 
 
 # ------------------------------------------------- verified by a GHUS person (13 Nov 2026)

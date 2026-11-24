@@ -469,7 +469,7 @@ const COUNTRY_PAIRS =
   "SD:Sudan;SR:Suriname;SE:Sweden;CH:Switzerland;SY:Syria;TW:Taiwan;TJ:Tajikistan;" +
   "TZ:Tanzania;TH:Thailand;TL:Timor-Leste;TG:Togo;TO:Tonga;TT:Trinidad and Tobago;" +
   "TN:Tunisia;TR:Türkiye;TM:Turkmenistan;TV:Tuvalu;UG:Uganda;UA:Ukraine;" +
-  "AE:United Arab Emirates;GB:United Kingdom;US:United States;UY:Uruguay;" +
+  "AE:United Arab Emirates;GB:United Kingdom;US:USA;UY:Uruguay;" +
   "UZ:Uzbekistan;VU:Vanuatu;VA:Vatican City;VE:Venezuela;VN:Vietnam;YE:Yemen;" +
   "ZM:Zambia;ZW:Zimbabwe";
 
@@ -480,8 +480,9 @@ export const COUNTRIES = COUNTRY_PAIRS.split(";").map(pair => {
 
 const COUNTRY_BY_NAME = new Map(COUNTRIES.map(([code, name]) => [name.toLocaleLowerCase(), name]));
 const COUNTRY_ALIASES = new Map(Object.entries({
-  usa: "United States", "u.s.a.": "United States", "u.s.": "United States",
-  us: "United States", "united states of america": "United States",
+  // One form for the country (GHUS, 24 Nov 2026): every US spelling reads "USA".
+  usa: "USA", "u.s.a.": "USA", "u.s.": "USA", us: "USA",
+  "united states": "USA", "united states of america": "USA",
   uk: "United Kingdom", "u.k.": "United Kingdom",
   "great britain": "United Kingdom", england: "United Kingdom",
   korea: "South Korea", "republic of korea": "South Korea",
@@ -498,11 +499,11 @@ export function normalizeCountry(value) {
   return COUNTRY_ALIASES.get(key) || COUNTRY_BY_NAME.get(key) || raw;
 }
 
-/** Every country, the United States first (most actors are there), then A–Z. */
+/** Every country, USA first (most organizations are there), then A–Z. */
 export function countryOptions() {
   const options = COUNTRIES.map(([, name]) => ({value: name, label: name}));
-  return [...options.filter(o => o.value === "United States"),
-    ...options.filter(o => o.value !== "United States")];
+  return [...options.filter(o => o.value === "USA"),
+    ...options.filter(o => o.value !== "USA")];
 }
 
 /**

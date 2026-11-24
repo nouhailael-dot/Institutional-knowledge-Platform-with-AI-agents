@@ -862,12 +862,12 @@ import React,{useState,useEffect,useRef} from "react";
 import {createRoot} from "react-dom/client";
 import htm from "htm";
 import {marked} from "marked";
-import {createReviewPage} from "./review.js?v=20261123a";
-import {createDiscoveryPage} from "./discovery.js?v=20261123d";
+import {createReviewPage} from "./review.js?v=20261124a";
+import {createDiscoveryPage} from "./discovery.js?v=20261124a";
 import {createDateInput, usDate} from "./dates.js?v=20261110b";
-import {createDataFeedPage} from "./datafeed.js?v=20261123b";
+import {createDataFeedPage} from "./datafeed.js?v=20261124a";
 import {createAccountPages} from "./accounts.js?v=20261123d";
-import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261123d";
+import {createDashboardPage, DASHBOARD_UNSEEN, NAVIGATE} from "./dashboard.js?v=20261124a";
 import {askConfirm, showMessage} from "./dialog.js?v=20261123a";
 const html = htm.bind(React.createElement);
 const md = (t)=>({dangerouslySetInnerHTML:{__html:marked.parse(t||"")}});
@@ -1253,7 +1253,9 @@ function downloadCsv(name,columns,rows){
    filters; Owner applies to All Records only. A country outside the US has no
    state, GHUS region or hub, so those filters and columns step aside (2 Nov 2026). */
 const sourceOf=r=>r.origin==="AI-Mapped"?"AI mapped":(r.origin||"");
-const US="United States";
+const US="USA";   // the one form for the country (GHUS, 24 Nov 2026)
+// Any US spelling a record may still carry counts as the US.
+const isUS=c=>["USA","US","UNITED STATES","UNITED STATES OF AMERICA"].includes(String(c||"").trim().toUpperCase());
 function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],columns,onOpen,exportName,empty,note}){
   const [q,setQ]=useState("");
   const [vals,setVals]=useState({});
@@ -1279,7 +1281,7 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
     if(r.ok){window.dispatchEvent(new CustomEvent("compass:preferences",{detail:d.preferences}));setSaveName("");setSaveNote(`Saved as '${name}'.`);}
     else setSaveNote(typeof d.detail==="string"?d.detail:"Could not save.");
   }
-  const nonUS=!!vals.country&&vals.country!==US;
+  const nonUS=!!vals.country&&!isUS(vals.country);
   const common=[
     {key:"_status",label:"Status",options:distinct(rows.map(statusOf)).filter(v=>v!=="Deleted"),test:(r,v)=>statusOf(r)===v},
     {key:"_source",label:"Source",options:distinct(rows.map(sourceOf)),test:(r,v)=>sourceOf(r)===v},
@@ -1668,7 +1670,7 @@ function Actors({focus,visit}){
   // from folded at the bottom. Approach and Lifecycle role stay in the Edit form only.
   const orFound=v=>isEmpty(v)?NOT_FOUND:html`<${RichText} text=${v} limit=${320}/>`;
   const longText=v=>isEmpty(v)?null:html`<${RichText} text=${v} limit=${320}/>`;
-  const us=!!sel&&(!sel.country||sel.country===US);
+  const us=!!sel&&(!sel.country||isUS(sel.country));
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
     onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
     layout="card"
