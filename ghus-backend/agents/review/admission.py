@@ -909,6 +909,34 @@ def apply_directory_edit(session, decision: Mapping[str, Any]) -> dict[str, Any]
             "changed": outcome["changed"]}
 
 
+def apply_directory_verification(session, decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Verify or reject one record from the Ecosystem Directory (re-review, 25 Nov 2026).
+
+    Delegates to ``decisions.record_directory_verification``, the approved writer,
+    in one transaction. Organizations, events and people.
+    """
+    from agents.enrichment.decisions import record_directory_verification
+
+    reviewer = _clean_required(decision.get("reviewer"), "reviewer", 120)
+    entity_type = str(decision.get("entity_type") or "")
+    raw_id = _clean_required(decision.get("entity_id"), "entity_id", 80)
+    transaction = session.begin()
+    try:
+        outcome = record_directory_verification(
+            session, entity_type=entity_type, entity_id=raw_id,
+            verified=bool(decision.get("verified")), decided_by=reviewer,
+            rejection_reason=decision.get("rejection_reason"), notes=decision.get("notes"),
+            live=True)
+    except ValueError as exc:
+        transaction.rollback()
+        raise AdmissionValidationError(str(exc)) from exc
+    except Exception:
+        transaction.rollback()
+        raise
+    transaction.commit()
+    return {"decision_kind": "verify_directory_record", **outcome}
+
+
 RECORD_DELETION_KINDS = {"delete_record", "restore_record"}
 
 
@@ -965,6 +993,8 @@ def _main(argv: list[str] | None = None) -> int:
             outcome = apply_directory_decision(session, raw)
         elif raw.get("decision_kind") == "edit_directory_record":
             outcome = apply_directory_edit(session, raw)
+        elif raw.get("decision_kind") == "verify_directory_record":
+            outcome = apply_directory_verification(session, raw)
         elif raw.get("decision_kind") in RECORD_DELETION_KINDS:
             outcome = apply_record_deletion(session, raw)
         else:

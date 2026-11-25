@@ -107,6 +107,8 @@ ROUTE_POLICY: list[Rule] = [
             "GET /api/browse/actors/{actor_id}/profile", "GET /api/browse/events",
             "GET /api/browse/hubs", "GET /api/browse/people"),
     *_rules("records.edit", "POST /api/browse/{kind}/{record_id}/edit"),
+    # Re-review (25 Nov 2026): verify or reject a record from the Directory.
+    *_rules("review.decide", "POST /api/browse/{kind}/{record_id}/verify"),
     *_rules("records.remove", "POST /api/browse/actors/{actor_id}/remove",
             "POST /api/browse/actors/{actor_id}/restore"),
     # Deletion with 30-day retention (Phase 6): delete, list (Pending Deletion), restore.

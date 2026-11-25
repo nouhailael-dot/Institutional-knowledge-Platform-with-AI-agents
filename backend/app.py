@@ -684,6 +684,51 @@ def directory_edit(kind: str, record_id: str, payload: DirectoryEdit):
     return outcome
 
 
+class DirectoryVerification(BaseModel):
+    verified: bool
+    rejection_reason: str = Field(default="", max_length=500)
+    confirm: bool = False
+
+
+_VERIFY_KINDS = {"actors": "actor", "events": "event", "people": "person"}
+
+
+@app.post("/api/browse/{kind}/{record_id}/verify")
+def directory_verify(kind: str, record_id: str, payload: DirectoryVerification):
+    """Verify or reject a record from the Ecosystem Directory (re-review, 25 Nov 2026).
+
+    Every verified organization, event and person was parked so the team goes
+    through each one again. The backend's approved writer
+    (decisions.record_directory_verification) appends the decision to the
+    record's verification history; a rejection needs a reason.
+    """
+    entity_type = _VERIFY_KINDS.get(kind)
+    if entity_type is None:
+        raise HTTPException(status_code=404, detail="Only organizations, events and people are verified here.")
+    reason = " ".join(payload.rejection_reason.split())
+    if not payload.verified and not reason:
+        raise HTTPException(status_code=400, detail="Give a reason to reject: it is kept with the record.")
+    if payload.confirm is not True:
+        raise HTTPException(status_code=400, detail="Confirm the decision first.")
+    bridge = review_admission_bridge()
+    if not bridge.configured:
+        raise HTTPException(status_code=503, detail=(
+            "Verifying isn't set up on this computer: Review's decision writer is not configured."))
+    try:
+        outcome = bridge.apply({
+            "decision_kind": "verify_directory_record", "entity_type": entity_type,
+            "entity_id": record_id, "verified": payload.verified,
+            "rejection_reason": reason[:500] or None, "reviewer": current_user(),
+            "idempotency_key": f"directory:verify:{record_id}:{time.time_ns()}"})
+    except AdmissionBridgeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    activity.note(result=outcome.get("status"), decision=outcome.get("current_status"),
+                  reason=reason[:500] or None)
+    for cached in (_actors, _events, _people):
+        cached.cache_clear()
+    return outcome
+
+
 # ------------------------------------------------- Delete, keep 30 days, restore (Phase 6)
 # GHUS policy (17 Nov 2026): a deleted record disappears from active use at once,
 # waits 30 days under Pending Deletion (Dashboard; restorable), then the

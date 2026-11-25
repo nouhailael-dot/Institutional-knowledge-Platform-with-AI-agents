@@ -409,6 +409,9 @@ def load_events() -> list[dict]:
                host.name AS organizer
         FROM event e
         LEFT JOIN actor_read host ON host.actor_id::text = to_jsonb(e)->>'host_actor_id'
+        -- A rejected event leaves the Directory, as a rejected organization or
+        -- person does (re-review, 25 Nov 2026).
+        WHERE COALESCE(e.record_status, '') <> 'rejected'
         ORDER BY e.name
     """
     out = []

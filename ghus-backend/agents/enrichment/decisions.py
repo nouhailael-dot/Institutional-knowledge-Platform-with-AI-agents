@@ -424,6 +424,171 @@ def record_verification_decision(
     return count
 
 
+# --- Re-review (GHUS, 25 Nov 2026) -------------------------------------------------
+# Every verified organization, event and person is parked so the team goes through
+# each one again in the Ecosystem Directory and verifies or rejects it there.
+# Organizations keep their status on the actor row (projected from their verification
+# history); events and people keep it in record_status, with each decision appended
+# to record_verification.
+REVIEW_TABLES = {"actor": ("actor", "actor_id", "name", "status"),
+                 "event": ("event", "event_id", "name", "record_status"),
+                 "person": ("person", "person_id", "full_name", "record_status")}
+
+
+def park_for_rereview(session, *, decided_by: str, reason: str,
+                      entity_types=("actor", "event", "person"), live: bool = False) -> dict:
+    """Park every VERIFIED record of these types; rejected and parked ones are left alone.
+
+    Dry run by default: it says how many would be parked and lists them. Records
+    pending deletion and merged duplicates are skipped. The previous status of
+    each record is returned (the caller keeps it as the backup).
+    """
+    reviewer = str(decided_by or "").strip()
+    note = " ".join(str(reason or "").split())[:500]
+    if not reviewer or not note:
+        raise ValueError("decided_by and a reason are required")
+    out: dict[str, object] = {"live": live, "parked": {}, "records": []}
+    for entity_type in entity_types:
+        table, key, name, status = REVIEW_TABLES[entity_type]
+        merged = " AND t.merged_into_actor_id IS NULL" if entity_type == "actor" else ""
+        deleted = ("" if not session.execute(text(
+            "SELECT to_regclass('compass.deleted_record') IS NOT NULL")).scalar() else
+            " AND NOT EXISTS (SELECT 1 FROM compass.deleted_record d WHERE d.entity_type = :type "
+            "AND d.entity_id = t.{key} AND d.restored_at IS NULL AND d.purged_at IS NULL)".format(key=key))
+        rows = session.execute(text(
+            f"SELECT t.{key}::text AS id, t.{name} AS name FROM {table} t "
+            f"WHERE t.{status} = 'verified'{merged}{deleted} FOR UPDATE"), {"type": entity_type}
+        ).mappings().all()
+        ids = [r["id"] for r in rows]
+        out["parked"][entity_type] = len(ids)
+        out["records"] += [{"entity_type": entity_type, "entity_id": r["id"], "name": r["name"],
+                            "previous_status": "verified"} for r in rows]
+        if not live or not ids:
+            continue
+        execute_canonical_write(session, text(
+            f"UPDATE {table} SET {status} = 'parked'"
+            + (", updated_at = now()" if entity_type == "actor" else "")
+            + f" WHERE {key} = ANY(CAST(:ids AS uuid[])) AND {status} = 'verified'"), {"ids": ids})
+        if entity_type != "actor":
+            # Events and people: the decision joins their verification history.
+            execute_canonical_write(session, text(
+                "INSERT INTO record_verification (entity_type, entity_id, decision, decided_by, notes) "
+                "SELECT :type, id, 'parked', :by, :note FROM unnest(CAST(:ids AS uuid[])) AS id"),
+                {"type": entity_type, "by": reviewer, "note": note, "ids": ids})
+    return out
+
+
+def restore_after_rereview(session, *, records: list[dict], decided_by: str,
+                           live: bool = False) -> dict:
+    """Undo ``park_for_rereview`` for the records of its backup that nobody decided since.
+
+    A record goes back to verified only if it is still parked and no one verified
+    or rejected it after it was parked: an organization whose latest verification
+    event is still "verified", an event or person whose latest record_verification
+    row is still the "parked" one.
+    """
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    restored: dict[str, int] = {}
+    for entity_type in REVIEW_TABLES:
+        table, key, _name, status = REVIEW_TABLES[entity_type]
+        ids = [str(uuid.UUID(r["entity_id"])) for r in records
+               if r.get("entity_type") == entity_type and r.get("previous_status") == "verified"]
+        if not ids:
+            continue
+        if entity_type == "actor":
+            due = session.execute(text(
+                "SELECT a.actor_id::text FROM actor a WHERE a.actor_id = ANY(CAST(:ids AS uuid[])) "
+                "AND a.status = 'parked' AND (SELECT v.decision FROM actor_verification_event v "
+                " WHERE v.actor_id = a.actor_id ORDER BY v.recorded_at DESC NULLS LAST, "
+                " v.decided_at DESC NULLS LAST LIMIT 1) = 'verified'"), {"ids": ids}).scalars().all()
+        else:
+            due = session.execute(text(
+                f"SELECT t.{key}::text FROM {table} t WHERE t.{key} = ANY(CAST(:ids AS uuid[])) "
+                f"AND t.{status} = 'parked' AND (SELECT rv.decision FROM record_verification rv "
+                " WHERE rv.entity_type = :type AND rv.entity_id = t." + key +
+                " ORDER BY rv.decided_at DESC LIMIT 1) = 'parked'"),
+                {"ids": ids, "type": entity_type}).scalars().all()
+        restored[entity_type] = len(due)
+        if not live or not due:
+            continue
+        if entity_type == "actor":
+            # The status is what the latest verification event (still "verified") says.
+            session.execute(text("SELECT set_config('ghus.verification_projection', 'on', true)"))
+            execute_canonical_write(session, text(
+                "UPDATE actor SET status = 'verified', updated_at = now() "
+                "WHERE actor_id = ANY(CAST(:ids AS uuid[])) AND status = 'parked'"), {"ids": list(due)})
+            session.execute(text("SELECT set_config('ghus.verification_projection', 'off', true)"))
+        else:
+            execute_canonical_write(session, text(
+                f"UPDATE {table} SET {status} = 'verified' "
+                f"WHERE {key} = ANY(CAST(:ids AS uuid[])) AND {status} = 'parked'"), {"ids": list(due)})
+            execute_canonical_write(session, text(
+                "INSERT INTO record_verification (entity_type, entity_id, decision, decided_by, notes) "
+                "SELECT :type, id, 'verified', :by, 'Re-review undone: back to verified.' "
+                "FROM unnest(CAST(:ids AS uuid[])) AS id"),
+                {"type": entity_type, "by": reviewer, "ids": list(due)})
+    return {"live": live, "restored": restored}
+
+
+def record_directory_verification(
+    session,
+    *,
+    entity_type: str,
+    entity_id: str,
+    verified: bool,
+    decided_by: str,
+    rejection_reason: str | None = None,
+    notes: str | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """A GHUS person verifies or rejects one record from the Ecosystem Directory.
+
+    Organizations: a verification event is appended and the database projects it
+    onto the actor's status. Events and people: a record_verification row is
+    appended and their record_status follows. A rejection needs a reason. A
+    record pending deletion, or merged into another, is refused.
+    """
+    if entity_type not in REVIEW_TABLES:
+        raise ValueError("only organizations, events and people are verified here")
+    reviewer = str(decided_by or "").strip()
+    if not reviewer:
+        raise ValueError("decided_by is required")
+    reason = " ".join(str(rejection_reason or "").split())[:500] or None
+    if not verified and not reason:
+        raise ValueError("give a reason to reject: it is kept with the record")
+    table, key, name, status = REVIEW_TABLES[entity_type]
+    entity_id = str(uuid.UUID(str(entity_id)))
+    extra = ", merged_into_actor_id" if entity_type == "actor" else ""
+    row = session.execute(text(
+        f"SELECT {name} AS name, {status} AS status{extra} FROM {table} "
+        f"WHERE {key} = CAST(:id AS uuid) FOR UPDATE"), {"id": entity_id}).mappings().first()
+    if row is None:
+        raise ValueError(f"that {entity_type} is not in the database")
+    if row.get("merged_into_actor_id"):
+        raise ValueError("that record was merged into another organization; decide that one instead")
+    if pending_deletion(session, entity_type, entity_id):
+        raise ValueError("that record is waiting for deletion; restore it first")
+    decision = "verified" if verified else "rejected"
+    shown = {"name": row["name"] if entity_type != "person" else None, "entity_type": entity_type,
+             "entity_id": entity_id, "previous_status": row["status"]}
+    if row["status"] == decision:
+        return {**shown, "status": "unchanged", "current_status": decision}
+    if not live:
+        return {**shown, "status": "would_apply", "current_status": decision}
+    note = " ".join(str(notes or "").split())[:500] or (
+        "Verified in the Ecosystem Directory." if verified else "Rejected in the Ecosystem Directory.")
+    record_verification_decision(session, entity_type=entity_type, entity_ids=[entity_id],
+                                 decision=decision, decided_by=reviewer, notes=note,
+                                 rejection_reason=reason)
+    if entity_type != "actor":
+        execute_canonical_write(session, text(
+            f"UPDATE {table} SET {status} = :d WHERE {key} = CAST(:id AS uuid)"),
+            {"d": decision, "id": entity_id})
+    return {**shown, "status": "applied", "current_status": decision}
+
+
 # GHUS notes: "free text, written only by GHUS" (Architecture V2 5.1). Only
 # actors and events have the column; people have none yet.
 GHUS_NOTES_KEYS = {"actor": "actor_id", "event": "event_id", "person": "person_id"}
