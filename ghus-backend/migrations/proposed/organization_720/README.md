@@ -91,3 +91,5 @@ No deploy is needed: the code keeps using the old names through the stand-ins.
 
 `../deferred/rollback/720_organization_names.sql`, then
 `DELETE FROM architecture_v2_migration_ledger WHERE migration_id = '720';`.
+Roll back 810 (unused tables) and then 800 (actor names) first, if they are applied:
+720's rollback renames `organization_ranking`, which 810 removes.

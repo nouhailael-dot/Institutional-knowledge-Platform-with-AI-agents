@@ -452,9 +452,7 @@ def load_people() -> list[dict]:
                   LEFT JOIN region_state rs ON rs.state_code = a.state_code
                  WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
                    AND a.merged_into_actor_id IS NULL) AS states,
-               (SELECT string_agg(DISTINCT t.name, '{_HUB_SEP}')
-                  FROM person_topic pt JOIN topic t ON t.topic_id = pt.topic_id
-                 WHERE pt.person_id = p.person_id) AS topics,
+               NULL::text AS topics,  -- person_topic was never filled; migration 810 removes it
                (SELECT string_agg(DISTINCT d.research_area, '{_HUB_SEP}')
                   FROM person_discovery_profile d
                  WHERE d.person_id = p.person_id AND d.research_area IS NOT NULL) AS research_areas,

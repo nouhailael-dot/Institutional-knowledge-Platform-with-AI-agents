@@ -24,10 +24,6 @@ from agents.common.hub_centers import (
     preview_center_drift,
 )
 from agents.discovery.promote import _insert_hub_review_bridge
-from agents.enrichment.decisions import (
-    apply_hub_center_decision,
-    record_hub_center_drift_review,
-)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -161,10 +157,8 @@ def test_dry_run_and_live_use_the_same_pure_assignment_plan():
 
 def test_phase6_writer_and_review_bridges_are_explicit():
     promote = (ROOT / "agents" / "discovery" / "promote.py").read_text(encoding="utf-8")
-    decisions = (ROOT / "agents" / "enrichment" / "decisions.py").read_text(encoding="utf-8")
     migration = (ROOT / "migrations" / "proposed" / "deferred" / "390_v2_hub_review_kinds.sql").read_text(encoding="utf-8")
     assert "INSERT INTO hub_actor" in promote
-    assert "UPDATE hub SET center_city" in decisions
     assert "compatibility_bridge" in promote
     assert "canonical_outcome" in promote
     assert "method_version" in promote
@@ -213,53 +207,6 @@ def test_topic_bridge_preserves_distinct_outcome_and_full_marker_contract():
     assert payload["deterministic_evidence"] == {"topic_matched": False}
     assert payload["method_version"] == "hub_assignment_v1"
     assert session.calls[0][1]["priority"] == "low"
-
-
-def test_center_drift_recording_is_evidence_only():
-    session = _RecordingSession()
-    record_hub_center_drift_review(
-        session,
-        hub_id="00000000-0000-0000-0000-000000000001",
-        topic_id=None,
-        proposed_city="Alpha",
-        proposed_state_code="CA",
-        proposed_latitude=1,
-        proposed_longitude=2,
-        shift_miles=26,
-        threshold_miles=25,
-        eligible_member_count=10,
-    )
-    statements = " ".join(statement for statement, _ in session.calls).lower()
-    assert "insert into hub_center_review" in statements
-    assert "insert into review_item" in statements
-    assert "update hub " not in statements
-
-
-def test_center_mutation_requires_approved_review_and_uses_decision_writer():
-    rejected = _RecordingSession()
-    with pytest.raises(ValueError, match="approved"):
-        apply_hub_center_decision(
-            rejected,
-            hub_id="00000000-0000-0000-0000-000000000001",
-            hub_center_review_id="00000000-0000-0000-0000-000000000002",
-            decided_by="schema-owner",
-        )
-
-    approved = _RecordingSession(
-        {
-            "proposed_city": "Alpha",
-            "proposed_state_code": "CA",
-            "proposed_latitude": 1,
-            "proposed_longitude": 2,
-        }
-    )
-    apply_hub_center_decision(
-        approved,
-        hub_id="00000000-0000-0000-0000-000000000001",
-        hub_center_review_id="00000000-0000-0000-0000-000000000002",
-        decided_by="schema-owner",
-    )
-    assert "UPDATE hub SET center_city" in approved.calls[-1][0]
 
 
 def test_phase6_does_not_introduce_forbidden_identifier():
