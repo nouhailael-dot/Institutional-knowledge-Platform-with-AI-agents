@@ -199,11 +199,9 @@ test('Verify on a map card saves it to Compass in one click', () => {
   assert.match(card, /Verified, not saved yet/);
 });
 
-// 24 Nov 2026: a saved card says where it went, with a link to the Directory record.
-test('a saved map card says whether it was added or matched, and opens the record', () => {
-  const where = script.slice(script.indexOf('function savedWhere('), script.indexOf('function savedWhere(') + 600);
-  assert.match(where, /saved\.placed==="matched"/);
-  assert.match(where, /Matched to the existing record/);
-  assert.match(where, /Added to the Ecosystem Directory as/);
-  assert.match(script, /record:\{kind:e\._entity_type\|\|"actor",id:saved\.entity_id\}\}\}\)\)\}>Open in the Directory<\/button>/);
+// 25 Nov 2026: Nouhaila's map card (7adad4a) is kept as she wrote it - a card saved to
+// the Directory shows its green chip and no extra line.
+test('a card saved to the Directory keeps her chip and no extra line', () => {
+  assert.match(script, /\$\{saved&&saved\.outcome!=="directory"&&html`<div class=/);
+  assert.doesNotMatch(script, /function savedWhere\(/);
 });

@@ -544,8 +544,6 @@
   .dir-results .empty{margin:0;border:0}
   .row-go{color:var(--muted);font-size:20px;width:24px;text-align:right}
   .save-panel{margin-top:16px}
-  .mcard .hint .link{border:0;background:transparent;color:var(--accent-ink);font:inherit;font-weight:600;cursor:pointer;padding:0}
-  .mcard .hint .link:hover{text-decoration:underline}
   .save-list td{vertical-align:top}
   .save-list .field{min-width:180px}
   .save-list .bad{color:var(--violet);font-weight:600}
@@ -2499,15 +2497,9 @@ function MapCard({e,request,onUpdate,jobId,onCost,onError,onBusy,disabled,onRevi
           onClick=${verify}>${reviewing?html`<span class="spin"></span>`:ready?"Save to Compass":"Verify"}</button>
       </div>`}
     </div>
-    ${/* Where the record went (GHUS, 24 Nov 2026): added to the Directory, or matched
-         to the record it updated, with a link to it. Verify is one click (7adad4a). */ ""}
-    ${saved&&html`<div class=${saved.outcome==="not_saved"?"whynot":"hint"} style=${{margin:"0 0 8px"}}>
-      ${saved.outcome==="directory"?savedWhere(saved,ename(e))
-        :saved.outcome==="review"?`Sent to Review Results${byWhom(saved.by)}. ${saved.reason||""}`
-        :`Not saved. ${saved.reason||""}`}
-      ${saved.outcome==="directory"&&saved.entity_id&&html` <button class="link" type="button"
-        onClick=${()=>window.dispatchEvent(new CustomEvent(NAVIGATE,{detail:{tab:"browse",
-          record:{kind:e._entity_type||"actor",id:saved.entity_id}}}))}>Open in the Directory</button>`}</div>`}
+    ${saved&&saved.outcome!=="directory"&&html`<div class=${saved.outcome==="not_saved"?"whynot":"hint"} style=${{margin:"0 0 8px"}}>
+      ${saved.outcome==="review"?`Sent to Review Results${byWhom(saved.by)}. ${saved.reason||""}`
+        :`Not saved. ${saved.reason||""}`}</div>`}
     ${confirmReject&&html`<div class="whynot" role="alert" style=${{display:"flex",flexWrap:"wrap",alignItems:"center",gap:"8px"}}>
       Remove ${ename(e)} from this map? This can't be undone.
       <button class="example" type="button" disabled=${reviewing} onClick=${()=>review("reject")}>Yes, reject</button>
@@ -2591,15 +2583,6 @@ function CarriedRows({rows,onChange,onDismiss}){
 const KIND_LABEL={actor:"Organization",event:"Event",person:"Person"};
 // " by Name" once accounts record who acted; nothing while it reads "Not recorded".
 const byWhom=by=>by&&!String(by).startsWith("Not recorded")?` by ${by}`:"";
-// Where a saved card went (24 Nov 2026): added as a new record, or merged into one there.
-// Older saves recorded neither and keep the plain line.
-function savedWhere(saved,name){
-  const who=byWhom(saved.by), lead=who?`Saved${who}: `:"";
-  const say=t=>lead?lead+t.charAt(0).toLowerCase()+t.slice(1):t;
-  if(saved.placed==="matched") return say(`Matched to the existing record “${saved.matched_name||name}” in the Ecosystem Directory, which it updated.`);
-  if(saved.placed==="added") return say(`Added to the Ecosystem Directory as “${name}”.`);
-  return `Saved to Compass${who}.`;
-}
 const OUTCOME_TEXT={directory:"Will be added to the directory",review:"Will go to Review Results",
   not_saved:"Can't be saved yet"};
 function SavePanel({jobId,items,onSaved,onClose}){

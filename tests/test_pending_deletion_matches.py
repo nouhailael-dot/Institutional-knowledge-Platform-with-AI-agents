@@ -96,7 +96,7 @@ def test_review_shows_a_deleted_possible_duplicate(monkeypatch):
         {"entity_type": "actor", "top_matches": [{"entity_id": "bbb"}]})["top_matches"][0]
 
 
-# --- after Verify, where the record went (24 Nov 2026) ---------------------------------------
+# --- a map card is saved as Nouhaila's map agent does it (7adad4a, kept 25 Nov 2026) --------
 
 class SaveService:
     """Checks two cards (one matches a record, one is new) and stores both."""
@@ -108,14 +108,12 @@ class SaveService:
 
     def confirm(self, preview_id, **kw):
         return {"rows": [{"row_number": 2, "outcome": "staged"}, {"row_number": 3, "outcome": "staged"}],
-                "not_stored": [],
-                "placed": [{"row_number": 2, "outcome": "matched_existing", "entity_id": "old-1"},
-                           {"row_number": 3, "outcome": "stored", "entity_id": "new-2"}]}
+                "not_stored": []}
 
 
-def test_a_map_save_says_whether_each_card_was_added_or_matched():
+def test_a_map_save_reports_each_card_as_her_agent_does():
     picks = [("actor", {"name": "Water Lab"}, "Water"), ("actor", {"name": "Brand New Lab"}, "Water")]
     first, second = map_save.save(SaveService(), picks, uploader="Ana", map_name="Water labs")
-    assert (first["outcome"], first["placed"], first["entity_id"], first["matched_name"]) == \
-        (map_save.DIRECTORY, "matched", "old-1", "Water Lab Inc.")
-    assert (second["outcome"], second["placed"], second["entity_id"]) == (map_save.DIRECTORY, "added", "new-2")
+    assert (first["outcome"], first["reason"]) == (map_save.DIRECTORY, "")
+    assert (second["outcome"], second["reason"]) == (map_save.DIRECTORY, "")
+    assert "placed" not in first and "matched_name" not in first

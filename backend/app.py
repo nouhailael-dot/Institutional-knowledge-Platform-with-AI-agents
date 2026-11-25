@@ -1364,10 +1364,7 @@ def map_save_verified(job_id: str, payload: SaveRequest):
         for pick, outcome in zip(payload.records, results):
             review.mark_saved(result, workflow, pick.name, pick.website, pick.kind,
                               {"outcome": outcome["outcome"], "reason": outcome["reason"],
-                               "by": uploader, "at": when,
-                               # Where it went (24 Nov 2026): added, or matched to a record.
-                               "placed": outcome.get("placed"), "entity_id": outcome.get("entity_id"),
-                               "matched_name": outcome.get("matched_name")})
+                               "by": uploader, "at": when})
         return result, workflow
     try:
         map_store().edit_result(job_id, change)
