@@ -1,5 +1,10 @@
 # Migration 800: actor names back in the database
 
+**Status: applied to production on 25 Nov 2026 (about 00:45 UTC).** Preflight passed
+6/6 and verify 10/10, with 980 actors and 900 template rows; the ledger row carries
+sha256 `829d46a5…`. The backup taken just before is
+`supabase-before-800-20261124T234845Z-without-raw-document-rows.dump`.
+
 **Decision (25 Nov 2026, Ismail; Nouhaila's database changes paused for it):** the
 database uses the actor names again, as the platform's code always has. Migration 720
 had renamed the actor tables to organization_* and left actor_* stand-in views; 800
