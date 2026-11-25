@@ -9,8 +9,10 @@ code by its full name. The API keeps its pre-V2 keys (`actor_type`, `state`,
 `verification_status`) so the page did not have to change.
 
   - We browse the dimensions that are POPULATED: hub membership, category and
-    status. Sector is not offered (the sector table is empty); TRL and country
-    are optional refinements (TRL is set on few actors; country is messy).
+    status. Sector is not offered (the sector table is empty); country is an
+    optional refinement (country is messy). TRL, Technology and IP, Key
+    constraints and Lifecycle role are gone (migration 750, 24 Nov 2026: no agent
+    collects them).
   - All filtering happens in memory. The live actor set is <1000 rows, so one
     read-only query + Python filtering is simpler and more robust than building
     WHERE clauses over the inconsistent `country` values.
@@ -143,8 +145,7 @@ def load_actors() -> list[dict]:
     records, so Browse lets you filter down to just them."""
     # actor_read is the Architecture V2 read view: it excludes rejected records
     # (the 153 "collection of organizations" placeholders GHUS rejected) and
-    # brings the descriptive fields back from actor_fact. TRL arrives from the
-    # fact store, so it is cast defensively rather than trusted to be a number.
+    # brings the descriptive fields back from actor_fact.
     sql = f"""
         SELECT a.actor_id, a.name,
                -- The word on screen is organization; the reference row keeps its old label.
@@ -163,8 +164,6 @@ def load_actors() -> list[dict]:
                         NULLIF(to_jsonb(a)->>'state', ''),
                         NULLIF(to_jsonb(a)->>'state_code', '')) AS state,
                a.country,
-               CASE WHEN to_jsonb(a)->>'estimated_trl' ~ '^[0-9]+$'
-                    THEN (to_jsonb(a)->>'estimated_trl')::smallint END AS trl,
                a.website, a.description,
                -- Every field the edit form shows (asked for on 27 Oct 2026),
                -- read through to_jsonb so a schema rename never breaks Browse.
@@ -173,10 +172,7 @@ def load_actors() -> list[dict]:
                NULLIF(to_jsonb(a)->>'primary_technical_focus', '') AS primary_technical_focus,
                NULLIF(to_jsonb(a)->>'technical_approach', '') AS technical_approach,
                NULLIF(to_jsonb(a)->>'current_activities', '') AS current_activities,
-               NULLIF(to_jsonb(a)->>'technology_ip_notes', '') AS technology_ip_notes,
-               NULLIF(to_jsonb(a)->>'key_constraints', '') AS key_constraints,
                NULLIF(to_jsonb(a)->>'funding_summary', '') AS funding_summary,
-               NULLIF(to_jsonb(a)->>'primary_lifecycle_role', '') AS primary_lifecycle_role,
                to_jsonb(a)->'alt_names' AS alt_names,
                NULLIF(to_jsonb(ac)->>'ghus_notes', '') AS ghus_notes,
                a.updated_at,
@@ -216,7 +212,6 @@ def load_actors() -> list[dict]:
                 "state": r["state"],
                 "country_raw": r["country"],
                 "country": normalize_country(r["country"]),
-                "trl": r["trl"],
                 "website": r["website"],
                 "description": r["description"],
                 "has_profile": bool(r["has_profile"]),
@@ -225,10 +220,7 @@ def load_actors() -> list[dict]:
                 "primary_technical_focus": r["primary_technical_focus"],
                 "technical_approach": r["technical_approach"],
                 "current_activities": r["current_activities"],
-                "technology_ip_notes": r["technology_ip_notes"],
-                "key_constraints": r["key_constraints"],
                 "funding_summary": r["funding_summary"],
-                "primary_lifecycle_role": r["primary_lifecycle_role"],
                 "alt_names": ", ".join(r["alt_names"]) if isinstance(r["alt_names"], list) else "",
                 "ghus_notes": r["ghus_notes"],
                 "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
@@ -254,8 +246,7 @@ def load_actors() -> list[dict]:
 # The descriptive fields an organization keeps in actor_fact; mirrors the
 # backend's decisions.DIRECTORY_EDIT_ACTOR_FACTS.
 GHUS_EDIT_FACT_KEYS = ("primary_technical_focus", "technical_approach", "current_activities",
-                       "technology_ip_notes", "key_constraints", "funding_summary",
-                       "primary_lifecycle_role")
+                       "funding_summary")
 
 
 # What a Directory removal records (backend agents/review/admission.py); the
@@ -464,9 +455,7 @@ def load_people() -> list[dict]:
                   LEFT JOIN region_state rs ON rs.state_code = a.state_code
                  WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
                    AND a.merged_into_actor_id IS NULL) AS states,
-               (SELECT string_agg(DISTINCT t.name, '{_HUB_SEP}')
-                  FROM person_topic pt JOIN topic t ON t.topic_id = pt.topic_id
-                 WHERE pt.person_id = p.person_id) AS topics,
+               NULL::text AS topics,  -- person_topic was never filled; migration 810 removes it
                (SELECT string_agg(DISTINCT d.research_area, '{_HUB_SEP}')
                   FROM person_discovery_profile d
                  WHERE d.person_id = p.person_id AND d.research_area IS NOT NULL) AS research_areas,
@@ -546,15 +535,12 @@ def filter_actors(actors: list[dict], *, hub: str | None = None,
                   types: list[str] | None = None,
                   country: str | None = None,
                   state: str | None = None,
-                  min_trl: int | None = None,
                   profiled_only: bool = False,
                   text: str | None = None) -> list[dict]:
     """Apply the Browse filters. Any arg left None/empty/False is ignored.
 
     `hub`/`country`/`state` are exact matches on values the UI got from this same
-    data, so no fuzzy logic is needed. `min_trl` keeps actors with a TRL >= the
-    given value (actors with no TRL are dropped, as they can't meet the bar).
-    `profiled_only` keeps only the deeply-profiled actors. `text` is a
+    data, so no fuzzy logic is needed. `profiled_only` keeps only the deeply-profiled actors. `text` is a
     case-insensitive name/description substring."""
     result = actors
     if hub:
@@ -568,8 +554,6 @@ def filter_actors(actors: list[dict], *, hub: str | None = None,
         result = [a for a in result if a["country"] == country]
     if state:
         result = [a for a in result if a["state"] == state]
-    if min_trl:
-        result = [a for a in result if a["trl"] is not None and a["trl"] >= min_trl]
     if profiled_only:
         result = [a for a in result if a["has_profile"]]
     if text:
@@ -645,8 +629,6 @@ if __name__ == "__main__":
     startups = filter_actors(actors, types=["Startup / Emerging Technology Company"])
     print(f"\nStartups: {len(startups)} (first 3: "
           f"{[a['name'] for a in startups[:3]]})")
-    trl6 = filter_actors(actors, min_trl=6)
-    print(f"TRL 6+: {len(trl6)}")
     profiled = filter_actors(actors, profiled_only=True)
     print(f"Deeply-profiled actors: {len(profiled)}")
     print(f"States available: {len(opts['states'])}")

@@ -318,6 +318,7 @@ def promote(
             event_id = _insert_event(session, staged.normalized_payload, source_id,
                                      reviewed=staged.prompt_version == HUMAN_DECISION_PROMPT)
             _append_event_topics(session, event_id=event_id, staged=staged, source_id=source_id)
+            _append_event_sectors(session, event_id=event_id, staged=staged, source_id=source_id)
             if _table_columns(session, "event_fact"):
                 _append_record_facts(session, entity_type="event", entity_id=event_id, staged=staged)
             _mark_index_dirty(session, entity_type="event", entity_id=event_id)
@@ -332,17 +333,16 @@ def promote(
             if not route.target_entity_id:
                 raise ValueError("absorb route requires target_entity_id")
             fields = _absorb_event_fields(session, route.target_entity_id, staged)
-            _append_event_topics(
+            sighting = insert_source(
                 session,
-                event_id=route.target_entity_id,
-                staged=staged,
-                source_id=insert_source(
-                    session,
-                    source_url=staged.source_url,
-                    fetched_at=staged.extracted_at,
-                    description="agent discovery event sighting",
-                ),
+                source_url=staged.source_url,
+                fetched_at=staged.extracted_at,
+                description="agent discovery event sighting",
             )
+            _append_event_topics(session, event_id=route.target_entity_id, staged=staged,
+                                 source_id=sighting)
+            _append_event_sectors(session, event_id=route.target_entity_id, staged=staged,
+                                  source_id=sighting)
             if _table_columns(session, "event_fact"):
                 _append_record_facts(session, entity_type="event",
                                      entity_id=route.target_entity_id, staged=staged)
@@ -415,6 +415,52 @@ def _capitalized(field_name: str, value):
     return value
 
 
+# Migration 740 (24 Nov 2026): an event's place, format and organizer have their own
+# columns. The Data Feed record carries them; format codes become the column's words.
+_EVENT_FORMAT_LABELS = {"in_person": "In person", "online": "Online", "hybrid": "Hybrid"}
+
+
+def _event_place_columns(session, payload: dict[str, object]) -> dict[str, object]:
+    """The 740 columns a record fills, limited to the columns this database has."""
+    columns = _table_columns(session, "event")
+    fmt = str(payload.get("event_format") or "").strip().lower().replace("-", "_").replace(" ", "_")
+    state = str(payload.get("state_code") or payload.get("state") or "").strip().upper()
+    wanted = {
+        "venue": payload.get("venue"),
+        "city": payload.get("city"),
+        "state_code": state if len(state) == 2 else None,
+        "country": payload.get("country"),
+        "organizer": payload.get("organizer"),
+        "event_format": _EVENT_FORMAT_LABELS.get(fmt),
+        "registration_url": payload.get("registration_url"),
+    }
+    cols = {name: value for name, value in wanted.items() if _has_value(value) and name in columns}
+    if cols.get("state_code") and "region_code" in columns:
+        region = session.execute(text(
+            "SELECT region_code FROM region_state WHERE state_code = :state"
+        ), {"state": cols["state_code"]}).scalar()
+        if region:
+            cols["region_code"] = region
+    return cols
+
+
+def _append_event_sectors(session, *, event_id: str, staged: StagedRecord, source_id: str) -> int:
+    """Link the event to each active sector it was saved under (25 Nov 2026; organizations
+    had this step, events never did, so the Directory's sector filter missed them)."""
+    if not _table_columns(session, "event_sector"):
+        return 0
+    codes = sorted({str(code).strip().upper() for code in staged.sector_codes if str(code).strip()})
+    if not codes:
+        return 0
+    rows = session.execute(text(
+        "INSERT INTO event_sector (event_id, sector_id, source_id) "
+        "SELECT CAST(:event AS uuid), s.sector_id, CAST(:source AS uuid) FROM sector s "
+        "WHERE s.active AND s.code = ANY(CAST(:codes AS text[])) "
+        "ON CONFLICT (event_id, sector_id) DO NOTHING RETURNING sector_id"
+    ), {"event": event_id, "source": source_id, "codes": codes}).all()
+    return len(rows)
+
+
 def _insert_event(session, payload: dict[str, object], source_id: str, *,
                   reviewed: bool = False) -> str:
     name = payload.get("name") or payload.get("title")
@@ -433,6 +479,7 @@ def _insert_event(session, payload: dict[str, object], source_id: str, *,
         day = _iso_day(payload.get(field_name))
         if day and (not columns or field_name in columns):
             cols[field_name] = day
+    cols.update(_event_place_columns(session, payload))
     if "record_status" in columns:
         cols["record_status"] = "verified" if reviewed else "parked"
     if "source_origin" in columns:
@@ -637,6 +684,15 @@ def _absorb_event_fields(session, event_id: str, staged: StagedRecord) -> list[s
         incoming = staged.normalized_payload.get(field_name)
         if _is_empty(row.get(field_name)) and _has_value(incoming):
             updates[field_name] = incoming
+    # The 740 columns too, only where the event has nothing yet (a person's value stays).
+    place = _event_place_columns(session, staged.normalized_payload)
+    if place:
+        current = session.execute(text(
+            f"SELECT {', '.join(place)} FROM event WHERE event_id = CAST(:event_id AS uuid)"
+        ), {"event_id": event_id}).mappings().first() or {}
+        for field_name, value in place.items():
+            if _is_empty(current.get(field_name)):
+                updates[field_name] = value
     if not updates:
         return []
 

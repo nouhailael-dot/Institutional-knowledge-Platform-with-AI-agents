@@ -34,8 +34,7 @@ class BrowseEditTests(unittest.TestCase):
         # Every field the database holds is editable (27 Oct 2026).
         sql = inspect.getsource(browse.load_actors)
         for column in ("primary_technical_focus", "technical_approach", "current_activities",
-                       "technology_ip_notes", "key_constraints", "funding_summary",
-                       "primary_lifecycle_role", "alt_names", "region_code", "ghus_notes"):
+                       "funding_summary", "alt_names", "region_code", "ghus_notes"):
             self.assertIn(column, sql)
         sql = inspect.getsource(browse.load_events)
         for column in ("start_date", "end_date", "thematic_focus", "expected_attendance",
@@ -48,6 +47,30 @@ class BrowseEditTests(unittest.TestCase):
             self.assertIn('OWNER_NOT_RECORDED', inspect.getsource(loader))
         page = PAGE.read_text(encoding="utf-8")
         self.assertIn('const OWNER_NONE="Not recorded";', page)
+
+    def test_no_page_or_ask_query_names_a_column_migration_750_deletes(self):
+        # 24 Nov 2026: the columns made for the first import that no agent collects
+        # are deleted (migration 750); a query naming one would fail once it is applied.
+        import re
+        from src import assemble, router
+        gone = ("estimated_trl", "technology_ip_notes", "key_constraints",
+                "primary_lifecycle_role", "identity_summary", "profile_summary",
+                "technical_summary", "lifecycle_summary")
+        sources = {"browse.load_actors": inspect.getsource(browse.load_actors),
+                   "assemble.assemble_actors": inspect.getsource(assemble.assemble_actors),
+                   "router schema": router.SCHEMA if hasattr(router, "SCHEMA") else
+                   Path("src/router.py").read_text(encoding="utf-8")}
+        for where, text in sources.items():
+            code = "\n".join(line for line in text.splitlines()
+                             if not line.strip().startswith(("#", "--")))
+            for column in gone:
+                self.assertIsNone(re.search(rf"\b(a\.|to_jsonb\(a\)->>'){column}\b", code),
+                                  f"{where} still reads {column}")
+                self.assertNotIn(f" {column} ", code.replace(",", " ").replace("(", " "),
+                                 f"{where} still names {column}")
+        page = PAGE.read_text(encoding="utf-8")
+        for column in gone[:4]:
+            self.assertNotIn(column, page)
 
     def test_trl_is_gone_from_browse(self):
         page = PAGE.read_text(encoding="utf-8")

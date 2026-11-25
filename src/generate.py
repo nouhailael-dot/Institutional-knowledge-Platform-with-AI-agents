@@ -32,7 +32,7 @@ _CONDENSE_SYSTEM = """\
 You rewrite a follow-up question into a single, self-contained question using the \
 conversation so far. Resolve references like "those", "them", "that hub" to the \
 specific entities discussed, and carry over any filters implied by context \
-(location, TRL, sector). Preserve the user's intent exactly. Output ONLY the \
+(location, type, sector). Preserve the user's intent exactly. Output ONLY the \
 rewritten question — no preamble. If the follow-up already stands on its own, \
 return it unchanged."""
 

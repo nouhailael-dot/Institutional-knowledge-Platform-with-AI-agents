@@ -84,7 +84,7 @@ _LISTED_FACT = re.compile(
     r"^(land.grant|relevant cent|program|key program|operator|type|.*\btype$|recent project|projects?$|"
     r"main funders?|funders?|sponsor|formal designation|facility|what it tests|current project|clinical|"
     r"academic link|scale|initiative|size|company size|products?|key products?|relevant products?|segment|"
-    r"operating location|current activity|technology|problem|found|stage|trl|funding stage|pilot|customer|"
+    r"operating location|current activity|technology|problem|found|stage|funding stage|pilot|customer|"
     r"offerings?|headquarters|fund size|thesis|jurisdiction|parent|mandate|funding programs?|mission|"
     r"geography|grant themes?|member|documented members|institution type|governance)", re.I)
 

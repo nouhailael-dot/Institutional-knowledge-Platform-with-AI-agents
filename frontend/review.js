@@ -19,11 +19,11 @@ import {
   categoryLabel, categoryOptions, countryOptions, isParentLink, isValidPair,
   linkTypeLabel, normalizeCountry, regionForState, sectorLabel, sectorOptions, setSectors,
   showsRankings, showsTrl, stateCode, stateOptions, typeLabel, typeOptions,
-} from "./taxonomy.js?v=20261124a";
+} from "./taxonomy.js?v=20261124c";
 import {
   BADGES, BUTTONS, CADENCES, FACTS, FIELDS, QUEUE, SECTIONS, SENTENCES,
   TRIGGERS,
-} from "./labels.js?v=20261124b";
+} from "./labels.js?v=20261124c";
 import {isoFromUs, usDate, usDateTime} from "./dates.js?v=20261110b";
 import {askConfirm} from "./dialog.js?v=20261123a";
 

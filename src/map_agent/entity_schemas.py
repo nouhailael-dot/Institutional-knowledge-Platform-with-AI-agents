@@ -244,7 +244,8 @@ def submit_entities_tool(entity_type: str, sectors: list[str] | None = None) -> 
     }
 
 # V2 adds light-pull fields without changing production database columns.
-from src.map_agent.actor_profile import ALL_CATEGORY_TYPES, CATEGORIES, CATEGORY_TYPES
+from src.map_agent.actor_profile import (ALL_CATEGORY_TYPES, CATEGORIES, CATEGORY_FACTS,
+                                         CATEGORY_TYPES, FACT_KEYS, OTHER_FACT)
 _ACTOR_ITEM['properties']['actor_type'] = {'type': 'string', 'enum': CATEGORIES}
 # One flat list, because the schema cannot tie a list to the chosen category;
 # normalize_actor_profile rejects a type from the wrong category.
@@ -264,9 +265,13 @@ for key, description in {
 }.items():
     _ACTOR_ITEM['properties'][key] = {'type':'string', 'description':description}
 _ACTOR_ITEM['properties']['match_strength'] = {'type':'string', 'enum':['strong','moderate']}
-_ACTOR_ITEM['properties']['category_details'] = {'type':'array', 'maxItems':8, 'items':{
-    'type':'object','properties':{'label':{'type':'string'}, 'value':{'type':'string'}},
-    'required':['label','value'],'additionalProperties':False}}
+_ACTOR_ITEM['properties']['category_details'] = {'type':'array', 'maxItems':8,
+    'description': 'Category facts, each under its key from the chosen category: '
+                   + ' | '.join(f'{c}: {", ".join(k)}' for c, k in CATEGORY_FACTS.items()),
+    'items':{'type':'object','properties':{
+        'key':{'type':'string', 'enum':[*FACT_KEYS, OTHER_FACT]},
+        'label':{'type':'string'}, 'value':{'type':'string'}},
+    'required':['key','label','value'],'additionalProperties':False}}
 _ACTOR_ITEM['properties']['actor_relationships'] = {'type':'array','maxItems':8,'items':{
     'type':'object','properties':{'organization_name':{'type':'string'},
     'relationship':{'type':'string','enum':['unit of','operated by','member of','portfolio of','spinout of','funded by','collaborates with']},

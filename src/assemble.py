@@ -54,8 +54,6 @@ def assemble_actors() -> list[dict]:
             a.primary_technical_focus,
             a.technical_approach,
             a.current_activities,
-            a.key_constraints,
-            a.estimated_trl,
             a.city, coalesce(rs.state_name, a.state_code) AS state, a.country,
             COALESCE(to_jsonb(a)->>'status', to_jsonb(a)->>'verification_status') AS status,
             pp.why_valuable_for_um6p,
@@ -104,8 +102,6 @@ def assemble_actors() -> list[dict]:
                 + _section("Primary technical focus", r["primary_technical_focus"])
                 + _section("Technical approach", r["technical_approach"])
                 + _section("Current activities", r["current_activities"])
-                + _section("Key constraints", r["key_constraints"])
-                + _section("Estimated TRL", r["estimated_trl"])
                 # The most valuable text in the dataset — see CLAUDE.md.
                 + _section("Why valuable for UM6P", r["why_valuable_for_um6p"])
                 + _section("Thematic focus", r["thematic_focus"])

@@ -58,7 +58,7 @@ class ActorCategoryCompatibilityTests(unittest.TestCase):
             self.assertNotRegex(sql, rf"\ba\.{column}\b")
         self.assertIsNone(re.search(r"\ba\.state\b", sql))
         for column in ("verification_status", "status", "location_city", "city",
-                       "state", "state_code", "estimated_trl"):
+                       "state", "state_code"):
             self.assertIn(f"to_jsonb(a)->>'{column}'", sql)
 
 

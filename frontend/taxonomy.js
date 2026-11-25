@@ -331,7 +331,6 @@ export const CATEGORY_LIGHT_ROWS = {
   startup: [
     ["technology_and_problem", "Technology and Problem Addressed"],
     ["founding_year_location", "Founding Year and Location"],
-    ["published_stage_or_trl", "Stage or TRL"],
     ["funding_stage", "Funding Stage"],
     ["pilot_customer_evidence", "Pilot or Customer Evidence"],
   ],
@@ -369,8 +368,9 @@ export const CATEGORY_LIGHT_ROWS = {
   ],
 };
 
-// Decision D14. TRL is a Startup row and only when published; rankings are a
-// University row. Neither is ever inferred, and a nonprofit never shows a TRL.
+// Decision D14: rankings are a University row, never inferred. TRL is removed from the
+// project (24 Nov 2026, migrations 750 and 770); TRL_CATEGORY and showsTrl stay only
+// until Review (review.js) stops importing them.
 export const TRL_CATEGORY = "startup";
 export const RANKING_CATEGORY = "university_academic";
 

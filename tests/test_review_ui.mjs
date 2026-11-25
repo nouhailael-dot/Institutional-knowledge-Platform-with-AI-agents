@@ -237,17 +237,18 @@ test('Light Pull rows follow the actor category and separate the kinds of missin
     reviewed_payload: {actor_category: 'startup'},
     agent_metadata: {facts: [
       {fact_type: 'light_pull', layer: 1, fact_key: 'funding_signal', collection_state: 'not_found', value: null},
-      {fact_type: 'light_pull', layer: 1, fact_key: 'published_stage_or_trl', value: 'TRL 4',
-       source_url: 'https://example.org/trl', date_read: '2026-10-01', confidence: 'High', source_origin: 'newly_found'},
+      {fact_type: 'light_pull', layer: 1, fact_key: 'funding_stage', value: 'Seed',
+       source_url: 'https://example.org/funding', date_read: '2026-10-01', confidence: 'High', source_origin: 'newly_found'},
     ]},
   });
   const startupKeys = startup.map(row => row.key);
-  assert.ok(startupKeys.includes('published_stage_or_trl'), 'startups show the TRL row');
+  // 25 Nov 2026 (6599c27): the TRL is removed from every page, startups included.
+  assert.ok(!startupKeys.includes('published_stage_or_trl'), 'no record shows a TRL row');
   assert.ok(!startupKeys.includes('rankings'), 'startups never show rankings');
-  const trl = startup.find(row => row.key === 'published_stage_or_trl');
-  assert.equal(trl.value, 'TRL 4');
-  assert.equal(trl.confidence, 'High');
-  assert.equal(trl.source, 'https://example.org/trl');
+  const stage = startup.find(row => row.key === 'funding_stage');
+  assert.equal(stage.value, 'Seed');
+  assert.equal(stage.confidence, 'High');
+  assert.equal(stage.source, 'https://example.org/funding');
   // The layer ran, so an absent row is Not Found rather than Not Yet Collected.
   assert.equal(startup.find(row => row.key === 'funding_signal').state, MISSING.notFound);
   assert.equal(startup.find(row => row.key === 'recent_activity').state, MISSING.notFound);
@@ -825,7 +826,8 @@ test('Light Pull fills information boxes, and the category drives which ones', (
   // Category-specific ones do, and follow Architecture V2 Sept 5.2.
   assert.ok(university.specific.some(r => r.key === 'rankings'));
   assert.ok(!startup.specific.some(r => r.key === 'rankings'));
-  assert.ok(startup.specific.some(r => r.key === 'published_stage_or_trl'));
+  // 25 Nov 2026 (6599c27): no category shows a TRL box any more.
+  assert.ok(!startup.specific.some(r => r.key === 'published_stage_or_trl'));
   assert.ok(!university.specific.some(r => r.key === 'published_stage_or_trl'));
 
   // A field already shown as an editable control is not repeated as a box.

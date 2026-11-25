@@ -156,8 +156,8 @@ ACTOR_FIELDS: tuple[Field, ...] = (
     Field("um6p_ocp_connection", "UM6P/OCP connection", "long_text",
           "A documented link with UM6P, OCP Group or INNOVX, with its source.", "",
           max_length=1000, target="actor_fact (Light Pull): um6p_ocp_connection"),
-    # Category-specific Light Pull boxes. Rankings and a startup's stage or TRL
-    # need structured, published evidence and are left to the Light Pull reader.
+    # Category-specific Light Pull boxes. Rankings need structured, published
+    # evidence and are left to the Light Pull reader. TRL is not collected (24 Nov 2026).
     _box("topic_unit_and_work", "University: unit and its work on the topic",
          "university_academic", "The school, department or centre working on the topic."),
     _box("institution_control", "University: public or private", "university_academic",
@@ -300,7 +300,7 @@ PERSON_FIELDS: tuple[Field, ...] = (
     Field("sectors", "Sector", "multi_enum", "GHUS sectors of their work, separated by ';'.",
           "Water", vocab="sectors", max_length=200, target="staged_record.sector_codes"),
     Field("topic", "Topic", "enum", "The controlled topic of their expertise.", "Water",
-          vocab="topics", target="person_topic (after review)"),
+          vocab="topics", target="staged_record.topic_id"),
     Field("source_url", "Source URL", "url",
           "Where this information can be checked. A Source URL, a biography URL or a "
           "LinkedIn URL is required.", "https://www.arizona.edu/people/ana-ruiz",

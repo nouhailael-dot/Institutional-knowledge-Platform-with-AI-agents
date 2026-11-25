@@ -391,7 +391,8 @@ def _staged(source: Mapping[str, Any], entity_type: str, edited: Mapping[str, An
     payload.pop("_discovered_domain", None)
     if entity_type == "actor" and not payload.get("topic_id") and source.get("request_topic_id"):
         payload["topic_id"] = str(source["request_topic_id"])
-    sector_codes = _source_sector_codes(source, payload) if entity_type == "actor" else []
+    # Events too (25 Nov 2026): without them an event got no sector link and no topic.
+    sector_codes = _source_sector_codes(source, payload) if entity_type in ("actor", "event") else []
     if entity_type == "actor":
         _location_from_light_pull(payload)
         _state_from_record(payload)

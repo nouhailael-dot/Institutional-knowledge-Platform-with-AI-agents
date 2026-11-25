@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 
 from src.datafeed import reference
+from src.map_agent.actor_profile import CATEGORY_FACTS
 
 KINDS = ("actor", "event", "person")
 # What a card shows after saving.
@@ -51,16 +52,24 @@ def _source(entity) -> str:
     return ""
 
 
-def _place(location) -> tuple[str, str, str]:
-    """(city, state, country) from free text like "Westminster, Colorado, USA"."""
+def _place_parts(location) -> tuple[str, str, str, str]:
+    """(venue, city, state, country) from free text like "Oregon Convention Center,
+    Portland, Oregon": the venue is what comes before the city (25 Nov 2026)."""
     parts = [p.strip() for p in str(location or "").split(",") if p.strip()]
     states = {name.casefold(): name for name in reference.taxonomy.STATE_NAMES.values()}
     states.update({code.casefold(): code for code in reference.taxonomy.STATE_NAMES})
-    for i, part in enumerate(parts):
-        word = re.sub(r"\s+\d{5}(-\d{4})?$", "", part)   # "TX 77002" -> "TX"
+    # From the end: in "…, New York, NY, 10019" the state is NY, and New York the city.
+    for i in range(len(parts) - 1, -1, -1):
+        word = re.sub(r"\s+\d{5}(-\d{4})?$", "", parts[i])   # "TX 77002" -> "TX"
         if word.casefold() in states:
-            return (parts[i - 1] if i else ""), states[word.casefold()], "USA"
-    return "", "", ""
+            venue = ", ".join(parts[:i - 1]) if i > 1 else ""
+            return venue, (parts[i - 1] if i else ""), states[word.casefold()], "USA"
+    return "", "", "", ""
+
+
+def _place(location) -> tuple[str, str, str]:
+    """(city, state, country) from free text like "Westminster, Colorado, USA"."""
+    return _place_parts(location)[1:]
 
 
 def event_type(raw) -> str:
@@ -73,11 +82,13 @@ def event_type(raw) -> str:
 _NOT_FACTS = frozenset({"sources", "profile_version", "record_status", "field_evidence",
                         "unsupported_fields", "verification_history", "ghus_notes", "hub_status",
                         "id", "entity_id", "_why", "selected", "excluded", "reason"})
+# Organization card fields stored under the name the update agent uses for the same fact.
+_FACT_NAMES = {"match_explanation": "why_matched"}
 # Card fields to_record reads, per kind: everything else goes to map_facts.
 _READ = {
     "actor": {"name", "other_names", "website", "actor_type", "category_type", "category_note",
               "description", "location_city", "state", "country", "funding_summary",
-              "um6p_ocp_detail"},
+              "um6p_ocp_detail", "international_connections"},
     "event": {"name", "event_type", "organizer", "next_date", "end_date", "event_format",
               "location", "thematic_focus", "description", "website", "recurring_pattern",
               "expected_attendance"},
@@ -86,10 +97,31 @@ _READ = {
 }
 
 
+def _category_facts(entity: dict) -> tuple[dict, list]:
+    """(facts for the template's own columns, the rest kept as category details).
+
+    24 Nov 2026: a fact keyed from the card's own category fills that column, as the
+    update agent's does; one with no key (maps before this date) or 'other' stays a detail."""
+    own = CATEGORY_FACTS.get(entity.get("actor_type"), {})
+    fixed, rest = {}, []
+    for detail in entity.get("category_details") or []:
+        if not isinstance(detail, dict):
+            continue
+        key, value = detail.get("key"), _clean(detail.get("value"))
+        if key in own and key not in fixed and value:
+            fixed[key] = value
+        else:
+            rest.append(detail)
+    return fixed, rest
+
+
 def map_facts(kind: str, entity: dict) -> dict:
     """Every non-empty card field the Data Feed record does not carry (4 Nov 2026):
     stored as sourced facts at admission, so nothing the card showed is lost."""
-    return {key: value for key, value in entity.items()
+    if kind == "actor" and entity.get("category_details"):
+        entity = {**entity, "category_details": _category_facts(entity)[1]}
+    names = _FACT_NAMES if kind == "actor" else {}
+    return {names.get(key, key): value for key, value in entity.items()
             if key not in _READ[kind] and key not in _NOT_FACTS and not str(key).startswith("_")
             and value not in (None, "", [], {}) and str(value).strip().casefold()
             not in ("not found", "not classified")}
@@ -124,11 +156,13 @@ def _contract_record(kind: str, entity: dict, sector: str) -> dict:
             "source_url": _source(entity),
             # Not "recent_activity": the Data Feed needs its date, and the map
             # records none (a date is never guessed).
-            "funding_signal": _clean(entity.get("funding_summary")),
+            "funding_summary": _clean(entity.get("funding_summary")),
+            "international_connection": _clean(entity.get("international_connections")),
             "um6p_ocp_connection": _clean(entity.get("um6p_ocp_detail")),
+            **_category_facts(entity)[0],
         }.items() if v}
     if kind == "event":
-        city, state, country = _place(entity.get("location"))
+        venue, city, state, country = _place_parts(entity.get("location"))
         return {k: v for k, v in {
             "name": _clean(entity.get("name")),
             "event_type": event_type(entity.get("event_type")),
@@ -136,7 +170,7 @@ def _contract_record(kind: str, entity: dict, sector: str) -> dict:
             "start_date": _us_day(entity.get("next_date")),
             "end_date": _us_day(entity.get("end_date")),
             "event_format": _FORMATS.get(_clean(entity.get("event_format")).casefold(), ""),
-            "city": city, "state_code": state, "country": country,
+            "venue": venue, "city": city, "state_code": state, "country": country,
             "sectors": sector,
             "themes": _clean(entity.get("thematic_focus")),
             "description": _clean(entity.get("description")),
@@ -241,3 +275,54 @@ def save(service, picks: list[tuple[str, dict, str]], *, uploader: str, map_name
                               placed="matched" if where.get("outcome") == "matched_existing" else "added",
                               entity_id=where.get("entity_id"), matched_name=r.get("matched_name"))
     return [results[i] for i in sorted(results)]
+
+
+# One-click Verify (GHUS, 23 Nov 2026): the sector is filled, never asked. Words that
+# name a sector in a card's sector or a map's request, per sector code.
+_SECTOR_WORDS = {
+    "AGRI": ("agricultur", "agronom", "farm", "crop", "soil", "food system", "agtech"),
+    "WATER": ("water", "irrigation", "hydrolog"),
+    "ENERGY": ("energy", "battery", "batteries", "solar", "hydrogen", "power grid"),
+    "MINING": ("mining", "mineral", "rare earth", "phosphogypsum"),
+    "CHEM": ("chemical", "chemistry", "catalys"),
+    "HEALTH": ("health care", "healthcare", "medical", "biomedical", "clinical"),
+    "SUSTAIN": ("sustainab", "climate", "circular economy"),
+    "AI": ("artificial intelligence", " ai ", "machine learning"),
+}
+
+
+def _named_sector(text, sectors: list[dict], *, first: bool = False) -> str:
+    """The sector a text names (its label, or a word that means it), else ''.
+    first=True (a card's own list): the one written first. Otherwise (a request):
+    only when exactly one sector is named; two named are never guessed between."""
+    low = f" {str(text or '').casefold()} "
+    at = {}
+    for item in sectors:
+        hits = [low.find(w) for w in (item["label"].casefold(), *_SECTOR_WORDS.get(item["code"], ()))]
+        hits = [i for i in hits if i >= 0]
+        if hits:
+            at[item["label"]] = min(hits)
+    if first and at:
+        return min(at, key=at.get)
+    return next(iter(at)) if len(at) == 1 else ""
+
+
+def auto_sector(entity: dict, map_entities: dict, request: str, sectors: list[dict]) -> str:
+    """A verified card's sector, with no question (23 Nov 2026), in this order:
+    the card's own sector; the map's most common sector; the sector the map's
+    request names. '' when none is clear: the save then says a sector is needed."""
+    own = _named_sector(entity.get("sector"), sectors, first=True)
+    if own:
+        return own
+    counts: dict[str, int] = {}
+    for cards in (map_entities or {}).values():
+        for card in cards or []:
+            named = _named_sector(card.get("sector"), sectors, first=True)
+            if named:
+                counts[named] = counts.get(named, 0) + 1
+    if counts:
+        best = max(counts.values())
+        top = [label for label, n in counts.items() if n == best]
+        if len(top) == 1:
+            return top[0]
+    return _named_sector(request, sectors)

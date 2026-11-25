@@ -12,9 +12,9 @@ regenerating the duplicates the backfill just removed.
         +-- >= HIGH  -> ABSORB   : no new row. Fields the winner is missing are
         |                          copied onto it, relationships attach to the
         |                          existing actor_id, winner flagged needs_review.
-        +-- >= LOW   -> REVIEW   : row is created but flagged, and the pair goes
-        |                          into review_queue for a human. Nothing is
-        |                          silently merged on a middling score.
+        +-- >= LOW   -> REVIEW   : (retired) the pair went into review_queue,
+        |                          removed by migration 810; possible duplicates
+        |                          now go to Review. Nothing is silently merged.
         +-- <  LOW   -> CREATE   : genuinely new actor, inserted with
                                    verification_status='needs_review'.
 
@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -203,15 +202,11 @@ class EntityResolver:
         )
 
     def _queue(self, actor_id_a: str, actor_id_b: str, score: float) -> str:
-        a, b = sorted([str(actor_id_a), str(actor_id_b)])
-        rid = str(uuid.uuid4())
-        self.session.execute(text(
-            "INSERT INTO review_queue (review_id, actor_id_a, actor_id_b, score, "
-            "model, status) VALUES (CAST(:r AS uuid), CAST(:a AS uuid), "
-            "CAST(:b AS uuid), :s, :m, 'pending') "
-            "ON CONFLICT ON CONSTRAINT uq_review_pair DO NOTHING"),
-            {"r": rid, "a": a, "b": b, "s": float(score), "m": self.model_name})
-        return rid
+        # review_queue (August's duplicate pairs) is removed by migration 810;
+        # possible duplicates go to Review as review_item rows.
+        raise RuntimeError(
+            "legacy ER writes are retired; use agents.discovery.promote.map_new_actor"
+        )
 
     def _create(self, record: dict, source_id) -> str:
         raise RuntimeError(

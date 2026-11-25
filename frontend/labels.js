@@ -297,11 +297,9 @@ export const SENTENCES = {
     "recorded, because none exist.",
   duplicatesNoMerge:
     "Compare the records side by side. Nothing is merged automatically.",
-  trlStartupOnly: "TRL is recorded for startups only, and only when a source publishes it.",
   rankingsUniversityOnly:
     "Rankings are recorded for universities only. A department never inherits its " +
     "university's ranking.",
-  legacyTrl: "A legacy Imported estimate. Not a current TRL.",
   ghusNotesOnly: "Only GHUS writes this field; Compass never does.",
   eventNotesEmpty: "Empty. Only GHUS writes this field; Compass never does.",
   personDiscoveryDisabled:

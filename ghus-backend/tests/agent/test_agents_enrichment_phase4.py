@@ -335,6 +335,9 @@ def test_canonical_writes_under_agents_are_only_in_permitted_modules():
                 Path("agents/collection/subscription_store.py"),
             },
             "event_topic": {Path("agents/discovery/promote.py")},
+            # Same writer as event_topic (25 Nov 2026): nothing linked an event to its
+            # sector, so the Directory's sector filter never found a saved event.
+            "event_sector": {Path("agents/discovery/promote.py")},
             # Migration 600: every fact Review shows about an event or a person.
             "event_fact": {Path("agents/enrichment/decisions.py")},
             "person_fact": {Path("agents/enrichment/decisions.py")},

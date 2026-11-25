@@ -75,6 +75,118 @@ class RecordTests(unittest.TestCase):
         self.assertEqual((record["first_name"], record["last_name"]), ("Ana", "Ruiz"))
 
 
+UNIVERSITY = {**ORG, "name": "University of Florida", "website": "https://www.ufl.edu",
+              "actor_type": "University / Academic Institution", "category_type": "Main Institution",
+              "funding_summary": "USDA NIFA grant, $1.2M, 2026, phosphate recovery.",
+              "international_connections": "Partnership with UM6P on soil science.",
+              "match_explanation": "Runs a phosphate research programme.",
+              "category_details": [
+                  {"key": "land_grant_designation", "label": "Land-grant", "value": "1862 land-grant"},
+                  {"key": "main_funders", "label": "Funders", "value": "USDA"},
+                  {"key": "other", "label": "Campus size", "value": "2,000 acres"}]}
+
+
+def checked(record_type, record):
+    """The real Data Feed check of one map record, as the service runs it."""
+    from src.datafeed import contract, reference, validate
+    by_key = {f.key: f for f in contract.fields(record_type)}
+    record = {k: v for k, v in record.items() if k != "map_facts"}
+    assert not set(record) - set(by_key), set(record) - set(by_key)
+    values = {by_key[k].header: str(v) for k, v in record.items()}
+    return validate.RowChecker(record_type, reference.vocabularies(None)).check(1, values)
+
+
+SECTORS = [{"code": "AGRI", "label": "Agriculture"}, {"code": "WATER", "label": "Water"},
+           {"code": "ENERGY", "label": "Energy Transition"}, {"code": "MINING", "label": "Mining"}]
+
+
+class AutoSectorTests(unittest.TestCase):
+    """One-click Verify (23 Nov 2026): the sector is filled, never asked."""
+
+    def test_the_card_sector_first_and_the_first_one_written(self):
+        self.assertEqual(save.auto_sector({"sector": "Education; Agriculture; Mining"}, {}, "", SECTORS),
+                         "Agriculture")
+
+    def test_then_the_maps_most_common_sector(self):
+        cards = {"actor": [{"sector": "Water"}, {"sector": "Water; Energy"}, {"sector": "Mining"}]}
+        self.assertEqual(save.auto_sector({"sector": None}, cards, "", SECTORS), "Water")
+
+    def test_then_the_sector_the_request_names(self):
+        self.assertEqual(save.auto_sector({}, {"actor": [{}]},
+                                          "Energy optimization research centers in New York", SECTORS),
+                         "Energy Transition")
+
+    def test_nothing_clear_gives_nothing(self):
+        self.assertEqual(save.auto_sector({}, {"actor": [{"sector": "Water"}, {"sector": "Mining"}]},
+                                          "partners in Texas", SECTORS), "")
+        self.assertEqual(save.auto_sector({}, {}, "water and energy start-ups", SECTORS), "")
+
+
+class EventPlaceTests(unittest.TestCase):
+    """25 Nov 2026: the venue was dropped and "…, New York, NY" read 1301 6th Ave as the city."""
+
+    def test_the_venue_is_what_comes_before_the_city(self):
+        record = save.to_record("event", {**EVENT, "location": "Oregon Convention Center, Portland, Oregon"}, "")
+        self.assertEqual((record["venue"], record["city"], record["state_code"]),
+                         ("Oregon Convention Center", "Portland", "Oregon"))
+
+    def test_the_state_is_read_from_the_end(self):
+        parts = save._place_parts("The Paramount Club, 1301 6th Ave, New York, NY, 10019")
+        self.assertEqual(parts, ("The Paramount Club, 1301 6th Ave", "New York", "NY", "USA"))
+
+    def test_a_place_with_no_venue_has_none(self):
+        record = save.to_record("event", EVENT, "")
+        self.assertNotIn("venue", record)
+        self.assertEqual(record["city"], "Westminster")
+
+
+class CategoryFactTests(unittest.TestCase):
+    """24 Nov 2026: a map fills the template's own columns, as the update agent does."""
+
+    def test_a_keyed_category_fact_fills_its_own_column(self):
+        record = save.to_record("actor", UNIVERSITY, "Agriculture")
+        self.assertEqual(record["land_grant_designation"], "1862 land-grant")
+        details = record["map_facts"]["category_details"]
+        self.assertEqual([d["label"] for d in details], ["Funders", "Campus size"])
+        result = checked("actor", record)
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["payload"]["light_pull_values"]["land_grant_designation"],
+                         "1862 land-grant")
+
+    def test_a_fact_keyed_for_another_category_stays_a_detail(self):
+        record = save.to_record("actor", UNIVERSITY, "Agriculture")
+        self.assertNotIn("main_funders", record)       # a research-centre fact
+        from src.map_agent.actor_profile import normalize_actor_profile
+        card = {**UNIVERSITY, "category_details": [dict(d) for d in UNIVERSITY["category_details"]]}
+        normalize_actor_profile(card, set())
+        self.assertEqual([d["key"] for d in card["category_details"]],
+                         ["land_grant_designation", "other", "other"])
+
+    def test_funding_international_and_why_matched_use_the_shared_names(self):
+        record = save.to_record("actor", UNIVERSITY, "Agriculture")
+        self.assertEqual(record["funding_summary"], UNIVERSITY["funding_summary"])
+        self.assertNotIn("funding_signal", record)
+        self.assertEqual(record["international_connection"], UNIVERSITY["international_connections"])
+        facts = record["map_facts"]
+        self.assertEqual(facts["why_matched"], UNIVERSITY["match_explanation"])
+        self.assertNotIn("match_explanation", facts)
+        self.assertNotIn("international_connections", facts)
+
+    def test_a_startup_saves_with_its_published_stage_and_says_when_it_is_missing(self):
+        startup = {**ORG, "name": "Soil Sense", "actor_type": "Startup / Emerging Technology Company",
+                   "category_type": "Independent", "category_details": [
+                       {"key": "development_stage", "label": "Stage", "value": "Pilot deployment"}]}
+        self.assertEqual(checked("actor", save.to_record("actor", startup, "Agriculture"))["errors"], [])
+        bare = checked("actor", save.to_record("actor", {**startup, "category_details": []}, "Agriculture"))
+        self.assertTrue(any("development stage" in e for e in bare["errors"]))
+
+    def test_a_card_from_before_the_keys_saves_as_it_did(self):
+        old = {**UNIVERSITY, "category_details": [{"label": "Land-grant", "value": "1862 land-grant"}]}
+        record = save.to_record("actor", old, "Agriculture")
+        self.assertNotIn("land_grant_designation", record)
+        self.assertEqual(record["map_facts"]["category_details"], old["category_details"])
+
+
 class SaveTests(unittest.TestCase):
     def picks(self):
         other = {**ORG, "name": "Mosaic Company", "website": "https://mosaicco.com"}
