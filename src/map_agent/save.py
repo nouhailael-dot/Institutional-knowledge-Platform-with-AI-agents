@@ -52,16 +52,24 @@ def _source(entity) -> str:
     return ""
 
 
-def _place(location) -> tuple[str, str, str]:
-    """(city, state, country) from free text like "Westminster, Colorado, USA"."""
+def _place_parts(location) -> tuple[str, str, str, str]:
+    """(venue, city, state, country) from free text like "Oregon Convention Center,
+    Portland, Oregon": the venue is what comes before the city (25 Nov 2026)."""
     parts = [p.strip() for p in str(location or "").split(",") if p.strip()]
     states = {name.casefold(): name for name in reference.taxonomy.STATE_NAMES.values()}
     states.update({code.casefold(): code for code in reference.taxonomy.STATE_NAMES})
-    for i, part in enumerate(parts):
-        word = re.sub(r"\s+\d{5}(-\d{4})?$", "", part)   # "TX 77002" -> "TX"
+    # From the end: in "…, New York, NY, 10019" the state is NY, and New York the city.
+    for i in range(len(parts) - 1, -1, -1):
+        word = re.sub(r"\s+\d{5}(-\d{4})?$", "", parts[i])   # "TX 77002" -> "TX"
         if word.casefold() in states:
-            return (parts[i - 1] if i else ""), states[word.casefold()], "USA"
-    return "", "", ""
+            venue = ", ".join(parts[:i - 1]) if i > 1 else ""
+            return venue, (parts[i - 1] if i else ""), states[word.casefold()], "USA"
+    return "", "", "", ""
+
+
+def _place(location) -> tuple[str, str, str]:
+    """(city, state, country) from free text like "Westminster, Colorado, USA"."""
+    return _place_parts(location)[1:]
 
 
 def event_type(raw) -> str:
@@ -154,7 +162,7 @@ def _contract_record(kind: str, entity: dict, sector: str) -> dict:
             **_category_facts(entity)[0],
         }.items() if v}
     if kind == "event":
-        city, state, country = _place(entity.get("location"))
+        venue, city, state, country = _place_parts(entity.get("location"))
         return {k: v for k, v in {
             "name": _clean(entity.get("name")),
             "event_type": event_type(entity.get("event_type")),
@@ -162,7 +170,7 @@ def _contract_record(kind: str, entity: dict, sector: str) -> dict:
             "start_date": _us_day(entity.get("next_date")),
             "end_date": _us_day(entity.get("end_date")),
             "event_format": _FORMATS.get(_clean(entity.get("event_format")).casefold(), ""),
-            "city": city, "state_code": state, "country": country,
+            "venue": venue, "city": city, "state_code": state, "country": country,
             "sectors": sector,
             "themes": _clean(entity.get("thematic_focus")),
             "description": _clean(entity.get("description")),

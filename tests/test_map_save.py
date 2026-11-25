@@ -96,6 +96,24 @@ def checked(record_type, record):
     return validate.RowChecker(record_type, reference.vocabularies(None)).check(1, values)
 
 
+class EventPlaceTests(unittest.TestCase):
+    """25 Nov 2026: the venue was dropped and "…, New York, NY" read 1301 6th Ave as the city."""
+
+    def test_the_venue_is_what_comes_before_the_city(self):
+        record = save.to_record("event", {**EVENT, "location": "Oregon Convention Center, Portland, Oregon"}, "")
+        self.assertEqual((record["venue"], record["city"], record["state_code"]),
+                         ("Oregon Convention Center", "Portland", "Oregon"))
+
+    def test_the_state_is_read_from_the_end(self):
+        parts = save._place_parts("The Paramount Club, 1301 6th Ave, New York, NY, 10019")
+        self.assertEqual(parts, ("The Paramount Club, 1301 6th Ave", "New York", "NY", "USA"))
+
+    def test_a_place_with_no_venue_has_none(self):
+        record = save.to_record("event", EVENT, "")
+        self.assertNotIn("venue", record)
+        self.assertEqual(record["city"], "Westminster")
+
+
 class CategoryFactTests(unittest.TestCase):
     """24 Nov 2026: a map fills the template's own columns, as the update agent does."""
 
