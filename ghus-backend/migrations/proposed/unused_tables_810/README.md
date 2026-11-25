@@ -45,7 +45,7 @@ after 800, to `C:\Users\Ismail\GHUS-data\backups\archive-810-removed-tables-2026
 | Rollback | `../deferred/rollback/810_remove_unused_tables.sql` (`pg_dump --schema-only` of Supabase on 25 Nov, after 800, with the two functions, their comments and every grant) |
 | Checks | `preflight.sql` (before), `verify.sql` (after) |
 
-The code changes ship with it and are safe before 810 too: Browse no longer reads
+The code changes ship with it, must be deployed before 810 is applied, and work before it too: Browse no longer reads
 `person_topic`, the Data Feed contract names `staged_record.topic_id`, the old duplicate
 check's `review_queue` write refuses, and the unused hub-centre review code is removed. The
 deletion clean-up's `PURGE_POLICY` skips tables that do not exist, so it needs no change.
@@ -64,6 +64,8 @@ applied; its ledger checksum matches the committed 800):
 
 ## Apply sequence (Supabase SQL editor; one script per run; a quiet window)
 
+0. **Deploy the commit that carries 810 first.** Older deployed code reads `person_topic`
+   when it loads the Directory's people, so dropping it before the deploy breaks that list.
 1. No Discovery, Update or Data Feed run in progress; tell Nouhaila. Fresh backup with
    `pg_dump` to `C:\Users\Ismail\GHUS-data\backups`.
 2. `preflight.sql`: every row `ok = true`. Stop otherwise (the migration would refuse
@@ -72,7 +74,7 @@ applied; its ledger checksum matches the committed 800):
 4. `ledger.sql`.
 5. `verify.sql`: every row `ok = true`.
 
-Deploy the commit that carries 810 before or after; the code works with and without the tables.
+The new code works with and without the tables; the old code does not (step 0).
 
 ## Rollback
 
