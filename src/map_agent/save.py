@@ -263,3 +263,54 @@ def save(service, picks: list[tuple[str, dict, str]], *, uploader: str, map_name
             else:
                 result.update(outcome=DIRECTORY, reason="")
     return [results[i] for i in sorted(results)]
+
+
+# One-click Verify (GHUS, 23 Nov 2026): the sector is filled, never asked. Words that
+# name a sector in a card's sector or a map's request, per sector code.
+_SECTOR_WORDS = {
+    "AGRI": ("agricultur", "agronom", "farm", "crop", "soil", "food system", "agtech"),
+    "WATER": ("water", "irrigation", "hydrolog"),
+    "ENERGY": ("energy", "battery", "batteries", "solar", "hydrogen", "power grid"),
+    "MINING": ("mining", "mineral", "rare earth", "phosphogypsum"),
+    "CHEM": ("chemical", "chemistry", "catalys"),
+    "HEALTH": ("health care", "healthcare", "medical", "biomedical", "clinical"),
+    "SUSTAIN": ("sustainab", "climate", "circular economy"),
+    "AI": ("artificial intelligence", " ai ", "machine learning"),
+}
+
+
+def _named_sector(text, sectors: list[dict], *, first: bool = False) -> str:
+    """The sector a text names (its label, or a word that means it), else ''.
+    first=True (a card's own list): the one written first. Otherwise (a request):
+    only when exactly one sector is named; two named are never guessed between."""
+    low = f" {str(text or '').casefold()} "
+    at = {}
+    for item in sectors:
+        hits = [low.find(w) for w in (item["label"].casefold(), *_SECTOR_WORDS.get(item["code"], ()))]
+        hits = [i for i in hits if i >= 0]
+        if hits:
+            at[item["label"]] = min(hits)
+    if first and at:
+        return min(at, key=at.get)
+    return next(iter(at)) if len(at) == 1 else ""
+
+
+def auto_sector(entity: dict, map_entities: dict, request: str, sectors: list[dict]) -> str:
+    """A verified card's sector, with no question (23 Nov 2026), in this order:
+    the card's own sector; the map's most common sector; the sector the map's
+    request names. '' when none is clear: the save then says a sector is needed."""
+    own = _named_sector(entity.get("sector"), sectors, first=True)
+    if own:
+        return own
+    counts: dict[str, int] = {}
+    for cards in (map_entities or {}).values():
+        for card in cards or []:
+            named = _named_sector(card.get("sector"), sectors, first=True)
+            if named:
+                counts[named] = counts.get(named, 0) + 1
+    if counts:
+        best = max(counts.values())
+        top = [label for label, n in counts.items() if n == best]
+        if len(top) == 1:
+            return top[0]
+    return _named_sector(request, sectors)

@@ -1253,13 +1253,16 @@ class SaveRequest(BaseModel):
     attest: bool = False
 
 
-def _save_picks(job_id: str, records: list[SavePick]):
-    """The verified cards a save names, as (kind, entity, sector)."""
+def _save_picks(job_id: str, records: list[SavePick], service=None):
+    """The verified cards a save names, as (kind, entity, sector). A card sent with no
+    sector gets one without a question (one-click Verify, 23 Nov 2026)."""
     if not records:
         raise HTTPException(status_code=400, detail="Verify at least one result first.")
     if len(records) > 50:
         raise HTTPException(status_code=400, detail="Save at most 50 results at a time.")
-    entities = ((map_record(job_id)["result"] or {}).get("entities") or {})
+    record = map_record(job_id)
+    entities = ((record["result"] or {}).get("entities") or {})
+    sectors = ((service.vocabularies() if service else {}).get("sectors") or [])
     picks = []
     for pick in records:
         found = [e for e in entities.get(pick.kind) or []
@@ -1267,7 +1270,9 @@ def _save_picks(job_id: str, records: list[SavePick]):
                  and (e.get("website") or "") == (pick.website or "")]
         if len(found) != 1:
             raise HTTPException(status_code=404, detail=f"{pick.name} is no longer in this map.")
-        picks.append((pick.kind, found[0], pick.sector.strip()))
+        sector = pick.sector.strip() or map_save.auto_sector(
+            found[0], entities, record.get("description") or "", sectors)
+        picks.append((pick.kind, found[0], sector))
     return picks
 
 
@@ -1284,9 +1289,10 @@ def _save_service():
 @app.post("/api/map/{job_id}/save-check")
 def map_save_check(job_id: str, payload: SaveRequest):
     """Free and writes nothing: what saving each verified card would do."""
-    picks = _save_picks(job_id, payload.records)
+    service = _save_service()
+    picks = _save_picks(job_id, payload.records, service)
     try:
-        return {"records": map_save.check(_save_service(), picks)}
+        return {"records": map_save.check(service, picks)}
     except DataFeedError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -1300,9 +1306,10 @@ def map_save_verified(job_id: str, payload: SaveRequest):
     if payload.attest is not True:
         raise HTTPException(status_code=400, detail="Confirm that you're authorized GHUS staff and checked the sources.")
     record = map_record(job_id)
-    picks = _save_picks(job_id, payload.records)
+    service = _save_service()
+    picks = _save_picks(job_id, payload.records, service)
     try:
-        results = map_save.save(_save_service(), picks, uploader=uploader,
+        results = map_save.save(service, picks, uploader=uploader,
                                 map_name=record["description"] or "untitled map")
     except DataFeedError as exc:
         raise HTTPException(status_code=400, detail=str(exc))

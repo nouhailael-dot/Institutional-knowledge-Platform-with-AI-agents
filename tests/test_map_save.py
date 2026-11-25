@@ -96,6 +96,32 @@ def checked(record_type, record):
     return validate.RowChecker(record_type, reference.vocabularies(None)).check(1, values)
 
 
+SECTORS = [{"code": "AGRI", "label": "Agriculture"}, {"code": "WATER", "label": "Water"},
+           {"code": "ENERGY", "label": "Energy Transition"}, {"code": "MINING", "label": "Mining"}]
+
+
+class AutoSectorTests(unittest.TestCase):
+    """One-click Verify (23 Nov 2026): the sector is filled, never asked."""
+
+    def test_the_card_sector_first_and_the_first_one_written(self):
+        self.assertEqual(save.auto_sector({"sector": "Education; Agriculture; Mining"}, {}, "", SECTORS),
+                         "Agriculture")
+
+    def test_then_the_maps_most_common_sector(self):
+        cards = {"actor": [{"sector": "Water"}, {"sector": "Water; Energy"}, {"sector": "Mining"}]}
+        self.assertEqual(save.auto_sector({"sector": None}, cards, "", SECTORS), "Water")
+
+    def test_then_the_sector_the_request_names(self):
+        self.assertEqual(save.auto_sector({}, {"actor": [{}]},
+                                          "Energy optimization research centers in New York", SECTORS),
+                         "Energy Transition")
+
+    def test_nothing_clear_gives_nothing(self):
+        self.assertEqual(save.auto_sector({}, {"actor": [{"sector": "Water"}, {"sector": "Mining"}]},
+                                          "partners in Texas", SECTORS), "")
+        self.assertEqual(save.auto_sector({}, {}, "water and energy start-ups", SECTORS), "")
+
+
 class EventPlaceTests(unittest.TestCase):
     """25 Nov 2026: the venue was dropped and "…, New York, NY" read 1301 6th Ave as the city."""
 
