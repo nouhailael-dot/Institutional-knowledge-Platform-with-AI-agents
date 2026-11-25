@@ -864,10 +864,15 @@ class V2PostgresReviewApiIntegrationTests(unittest.TestCase):
             review = ReviewStore(root / "review.sqlite3", enable_test_canonical=True)
             source = PostgresReviewSource(database_url)
             bridge = MagicMock(configured=False)
+            # This proves the plumbing for review_item rows, which the platform hides
+            # since 25 Nov 2026 (SHOW_MAP_CHECKS): shown again for this proof only.
+            from src.review import postgres_source as review_source_module
+
             with patch.object(backend, "map_store", return_value=runs), \
                     patch.object(backend, "review_store", return_value=review), \
                     patch.object(backend, "review_postgres_source", return_value=source), \
-                    patch.object(backend, "review_admission_bridge", return_value=bridge):
+                    patch.object(backend, "review_admission_bridge", return_value=bridge), \
+                    patch.object(review_source_module, "SHOW_MAP_CHECKS", True):
                 backend._review_sync_last = 0.0
                 backend._review_sync_store_key = None
                 with TestClient(backend.app) as client:

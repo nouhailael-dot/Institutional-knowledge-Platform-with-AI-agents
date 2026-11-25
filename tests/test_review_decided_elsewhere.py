@@ -44,7 +44,9 @@ def test_decided_checks_are_retired_and_waiting_ones_still_listed(source):
         key = f"postgres:review_item:{review_id}"
         assert source.retired_keys.get(key) == "decided_elsewhere"
         assert key not in listed
-    assert any(f"postgres:review_item:{review_id}" in listed for review_id in waiting)
+    # Waiting checks are never treated as decided (they may be hidden for another reason).
+    for review_id in waiting:
+        assert source.retired_keys.get(f"postgres:review_item:{review_id}") != "decided_elsewhere"
 
 
 def test_review_folds_away_its_pending_copy_of_a_decided_check(source, tmp_path):

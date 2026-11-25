@@ -25,6 +25,10 @@ from dotenv import dotenv_values
 
 
 DATAFEED_SOURCE = "ghus_data_feed"
+# The pipeline's automatic follow-up checks ("Map checks") are off the platform
+# (GHUS, 25 Nov 2026). True brings them back; nothing was deleted.
+SHOW_MAP_CHECKS = False
+MAP_CHECKS_HIDDEN = "map_checks_hidden"
 # An organization update's stored title prefix; "Actor update:" before 24 Nov 2026.
 UPDATE_TITLE = re.compile(r"^(?:Actor|Organization) update:\s*")
 
@@ -451,6 +455,16 @@ class PostgresReviewSource:
                 for profile in profiles:
                     candidates[profile["source_key"]] = profile
                 self.retired_keys = retired
+
+            # The automatic follow-up checks ("Map checks": verification, location,
+            # hub, links... raised by the pipeline, not by a request or an update)
+            # are not shown on the platform (GHUS, 25 Nov 2026). They stay in the
+            # database; Review's copies are folded away, and new ones never appear.
+            if not SHOW_MAP_CHECKS:
+                for key in [k for k, c in candidates.items()
+                            if str(c.get("source_run_id") or "").startswith("v2-review:")]:
+                    candidates.pop(key)
+                    self.retired_keys.setdefault(key, MAP_CHECKS_HIDDEN)
 
             # A check decided somewhere else (a record verified from its own page,
             # an admission that settled it) is no longer waiting: Review's copy of
