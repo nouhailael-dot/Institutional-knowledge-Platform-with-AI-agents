@@ -1350,6 +1350,18 @@ def record_fact_review_decision(
     item, payload = _pending_review_item(session, review_item_id, FACT_REVIEW_KINDS)
     new_id = str(payload.get("new_fact_id") or "")
     current_id = str(payload.get("current_fact_id") or "")
+    if payload.get("field_key") == DESCRIPTION_KEY and new_id:
+        # A proposed description (propose_description): the actor's own column.
+        if keep_both:
+            raise ValueError("an organization has one description: use the new one or keep it")
+        outcome = {"review_item_id": review_item_id, "actor_id": item["entity_id"],
+                   "field_key": DESCRIPTION_KEY, "new_fact_id": new_id, "current_fact_id": None,
+                   "decision": "use_new_value" if accept else "keep_current_value"}
+        if item["status"] != "pending":
+            return {**outcome, "action": "already_resolved"}
+        return _decide_description(session, item=item, payload=payload,
+                                   review_item_id=review_item_id, reviewer=reviewer,
+                                   accept=accept, notes=notes, outcome=outcome, live=live)
     if not new_id or not current_id:
         raise ValueError("this review item does not name the two facts it compares")
     if keep_both and accept:
@@ -1736,6 +1748,115 @@ def propose_category_type(
         "source_url": source_url, "origin": "actor_update", "request_id": request_id},
         sort_keys=True)})
     return {"action": "proposed", "review_item_id": review_id}
+
+
+DESCRIPTION_KEY = "description"
+
+
+def propose_description(
+    session,
+    *,
+    actor_id: str,
+    topic_id: str,
+    text_value: str,
+    source_url: str,
+    quotes: list[dict],
+    weakness: str | None,
+    request_id: str | None = None,
+    date_read: datetime | None = None,
+    live: bool = False,
+) -> dict[str, object]:
+    """Ask GHUS to replace a weak description with one an update wrote (25 Nov 2026).
+
+    The description is a reviewer-owned column of the actor, so an update never
+    writes it. The proposed text is kept as a ``pending_update`` fact (never
+    current) with its quotes, and a ``pending_update`` review item shows it
+    beside the current text; ``record_fact_review_decision`` replaces the
+    description only when a person accepts. Raised once per actor at a time.
+    """
+    proposed = " ".join(str(text_value or "").split())
+    if not proposed:
+        raise ValueError("a proposed description needs its text")
+    actor = session.execute(text(
+        "SELECT description, merged_into_actor_id FROM actor WHERE actor_id=CAST(:a AS uuid)"),
+        {"a": actor_id}).mappings().first()
+    if actor is None:
+        raise ValueError("actor not found")
+    if actor["merged_into_actor_id"]:
+        return {"action": "merged"}
+    current_text = " ".join(str(actor["description"] or "").split())
+    if current_text.casefold() == proposed.casefold():
+        return {"action": "same_value"}
+    pending = session.execute(text(
+        "SELECT review_item_id::text FROM review_item WHERE review_kind='pending_update' "
+        "AND status='pending' AND entity_id=CAST(:a AS uuid) "
+        "AND payload->>'field_key'=:key LIMIT 1"), {"a": actor_id, "key": DESCRIPTION_KEY}).scalar()
+    if pending:
+        return {"action": "already_proposed", "review_item_id": pending}
+    if not live:
+        return {"action": "would_propose"}
+    fact = validate_actor_fact(ActorFactWrite(
+        actor_id=actor_id, topic_id=topic_id, field_key=DESCRIPTION_KEY,
+        fact_type="description_proposal", layer=1, value={"text": proposed, "quotes": quotes},
+        collection_state="found", source_url=source_url, source_origin="newly_found",
+        date_read=date_read or datetime.now(UTC), confidence="medium",
+        created_by="agent:actor_updates", request_id=request_id))
+    source_id = insert_source(
+        session, source_url=fact.source_url, fetched_at=fact.date_read,
+        description="Organization update: proposed description",
+        source_type="agent_collection", trust_tier="candidate")
+    fact_id = _insert_resolved_fact(
+        session, fact=fact, source_id=source_id, semantic_hash=_fact_semantic_hash(fact),
+        creator_class=_fact_creator_class(fact), lifecycle_state="pending_update",
+        supersedes_fact_id=None)
+    _append_fact_resolution(session, fact_id, "pending_human_update", None,
+                            fact.created_by, "a description is replaced only by GHUS")
+    review_id = str(uuid.uuid4())
+    execute_canonical_write(session, text(
+        "INSERT INTO review_item(review_item_id,review_kind,entity_type,entity_id,topic_id,"
+        "priority,payload,status) VALUES(CAST(:id AS uuid),'pending_update','actor',"
+        "CAST(:actor AS uuid),CAST(:topic AS uuid),'normal',CAST(:payload AS jsonb),'pending')"
+    ), {"id": review_id, "actor": actor_id, "topic": topic_id, "payload": json.dumps({
+        "field_key": DESCRIPTION_KEY, "new_fact_id": fact_id, "current_fact_id": None,
+        "state": "pending_update", "current_text": current_text or None,
+        "weakness": weakness, "origin": "actor_update", "request_id": request_id},
+        sort_keys=True)})
+    return {"action": "proposed", "review_item_id": review_id, "fact_id": fact_id}
+
+
+def _decide_description(session, *, item, payload, review_item_id, reviewer, accept, notes,
+                        outcome, live) -> dict[str, object]:
+    """Accept or keep: a proposed description against the actor's current one."""
+    new_id = str(payload.get("new_fact_id") or "")
+    fact = session.execute(text(
+        "SELECT fact_value FROM actor_fact WHERE actor_fact_id=CAST(:id AS uuid) "
+        "AND actor_id=CAST(:a AS uuid) AND fact_key=:key"),
+        {"id": new_id, "a": item["entity_id"], "key": DESCRIPTION_KEY}).mappings().first()
+    if fact is None:
+        raise ValueError("the proposed description no longer exists")
+    value = fact["fact_value"] if isinstance(fact["fact_value"], dict) else json.loads(
+        fact["fact_value"] or "{}")
+    proposed = " ".join(str(value.get("text") or "").split())
+    now_text = session.execute(text(
+        "SELECT description FROM actor WHERE actor_id=CAST(:a AS uuid) FOR UPDATE"),
+        {"a": item["entity_id"]}).scalar()
+    if accept and " ".join(str(now_text or "").split()) != (payload.get("current_text") or ""):
+        raise ValueError("the description changed after this proposal was raised; "
+                         "check the organization again before replacing it")
+    if not live:
+        return {**outcome, "action": "would_decide"}
+    reason = ("GHUS review: use the proposed description" if accept else
+              "GHUS review: keep the current description") + (f"; {notes}" if notes else "")
+    if accept:
+        record_directory_edit(session, entity_type="actor", entity_id=item["entity_id"],
+                              changes={DESCRIPTION_KEY: proposed}, decided_by=reviewer, live=True)
+        _append_fact_resolution(session, new_id, "accepted", None, reviewer, reason)
+    else:
+        _append_fact_resolution(session, new_id, "rejected", None, reviewer, reason)
+    _close_review_item(session, review_item_id, decision="approve" if accept else "reject",
+                       status="approved" if accept else "rejected", decided_by=reviewer,
+                       reason=reason)
+    return {**outcome, "action": "decided"}
 
 
 def fill_category_type(

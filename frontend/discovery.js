@@ -876,10 +876,13 @@ export function orgUpdateProblems({list, form}, today = null) {
  * scope; left blank, it is a general update of the full profile, the priority
  * areas first (GHUS, 2026-11-01).
  */
-export function orgUpdatePayload({list, interests = [], focus = "", form, requester = "", sectors = []}) {
+export function orgUpdatePayload({list, interests = [], focus = "", form, requester = "", sectors = [],
+                                  improveDescription = false}) {
   const ids = list.filter((row) => row.checked).map((row) => row.actor.actor_id);
   const payload = {actor_ids: ids, max_actors_per_run: Math.max(ids.length, 1), depth: "light",
     cadence: form.cadence, start_date: form.startDate, end_date: scheduleEnd(form)};
+  // 25 Nov 2026: a weak description gets a better one, raised in Review.
+  if (improveDescription) payload.improve_description = true;
   const instructions = String(focus || "").trim();
   if (instructions) {
     Object.assign(payload, {scope: "topic", focus: instructions.slice(0, MAX_SPECIFIC_CHARS)});
@@ -1638,6 +1641,7 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
     const [active, setActive] = useState(0);
     const [list, setList] = useState([]);
     const [focus, setFocus] = useState("");
+    const [improveDescription, setImproveDescription] = useState(true);
     const [form, setForm] = useState({cadence: "", startDate: "", duration: ""});
     const [touched, setTouched] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -1727,7 +1731,8 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
       setTouched(true);
       if (!ready || busy || tooMany) return;
       setBusy(true); setError("");
-      const payload = orgUpdatePayload({list, focus, form, requester, sectors: allSectors});
+      const payload = orgUpdatePayload({list, focus, form, requester, sectors: allSectors,
+        improveDescription});
       try {
         const made = await api("/api/discovery/update-requests", {method: "POST", body: JSON.stringify(payload)});
         // A request that starts today runs its first check now, like every Monitor request.
@@ -1813,6 +1818,14 @@ export function createDiscoveryPage({html, useState, useEffect, useRef = () => (
         <strong>${updateSector(focus, allSectors).name}</strong> sector.</p>`}
       <p class="muted org-hint">Leave this blank for a general update: the full profile is checked for
         new, missing, or outdated information. These instructions apply to all selected organizations.</p>
+      <label class="org-option">
+        <input type="checkbox" checked=${improveDescription}
+          onChange=${(e) => setImproveDescription(e.target.checked)}/>
+        <span><strong>Improve the description when it is weak.</strong>
+          <span class="muted"> A short or missing description gets a better one, written from the
+          organization's own pages. It waits in Review Results beside the current one; nothing
+          changes until you accept it.</span></span>
+      </label>
 
       <${ScheduleRow} form=${form} set=${setSchedule} kind="update" options=${options} today=${today} shown=${shown}/>
 

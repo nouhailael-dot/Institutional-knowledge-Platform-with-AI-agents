@@ -604,6 +604,12 @@ test('Organizations Update sends only the checked organizations; blank instructi
   assert.equal(specific.end_date, '2026-11-02');
   assert.equal(specific.categories, undefined);
   assert.equal(orgUpdatePayload({list, focus: '   ', form}).scope, 'general');
+  // 25 Nov 2026: "Improve the description when it is weak" is sent only when ticked.
+  assert.equal(orgUpdatePayload({list, form, improveDescription: true}).improve_description, true);
+  assert.equal('improve_description' in orgUpdatePayload({list, form}), false);
+  const source = fs.readFileSync(new URL('../frontend/discovery.js', import.meta.url), 'utf8');
+  assert.match(source, /Improve the description when it is weak\./);
+  assert.match(source, /useState\(true\);[\s\S]{0,80}const \[form, setForm\]/);
   // Create Request waits for a checked organization, the description and the schedule.
   const blank = {cadence: '', startDate: '', duration: ''};
   assert.deepEqual(Object.keys(orgUpdateProblems({list: [], form: blank})),

@@ -781,7 +781,8 @@ function side(fact) {
     source: present(fact.source_url),
     date: shortDate(fact.date_read),
     confidence: confidenceLabel(present(fact.confidence)),
-    setBy: fact.set_by === "ghus_human" ? "GHUS" : "Agent",
+    // "record": the directory's own column (a description), not a sourced fact.
+    setBy: fact.set_by === "ghus_human" ? "GHUS" : fact.set_by === "record" ? "Directory" : "Agent",
   };
 }
 

@@ -167,9 +167,11 @@ WRITTEN = frozenset({"new", "changed", "additional", "corroborated", "conflict",
                      "not_found"})
 
 DEFAULT_SETTINGS = {
-    "max_usd_per_actor": 0.30,
+    # 25 Nov 2026: an update reads up to ten pages (update_reader) and may write a
+    # better description, so its caps rise (GHUS: updates did too little).
+    "max_usd_per_actor": 0.75,
     "max_actors_per_request": 20,
-    "max_usd_per_request_run": 3.00,
+    "max_usd_per_request_run": 10.00,
     "stale_after_days": 365,
     "time_sensitive_stale_after_days": 180,
     "recheck_not_found_after_days": 90,
@@ -265,6 +267,7 @@ def load_actor(session, actor_id: str) -> dict | None:
         "NULLIF(to_jsonb(a)->>'actor_category', '') AS actor_category, "
         "NULLIF(to_jsonb(a)->>'category_type', '') AS category_type, "
         "NULLIF(to_jsonb(a)->>'actor_type', '') AS actor_type, "
+        "NULLIF(to_jsonb(a)->>'description', '') AS description, "
         "NULLIF(to_jsonb(a)->>'location_city', '') AS city, "
         "COALESCE(NULLIF(to_jsonb(a)->>'state_code', ''), NULLIF(to_jsonb(a)->>'state', '')) "
         "AS state, NULLIF(to_jsonb(a)->>'country', '') AS country, "
@@ -819,8 +822,13 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
                  scope: str = "general", depth: str = "light", fields=(), categories=(),
                  focus: str = "", max_usd: float | None = None, config: dict | None = None,
                  reader_factory=None, runs_dir: Path = RUNS_DIR,
-                 today: datetime | None = None) -> dict:
-    """Read the actor's pages once and compare every box. Writes no database row."""
+                 today: datetime | None = None, improve_description: bool = False) -> dict:
+    """Read the actor's pages once and compare every box. Writes no database row.
+
+    ``improve_description``: when the recorded description is weak, a better one
+    is written from the pages read (``description_upgrade``); the apply step
+    raises it in Review, never over the record.
+    """
     if config is None:
         from agents.discovery.search.run import load_open_web_config
 
@@ -843,9 +851,11 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
     if reader_factory is None:
         from agents.collection.deep_pull_reader import DeepPullReader
         from agents.collection.light_pull_candidates import _reader
+        from agents.collection.update_reader import UpdateReader
 
+        # An update reads wider than discovery's Light Pull (update_reader).
         reader, meter, model = _reader(
-            config, cap, reader_class=DeepPullReader if depth == "deep" else None)
+            config, cap, reader_class=DeepPullReader if depth == "deep" else UpdateReader)
     else:
         reader, meter, model = reader_factory(cap)
 
@@ -900,6 +910,16 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
         proposed_type = type_proposal(client, actor, read)
     except Exception as exc:  # noqa: BLE001 - the facts stand without it; say so
         type_error = f"No Category Type was proposed: {type(exc).__name__}"
+    description = None
+    if improve_description:
+        from agents.collection import description_upgrade
+
+        try:
+            description = description_upgrade.propose(
+                client, name=actor["name"], current=actor.get("description"),
+                texts=dict(getattr(read, "texts", {}) or {}), topic=topic["name"])
+        except Exception as exc:  # noqa: BLE001 - the facts stand without it; say so
+            description = {"skipped": f"No description was written: {type(exc).__name__}"}
     spent = round(float(meter.spent_usd), 4)
     # Boxes in the schema with nothing recorded and not read now.
     schema = plan["schema"]
@@ -919,6 +939,9 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
         "applied_run_id": None, "written_fields": [],
         "related": related, "hubs": plan["hubs"], "type_proposal": proposed_type,
         "proposals_written": False,
+        "improve_description": bool(improve_description),
+        "description_proposal": description if description and description.get("text") else None,
+        "description_written": False,
     }
     Path(runs_dir).mkdir(parents=True, exist_ok=True)
     _check_path(runs_dir, check_id).write_text(json.dumps(record, default=str, indent=1),
@@ -931,7 +954,10 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
             "counts": counts_of(findings), "cost_usd": spent, "model": model,
             "related": related, "related_error": related_error,
             "type_proposal": proposed_type, "type_error": type_error,
-            "proposals": _proposal_count(related, plan["hubs"], proposed_type),
+            # The better description written (to be raised in Review), or why none was.
+            "description": description,
+            "proposals": (_proposal_count(related, plan["hubs"], proposed_type)
+                          + (1 if record["description_proposal"] else 0)),
             "writes": sum(1 for f in findings if f["outcome"] in WRITTEN
                           and not (f["outcome"] == "not_found" and f.get("reason"))),
             "error": read.error}
@@ -1075,6 +1101,25 @@ def _write_proposals(session, record: dict, request_id: str) -> list[dict]:
     return out
 
 
+def _write_description(session, record: dict, request_id: str, read_at: datetime) -> dict:
+    """The better description the check wrote, raised in Review beside the current one."""
+    from agents.enrichment.decisions import propose_description
+
+    proposal = record["description_proposal"]
+    savepoint = session.begin_nested()
+    try:
+        result = propose_description(
+            session, actor_id=record["actor_id"], topic_id=record["topic_id"],
+            text_value=proposal["text"], source_url=proposal["source_url"],
+            quotes=proposal.get("quotes") or [], weakness=proposal.get("weakness"),
+            request_id=request_id, date_read=read_at, live=True)
+        savepoint.commit()
+    except Exception as exc:  # noqa: BLE001 - the facts stand without it; say so
+        savepoint.rollback()
+        result = {"action": "failed", "error": f"{type(exc).__name__}: {exc}"[:200]}
+    return {"kind": "description", "name": "Description", **result}
+
+
 def _actual(session, fact_id: str, current_id: str | None) -> str:
     """What the writer really did, read back from the fact it returned."""
     if current_id and fact_id == current_id:
@@ -1128,7 +1173,9 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
     pending = [f for f in record["findings"] if f["outcome"] in WRITTEN
                and not (f["outcome"] == "not_found" and f.get("reason"))
                and f["field"] not in done]
-    if not pending and record.get("proposals_written", True):
+    description_due = bool(record.get("description_proposal")) and not record.get(
+        "description_written")
+    if not pending and record.get("proposals_written", True) and not description_due:
         return {"ok": True, "check_id": check_id, "run_id": record.get("applied_run_id"),
                 "results": [], "note": "Everything in this check was already written."}
     read_at = datetime.fromisoformat(record["read_at"])
@@ -1194,6 +1241,9 @@ def apply_check(session, check_id: str, *, runs_dir: Path = RUNS_DIR, config: di
     if not record.get("proposals_written"):
         proposals = _write_proposals(session, record, request_id)
         record["proposals_written"] = True
+    if description_due:
+        proposals.append(_write_description(session, record, request_id, read_at))
+        record["description_written"] = True
     failed = [r for r in results if not r.get("written")]
     status = "attention" if failed else "succeeded"
     reason = (f"{len(failed)} box(es) failed; apply the same check again to retry them."
@@ -1251,7 +1301,7 @@ SCOPE_NAMES = {"general": "General update", "topic": "Specific changes",
 REQUEST_KEYS = frozenset({
     "title", "actor_ids", "group", "topic", "scope", "depth", "categories", "fields", "focus",
     "cadence", "start_date", "end_date", "max_actors_per_run", "max_usd_per_run",
-    "requested_by",
+    "requested_by", "improve_description",
 })
 # Specific Changes is described in the person's own words (GHUS, 2026-10-30).
 MAX_FOCUS_CHARS = 1000
@@ -1354,7 +1404,9 @@ def request_options(payload: dict, *, config: dict | None = None,
         "max_usd_per_run": round(ceiling, 4), "requested_by": requested_by,
         "options": {"scope": scope, "depth": depth, "categories": categories,
                     "fields": fields, "focus": focus,
-                    "topic": topic, "category": category, "max_actors_per_run": per_run},
+                    "topic": topic, "category": category, "max_actors_per_run": per_run,
+                    # 25 Nov 2026: write a better description when the recorded one is weak.
+                    "improve_description": bool(payload.get("improve_description"))},
     }
 
 
@@ -1596,7 +1648,8 @@ def _prepared_from(subscription) -> dict:
                     "fields": list(options.get("fields") or []),
                     "focus": options.get("focus") or "", "topic": options.get("topic"),
                     "category": options.get("category"),
-                    "max_actors_per_run": int(options.get("max_actors_per_run") or 1)},
+                    "max_actors_per_run": int(options.get("max_actors_per_run") or 1),
+                    "improve_description": bool(options.get("improve_description"))},
     }
 
 
@@ -1633,7 +1686,8 @@ def run_request(session, subscription, *, ledger: tuple[str, str], config: dict 
                 session, actor_id=actor["actor_id"], topic_code=actor["topic"],
                 scope=options["scope"], fields=options["fields"],
                 categories=options["categories"], focus=options["focus"], max_usd=cap,
-                config=config, reader_factory=reader_factory, runs_dir=runs_dir)
+                config=config, reader_factory=reader_factory, runs_dir=runs_dir,
+                improve_description=bool(options.get("improve_description")))
         except Exception as exc:  # noqa: BLE001 - one actor must not stop the others
             session.rollback()
             check = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
@@ -1753,6 +1807,8 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("check")
     _common(check)
     check.add_argument("--max-usd", type=float, default=None)
+    check.add_argument("--improve-description", action="store_true",
+                       help="write a better description when the recorded one is weak")
     apply = sub.add_parser("apply")
     apply.add_argument("--check-id", required=True)
     # Update requests (migration 570), run by the request runner.
@@ -1818,7 +1874,8 @@ def main(argv: list[str] | None = None) -> int:
                            depth=args.depth, fields=fields, categories=_split(args.categories),
                            focus=args.focus, config=config)
             result = (plan_update(session, **options) if args.command == "plan"
-                      else check_update(session, max_usd=args.max_usd, **options))
+                      else check_update(session, max_usd=args.max_usd,
+                                        improve_description=args.improve_description, **options))
     except (ActorUpdateError, ValueError) as exc:
         session.rollback()
         result = {"ok": False, "error": str(exc)}

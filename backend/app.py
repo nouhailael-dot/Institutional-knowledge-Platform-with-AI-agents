@@ -2134,6 +2134,8 @@ class ActorUpdateRequest(BaseModel):
     fields: list[str] = Field(default_factory=list, max_length=40)
     categories: list[str] = Field(default_factory=list, max_length=10)
     focus: str = Field(default="", max_length=200)
+    # 25 Nov 2026: write a better description when the recorded one is weak.
+    improve_description: bool = False
 
 
 @app.get("/api/discovery/actors")
@@ -2220,8 +2222,11 @@ class UpdateRequestDraft(BaseModel):
     start_date: str | None = Field(default=None, max_length=10)
     end_date: str | None = Field(default=None, max_length=10)
     max_actors_per_run: int | None = Field(default=None, ge=1, le=50)
-    max_usd_per_run: float | None = Field(default=None, gt=0, le=5)
+    # The backend's own ceiling (agents/config/sources.yaml) is the real limit.
+    max_usd_per_run: float | None = Field(default=None, gt=0, le=10)
     requested_by: str | None = Field(default=None, max_length=254)
+    # 25 Nov 2026: write a better description when the recorded one is weak.
+    improve_description: bool = False
 
 
 @app.get("/api/discovery/update-requests")

@@ -292,8 +292,13 @@ def _states_an_address(docs) -> bool:
 
 
 def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
-                 actor_category: str | None = None, want_location: bool = False) -> list:
-    """Homepage, About page, one topic or category page: at most three, same site.
+                 actor_category: str | None = None, want_location: bool = False,
+                 max_pages: int = MAX_LIGHT_PULL_FETCHES, topic_pages: int = 1) -> list:
+    """Homepage, About page, topic or category pages, evidence pages: same site.
+
+    ``max_pages`` bounds the pages (Light Pull: MAX_LIGHT_PULL_FETCHES); an
+    organization update reads more (``update_reader``), with ``topic_pages``
+    topic pages instead of one.
 
     ``fetch(url)`` returns a FetchedDoc (url, content). A page that cannot be
     fetched is skipped; the homepage failing means nothing can be read.
@@ -323,7 +328,7 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
     topic = _stems(" ".join(topic_terms))
     hints = _CATEGORY_PAGE_HINTS.get(actor_category or "", _GENERIC_HINTS)
     seen = {d.url.rstrip("/") for d in docs}
-    best: tuple[int, str] | None = None
+    scored: dict[str, tuple[int, str]] = {}
     for href, label in _HREF.findall(home.content or ""):
         target = urljoin(home.url, href.strip())
         if registrable_domain(target) != site or target.rstrip("/") in seen:
@@ -332,11 +337,15 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
             continue
         words = f"{urlsplit(target).path} {re.sub(r'<[^>]+>', ' ', label)}".casefold()
         score = 2 * len(_stems(words) & topic) + sum(h in words for h in hints)
-        if score and (best is None or score > best[0]):
-            best = (score, target)
-    if best and len(docs) < MAX_LIGHT_PULL_FETCHES:
+        if score and score > scored.get(target.rstrip("/"), (0, ""))[0]:
+            scored[target.rstrip("/")] = (score, target)
+    # The best-scoring first; ties keep the order of the home page's links.
+    ranked = sorted(scored.values(), key=lambda pair: -pair[0])
+    for _score, target in ranked[:max(1, topic_pages)]:
+        if len(docs) >= max_pages:
+            break
         try:
-            docs.append(fetch(best[1]))
+            docs.append(fetch(target))
         except Exception as exc:  # noqa: BLE001
             logger.info("topic page unavailable for %s: %s", website, exc)
     # Then the pages where funding, awards and recent work are announced (news,
@@ -344,13 +353,13 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
     # is still unstated.
     reserve = 1 if want_location and not _states_an_address(docs) else 0
     for target in _evidence_pages(home, site, {d.url.rstrip("/") for d in docs}):
-        if len(docs) >= MAX_LIGHT_PULL_FETCHES - reserve:
+        if len(docs) >= max_pages - reserve:
             break
         try:
             docs.append(fetch(target))
         except Exception as exc:  # noqa: BLE001
             logger.info("evidence page unavailable for %s: %s", website, exc)
-    if want_location and len(docs) < MAX_LIGHT_PULL_FETCHES and not _states_an_address(docs):
+    if want_location and len(docs) < max_pages and not _states_an_address(docs):
         seen = {d.url.rstrip("/") for d in docs}
         for href, label in _HREF.findall(home.content or ""):
             target = urljoin(home.url, href.strip())
@@ -363,7 +372,7 @@ def choose_pages(fetch, website: str, *, topic_terms: Sequence[str] = (),
                 except Exception as exc:  # noqa: BLE001
                     logger.info("contact page unavailable for %s: %s", website, exc)
                 break
-    return docs[:MAX_LIGHT_PULL_FETCHES]
+    return docs[:max_pages]
 
 
 def _evidence_pages(home, site: str, seen: set[str]) -> list[str]:
@@ -490,16 +499,17 @@ def _footer_text(content: str) -> str:
     return " ".join(lines)[:FOOTER_CHARS]
 
 
-def _page_text(content: str) -> str:
+def _page_text(content: str, chars: int = MAX_PAGE_CHARS) -> str:
     footer = _footer_text(content)
-    room = MAX_PAGE_CHARS - (len(footer) + 10 if footer else 0)
+    room = chars - (len(footer) + 10 if footer else 0)
     text = _visible_html_text(content or "")[:room]
     return f"{text}\nFooter: {footer}" if footer else text
 
 
-def light_documents(docs, *, read_at: datetime) -> tuple[LightDocument, ...]:
+def light_documents(docs, *, read_at: datetime,
+                    chars: int = MAX_PAGE_CHARS) -> tuple[LightDocument, ...]:
     return tuple(
-        LightDocument(url=d.url, text=_page_text(d.content or ""), date_read=read_at)
+        LightDocument(url=d.url, text=_page_text(d.content or "", chars), date_read=read_at)
         for d in docs
     )
 
@@ -899,6 +909,12 @@ class LightPullReader:
     tool_description = "Answer every Light Pull box from these pages only."
 
     evidence_searches: Mapping[str, str] = EVIDENCE_SEARCHES
+    # How much is read: the Light Pull bound. An organization update reads more
+    # (update_reader.UpdateReader).
+    max_pages: int = MAX_LIGHT_PULL_FETCHES
+    topic_pages: int = 1
+    page_chars: int = MAX_PAGE_CHARS
+    followup_pages: int = FOLLOWUP_PAGES
 
     def __init__(self, client, fetch, *, max_tokens: int = 3000, fallback=None,
                  answer_cache: Path | None = None):
@@ -942,7 +958,7 @@ class LightPullReader:
         wanted = list(fields) if fields is not None else [
             *COMMON_READ_FIELDS, *CATEGORY_LIGHT_FIELDS.get(actor_category or "", ())]
         spent = float(getattr(getattr(self.client, "cost_meter", None), "spent_usd", 0.0) or 0.0)
-        fetch = BoundedFetch(self.fetch, MAX_LIGHT_PULL_FETCHES)
+        fetch = BoundedFetch(self.fetch, self.max_pages)
         fallback = self.fallback
         if fallback:
             fallback.start()
@@ -957,7 +973,8 @@ class LightPullReader:
             try:
                 docs = choose_pages(fetch, website, topic_terms=topic_terms,
                                     actor_category=actor_category,
-                                    want_location="location" in wanted)
+                                    want_location="location" in wanted,
+                                    max_pages=self.max_pages, topic_pages=self.topic_pages)
             except Exception as exc:  # noqa: BLE001 - an unreachable site is a stated outcome
                 failure = failure_of(exc)
             if failure is not None and failure["kind"] in ("unreachable", "not_found", "timeout"):
@@ -966,7 +983,9 @@ class LightPullReader:
                     try:
                         docs = choose_pages(fetch, variant, topic_terms=topic_terms,
                                             actor_category=actor_category,
-                                            want_location="location" in wanted)
+                                            want_location="location" in wanted,
+                                            max_pages=self.max_pages,
+                                            topic_pages=self.topic_pages)
                     except Exception:  # noqa: BLE001 - the first failure is the one reported
                         continue
                     failure = None
@@ -1044,7 +1063,7 @@ class LightPullReader:
             if fallback and result.attempts:
                 result.error += " No other source open to the agent names it."
             return result
-        documents = without_repeats(light_documents(docs, read_at=read_at))
+        documents = without_repeats(light_documents(docs, read_at=read_at, chars=self.page_chars))
         result.pages = [d.url for d in documents]
         result.sources = {d.url: kinds.get(d.url, "official") for d in documents}
         texts = {d.url: d.text for d in documents}
@@ -1119,8 +1138,8 @@ class LightPullReader:
             return
         site = registrable_domain(home.url)
         seen = {u.rstrip("/") for u in result.pages} | {home.url.rstrip("/")}
-        targets = followup_targets(home, site, seen, missing)
-        fetch = BoundedFetch(self.fetch, FOLLOWUP_PAGES + 1)
+        targets = followup_targets(home, site, seen, missing, limit=self.followup_pages)
+        fetch = BoundedFetch(self.fetch, self.followup_pages + 1)
         docs = []
         for target in targets:
             try:

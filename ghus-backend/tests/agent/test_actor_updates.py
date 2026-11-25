@@ -284,7 +284,8 @@ def test_a_request_is_normalised_into_what_the_table_stores():
     assert prepared["max_usd_per_run"] == 0.5
     assert prepared["options"] == {
         "scope": "missing", "depth": "light", "categories": ["funding"], "fields": [],
-        "focus": "", "topic": None, "category": None, "max_actors_per_run": 1}
+        "focus": "", "topic": None, "category": None, "max_actors_per_run": 1,
+                                   "improve_description": False}
     # A one-time request ends the day it starts.
     once = _request(cadence="once", end_date=None)
     assert once["end_date"] == once["start_date"]
@@ -295,7 +296,7 @@ def test_a_request_is_normalised_into_what_the_table_stores():
     ({"group": {"sector": "WATER", "town": "x"}}, "sector, type and state"),
     ({"depth": "deep"}, "Light refresh"),
     ({"scope": "specific"}, "at least one box"),
-    ({"max_usd_per_run": 9}, "spend ceiling"),
+    ({"max_usd_per_run": 11}, "spend ceiling"),
     ({"max_usd_per_run": -1}, "spend ceiling"),
     ({"max_actors_per_run": 99}, "Organizations per run"),
     ({"actor_ids": [str(uuid.uuid4()) for _ in range(21)]}, "at most 20"),

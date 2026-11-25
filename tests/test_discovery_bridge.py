@@ -328,7 +328,8 @@ def test_update_request_routes_validate_and_run_now_starts_the_runner(monkeypatc
     assert [c[0] for c in bridge.calls] == ["plan", "create", "pause", "run"]
     # Unset choices are not sent: the backend applies its own defaults.
     assert bridge.calls[0][1] == {"actor_ids": ["a"], "scope": "general", "depth": "light",
-                                  "categories": [], "fields": [], "focus": "", "cadence": "once"}
+                                  "categories": [], "fields": [], "focus": "", "cadence": "once",
+                                  "improve_description": False}
 
 
 def test_an_end_date_change_is_a_live_backend_command_for_a_real_request(tmp_path):

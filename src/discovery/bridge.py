@@ -568,6 +568,9 @@ class DiscoveryBridge:
     def check_update(self, actor_id: str, options: dict[str, Any]) -> dict[str, Any]:
         """Read the actor's own pages once and compare every box. Nothing is written."""
         arguments = _update_arguments(actor_id, options)   # a bad value is refused first
+        if options.get("improve_description"):
+            # 25 Nov 2026: a weak description gets a better one, raised in Review.
+            arguments.append("--improve-description")
         _require_contact()
         return self._call(["check", *arguments],
                           module="agents.collection.actor_updates", timeout=600)

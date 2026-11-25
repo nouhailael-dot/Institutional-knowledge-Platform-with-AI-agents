@@ -796,6 +796,22 @@ class PostgresReviewSource:
             "run_id": str(item["source_run_id"]).removeprefix("actor-update:"),
             "raised_at": item.get("created_at"),
         }
+        if kind == "pending_update" and pipeline.get("field_key") == "description":
+            # 25 Nov 2026: a better description an update wrote for a weak one. The
+            # current text is the record's own column, kept in the item.
+            change = meta.get("fact_change") or {}
+            proposed = dict(change.get("proposed") or {})
+            value = proposed.get("value")
+            if isinstance(value, dict):
+                proposed["value"] = value.get("text")
+            return {**base, "kind": "fact", "field_key": "description",
+                    "current": {"value": pipeline.get("current_text"), "set_by": "record"},
+                    "proposed": proposed,
+                    "reason": " ".join(filter(None, [
+                        pipeline.get("weakness"),
+                        "The update wrote a fuller one from the organization's own pages; "
+                        "it replaces the current description only if you use it."])),
+                    "can_keep_both": False}
         if kind in ("fact_conflict", "pending_update"):
             change = meta.get("fact_change") or {}
             field = change.get("field_key") or pipeline.get("field_key")

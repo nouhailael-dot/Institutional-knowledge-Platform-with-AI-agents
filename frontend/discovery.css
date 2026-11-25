@@ -274,6 +274,8 @@
 .org-count{margin:10px 0 22px;font-size:14px;color:var(--muted)}
 .org-count.error{color:#b42318}
 .org-hint{margin:8px 0 0;font-size:14px}
+.org-option{display:flex;gap:10px;align-items:flex-start;margin:14px 0 0;font-size:14px;line-height:1.45;cursor:pointer}
+.org-option input{margin-top:3px;flex:none}
 .org-specific{display:block;width:100%;margin:12px 0 0;border:1px solid var(--line-strong);border-radius:8px;padding:12px 14px;font:inherit;font-size:14.5px;color:var(--ink);background:var(--surface);resize:vertical;box-sizing:border-box}
 .org-specific:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .org-specific.invalid{border-color:#b42318}
