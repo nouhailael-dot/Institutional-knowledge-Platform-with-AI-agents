@@ -300,7 +300,7 @@ PERSON_FIELDS: tuple[Field, ...] = (
     Field("sectors", "Sector", "multi_enum", "GHUS sectors of their work, separated by ';'.",
           "Water", vocab="sectors", max_length=200, target="staged_record.sector_codes"),
     Field("topic", "Topic", "enum", "The controlled topic of their expertise.", "Water",
-          vocab="topics", target="person_topic (after review)"),
+          vocab="topics", target="staged_record.topic_id"),
     Field("source_url", "Source URL", "url",
           "Where this information can be checked. A Source URL, a biography URL or a "
           "LinkedIn URL is required.", "https://www.arizona.edu/people/ana-ruiz",
