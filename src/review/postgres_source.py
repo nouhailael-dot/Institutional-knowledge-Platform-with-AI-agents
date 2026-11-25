@@ -452,6 +452,16 @@ class PostgresReviewSource:
                     candidates[profile["source_key"]] = profile
                 self.retired_keys = retired
 
+            # A check decided somewhere else (a record verified from its own page,
+            # an admission that settled it) is no longer waiting: Review's copy of
+            # it must not stay listed as pending.
+            if "status" in review_columns:
+                for row in db.execute(
+                        "SELECT review_item_id::text AS review_item_id FROM review_item "
+                        "WHERE status <> 'pending'").fetchall():
+                    self.retired_keys.setdefault(
+                        f"postgres:review_item:{row['review_item_id']}", "decided_elsewhere")
+
             return list(candidates.values()), warnings
 
     # ------------------------------------------- event and people discovery runs
