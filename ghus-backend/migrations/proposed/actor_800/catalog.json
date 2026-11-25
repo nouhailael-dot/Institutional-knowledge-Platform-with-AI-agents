@@ -1,0 +1,834 @@
+{
+  "relations": [
+    [
+      "hub_organization",
+      "r"
+    ],
+    [
+      "hub_organization_removed",
+      "r"
+    ],
+    [
+      "organization",
+      "r"
+    ],
+    [
+      "organization_category_definition",
+      "r"
+    ],
+    [
+      "organization_category_migration_audit",
+      "r"
+    ],
+    [
+      "organization_category_type_definition",
+      "r"
+    ],
+    [
+      "organization_evaluation",
+      "r"
+    ],
+    [
+      "organization_fact",
+      "r"
+    ],
+    [
+      "organization_fact_current_pointer",
+      "r"
+    ],
+    [
+      "organization_location",
+      "r"
+    ],
+    [
+      "organization_merge_log",
+      "r"
+    ],
+    [
+      "organization_person",
+      "r"
+    ],
+    [
+      "organization_ranking",
+      "r"
+    ],
+    [
+      "organization_relevance",
+      "r"
+    ],
+    [
+      "organization_sector",
+      "r"
+    ],
+    [
+      "organization_strategic_connection_check",
+      "r"
+    ],
+    [
+      "organization_topic",
+      "r"
+    ],
+    [
+      "organization_update_subscription",
+      "r"
+    ],
+    [
+      "organization_update_subscription_run",
+      "r"
+    ],
+    [
+      "organization_verification_event",
+      "r"
+    ],
+    [
+      "organization_descendant_edge",
+      "v"
+    ],
+    [
+      "organization_descendants",
+      "v"
+    ],
+    [
+      "organization_fact_current",
+      "v"
+    ],
+    [
+      "organization_fact_current_v2",
+      "v"
+    ],
+    [
+      "organization_fact_history",
+      "v"
+    ],
+    [
+      "organization_read",
+      "v"
+    ],
+    [
+      "organization_template",
+      "v"
+    ]
+  ],
+  "columns": {
+    "hub_organization": [
+      "hub_id",
+      "organization_id",
+      "relationship_type",
+      "is_primary",
+      "created_at",
+      "topic_id",
+      "distance_miles",
+      "assignment_outcome",
+      "outside_radius",
+      "overlap_flag",
+      "source_id"
+    ],
+    "hub_organization_removed": [
+      "hub_id",
+      "organization_id",
+      "membership",
+      "reason",
+      "decided_by",
+      "removed_at"
+    ],
+    "organization": [
+      "organization_id",
+      "name",
+      "slug",
+      "description",
+      "website",
+      "city",
+      "country",
+      "source_id",
+      "confidence",
+      "created_at",
+      "updated_at",
+      "merged_into_organization_id",
+      "organization_category",
+      "alt_names",
+      "category_type",
+      "category_note",
+      "category_needs_review",
+      "website_domain",
+      "state_code",
+      "region_code",
+      "latitude",
+      "longitude",
+      "is_multi_location",
+      "source_origin",
+      "ghus_notes",
+      "status",
+      "primary_technical_focus",
+      "technical_approach",
+      "current_activities",
+      "funding_summary",
+      "location",
+      "why_matched",
+      "recent_activity",
+      "funding_signal",
+      "international_connection",
+      "um6p_ocp_connection",
+      "current_initiative",
+      "current_initiative_working_group",
+      "current_project",
+      "pilot_customer_evidence",
+      "relevant_program",
+      "topic_unit_and_work",
+      "institution_control",
+      "land_grant_designation",
+      "rankings",
+      "relevant_centers_programs",
+      "parent_and_center_type",
+      "topic_research_focus",
+      "active_recent_projects",
+      "main_funders",
+      "sponsoring_agency",
+      "formal_national_designation",
+      "topic_program_area",
+      "facility_type_operator",
+      "testing_demonstration_scope",
+      "clinical_research_focus",
+      "parent_academic_link",
+      "hospital_type_scale",
+      "ownership_and_size",
+      "topic_business_segment_product",
+      "mapped_geography_operations",
+      "technology_and_problem",
+      "founding_year_location",
+      "funding_stage",
+      "platform_type_operator",
+      "sector_focus",
+      "platform_offerings",
+      "scale_indicator",
+      "investor_type_headquarters",
+      "sector_stage_focus",
+      "geographic_focus",
+      "published_fund_size",
+      "topic_investment_thesis",
+      "jurisdiction_parent_agency",
+      "topic_mandate_program",
+      "visible_funding_programs",
+      "mission_sector_focus",
+      "programs_grant_themes",
+      "association_type",
+      "sector_geographic_scope",
+      "member_types",
+      "linked_members",
+      "network_scope_locations",
+      "official_identity",
+      "parent_connection",
+      "sector_topic",
+      "hub_assignment",
+      "organization_category_type"
+    ],
+    "organization_category_definition": [
+      "category_code",
+      "display_name",
+      "description",
+      "sort_order",
+      "active"
+    ],
+    "organization_category_migration_audit": [
+      "organization_id",
+      "migration_batch_id",
+      "legacy_category",
+      "legacy_category_raw",
+      "mapped_category",
+      "mapping_status",
+      "prior_status",
+      "prior_source_origin",
+      "prior_category_note",
+      "prior_category_needs_review",
+      "migrated_at"
+    ],
+    "organization_category_type_definition": [
+      "category_code",
+      "type_code",
+      "display_name",
+      "sort_order",
+      "active",
+      "definition",
+      "is_other"
+    ],
+    "organization_evaluation": [
+      "organization_evaluation_id",
+      "organization_id",
+      "evaluation_context",
+      "context_entity_type",
+      "context_entity_id",
+      "score",
+      "evaluation_summary",
+      "evidence_summary",
+      "source_id",
+      "verification_status",
+      "confidence",
+      "generated_by",
+      "created_at",
+      "updated_at"
+    ],
+    "organization_fact": [
+      "organization_fact_id",
+      "organization_id",
+      "topic_id",
+      "fact_type",
+      "fact_key",
+      "fact_value",
+      "collection_state",
+      "layer",
+      "source_id",
+      "source_origin",
+      "confidence",
+      "observed_at",
+      "retrieved_at",
+      "generated_by",
+      "request_id",
+      "created_at",
+      "semantic_hash",
+      "creator_class",
+      "lifecycle_state",
+      "supersedes_fact_id"
+    ],
+    "organization_fact_current_pointer": [
+      "organization_id",
+      "topic_id",
+      "fact_key",
+      "organization_fact_id",
+      "changed_at"
+    ],
+    "organization_location": [
+      "organization_location_id",
+      "organization_id",
+      "location_name",
+      "country",
+      "state_code",
+      "city",
+      "region_code",
+      "latitude",
+      "longitude",
+      "is_primary",
+      "source_id",
+      "created_at"
+    ],
+    "organization_merge_log": [
+      "merge_id",
+      "winner_organization_id",
+      "loser_organization_id",
+      "score",
+      "method",
+      "decided_by",
+      "decided_at",
+      "pre_merge_state",
+      "status",
+      "reverted_at",
+      "created_at"
+    ],
+    "organization_person": [
+      "organization_id",
+      "person_id",
+      "role",
+      "is_current",
+      "start_date",
+      "end_date"
+    ],
+    "organization_ranking": [
+      "organization_ranking_id",
+      "organization_id",
+      "context_organization_id",
+      "publisher",
+      "ranking_name",
+      "ranking_year",
+      "subject",
+      "ranked_entity_name",
+      "position_text",
+      "source_id",
+      "created_at"
+    ],
+    "organization_relevance": [
+      "organization_relevance_id",
+      "organization_id",
+      "challenge_id",
+      "relevance_score",
+      "maturity_risk",
+      "collaboration_orientation",
+      "why_relevant",
+      "current_evidence",
+      "additional_validation_needed",
+      "source_id",
+      "created_at",
+      "challenge_relevance_narrative",
+      "source_links"
+    ],
+    "organization_sector": [
+      "organization_id",
+      "sector_id",
+      "confidence",
+      "source_id",
+      "match_strength",
+      "match_reason",
+      "is_primary",
+      "source_origin",
+      "created_at"
+    ],
+    "organization_strategic_connection_check": [
+      "connection_check_id",
+      "organization_id",
+      "topic_id",
+      "layer",
+      "state",
+      "strategic_entity_id",
+      "connection_kind",
+      "source_id",
+      "fetched_document_ids",
+      "created_at"
+    ],
+    "organization_topic": [
+      "organization_id",
+      "topic_id",
+      "match_strength",
+      "match_reason",
+      "source_id",
+      "created_at"
+    ],
+    "organization_update_subscription": [
+      "organization_update_subscription_id",
+      "organization_ids",
+      "sector_codes",
+      "topic_ids",
+      "country",
+      "state_code",
+      "city",
+      "region_code",
+      "start_date",
+      "end_date",
+      "cadence",
+      "requested_by",
+      "requested_via",
+      "origin_run_id",
+      "status",
+      "last_run_at",
+      "next_due_at",
+      "created_at",
+      "updated_at",
+      "title",
+      "focus_terms",
+      "max_new_organizations_per_run",
+      "update_options",
+      "max_usd_per_run",
+      "discovery_entity",
+      "discovery_options"
+    ],
+    "organization_update_subscription_run": [
+      "organization_update_subscription_id",
+      "collection_run_id",
+      "dry_run",
+      "created_at"
+    ],
+    "organization_verification_event": [
+      "organization_verification_event_id",
+      "organization_id",
+      "topic_id",
+      "decision",
+      "decided_by",
+      "decided_at",
+      "reason",
+      "rejection_reason",
+      "source_id",
+      "decision_origin",
+      "migration_batch_id",
+      "recorded_at"
+    ],
+    "organization_descendant_edge": [
+      "root_organization_id",
+      "descendant_organization_id",
+      "depth",
+      "path"
+    ],
+    "organization_descendants": [
+      "root_organization_id",
+      "descendant_organization_id",
+      "depth",
+      "path"
+    ],
+    "organization_fact_current": [
+      "organization_fact_id",
+      "organization_id",
+      "topic_id",
+      "fact_type",
+      "fact_key",
+      "fact_value",
+      "collection_state",
+      "layer",
+      "source_id",
+      "source_origin",
+      "confidence",
+      "observed_at",
+      "retrieved_at",
+      "generated_by",
+      "request_id",
+      "created_at",
+      "resolution_state"
+    ],
+    "organization_fact_current_v2": [
+      "organization_fact_id",
+      "organization_id",
+      "topic_id",
+      "fact_type",
+      "fact_key",
+      "fact_value",
+      "collection_state",
+      "layer",
+      "source_id",
+      "source_origin",
+      "confidence",
+      "observed_at",
+      "retrieved_at",
+      "generated_by",
+      "request_id",
+      "created_at",
+      "semantic_hash",
+      "creator_class",
+      "lifecycle_state",
+      "supersedes_fact_id",
+      "is_current"
+    ],
+    "organization_fact_history": [
+      "organization_fact_id",
+      "organization_id",
+      "topic_id",
+      "fact_type",
+      "fact_key",
+      "fact_value",
+      "collection_state",
+      "layer",
+      "source_id",
+      "source_origin",
+      "confidence",
+      "observed_at",
+      "retrieved_at",
+      "generated_by",
+      "request_id",
+      "created_at",
+      "semantic_hash",
+      "creator_class",
+      "lifecycle_state",
+      "supersedes_fact_id",
+      "is_current"
+    ],
+    "organization_read": [
+      "organization_id",
+      "name",
+      "slug",
+      "organization_category",
+      "category_type",
+      "category_note",
+      "category_needs_review",
+      "description",
+      "website",
+      "website_domain",
+      "city",
+      "state_code",
+      "region_code",
+      "country",
+      "latitude",
+      "longitude",
+      "is_multi_location",
+      "status",
+      "source_origin",
+      "source_id",
+      "merged_into_organization_id",
+      "alt_names",
+      "created_at",
+      "updated_at",
+      "primary_technical_focus",
+      "technical_approach",
+      "current_activities",
+      "funding_summary"
+    ],
+    "organization_template": [
+      "organization_id",
+      "name",
+      "alternate_names",
+      "website",
+      "organization_category",
+      "category_type",
+      "category_note",
+      "description",
+      "primary_sector",
+      "topic",
+      "additional_sectors",
+      "city",
+      "state_code",
+      "region",
+      "country",
+      "parent_name",
+      "parent_relationship",
+      "source_url",
+      "recent_activity",
+      "recent_activity_date",
+      "funding_signal",
+      "international_connection",
+      "primary_technical_focus",
+      "technical_approach",
+      "current_activities",
+      "funding_summary",
+      "ghus_notes",
+      "um6p_ocp_connection",
+      "topic_unit_and_work",
+      "institution_control",
+      "land_grant_designation",
+      "relevant_centers_programs",
+      "parent_and_center_type",
+      "topic_research_focus",
+      "active_recent_projects",
+      "main_funders",
+      "sponsoring_agency",
+      "formal_national_designation",
+      "topic_program_area",
+      "facility_type_operator",
+      "testing_demonstration_scope",
+      "current_project",
+      "clinical_research_focus",
+      "parent_academic_link",
+      "hospital_type_scale",
+      "current_initiative",
+      "ownership_and_size",
+      "topic_business_segment_product",
+      "mapped_geography_operations",
+      "development_stage",
+      "technology_and_problem",
+      "founding_year_location",
+      "funding_stage",
+      "pilot_customer_evidence",
+      "platform_type_operator",
+      "sector_focus",
+      "platform_offerings",
+      "scale_indicator",
+      "investor_type_headquarters",
+      "sector_stage_focus",
+      "geographic_focus",
+      "published_fund_size",
+      "topic_investment_thesis",
+      "jurisdiction_parent_agency",
+      "topic_mandate_program",
+      "visible_funding_programs",
+      "mission_sector_focus",
+      "relevant_program",
+      "programs_grant_themes",
+      "association_type",
+      "sector_geographic_scope",
+      "member_types",
+      "current_initiative_working_group",
+      "linked_members",
+      "network_scope_locations",
+      "status"
+    ]
+  },
+  "stand_ins": [
+    {
+      "name": "actor",
+      "definition": " SELECT organization_id AS actor_id,\n    name,\n    slug,\n    description,\n    website,\n    city,\n    country,\n    source_id,\n    confidence,\n    created_at,\n    updated_at,\n    merged_into_organization_id AS merged_into_actor_id,\n    organization_category AS actor_category,\n    alt_names,\n    category_type,\n    category_note,\n    category_needs_review,\n    website_domain,\n    state_code,\n    region_code,\n    latitude,\n    longitude,\n    is_multi_location,\n    source_origin,\n    ghus_notes,\n    status\n   FROM organization;",
+      "comment": "Stand-in for organization until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_category_definition",
+      "definition": " SELECT category_code,\n    display_name,\n    description,\n    sort_order,\n    active\n   FROM organization_category_definition;",
+      "comment": "Stand-in for organization_category_definition until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_category_migration_audit",
+      "definition": " SELECT organization_id AS actor_id,\n    migration_batch_id,\n    legacy_category,\n    legacy_category_raw,\n    mapped_category,\n    mapping_status,\n    prior_status,\n    prior_source_origin,\n    prior_category_note,\n    prior_category_needs_review,\n    migrated_at\n   FROM organization_category_migration_audit;",
+      "comment": "Stand-in for organization_category_migration_audit until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_category_type_definition",
+      "definition": " SELECT category_code,\n    type_code,\n    display_name,\n    sort_order,\n    active,\n    definition,\n    is_other\n   FROM organization_category_type_definition;",
+      "comment": "Stand-in for organization_category_type_definition until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_descendant_edge",
+      "definition": " SELECT root_organization_id AS root_actor_id,\n    descendant_organization_id AS descendant_actor_id,\n    depth,\n    path\n   FROM organization_descendant_edge;",
+      "comment": "Stand-in for organization_descendant_edge until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_descendants",
+      "definition": " SELECT root_organization_id AS root_actor_id,\n    descendant_organization_id AS descendant_actor_id,\n    depth,\n    path\n   FROM organization_descendants;",
+      "comment": "Stand-in for organization_descendants until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_evaluation",
+      "definition": " SELECT organization_evaluation_id AS actor_evaluation_id,\n    organization_id AS actor_id,\n    evaluation_context,\n    context_entity_type,\n    context_entity_id,\n    score,\n    evaluation_summary,\n    evidence_summary,\n    source_id,\n    verification_status,\n    confidence,\n    generated_by,\n    created_at,\n    updated_at\n   FROM organization_evaluation;",
+      "comment": "Stand-in for organization_evaluation until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_fact",
+      "definition": " SELECT organization_fact_id AS actor_fact_id,\n    organization_id AS actor_id,\n    topic_id,\n    fact_type,\n    fact_key,\n    fact_value,\n    collection_state,\n    layer,\n    source_id,\n    source_origin,\n    confidence,\n    observed_at,\n    retrieved_at,\n    generated_by,\n    request_id,\n    created_at,\n    semantic_hash,\n    creator_class,\n    lifecycle_state,\n    supersedes_fact_id\n   FROM organization_fact;",
+      "comment": "Stand-in for organization_fact until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_fact_current",
+      "definition": " SELECT organization_fact_id AS actor_fact_id,\n    organization_id AS actor_id,\n    topic_id,\n    fact_type,\n    fact_key,\n    fact_value,\n    collection_state,\n    layer,\n    source_id,\n    source_origin,\n    confidence,\n    observed_at,\n    retrieved_at,\n    generated_by,\n    request_id,\n    created_at,\n    resolution_state\n   FROM organization_fact_current;",
+      "comment": "Stand-in for organization_fact_current until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_fact_current_pointer",
+      "definition": " SELECT organization_id AS actor_id,\n    topic_id,\n    fact_key,\n    organization_fact_id AS actor_fact_id,\n    changed_at\n   FROM organization_fact_current_pointer;",
+      "comment": "Stand-in for organization_fact_current_pointer until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_fact_current_v2",
+      "definition": " SELECT organization_fact_id AS actor_fact_id,\n    organization_id AS actor_id,\n    topic_id,\n    fact_type,\n    fact_key,\n    fact_value,\n    collection_state,\n    layer,\n    source_id,\n    source_origin,\n    confidence,\n    observed_at,\n    retrieved_at,\n    generated_by,\n    request_id,\n    created_at,\n    semantic_hash,\n    creator_class,\n    lifecycle_state,\n    supersedes_fact_id,\n    is_current\n   FROM organization_fact_current_v2;",
+      "comment": "Stand-in for organization_fact_current_v2 until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_fact_history",
+      "definition": " SELECT organization_fact_id AS actor_fact_id,\n    organization_id AS actor_id,\n    topic_id,\n    fact_type,\n    fact_key,\n    fact_value,\n    collection_state,\n    layer,\n    source_id,\n    source_origin,\n    confidence,\n    observed_at,\n    retrieved_at,\n    generated_by,\n    request_id,\n    created_at,\n    semantic_hash,\n    creator_class,\n    lifecycle_state,\n    supersedes_fact_id,\n    is_current\n   FROM organization_fact_history;",
+      "comment": "Stand-in for organization_fact_history until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_location",
+      "definition": " SELECT organization_location_id AS actor_location_id,\n    organization_id AS actor_id,\n    location_name,\n    country,\n    state_code,\n    city,\n    region_code,\n    latitude,\n    longitude,\n    is_primary,\n    source_id,\n    created_at\n   FROM organization_location;",
+      "comment": "Stand-in for organization_location until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_merge_log",
+      "definition": " SELECT merge_id,\n    winner_organization_id AS winner_actor_id,\n    loser_organization_id AS loser_actor_id,\n    score,\n    method,\n    decided_by,\n    decided_at,\n    pre_merge_state,\n    status,\n    reverted_at,\n    created_at\n   FROM organization_merge_log;",
+      "comment": "Stand-in for organization_merge_log until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_person",
+      "definition": " SELECT organization_id AS actor_id,\n    person_id,\n    role,\n    is_current,\n    start_date,\n    end_date\n   FROM organization_person;",
+      "comment": "Stand-in for organization_person until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_ranking",
+      "definition": " SELECT organization_ranking_id AS actor_ranking_id,\n    organization_id AS actor_id,\n    context_organization_id AS context_actor_id,\n    publisher,\n    ranking_name,\n    ranking_year,\n    subject,\n    ranked_entity_name,\n    position_text,\n    source_id,\n    created_at\n   FROM organization_ranking;",
+      "comment": "Stand-in for organization_ranking until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_read",
+      "definition": " SELECT organization_id AS actor_id,\n    name,\n    slug,\n    organization_category AS actor_category,\n    category_type,\n    category_note,\n    category_needs_review,\n    description,\n    website,\n    website_domain,\n    city,\n    state_code,\n    region_code,\n    country,\n    latitude,\n    longitude,\n    is_multi_location,\n    status,\n    source_origin,\n    source_id,\n    merged_into_organization_id AS merged_into_actor_id,\n    alt_names,\n    created_at,\n    updated_at,\n    primary_technical_focus,\n    technical_approach,\n    current_activities,\n    funding_summary\n   FROM organization_read;",
+      "comment": "Stand-in for organization_read until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_relevance",
+      "definition": " SELECT organization_relevance_id AS actor_relevance_id,\n    organization_id AS actor_id,\n    challenge_id,\n    relevance_score,\n    maturity_risk,\n    collaboration_orientation,\n    why_relevant,\n    current_evidence,\n    additional_validation_needed,\n    source_id,\n    created_at,\n    challenge_relevance_narrative,\n    source_links\n   FROM organization_relevance;",
+      "comment": "Stand-in for organization_relevance until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_sector",
+      "definition": " SELECT organization_id AS actor_id,\n    sector_id,\n    confidence,\n    source_id,\n    match_strength,\n    match_reason,\n    is_primary,\n    source_origin,\n    created_at\n   FROM organization_sector;",
+      "comment": "Stand-in for organization_sector until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_strategic_connection_check",
+      "definition": " SELECT connection_check_id,\n    organization_id AS actor_id,\n    topic_id,\n    layer,\n    state,\n    strategic_entity_id,\n    connection_kind,\n    source_id,\n    fetched_document_ids,\n    created_at\n   FROM organization_strategic_connection_check;",
+      "comment": "Stand-in for organization_strategic_connection_check until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_topic",
+      "definition": " SELECT organization_id AS actor_id,\n    topic_id,\n    match_strength,\n    match_reason,\n    source_id,\n    created_at\n   FROM organization_topic;",
+      "comment": "Stand-in for organization_topic until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_update_subscription",
+      "definition": " SELECT organization_update_subscription_id AS actor_update_subscription_id,\n    organization_ids AS actor_ids,\n    sector_codes,\n    topic_ids,\n    country,\n    state_code,\n    city,\n    region_code,\n    start_date,\n    end_date,\n    cadence,\n    requested_by,\n    requested_via,\n    origin_run_id,\n    status,\n    last_run_at,\n    next_due_at,\n    created_at,\n    updated_at,\n    title,\n    focus_terms,\n    max_new_organizations_per_run AS max_new_actors_per_run,\n    update_options,\n    max_usd_per_run,\n    discovery_entity,\n    discovery_options\n   FROM organization_update_subscription;",
+      "comment": "Stand-in for organization_update_subscription until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_update_subscription_run",
+      "definition": " SELECT organization_update_subscription_id AS actor_update_subscription_id,\n    collection_run_id,\n    dry_run,\n    created_at\n   FROM organization_update_subscription_run;",
+      "comment": "Stand-in for organization_update_subscription_run until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "actor_verification_event",
+      "definition": " SELECT organization_verification_event_id AS actor_verification_event_id,\n    organization_id AS actor_id,\n    topic_id,\n    decision,\n    decided_by,\n    decided_at,\n    reason,\n    rejection_reason,\n    source_id,\n    decision_origin,\n    migration_batch_id,\n    recorded_at\n   FROM organization_verification_event;",
+      "comment": "Stand-in for organization_verification_event until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "hub_actor",
+      "definition": " SELECT hub_id,\n    organization_id AS actor_id,\n    relationship_type,\n    is_primary,\n    created_at,\n    topic_id,\n    distance_miles,\n    assignment_outcome,\n    outside_radius,\n    overlap_flag,\n    source_id\n   FROM hub_organization;",
+      "comment": "Stand-in for hub_organization until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    },
+    {
+      "name": "hub_actor_removed",
+      "definition": " SELECT hub_id,\n    organization_id AS actor_id,\n    membership,\n    reason,\n    decided_by,\n    removed_at\n   FROM hub_organization_removed;",
+      "comment": "Stand-in for hub_organization_removed until the code uses the new name (migration 720).",
+      "options": "security_invoker=true"
+    }
+  ],
+  "grants": [],
+  "functions": {
+    "ghus_guard_organization_status": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_guard_organization_status()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n  IF NEW.status IN ('verified','rejected')\n     AND COALESCE(current_setting('ghus.verification_projection',true),'off') <> 'on'\n  THEN\n    RAISE EXCEPTION 'verified/rejected status requires organization_verification_event';\n  END IF;\n  RETURN NEW;\nEND;\n$function$\n",
+      "md5": "79ee4a866301ac87769c082b71834614"
+    },
+    "ghus_guard_ranking_is_university": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_guard_ranking_is_university()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE category text;\nBEGIN\n    SELECT a.organization_category INTO category FROM organization a\n     WHERE a.organization_id = NEW.organization_id;\n    IF category IS DISTINCT FROM 'university_academic' THEN\n        RAISE EXCEPTION\n            'rankings are recorded for university organizations only; organization % is %',\n            NEW.organization_id, COALESCE(category, 'unclassified');\n    END IF;\n    RETURN NEW;\nEND $function$\n",
+      "md5": "6fdd630187f7bffbb46b5bc8574072a7"
+    },
+    "ghus_guard_subscription_run_append_only": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_guard_subscription_run_append_only()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    IF TG_OP = 'DELETE' AND compass.purge_door_open() THEN\n        RETURN OLD;\n    END IF;\n    RAISE EXCEPTION 'organization_update_subscription_run is append-only: % is not permitted', TG_OP;\nEND $function$\n",
+      "md5": "575a4cdc05eb3a2995807307762a5329"
+    },
+    "ghus_organization_details_on_pointer": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_organization_details_on_pointer()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    PERFORM ghus_organization_details_refresh(NEW.organization_id, NEW.fact_key);\n    RETURN NULL;\nEND $function$\n",
+      "md5": "505ffe75c4ede1521ddf7d0309a91839"
+    },
+    "ghus_organization_details_on_topicless_fact": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_organization_details_on_topicless_fact()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nBEGIN\n    PERFORM ghus_organization_details_refresh(NEW.organization_id, NEW.fact_key);\n    RETURN NULL;\nEND $function$\n",
+      "md5": "505ffe75c4ede1521ddf7d0309a91839"
+    },
+    "ghus_organization_details_refresh": {
+      "args": "p_organization uuid, p_key text",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_organization_details_refresh(p_organization uuid, p_key text)\n RETURNS void\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    v_value jsonb;\nBEGIN\n    -- 790: only the fact columns moved from organization_details are written here.\n    IF NOT p_key = ANY (ARRAY[\n            'primary_technical_focus',\n            'technical_approach',\n            'current_activities',\n            'funding_summary',\n            'location',\n            'why_matched',\n            'recent_activity',\n            'funding_signal',\n            'international_connection',\n            'um6p_ocp_connection',\n            'current_initiative',\n            'current_initiative_working_group',\n            'current_project',\n            'pilot_customer_evidence',\n            'relevant_program',\n            'topic_unit_and_work',\n            'institution_control',\n            'land_grant_designation',\n            'rankings',\n            'relevant_centers_programs',\n            'parent_and_center_type',\n            'topic_research_focus',\n            'active_recent_projects',\n            'main_funders',\n            'sponsoring_agency',\n            'formal_national_designation',\n            'topic_program_area',\n            'facility_type_operator',\n            'testing_demonstration_scope',\n            'clinical_research_focus',\n            'parent_academic_link',\n            'hospital_type_scale',\n            'ownership_and_size',\n            'topic_business_segment_product',\n            'mapped_geography_operations',\n            'technology_and_problem',\n            'founding_year_location',\n            'funding_stage',\n            'platform_type_operator',\n            'sector_focus',\n            'platform_offerings',\n            'scale_indicator',\n            'investor_type_headquarters',\n            'sector_stage_focus',\n            'geographic_focus',\n            'published_fund_size',\n            'topic_investment_thesis',\n            'jurisdiction_parent_agency',\n            'topic_mandate_program',\n            'visible_funding_programs',\n            'mission_sector_focus',\n            'programs_grant_themes',\n            'association_type',\n            'sector_geographic_scope',\n            'member_types',\n            'linked_members',\n            'network_scope_locations',\n            'official_identity',\n            'parent_connection',\n            'sector_topic',\n            'hub_assignment',\n            'organization_category_type']) THEN\n        RETURN;\n    END IF;\n    SELECT CASE WHEN f.collection_state = 'found' THEN f.fact_value\n                ELSE to_jsonb(f.collection_state) END\n      INTO v_value\n      FROM organization_fact f\n     WHERE f.organization_id = p_organization AND f.fact_key = p_key\n       AND (EXISTS (SELECT 1 FROM organization_fact_current_pointer p\n                     WHERE p.organization_fact_id = f.organization_fact_id)\n            OR (f.topic_id IS NULL AND EXISTS (\n                    SELECT 1 FROM organization_fact_current c\n                     WHERE c.organization_fact_id = f.organization_fact_id\n                       AND c.resolution_state = 'accepted')))\n     ORDER BY (f.collection_state = 'found') DESC, f.retrieved_at DESC NULLS LAST,\n              f.created_at DESC\n     LIMIT 1;\n    IF NOT FOUND THEN\n        RETURN;\n    END IF;\n    EXECUTE format('UPDATE public.organization SET %I = $1 WHERE organization_id = $2', p_key)\n    USING v_value, p_organization;\nEND $function$\n",
+      "md5": "42ed8b4a7b5e6350fb380ca6a2bd412d"
+    },
+    "ghus_prevent_organization_family_cycle": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_prevent_organization_family_cycle()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE cycle_found boolean;\nBEGIN\n    IF NEW.relationship_type NOT IN ('unit_of','operated_by') THEN\n        RETURN NEW;\n    END IF;\n    WITH RECURSIVE ancestors(organization_id,path) AS (\n        SELECT NEW.object_id,ARRAY[NEW.object_id]\n        UNION ALL\n        SELECT edge.object_id,ancestors.path || edge.object_id\n        FROM ancestors\n        JOIN entity_edge edge\n          ON edge.subject_type='actor' AND edge.object_type='actor'\n         AND edge.subject_id=ancestors.organization_id\n         AND edge.relationship_type IN ('unit_of','operated_by')\n        WHERE NOT edge.object_id=ANY(ancestors.path)\n    )\n    SELECT EXISTS(SELECT 1 FROM ancestors WHERE organization_id=NEW.subject_id)\n    INTO cycle_found;\n    IF cycle_found THEN\n        RAISE EXCEPTION 'organization family cycle refused for % -> %',NEW.subject_id,NEW.object_id;\n    END IF;\n    RETURN NEW;\nEND $function$\n",
+      "md5": "d26dc6562cd14ebdc4ee8bf921cf95ee"
+    },
+    "ghus_project_organization_verification_status": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_project_organization_verification_status()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\nBEGIN\n    PERFORM set_config('ghus.verification_projection','on',true);\n    UPDATE organization SET status=NEW.decision,updated_at=now() WHERE organization_id=NEW.organization_id;\n    PERFORM set_config('ghus.verification_projection','off',true);\n    RETURN NEW;\nEND;\n$function$\n",
+      "md5": "6937f673c34fd81e45219e89e7bc75c7"
+    },
+    "ghus_validate_entity_edge": {
+      "args": "",
+      "def": "CREATE OR REPLACE FUNCTION public.ghus_validate_entity_edge()\n RETURNS trigger\n LANGUAGE plpgsql\nAS $function$\nDECLARE\n    allowed_subjects text[];\n    allowed_objects text[];\n    endpoint_exists boolean;\nBEGIN\n    SELECT subject_types,object_types INTO allowed_subjects,allowed_objects\n    FROM entity_edge_type_definition\n    WHERE relationship_type=NEW.relationship_type;\n    IF allowed_subjects IS NULL\n       OR NOT NEW.subject_type=ANY(allowed_subjects)\n       OR NOT NEW.object_type=ANY(allowed_objects) THEN\n        RAISE EXCEPTION 'invalid endpoint pair % -> % for %',\n            NEW.subject_type,NEW.object_type,NEW.relationship_type;\n    END IF;\n\n    IF NEW.subject_type='actor' THEN\n        SELECT EXISTS(SELECT 1 FROM organization WHERE organization_id=NEW.subject_id) INTO endpoint_exists;\n    ELSIF NEW.subject_type='person' THEN\n        SELECT EXISTS(SELECT 1 FROM person WHERE person_id=NEW.subject_id) INTO endpoint_exists;\n    ELSIF NEW.subject_type='event' THEN\n        SELECT EXISTS(SELECT 1 FROM event WHERE event_id=NEW.subject_id) INTO endpoint_exists;\n    ELSE\n        SELECT EXISTS(SELECT 1 FROM strategic_entity WHERE strategic_entity_id=NEW.subject_id) INTO endpoint_exists;\n    END IF;\n    IF NOT endpoint_exists THEN\n        RAISE EXCEPTION 'missing % subject endpoint %',NEW.subject_type,NEW.subject_id;\n    END IF;\n\n    IF NEW.object_type='actor' THEN\n        SELECT EXISTS(SELECT 1 FROM organization WHERE organization_id=NEW.object_id) INTO endpoint_exists;\n    ELSIF NEW.object_type='person' THEN\n        SELECT EXISTS(SELECT 1 FROM person WHERE person_id=NEW.object_id) INTO endpoint_exists;\n    ELSIF NEW.object_type='event' THEN\n        SELECT EXISTS(SELECT 1 FROM event WHERE event_id=NEW.object_id) INTO endpoint_exists;\n    ELSE\n        SELECT EXISTS(SELECT 1 FROM strategic_entity WHERE strategic_entity_id=NEW.object_id) INTO endpoint_exists;\n    END IF;\n    IF NOT endpoint_exists THEN\n        RAISE EXCEPTION 'missing % object endpoint %',NEW.object_type,NEW.object_id;\n    END IF;\n    RETURN NEW;\nEND $function$\n",
+      "md5": "d1594c2919f6088793ab4c643a3874f2"
+    }
+  },
+  "last_ledger": "790",
+  "sha256": "829d46a5f25c5cf0168ede3dab5fda876f10caed5c3e17e8848239cceeab0e55"
+}

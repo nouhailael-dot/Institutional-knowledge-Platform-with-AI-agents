@@ -51,15 +51,17 @@ def conn():
             raw = connection.connection.driver_connection     # SQL run as written (no placeholders)
             if not connection.execute(text("SELECT to_regclass('compass.user_profile')")).scalar():
                 raw.execute(_sql_body("700_compass_accounts.sql"))
-            savepoint = connection.begin_nested()
-            try:
-                raw.execute(_sql_body("710_record_deletion_retention.sql"))
-            except Exception as exc:  # noqa: BLE001
-                savepoint.rollback()
-                if "from production as reviewed" in str(exc):
-                    pytest.skip("710 targets production's schema: set V2_TEST_DATABASE_URL to a restored "
-                                "copy of the latest Supabase backup (e.g. ghus_phase7_prodcopy_test)")
-                raise
+            # A copy restored from a recent backup already has 710: test it as it is.
+            if not connection.execute(text("SELECT to_regclass('compass.deleted_record')")).scalar():
+                savepoint = connection.begin_nested()
+                try:
+                    raw.execute(_sql_body("710_record_deletion_retention.sql"))
+                except Exception as exc:  # noqa: BLE001
+                    savepoint.rollback()
+                    if "from production as reviewed" in str(exc):
+                        pytest.skip("710 targets production's schema: set V2_TEST_DATABASE_URL to a restored "
+                                    "copy of the latest Supabase backup (e.g. ghus_phase7_prodcopy_test)")
+                    raise
             yield connection
         finally:
             outer.rollback()
@@ -236,7 +238,10 @@ def test_a_purged_person_leaves_no_personal_data(conn):
 
 def test_an_unplanned_link_blocks_the_purge_instead_of_guessing(conn):
     actor, by = _busy_actor(conn), _person(conn)
-    conn.exec_driver_sql("CREATE TABLE public.tmp_new_link (actor_id uuid REFERENCES actor(actor_id))")
+    # Between 720 and 800, actor was a stand-in view over organization: keys point at the table.
+    is_table = conn.execute(text("SELECT relkind = 'r' FROM pg_class WHERE oid = to_regclass('public.actor')")).scalar()
+    target = "actor(actor_id)" if is_table else "organization(organization_id)"
+    conn.exec_driver_sql(f"CREATE TABLE public.tmp_new_link (actor_id uuid REFERENCES {target})")
     deletion = delete_record(conn, entity_type="actor", entity_id=actor, deleted_by=by, live=True)["deletion_id"]
     _expire(conn, deletion)
     out = purge_record(conn, deletion_id=deletion, live=True)

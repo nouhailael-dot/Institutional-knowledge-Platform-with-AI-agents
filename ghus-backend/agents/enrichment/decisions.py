@@ -714,7 +714,7 @@ PURGE_POLICY = {
         ("actor", "merged_into_actor_id", "block"),             # duplicates merged into it
         ("actor_fact_current_pointer", "actor_id", "delete"),
         ("actor_fact", "actor_id", "delete"),
-        ("actor_details", "actor_id", "delete"),                 # 620/621: one row per organization
+        ("actor_details", "actor_id", "delete"),                 # 620/621 (merged into the row itself by 790)
         ("actor_capability_fact", "actor_id", "delete"),
         ("actor_category_migration_audit", "actor_id", "delete"),
         ("actor_evaluation", "actor_id", "delete"),
@@ -870,12 +870,45 @@ def restore_record(session, *, deletion_id: str, restored_by: str, live: bool = 
             **{k: row[k] for k in ("entity_type", "entity_id", "name")}}
 
 
+def _base_of(session, name: str) -> str:
+    """The table a name stands for. Since migration 720 most actor_* names are stand-in
+    views over one organization_* table, and foreign keys live on that table; a real
+    table (or a name that is not there) stands for itself."""
+    base = session.execute(text("""
+        SELECT CASE WHEN c.relkind = 'v' THEN (
+                   SELECT min(b.relname) FROM pg_rewrite r
+                     JOIN pg_depend d ON d.objid = r.oid AND d.classid = 'pg_rewrite'::regclass
+                     JOIN pg_class b ON b.oid = d.refobjid AND b.relkind IN ('r', 'p')
+                    WHERE r.ev_class = c.oid
+                   HAVING count(DISTINCT b.oid) = 1)
+               ELSE c.relname END
+          FROM pg_class c WHERE c.oid = to_regclass(:t)"""), {"t": f"public.{name}"}).scalar()
+    return base or name
+
+
+def _policy_link(session, table: str, columns: str) -> tuple[str, str]:
+    """A foreign key's table and columns in the names this policy uses: an
+    organization_* table is read as its actor_* stand-in, and its columns likewise,
+    when that stand-in exists. Anything else keeps its own name (and, when the
+    policy does not list it, blocks the purge)."""
+    stand_in = table.replace("organization", "actor")
+    if stand_in == table or _base_of(session, stand_in) != table:
+        return table, columns
+    names = {r[0] for r in session.execute(text(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = :t"),
+        {"t": stand_in}).all()}
+    renamed = [c.replace("organization", "actor") for c in columns.split(",")]
+    return stand_in, ",".join(r if r in names else c for r, c in zip(renamed, columns.split(",")))
+
+
 def _unplanned_links(session, entity_type: str) -> list[str]:
     """Foreign keys into the record or its deleted rows that the policy does not cover."""
     table = DELETABLE[entity_type][0]
     covered = {(t, c) for t, c, _ in PURGE_POLICY[entity_type]} | PURGE_SAME_ROWS
     children = {(parent, (t, c)) for (parent, _), rows in PURGE_CHILDREN.items() for t, c, _ in rows}
     deleted_tables = {t for t, _, a in PURGE_POLICY[entity_type] if a == "delete"}
+    # Keys live on the real tables; read them back in the policy's own names.
+    policy_name = {_base_of(session, t): t for t in [*deleted_tables, table]}
     found = session.execute(text("""
         SELECT ref.relname, src.relname,
                (SELECT string_agg(a.attname, ',' ORDER BY k.ord) FROM unnest(c.conkey) WITH ORDINALITY k(n, ord)
@@ -883,7 +916,8 @@ def _unplanned_links(session, entity_type: str) -> list[str]:
           FROM pg_constraint c JOIN pg_class src ON src.oid = c.conrelid JOIN pg_class ref ON ref.oid = c.confrelid
           JOIN pg_namespace n ON n.oid = ref.relnamespace
          WHERE c.contype = 'f' AND n.nspname = 'public' AND ref.relname = ANY(:tables)
-    """), {"tables": [table, *deleted_tables]}).all()
+    """), {"tables": list(policy_name)}).all()
+    found = [(policy_name[ref], *_policy_link(session, src, cols)) for ref, src, cols in found]
     missing = []
     for ref, src, cols in found:
         if ref == table and (src, cols) not in covered:
