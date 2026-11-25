@@ -60,7 +60,10 @@ applied; its ledger checksum matches the committed 800):
   7 people load, an organization profile opens, and the deletion policy finds no uncovered
   link for organizations, people, events or hubs;
 - rollback: the schema is identical to before 810 except the grants, which the local copy
-  never had (Supabase has them, and the rollback restores them).
+  never had (Supabase has them, and the rollback restores them), and the archive's COPY
+  sections bring back all 21,199 rows (repeated after 820's rehearsal, same result).
+
+Applied to Supabase on 25 Nov 2026 at 14:33 UTC; verify 6 of 6 true.
 
 ## Apply sequence (Supabase SQL editor; one script per run; a quiet window)
 
