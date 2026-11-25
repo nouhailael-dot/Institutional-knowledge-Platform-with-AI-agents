@@ -363,6 +363,16 @@
   .date-input-pick:hover:not(:disabled){color:var(--accent-ink);border-color:var(--accent)}
   .date-input-pick:hover{background:var(--surface-2)}
   .date-input-pick:disabled{opacity:.5;cursor:default}
+  /* Directory filters (25 Nov 2026): a date box looks like the boxes beside it - the
+     same border, height and text, with the calendar icon inside it on the right. */
+  .filters .date-input>input[type="text"]{border:1px solid var(--line-strong);border-radius:6px;
+    padding:10px 42px 10px 12px;font-size:14px;color:var(--ink);background:var(--surface);
+    min-height:40.5px;box-sizing:border-box;width:100%}
+  .filters .date-input>input[type="text"]:focus{outline:none;border-color:var(--accent);
+    box-shadow:0 0 0 4px var(--accent-soft)}
+  .filters .date-input-pick{position:absolute;top:1px;right:1px;bottom:1px;min-width:38px;
+    border:0;border-radius:0 5px 5px 0;background:transparent}
+  .filters .date-input-pick:hover:not(:disabled){background:var(--surface-2)}
   .date-cal{position:absolute;top:calc(100% + 6px);right:0;z-index:60;width:272px;padding:10px;background:var(--surface);border:1px solid var(--line-strong);border-radius:12px;box-shadow:0 12px 32px rgba(20,20,20,.16)}
   .date-cal.up{top:auto;bottom:calc(100% + 6px)}
   .date-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
@@ -1583,7 +1593,7 @@ const EDIT_GROUPS={
       ["funding_summary","Funding","long"],["constraints_summary","Constraints","long"]]],
   ],
   event:[
-    ["Identity",[["name","Name"],["event_type","Type"],["organizer","Organizer","readonly"],["website","Website"]]],
+    ["Identity",[["name","Name"],["organizer","Organizer","readonly"],["website","Website"]]],
     ["When and where",[["start_date","Start date","date"],["end_date","End date","date"],
       ["recurring_pattern","Frequency","select","frequencies"],["location","Location"],["access_type","Access"]]],
     ["What it covers",[["description","Description","long"],["thematic_focus","Topic","long"],
@@ -1878,7 +1888,7 @@ function Events({focus,visit}){
   const eventState=e=>stateInText(e.location);
   const eventRegion=e=>regionOfState(eventState(e));
   if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
-    subtitle=${[capFirst(sel.event_type),sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
+    subtitle=${[sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
     glance=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],["When",when(sel)==="No date"?null:when(sel)],
       ["Location",sel.location],["Frequency",sel.recurring_pattern],["Website",link(sel.website)]]}
     sections=${[
@@ -1897,7 +1907,6 @@ function Events({focus,visit}){
     filters=${[
       {key:"from",label:"From",kind:"date",test:(e,v)=>!!e.start_date&&(e.end_date||e.start_date).slice(0,10)>=v},
       {key:"to",label:"To",kind:"date",test:(e,v)=>!!e.start_date&&e.start_date.slice(0,10)<=v},
-      {key:"type",label:"Type",options:data.event_types||[],test:(e,v)=>e.event_type===v},
       // A list starting on All, like every other filter (GHUS, 11 Nov 2026).
       {key:"location",label:"City",options:vals=>distinct(events.filter(e=>!vals.state||eventState(e)===vals.state).map(eventCity)),
         test:(e,v)=>eventCity(e)===v},
@@ -1908,7 +1917,6 @@ function Events({focus,visit}){
       {key:"frequency",label:"Frequency",options:distinct(events.map(e=>e.recurring_pattern)),test:(e,v)=>e.recurring_pattern===v},
     ]}
     columns=${[
-      {label:"Type",text:e=>e.event_type||""},
       {label:"Dates",text:e=>e.start_date?eventDates(e.start_date,e.end_date):"",
         cell:e=>!e.start_date?dash(""):html`${eventDates(e.start_date,e.end_date)}${when(e)==="Past"?html` <span class="chip slate">past</span>`:""}`},
       {label:"Location",text:e=>e.location||""},
