@@ -26,6 +26,8 @@ from pathlib import Path
 
 from sqlalchemy import text
 
+from agents.common.topics import topic_rows
+
 from agents.collection import subscription_store as store
 from agents.collection.notify import is_email
 from agents.collection.people_brief import BriefError, apply_brief
@@ -201,7 +203,8 @@ def _db_cadences(session) -> list[str]:
 def _options(session) -> dict:
     topics = [
         dict(row) for row in session.execute(text(
-            "SELECT topic_id::text AS topic_id, code, name FROM topic WHERE active ORDER BY name"
+            f"SELECT topic_id::text AS topic_id, code, name FROM {topic_rows(session)} t "
+            "WHERE active ORDER BY name"
         )).mappings()
     ]
     return {

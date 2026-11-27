@@ -5,6 +5,7 @@ import csv
 import json
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -298,12 +299,8 @@ def test_unmatched_institution_creates_stub_actor_and_person_atomically():
     actor_params = session.statements[actor_index][1]
     assert actor_params["name"] == "Example Institute of Water"
     assert actor_params["verification_status"] == "needs_review"
-    profile_params = next(
-        params
-        for statement, params in session.statements
-        if "INSERT INTO person_discovery_profile" in statement
-    )
-    assert profile_params["needs_actor_enrichment"] is True
+    # 820: person_discovery_profile is gone; the profile is kept on person itself.
+    assert not any("person_discovery_profile" in statement for statement in sql)
     assert session.transaction.committed is True
 
 
@@ -391,7 +388,7 @@ def test_person_create_dry_run_executes_full_transaction_then_rolls_back():
     assert any("INSERT INTO source" in statement for statement in sql)
     assert any("INSERT INTO person " in statement for statement in sql)
     assert any("INSERT INTO actor_person" in statement for statement in sql)
-    assert any("INSERT INTO person_discovery_profile" in statement for statement in sql)
+    assert not any("person_discovery_profile" in statement for statement in sql)
     assert any("INSERT INTO index_dirty" in statement for statement in sql)
     assert session.transaction.rolled_back is True
     assert session.transaction.committed is False
@@ -407,15 +404,25 @@ def test_person_create_dry_run_executes_full_transaction_then_rolls_back():
     assert "orcid" not in person_params
     assert "linkedin_url" not in person_params
 
-    profile_params = next(
-        params
-        for statement, params in session.statements
-        if "INSERT INTO person_discovery_profile" in statement
-    )
-    assert profile_params["public_profile_url"] == "https://example.edu/amina"
-    assert profile_params["research_area"] == "Membrane desalination and water treatment"
-    assert profile_params["source_url"] == "https://example.edu/amina"
-    assert profile_params["source_id"] == person_params["source_id"]
+
+
+def test_the_profile_page_and_research_area_fill_only_empty_person_columns():
+    from agents.discovery.promote import _record_person_profile
+
+    session = Session()
+    session.info = {"ghus_person_columns": frozenset({"research_area", "public_profile_url"})}
+    staged = SimpleNamespace(normalized_payload={
+        "research_area": "Membrane desalination", "public_profile_url": "https://example.edu/amina"})
+    _record_person_profile(session, staged=staged, person_id="00000000-0000-0000-0000-000000000001")
+    (statement, params), = session.statements
+    assert statement.startswith("UPDATE person SET")
+    assert "research_area = COALESCE(NULLIF(research_area, ''), :research_area)" in statement
+    assert params["public_profile_url"] == "https://example.edu/amina"
+
+    before_820 = Session()
+    before_820.info = {"ghus_person_columns": frozenset({"full_name"})}
+    _record_person_profile(before_820, staged=staged, person_id="00000000-0000-0000-0000-000000000001")
+    assert before_820.statements == []
 
 
 def test_person_create_live_capability_commits_only_on_fake_session():

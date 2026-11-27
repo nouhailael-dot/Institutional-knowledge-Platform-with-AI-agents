@@ -293,6 +293,16 @@ def _event_name(payload: dict[str, Any], fallback: Any) -> None:
         payload["name"] = payload.get("title") or fallback
 
 
+def _topic_source(columns: dict) -> str | None:
+    """Where topic rows are read from: the topic table, or after 820 the thematic sectors."""
+    if {"topic_id", "code"} <= set(columns.get("topic", set())):
+        return "topic"
+    if {"sector_id", "code", "is_thematic"} <= set(columns.get("sector", set())):
+        from src.topics import SECTOR_TOPICS
+        return SECTOR_TOPICS
+    return None
+
+
 class PostgresReviewSource:
     """Fetch human-review work from the original discovery database."""
 
@@ -529,11 +539,12 @@ class PostgresReviewSource:
         topics: dict[str, dict[str, Any]] = {}
         by_code: dict[str, dict[str, Any]] = {}
         topic_columns = columns.get("topic", set())
-        if {"topic_id", "code"} <= topic_columns:
-            active = "active" if "active" in topic_columns else "true AS active"
-            name = "name" if "name" in topic_columns else "code AS name"
+        source = _topic_source(columns)
+        if source:
+            active = "active" if "active" in topic_columns or source != "topic" else "true AS active"
+            name = "name" if "name" in topic_columns or source != "topic" else "code AS name"
             for row in db.execute(
-                f"SELECT topic_id::text AS topic_id, code, {name}, {active} FROM topic"
+                f"SELECT topic_id::text AS topic_id, code, {name}, {active} FROM {source} t"
             ).fetchall():
                 topics[row["topic_id"]] = dict(row)
                 by_code[str(row["code"] or "").upper()] = dict(row)
@@ -1412,8 +1423,8 @@ class PostgresReviewSource:
             "  AND ri.created_at BETWEEN ur.started_at AND COALESCE(ur.finished_at, now()) "
             "  ORDER BY ur.started_at DESC LIMIT 1)) AS update_run_id, "
             if all_columns.get("collection_run") else "NULL::text AS update_run_id, ")
-        topic_code = ("(SELECT t.code FROM topic t WHERE t.topic_id=ri.topic_id) AS topic_code, "
-                      if "code" in all_columns.get("topic", set()) else "NULL::text AS topic_code, ")
+        topic_code = (f"(SELECT t.code FROM {_topic_source(all_columns)} t WHERE t.topic_id=ri.topic_id) "
+                      "AS topic_code, " if _topic_source(all_columns) else "NULL::text AS topic_code, ")
         return db.execute(
             "SELECT ri.review_item_id::text AS review_item_id, ri.review_kind, "
             "ri.entity_type, ri.entity_id::text AS entity_id, "
@@ -1644,9 +1655,10 @@ class PostgresReviewSource:
         if {"hub_actor", "hub_sector", "sector"} <= set(columns):
             routes.append("SELECT s.code FROM hub_actor ha JOIN hub_sector hs ON hs.hub_id = ha.hub_id "
                           "JOIN sector s ON s.sector_id = hs.sector_id WHERE ha.actor_id = a.actor_id")
-        if "hub_actor" in columns and "topic" in columns and "topic_id" in columns.get("hub", set()):
+        if "hub_actor" in columns and _topic_source(columns) and "topic_id" in columns.get("hub", set()):
             routes.append("SELECT t.code FROM hub_actor ha JOIN hub h ON h.hub_id = ha.hub_id "
-                          "JOIN topic t ON t.topic_id = h.topic_id WHERE ha.actor_id = a.actor_id")
+                          f"JOIN {_topic_source(columns)} t ON t.topic_id = h.topic_id "
+                          "WHERE ha.actor_id = a.actor_id")
         if not routes:
             return "NULL::text[]"
         return ("(SELECT array_agg(DISTINCT code ORDER BY code) FROM ("
@@ -1899,13 +1911,10 @@ class PostgresReviewSource:
                            if "active" in (self._columns(db).get("sector") or set()) else "")
             for row in db.execute(
                 "SELECT a.actor_id::text AS actor_id, s.code AS sector_code, "
-                "COALESCE(al.latitude, a.latitude) AS latitude, "
-                "COALESCE(al.longitude, a.longitude) AS longitude "
+                "a.latitude AS latitude, a.longitude AS longitude "
                 "FROM actor a JOIN actor_sector asec ON asec.actor_id = a.actor_id "
                 f"JOIN sector s ON s.sector_id = asec.sector_id{only_active} "
-                "LEFT JOIN LATERAL (SELECT latitude, longitude FROM actor_location "
-                "WHERE actor_id = a.actor_id ORDER BY is_primary DESC, created_at LIMIT 1) al "
-                "ON TRUE ORDER BY a.actor_id, s.code"
+                "ORDER BY a.actor_id, s.code"
             ).fetchall():
                 actor_id = str(row["actor_id"])
                 latitude, longitude = _coordinate(row["latitude"]), _coordinate(row["longitude"])

@@ -188,8 +188,7 @@ export function infoBoxes(row, recordType, vocab, fields = []) {
       {title: "Location", items: [item("city", p.city), item("state_code", p.state_code),
         item("region", p.state_code ? vocabLabel(vocab, "regions", regionOf(vocab, p.state_code))
           : ""), item("country", p.country)]},
-      {title: "Sector and topic", items: [item("primary_sector", sectors(p.sector_codes)),
-        item("topic", vocabLabel(vocab, "topics", p.topic_code))]},
+      {title: "Sector", items: [item("primary_sector", sectors(p.sector_codes))]},
       {title: "Parent", items: [item("parent_name", p.parent_name),
         item("parent_relationship", vocabLabel(vocab, "parent_links", p.parent_relationship))]},
       {title: "Source", items: [item("source_url", p.source_url)]},
@@ -202,8 +201,7 @@ export function infoBoxes(row, recordType, vocab, fields = []) {
       {title: "Profile", items: [item("bio", p.bio), item("bio_url", p.bio_url),
         item("linkedin_url", p.linkedin_url), item("expertise", (p.expertise || []).join(", "))]},
       {title: "Location and sector", items: [item("city", p.work_location),
-        item("sectors", sectors(p.sector_codes)),
-        item("topic", vocabLabel(vocab, "topics", p.topic_code))]},
+        item("sectors", sectors(p.sector_codes))]},
       {title: "Source", items: [item("source_url", p.source_url)]},
     ];
   }
@@ -217,7 +215,7 @@ export function infoBoxes(row, recordType, vocab, fields = []) {
       item("event_format", vocabLabel(vocab, "event_formats", p.event_format)),
       item("venue", p.location)]},
     {title: "Sector and themes", items: [item("sectors", sectors(p.sector_codes)),
-      item("topic", vocabLabel(vocab, "topics", p.topic_code)), item("themes", p.thematic_focus),
+      item("themes", p.thematic_focus),
       item("recurring_pattern", vocabLabel(vocab, "recurrence", p.recurring_pattern))]},
     {title: "Links", items: [item("website", p.website),
       item("registration_url", p.registration_url), item("source_url", p.source_url)]},

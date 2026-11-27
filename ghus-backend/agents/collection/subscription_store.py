@@ -20,6 +20,8 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy import text
 
+from agents.common.topics import topic_rows
+
 from agents.collection.subscriptions import (
     ACTIVE,
     ACTOR_UPDATES,
@@ -426,7 +428,7 @@ def topic_codes(session) -> dict[str, str]:
     return {
         str(row["topic_id"]): str(row["code"])
         for row in session.execute(text(
-            "SELECT topic_id::text AS topic_id, code FROM topic WHERE active"
+            f"SELECT topic_id::text AS topic_id, code FROM {topic_rows(session)} t WHERE active"
         )).mappings()
     }
 

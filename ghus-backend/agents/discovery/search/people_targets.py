@@ -91,9 +91,7 @@ def institution_domains(session, *, states: Sequence[str], sector_codes: Sequenc
         "a.actor_category AS category, concat_ws(' ', a.name, a.description, "
         # Through to_jsonb: the shared database no longer has these legacy columns.
         "to_jsonb(a)->>'primary_technical_focus', to_jsonb(a)->>'current_activities') AS about, "
-        "COALESCE(a.state_code, (SELECT l.state_code FROM actor_location l "
-        " WHERE l.actor_id = a.actor_id ORDER BY l.is_primary DESC NULLS LAST LIMIT 1)) "
-        " AS state, "
+        "a.state_code AS state, "
         "EXISTS (SELECT 1 FROM actor_sector x JOIN sector s ON s.sector_id = x.sector_id "
         "        WHERE x.actor_id = a.actor_id AND upper(s.code) = ANY(:codes)) AS in_sector "
         "FROM actor a WHERE a.actor_category = ANY(:cats) "

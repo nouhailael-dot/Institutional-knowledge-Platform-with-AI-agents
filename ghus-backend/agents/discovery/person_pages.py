@@ -101,21 +101,16 @@ def load_person_profile_targets(session) -> list[dict[str, object]]:
         session.execute(
             text(
                 "SELECT p.person_id::text AS person_id, p.full_name AS name, p.title AS role, "
-                "COALESCE(NULLIF(btrim(p.linkedin_url), ''), pdp.public_profile_url) "
+                # 820: the profile URL is a column of person (person_discovery_profile is gone).
+                "COALESCE(NULLIF(btrim(p.linkedin_url), ''), "
+                "NULLIF(btrim(to_jsonb(p)->>'public_profile_url'), '')) "
                 "AS public_profile_url, a.name AS affiliation "
                 "FROM person p "
                 "LEFT JOIN actor_person ap ON ap.person_id = p.person_id "
                 "AND ap.is_current IS NOT FALSE "
                 "LEFT JOIN actor a ON a.actor_id = ap.actor_id "
-                "LEFT JOIN LATERAL ("
-                "SELECT profile.public_profile_url FROM person_discovery_profile profile "
-                "WHERE profile.person_id = p.person_id "
-                "AND profile.public_profile_url IS NOT NULL "
-                "AND btrim(profile.public_profile_url) <> '' "
-                "ORDER BY profile.fetched_at DESC, profile.created_at DESC LIMIT 1"
-                ") pdp ON TRUE "
                 "WHERE COALESCE(NULLIF(btrim(p.linkedin_url), ''), "
-                "pdp.public_profile_url) IS NOT NULL "
+                "NULLIF(btrim(to_jsonb(p)->>'public_profile_url'), '')) IS NOT NULL "
                 "ORDER BY p.full_name"
             )
         )

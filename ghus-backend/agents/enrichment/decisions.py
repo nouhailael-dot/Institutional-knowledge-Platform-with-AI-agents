@@ -166,27 +166,6 @@ def append_entity_fact(
     return {"action": "appended" if current is None else "superseded", "fact_id": fact_id}
 
 
-def append_event_claim(session, *, event_id: str, claim_text: str, source_url: str,
-                       date_read: datetime, live: bool = False) -> dict[str, object]:
-    """A publicly stated claim about an event's scale or standing, with its source."""
-    claim = " ".join(str(claim_text or "").split())
-    if not claim:
-        raise ValueError("a claim needs its text")
-    exists = session.execute(text(
-        "SELECT 1 FROM event_claim WHERE event_id=CAST(:event AS uuid) AND claim_text=:claim"),
-        {"event": event_id, "claim": claim}).first()
-    if exists:
-        return {"action": "already_recorded"}
-    if not live:
-        return {"action": "would_append"}
-    source_id = insert_source(session, source_url=source_url, fetched_at=date_read,
-                              description="Architecture V2 event standing claim",
-                              source_type="agent_collection", trust_tier="candidate")
-    execute_canonical_write(session, text(
-        "INSERT INTO event_claim (event_claim_id,event_id,claim_text,source_id) VALUES "
-        "(CAST(:id AS uuid),CAST(:event AS uuid),:claim,CAST(:source AS uuid))"
-    ), {"id": str(uuid.uuid4()), "event": event_id, "claim": claim[:2000], "source": source_id})
-    return {"action": "appended"}
 
 
 def append_actor_fact(
@@ -1252,14 +1231,16 @@ def create_sector(
         {"code": code, "name": name,
          "description": note or f"Added by {created_by} in Review for a discovered actor."},
     ).scalar_one()
-    execute_canonical_write(
-        session,
-        text(
-            "INSERT INTO topic (code, name, description, active) VALUES (:code, :name, "
-            ":description, true) ON CONFLICT DO NOTHING"
-        ),
-        {"code": code, "name": name, "description": note or f"Topic for the {name} sector."},
-    )
+    if session.execute(text("SELECT to_regclass('public.topic') IS NOT NULL")).scalar():
+        # Before 820 a sector also needed its topic row; after 820 the sector is the topic.
+        execute_canonical_write(
+            session,
+            text(
+                "INSERT INTO topic (code, name, description, active) VALUES (:code, :name, "
+                ":description, true) ON CONFLICT DO NOTHING"
+            ),
+            {"code": code, "name": name, "description": note or f"Topic for the {name} sector."},
+        )
     return {"sector_id": sector_id, "code": code, "name": name, "created": True}
 
 
@@ -1506,8 +1487,9 @@ def record_fact_review_decision(
 
     ``keep_both`` exists only where the model holds several valid values: a
     box has one current value, but an actor may have several locations. The
-    current location stays current; the proposed one is added as an additional
-    ``actor_location`` with its source, once the gazetteer places it.
+    current location stays current; the proposed one is kept as an accepted
+    fact with its source, once the gazetteer places it, and the actor is marked
+    as having several locations (820: there is no separate location table).
     """
     reviewer = str(decided_by or "").strip()
     if not reviewer:
@@ -1614,24 +1596,15 @@ def _keep_both_locations(session, *, item, fact, outcome, review_item_id, curren
                             {"a": item["entity_id"]}).first()
     if actor is None:
         raise ValueError("the actor no longer exists")
+    # The current location is the actor's own city and state.
     already = session.execute(text(
-        "SELECT 1 FROM actor_location WHERE actor_id=CAST(:a AS uuid) "
-        "AND lower(city)=lower(:city) AND state_code IS NOT DISTINCT FROM :state"
+        "SELECT 1 FROM actor WHERE actor_id=CAST(:a AS uuid) "
+        "AND lower(COALESCE(to_jsonb(actor)->>'city', '')) = lower(:city) "
+        "AND state_code IS NOT DISTINCT FROM :state"
     ), {"a": item["entity_id"], "city": place.city, "state": place.state_code}).first()
     if not live:
         return {**outcome, "action": "would_decide", "added_location": located,
                 "location_already_listed": already is not None}
-    if already is None:
-        inserted = execute_canonical_write(session, text(
-            "INSERT INTO actor_location (actor_location_id,actor_id,location_name,country,"
-            "state_code,city,region_code,latitude,longitude,is_primary,source_id) VALUES ("
-            "CAST(:id AS uuid),CAST(:a AS uuid),:name,'US',:state_code,:city,:region_code,"
-            ":latitude,:longitude,false,CAST(:source AS uuid))"
-        ), {"id": str(uuid.uuid4()), "a": item["entity_id"],
-            "name": f"{place.city}, {place.state_code}", "source": fact["source_id"],
-            **located})
-        if inserted.rowcount != 1:
-            raise ValueError("the additional location was not written")
     if _has_column(session, "actor", "is_multi_location"):
         updated = execute_canonical_write(session, text(
             "UPDATE actor SET is_multi_location=true, updated_at=now() "
@@ -2717,8 +2690,8 @@ def _assert_identifier(value: str) -> None:
 
 # ------------------------------------------------- one form for the country (24 Nov 2026)
 # Where a country is stored, and the key that names each row in the report.
-_COUNTRY_COLUMNS = (("actor", "actor_id", "name"), ("actor_location", "actor_location_id", "location_name"),
-                    ("hub", "hub_id", "name"), ("proposed_hub", "proposed_hub_id", "name"))
+_COUNTRY_COLUMNS = (("actor", "actor_id", "name"), ("hub", "hub_id", "name"),
+                    ("proposed_hub", "proposed_hub_id", "name"))
 
 
 def standardize_countries(session, *, live: bool = False) -> dict[str, object]:
@@ -2728,8 +2701,7 @@ def standardize_countries(session, *, live: bool = False) -> dict[str, object]:
     US spellings change; a value that is something else (a city or a state typed
     into a hub's country) is listed for a person to decide, never rewritten.
     ``updated_at`` is left as it was: nothing about the record itself changed.
-    A location that would then duplicate one already saved as "USA" is left and
-    listed. Dry run unless ``live``.
+    Dry run unless ``live``.
     """
     from agents.common.geography import STORED_US, US_SPELLINGS
 
@@ -2740,16 +2712,7 @@ def standardize_countries(session, *, live: bool = False) -> dict[str, object]:
             f"SELECT {key}::text AS id, {label} AS label, country FROM {table} "
             "WHERE lower(btrim(country)) = ANY(:spellings) AND country <> :usa"),
             {"spellings": spellings, "usa": STORED_US}).mappings().all()
-        blocked: list[str] = []
-        if table == "actor_location" and found:
-            # (actor, country, state, city, name) is unique: a twin already "USA" stays.
-            blocked = [str(r[0]) for r in session.execute(text(
-                "SELECT a.actor_location_id::text FROM actor_location a JOIN actor_location b "
-                "ON b.actor_id = a.actor_id AND b.country = :usa "
-                "AND b.state_code IS NOT DISTINCT FROM a.state_code AND b.city IS NOT DISTINCT FROM a.city "
-                "AND b.location_name IS NOT DISTINCT FROM a.location_name "
-                "WHERE a.actor_location_id = ANY(CAST(:ids AS uuid[]))"),
-                {"usa": STORED_US, "ids": [r["id"] for r in found]}).all()]
+        blocked: list[str] = []  # 820: no location table, so no twin location to keep
         ids = [r["id"] for r in found if r["id"] not in blocked]
         others = session.execute(text(
             f"SELECT {key}::text AS id, {label} AS label, country FROM {table} "

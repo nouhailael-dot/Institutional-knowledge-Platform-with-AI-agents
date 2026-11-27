@@ -80,11 +80,12 @@ def _named(name, text, prefix=False):
 
 @lru_cache(maxsize=1)
 def sectors():
-    """The sectors Discovery accepts, as {name: code}: the active rows of `topic`,
-    the same list the Discovery page offers (read once, read-only)."""
+    """The sectors Discovery accepts, as {name: code}: the active thematic sectors
+    (the old topic list), the same list the Discovery page offers (read-only)."""
     from src.db import get_readonly_connection
+    from src.topics import topic_rows
     with get_readonly_connection() as conn, conn.cursor() as cur:
-        cur.execute("SELECT name, code FROM topic WHERE active ORDER BY name")
+        cur.execute(f"SELECT name, code FROM {topic_rows(cur)} t WHERE active ORDER BY name")
         return dict(cur.fetchall())
 
 

@@ -357,12 +357,13 @@ def load_hubs() -> list[dict]:
                (SELECT count(*) FROM hub_actor ha JOIN actor a
                   ON a.actor_id = ha.actor_id AND a.merged_into_actor_id IS NULL
                  WHERE ha.hub_id = h.hub_id) AS actor_count
-        FROM hub h LEFT JOIN topic t ON t.topic_id = h.topic_id
+        FROM hub h LEFT JOIN {topics} t ON t.topic_id = h.topic_id
         ORDER BY h.name
     """
     out = []
     with _readonly() as conn, conn.cursor() as cur:
-        cur.execute(sql)
+        from src.topics import topic_rows
+        cur.execute(sql.replace("{topics}", topic_rows(cur)))
         cols = [c.name for c in cur.description]
         for row in cur.fetchall():
             r = dict(zip(cols, row))
@@ -456,12 +457,9 @@ def load_people() -> list[dict]:
                  WHERE ap.person_id = p.person_id AND ap.is_current IS NOT FALSE
                    AND a.merged_into_actor_id IS NULL) AS states,
                NULL::text AS topics,  -- person_topic was never filled; migration 810 removes it
-               (SELECT string_agg(DISTINCT d.research_area, '{_HUB_SEP}')
-                  FROM person_discovery_profile d
-                 WHERE d.person_id = p.person_id AND d.research_area IS NOT NULL) AS research_areas,
-               (SELECT d.public_profile_url FROM person_discovery_profile d
-                 WHERE d.person_id = p.person_id AND d.public_profile_url IS NOT NULL
-                 ORDER BY d.fetched_at DESC NULLS LAST LIMIT 1) AS profile_url
+               -- 820: research area and profile page are columns of person.
+               NULLIF(to_jsonb(p)->>'research_area', '') AS research_areas,
+               NULLIF(to_jsonb(p)->>'public_profile_url', '') AS profile_url
                {{pending}}
         FROM person p
         WHERE COALESCE(p.record_status, '') <> 'rejected'

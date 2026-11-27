@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
+from agents.common.topics import topic_rows
+
 
 def _has_table(session, table: str) -> bool:
     return bool(session.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": table}).scalar())
@@ -35,7 +37,7 @@ def _hubs(session) -> list[dict]:
     return [dict(r) for r in session.execute(text(
         "SELECT h.hub_id::text AS hub_id, h.name, h.topic_id::text AS topic_id, "
         "h.center_latitude, h.center_longitude, COALESCE(h.radius_miles, 200) AS radius_miles, "
-        f"{sector} AS sector_code FROM hub h LEFT JOIN topic t ON t.topic_id = h.topic_id"
+        f"{sector} AS sector_code FROM hub h LEFT JOIN {topic_rows(session)} t ON t.topic_id = h.topic_id"
     )).mappings()]
 
 

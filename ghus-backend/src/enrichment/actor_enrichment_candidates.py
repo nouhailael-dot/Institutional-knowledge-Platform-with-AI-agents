@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from agents.enrichment.decisions import persist_canonical_record
 from src.ai.client import SONNET, UsageTracker, structured_json
-from src.db.models import Actor, ActorRelevance, Challenge, Hub, HubActor, Source
+from src.db.models import Actor, Hub, HubActor, Source
 
 logger = logging.getLogger(__name__)
 
@@ -1328,20 +1328,6 @@ def build_high_confidence_web_candidate_decision(
     }
 
 
-def _extract_urls(text: str) -> list[str]:
-    return [url.rstrip(").,;") for url in re.findall(r"https?://[^\s)]+", text or "")]
-
-
-def _official_link_for_actor(actor_name: str, source_links: str) -> Optional[str]:
-    for match in re.finditer(r"https?://[^\s)]+", source_links or ""):
-        url = match.group(0).rstrip(").,;")
-        context_start = max(0, match.start() - 180)
-        context = source_links[context_start:match.start()]
-        if "official" in context.lower() or name_similarity(actor_name, context) >= 0.8:
-            return url
-    return None
-
-
 def compact_json(data: object, limit: int = 6000) -> str:
     text = json.dumps(data, ensure_ascii=False, indent=2)
     return text[:limit]
@@ -2049,63 +2035,9 @@ class ActorEnrichmentCandidatePipeline:
         return self._all_hubs_cache
 
     def _relevance_context_decision(self, actor: Actor) -> Optional[dict]:
-        rows = self.session.execute(
-            select(ActorRelevance, Challenge)
-            .outerjoin(Challenge, Challenge.challenge_id == ActorRelevance.challenge_id)
-            .where(ActorRelevance.actor_id == actor.actor_id)
-            .order_by(Challenge.name)
-        ).all()
-        if not rows:
-            return None
-
-        challenge_names = []
-        evidence_parts = []
-        link_parts = []
-        for relevance, challenge in rows:
-            if challenge and challenge.name:
-                challenge_names.append(challenge.name)
-            for attr in (
-                "current_evidence",
-                "why_relevant",
-                "challenge_relevance_narrative",
-            ):
-                value = getattr(relevance, attr, None)
-                if value:
-                    evidence_parts.append(value)
-            if relevance.source_links:
-                link_parts.append(relevance.source_links)
-
-        links_text = " ".join(link_parts)
-        evidence_text = _clean_context_snippet(" ".join(evidence_parts), 360)
-        if not evidence_text and not links_text:
-            return None
-
-        challenge_label = _join_names(challenge_names, limit=2)
-        actor_type = (actor.actor_type or "actor").replace("_", " ")
-        if evidence_text:
-            description = (
-                f"{actor.name} is tracked as a {actor_type} in the "
-                f"{challenge_label} challenge context; evidence notes {evidence_text}."
-            )
-        else:
-            description = (
-                f"{actor.name} is tracked as a {actor_type} in the "
-                f"{challenge_label} challenge context with supporting source links."
-            )
-        source_url = (_extract_urls(links_text) or [f"relevance_context://actor/{actor.actor_id}"])[0]
-        website = _official_link_for_actor(actor.name, links_text)
-        return {
-            "matched": True,
-            "confidence": 0.88,
-            "needs_human_review": False,
-            "description": description[:1000],
-            "website": website,
-            "location_city": None,
-            "state": None,
-            "country": None,
-            "source_url": source_url,
-            "evidence_summary": "Actor relevance evidence/source links from the challenge context.",
-        }
+        """The NutriCrops relevance context (actor_relevance, challenge) was removed by
+        migration 820; there is no relevance context to describe an organization from."""
+        return None
 
     def _write_audit_row(
         self,

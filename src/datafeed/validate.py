@@ -208,13 +208,16 @@ class RowChecker:
         return state, country
 
     def _topic(self, cells, errors, fallback_code: str | None = None) -> dict | None:
+        """The record's topic is its (first) sector: the templates have no Topic column (820).
+
+        A file from an older template may still carry one; it is read the same way."""
         raw = cells.get("topic", "")
         topics = self.vocab.get("topics") or []
         if raw:
             item = lookup(topics, raw)
             if item is None:
-                errors.append(f"Topic '{raw}' is not one of the database's topics"
-                              + ("." if topics else " (the topic list could not be read)."))
+                errors.append(f"Topic '{raw}' is not one of the database's sectors"
+                              + ("." if topics else " (the sector list could not be read)."))
             return item
         if fallback_code:
             return next((t for t in topics if t["code"] == fallback_code), None)
@@ -292,8 +295,8 @@ class RowChecker:
             payload["topic_id"] = topic["topic_id"]
             payload["topic_code"] = topic["code"]
         elif sector and not cells.get("topic"):
-            warnings.append(f"Sector {sector['label']} has no topic of its own: Light Pull "
-                            "facts are recorded only once a topic is chosen in Review.")
+            warnings.append(f"Sector {sector['label']} is not one of the thematic sectors: Light "
+                            "Pull facts are recorded only once a thematic sector is chosen in Review.")
         state, country = self._place(cells, payload, errors, warnings)
         city = cells.get("city")
         payload.update(city=city, location_city=city, state=state or None,
@@ -375,7 +378,7 @@ class RowChecker:
                                       country if country and country != US else None) if p)
         payload["work_location"] = place or None
         payload["sector_codes"] = self._sectors("sectors", cells, errors)
-        topic = self._topic(cells, errors)
+        topic = self._topic(cells, errors, (payload["sector_codes"] or [None])[0])
         if topic:
             payload["topic_id"], payload["topic_code"] = topic["topic_id"], topic["code"]
 
@@ -418,7 +421,7 @@ class RowChecker:
         if not cells.get("organizer"):
             warnings.append("No organizer: the event is recorded with no confirmed host.")
         payload["sector_codes"] = self._sectors("sectors", cells, errors)
-        topic = self._topic(cells, errors)
+        topic = self._topic(cells, errors, (payload["sector_codes"] or [None])[0])
         if topic:
             payload["topic_id"], payload["topic_code"] = topic["topic_id"], topic["code"]
 

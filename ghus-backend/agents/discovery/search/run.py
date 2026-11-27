@@ -16,6 +16,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from sqlalchemy import text
 
+from agents.common.topics import topic_rows
+
 from agents.common.config import load_sources_config
 from agents.common.cost import CostLimitExceeded, CostMeter
 from agents.common.llm import ClaudeToolClient, llm_usage_delta, llm_usage_snapshot
@@ -1263,16 +1265,11 @@ def _candidate_topics(
     """Architecture V2: each actor is found for the topic of the hub its query targeted."""
     if session is None:
         return {}
-    has_topics = session.execute(
-        text("SELECT to_regclass('public.topic') IS NOT NULL AS present")
-    ).mappings().first()
-    if not has_topics or not has_topics.get("present"):
-        return {}
     hub_topics = {
         str(row["name"]): {"topic_id": str(row["topic_id"]), "code": str(row["code"])}
         for row in session.execute(text(
             "SELECT h.name, h.topic_id::text AS topic_id, t.code FROM hub h "
-            "JOIN topic t ON t.topic_id = h.topic_id"
+            f"JOIN {topic_rows(session)} t ON t.topic_id = h.topic_id"
         )).mappings().all()
     }
     topics: dict[str, dict[str, str]] = {}
@@ -1337,7 +1334,7 @@ def _request_topics(session, request, results) -> dict[str, dict[str, str]]:
         return {}
     code = request.sector_codes[0]
     row = session.execute(
-        text("SELECT topic_id::text AS topic_id, code FROM topic WHERE code = :code"),
+        text(f"SELECT topic_id::text AS topic_id, code FROM {topic_rows(session)} t WHERE code = :code"),
         {"code": code},
     ).mappings().first()
     if row is None:

@@ -47,9 +47,10 @@ def _database_lists(connect: Callable[[], Any] | None) -> dict[str, Any]:
             sectors = conn.execute(
                 "SELECT code, name FROM sector WHERE COALESCE(active, true) ORDER BY "
                 "COALESCE(is_thematic, true) DESC, name").fetchall()
+            from src.topics import topic_rows
             topics = conn.execute(
-                "SELECT code, name, topic_id::text FROM topic WHERE COALESCE(active, true) "
-                "ORDER BY name").fetchall()
+                f"SELECT code, name, topic_id::text FROM {topic_rows(conn)} t "
+                "WHERE COALESCE(active, true) ORDER BY name").fetchall()
     except Exception:  # noqa: BLE001 - a reference read must not stop the page
         return {}
     return {"sectors": [{"code": r[0], "label": r[1]} for r in sectors],

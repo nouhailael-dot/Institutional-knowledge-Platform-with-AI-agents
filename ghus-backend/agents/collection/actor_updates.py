@@ -80,6 +80,8 @@ from urllib.parse import urlsplit
 
 from sqlalchemy import text
 
+from agents.common.topics import topic_rows
+
 ROOT = Path(__file__).resolve().parents[2]
 RUNS_DIR = ROOT / "agents" / "runs" / "actor-updates"
 JOB_NAME = "actor_update"
@@ -227,20 +229,21 @@ def actor_topics(session, actor_id: str) -> list[dict]:
     params = {"id": actor_id}
     found: list[dict] = []
     routes = []
+    topics = topic_rows(session)
     if _has_table(session, "actor_sector"):
         routes.append(("sector",
             "SELECT t.topic_id::text AS topic_id, t.code, t.name FROM actor_sector x "
-            "JOIN sector s ON s.sector_id = x.sector_id JOIN topic t ON t.code = s.code "
+            f"JOIN sector s ON s.sector_id = x.sector_id JOIN {topics} t ON t.code = s.code "
             "WHERE x.actor_id = CAST(:id AS uuid)"))
     if _has_table(session, "hub_actor") and _has_table(session, "hub_sector"):
         routes.append(("hub",
             "SELECT t.topic_id::text AS topic_id, t.code, t.name FROM hub_actor ha "
             "JOIN hub_sector hs ON hs.hub_id = ha.hub_id JOIN sector s ON s.sector_id = hs.sector_id "
-            "JOIN topic t ON t.code = s.code WHERE ha.actor_id = CAST(:id AS uuid)"))
+            f"JOIN {topics} t ON t.code = s.code WHERE ha.actor_id = CAST(:id AS uuid)"))
     if _has_table(session, "hub_actor") and _has_column(session, "hub", "topic_id"):
         routes.append(("hub",
             "SELECT t.topic_id::text AS topic_id, t.code, t.name FROM hub_actor ha "
-            "JOIN hub h ON h.hub_id = ha.hub_id JOIN topic t ON t.topic_id = h.topic_id "
+            f"JOIN hub h ON h.hub_id = ha.hub_id JOIN {topics} t ON t.topic_id = h.topic_id "
             "WHERE ha.actor_id = CAST(:id AS uuid)"))
     for source, sql in routes:
         for row in session.execute(text(sql), params).mappings():
@@ -251,7 +254,8 @@ def actor_topics(session, actor_id: str) -> list[dict]:
 
 def topic_by_code(session, code: str) -> dict | None:
     row = session.execute(text(
-        "SELECT topic_id::text AS topic_id, code, name FROM topic WHERE upper(code) = upper(:c)"
+        f"SELECT topic_id::text AS topic_id, code, name FROM {topic_rows(session)} t "
+        "WHERE upper(code) = upper(:c)"
     ), {"c": code}).mappings().first()
     return {**dict(row), "source": "chosen"} if row else None
 
@@ -1728,8 +1732,9 @@ def list_requests(session) -> dict:
     # A request on an inactive sector is a test fixture (the integration tests
     # create inactive topics); the page says how many and does not list them.
     inactive = set(session.execute(text(
-        "SELECT upper(code) FROM topic WHERE NOT COALESCE((to_jsonb(topic)->>'active')::boolean, true)"
-    )).scalars()) if _has_table(session, "topic") else set()
+        f"SELECT upper(code) FROM {topic_rows(session)} t "
+        "WHERE NOT COALESCE((to_jsonb(t)->>'active')::boolean, true)"
+    )).scalars()) if _has_table(session, "topic") or _has_table(session, "sector") else set()
     for row in store.load_actor_update_requests(session):
         item = dict(row)
         try:
@@ -1761,7 +1766,7 @@ def one_time_updates(session, *, inactive=frozenset(), limit: int = 30) -> list[
         "r.config_snapshot, a.actor_id::text AS actor_id, a.name, upper(t.code) AS topic, "
         "t.name AS topic_name FROM collection_run r "
         "JOIN collection_request q ON q.collection_request_id = r.collection_request_id "
-        "JOIN actor a ON a.actor_id = q.actor_id LEFT JOIN topic t ON t.topic_id = q.topic_id "
+        f"JOIN actor a ON a.actor_id = q.actor_id LEFT JOIN {topic_rows(session)} t ON t.topic_id = q.topic_id "
         "WHERE r.job_name = :job ORDER BY r.started_at DESC LIMIT :limit"
     ), {"job": JOB_NAME, "limit": limit}).mappings()
     out = []
