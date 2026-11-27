@@ -98,8 +98,9 @@ test('summary counts: maps awaiting review, requests with new findings, requests
   // 'd' found things in October and was never opened: older than a week, not new.
   assert.deepEqual(rows.map(r => r.id), ['c', 'a', 'b', 'd']);
   assert.equal(rows[3].state, 'completed');
-  assert.equal(rows[0].type, 'Organization update');
-  assert.equal(rows[1].type, 'Topic monitoring');
+  // The same request types as Monitor and Update (27 Nov 2026).
+  assert.equal(rows[0].type, 'Update Existing Records');
+  assert.equal(rows[1].type, 'Find New Records');
   assert.deepEqual(summaryCounts({maps: [{pending_review: 2}, {pending_review: 0}], rows}),
     {mapsPending: 1, newUpdates: 1, attention: 1});
   assert.equal(recentRequests(rows, 7, NOW).length, 3);

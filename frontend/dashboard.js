@@ -185,7 +185,8 @@ export function requestRows({requests = [], updates = []} = {}, seen = {}, seenA
     ...updates.map(r => ({r, kind: "update"})),
   ].map(({r, kind}) => ({
     id: r.subscription_id, name: r.title || (kind === "update" ? "Organization update" : "Monitoring request"),
-    type: kind === "update" ? "Organization update" : "Topic monitoring",
+    // The same words as Monitor and Update's request types (27 Nov 2026).
+    type: kind === "update" ? "Update Existing Records" : "Find New Records",
     date: lastActivity(r), state: requestState(r, kind, since(r.subscription_id)),
     newUpdate: hasNewUpdate(r, kind, since(r.subscription_id)), attention: needsAttention(r),
   })).sort((a, b) => time(b.date) - time(a.date));

@@ -1562,7 +1562,9 @@ def _request_title(prepared: dict, chosen: list[dict], sector_name: str | None =
     scope = SCOPE_NAMES[prepared["options"]["scope"]]
     if prepared["actor_ids"]:
         names = [a["name"] for a in chosen] or ["chosen organizations"]
-        who = names[0] if len(prepared["actor_ids"]) == 1 else f"{len(prepared['actor_ids'])} actors"
+        # People read "organizations", never "actors" (27 Nov 2026).
+        who = (names[0] if len(prepared["actor_ids"]) == 1
+               else f"{len(prepared['actor_ids'])} organizations")
     else:
         category = (prepared["options"]["category"] or "").replace("_", " ") or None
         who = " · ".join(filter(None, [sector_name or prepared["sector"], category,

@@ -32,7 +32,7 @@ PERMISSIONS = {
     "requests.create": "Create and run Discovery and Update requests (paid agents)",
     "datafeed.import": "Import records through Data Feed",
     "review.view": "Open Review Results",
-    "review.decide": "Verify, reject and park records",
+    "review.decide": "Verify records, and decide in Review Results",
     "records.edit": "Edit shared records",
     "notes.write": "Add and edit GHUS Notes",
     "records.remove": "Remove a record from the Directory, or restore it",

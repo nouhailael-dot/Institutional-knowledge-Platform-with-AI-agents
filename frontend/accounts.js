@@ -15,19 +15,20 @@ const PERMISSION_WORDS = {
   "requests.create": "Create and run requests (paid agents)",
   "datafeed.import": "Import with Data Feed",
   "review.view": "Open Review Results",
-  "review.decide": "Verify, reject and park",
+  "review.decide": "Verify records, and decide in Review Results",
   "records.edit": "Edit records",
   "notes.write": "Write GHUS Notes",
   "records.remove": "Remove and restore records",
-  "records.delete_permanent": "Permanently delete records",
+  "records.delete_permanent": "Delete records (restorable for 30 days under Pending Deletion)",
   "usage.view_all": "Everyone's usage and costs",
   "audit.view_all": "Full audit history",
   "users.manage": "Manage users and roles",
   "settings.admin": "Administrative settings",
 };
 
-// In the role, but switched off until its own approval (permanent deletion: Phase 6).
-const NOT_YET = new Set(["records.delete_permanent"]);
+// In the role, but switched off until its own approval. Empty since deleting went
+// live (17 Nov 2026: hidden at once, restorable 30 days, then removed).
+const NOT_YET = new Set();
 
 const day = (v) => v ? new Date(v).toLocaleDateString("en-US", {month: "short", day: "numeric", year: "numeric"}) : "—";
 const moment = (v) => v ? new Date(v).toLocaleString("en-US", {month: "short", day: "numeric", year: "numeric",
