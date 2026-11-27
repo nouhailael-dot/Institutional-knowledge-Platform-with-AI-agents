@@ -65,7 +65,7 @@ EXAMPLES: dict[str, list[dict[str, str]]] = {
          "linkedin_url": "https://www.linkedin.com/in/example-ana-ruiz",
          "bio": "Hydrologist working on groundwater recharge in arid regions.",
          "expertise": "groundwater; aquifer recharge", "city": "Tucson", "state_code": "Arizona",
-         "country": "USA", "sectors": "Water", "topic": "Water",
+         "country": "USA", "sectors": "Water",
          "source_url": "https://www.arizona.example.edu/people/ana-ruiz"},
     ],
     "event": [
@@ -73,7 +73,7 @@ EXAMPLES: dict[str, list[dict[str, str]]] = {
          "organizer": "Kansas Water Office", "start_date": "2027-04-02",
          "end_date": "2027-04-03", "event_format": "Hybrid", "venue": "Century II",
          "city": "Wichita", "state_code": "Kansas", "country": "USA",
-         "sectors": "Water; Agriculture", "topic": "Water",
+         "sectors": "Water; Agriculture",
          "themes": "groundwater policy; irrigation technology",
          "description": "A two-day summit on water management in the Great Plains.",
          "website": "https://greatplainswatersummit.example", "recurring_pattern": "Annual",

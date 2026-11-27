@@ -26,7 +26,7 @@ from agents.common.actor_classification import (
     classification_from_payload,
 )
 from agents.common.facts import ActorFactWrite
-from agents.common.geography import PreparedActorGeography, prepare_actor_geography, stored_country
+from agents.common.geography import PreparedActorGeography, prepare_actor_geography
 from agents.common.hub_assignment import (
     HUB_ASSIGNMENT_METHOD_VERSION,
     NEEDS_REVIEW_LOCATION,
@@ -317,7 +317,6 @@ def promote(
             )
             event_id = _insert_event(session, staged.normalized_payload, source_id,
                                      reviewed=staged.prompt_version == HUMAN_DECISION_PROMPT)
-            _append_event_topics(session, event_id=event_id, staged=staged, source_id=source_id)
             _append_event_sectors(session, event_id=event_id, staged=staged, source_id=source_id)
             if _table_columns(session, "event_fact"):
                 _append_record_facts(session, entity_type="event", entity_id=event_id, staged=staged)
@@ -339,8 +338,6 @@ def promote(
                 fetched_at=staged.extracted_at,
                 description="agent discovery event sighting",
             )
-            _append_event_topics(session, event_id=route.target_entity_id, staged=staged,
-                                 source_id=sighting)
             _append_event_sectors(session, event_id=route.target_entity_id, staged=staged,
                                   source_id=sighting)
             if _table_columns(session, "event_fact"):
@@ -595,9 +592,9 @@ def _append_record_facts(session, *, entity_type: str, entity_id: str, staged: S
 
     4 Nov 2026: a format, an audience, a department or relevant work was shown
     to the reviewer and lost at verification. Each value keeps the page and the
-    date its evidence names; standing claims about an event go to event_claim.
+    date its evidence names; standing claims about an event are event facts too (820).
     """
-    from agents.enrichment.decisions import append_entity_fact, append_event_claim
+    from agents.enrichment.decisions import append_entity_fact
 
     payload = staged.normalized_payload or {}
     facts = dict(payload.get("facts") or {}) if isinstance(payload.get("facts"), dict) else {}
@@ -621,13 +618,6 @@ def _append_record_facts(session, *, entity_type: str, entity_id: str, staged: S
         if not url.startswith(("http://", "https://")):
             continue
         moment = _fact_moment(proof.get("date_read"), staged.extracted_at)
-        if entity_type == "event" and key == "standing_claims":
-            for claim in (value if isinstance(value, list) else [value]):
-                if str(claim or "").strip():
-                    append_event_claim(session, event_id=entity_id, claim_text=str(claim),
-                                       source_url=url, date_read=moment, live=True)
-                    written += 1
-            continue
         append_entity_fact(session, entity_type=entity_type, entity_id=entity_id, fact_key=key,
                            value=_capitalized(key, value), source_url=url, date_read=moment,
                            created_by="agent:promote", live=True)
@@ -635,32 +625,6 @@ def _append_record_facts(session, *, entity_type: str, entity_id: str, staged: S
     return written
 
 
-def _append_event_topics(session, *, event_id: str, staged: StagedRecord, source_id: str) -> int:
-    """Architecture V2: link the event to every active topic its own page evidences."""
-    if not _table_columns(session, "event_topic"):
-        return 0
-    codes = sorted({str(code).strip().upper() for code in staged.sector_codes if str(code).strip()})
-    if not codes:
-        return 0
-    topics = session.execute(text(
-        "SELECT topic_id::text AS topic_id, code FROM topic "
-        "WHERE active AND code = ANY(CAST(:codes AS text[]))"
-    ), {"codes": codes}).mappings().all()
-    if not topics:
-        return 0
-    request_id = _discovery_collection_request(session, staged)
-    for topic in topics:
-        session.execute(text(
-            "INSERT INTO event_topic (event_id,topic_id,why_matched,source_id,collection_request_id) "
-            "VALUES (CAST(:event AS uuid),CAST(:topic AS uuid),:why,CAST(:source AS uuid),"
-            "CAST(:request AS uuid)) ON CONFLICT DO NOTHING"
-        ), {
-            "event": event_id, "topic": topic["topic_id"], "source": source_id,
-            "request": request_id,
-            "why": f"The event page evidences the {topic['code']} sector (open-web discovery "
-                   f"run {staged.run_id}).",
-        })
-    return len(topics)
 
 
 def _absorb_event_fields(session, event_id: str, staged: StagedRecord) -> list[str]:
@@ -965,14 +929,6 @@ def map_new_actor(
                 source_id=source_id,
                 topic_id=topic_id,
             )
-            _append_actor_topic(
-                session,
-                actor_id=route.target_entity_id,
-                topic_id=topic_id,
-                source_id=source_id,
-                payload=staged.normalized_payload,
-                run_id=staged.run_id,
-            )
             result = PromotionResult(
                 action="appended_to_existing",
                 entity_type="actor",
@@ -1028,12 +984,6 @@ def map_new_actor(
             )
             for relationship in relationships:
                 append_entity_edge(session, relationship, live=True)
-            _insert_actor_locations(
-                session,
-                actor_id=actor_id,
-                geography=geography,
-                source_id=source_id,
-            )
             _record_geocode_failures(
                 session,
                 actor_id=actor_id,
@@ -1059,14 +1009,6 @@ def map_new_actor(
                     source_id=source_id,
                     topic_id=topic_id,
                 )
-            _append_actor_topic(
-                session,
-                actor_id=actor_id,
-                topic_id=topic_id,
-                source_id=source_id,
-                payload=staged.normalized_payload,
-                run_id=staged.run_id,
-            )
             _persist_hub_assignment_plan(
                 session,
                 actor_id=actor_id,
@@ -1232,40 +1174,6 @@ def _insert_actor_v2(session, payload: dict[str, object], source_id: str) -> str
     return actor_id
 
 
-def _insert_actor_locations(
-    session,
-    *,
-    actor_id: str,
-    geography: PreparedActorGeography,
-    source_id: str,
-) -> None:
-    for location in geography.locations:
-        result = location.result
-        if not result.city:
-            continue
-        session.execute(
-            text(
-                "INSERT INTO actor_location (actor_location_id,actor_id,location_name,country,"
-                "state_code,city,region_code,latitude,longitude,is_primary,source_id) VALUES ("
-                "CAST(:location_id AS uuid),CAST(:actor_id AS uuid),:location_name,:country,"
-                ":state_code,:city,:region_code,:latitude,:longitude,:is_primary,"
-                "CAST(:source_id AS uuid)) ON CONFLICT DO NOTHING"
-            ),
-            {
-                "location_id": str(uuid.uuid4()),
-                "actor_id": actor_id,
-                "location_name": location.location_name,
-                # Saved as "USA", the one form (24 Nov 2026); the gazetteer says "US".
-                "country": stored_country(result.country),
-                "state_code": result.state_code,
-                "city": result.city,
-                "region_code": result.region_code,
-                "latitude": result.latitude,
-                "longitude": result.longitude,
-                "is_primary": location.is_primary,
-                "source_id": source_id,
-            },
-        )
 
 
 def _record_geocode_failures(
@@ -1507,32 +1415,6 @@ def _insert_actor_fact(
     return fact_id
 
 
-def _append_actor_topic(
-    session,
-    *,
-    actor_id: str,
-    topic_id: str | None,
-    source_id: str,
-    payload: dict[str, object],
-    run_id: str,
-) -> None:
-    if not topic_id:
-        return
-    session.execute(
-        text(
-            "INSERT INTO actor_topic (actor_id,topic_id,match_strength,match_reason,source_id) "
-            "VALUES (CAST(:actor_id AS uuid),CAST(:topic_id AS uuid),:match_strength,"
-            ":match_reason,CAST(:source_id AS uuid)) ON CONFLICT DO NOTHING"
-        ),
-        {
-            "actor_id": actor_id,
-            "topic_id": topic_id,
-            "match_strength": str(payload.get("match_strength") or "moderate"),
-            "match_reason": str(payload.get("match_reason") or "not_found"),
-            "source_id": source_id,
-            "run_id": run_id,
-        },
-    )
 
 
 def _insert_v2_actor_review(
@@ -2010,14 +1892,7 @@ def _promote_person(
                     actor_id=actor_id,
                     role=role,
                 )
-                _insert_person_discovery_profile(
-                    session,
-                    staged=staged,
-                    person_id=person_id,
-                    actor_id=actor_id,
-                    source_id=source_id,
-                    needs_actor_enrichment=created_affiliation_stub,
-                )
+                _record_person_profile(session, staged=staged, person_id=person_id)
             elif missing_organization and _table_columns(session, "person_fact"):
                 from agents.enrichment.decisions import append_entity_fact
 
@@ -2288,42 +2163,23 @@ def _insert_person_affiliation(
     )
 
 
-def _insert_person_discovery_profile(
-    session,
-    *,
-    staged: StagedRecord,
-    person_id: str,
-    actor_id: str,
-    source_id: str,
-    needs_actor_enrichment: bool = False,
-) -> str:
-    profile_id = str(uuid.uuid4())
+def _record_person_profile(session, *, staged: StagedRecord, person_id: str) -> None:
+    """The research area and public profile page, as columns of the person (820).
+
+    Only an empty column is filled: a value a person entered or verified stays.
+    Before 820 the columns do not exist yet and nothing is written.
+    """
+    columns = _table_columns(session, "person")
     payload = staged.normalized_payload
-    session.execute(
-        text(
-            "INSERT INTO person_discovery_profile (person_discovery_profile_id, "
-            "person_id, actor_id, role, affiliation_raw, research_area, public_profile_url, "
-            "needs_actor_enrichment, source_id, "
-            "source_url, fetched_at) VALUES (CAST(:person_discovery_profile_id AS uuid), "
-            "CAST(:person_id AS uuid), CAST(:actor_id AS uuid), :role, :affiliation_raw, "
-            ":research_area, :public_profile_url, :needs_actor_enrichment, "
-            "CAST(:source_id AS uuid), :source_url, :fetched_at)"
-        ),
-        {
-            "person_discovery_profile_id": profile_id,
-            "person_id": person_id,
-            "actor_id": actor_id,
-            "role": payload.get("role"),
-            "affiliation_raw": payload.get("affiliation_raw") or payload.get("affiliation"),
-            "research_area": payload.get("research_area"),
-            "public_profile_url": payload.get("public_profile_url"),
-            "needs_actor_enrichment": needs_actor_enrichment,
-            "source_id": source_id,
-            "source_url": staged.source_url,
-            "fetched_at": staged.extracted_at,
-        },
-    )
-    return profile_id
+    values = {key: str(payload.get(key) or "").strip()[:1000]
+              for key in ("research_area", "public_profile_url") if key in columns}
+    values = {key: value for key, value in values.items() if value}
+    if not values:
+        return
+    sets = ", ".join(f"{key} = COALESCE(NULLIF({key}, ''), :{key})" for key in values)
+    session.execute(text(
+        f"UPDATE person SET {sets} WHERE person_id = CAST(:person_id AS uuid)"
+    ), {**values, "person_id": person_id})
 
 
 def _is_linkedin_profile(value: str) -> bool:

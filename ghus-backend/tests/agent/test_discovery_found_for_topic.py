@@ -40,6 +40,9 @@ class _Rows:
     def all(self):
         return self._rows
 
+    def scalar(self):
+        return next(iter(self._rows[0].values())) if self._rows else None
+
 
 class _Session:
     def execute(self, statement, params=None):

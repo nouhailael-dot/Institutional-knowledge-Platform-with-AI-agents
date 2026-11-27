@@ -60,8 +60,6 @@ event(event_id uuid PK, name text, event_type text, location text,
 partnership_profile(actor_id uuid, why_valuable_for_um6p text,
       africa_specific_mandate text, key_entry_points text)   -- ~1 row per profiled actor
 
-actor_relevance(actor_id uuid, challenge_id uuid, relevance_score numeric, why_relevant text)
-challenge(challenge_id uuid PK, name text)
 """
 
 PLANNER_SYSTEM = f"""You route questions about a research database to the right \

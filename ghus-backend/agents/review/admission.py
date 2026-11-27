@@ -21,6 +21,8 @@ from typing import Any, Mapping
 
 from sqlalchemy import Enum, String, text
 
+from agents.common.topics import topic_rows
+
 from agents.common.resolve_route import (
     RouteDecision,
     load_actor_candidates,
@@ -283,7 +285,7 @@ def _load_source(session, table: str, source_id: str) -> dict[str, Any]:
             "  JOIN actor_update_subscription_run sr"
             "    ON sr.actor_update_subscription_id = s.actor_update_subscription_id"
             "  JOIN collection_run cr ON cr.collection_run_id = sr.collection_run_id"
-            "  JOIN topic t ON t.code = s.sector_codes[1]"
+            f"  JOIN {topic_rows(session)} t ON t.code = s.sector_codes[1]"
             "  WHERE cr.config_snapshot->>'search_run_id' = c.run_id::text"
             "  ORDER BY cr.started_at DESC LIMIT 1) AS request_topic_id "
             "FROM search_candidate c WHERE c.candidate_id = CAST(:source_id AS uuid)"

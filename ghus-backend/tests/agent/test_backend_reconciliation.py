@@ -43,7 +43,7 @@ class Session:
             return Result(self.pointer)
         if "SELECT actor_id FROM actor" in sql:
             return Result(("actor",))
-        if "SELECT 1 FROM actor_location" in sql:
+        if "SELECT 1 FROM actor WHERE" in sql:
             return Result(self.duplicate)
         return Result(rowcount=self.rowcount)
 
@@ -71,9 +71,10 @@ def test_keep_both_preserves_pointer_and_carries_source_in_existing_writer(conte
     session, _, _, resolution, close = context
     result = decide(session, live=True)
     assert result["action"] == "decided"
-    inserted = [(sql, args) for sql, args in session.statements if sql.startswith("INSERT")]
-    assert len(inserted) == 1 and "actor_location" in inserted[0][0]
-    assert inserted[0][1]["source"] == "source"
+    # 820: no location table; the second location stays an accepted fact and the
+    # organization is marked as having several locations.
+    assert not any(sql.startswith("INSERT") for sql, _ in session.statements)
+    assert any("UPDATE actor SET is_multi_location=true" in sql for sql, _ in session.statements)
     assert not any("UPDATE actor_fact_current_pointer" in sql for sql, _ in session.statements)
     assert any("FROM actor WHERE" in sql and "FOR UPDATE" in sql for sql, _ in session.statements)
     resolution.assert_called_once()
@@ -90,7 +91,7 @@ def test_duplicate_location_is_not_inserted_again(context):
 def test_dry_run_checks_duplicates_without_writing(context):
     session, _, _, resolution, close = context
     assert decide(session)["action"] == "would_decide"
-    assert any("FROM actor_location" in sql for sql, _ in session.statements)
+    assert any("SELECT 1 FROM actor WHERE" in sql for sql, _ in session.statements)
     assert all(sql.startswith("SELECT") for sql, _ in session.statements)
     resolution.assert_not_called()
     close.assert_not_called()

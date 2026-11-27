@@ -7,8 +7,8 @@ THIS is the file that breaks — the column names below are the contract. Run
 Design notes:
 - We index only LIVE actors (merged_into_actor_id IS NULL); the 53 dedupe
   duplicates are skipped so search never returns the same org twice.
-- partnership_profile and actor_relevance are 1:1 with actor (verified), so a
-  LEFT JOIN is safe — no row multiplication.
+- partnership_profile is 1:1 with actor (verified), so a LEFT JOIN is safe — no
+  row multiplication. (actor_relevance and challenge are removed by migration 820.)
 - Every field is added ONLY IF it has content (see `_section`). Most actors have
   just name + description today; the 28 with a partnership_profile get the full,
   rich blob. As the data fills in, re-running this enriches docs automatically.
@@ -61,8 +61,6 @@ def assemble_actors() -> list[dict]:
             pp.key_entry_points,
             pp.africa_specific_mandate,
             pp.strategic_plan,
-            ar.why_relevant,
-            ar.current_evidence,
             -- hubs this actor belongs to, as a comma list (many hubs -> one actor)
             (SELECT string_agg(h.name, ', ')
                FROM hub_actor ha JOIN hub h ON h.hub_id = ha.hub_id
@@ -71,7 +69,6 @@ def assemble_actors() -> list[dict]:
         LEFT JOIN actor_category_definition cd ON cd.category_code = a.actor_category
         LEFT JOIN region_state              rs ON rs.state_code = a.state_code
         LEFT JOIN partnership_profile pp ON pp.actor_id = a.actor_id
-        LEFT JOIN actor_relevance     ar ON ar.actor_id = a.actor_id
         WHERE a.merged_into_actor_id IS NULL
           -- GHUS-rejected records (e.g. collections of organizations) are not indexed.
           AND COALESCE(to_jsonb(a)->>'status', '') <> 'rejected'
@@ -108,8 +105,6 @@ def assemble_actors() -> list[dict]:
                 + _section("Key entry points", r["key_entry_points"])
                 + _section("Africa-specific mandate", r["africa_specific_mandate"])
                 + _section("Strategic plan", r["strategic_plan"])
-                + _section("Why relevant", r["why_relevant"])
-                + _section("Current evidence", r["current_evidence"])
                 + _section("Part of hubs", r["hub_names"])
                 # + _section("Sectors", r["sector_names"])  # empty for now
             )

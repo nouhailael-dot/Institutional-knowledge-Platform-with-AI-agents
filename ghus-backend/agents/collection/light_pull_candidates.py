@@ -41,6 +41,8 @@ from urllib.parse import urlsplit
 
 from sqlalchemy import text
 
+from agents.common.topics import topic_rows
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -182,7 +184,7 @@ def actor_targets(session, *, origin: str, force: bool, limit: int) -> list[dict
         "a.category_type, f.topic_id::text AS topic_id, t.name AS topic_name, "
         "array_agg(DISTINCT f.fact_key) AS open_keys "
         "FROM actor a JOIN actor_fact f ON f.actor_id = a.actor_id AND f.layer = 1 "
-        "LEFT JOIN topic t ON t.topic_id = f.topic_id "
+        f"LEFT JOIN {topic_rows(session)} t ON t.topic_id = f.topic_id "
         "WHERE a.source_origin = :origin AND COALESCE(a.website, '') <> '' "
         + ("" if force else "AND f.collection_state <> 'found' ")
         + "GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY a.name LIMIT :limit"

@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, replace
 
 from sqlalchemy import text
 
+from agents.common.topics import topic_rows
+
 from agents.common.hub_detection import (
     DetectionActor,
     HubDetectionConfig,
@@ -87,15 +89,14 @@ def load_detection_snapshot(session) -> DetectionSnapshot:
             "t.name AS topic_name,COALESCE(to_jsonb(a)->>'status',to_jsonb(a)->>'record_status') "
             "AS record_status,a.actor_category,a.category_type,"
             "(a.merged_into_actor_id IS NOT NULL) AS merged,"
-            "COALESCE(al.city,to_jsonb(a)->>'city',to_jsonb(a)->>'location_city') AS city,"
-            "COALESCE(al.state_code,a.state_code,to_jsonb(a)->>'state') AS state_code,"
-            "COALESCE(al.latitude,a.latitude) AS latitude,"
-            "COALESCE(al.longitude,a.longitude) AS longitude "
-            "FROM actor a JOIN actor_topic at ON at.actor_id=a.actor_id "
-            "JOIN topic t ON t.topic_id=at.topic_id "
-            "LEFT JOIN LATERAL (SELECT city,state_code,latitude,longitude FROM actor_location "
-            "WHERE actor_id=a.actor_id ORDER BY is_primary DESC,created_at,actor_location_id "
-            "LIMIT 1) al ON TRUE ORDER BY a.actor_id,t.topic_id"
+            "COALESCE(to_jsonb(a)->>'city',to_jsonb(a)->>'location_city') AS city,"
+            "COALESCE(a.state_code,to_jsonb(a)->>'state') AS state_code,"
+            "a.latitude AS latitude,a.longitude AS longitude "
+            # 820: an actor's topics are its thematic sectors (actor_topic and actor_location are gone).
+            "FROM actor a JOIN actor_sector x ON x.actor_id=a.actor_id "
+            "JOIN sector s ON s.sector_id=x.sector_id "
+            f"JOIN {topic_rows(session)} t ON t.code=s.code "
+            "ORDER BY a.actor_id,t.topic_id"
         )
     ).mappings().all()
 
