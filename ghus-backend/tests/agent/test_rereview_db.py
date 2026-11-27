@@ -54,6 +54,8 @@ def _first(session, table, key, status_column, status):
 def test_a_dry_run_counts_and_changes_nothing(session):
     verified = _count(session, "SELECT count(*) FROM actor WHERE status='verified' "
                                "AND merged_into_actor_id IS NULL")
+    if not verified:
+        pytest.skip("this copy was taken after the re-review park: nothing is verified")
     out = park_for_rereview(session, decided_by="tester", reason=REASON)
     assert out["live"] is False and out["parked"]["actor"] <= verified
     assert out["parked"]["actor"] > 0
@@ -104,7 +106,9 @@ def test_each_record_type_is_verified_or_rejected_from_the_directory(session, en
 
 def test_restore_puts_back_only_what_nobody_decided_since(session):
     out = park_for_rereview(session, decided_by="tester", reason=REASON, live=True)
-    decided = next(r for r in out["records"] if r["entity_type"] == "actor")
+    decided = next((r for r in out["records"] if r["entity_type"] == "actor"), None)
+    if decided is None:
+        pytest.skip("this copy was taken after the re-review park: nothing is verified")
     record_directory_verification(session, entity_type="actor", entity_id=decided["entity_id"],
                                   verified=False, rejection_reason="Not in scope",
                                   decided_by="tester", live=True)

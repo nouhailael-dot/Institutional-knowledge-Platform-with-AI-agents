@@ -40,10 +40,13 @@ def session():
 
 
 def _actor(session):
+    from agents.common.topics import topic_rows
+
+    # Any sector id serves as the fact's topic: before 820 the topic table, after it the
+    # thematic sectors that carry the same ids (topic_rows reads whichever exists).
     row = session.execute(text(
         "SELECT a.actor_id::text AS actor_id, a.description, "
-        "COALESCE((SELECT at.topic_id FROM actor_topic at WHERE at.actor_id = a.actor_id LIMIT 1),"
-        "         (SELECT t.topic_id FROM topic t ORDER BY t.code LIMIT 1))::text AS topic_id "
+        f"(SELECT t.topic_id FROM {topic_rows(session)} t ORDER BY t.code LIMIT 1)::text AS topic_id "
         "FROM actor a "
         "WHERE a.merged_into_actor_id IS NULL AND length(coalesce(a.description, '')) < 120 "
         "AND NOT EXISTS (SELECT 1 FROM review_item ri WHERE ri.entity_id = a.actor_id "

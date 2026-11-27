@@ -179,7 +179,7 @@ test('information boxes group a record the way Review does, with a derived regio
     'Sector', 'Parent', 'Source']);
   const location = boxes.find(b => b.title === 'Location').items;
   assert.equal(location.find(i => i.label === 'region').value, 'Midwest / Great Lakes');
-  assert.equal(boxes.find(b => b.title === 'Sector and topic').items[0].value, 'Water, Agriculture');
+  assert.equal(boxes.find(b => b.title === 'Sector').items[0].value, 'Water, Agriculture');
   const pending = infoBoxes({payload: {actor_category: 'company'}}, 'actor', VOCAB, []);
   assert.equal(pending[1].items[1].value, 'Pending Classification');
   const noHost = infoBoxes({payload: {name: 'E'}}, 'event', VOCAB, []);
