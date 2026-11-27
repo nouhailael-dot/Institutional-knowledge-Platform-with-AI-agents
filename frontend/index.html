@@ -1222,41 +1222,33 @@ function DeletePanel({kind,r,onDone,onClose}){
 }
 /* Re-review (GHUS, 25 Nov 2026): every verified organization, event and person was
    parked so the team goes through each one again. Verify keeps it in the Directory
-   as Verified; Reject (a reason is required) takes it out. The backend's approved
-   writer appends the decision to the record's verification history. */
+   as Verified; a record not kept is deleted with Delete (GHUS, 27 Nov 2026: no
+   separate Reject). The backend's approved writer appends the decision to the
+   record's verification history. */
 const VERIFY_KINDS={actor:"actors",event:"events",person:"people"};
-function VerifyPanel({kind,r,verified,onDone,onClose}){
+function VerifyPanel({kind,r,onDone,onClose}){
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState(null);
-  const [reason,setReason]=useState("");
   const word=KIND_WORD[kind]||"record";
   async function send(){
     if(busy) return;
-    if(!verified&&!reason.trim()){setErr("Give a reason to reject: it is kept with the record.");return;}
     setBusy(true); setErr(null);
     try{
       const res=await fetch(`/api/browse/${VERIFY_KINDS[kind]}/${encodeURIComponent(r.id)}/verify`,{method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({verified,rejection_reason:reason.trim(),confirm:true})});
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({verified:true,confirm:true})});
       const d=await res.json();
       if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not save the decision.");
-      onDone(d.status==="unchanged"?`${r.name} was already ${verified?"verified":"rejected"}.`
-        :verified?`${r.name} is verified and stays in the Ecosystem Directory.`
-        :`${r.name} is rejected and no longer shows in the Ecosystem Directory.`);
+      onDone(d.status==="unchanged"?`${r.name} was already verified.`
+        :`${r.name} is verified and stays in the Ecosystem Directory.`);
     }catch(e){ setErr(String(e.message||e)); setBusy(false); }
   }
-  return html`<div class="card pad fade delete-panel" role="alertdialog" aria-label=${`${verified?"Verify":"Reject"} ${r.name}`}>
-    <p class=${verified?"":"delete-warning"} style=${{marginTop:0,fontWeight:600}}>${verified
-      ?`Verify the ${word} “${r.name}”?`:`Reject the ${word} “${r.name}”?`}</p>
-    <p class="hint" style=${{margin:"0 0 10px"}}>${verified
-      ?"It stays in the Ecosystem Directory marked Verified. Check its details first; use Edit to correct anything."
-      :"It leaves the Ecosystem Directory. Nothing is deleted: the decision and your reason are kept with the record."}</p>
-    ${!verified&&html`<label class="field-label" for="reject-reason">Reason (required)</label>
-      <textarea id="reject-reason" class="delete-reason" rows="2" maxlength="500" value=${reason}
-        placeholder="Why is it not kept?" onInput=${e=>setReason(e.target.value)}></textarea>`}
+  return html`<div class="card pad fade delete-panel" role="alertdialog" aria-label=${`Verify ${r.name}`}>
+    <p style=${{marginTop:0,fontWeight:600}}>Verify the ${word} “${r.name}”?</p>
+    <p class="hint" style=${{margin:"0 0 10px"}}>It stays in the Ecosystem Directory marked Verified.
+      Check its details first; use Edit to correct anything, or Delete if it should not be kept.</p>
     ${err&&html`<div class="whynot" role="alert">${err}</div>`}
     <div class="attach-row">
-      <button class=${"btn"+(verified?"":" danger")} type="button" disabled=${busy} onClick=${send}>${busy?"Saving…":verified?"Yes, verify it":"Yes, reject it"}</button>
+      <button class="btn" type="button" disabled=${busy} onClick=${send}>${busy?"Saving…":"Yes, verify it"}</button>
       <button class="example" type="button" disabled=${busy} onClick=${onClose}>Cancel</button>
     </div>
   </div>`;
@@ -1498,8 +1490,8 @@ function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[]
   const [saved,setSaved]=useState(null);
   useEffect(()=>{setSaved(null);setEditing(false);},[r.id]);
   const [deleting,setDeleting]=useState(false);
-  const [deciding,setDeciding]=useState(null);   // null | "verify" | "reject"
-  useEffect(()=>{setDeciding(null);},[r.id]);
+  const [deciding,setDeciding]=useState(false);   // the Verify confirmation is open
+  useEffect(()=>{setDeciding(false);},[r.id]);
   const [profile,setProfile]=useState(null);
   const removed=statusOf(r)==="Deleted";
   const decidable=!!VERIFY_KINDS[kind]&&!removed&&statusOf(r)!=="Rejected";
@@ -1512,10 +1504,9 @@ function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[]
       <button class="backlink" onClick=${onBack}>← Back to results</button>
       <span style=${{display:"inline-flex",gap:"8px"}}>
         ${/* Delete: every record type with accounts (Phase 6); organizations only without. */ ""}
+        ${/* Verify, Edit, Delete (GHUS, 27 Nov 2026): a record not kept is deleted; no separate Reject. */ ""}
         ${decidable&&!editing&&!deleting&&!deciding&&statusOf(r)!=="Verified"&&html`<button class="btn" type="button"
-          data-needs="review.decide" onClick=${()=>{setSaved(null);setDeciding("verify");}}>Verify</button>`}
-        ${decidable&&!editing&&!deleting&&!deciding&&html`<button class="example danger" type="button"
-          data-needs="review.decide" onClick=${()=>{setSaved(null);setDeciding("reject");}}>Reject</button>`}
+          data-needs="review.decide" onClick=${()=>{setSaved(null);setDeciding(true);}}>Verify</button>`}
         ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" data-needs="records.edit" onClick=${()=>{setSaved(null);setEditing(true);}}>Edit</button>`}
         ${(currentAccount()||kind==="actor")&&!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
           data-needs=${currentAccount()?"records.delete_permanent":"records.remove"}
@@ -1524,8 +1515,8 @@ function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[]
     </div>
     ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
       onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
-    ${deciding&&html`<${VerifyPanel} kind=${kind} r=${r} verified=${deciding==="verify"} onClose=${()=>setDeciding(null)}
-      onDone=${msg=>{setDeciding(null); onChanged?onChanged(msg):setSaved(msg);}}/>`}
+    ${deciding&&html`<${VerifyPanel} kind=${kind} r=${r} onClose=${()=>setDeciding(false)}
+      onDone=${msg=>{setDeciding(false); onChanged?onChanged(msg):setSaved(msg);}}/>`}
     ${saved&&html`<div class="selnote" role="status">${saved}</div>`}
     <h2>${r.name}</h2>
     <${RecordTrail} kind=${kind} id=${r.id}/>

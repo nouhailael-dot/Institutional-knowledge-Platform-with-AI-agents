@@ -72,11 +72,16 @@ class DirectoryVerifyTests(unittest.TestCase):
         rule = next(r for r in ROUTE_POLICY if r.template == "/api/browse/{kind}/{record_id}/verify")
         self.assertEqual((rule.method, rule.permission), ("POST", "review.decide"))
 
-    def test_the_record_page_offers_verify_and_reject(self):
+    def test_the_record_page_offers_verify_edit_and_delete_but_no_reject(self):
+        """GHUS, 27 Nov 2026: a record not kept is deleted; there is no separate Reject."""
         page = (Path(__file__).resolve().parents[1] / "frontend" / "index.html").read_text(encoding="utf-8")
         self.assertIn("function VerifyPanel", page)
-        self.assertIn('data-needs="review.decide" onClick=${()=>{setSaved(null);setDeciding("verify");}}', page)
-        self.assertIn("/verify`", page)
+        self.assertIn('data-needs="review.decide" onClick=${()=>{setSaved(null);setDeciding(true);}}>Verify</button>', page)
+        self.assertIn('body:JSON.stringify({verified:true,confirm:true})', page)
+        self.assertNotIn('setDeciding("reject")', page)
+        self.assertNotIn(">Reject</button>`}\n        ${!editing&&!deleting&&!removed", page)
+        self.assertIn(">Edit</button>", page)
+        self.assertIn("onClick=${()=>setDeleting(true)}>Delete</button>", page)
 
 
 if __name__ == "__main__":
