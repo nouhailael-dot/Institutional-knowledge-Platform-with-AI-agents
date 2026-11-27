@@ -174,8 +174,9 @@ test('the preview row uses labels, never codes', () => {
 
 test('information boxes group a record the way Review does, with a derived region', () => {
   const boxes = infoBoxes(ACTOR_ROW, 'actor', VOCAB, [{key: 'category_type', header: 'Category Type'}]);
+  // 820 (27 Nov 2026): topic became sector, so the box is named Sector.
   assert.deepEqual(boxes.map(b => b.title), ['Identity', 'Classification', 'Location',
-    'Sector and topic', 'Parent', 'Source']);
+    'Sector', 'Parent', 'Source']);
   const location = boxes.find(b => b.title === 'Location').items;
   assert.equal(location.find(i => i.label === 'region').value, 'Midwest / Great Lakes');
   assert.equal(boxes.find(b => b.title === 'Sector and topic').items[0].value, 'Water, Agriculture');
