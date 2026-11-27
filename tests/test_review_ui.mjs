@@ -377,8 +377,20 @@ test('the runs panel lists only runs of the type with records in the queue, each
 test('a record row says what it is: an update result, or the kind and reason', () => {
   assert.equal(recordRowNote({agent_metadata: {source_table: 'actor_update'}, entity_type: 'actor'}),
     'Update result · check what it wrote');
-  assert.match(recordRowNote({entity_type: 'actor', review_reason: 'below_threshold', agent_metadata: {}}),
-    /^Organization · /);
+  // The reason it waits is not shown (GHUS, 27 Nov 2026); where it came from still is.
+  assert.equal(recordRowNote({entity_type: 'actor', review_reason: 'borderline_score', agent_metadata: {}}),
+    'Organization');
+  assert.equal(recordRowNote({entity_type: 'event', review_reason: 'map_agent', agent_metadata: {}}),
+    'Event · Proposed by Explore and Map');
+});
+
+test('the record card shows no reason tag, no essential-fields count, no per-box source, no scores', () => {
+  // GHUS, 27 Nov 2026: Sources stay listed once at the end of the record.
+  assert.doesNotMatch(component, /found with a source/);
+  assert.doesNotMatch(component, /class="review-card-sub"/);
+  assert.match(component, /function sourceLink\(_html, _url\) \{\r?\n  return null;/);
+  assert.doesNotMatch(component, /`Source: \$\{row\.sourceHost\}`/);
+  assert.match(component, /field === "website" && \/\^https\?:\\\/\\\/\/i\.test/);
 });
 
 test('run labels and chips hide raw UUIDs without changing the stored run id', () => {
@@ -407,9 +419,10 @@ test('header badges carry the record kind, the review state and every reason', (
     entity_type: 'actor', status: 'pending_review', record_status: 'parked',
     review_reason: 'geocode_failed', duplicate_state: 'possible_duplicate',
   });
-  // Stored "parked" by the agent is not a decision: it reads Pending.
+  // Stored "parked" by the agent is not a decision: it reads Pending. The review
+  // reason (a blue tag) is not shown (GHUS, 27 Nov 2026).
   assert.deepEqual(badges.map(badge => badge.label),
-    ['Organization', 'Pending Review', 'Geocode Failed', 'Possible Duplicate']);
+    ['Organization', 'Pending Review', 'Possible Duplicate']);
   // Parked only when a person parked it - in Review, or on its Build the Map card.
   assert.equal(headerBadges({entity_type: 'actor', status: 'pending_review', record_status: 'parked',
     decision_kind: 'defer'})[1].label, 'Parked');
@@ -1544,8 +1557,9 @@ test('Why It Matched explains the GHUS fit and the badge follows relevance', asy
   const rows = ghusFitRows({strength: 'weak', relevance: 0.45, priority: 0.225,
     fits: ['Works in HEALTH: digital health.'], value: ['GHUS use cases: corporate engagement (fund)'],
     concerns: ['Read from a page about it on another site, not its own website']});
-  assert.deepEqual(rows.map(([label]) => label), ['Fits the Request', 'Value for GHUS', 'To Check', 'Scores']);
-  assert.deepEqual(rows[3][1], ['Relevance 0.45 · Engagement priority 0.23']);
+  // No Scores row (GHUS, 27 Nov 2026): the numbers mean nothing to a reviewer.
+  assert.deepEqual(rows.map(([label]) => label), ['Fits the Request', 'Value for GHUS', 'To Check']);
+  assert.equal(rows.length, 3);
   assert.equal(matchStrengthLabel('weak'), 'Weak');
   assert.equal(MATCH_STRENGTH_CLASSES.weak, 'parked');
   assert.deepEqual(ghusFitRows(null), []);

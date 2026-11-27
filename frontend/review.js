@@ -404,7 +404,7 @@ export function sharedRecordNotes(records = []) {
     id: candidate.candidate_id,
     note: recordRowNote(candidate),
     movable: [RECORD_KIND_LABELS[candidate?.entity_type], originLabel(candidate),
-      candidate?.review_reason ? reviewReasonLabel(candidate.review_reason) : ""].filter(Boolean),
+      originReason(candidate)].filter(Boolean),
   }));
   const common = parts.length
     ? parts[0].movable.filter(word => parts.every(row => row.movable.includes(word)
@@ -437,8 +437,16 @@ export function recordRowNote(candidate) {
   if (meta.source_table === "actor_update") return "Update result · check what it wrote";
   const kind = RECORD_KIND_LABELS[candidate?.entity_type] || candidate?.entity_type || "";
   const origin = originLabel(candidate);
-  const reason = candidate?.review_reason ? reviewReasonLabel(candidate.review_reason) : "";
-  return [kind, origin, reason].filter(Boolean).join(" · ");
+  return [kind, origin, originReason(candidate)].filter(Boolean).join(" · ");
+}
+
+// GHUS, 27 Nov 2026: why the agent left a record for a person ("Borderline Score",
+// "Too Little Evidence" ...) is not shown. Only where it came from still reads, as
+// plain words: proposed by Explore and Map, or supplied through the Data Feed.
+const ORIGIN_REASONS = new Set(["map_agent", "data_feed"]);
+function originReason(candidate) {
+  const reason = candidate?.review_reason;
+  return ORIGIN_REASONS.has(reason) ? reviewReasonLabel(reason) : "";
 }
 
 export function groupQueue(candidates, groups = []) {
@@ -846,8 +854,7 @@ export function relatedItems(candidates = [], selected) {
       && item.agent_metadata?.entity_id === actorId)
     .map(item => ({
       id: item.candidate_id,
-      label: isUpdateProfile(item) ? "Organization updates"
-        : item.review_reason ? reviewReasonLabel(item.review_reason) : recordRowNote(item),
+      label: isUpdateProfile(item) ? "Organization updates" : recordRowNote(item),
       run: item.run_label || "",
     }));
 }
@@ -1611,10 +1618,7 @@ export function headerBadges(candidate) {
   badges.push(candidate.status === "pending_review" && !recordStatus
     ? {tone: isParkedByReviewer(candidate) ? "parked" : "pending_review", label: waitingLabel(candidate)}
     : {tone: candidate.status, label: recordStatus || reviewStatusLabel(candidate.status)});
-  if (candidate.review_reason) {
-    badges.push({tone: "reason", label: reviewReasonLabel(candidate.review_reason),
-      hint: reviewReasonHint(candidate.review_reason)});
-  }
+  // The review reason ("Borderline Score" ...) is not shown (GHUS, 27 Nov 2026).
   if (candidate.duplicate_state === "possible_duplicate") {
     badges.push({tone: "duplicate", label: BADGES.possibleDuplicate});
   }
@@ -1708,9 +1712,6 @@ function lightLine(html, row) {
       ${row.state ? html`<span class="review-missing">${missingWithPages(row)}</span>`
         : row.kept ? html`<span class="review-missing">The value in the directory was kept (see Fact History)</span>`
         : formatFactValue(row.value)}
-      ${(row.source || row.confidence) && html`<small>${row.source && html`<a href=${row.source}
-        target="_blank" rel="noreferrer">${row.sourceHost ? `Source: ${row.sourceHost}` : "Source"}</a>`}${
-        row.source && row.confidence ? " · " : ""}${row.confidence || ""}</small>`}
       ${row.fromSector && html`<small>From its ${row.fromSector} facts.</small>`}
       ${row.fromRecord && html`<small>From the ${row.fromRecord} (not re-read from its pages).</small>`}
       ${row.recordValue != null && html`<small>On the earlier GHUS profile: ${formatFactValue(row.recordValue)}</small>`}
@@ -2030,6 +2031,10 @@ function profileRow(html, candidate, draft, [field, label, factKeys], {edit, dis
 export function cardField(html, candidate, field, value, onChange, disabled, error, label) {
   const name = label || reviewFieldLabel(field);
   if (!(candidate?.editable_fields || []).includes(field)) {
+    // The website opens from its own box (GHUS, 27 Nov 2026).
+    if (field === "website" && /^https?:\/\//i.test(String(value || ""))) {
+      return cardLine(html, name, html`<a href=${value} target="_blank" rel="noreferrer">${value}</a>`);
+    }
     return cardLine(html, name, DATE_FIELDS.has(field) ? usDate(value ?? "") : formatCardValue(value));
   }
   const long = LONG_FIELDS.test(field);
@@ -2071,13 +2076,11 @@ export const MATCH_STRENGTH_CLASSES = {strong: "verified", moderate: "pending_re
 export function ghusFitRows(fit) {
   if (!fit || typeof fit !== "object") return [];
   const list = value => (Array.isArray(value) ? value : []).map(usSpelling).filter(Boolean);
-  const scores = [fit.relevance != null && `Relevance ${Number(fit.relevance).toFixed(2)}`,
-    fit.priority != null && `Engagement priority ${Number(fit.priority).toFixed(2)}`].filter(Boolean);
+  // The relevance and engagement scores are not shown (GHUS, 27 Nov 2026).
   return [
     ["Fits the Request", list(fit.fits)],
     ["Value for GHUS", list(fit.value)],
     ["To Check", list(fit.concerns)],
-    ["Scores", scores.length ? [scores.join(" · ")] : []],
   ];
 }
 
@@ -2100,8 +2103,10 @@ function formatCardValue(value) {
   return Array.isArray(value) ? value.filter(Boolean).join(", ") : formatFactValue(value);
 }
 
-function sourceLink(html, url) {
-  return url ? html`<small><a href=${url} target="_blank" rel="noreferrer">Source</a></small>` : null;
+// No "Source" under each box (GHUS, 27 Nov 2026): the pages read are listed once,
+// under Sources at the end of the record.
+function sourceLink(_html, _url) {
+  return null;
 }
 
 /**
@@ -2905,14 +2910,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${pending && twoWayKind(selected) !== "update" && html`<div class="review-edit-bar">
               <button class=${"review-act" + (editing ? " chosen" : "")} disabled=${busy}
                 onClick=${() => setEditing(!editing)}>${editing ? "Done Editing" : "Edit"}</button></div>`}
-            <p class="review-card-sub">
-              ${selected.entity_type === "person"
-                ? (personLink(selected, draft) && html`<a href=${personLink(selected, draft)} target="_blank"
-                    rel="noreferrer">${personLink(selected, draft)}</a> · `)
-                : html`${present(draft.website)
-                  ? html`<a href=${draft.website} target="_blank" rel="noreferrer">${draft.website}</a>`
-                  : MISSING.notProvided} · `}${runChip(selected)}
-            </p>
             ${isMigratedBaseline(selected) && html`<div class="review-notice" role="status">
               <strong>${BADGES.migratedBaseline}.</strong> ${SENTENCES.migratedBaseline}
             </div>`}
@@ -2942,11 +2939,6 @@ export function createReviewPage({html, useEffect, useRef, useState}) {
             ${isActor ? html`
             <details class="mpeople review-profile" open>
               <summary>Organization profile</summary>
-              ${completeness && completeness.total > 0 && html`<div class="review-completeness">
-                <b>Essential fields:</b> ${`${completeness.supported.length} of ${completeness.total} found with a source`}${
-                  completeness.missing.length ? html` · <span class="review-missing">${
-                  `Missing: ${completeness.missing.join(", ")}`}</span>` : ""}
-                <small>${SENTENCES.completenessNotVerification}</small></div>`}
               ${cardLine(html, "Other Names", otherNames.join(", "))}
               <label class="review-line"><b>${FIELDS.primarySector}</b>
                 <span class="review-value review-value-row">
