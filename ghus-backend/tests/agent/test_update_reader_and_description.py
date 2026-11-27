@@ -112,21 +112,24 @@ def test_the_model_saying_not_enough_proposes_nothing():
 
 # ------------------------------------------------------------------ requests
 
-def test_a_request_carries_the_description_option():
-    from agents.collection.actor_updates import request_options
+def test_every_request_improves_weak_descriptions():
+    """27 Nov 2026: part of every update run, not an option on the form."""
+    import inspect
 
-    prepared = request_options({"actor_ids": ["24ed7d2a-2392-4a3f-a177-5c74f5d57c40"],
-                                "improve_description": True})
-    assert prepared["options"]["improve_description"] is True
-    plain = request_options({"actor_ids": ["24ed7d2a-2392-4a3f-a177-5c74f5d57c40"]})
-    assert plain["options"]["improve_description"] is False
+    from agents.collection.actor_updates import check_update, request_options
+
+    for payload in ({}, {"improve_description": False}, {"improve_description": True}):
+        prepared = request_options({"actor_ids": ["24ed7d2a-2392-4a3f-a177-5c74f5d57c40"], **payload})
+        assert prepared["options"]["improve_description"] is True
+    assert inspect.signature(check_update).parameters["improve_description"].default is True
 
 
-def test_saved_requests_hand_the_option_to_each_run():
+def test_requests_saved_before_the_change_improve_descriptions_too():
     from agents.collection.actor_updates import _prepared_from
 
-    subscription = SimpleNamespace(
-        update_options={"scope": "general", "improve_description": True}, title="t",
-        actor_ids=["a"], sector_codes=None, state_code=None, start_date=None, end_date=None,
-        cadence="once", max_usd_per_run=1.0)
-    assert _prepared_from(subscription)["options"]["improve_description"] is True
+    for options in ({"scope": "general"}, {"scope": "general", "improve_description": False}):
+        subscription = SimpleNamespace(
+            update_options=options, title="t",
+            actor_ids=["a"], sector_codes=None, state_code=None, start_date=None, end_date=None,
+            cadence="once", max_usd_per_run=1.0)
+        assert _prepared_from(subscription)["options"]["improve_description"] is True

@@ -828,12 +828,13 @@ def check_update(session, *, actor_id: str, topic_code: str | None = None,
                  scope: str = "general", depth: str = "light", fields=(), categories=(),
                  focus: str = "", max_usd: float | None = None, config: dict | None = None,
                  reader_factory=None, runs_dir: Path = RUNS_DIR,
-                 today: datetime | None = None, improve_description: bool = False) -> dict:
+                 today: datetime | None = None, improve_description: bool = True) -> dict:
     """Read the actor's pages once and compare every box. Writes no database row.
 
-    ``improve_description``: when the recorded description is weak, a better one
-    is written from the pages read (``description_upgrade``); the apply step
-    raises it in Review, never over the record.
+    ``improve_description`` (on for every update since 27 Nov 2026): when the
+    recorded description is weak, a better one is written from the pages read
+    (``description_upgrade``); the apply step raises it in Review, never over the
+    record. A description that is not weak is never sent to the model.
     """
     if config is None:
         from agents.discovery.search.run import load_open_web_config
@@ -1411,8 +1412,8 @@ def request_options(payload: dict, *, config: dict | None = None,
         "options": {"scope": scope, "depth": depth, "categories": categories,
                     "fields": fields, "focus": focus,
                     "topic": topic, "category": category, "max_actors_per_run": per_run,
-                    # 25 Nov 2026: write a better description when the recorded one is weak.
-                    "improve_description": bool(payload.get("improve_description"))},
+                    # A weak description gets a better one on every run (27 Nov 2026).
+                    "improve_description": True},
     }
 
 
@@ -1657,7 +1658,8 @@ def _prepared_from(subscription) -> dict:
                     "focus": options.get("focus") or "", "topic": options.get("topic"),
                     "category": options.get("category"),
                     "max_actors_per_run": int(options.get("max_actors_per_run") or 1),
-                    "improve_description": bool(options.get("improve_description"))},
+                    # Every run, requests saved before 27 Nov 2026 included.
+                    "improve_description": True},
     }
 
 
@@ -1695,7 +1697,7 @@ def run_request(session, subscription, *, ledger: tuple[str, str], config: dict 
                 scope=options["scope"], fields=options["fields"],
                 categories=options["categories"], focus=options["focus"], max_usd=cap,
                 config=config, reader_factory=reader_factory, runs_dir=runs_dir,
-                improve_description=bool(options.get("improve_description")))
+                improve_description=True)
         except Exception as exc:  # noqa: BLE001 - one actor must not stop the others
             session.rollback()
             check = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
@@ -1883,8 +1885,9 @@ def main(argv: list[str] | None = None) -> int:
                            depth=args.depth, fields=fields, categories=_split(args.categories),
                            focus=args.focus, config=config)
             result = (plan_update(session, **options) if args.command == "plan"
-                      else check_update(session, max_usd=args.max_usd,
-                                        improve_description=args.improve_description, **options))
+                      # A weak description is improved on every check (27 Nov 2026); the old
+                      # --improve-description flag is still accepted and changes nothing.
+                      else check_update(session, max_usd=args.max_usd, **options))
     except (ActorUpdateError, ValueError) as exc:
         session.rollback()
         result = {"ok": False, "error": str(exc)}

@@ -285,7 +285,7 @@ def test_a_request_is_normalised_into_what_the_table_stores():
     assert prepared["options"] == {
         "scope": "missing", "depth": "light", "categories": ["funding"], "fields": [],
         "focus": "", "topic": None, "category": None, "max_actors_per_run": 1,
-                                   "improve_description": False}
+                                   "improve_description": True}
     # A one-time request ends the day it starts.
     once = _request(cadence="once", end_date=None)
     assert once["end_date"] == once["start_date"]
