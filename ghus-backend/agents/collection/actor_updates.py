@@ -170,10 +170,12 @@ WRITTEN = frozenset({"new", "changed", "additional", "corroborated", "conflict",
 
 DEFAULT_SETTINGS = {
     # 25 Nov 2026: an update reads up to ten pages (update_reader) and may write a
-    # better description, so its caps rise (GHUS: updates did too little).
+    # better description, so the per-actor cap rises (GHUS: updates did too little).
+    # A run stays within the database bound for a request: 5.00 (migration 570,
+    # subscriptions.MAX_USD_PER_RUN); 10.00 was refused when a request was saved.
     "max_usd_per_actor": 0.75,
     "max_actors_per_request": 20,
-    "max_usd_per_request_run": 10.00,
+    "max_usd_per_request_run": 5.00,
     "stale_after_days": 365,
     "time_sensitive_stale_after_days": 180,
     "recheck_not_found_after_days": 90,

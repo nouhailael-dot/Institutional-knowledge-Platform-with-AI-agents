@@ -296,7 +296,7 @@ def test_a_request_is_normalised_into_what_the_table_stores():
     ({"group": {"sector": "WATER", "town": "x"}}, "sector, type and state"),
     ({"depth": "deep"}, "Light refresh"),
     ({"scope": "specific"}, "at least one box"),
-    ({"max_usd_per_run": 11}, "spend ceiling"),
+    ({"max_usd_per_run": 6}, "spend ceiling"),
     ({"max_usd_per_run": -1}, "spend ceiling"),
     ({"max_actors_per_run": 99}, "Organizations per run"),
     ({"actor_ids": [str(uuid.uuid4()) for _ in range(21)]}, "at most 20"),

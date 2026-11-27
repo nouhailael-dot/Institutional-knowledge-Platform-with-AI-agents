@@ -2271,8 +2271,8 @@ class UpdateRequestDraft(BaseModel):
     start_date: str | None = Field(default=None, max_length=10)
     end_date: str | None = Field(default=None, max_length=10)
     max_actors_per_run: int | None = Field(default=None, ge=1, le=50)
-    # The backend's own ceiling (agents/config/sources.yaml) is the real limit.
-    max_usd_per_run: float | None = Field(default=None, gt=0, le=10)
+    # The database bound for a request (migration 570): at most $5 a run.
+    max_usd_per_run: float | None = Field(default=None, gt=0, le=5)
     requested_by: str | None = Field(default=None, max_length=254)
     # 25 Nov 2026: write a better description when the recorded one is weak.
     improve_description: bool = False
