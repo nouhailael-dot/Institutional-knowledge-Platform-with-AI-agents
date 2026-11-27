@@ -1,7 +1,7 @@
 /* Review screen. Uses the app's own tokens (--surface, --line, --ink, --muted,
    --accent) so it stays in step with the rest of the platform in light and dark.
    Layout: a persistent queue rail on the left, the six numbered boxes on the
-   right, and a sticky decision footer that never scrolls out of reach. */
+   right, and the decision bar at the end of each record (27 Nov 2026). */
 
 .review-page{max-width:1480px;margin:0 auto}
 
@@ -158,8 +158,9 @@
 .review-audit dd,.review-audit summary{color:var(--ink)}
 
 /* ---------------------------------------------------------------- footer */
-/* Sticky, because a reviewer should never have to scroll to decide. */
-.review-footer{position:sticky;bottom:0;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin:18px -20px -84px;padding:14px 20px;background:var(--surface);border-top:1px solid var(--line-strong,var(--line));box-shadow:0 -4px 14px rgb(0 0 0 / .06)}
+/* 27 Nov 2026 (GHUS): the decision bar is the end of the record, reached by scrolling
+   to the bottom - no longer pinned to the screen from the start. */
+.review-footer{position:static;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin:18px -20px -84px;padding:14px 20px;background:var(--surface);border-top:1px solid var(--line-strong,var(--line));border-radius:0 0 10px 10px}
 .btn.danger{background:#b42318;color:white;border-color:#b42318}
 /* Decision buttons (5 Nov 2026): white outlined, Verify in the platform orange. */
 .review-act{min-width:92px;padding:10px 22px;border:1px solid var(--line-strong,#d9d9d9);border-radius:8px;
