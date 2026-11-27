@@ -275,7 +275,7 @@ test('Light Pull is Layer 1 only and Deep Pull evidence stays separate', () => {
   // `{ "reason": "Found by open-web discovery ..." }` on screen instead of the
   // sentence. A single meaningful sentence renders as itself; a small object
   // renders as labelled lines.
-  assert.equal(formatFactValue({actor_category: 'company'}), 'Category: company');
+  assert.equal(formatFactValue({actor_category: 'company'}), 'Category: Company');
   assert.equal(formatFactValue({reason: 'Found by open-web discovery for hub X'}),
     'Found by open-web discovery for hub X');
   assert.equal(formatFactValue({state: 'not_yet_checked'}), 'State: not_yet_checked');
@@ -1114,7 +1114,7 @@ test('an update profile fills its boxes, marks what the update found, and shows 
   const rows = Object.fromEntries(lightFactRows(profile).map(row => [row.key, row]));
   // Saved values sit in their own boxes, each with what the update did.
   assert.equal(rows.ownership_and_size.value, 'An NRG company');
-  assert.match(updateNote(rows.ownership_and_size.update), /^Updated · .* · was: Private company$/);
+  assert.match(updateNote(rows.ownership_and_size.update), /^Updated · .* · was: Private Company$/);
   assert.equal(rows.international_connection.state, 'Not Found');
   // A box no update read is Not Yet Collected, not Not Found.
   assert.equal(rows.topic_business_segment_product.state, 'Not Yet Collected');
@@ -1634,4 +1634,36 @@ test('after Verify, Review says whether the record was added or merged, with a l
     'Added to the Ecosystem Directory as “Prairie Water Lab”.');
   assert.equal(placedLine({decisionKind: 'reject', selected}), null);
   assert.match(component, /record: placed\}\}\)\)\}>Open in the Directory<\/button>/);
+});
+
+// 27 Nov 2026 (GHUS): short values read as titles; combined boxes are split; Sector Focus is not repeated.
+test('short box values read as titles; sentences, links and codes keep their case', async () => {
+  const {titleCase, formatFactValue} = await import('../frontend/review.js');
+  assert.equal(titleCase('national trade organization'), 'National Trade Organization');
+  assert.equal(titleCase('state of the art lab'), 'State of the Art Lab');
+  assert.equal(titleCase('UM6P research partner'), 'UM6P Research Partner');
+  assert.equal(titleCase('corporate members, organization members, individual producers, developers, equipment suppliers'),
+    'Corporate Members, Organization Members, Individual Producers, Developers, Equipment Suppliers');
+  const sentence = 'Aims to achieve zero injuries via an industry-wide partnership.';
+  assert.equal(titleCase(sentence), sentence);
+  assert.equal(titleCase('https://nma.org/'), 'https://nma.org/');
+  assert.equal(formatFactValue({member_types: ['corporate members', 'developers']}),
+    'Member Types: Corporate Members, Developers');
+});
+
+test('a combined box is shown as one box per fact, without repeating the sectors', async () => {
+  const {splitBoxes, formatFactValue} = await import('../frontend/review.js');
+  const rows = splitBoxes([
+    {key: 'sector_geographic_scope', label: 'Sector Focus and Geographic Scope',
+     value: {sectors: ['mining'], places: ['united states']}},
+    {key: 'sector_focus', label: 'Sector Focus', value: {sectors: ['ai']}},
+    {key: 'investor_type_headquarters', label: 'Investor Type and Headquarters',
+     value: {investor_type: 'venture capital', headquarters: 'menlo park'}},
+    {key: 'hospital_type_scale', label: 'Hospital Type and Scale', state: 'Not Found', value: null},
+  ]);
+  assert.deepEqual(rows.map(r => r.label),
+    ['Geographic Scope', 'Investor Type', 'Headquarters', 'Hospital Type', 'Scale']);
+  assert.equal(formatFactValue(rows[0].value), 'United States');
+  assert.equal(formatFactValue(rows[2].value), 'Menlo Park');
+  assert.equal(rows[3].state, 'Not Found');
 });

@@ -54,8 +54,9 @@ test('every box of an event card is editable, starting with what the card shows'
     agent_metadata: {sector_codes: []},
   };
   const filled = profilePrefill(candidate, {name: 'Beyond Africa'});
-  assert.equal(filled.audience, 'Founders and investors');
-  assert.equal(filled.event_format, 'In person');           // capitalised as shown
+  // Short values read as titles in the boxes (GHUS, 27 Nov 2026).
+  assert.equal(filled.audience, 'Founders and Investors');
+  assert.equal(filled.event_format, 'In person');           // the format's own option label
   assert.equal(filled.um6p_ocp_involvement, undefined);      // never the map's "not found" wording
   assert.equal(EDIT_AS.person.work_evidence, 'relevant_work');
 });

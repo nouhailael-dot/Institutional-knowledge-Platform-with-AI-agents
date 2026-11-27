@@ -1223,6 +1223,8 @@ export function deepPullFacts(candidate) {
 const FACT_PRIMARY_KEYS = [
   "reason", "description", "summary", "text", "value", "name", "statement",
 ];
+// Primary keys that hold an explanation, kept in sentence case (27 Nov 2026).
+const SENTENCE_KEYS = new Set(["reason", "description", "summary", "statement", "text"]);
 
 // Dates a fact carries about ITSELF - when it was read, when it was recorded -
 // are provenance, and a reviewer reads a box for what it says, not when it was
@@ -1236,6 +1238,39 @@ const FACT_DATE_KEYS = new Set([
 // Which parts of a value an earlier reading supplied (backend fact_parts).
 const CARRIED_OVER = "carried_over";
 
+/**
+ * Short values read as titles in the boxes (GHUS, 27 Nov 2026): "national trade
+ * organization" reads "National Trade Organization". Only a short phrase (at most
+ * eight words, no sentence) changes; sentences, links and emails keep their case,
+ * and a word that already has a capital (UM6P, iPhone, NASA) is left as written.
+ */
+const MINOR_WORDS = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of",
+  "on", "or", "per", "the", "to", "via", "vs", "with"]);
+export function titleCase(text) {
+  const value = String(text ?? "");
+  const trimmed = value.trim();
+  if (!trimmed || /https?:\/\/|www\.|@|\n/i.test(trimmed)) return value;
+  const words = trimmed.split(/\s+/);
+  // A list written as one text ("corporate members, developers, ..."): each item is a title.
+  const items = trimmed.split(/\s*,\s*/);
+  if (words.length > 8 && items.length > 1 && !/[.!?;:]/.test(trimmed)
+      && items.every(item => item && item.split(/\s+/).length <= 5)) {
+    return items.map(item => titleCase(item)).join(", ");
+  }
+  if (words.length > 8 || /[.!?;:]\s+\S/.test(trimmed) || /[.!?]$/.test(trimmed)) return value;
+  return words.map((word, index) => word.split("-").map((piece, i) => {
+    // Already has a capital, starts with a number or symbol, or is a code (not_yet_checked).
+    if (!/^[a-z]/.test(piece) || /[A-Z_]/.test(piece)) return piece;
+    if (index > 0 && i === 0 && MINOR_WORDS.has(piece)) return piece;
+    return piece.charAt(0).toUpperCase() + piece.slice(1);
+  }).join("-")).join(" ");
+}
+
+/** A list of short items, each a title: "corporate members, developers" -> "Corporate Members, Developers". */
+function titleList(items) {
+  return items.map(item => titleCase(item)).join(", ");
+}
+
 /** Turn one key of a fact object into "Label: value", or null if it says nothing. */
 function factEntry(key, value) {
   if (value === null || value === undefined) return null;
@@ -1243,12 +1278,12 @@ function factEntry(key, value) {
   if (Array.isArray(value)) {
     const items = value.map(item => (typeof item === "string" ? item : null)).filter(Boolean);
     if (!items.length) return null;
-    return `${fieldLabel(key)}: ${items.join(", ")}`;
+    return `${fieldLabel(key)}: ${titleList(items)}`;
   }
   if (typeof value === "object") return null;          // nested objects stay out of a one-liner
   const text = String(value).trim();
   if (!text) return null;
-  return `${fieldLabel(key)}: ${text}`;
+  return `${fieldLabel(key)}: ${titleCase(text)}`;
 }
 
 /** A fact key as a readable label, reusing the screen's own label rules. */
@@ -1267,19 +1302,23 @@ function fieldLabel(key) {
  */
 export function formatFactValue(value) {
   if (value === null || value === undefined) return "No value recorded";
-  // A value that is a date (an event's next date) reads MM/DD/YYYY; other text as written.
-  if (typeof value === "string") return usDate(value);
+  // A value that is a date (an event's next date) reads MM/DD/YYYY; a short phrase
+  // reads as a title; a sentence as written.
+  if (typeof value === "string") return titleCase(usDate(value));
   if (typeof value !== "object") return String(value);
   // A list box (funding, recent activity, projects - 4 Nov 2026): one line per entry.
   if (Array.isArray(value.entries)) return formatEntries(value.entries);
   if (Array.isArray(value)) {
     if (value.some(item => item && typeof item === "object")) return formatEntries(value);
     const items = value.map(item => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
-    return items.length ? items.join(", ") : "No value recorded";
+    return items.length ? titleList(items) : "No value recorded";
   }
   for (const key of FACT_PRIMARY_KEYS) {
     const primary = value[key];
-    if (typeof primary === "string" && primary.trim()) return primary.trim();
+    // An explanation (why it matched, a summary) stays a sentence; a name or value is a title.
+    if (typeof primary === "string" && primary.trim()) {
+      return SENTENCE_KEYS.has(key) ? primary.trim() : titleCase(primary.trim());
+    }
   }
   const entries = Object.entries(value);
   const lines = entries.map(([key, item]) => factEntry(key, item)).filter(Boolean);
@@ -1519,10 +1558,56 @@ export function lightPullBoxes(candidate, category) {
   });
   const specificKeys = new Set((CATEGORY_LIGHT_ROWS[resolved] || []).map(([key]) => key));
   return {
-    common: rows.filter(row => !specificKeys.has(row.key)
-      && !LIGHT_ROWS_SHOWN_AS_CONTROLS.has(row.key)),
-    specific: rows.filter(row => specificKeys.has(row.key)),
+    common: splitBoxes(rows.filter(row => !specificKeys.has(row.key)
+      && !LIGHT_ROWS_SHOWN_AS_CONTROLS.has(row.key))),
+    specific: splitBoxes(rows.filter(row => specificKeys.has(row.key))),
   };
+}
+
+/**
+ * Boxes that held two facts, shown as two boxes (GHUS, 27 Nov 2026): each gets
+ * its own label and only its own parts (agents/common/fact_parts.py).
+ */
+// The sectors these boxes also held are left out: Primary Sector and Other Sectors
+// already show them (GHUS, 27 Nov 2026).
+export const SPLIT_BOXES = {
+  sector_geographic_scope: [["Geographic Scope", ["places"]]],
+  sector_stage_focus: [["Stage Focus", ["stages"]]],
+  investor_type_headquarters: [["Investor Type", ["investor_type"]], ["Headquarters", ["headquarters"]]],
+  jurisdiction_parent_agency: [["Jurisdiction", ["jurisdiction"]], ["Parent Agency", ["parent_agency"]]],
+  platform_type_operator: [["Platform Type", ["platform_type"]], ["Operator", ["operator"]]],
+  facility_type_operator: [["Facility Type", ["facility_type"]], ["Operator", ["operator"]]],
+  parent_and_center_type: [["Parent Organization", ["parent_organization"]], ["Center Type", ["center_type"]]],
+  founding_year_location: [["Founding Year", ["founded_year"]], ["Founding Location", ["founded_in"]]],
+  hospital_type_scale: [["Hospital Type", ["hospital_type"]], ["Scale", ["beds", "sites", "patients"]]],
+  ownership_and_size: [["Ownership", ["ownership", "parent_organization"]],
+    ["Size", ["employees", "customers", "sites", "revenue"]]],
+};
+
+const emptyPart = value => value === null || value === undefined || value === ""
+  || (Array.isArray(value) && !value.length);
+
+// Boxes that only repeat what another box shows (the sectors): not shown.
+export const REPEATED_BOXES = new Set(["sector_focus"]);
+
+/** One row per fact: a combined box becomes one row for each of its parts. */
+export function splitBoxes(rows) {
+  return rows.filter(row => !REPEATED_BOXES.has(row.key)).flatMap(row => {
+    const parts = SPLIT_BOXES[row.key];
+    if (!parts) return [row];
+    const value = row.value && typeof row.value === "object" && !Array.isArray(row.value) ? row.value : null;
+    // A value kept as plain text has no parts to split: it stays one box.
+    if (!row.state && !value) return [row];
+    return parts.map(([label, keys], index) => {
+      const own = value ? keys.filter(k => !emptyPart(value[k])) : [];
+      const part = {...row, key: `${row.key}.${index}`, label};
+      if (row.state) return part;                      // not found: both parts say so
+      if (!own.length) return {...part, value: null, state: MISSING.notFound};
+      // One part: its value alone ("Mining"); several: "Beds: 120 · Sites: 3".
+      return {...part, value: own.length === 1 ? value[own[0]]
+        : Object.fromEntries(own.map(k => [k, value[k]]))};
+    });
+  });
 }
 
 export function factHistoryRows(candidate) {
@@ -2035,6 +2120,8 @@ export function cardField(html, candidate, field, value, onChange, disabled, err
     if (field === "website" && /^https?:\/\//i.test(String(value || ""))) {
       return cardLine(html, name, html`<a href=${value} target="_blank" rel="noreferrer">${value}</a>`);
     }
+    // A record's own name, text and contact details keep exactly what was written.
+    if (AS_WRITTEN_FIELDS.has(field)) return cardLine(html, name, formatCardValue(value, {asWritten: true}));
     return cardLine(html, name, DATE_FIELDS.has(field) ? usDate(value ?? "") : formatCardValue(value));
   }
   const long = LONG_FIELDS.test(field);
@@ -2098,9 +2185,14 @@ export function cardLine(html, label, value, extra = null) {
       extra || ""}</span></div>`;
 }
 
-function formatCardValue(value) {
+// Fields shown exactly as written, never re-cased (27 Nov 2026).
+const AS_WRITTEN_FIELDS = new Set(["name", "full_name", "description", "ghus_notes", "website",
+  "email", "linkedin_url", "profile_url", "alt_names", "alternate_names", "title"]);
+
+function formatCardValue(value, {asWritten = false} = {}) {
   if (value === null || value === undefined || value === "") return "";
-  return Array.isArray(value) ? value.filter(Boolean).join(", ") : formatFactValue(value);
+  if (asWritten) return Array.isArray(value) ? value.filter(Boolean).join(", ") : String(value);
+  return Array.isArray(value) ? titleList(value.filter(Boolean).map(String)) : formatFactValue(value);
 }
 
 // No "Source" under each box (GHUS, 27 Nov 2026): the pages read are listed once,
