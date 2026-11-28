@@ -1050,7 +1050,7 @@ function Ask({onCarryOver,onExplore}){
                   ${modeChip(t.mode,t.sources)}
                   ${streaming&&!t.answer&&html`<span class="chip"><span class="spin"></span> thinking…</span>`}
                 </div>
-                ${t.rewritten&&html`<div class="rw">Interpreted as: <b>${t.rewritten}</b></div>`}
+                ${/* The follow-up's rewritten form is used for the search but no longer shown (GHUS, 27 Nov 2026). */""}
                 <div class="answer" ...${md(t.answer)}></div>
                 ${!t.done&&t.answer&&html`<span class="cursor"></span>`}
                 ${t.sql&&html`<div class="hint" style=${{marginTop:"18px",borderTop:"1px solid var(--line)",paddingTop:"14px"}}>Source — verified database</div>`}
