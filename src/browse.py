@@ -23,6 +23,7 @@ Pure data, runnable on its own:  python -m src.browse
 from uuid import UUID
 
 import os
+import re
 
 from src.db import get_readonly_connection, psycopg_database_url
 
@@ -344,6 +345,29 @@ def load_actor_profile(actor_id: str) -> dict:
         origin_source = {"type": row[0], "description": row[1]} if row else None
     return {"sources": sources, "verification": verification, "events": events,
             "relationships": relationships, "origin_source": origin_source}
+
+
+# Our own US city list (GHUS, 23 Nov 2026: Directory filters use our lists, not the
+# records'): the census places in us_city_coord, by state, the census word dropped
+# ("Savannah CDP" -> "Savannah"). Read once per state; the list does not change.
+_CITY_SUFFIX = re.compile(
+    r"\s+(city and borough|consolidated government|metropolitan government|unified government|"
+    r"urban county|city|town|village|borough|municipality|plantation|CDP|comunidad|zona urbana)"
+    r"(\s+\(balance\))?$", re.I)
+_cities: dict[str, list[str]] = {}
+
+
+def us_cities(state_code: str) -> list[str]:
+    """Every place in our US city list for a two-letter state code, A to Z."""
+    code = str(state_code or "").strip().upper()
+    if not re.fullmatch(r"[A-Z]{2}", code):
+        return []
+    if code not in _cities:
+        with _readonly() as conn, conn.cursor() as cur:
+            cur.execute("SELECT place_name FROM us_city_coord WHERE state_code = %s", (code,))
+            names = {_CITY_SUFFIX.sub("", r[0]).strip() for r in cur.fetchall()}
+        _cities[code] = sorted(n for n in names if n)
+    return _cities[code]
 
 
 def load_hubs() -> list[dict]:

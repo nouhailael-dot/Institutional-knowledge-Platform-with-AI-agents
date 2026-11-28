@@ -555,6 +555,12 @@ def _ask_visible(hits: list[dict]) -> list[dict]:
             hidden.get(_ASK_KINDS.get(str(h.get("entity_type") or "").lower(), ""), set())]
 
 
+@app.get("/api/reference/cities")
+def reference_cities(state: str = ""):
+    """Our US city list for one state (Directory City filter, 23 Nov 2026). Read-only."""
+    return {"state": state.strip().upper(), "cities": browse.us_cities(state)}
+
+
 @app.get("/api/browse/actors")
 def browse_actors():
     by_hub = _sectors_by_hub()

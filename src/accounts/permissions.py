@@ -105,7 +105,9 @@ ROUTE_POLICY: list[Rule] = [
     *_rules("records.view",
             "GET /api/browse/actors", "GET /api/browse/actors/removed",
             "GET /api/browse/actors/{actor_id}/profile", "GET /api/browse/events",
-            "GET /api/browse/hubs", "GET /api/browse/people"),
+            "GET /api/browse/hubs", "GET /api/browse/people",
+            # Our US city list for the Directory's City filter (25 Nov 2026).
+            "GET /api/reference/cities"),
     *_rules("records.edit", "POST /api/browse/{kind}/{record_id}/edit"),
     # Re-review (25 Nov 2026): verify or reject a record from the Directory.
     *_rules("review.decide", "POST /api/browse/{kind}/{record_id}/verify"),

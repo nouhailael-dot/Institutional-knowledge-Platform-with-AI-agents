@@ -1296,9 +1296,16 @@ const US="USA";   // the one form for the country (GHUS, 24 Nov 2026)
 const isUS=c=>["USA","US","UNITED STATES","UNITED STATES OF AMERICA"].includes(String(c||"").trim().toUpperCase());
 function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],columns,onOpen,exportName,empty,note}){
   const [q,setQ]=useState("");
-  const [vals,setVals]=useState({});
+  // A filter may start on a value: Country starts on USA (GHUS, 23 Nov 2026).
+  const [vals,setVals]=useState(()=>Object.fromEntries(filters.filter(f=>f.initial).map(f=>[f.key,f.initial])));
   const [mine,setMine]=useState(false);
-  const set=(k,v)=>setVals(x=>({...x,[k]:v}));
+  // A new state or country makes the chosen city meaningless; a country outside the
+  // US also clears State, Region and Hub, which it hides.
+  const set=(k,v)=>setVals(x=>({...x,[k]:v,...(k==="state"||k==="country"?{city:"",location:""}:{}),
+    ...(k==="country"&&v&&!isUS(v)?{state:"",region:"",hub:""}:{})}));
+  const [,redraw]=useState(0);
+  useEffect(()=>{const on=()=>redraw(n=>n+1);window.addEventListener("compass:cities",on);
+    return ()=>window.removeEventListener("compass:cities",on);},[]);
   // Personal preferences (individual accounts): the view the Directory opens on, once,
   // and this tab's saved filters. Only what this person sees changes.
   const prefTab={organizations:"actors",hubs:"hubs",people:"people",events:"events"}[exportName]||exportName;
@@ -1345,7 +1352,8 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
           onInput=${e=>set(f.key,e.target.value)}/>`
       : f.kind==="date"
       ? html`<${DateInput} ariaLabel=${f.label} value=${vals[f.key]||""} onChange=${v=>set(f.key,v)}/>`
-      : html`<${Sel} v=${vals[f.key]||""} set=${v=>set(f.key,v)} opts=${typeof f.options==="function"?f.options(vals):f.options}/>`}</div>`;
+      : html`<${Sel} v=${vals[f.key]||""} set=${v=>set(f.key,v)} opts=${(typeof f.options==="function"?f.options(vals):f.options)||[]}
+          disabled=${!!(f.disabled&&f.disabled(vals))} empty=${f.emptyText}/>`}</div>`;
   // Export = what the table shows: the name, its two tags, then the columns.
   const exportColumns=[{label:nameLabel,text:r=>r.name},{label:"Source",text:sourceOf},
     {label:"Status",text:statusOf},...columns];
@@ -1751,11 +1759,16 @@ function Actors({focus,visit}){
     filters=${[
       {key:"sector",label:"Sector",options:options.sectors||[],test:(a,v)=>(a.sectors||[]).includes(v)},
       {key:"type",label:"Category",options:options.types,test:(a,v)=>typeOf(a)===v},
-      {key:"city",label:"City",options:vals=>distinct(actors.filter(a=>(!vals.state||a.state===vals.state)
-        &&(!vals.country||a.country===vals.country)).map(a=>a.city)),test:(a,v)=>a.city===v},
-      {key:"state",label:"State",usOnly:true,options:options.states,test:(a,v)=>a.state===v},
-      {key:"region",label:"Region",usOnly:true,options:distinct(actors.map(a=>a.region)),test:(a,v)=>a.region===v},
-      {key:"country",label:"Country",options:distinct(actors.map(a=>a.country)),test:(a,v)=>a.country===v},
+      // City, State and Region come from our own US lists (GHUS, 23 Nov 2026): the city
+      // list is the chosen state's; another country lists its cities from the records.
+      {key:"city",label:"City",options:vals=>vals.country&&!isUS(vals.country)
+          ?distinct(actors.filter(a=>a.country===vals.country).map(a=>a.city))
+          :vals.state?usCities(vals.state):[],
+        disabled:vals=>(!vals.country||isUS(vals.country))&&!vals.state,emptyText:"Choose a state first",
+        test:(a,v)=>cityKey(a.city)===cityKey(v)},
+      {key:"state",label:"State",usOnly:true,options:US_STATE_OPTIONS(),test:(a,v)=>a.state===v},
+      {key:"region",label:"Region",usOnly:true,options:US_REGION_OPTIONS(),test:(a,v)=>a.region===v},
+      {key:"country",label:"Country",initial:"USA",options:distinct(actors.map(a=>a.country)),test:(a,v)=>a.country===v},
       {key:"hub",label:"Hub",usOnly:true,options:options.hubs,test:(a,v)=>a.hubs.includes(v)},
     ]}
     more=${[
@@ -1908,10 +1921,12 @@ function Events({focus,visit}){
       {key:"from",label:"From",kind:"date",test:(e,v)=>!!e.start_date&&(e.end_date||e.start_date).slice(0,10)>=v},
       {key:"to",label:"To",kind:"date",test:(e,v)=>!!e.start_date&&e.start_date.slice(0,10)<=v},
       // A list starting on All, like every other filter (GHUS, 11 Nov 2026).
-      {key:"location",label:"City",options:vals=>distinct(events.filter(e=>!vals.state||eventState(e)===vals.state).map(eventCity)),
-        test:(e,v)=>eventCity(e)===v},
-      {key:"state",label:"State",options:distinct(events.map(eventState)),test:(e,v)=>eventState(e)===v},
-      {key:"region",label:"Region",options:distinct(events.map(eventRegion)),test:(e,v)=>eventRegion(e)===v},
+      // Our own US lists (GHUS, 23 Nov 2026); the city list is the chosen state's.
+      {key:"location",label:"City",options:vals=>vals.state?usCities(vals.state):[],
+        disabled:vals=>!vals.state,emptyText:"Choose a state first",
+        test:(e,v)=>cityKey(eventCity(e))===cityKey(v)},
+      {key:"state",label:"State",options:US_STATE_OPTIONS(),test:(e,v)=>eventState(e)===v},
+      {key:"region",label:"Region",options:US_REGION_OPTIONS(),test:(e,v)=>eventRegion(e)===v},
     ]}
     more=${[
       {key:"frequency",label:"Frequency",options:distinct(events.map(e=>e.recurring_pattern)),test:(e,v)=>e.recurring_pattern===v},
@@ -1952,8 +1967,8 @@ function People({focus,visit}){
       text:p=>[p.name,p.title,...p.organizations,...p.topics,...p.research_areas].join(" ")}}
     filters=${[
       {key:"sector",label:"Sector",options:options.topics,test:(p,v)=>p.topics.includes(v)},
-      {key:"state",label:"State",options:options.states,test:(p,v)=>p.states.includes(v)},
-      {key:"region",label:"Region",options:distinct(options.states.map(x=>regionOfState(stateName(x)))),
+      {key:"state",label:"State",options:US_STATE_OPTIONS(),test:(p,v)=>p.states.some(x=>stateName(x)===v)},
+      {key:"region",label:"Region",options:US_REGION_OPTIONS(),
         test:(p,v)=>p.states.some(x=>regionOfState(stateName(x))===v)},
     ]}
     columns=${[
@@ -1963,8 +1978,25 @@ function People({focus,visit}){
     ]}/>`;
 }
 
-function Sel({v,set,opts}){ return html`<select class="field" value=${v} onChange=${e=>set(e.target.value)}>
-  <option value="">All</option>${opts.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`; }
+function Sel({v,set,opts,disabled,empty}){ return html`<select class="field" value=${v} disabled=${disabled} onChange=${e=>set(e.target.value)}>
+  <option value="">${disabled&&empty?empty:"All"}</option>${opts.map(o=>html`<option key=${o} value=${o}>${o}</option>`)}</select>`; }
+// Our own US city list, per state (GHUS, 23 Nov 2026), loaded once per state; the
+// Directory redraws when a list arrives. null while it loads.
+const US_CITY_LISTS={};
+function usCities(stateName){
+  const code=STATE_CODES[STATE_NAMES.indexOf(stateName)];
+  if(!code) return [];
+  if(US_CITY_LISTS[code]) return US_CITY_LISTS[code];
+  if(!US_CITY_LISTS["_"+code]) US_CITY_LISTS["_"+code]=fetch(`/api/reference/cities?state=${code}`)
+    .then(r=>r.json()).then(d=>{US_CITY_LISTS[code]=d.cities||[];window.dispatchEvent(new Event("compass:cities"));})
+    .catch(()=>{US_CITY_LISTS[code]=[];});
+  return null;
+}
+// "New York City" and "New York" are the same city for a filter.
+const cityKey=x=>String(x||"").toLowerCase().replace(/\s+city$/,"").trim();
+// The 50 states and DC, and the 7 GHUS regions: our lists, not the records' values.
+const US_STATE_OPTIONS=()=>STATE_NAMES;
+const US_REGION_OPTIONS=()=>Object.keys(US_REGIONS);
 function Loading(){ return html`<div class="empty"><span class="spin"></span> Loading…</div>`; }
 
 /* ------------------------------------------------------ Build the Map */
