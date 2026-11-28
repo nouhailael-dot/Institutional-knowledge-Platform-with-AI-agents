@@ -831,6 +831,24 @@
   .mcard .mpeople{background:none;margin:20px 0 0;padding:0;border:0}
   .mcard .mpeople>.example{color:var(--accent-ink);border-color:var(--line);padding:8px 16px}
   @media(max-width:760px){.mcard{padding:18px 16px}.mcard .mh{flex-wrap:wrap}.mcard .mactions{width:100%}}
+  /* A Directory record in the Explore and Map card (28 Nov 2026): the same sign, name,
+     status, tags, grey strip and facts; the card stays still under the mouse. */
+  .dpage>.backlink{margin:0 0 12px}
+  .mcard.dcard,.mcard.dcard:hover{transform:none;animation:none}
+  .mcard.dcard.pick:hover{border-left-width:3px}
+  .mcard.dcard .record-trail{margin:0 0 16px}
+  .mcard.dcard .msec{margin:22px 0 0}
+  .mcard.dcard .msec>.mhead{font-size:14.5px;font-weight:650;color:var(--slate);margin-bottom:8px}
+  .mcard.dcard .msec table.grid{margin-top:4px}
+  /* Select and Delete several on a Directory list (28 Nov 2026). */
+  .dir-actions{display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center}
+  table.grid .pick-cell{width:36px;padding-right:0}
+  table.grid .pick-cell input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer}
+  table.grid tr.row-picked td{background:var(--accent-soft)}
+  .bulk-names{max-height:180px;overflow:auto;margin:0 0 10px;padding:8px 12px 8px 28px;border:1px solid var(--line);border-radius:8px;font-size:14px}
+  /* Save / Reset under Edit and the Yes / No of Verify and Delete: the map card's button size. */
+  .edit-form .attach-row .btn,.delete-panel .attach-row .btn{padding:9px 22px;font-size:14px;line-height:1.3;min-width:96px}
+  .edit-form .attach-row .example,.delete-panel .attach-row .example{padding:8px 16px;font-size:14px;line-height:1.3}
 </style>
 <link rel="stylesheet" href="/review.css?v=20261127a"/>
 <link rel="stylesheet" href="/discovery.css?v=20261125a"/>
@@ -1230,6 +1248,62 @@ function DeletePanel({kind,r,onDone,onClose}){
     </div>
   </div>`;
 }
+/* Delete several records at once from a Directory list (28 Nov 2026). Each one goes
+   through the same Delete as its own page, one after another, so each waits 30 days
+   under Pending Deletion and records who deleted it. The box names every record and
+   the count before anything is deleted; the end message names any that failed. */
+const KIND_PLURAL={actor:"organizations",event:"events",person:"people",hub:"hubs"};
+const rowId=r=>r.id||r.hub_id;
+function BulkDeletePanel({kind,records,onDone,onClose}){
+  const retained=!!currentAccount();
+  const [busy,setBusy]=useState(false);
+  const [done,setDone]=useState(0);
+  const [err,setErr]=useState(null);
+  const [reason,setReason]=useState("");
+  const n=records.length, noun=n===1?KIND_WORD[kind]:KIND_PLURAL[kind];
+  const until=new Date(Date.now()+RETENTION_DAYS*864e5).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+  async function send(){
+    if(busy) return;
+    setBusy(true); setErr(null); setDone(0);
+    const failed=[];
+    for(const r of records){
+      try{
+        const res=retained
+          ? await fetch(`/api/browse/${KIND_PATH[kind]}/${encodeURIComponent(rowId(r))}/delete`,{method:"POST",
+              headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:reason.trim(),confirm:true})})
+          : await fetch(`/api/browse/actors/${rowId(r)}/remove`,{method:"POST",
+              headers:{"Content-Type":"application/json"},body:JSON.stringify({reason:DELETE_REASON,confirm:true})});
+        const d=await res.json().catch(()=>({}));
+        if(!res.ok) throw new Error((d.detail&&d.detail.message)||d.detail||"Could not delete it.");
+      }catch(e){ failed.push(`${r.name} (${String(e.message||e)})`); }
+      setDone(x=>x+1);
+    }
+    const ok=n-failed.length;
+    if(!ok){ setErr(`Nothing was deleted. ${failed.join("; ")}`); setBusy(false); return; }
+    const okNoun=ok===1?KIND_WORD[kind]:KIND_PLURAL[kind];
+    onDone(`${ok} ${okNoun} ${ok===1?"was":"were"} deleted.`
+      +(retained?` ${ok===1?"It":"They"} can be restored from Pending Deletion on the Dashboard until ${until}; after that ${ok===1?"it is":"they are"} removed permanently.`:"")
+      +(failed.length?` Not deleted: ${failed.join("; ")}.`:""));
+  }
+  return html`<div class="card pad fade delete-panel" role="alertdialog" aria-label=${`Delete ${n} ${noun}`}>
+    <p class="delete-warning" style=${{marginTop:0}}>Delete ${n} ${noun}?</p>
+    <ul class="bulk-names">${records.map(r=>html`<li key=${rowId(r)}>${r.name}</li>`)}</ul>
+    ${retained
+      ? html`<p class="hint" style=${{margin:"0 0 10px"}}>They disappear at once from the Directory, Explore and Map,
+          search, Ask and the agents. For ${RETENTION_DAYS} days (until ${until}) each one is listed under Pending Deletion
+          on the Dashboard, where an Admin or Editor can restore it with everything it had. After that they are removed permanently.</p>
+        <label class="field-label" for="bulk-delete-reason">Reason (optional)</label>
+        <textarea id="bulk-delete-reason" class="delete-reason" rows="2" maxlength="500" value=${reason} disabled=${busy}
+          placeholder="Why are they being deleted?" onInput=${e=>setReason(e.target.value)}></textarea>`
+      : html`<p class="hint" style=${{margin:"0 0 10px"}}>Clicking Yes removes them from the Ecosystem Directory for everyone.</p>`}
+    ${err&&html`<div class="whynot" role="alert">${err}</div>`}
+    <div class="attach-row">
+      <button class="btn danger" type="button" disabled=${busy} onClick=${send}>
+        ${busy?html`<span class="spin"></span> Deleting ${Math.min(done+1,n)} of ${n}…`:`Yes, delete ${n}`}</button>
+      <button class="example" type="button" disabled=${busy} onClick=${onClose}>No, keep</button>
+    </div>
+  </div>`;
+}
 /* Re-review (GHUS, 25 Nov 2026): every verified organization, event and person was
    parked so the team goes through each one again. Verify keeps it in the Directory
    as Verified; a record not kept is deleted with Delete (GHUS, 27 Nov 2026: no
@@ -1294,7 +1368,7 @@ const sourceOf=r=>r.origin==="AI-Mapped"?"AI mapped":(r.origin||"");
 const US="USA";   // the one form for the country (GHUS, 24 Nov 2026)
 // Any US spelling a record may still carry counts as the US.
 const isUS=c=>["USA","US","UNITED STATES","UNITED STATES OF AMERICA"].includes(String(c||"").trim().toUpperCase());
-function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],columns,onOpen,exportName,empty,note}){
+function Directory({kind,noun,plural,nameLabel="Name",rows,search,filters,more=[],columns,onOpen,onChanged,exportName,empty,note}){
   const [q,setQ]=useState("");
   // A filter may start on a value: Country starts on USA (GHUS, 23 Nov 2026).
   const [vals,setVals]=useState(()=>Object.fromEntries(filters.filter(f=>f.initial).map(f=>[f.key,f.initial])));
@@ -1346,6 +1420,19 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
     (!mine||(me&&r.owner_user_id===me.user_id)) &&
     (!needle||search.text(r).toLowerCase().includes(needle)) &&
     all.every(f=>!vals[f.key]||f.test(r,vals[f.key])));
+  // Select and Delete several (28 Nov 2026): Select all ticks every row the filters
+  // show, and a new search or filter clears the ticks, so nothing hidden is deleted.
+  const canDelete=!!currentAccount()||kind==="actor";
+  const [selecting,setSelecting]=useState(false);
+  const [picked,setPicked]=useState(()=>new Set());
+  const [bulk,setBulk]=useState(false);
+  const filterKey=JSON.stringify([q,vals,mine]);
+  useEffect(()=>{setPicked(new Set());setBulk(false);},[filterKey]);
+  const pickedRows=matches.filter(r=>picked.has(rowId(r)));
+  const allPicked=matches.length>0&&pickedRows.length===matches.length;
+  const toggle=r=>setPicked(x=>{const y=new Set(x);y.has(rowId(r))?y.delete(rowId(r)):y.add(rowId(r));return y;});
+  const stopSelecting=()=>{setSelecting(false);setPicked(new Set());setBulk(false);};
+  const deleteNeeds=currentAccount()?"records.delete_permanent":"records.remove";
   const control=f=>html`<div key=${f.key}><label>${f.label}</label>
     ${f.kind==="text"
       ? html`<input class="field" placeholder=${f.placeholder||""} value=${vals[f.key]||""}
@@ -1389,31 +1476,42 @@ function Directory({noun,plural,nameLabel="Name",rows,search,filters,more=[],col
     </div>
     <div class="card dir-results" style=${{overflow:"hidden"}}>
       <div class="dir-count">
-        <span>${matches.length} ${matches.length===1?noun:plural} shown</span>
-        <button class="example" type="button" disabled=${!matches.length}
-          onClick=${()=>downloadCsv(exportName,exportColumns,matches)}>⤓ Export</button>
+        <span>${matches.length} ${matches.length===1?noun:plural} shown${selecting?` · ${pickedRows.length} selected`:""}</span>
+        <span class="dir-actions">
+          ${canDelete&&!selecting&&html`<button class="example" type="button" data-needs=${deleteNeeds} disabled=${!matches.length}
+            onClick=${()=>setSelecting(true)}>Select</button>`}
+          ${selecting&&html`<button class="example" type="button" disabled=${bulk}
+              onClick=${()=>setPicked(allPicked?new Set():new Set(matches.map(rowId)))}>${allPicked?"Unselect all":`Select all ${matches.length}`}</button>
+            <button class="example danger" type="button" data-needs=${deleteNeeds} disabled=${!pickedRows.length||bulk}
+              onClick=${()=>setBulk(true)}>Delete${pickedRows.length?` (${pickedRows.length})`:""}</button>
+            <button class="example" type="button" disabled=${bulk} onClick=${stopSelecting}>Cancel</button>`}
+          <button class="example" type="button" disabled=${!matches.length}
+            onClick=${()=>downloadCsv(exportName,exportColumns,matches)}>⤓ Export</button>
+        </span>
       </div>
+      ${bulk&&html`<div style=${{padding:"0 16px 16px"}}><${BulkDeletePanel} kind=${kind} records=${pickedRows}
+        onClose=${()=>setBulk(false)} onDone=${msg=>{stopSelecting();onChanged&&onChanged(msg);}}/></div>`}
     ${!rows.length? html`<div class="empty">${empty}</div>`
       : !matches.length? html`<div class="empty">No ${plural} match these filters. Try widening them.</div>`
       : html`
-      <table class="grid"><thead><tr><th>${nameLabel}</th>
+      <table class=${"grid"+(selecting?" selecting":"")}><thead><tr>${selecting&&html`<th class="pick-cell" aria-label="Selected"></th>`}<th>${nameLabel}</th>
         ${columns.map(c=>html`<th key=${c.label} class=${c.num?"num":""}>${c.label}</th>`)}<th aria-hidden="true"></th></tr></thead>
-        <tbody>${matches.slice(0,400).map(r=>html`<tr key=${r.id||r.hub_id||r.name} onClick=${()=>onOpen(r)}>
+        <tbody>${matches.slice(0,400).map(r=>html`<tr key=${r.id||r.hub_id||r.name} class=${selecting&&picked.has(rowId(r))?"row-picked":""}
+            onClick=${()=>selecting?toggle(r):onOpen(r)}>
+          ${selecting&&html`<td class="pick-cell"><input type="checkbox" aria-label=${`Select ${r.name}`}
+            checked=${picked.has(rowId(r))} onClick=${e=>e.stopPropagation()} onChange=${()=>toggle(r)}/></td>`}
           <td><div class="name-link">${r.name}</div><${RecordBadges} r=${r}/></td>
           ${columns.map(c=>html`<td key=${c.label} class=${c.num?"num":""}>${c.cell?c.cell(r):dash(c.text(r))}</td>`)}
           <td class="row-go" aria-hidden="true">›</td></tr>`)}</tbody>
       </table>
       ${matches.length>400&&html`<div class="tablecap">
-        Showing first 400 of ${matches.length}. Narrow the filters to see the rest.</div>`}`}
+        Showing first 400 of ${matches.length}. Narrow the filters to see the rest.${selecting&&pickedRows.length>400?` Select all also ticked the ${matches.length-400} not shown.`:""}</div>`}`}
     </div>
   </div>`;
 }
 
 /* A record's page: what we hold, then the Edit form for every field. */
-/* A record's profile (29 Oct 2026): one layout for every type. Header with the
-   name, a one-line summary and badges; a main column of titled sections, where an
-   empty field reads "Not found" (an empty field is itself an answer); a side
-   column with the key facts and the sources and history. */
+/* A record's page: see RecordPage. Long text and its "Not Found" for an empty value. */
 const NOT_FOUND=html`<span class="dash">Not Found</span>`;
 const isEmpty=v=>v==null||v===""||(Array.isArray(v)&&!v.length);
 // Long text keeps its paragraphs and bullet points; a long one opens with Show more.
@@ -1439,12 +1537,6 @@ function RichText({text,limit=420}){
 const SMALL_WORDS=new Set(["a","an","and","as","at","by","for","in","of","on","or","the","to","with"]);
 const titleCase=t=>String(t).split(" ").map((w,i)=>i&&SMALL_WORDS.has(w.toLowerCase())?w.toLowerCase()
   :/^[a-z]/.test(w)?w[0].toUpperCase()+w.slice(1):w).join(" ");
-function Section({title,rows,children}){
-  return html`<section class="pf-section"><h3>${titleCase(title)}</h3>
-    ${rows&&html`<div class="pf-rows">${rows.map(([k,v])=>html`<${React.Fragment} key=${k}>
-      <span class="pf-k">${k}</span><span class="pf-v">${isEmpty(v)?NOT_FOUND:v}</span></${React.Fragment}>`)}</div>`}
-    ${children}</section>`;
-}
 const link=(url,label)=>url?html`<a href=${url} target="_blank" rel="noopener noreferrer">${label||url.replace(/^https?:\/\/(www\.)?/,"").replace(/\/$/,"")}</a>`:null;
 const FACT_LABELS={description:"description",primary_technical_focus:"technical focus",technical_approach:"approach",
   current_activities:"current activities",funding_summary:"funding"};
@@ -1452,7 +1544,7 @@ const RELATION_LABELS={unit_of:["Unit of","Has unit"],operated_by:["Operated by"
   portfolio_of:["In the portfolio of","Has in its portfolio"],spinout_of:["Spinout of","Spun out"],funded_by:["Funded by","Funds"],
   collaborates_with:["Collaborates with","Collaborates with"]};
 
-function SourcesHistory({kind,r,profile,bare}){
+function SourcesHistory({kind,r,profile}){
   const lines=[];
   const origin=r.origin==="AI-Mapped"?"Found by Explore and Map or monitoring":r.origin==="Imported"?"Imported from the Phase 1 map":null;
   if(origin) lines.push(origin);
@@ -1468,25 +1560,14 @@ function SourcesHistory({kind,r,profile,bare}){
   if(statusOf(r)==="Deleted"&&r.removed_at) lines.push(`Deleted ${usDate(r.removed_at.slice(0,10))}${byWhom(r.removed_by)}: ${r.removed_reason||""}`);
   if(kind==="hub"&&r.approved_at) lines.push(`Approved ${usDate(String(r.approved_at).slice(0,10))}${byWhom(r.approved_by)}`);
   const sources=(profile&&profile.sources)||[];
-  if(bare){
-    if(r.updated_at) lines.push(`Last updated ${usDate(r.updated_at.slice(0,10))}`);
-    lines.push(`Owner: ${ownerOf(r)}`);
-    return html`<div class="pf-origin-body">
-      ${lines.map(l=>html`<div class="pf-history" key=${l}>${l}</div>`)}
-      <div class="mhead" style=${{marginTop:"10px"}}>Source pages</div>
-      ${kind==="actor"&&!profile?html`<div class="hint" style=${{margin:0}}><span class="spin"></span> Loading…</div>`:null}
-      ${sources.map(s=>html`<div class="pf-source" key=${s.url}>${link(s.url)}
-        ${(s.supports||[]).some(k=>FACT_LABELS[k])&&html`<span class="dash"> — ${s.supports.filter(k=>FACT_LABELS[k]).map(k=>FACT_LABELS[k]).join(", ")}</span>`}</div>`)}
-      ${profile&&!sources.length&&html`<div class="dash">No source pages recorded</div>`}
-    </div>`;
-  }
-  return html`<div class="pf-side-box"><h3>Sources and History</h3>
-    ${kind==="actor"&&!profile?html`<div class="hint" style=${{margin:0}}><span class="spin"></span> Loading…</div>`:null}
-    ${sources.map(s=>html`<div class="pf-source" key=${s.url}>${link(s.url)}
-      ${(s.supports||[]).some(k=>FACT_LABELS[k])&&html`<div class="hint" style=${{margin:0}}>${s.supports.filter(k=>FACT_LABELS[k]).map(k=>FACT_LABELS[k]).join(", ")}</div>`}</div>`)}
-    ${kind!=="actor"&&r.website&&html`<div class="pf-source">${link(r.website)}</div>`}
-    ${kind==="actor"&&profile&&!sources.length&&html`<div class="dash">No source pages recorded</div>`}
+  if(r.updated_at) lines.push(`Last updated ${usDate(r.updated_at.slice(0,10))}`);
+  if(shown(ownerOf(r))) lines.push(`Owner: ${ownerOf(r)}`);
+  return html`<div class="pf-origin-body">
     ${lines.map(l=>html`<div class="pf-history" key=${l}>${l}</div>`)}
+    ${kind==="actor"&&!profile?html`<div class="hint" style=${{margin:"10px 0 0"}}><span class="spin"></span> Loading…</div>`:null}
+    ${sources.length>0&&html`<div class="mhead" style=${{marginTop:"10px"}}>Source pages</div>`}
+    ${sources.map(s=>html`<div class="pf-source" key=${s.url}>${link(s.url)}
+      ${(s.supports||[]).some(k=>FACT_LABELS[k])&&html`<span class="dash"> — ${s.supports.filter(k=>FACT_LABELS[k]).map(k=>FACT_LABELS[k]).join(", ")}</span>`}</div>`)}
   </div>`;
 }
 
@@ -1496,14 +1577,29 @@ function RecordTrail({kind,id}){
     fetch(`/api/account/record-trail?entity_type=${kind}&entity_id=${encodeURIComponent(id)}`)
       .then(r=>r.ok?r.json():null).then(d=>live&&setT(d)).catch(()=>{});return()=>{live=false;};},[kind,id]);
   if(!t) return null;
-  const who=(x,fallback)=>x?`${x.name}, ${new Date(x.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`:fallback;
+  const who=x=>`${x.name}, ${new Date(x.at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`;
+  // Only what is recorded (28 Nov 2026): a missing name is left out, not shown as Not recorded.
+  const parts=[["Brought in by",t.owner],["Verified by",t.reviewed_by],["Last edited by",t.last_edited_by]].filter(([,x])=>x);
+  if(!parts.length) return null;
   return html`<div class="record-trail hint">
-    <span><b>Brought in by</b> ${who(t.owner,"Not recorded")}</span>
-    <span><b>Verified by</b> ${who(t.reviewed_by,"Not recorded")}</span>
-    <span><b>Last edited by</b> ${who(t.last_edited_by,"Not edited since accounts")}</span></div>`;
+    ${parts.map(([k,x])=>html`<span key=${k}><b>${k}</b> ${who(x)}</span>`)}</div>`;
 }
 
-function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[],children,options,layout,tags,meta}){
+/* A record's page in the Explore and Map card's design (28 Nov 2026): sign, name,
+   status and tags, Verify / Edit / Delete on the right, the grey strip of short
+   facts, then the description and the longer facts in two columns, and where the
+   record comes from folded at the bottom. Only what the record holds is shown: an
+   empty or "Not Found" field, and a section with nothing in it, are left out.
+   The Edit form still lists every field, so a missing one can be filled in. */
+const NOT_FOUND_TEXT=/^\s*(not[ _]found|not recorded|not classified|none|n\/a|unknown)\s*\.?\s*$/i;
+const shown=v=>!(isEmpty(v)||(typeof v==="string"&&(!v.trim()||NOT_FOUND_TEXT.test(v))));
+const keep=v=>shown(v)?v:null;
+const richOf=(v,limit)=>shown(v)?html`<${RichText} text=${v} limit=${limit}/>`:null;
+// A titled part of the card under the facts; null when it has nothing to show.
+function CardSection({title,children}){
+  return html`<div class="msec"><div class="mhead">${titleCase(title)}</div>${children}</div>`;
+}
+function RecordPage({kind,r,onBack,onChanged,onSaved,sections,children,options,tags,strip=[]}){
   const [editing,setEditing]=useState(false);
   const [saved,setSaved]=useState(null);
   useEffect(()=>{setSaved(null);setEditing(false);},[r.id]);
@@ -1517,54 +1613,48 @@ function RecordPage({kind,r,onBack,onChanged,onSaved,subtitle,sections,glance=[]
     api(`/api/browse/actors/${r.id}/profile`).then(d=>live&&setProfile(d)).catch(()=>live&&setProfile({sources:[],events:[],relationships:[]}));
     return ()=>{live=false;}; },[r.id]);
   const body=typeof sections==="function"?sections(profile):(sections||[]);
-  return html`<div class="card pad detail fade">
-    <div style=${{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <button class="backlink" onClick=${onBack}>← Back to results</button>
-      <span style=${{display:"inline-flex",gap:"8px"}}>
-        ${/* Delete: every record type with accounts (Phase 6); organizations only without. */ ""}
-        ${/* Verify, Edit, Delete (GHUS, 27 Nov 2026): a record not kept is deleted; no separate Reject. */ ""}
-        ${decidable&&!editing&&!deleting&&!deciding&&statusOf(r)!=="Verified"&&html`<button class="btn" type="button"
-          data-needs="review.decide" onClick=${()=>{setSaved(null);setDeciding(true);}}>Verify</button>`}
-        ${!editing&&!deleting&&!removed&&html`<button class="example" type="button" data-needs="records.edit" onClick=${()=>{setSaved(null);setEditing(true);}}>Edit</button>`}
-        ${(currentAccount()||kind==="actor")&&!editing&&!deleting&&!removed&&html`<button class="example danger" type="button"
-          data-needs=${currentAccount()?"records.delete_permanent":"records.remove"}
-          onClick=${()=>setDeleting(true)}>Delete</button>`}
-      </span>
-    </div>
-    ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
-      onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
-    ${deciding&&html`<${VerifyPanel} kind=${kind} r=${r} onClose=${()=>setDeciding(false)}
-      onDone=${msg=>{setDeciding(false); onChanged?onChanged(msg):setSaved(msg);}}/>`}
-    ${saved&&html`<div class="selnote" role="status">${saved}</div>`}
-    <h2>${r.name}</h2>
-    <${RecordTrail} kind=${kind} id=${r.id}/>
-    ${layout==="card"&&tags}
-    ${layout==="card"&&meta&&html`<div class="mmeta" style=${{margin:"4px 0 8px"}}>${meta}</div>`}
-    ${layout!=="card"&&subtitle&&html`<div class="loc">${subtitle}</div>`}
-    <div class="badges"><${RecordBadges} r=${r}/></div>
-    ${editing
-      ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}
-          onSaved=${(values,outcome)=>{setEditing(false);
-            setSaved(outcome&&outcome.status==="unchanged"?"Nothing changed: the record already had these values."
-              :"Saved. The record is updated in the Ecosystem Directory.");
-            onSaved&&onSaved(values);}}/>`
-      : layout==="card"
-      ? html`<div class="pf-card">${body}${children}
-          <details class="mwhy-box pf-origin">
-            <summary><span class="mwhy-t">✦ Where This Record Comes From</span>
-              <span class="mwhy-right"><span class="mwhy-n">${sourceOf(r)||""}</span><span class="mchev" aria-hidden="true">▾</span></span></summary>
-            <${SourcesHistory} kind=${kind} r=${r} profile=${profile} bare=${true}/>
-          </details></div>`
-      : html`<div class="pf-grid">
-          <div class="pf-main">${body}${children}</div>
-          <aside class="pf-side">
-            <div class="pf-side-box"><h3>At a Glance</h3>
-              ${[...glance,["Owner",ownerOf(r)]].map(([k,v])=>html`<div class="pf-glance" key=${k}>
-                <span class="pf-k">${k}</span><span>${isEmpty(v)?NOT_FOUND:v}</span></div>`)}
-            </div>
-            <${SourcesHistory} kind=${kind} r=${r} profile=${profile}/>
-          </aside>
+  const idle=!editing&&!deleting&&!deciding;
+  return html`<div class="dpage fade">
+    <button class="backlink" onClick=${onBack}>← Back to results</button>
+    <div class="mcard dcard pick">
+      <div class="mh">
+        <div class="mbadge" aria-hidden="true">${badgeText({name:r.name,_entity_type:kind==="person"?"person":"actor"})}</div>
+        <div class="mhmain">
+          <div class="mn">${r.name}</div>
+          <div class="mstatus"><${RecordBadges} r=${r}/></div>
+          ${tags}
+        </div>
+        ${/* Verify, Edit, Delete (GHUS, 27 Nov 2026): a record not kept is deleted; no separate Reject.
+             Delete: every record type with accounts (Phase 6); organizations only without. */ ""}
+        ${idle&&!removed&&html`<div class="mactions">
+          ${decidable&&statusOf(r)!=="Verified"&&html`<button class="example mprimary" type="button"
+            data-needs="review.decide" onClick=${()=>{setSaved(null);setDeciding(true);}}>Verify</button>`}
+          <button class="example" type="button" data-needs="records.edit" onClick=${()=>{setSaved(null);setEditing(true);}}>Edit</button>
+          ${(currentAccount()||kind==="actor")&&html`<button class="example danger" type="button"
+            data-needs=${currentAccount()?"records.delete_permanent":"records.remove"}
+            onClick=${()=>setDeleting(true)}>Delete</button>`}
         </div>`}
+      </div>
+      <${RecordTrail} kind=${kind} id=${r.id}/>
+      ${deleting&&html`<${DeletePanel} kind=${kind} r=${r} onClose=${()=>setDeleting(false)}
+        onDone=${msg=>{setDeleting(false); onChanged&&onChanged(msg);}}/>`}
+      ${deciding&&html`<${VerifyPanel} kind=${kind} r=${r} onClose=${()=>setDeciding(false)}
+        onDone=${msg=>{setDeciding(false); onChanged?onChanged(msg):setSaved(msg);}}/>`}
+      ${saved&&html`<div class="selnote" role="status">${saved}</div>`}
+      ${editing
+        ? html`<${RecordEditor} kind=${kind} record=${r} options=${options||{}} onClose=${()=>setEditing(false)}
+            onSaved=${(values,outcome)=>{setEditing(false);
+              setSaved(outcome&&outcome.status==="unchanged"?"Nothing changed: the record already had these values."
+                :"Saved. The record is updated in the Ecosystem Directory.");
+              onSaved&&onSaved(values);}}/>`
+        : html`<${CardStrip} items=${strip.map(([k,v])=>[k,keep(v)])}/>
+            ${body}${children}
+            <details class="mwhy-box">
+              <summary><span class="mwhy-t"><span class="mstar" aria-hidden="true">✦</span> Where This Record Comes From</span>
+                <span class="mwhy-right"><span class="mwhy-n">${sourceOf(r)||""}</span><span class="mchev" aria-hidden="true">▾</span></span></summary>
+              <${SourcesHistory} kind=${kind} r=${r} profile=${profile}/>
+            </details>`}
+    </div>
   </div>`;
 }
 
@@ -1717,42 +1807,36 @@ function Actors({focus,visit}){
   const editOptions={types:options.types,states:options.states,regions:distinct(actors.map(a=>a.region))};
   const key=v=>String(v||"").trim().toLowerCase();
   const peopleAt=a=>!peopleData||peopleData.__error?null:(peopleData.people||[]).filter(p=>(p.organizations||[]).some(o=>key(o)===key(a.name)));
-  // The organization page in the Explore and Map card's style (3 Nov 2026): tags and
-  // a one-line location under the name, facts in two columns, where the record comes
-  // from folded at the bottom. Approach stays in the Edit form only. Technology and IP,
-  // Constraints and Lifecycle role are gone (migration 750: no agent collects them).
-  const orFound=v=>isEmpty(v)?NOT_FOUND:html`<${RichText} text=${v} limit=${320}/>`;
+  // The organization page in the Explore and Map card's design (3 Nov, 28 Nov 2026):
+  // the grey strip holds where it is and its hub; Approach stays in the Edit form only.
+  // Technology and IP, Constraints and Lifecycle role are gone (migration 750).
   const us=!!sel&&(!sel.country||isUS(sel.country));
+  const people=sel&&peopleAt(sel);
   if(sel) return html`<${RecordPage} kind="actor" r=${sel} options=${editOptions} onBack=${()=>setSel(null)} onChanged=${changed}
     onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
-    layout="card"
-    tags=${html`<div class="mtags">${typeOf(sel)&&html`<span class="mtag cat">${typeOf(sel)}</span>`}
+    tags=${(typeOf(sel)||(sel.sectors||[]).length>0)&&html`<div class="mtags">${typeOf(sel)&&html`<span class="mtag">${typeOf(sel)}</span>`}
       ${(sel.sectors||[]).map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`}
-    meta=${html`📍 ${[sel.city,us&&sel.state,us&&sel.region,sel.country].filter(Boolean).join(" · ")||"Location Not Found"}${us&&html` <span class="msep">·</span> Hub: ${!sel.hubs.length?"not in a hub":sel.hubs.length===1?sel.hubs[0]:`${sel.hubs[0]} +${sel.hubs.length-1} more`}`}`}
+    strip=${[
+      ["Location",[sel.city,us&&sel.state].filter(shown).join(" · ")],
+      ["Region",[us&&sel.region,sel.country].filter(shown).join(" · ")],
+      ["Category type",sel.category_type],
+      [us&&sel.hubs.length>1?"Hubs":"Hub",us&&sel.hubs.length?html`${sel.hubs.map(h=>html`<div key=${h}>${h}</div>`)}`:null],
+    ]}
     sections=${profile=>[
-      html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
-      html`<${Section} key="facts" title="Key Facts"><${Facts} items=${[
-        ["Category type",sel.category_type&&sel.category_type!=="Not classified"?sel.category_type:NOT_FOUND],
-        ["Website",sel.website?extLink(sel.website):NOT_FOUND],
-        ["Focus",orFound(sel.primary_technical_focus),true],
-        ["Activity",orFound(sel.current_activities),true],
-        ["Funding",orFound(sel.funding_summary),true],
-        ["Other names",sel.alt_names],
-      ]}/></${Section}>`,
-      html`<${Section} key="links" title="Connections"><${Facts} items=${[
-        [sel.hubs.length>1?`Hubs (${sel.hubs.length})`:"Hub",sel.hubs.length?html`${sel.hubs.map(h=>html`<div key=${h}>${h}</div>`)}`:html`<span class="dash">Not in a hub</span>`,true],
-        ...((profile&&profile.relationships)||[]).map(x=>[(RELATION_LABELS[x.type]||[x.type,x.type])[x.outgoing?0:1],x.name]),
-        ["Events it organizes",!profile?"…":profile.events.length?profile.events.map(e=>e.name+(e.start_date?` (${usDate(e.start_date)})`:"")).join(" · ")
-          :html`<span class="dash">None recorded</span>`,true],
-      ]}/></${Section}>`,
-      html`<${Section} key="people" title=${`People${peopleAt(sel)?` (${peopleAt(sel).length})`:""}`}>
-        ${!peopleAt(sel)?html`<span class="dash">Loading…</span>`
-          :!peopleAt(sel).length?html`<span class="dash">No people in the directory work here yet.</span>`
-          :html`<${Facts} items=${peopleAt(sel).map(x=>[x.name,x.title||html`<span class="dash">Title Not Found</span>`])}/>`}
-      </${Section}>`,
-      html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
-        :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
-  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="organization" plural="organizations" nameLabel="Organization" rows=${actors} exportName="organizations"
+      shown(sel.description)&&html`<div class="mdesc" key="about"><${RichText} text=${sel.description}/></div>`,
+      html`<${Facts} key="facts" items=${[
+        ["Activity",richOf(sel.current_activities,320)],
+        ["Focus",richOf(sel.primary_technical_focus,320)],
+        ["Funding",richOf(sel.funding_summary,320)],
+        ["Other names",keep(sel.alt_names)],
+        ["Official website",shown(sel.website)?extLink(sel.website):null],
+        ...((profile&&profile.relationships)||[]).map(x=>[(RELATION_LABELS[x.type]||[x.type,x.type])[x.outgoing?0:1],keep(x.name)]),
+        ["Events it organizes",profile&&profile.events.length?profile.events.map(e=>e.name+(e.start_date?` (${usDate(e.start_date)})`:"")).join(" · "):null,true],
+      ]}/>`,
+      people&&people.length>0&&html`<${CardSection} key="people" title=${`People (${people.length})`}>
+        <${Facts} items=${people.map(x=>[x.name,keep(x.title)||" "])}/></${CardSection}>`,
+      shown(sel.ghus_notes)&&html`<${CardSection} key="notes" title="GHUS Notes"><${RichText} text=${sel.ghus_notes}/></${CardSection}>`]}/>`;
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} kind="actor" onChanged=${changed} noun="organization" plural="organizations" nameLabel="Organization" rows=${actors} exportName="organizations"
     onOpen=${setSel} empty="No organizations in the database yet."
     search=${{placeholder:"Search name, description, technical focus…",
       text:a=>[a.name,a.description,a.primary_technical_focus,a.alt_names].join(" ")}}
@@ -1801,31 +1885,39 @@ function Hubs({visit}){
   const hubRegion=h=>regionOfState(hubState(h));
   if(sel){
     const related=(actorsData?.actors||[]).filter(a=>(a.hubs||[]).includes(sel.name));
+    const sites=String(sel.official_websites||"").split(/[,\s]+/).filter(u=>u.startsWith("http")).slice(0,3);
+    const narratives=[["programs_and_labs_narrative","Programs and labs"],["talent_narrative","Talent"],
+      ["research_infrastructure_narrative","Research infrastructure"],["industry_integration_narrative","Industry integration"],
+      ["international_engagement_narrative","International engagement"]].filter(([k])=>shown(sel[k]));
+    const count=sel.actor_count??related.length;
     return html`<${RecordPage} kind="hub" r=${{...sel,id:sel.id||sel.hub_id}} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
-      subtitle=${[sectorOf(sel),[sel.primary_city,sel.state].filter(Boolean).join(", ")].filter(Boolean).join("  ·  ")}
-      glance=${[["Sector",sectorOf(sel)],["Organizations",String(sel.actor_count??related.length)],
-        ["Center",[sel.primary_city,sel.state,sel.country].filter(Boolean).join(", ")],
-        ["Websites",sel.official_websites?String(sel.official_websites).split(/[,\s]+/).filter(u=>u.startsWith("http")).slice(0,3)
-          .map(u=>html`<div key=${u}>${link(u)}</div>`):null]]}
+      tags=${shown(sectorOf(sel))&&html`<div class="mtags"><span class="mtag">${sectorOf(sel)}</span></div>`}
+      strip=${[
+        ["Center",[sel.primary_city,hubState(sel)||sel.state].filter(shown).join(" · ")],
+        ["Region",[hubRegion(sel),sel.country].filter(shown).join(" · ")],
+        ["Organizations",count?String(count):null],
+      ]}
       sections=${[
-        html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/></${Section}>`,
-        html`<${Section} key="value" title="Strategic value and strengths" rows=${[["Strategic value",sel.strategic_value_summary&&html`<${RichText} text=${sel.strategic_value_summary} limit=${300}/>`],
-          ["Core strengths",sel.core_topic_strengths],["Funding",sel.funding_summary],["Constraints",sel.constraints_summary]]}/>`,
-        html`<${Section} key="narr" title="In depth">
-          ${[["programs_and_labs_narrative","Programs and labs"],["talent_narrative","Talent"],
-            ["research_infrastructure_narrative","Research infrastructure"],["industry_integration_narrative","Industry integration"],
-            ["international_engagement_narrative","International engagement"]].map(([k,label])=>html`<details class="pf-narr" key=${k}>
-              <summary>${label}</summary><${RichText} text=${sel[k]} limit=${100000}/></details>`)}
-        </${Section}>`]}>
-      <${Section} title=${`Organizations in this hub (${related.length})`}>
-      ${related.length===0? html`<span class="dash">No organizations linked yet.</span>` : html`
+        shown(sel.description)&&html`<div class="mdesc" key="about"><${RichText} text=${sel.description}/></div>`,
+        html`<${Facts} key="facts" items=${[
+          ["Strategic value",richOf(sel.strategic_value_summary,300)],
+          ["Core strengths",richOf(sel.core_topic_strengths,300)],
+          ["Funding",richOf(sel.funding_summary,300)],
+          ["Constraints",richOf(sel.constraints_summary,300)],
+          [sites.length>1?"Official websites":"Official website",sites.length?html`${sites.map(u=>html`<div key=${u}>${extLink(u)}</div>`)}`:null],
+        ]}/>`,
+        narratives.length>0&&html`<${CardSection} key="narr" title="In depth">
+          ${narratives.map(([k,label])=>html`<details class="pf-narr" key=${k}>
+            <summary>${label}</summary><${RichText} text=${sel[k]} limit=${100000}/></details>`)}
+        </${CardSection}>`]}>
+      ${related.length>0&&html`<${CardSection} title=${`Organizations in this hub (${related.length})`}>
         <table class="grid"><thead><tr><th>Organization</th><th>Category</th><th>Location</th></tr></thead>
         <tbody>${related.map(a=>html`<tr key=${a.id}><td><div class="name-link">${a.name}</div><${RecordBadges} r=${a}/></td>
-          <td>${dash(shortType(a.actor_category||a.actor_type))}</td><td>${dash([a.city,a.state].filter(Boolean).join(", "))}</td></tr>`)}</tbody></table>`}
-      </${Section}>
+          <td>${dash(shortType(a.actor_category||a.actor_type))}</td><td>${dash([a.city,a.state].filter(Boolean).join(", "))}</td></tr>`)}</tbody></table>
+      </${CardSection}>`}
     </${RecordPage}>`;
   }
-  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} kind="hub" onChanged=${changed} noun="hub" plural="hubs" nameLabel="Hub" rows=${hubs} exportName="hubs"
     onOpen=${setSel} empty="No hubs in the database yet."
     search=${{placeholder:"Search name, city, description…",
       text:h=>[h.name,h.primary_city,h.state,h.description,sectorOf(h)].join(" ")}}
@@ -1900,19 +1992,23 @@ function Events({focus,visit}){
   const dated=events.filter(e=>e.start_date).length;
   const eventState=e=>stateInText(e.location);
   const eventRegion=e=>regionOfState(eventState(e));
+  // Attended stays off the page until GHUS records it (its dropdown is planned).
   if(sel) return html`<${RecordPage} kind="event" r=${sel} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
-    subtitle=${[sel.start_date&&eventDates(sel.start_date,sel.end_date),sel.location].filter(Boolean).join("  ·  ")}
-    glance=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],["When",when(sel)==="No date"?null:when(sel)],
-      ["Location",sel.location],["Frequency",sel.recurring_pattern],["Website",link(sel.website)]]}
+    strip=${[
+      [sel.end_date?"Dates":"Date",sel.start_date?eventDates(sel.start_date,sel.end_date)+(when(sel)==="Past"?" (Past)":""):null],
+      ["Location",sel.location],
+      ["Region",eventRegion(sel)],
+      ["Frequency",sel.recurring_pattern],
+    ]}
     sections=${[
-      html`<${Section} key="about" title="About"><${RichText} text=${sel.description}/>
-        ${sel.thematic_focus&&html`<div class="pf-rows" style=${{marginTop:"8px"}}><span class="pf-k">Topic</span><span class="pf-v">${sel.thematic_focus}</span></div>`}</${Section}>`,
-      html`<${Section} key="when" title="When and where" rows=${[["Dates",sel.start_date?eventDates(sel.start_date,sel.end_date):null],
-        ["Frequency",sel.recurring_pattern],["Location",sel.location],["Access",sel.access_type]]}/>`,
-      html`<${Section} key="who" title="Who" rows=${[["Organizer",sel.organizer],["Sponsors",sel.sponsoring_orgs],["Scale",sel.expected_attendance]]}/>`,
-      html`<${Section} key="ghus" title="GHUS engagement" rows=${[["Attended",html`<span class="dash">Not recorded yet</span>`],
-        ["Notes",sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`:html`<span class="dash">No notes yet. Add them with Edit.</span>`]]}/>`]}/>`;
-  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
+      shown(sel.description)&&html`<div class="mdesc" key="about"><${RichText} text=${sel.description}/></div>`,
+      html`<${Facts} key="facts" items=${[
+        ["Topic",keep(sel.thematic_focus)],["Organizer",keep(sel.organizer)],
+        ["Scale",keep(sel.expected_attendance)],["Sponsors",keep(sel.sponsoring_orgs)],["Access",keep(sel.access_type)],
+        ["Official website",shown(sel.website)?extLink(sel.website):null],
+      ]}/>`,
+      shown(sel.ghus_notes)&&html`<${CardSection} key="notes" title="GHUS Notes"><${RichText} text=${sel.ghus_notes}/></${CardSection}>`]}/>`;
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} kind="event" onChanged=${changed} noun="event" plural="events" nameLabel="Event" rows=${events} exportName="events"
     onOpen=${setSel} empty="No events in the database yet."
     note=${`Upcoming events first, then those without a date, then past ones. ${dated} of ${events.length} events have a date.`}
     search=${{placeholder:"Search name, description, topic…",
@@ -1952,15 +2048,19 @@ function People({focus,visit}){
   if(data.__error) return html`<${LoadError} message=${data.__error}/>`;
   const {people,options}=data;
   if(sel) return html`<${RecordPage} kind="person" r=${{...sel,website:sel.profile_url}} onBack=${()=>setSel(null)} onChanged=${changed} onSaved=${v=>{setSel(x=>({...x,...v}));setVersion(n=>n+1);}}
-    subtitle=${[sel.title,sel.organizations.join(", "),sel.states.join(", ")].filter(Boolean).join("  ·  ")}
-    glance=${[["Title",sel.title],["Organization",sel.organizations.join(", ")],["State",sel.states.join(", ")]]}
+    tags=${sel.topics.length>0&&html`<div class="mtags">${sel.topics.map(x=>html`<span class="mtag" key=${x}>${x}</span>`)}</div>`}
+    strip=${[
+      ["Title",sel.title],
+      ["Organization",sel.organizations.filter(shown).join(", ")],
+      ["Location",sel.states.filter(shown).join(", ")],
+      [/linkedin\.com/i.test(sel.profile_url||"")?"LinkedIn":"Profile",shown(sel.profile_url)?extLink(sel.profile_url):null],
+    ]}
     sections=${[
-      html`<${Section} key="role" title="Role" rows=${[["Title",sel.title],["Organization",sel.organizations.join(", ")]]}/>`,
-      html`<${Section} key="exp" title="Expertise" rows=${[["Sector",sel.topics.join(", ")],["Research areas",sel.research_areas.join(", ")]]}/>`,
-      html`<${Section} key="prof" title="Profiles" rows=${[["Public profile",link(sel.profile_url)],["ORCID",sel.orcid]]}/>`,
-      html`<${Section} key="notes" title="GHUS Notes">${sel.ghus_notes?html`<${RichText} text=${sel.ghus_notes}/>`
-        :html`<span class="dash">No notes yet. Add them with Edit.</span>`}</${Section}>`]}/>`;
-  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
+      html`<${Facts} key="facts" items=${[
+        ["Research areas",keep(sel.research_areas.filter(shown).join(", "))],["ORCID",keep(sel.orcid)],
+      ]}/>`,
+      shown(sel.ghus_notes)&&html`<${CardSection} key="notes" title="GHUS Notes"><${RichText} text=${sel.ghus_notes}/></${CardSection}>`]}/>`;
+  return html`${notice&&html`<div class="selnote" role="status">${notice}</div>`}<${Directory} kind="person" onChanged=${changed} noun="person" plural="people" nameLabel="Person" rows=${people} exportName="people"
     onOpen=${setSel}
     empty="No people in the database yet. People found in Build the Map appear here once they are verified into the database."
     search=${{placeholder:"Search name, title, employer, expertise…",
